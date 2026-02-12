@@ -57,6 +57,18 @@ pub enum FillRule {
 /// This struct maintains state during content stream processing and accumulates
 /// path operations. When a painting operator is encountered, the current path
 /// is finalized and added to the extracted paths list.
+///
+/// # XObject Support (Issue #40)
+///
+/// The extractor can recursively process Form XObjects by maintaining a reference
+/// to page resources and the document. When encountering a `Do` operator with a
+/// Form XObject name, it will:
+/// 1. Resolve the XObject from resources
+/// 2. Check if it's a Form (not Image)
+/// 3. Apply coordinate transformations
+/// 4. Recursively extract paths from the XObject stream
+///
+/// XObjects are tracked to prevent infinite loops from circular references.
 #[derive(Debug)]
 pub struct PathExtractor {
     /// Accumulated complete paths
@@ -75,6 +87,16 @@ pub struct PathExtractor {
     current_line_join: LineJoin,
     /// Current transformation matrix for coordinate transformation
     ctm: Matrix,
+    /// Page resources for XObject resolution (Issue #40)
+    resources: Option<crate::object::Object>,
+    /// Document reference for loading XObjects (Issue #40)
+    /// This is a raw pointer because we need to call mutable methods on the document
+    /// during XObject processing. It's safe because:
+    /// 1. The extraction process is synchronous (no threading)
+    /// 2. The document's lifetime exceeds the extractor's
+    document: Option<*mut crate::document::PdfDocument>,
+    /// Processed XObjects to prevent infinite loops (Issue #40)
+    processed_xobjects: std::collections::HashSet<crate::object::ObjectRef>,
 }
 
 impl PathExtractor {
@@ -91,7 +113,35 @@ impl PathExtractor {
             current_line_cap: LineCap::Butt,
             current_line_join: LineJoin::Miter,
             ctm: Matrix::identity(),
+            resources: None,
+            document: None,
+            processed_xobjects: std::collections::HashSet::new(),
         }
+    }
+
+    /// Set the page resources for XObject resolution (Issue #40).
+    pub fn set_resources(&mut self, resources: crate::object::Object) {
+        self.resources = Some(resources);
+    }
+
+    /// Set the document reference for XObject access (Issue #40).
+    pub fn set_document(&mut self, document: *mut crate::document::PdfDocument) {
+        self.document = Some(document);
+    }
+
+    /// Get the page resources if available.
+    pub(crate) fn get_resources(&self) -> Option<&crate::object::Object> {
+        self.resources.as_ref()
+    }
+
+    /// Check if an XObject has already been processed (Issue #40).
+    pub(crate) fn is_xobject_processed(&self, xobject_ref: crate::object::ObjectRef) -> bool {
+        self.processed_xobjects.contains(&xobject_ref)
+    }
+
+    /// Mark an XObject as processed to prevent infinite loops (Issue #40).
+    pub(crate) fn mark_xobject_processed(&mut self, xobject_ref: crate::object::ObjectRef) {
+        self.processed_xobjects.insert(xobject_ref);
     }
 
     /// Update the current transformation matrix.

@@ -133,6 +133,35 @@ impl PyPdfDocument {
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to extract text: {}", e)))
     }
 
+    /// Extract individual characters from a page.
+    ///
+    /// This is a **low-level API** for character-level granularity. For most use cases,
+    /// prefer `extract_text()` or `extract_spans()` which provide complete text strings.
+    ///
+    /// Characters are sorted in reading order (top-to-bottom, left-to-right) and
+    /// overlapping characters (rendered multiple times for effects) are deduplicated.
+    ///
+    /// Args:
+    ///     page (int): Page index (0-based)
+    ///
+    /// Returns:
+    ///     list[TextChar]: Extracted characters with position, font, and style information
+    ///
+    /// Raises:
+    ///     RuntimeError: If character extraction fails
+    ///
+    /// Example:
+    ///     >>> doc = PdfDocument("sample.pdf")
+    ///     >>> chars = doc.extract_chars(0)
+    ///     >>> for ch in chars:
+    ///     ...     print(f"'{ch.char}' at ({ch.bbox.x:.1f}, {ch.bbox.y:.1f})")
+    fn extract_chars(&mut self, page: usize) -> PyResult<Vec<PyTextChar>> {
+        self.inner
+            .extract_chars(page)
+            .map(|chars| chars.into_iter().map(|ch| PyTextChar { inner: ch }).collect())
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to extract characters: {}", e)))
+    }
+
     /// Check if document has a structure tree (Tagged PDF).
     ///
     /// Tagged PDFs contain explicit document structure that defines reading order,
@@ -2438,9 +2467,136 @@ impl PyPdfElement {
     }
 }
 
+// === Text Extraction Types ===
+
+/// A single character with its position and styling information.
+///
+/// Low-level character extraction result containing position, font, and style data
+/// for each character in a PDF page. Use `extract_chars()` to get a list of these.
+///
+/// # Attributes:
+///     char (str): The character itself
+///     bbox (dict): Bounding box with keys: x, y, width, height
+///     font_name (str): Font family name
+///     font_size (float): Font size in points
+///     font_weight (str): "normal" or "bold"
+///     is_italic (bool): Whether the character is italic
+///     color (tuple): RGB color as (r, g, b) with values 0.0-1.0
+#[pyclass(name = "TextChar")]
+#[derive(Clone)]
+pub struct PyTextChar {
+    inner: RustTextChar,
+}
+
+#[pymethods]
+impl PyTextChar {
+    /// The character itself.
+    #[getter]
+    fn char(&self) -> char {
+        self.inner.char
+    }
+
+    /// Bounding box of the character as a dictionary.
+    ///
+    /// Returns:
+    ///     dict: {"x": float, "y": float, "width": float, "height": float}
+    #[getter]
+    fn bbox(&self) -> std::collections::HashMap<&'static str, f32> {
+        let mut bbox = std::collections::HashMap::new();
+        bbox.insert("x", self.inner.bbox.x);
+        bbox.insert("y", self.inner.bbox.y);
+        bbox.insert("width", self.inner.bbox.width);
+        bbox.insert("height", self.inner.bbox.height);
+        bbox
+    }
+
+    /// Font name/family.
+    #[getter]
+    fn font_name(&self) -> String {
+        self.inner.font_name.clone()
+    }
+
+    /// Font size in points.
+    #[getter]
+    fn font_size(&self) -> f32 {
+        self.inner.font_size
+    }
+
+    /// Font weight as a string.
+    ///
+    /// Returns:
+    ///     str: "normal" or "bold"
+    #[getter]
+    fn font_weight(&self) -> String {
+        match self.inner.font_weight {
+            FontWeight::Normal => "normal".to_string(),
+            FontWeight::Bold => "bold".to_string(),
+        }
+    }
+
+    /// Whether the character is italic.
+    #[getter]
+    fn is_italic(&self) -> bool {
+        self.inner.is_italic
+    }
+
+    /// Text color as RGB tuple.
+    ///
+    /// Returns:
+    ///     tuple: (r, g, b) with values 0.0-1.0
+    #[getter]
+    fn color(&self) -> (f32, f32, f32) {
+        (self.inner.color.r, self.inner.color.g, self.inner.color.b)
+    }
+
+    /// Text rotation angle in degrees.
+    #[getter]
+    fn rotation_degrees(&self) -> f32 {
+        self.inner.rotation_degrees
+    }
+
+    /// Baseline X position.
+    #[getter]
+    fn origin_x(&self) -> f32 {
+        self.inner.origin_x
+    }
+
+    /// Baseline Y position.
+    #[getter]
+    fn origin_y(&self) -> f32 {
+        self.inner.origin_y
+    }
+
+    /// Horizontal distance to next character.
+    #[getter]
+    fn advance_width(&self) -> f32 {
+        self.inner.advance_width
+    }
+
+    /// Marked Content ID (for Tagged PDFs).
+    ///
+    /// Returns:
+    ///     int | None: MCID if available, None otherwise
+    #[getter]
+    fn mcid(&self) -> Option<u32> {
+        self.inner.mcid
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "TextChar('{}' at ({:.1}, {:.1}), {}pt {})",
+            self.inner.char,
+            self.inner.bbox.x,
+            self.inner.bbox.y,
+            self.inner.font_size as i32,
+            self.inner.font_name
+        )
+    }
+}
+
 // === Advanced Graphics Types ===
 
-use crate::layout::Color as RustColor;
+use crate::layout::{Color as RustColor, TextChar as RustTextChar, FontWeight, Rect};
 use crate::writer::{
     BlendMode as RustBlendMode, LineCap as RustLineCap, LineJoin as RustLineJoin,
     PatternPresets as RustPatternPresets,
@@ -3116,6 +3272,9 @@ fn pdf_oxide(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyPdfImage>()?;
     m.add_class::<PyPdfElement>()?;
     m.add_class::<PyAnnotationWrapper>()?;
+
+    // Text extraction types
+    m.add_class::<PyTextChar>()?;
 
     // Advanced graphics
     m.add_class::<PyColor>()?;
