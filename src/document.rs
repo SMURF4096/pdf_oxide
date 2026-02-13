@@ -1524,10 +1524,7 @@ impl PdfDocument {
             Err(e) => {
                 // If tree traversal fails (malformed page tree), try fallback scanning
                 if matches!(e, Error::InvalidPdf(_)) {
-                    log::warn!(
-                        "Page tree traversal failed ({}), trying fallback scan method",
-                        e
-                    );
+                    log::warn!("Page tree traversal failed ({}), trying fallback scan method", e);
                     self.get_page_by_scanning(page_index)
                 } else {
                     Err(e)
@@ -1651,9 +1648,7 @@ impl PdfDocument {
                 let kids = match node_dict.get("Kids").and_then(|obj| obj.as_array()) {
                     Some(k) => k,
                     None => {
-                        log::warn!(
-                            "Malformed PDF: Pages node missing /Kids array"
-                        );
+                        log::warn!("Malformed PDF: Pages node missing /Kids array");
                         // Malformed PDF: Pages node has no /Kids array
                         // Gracefully return without error to allow other recovery paths
                         // The scanning method will find pages eventually
