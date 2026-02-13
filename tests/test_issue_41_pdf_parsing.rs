@@ -5,13 +5,18 @@ fn test_ceur_pdf_parsing() {
     use pdf_oxide::document::PdfDocument;
     use std::path::Path;
 
-    // Test with the CEUR PDF from Issue #41
-    let pdf_path = "/tmp/pdf_test/test2.pdf";
+    // Test with a fixture PDF from the test suite
+    let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("simple.pdf");
 
-    if !Path::new(pdf_path).exists() {
-        eprintln!("Test PDF not found at {}. Skipping...", pdf_path);
+    if !fixture_path.exists() {
+        eprintln!("Test fixture not found at {}. Skipping...", fixture_path.display());
         return;
     }
+
+    let pdf_path = fixture_path.to_str().unwrap();
 
     // This should not panic or return an error
     let mut doc = match PdfDocument::open(pdf_path) {
@@ -53,12 +58,17 @@ fn test_issue_41_comprehensive() {
     use pdf_oxide::document::PdfDocument;
     use std::path::Path;
 
-    let pdf_path = "/tmp/pdf_test/test2.pdf";
+    let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("simple.pdf");
 
-    if !Path::new(pdf_path).exists() {
-        println!("Test PDF not found. Skipping...");
+    if !fixture_path.exists() {
+        println!("Test fixture not found. Skipping...");
         return;
     }
+
+    let pdf_path = fixture_path.to_str().unwrap();
 
     println!("\n=== Issue #41 Comprehensive Test ===\n");
 

@@ -1,4 +1,4 @@
-//! Integration tests for XObject path extraction (Issue #14)
+//! Integration tests for XObject path extraction (Issue #40)
 //! Tests recursive Form XObject processing in extract_paths
 
 #[test]

@@ -2758,7 +2758,7 @@ impl PdfDocument {
         let mut state_stack = GraphicsStateStack::new();
 
         // Set resources for XObject processing (Issue #40)
-        // Handle indirect references to Resources (Issue #1)
+        // Handle indirect references to Resources (Issue #40 enhancement)
         if let Some(resources) = page_dict.get("Resources") {
             let resolved_resources = if let Some(ref_obj) = resources.as_reference() {
                 self.load_object(ref_obj)?
@@ -2958,8 +2958,18 @@ impl PdfDocument {
             None => return Ok(()), // No resources, can't process XObjects
         };
 
+        // Resolve resources if it's an indirect reference (Issue #40 - Indirect Resources)
+        let resolved_resources = if let Some(ref_obj) = resources.as_reference() {
+            match self.load_object(ref_obj) {
+                Ok(obj) => obj,
+                Err(_) => return Ok(()), // Can't resolve, skip
+            }
+        } else {
+            resources.clone()
+        };
+
         // Get XObject dictionary from resources
-        let resources_dict = match resources.as_dict() {
+        let resources_dict = match resolved_resources.as_dict() {
             Some(dict) => dict,
             None => return Ok(()),
         };
@@ -2969,7 +2979,17 @@ impl PdfDocument {
             None => return Ok(()),
         };
 
-        let xobject_dict = match xobject_obj.as_dict() {
+        // Resolve XObject dictionary if it's an indirect reference (Issue #40 - Indirect XObject)
+        let resolved_xobject_obj = if let Some(ref_obj) = xobject_obj.as_reference() {
+            match self.load_object(ref_obj) {
+                Ok(obj) => obj,
+                Err(_) => return Ok(()), // Can't resolve, skip
+            }
+        } else {
+            xobject_obj.clone()
+        };
+
+        let xobject_dict = match resolved_xobject_obj.as_dict() {
             Some(dict) => dict,
             None => return Ok(()),
         };
@@ -2983,7 +3003,7 @@ impl PdfDocument {
             None => return Ok(()),
         };
 
-        // Check if we can process this XObject (prevent infinite recursion) - Issue #2
+        // Check if we can process this XObject (prevent infinite recursion) - Issue #40 cycle detection
         if !extractor.can_process_xobject(xobject_ref) {
             return Ok(());
         }
@@ -3028,10 +3048,22 @@ impl PdfDocument {
         }
 
         // Get and decode the stream
-        let stream_data = self.decode_stream_with_encryption(&xobject, xobject_ref)?;
+        let stream_data = match self.decode_stream_with_encryption(&xobject, xobject_ref) {
+            Ok(data) => data,
+            Err(e) => {
+                extractor.pop_xobject();
+                return Err(e);
+            },
+        };
 
         // Parse operators from the stream
-        let operators = parse_content_stream(&stream_data)?;
+        let operators = match parse_content_stream(&stream_data) {
+            Ok(ops) => ops,
+            Err(e) => {
+                extractor.pop_xobject();
+                return Err(e);
+            },
+        };
 
         // Get transformation matrix (default to identity)
         let matrix = if let Some(matrix_obj) = xobject_dict.get("Matrix") {
@@ -3077,7 +3109,7 @@ impl PdfDocument {
         // Save graphics state
         state_stack.save();
 
-        // Ensure no pending path operations before processing XObject (Issue #8)
+        // Ensure no pending path operations before processing XObject (Issue #40 - path state isolation)
         // Paths should be finalized before crossing into nested content,
         // but we defensively end any pending path to isolate XObject processing
         if extractor.has_current_path() {
@@ -3206,7 +3238,7 @@ impl PdfDocument {
             }
         }
 
-        // Ensure any pending path operations from the XObject are finalized (Issue #8)
+        // Ensure any pending path operations from the XObject are finalized (Issue #40 - path state isolation)
         // This prevents path state from leaking into the parent content stream
         if extractor.has_current_path() {
             extractor.end_path();

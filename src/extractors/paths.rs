@@ -89,7 +89,7 @@ pub struct PathExtractor {
     ctm: Matrix,
     /// Page resources for XObject resolution (Issue #40)
     resources: Option<crate::object::Object>,
-    /// Stack of XObjects being processed to detect cycles (Issue #40, #2)
+    /// Stack of XObjects being processed to detect cycles (Issue #40)
     /// Uses a call stack approach instead of global "processed" set to allow
     /// the same XObject to be extracted at different transformations
     xobject_processing_stack: Vec<crate::object::ObjectRef>,
@@ -128,7 +128,7 @@ impl PathExtractor {
     }
 
     /// Check if an XObject is already in the processing stack (cycle detection)
-    /// and if we haven't exceeded maximum nesting depth (Issue #40, #2).
+    /// and if we haven't exceeded maximum nesting depth (Issue #40).
     pub(crate) fn can_process_xobject(&self, xobject_ref: crate::object::ObjectRef) -> bool {
         // Check if already in processing stack (would cause infinite recursion)
         if self.xobject_processing_stack.contains(&xobject_ref) {

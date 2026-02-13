@@ -1,4 +1,4 @@
-//! Integration tests for extract_chars API (Issue #15)
+//! Integration tests for extract_chars API (Issue #39)
 //! Tests the new character-level text extraction API with real PDFs
 
 #[test]

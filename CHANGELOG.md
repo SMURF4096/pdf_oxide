@@ -4,6 +4,13 @@ All notable changes to PDFOxide are documented here.
 
 ## [0.3.4] - 2026-02-12
 
+### ⚠️ Breaking Changes
+- **`parse_header()` function signature** - Now includes offset tracking
+  - **Before**: `parse_header(reader) -> Result<(u8, u8)>`
+  - **After**: `parse_header(reader, lenient) -> Result<(u8, u8, u64)>`
+  - **Migration**: Replace `let (major, minor) = parse_header(&mut reader)?;` with `let (major, minor, _offset) = parse_header(&mut reader, true)?;`
+  - Note: This is a public API function; consider using `doc.version()` for typical use cases instead
+
 ### Fixed - PDF Parsing Robustness (Issue #41)
 - **Header offset support** - PDFs with binary prefixes or BOM headers now open successfully
   - Parse header function now searches first 1024 bytes for `%PDF-` marker (PDF spec compliant)
