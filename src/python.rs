@@ -2534,8 +2534,15 @@ impl PyTextChar {
     #[getter]
     fn font_weight(&self) -> String {
         match self.inner.font_weight {
+            FontWeight::Thin => "thin".to_string(),
+            FontWeight::ExtraLight => "extra-light".to_string(),
+            FontWeight::Light => "light".to_string(),
             FontWeight::Normal => "normal".to_string(),
+            FontWeight::Medium => "medium".to_string(),
+            FontWeight::SemiBold => "semi-bold".to_string(),
             FontWeight::Bold => "bold".to_string(),
+            FontWeight::ExtraBold => "extra-bold".to_string(),
+            FontWeight::Black => "black".to_string(),
         }
     }
 
@@ -2601,7 +2608,7 @@ impl PyTextChar {
 
 // === Advanced Graphics Types ===
 
-use crate::layout::{Color as RustColor, FontWeight, Rect, TextChar as RustTextChar};
+use crate::layout::{Color as RustColor, FontWeight, TextChar as RustTextChar};
 use crate::writer::{
     BlendMode as RustBlendMode, LineCap as RustLineCap, LineJoin as RustLineJoin,
     PatternPresets as RustPatternPresets,
