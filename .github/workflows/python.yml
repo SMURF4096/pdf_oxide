@@ -71,8 +71,9 @@ jobs:
 
       - name: Run Rust tests with Python feature
         # Skip on macOS due to extension-module linking restrictions
+        # Use --lib to skip doctests (doctests validated in main CI)
         if: runner.os != 'macOS'
-        run: cargo test --features python
+        run: cargo test --lib --features python
 
       - name: Run Python tests
         run: uv run pytest tests/test_python.py -v
