@@ -1542,7 +1542,9 @@ impl PdfDocument {
         let mut current_index = 0;
 
         // Collect all object numbers first to avoid borrow checker issues
-        let obj_nums: Vec<u32> = self.xref.all_object_numbers().collect();
+        // Sort for deterministic iteration order (HashMap iteration is non-deterministic)
+        let mut obj_nums: Vec<u32> = self.xref.all_object_numbers().collect();
+        obj_nums.sort_unstable();
 
         // Iterate through all objects looking for Page objects
         for obj_num in obj_nums {

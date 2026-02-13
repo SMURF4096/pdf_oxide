@@ -2482,7 +2482,7 @@ impl PyPdfElement {
 /// # Attributes
 ///
 /// - `char` (str): The character itself
-/// - `bbox` (dict): Bounding box with keys: x, y, width, height
+/// - `bbox` (tuple): Bounding box as (x, y, width, height)
 /// - `font_name` (str): Font family name
 /// - `font_size` (float): Font size in points
 /// - `font_weight` (str): "normal", "bold", "light", etc.
@@ -2502,18 +2502,18 @@ impl PyTextChar {
         self.inner.char
     }
 
-    /// Bounding box of the character as a dictionary.
+    /// Bounding box of the character.
     ///
     /// Returns:
-    ///     dict: {"x": float, "y": float, "width": float, "height": float}
+    ///     tuple[float, float, float, float]: (x, y, width, height)
     #[getter]
-    fn bbox(&self) -> std::collections::HashMap<&'static str, f32> {
-        let mut bbox = std::collections::HashMap::new();
-        bbox.insert("x", self.inner.bbox.x);
-        bbox.insert("y", self.inner.bbox.y);
-        bbox.insert("width", self.inner.bbox.width);
-        bbox.insert("height", self.inner.bbox.height);
-        bbox
+    fn bbox(&self) -> (f32, f32, f32, f32) {
+        (
+            self.inner.bbox.x,
+            self.inner.bbox.y,
+            self.inner.bbox.width,
+            self.inner.bbox.height,
+        )
     }
 
     /// Font name/family.
