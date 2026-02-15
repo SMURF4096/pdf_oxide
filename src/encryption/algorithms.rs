@@ -136,9 +136,10 @@ pub fn pad_password(password: &[u8]) -> Vec<u8> {
     padded
 }
 
-/// Authenticate the user password (Algorithm 4/5).
+/// Authenticate the user password (Algorithm 4/5 for R<=4, Algorithm 11 for R>=5).
 ///
 /// PDF Spec: Section 7.6.3.4 - Algorithm 4/5: User password authentication
+/// PDF 2.0 Spec: Algorithm 11 - Authenticating user password for R>=5
 ///
 /// Returns the encryption key if authentication succeeds.
 pub fn authenticate_user_password(
@@ -151,6 +152,11 @@ pub fn authenticate_user_password(
     key_length: usize,
     encrypt_metadata: bool,
 ) -> Option<Vec<u8>> {
+    // R>=5 uses SHA-256 based verification (Algorithm 11)
+    if revision >= 5 {
+        return authenticate_user_password_r5(password, user_key);
+    }
+
     // Compute encryption key from password
     let key = compute_encryption_key(
         password,
@@ -179,6 +185,56 @@ pub fn authenticate_user_password(
         Some(key)
     } else {
         None
+    }
+}
+
+/// Verify user password for R>=5 (PDF 2.0 Algorithm 11).
+///
+/// PDF 2.0 Spec (ISO 32000-2:2020): Algorithm 11 — Authenticating the user password
+///
+/// 1. SASLprep and truncate password to 127 UTF-8 bytes
+/// 2. SHA-256(password || user_validation_salt) where validation_salt = U[32..40]
+/// 3. Compare with U[0..32]
+/// 4. If match: file encryption key = SHA-256(password || user_key_salt) where key_salt = U[40..48]
+fn authenticate_user_password_r5(password: &[u8], user_key: &[u8]) -> Option<Vec<u8>> {
+    if user_key.len() < 48 {
+        return None;
+    }
+
+    let password = saslprep_password(password);
+    let password = truncate_password_utf8(&password);
+
+    let validation_salt = &user_key[32..40];
+    let key_salt = &user_key[40..48];
+
+    // Step 1: Verify — SHA-256(password || validation_salt)
+    let mut hasher = Sha256::new();
+    hasher.update(&password);
+    hasher.update(validation_salt);
+    let hash = hasher.finalize();
+
+    if constant_time_compare(&hash, &user_key[..32]) {
+        // Step 2: Derive file encryption key — SHA-256(password || key_salt)
+        let mut hasher = Sha256::new();
+        hasher.update(&password);
+        hasher.update(key_salt);
+        Some(hasher.finalize().to_vec())
+    } else {
+        None
+    }
+}
+
+/// Apply SASLprep (RFC 4013) normalization to a password.
+///
+/// PDF 2.0 Spec requires SASLprep for Unicode passwords in R>=5.
+/// Falls back to raw bytes if the input is not valid UTF-8 or normalization fails.
+fn saslprep_password(password: &[u8]) -> Vec<u8> {
+    let Ok(password_str) = std::str::from_utf8(password) else {
+        return password.to_vec();
+    };
+    match stringprep::saslprep(password_str) {
+        Ok(normalized) => normalized.as_bytes().to_vec(),
+        Err(_) => password.to_vec(),
     }
 }
 
@@ -669,6 +725,85 @@ mod tests {
             2,
             5,
             true,
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_saslprep_ascii_passthrough() {
+        // Plain ASCII should pass through unchanged
+        let password = b"hello123";
+        let result = saslprep_password(password);
+        assert_eq!(result, b"hello123");
+    }
+
+    #[test]
+    fn test_saslprep_unicode_normalization() {
+        // NFKC normalization: fullwidth 'A' (U+FF21) should map to 'A' (U+0041)
+        let password = "\u{FF21}".as_bytes();
+        let result = saslprep_password(password);
+        assert_eq!(result, b"A");
+    }
+
+    #[test]
+    fn test_authenticate_user_r5_correct_password() {
+        // Manually build a 48-byte U value for password "test"
+        let password = b"test";
+        let validation_salt = [0x01u8; 8];
+        let key_salt = [0x02u8; 8];
+
+        // Compute expected hash: SHA-256("test" || validation_salt)
+        let mut hasher = Sha256::new();
+        hasher.update(password);
+        hasher.update(&validation_salt);
+        let hash = hasher.finalize();
+
+        // Build U = hash[0..32] || validation_salt || key_salt
+        let mut user_key = hash.to_vec();
+        user_key.extend_from_slice(&validation_salt);
+        user_key.extend_from_slice(&key_salt);
+        assert_eq!(user_key.len(), 48);
+
+        let result = authenticate_user_password(
+            password, &user_key, &[0u8; 48], // owner_key unused for R>=5
+            -1, b"", 5, 32, true,
+        );
+        assert!(result.is_some());
+
+        // Verify the returned key is SHA-256("test" || key_salt)
+        let mut hasher = Sha256::new();
+        hasher.update(password);
+        hasher.update(&key_salt);
+        let expected_key = hasher.finalize().to_vec();
+        assert_eq!(result.unwrap(), expected_key);
+    }
+
+    #[test]
+    fn test_authenticate_user_r5_wrong_password() {
+        let password = b"test";
+        let validation_salt = [0x01u8; 8];
+        let key_salt = [0x02u8; 8];
+
+        let mut hasher = Sha256::new();
+        hasher.update(password);
+        hasher.update(&validation_salt);
+        let hash = hasher.finalize();
+
+        let mut user_key = hash.to_vec();
+        user_key.extend_from_slice(&validation_salt);
+        user_key.extend_from_slice(&key_salt);
+
+        let result =
+            authenticate_user_password(b"wrong", &user_key, &[0u8; 48], -1, b"", 5, 32, true);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_authenticate_user_r5_short_u_value() {
+        // U value shorter than 48 bytes should return None
+        let result = authenticate_user_password(
+            b"test", &[0u8; 40], // too short
+            &[0u8; 48], -1, b"", 5, 32, true,
         );
         assert!(result.is_none());
     }
