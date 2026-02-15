@@ -4315,13 +4315,11 @@ impl PdfDocument {
                             .last()
                             .copied()
                             .unwrap_or_else(crate::content::Matrix::identity);
-                        match self.extract_images_from_xobject_do(&name, res, current_ctm) {
-                            Ok(mut xobj_images) => {
-                                images.append(&mut xobj_images);
-                            },
-                            Err(_) => {},
+                        if let Ok(mut xobj_images) =
+                            self.extract_images_from_xobject_do(&name, res, current_ctm)
+                        {
+                            images.append(&mut xobj_images);
                         }
-                    } else {
                     }
                 },
 
@@ -4443,29 +4441,24 @@ impl PdfDocument {
                 }
 
                 // Extract as Image XObject
-                match extract_image_from_xobject(Some(self), &resolved_xobject, xobject_ref_opt) {
-                    Ok(mut image) => {
-                        // Apply CTM transformation to bbox
-                        if let Some(rect) = image.bbox() {
-                            let new_bbox = self.transform_bbox_with_ctm(rect, ctm);
-                            image.set_bbox(new_bbox);
-                            images.push(image);
-                        } else {
-                            // No bbox yet, use CTM to estimate one
-                            // For a unit square (0,0) to (1,1) in user space
-                            let width = image.width() as f32;
-                            let height = image.height() as f32;
-                            let bbox = crate::geometry::Rect {
-                                x: ctm.e,
-                                y: ctm.f,
-                                width: ctm.a * width,
-                                height: ctm.d * height,
-                            };
-                            image.set_bbox(bbox);
-                            images.push(image);
-                        }
-                    },
-                    Err(_) => {},
+                if let Ok(mut image) =
+                    extract_image_from_xobject(Some(self), &resolved_xobject, xobject_ref_opt)
+                {
+                    if let Some(rect) = image.bbox() {
+                        let new_bbox = self.transform_bbox_with_ctm(rect, ctm);
+                        image.set_bbox(new_bbox);
+                    } else {
+                        let width = image.width() as f32;
+                        let height = image.height() as f32;
+                        let bbox = crate::geometry::Rect {
+                            x: ctm.e,
+                            y: ctm.f,
+                            width: ctm.a * width,
+                            height: ctm.d * height,
+                        };
+                        image.set_bbox(bbox);
+                    }
+                    images.push(image);
                 }
             },
             "Form" => {
@@ -4537,7 +4530,7 @@ impl PdfDocument {
         let new_ctm = parent_ctm.multiply(&matrix);
 
         // Decode form stream
-        let stream_data = self.decode_stream_with_encryption(&xobject, xobject_ref)?;
+        let stream_data = self.decode_stream_with_encryption(xobject, xobject_ref)?;
 
         // Parse operators from form stream
         let operators = parse_content_stream(&stream_data)?;
@@ -4688,6 +4681,10 @@ impl PdfDocument {
         None
     }
 
+    /// Extract images from a page and save them to files.
+    ///
+    /// Each image is saved as a separate file in `output_dir` with the given
+    /// `prefix` and an incrementing index starting from `start_index`.
     pub fn extract_images_to_files(
         &mut self,
         page_index: usize,
