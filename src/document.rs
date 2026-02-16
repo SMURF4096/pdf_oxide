@@ -78,6 +78,9 @@ pub struct PdfDocument {
     font_cache: HashMap<ObjectRef, crate::fonts::FontInfo>,
     /// Cached structure tree (None = not yet checked, Some(None) = untagged, Some(Some) = tagged)
     structure_tree_cache: Option<Option<crate::structure::StructTreeRoot>>,
+    /// Page object cache keyed by page index to avoid re-traversing the page tree.
+    /// The page tree structure is static (§7.7.3.2), so pages can be safely cached.
+    page_cache: HashMap<usize, Object>,
 }
 
 impl std::fmt::Debug for PdfDocument {
@@ -182,6 +185,7 @@ impl PdfDocument {
             header_offset,
             font_cache: HashMap::new(),
             structure_tree_cache: None,
+            page_cache: HashMap::new(),
         };
 
         // Initialize encryption immediately
@@ -1621,6 +1625,11 @@ impl PdfDocument {
     /// Returns an error if the page index is out of bounds or if the page
     /// tree structure is invalid.
     fn get_page(&mut self, page_index: usize) -> Result<Object> {
+        // Check page cache first — page tree is static per §7.7.3.2
+        if let Some(cached) = self.page_cache.get(&page_index) {
+            return Ok(cached.clone());
+        }
+
         // Load catalog
         let catalog = self.catalog()?;
         let catalog_dict = catalog.as_dict().ok_or_else(|| Error::InvalidObjectType {
@@ -1641,7 +1650,7 @@ impl PdfDocument {
         let mut inherited = HashMap::new();
 
         // Load page tree and find the requested page
-        match self.get_page_from_tree(pages_ref, page_index, &mut 0, &mut inherited) {
+        let page = match self.get_page_from_tree(pages_ref, page_index, &mut 0, &mut inherited) {
             Ok(page) => Ok(page),
             Err(e) => {
                 // If tree traversal fails (malformed page tree), try fallback scanning
@@ -1658,7 +1667,11 @@ impl PdfDocument {
                     Err(e)
                 }
             },
-        }
+        }?;
+
+        // Cache for future calls
+        self.page_cache.insert(page_index, page.clone());
+        Ok(page)
     }
 
     /// Get a page by scanning all objects in the PDF (fallback for broken page trees)
