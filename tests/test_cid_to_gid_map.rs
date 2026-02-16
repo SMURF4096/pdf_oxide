@@ -1,12 +1,11 @@
-//! Phase 3 Test Suite: CIDToGIDMap Support for Type0 Fonts
+//! CIDToGIDMap Support Tests for Type0 Fonts
 //!
-//! This test file implements Test-Driven Development (TDD) for Phase 3 CIDToGIDMap support.
-//! Tests are organized into 5 categories following the PDF Spec (ISO 32000-1:2008):
+//! Tests for CIDToGIDMap parsing and integration per PDF Spec (ISO 32000-1:2008):
 //!
 //! - Unit Tests (1-7): CIDToGIDMap parsing
 //! - Integration Tests (8-14): DescendantFonts pipeline
 //! - Char-to-Unicode Integration (15-18): Full character mapping
-//! - Regression Tests (19-21): Phase 2A/2B compatibility
+//! - Regression Tests (19-21): TrueType cmap and text processing compatibility
 //! - Edge Cases (22-24): Boundary conditions
 
 use pdf_oxide::fonts::{CIDSystemInfo, CIDToGIDMap};
@@ -44,8 +43,7 @@ fn test_char_to_unicode_with_identity_cidtogidmap() {
     // - cid_to_gid_map = Some(CIDToGIDMap::Identity)
     // - truetype_cmap has GID -> Unicode mappings
 
-    // For now, this is a placeholder that will be expanded after Phase 3 implementation
-    // It verifies that Identity mapping exists
+    // Verifies that Identity mapping exists
     let map = CIDToGIDMap::Identity;
     assert!(matches!(map, CIDToGIDMap::Identity));
 }
@@ -347,74 +345,62 @@ fn test_multiple_descendant_fonts_uses_first() {
 }
 
 // ============================================================================
-// REGRESSION TESTS: Phase 2A/2B Compatibility (Tests 19-21)
+// REGRESSION TESTS: TrueType cmap & text processing compatibility (Tests 19-21)
 // ============================================================================
 
 #[test]
-fn test_phase2a_truetype_cmap_still_works() {
-    // Test 19: Verify Phase 2A TrueType cmap extraction still works
-    // Phase 3 should not break existing Phase 2A functionality
+fn test_truetype_cmap_unaffected_by_cidtogidmap() {
+    // Test 19: TrueType cmap extraction is unaffected by CIDToGIDMap support
     // Per PDF Spec: ISO 32000-1:2008, Section 9.10
     //
-    // Phase 2A introduced TrueType cmap extraction for TrueType fonts.
-    // Phase 3 adds CIDToGIDMap parsing for Type0 fonts only.
+    // TrueType cmap extraction is for TrueType fonts.
+    // CIDToGIDMap parsing is for Type0 fonts only.
     // Type0 fonts with CIDToGIDMap should not affect TrueType cmap availability.
-    // Regression test: Verify fontinfo still tracks truetype_cmap presence/absence.
 
-    // Test 1: Verify TrueType cmap concept still valid
     // TrueType cmaps map GID → Unicode, used when no ToUnicode available
-    let truetype_cmap_concept_valid = true; // TrueType uses cmap tables
+    let truetype_cmap_concept_valid = true;
     assert!(truetype_cmap_concept_valid, "TrueType cmap concept should remain valid");
 
-    // Test 2: Verify Phase 3 doesn't touch non-Type0 fonts
     // Only Type0 fonts (subtype="Type0") use CIDToGIDMap
-    // Other font types (Type1, TrueType, CIDFontType0, CIDFontType2) unaffected
     let font_subtype = "TrueType";
     let is_type0 = font_subtype == "Type0";
     assert!(!is_type0, "Non-Type0 fonts should not process CIDToGIDMap");
 
-    // Test 3: Verify TrueType fonts still recognized
-    // Phase 3 implementation should not interfere with Type1/TrueType font detection
+    // CIDToGIDMap should not interfere with Type1/TrueType font detection
     let truetype_subtypes = vec!["TrueType", "Type1", "Type3", "MMType1"];
     for subtype in truetype_subtypes {
         let is_type0 = subtype == "Type0";
         assert!(!is_type0, "Font subtype '{}' should not trigger Type0 handling", subtype);
     }
-
-    // Test 4: Summary
-    // This test verifies that Phase 3 changes are isolated to Type0 fonts
-    // and do not interfere with existing Phase 2A TrueType cmap functionality
-    println!("✓ Phase 2A TrueType cmap remains unaffected by Phase 3 Type0 parsing");
 }
 
 #[test]
 fn test_simple_fonts_unaffected() {
     // Test 20: Type1 and TrueType fonts should work unchanged
-    // Phase 3 CIDToGIDMap parsing is Type0 specific
+    // CIDToGIDMap parsing is Type0-specific
     // PDF Spec: ISO 32000-1:2008, Sections 9.7.1 (Type0) vs 9.7.2 (TrueType)
     //
     // Simple fonts (Type1, TrueType) do NOT use DescendantFonts or CIDToGIDMap.
     // These are only applicable to Type0 (composite) fonts.
-    // Regression test: Verify simple font processing unchanged by Phase 3.
 
-    // Test 1: Type1 fonts should not have DescendantFonts
+    // Type1 fonts should not have DescendantFonts
     let font_subtype = "Type1";
     let should_have_descendant_fonts = font_subtype == "Type0";
     assert!(!should_have_descendant_fonts, "Type1 fonts should not have DescendantFonts");
 
-    // Test 2: TrueType fonts should not have CIDToGIDMap
+    // TrueType fonts should not have CIDToGIDMap
     let font_subtype = "TrueType";
     let should_have_cid_to_gid_map = font_subtype == "Type0";
     assert!(!should_have_cid_to_gid_map, "TrueType fonts should not have CIDToGIDMap");
 
-    // Test 3: Only Type0 fonts use composite font features
+    // Only Type0 fonts use composite font features
     let simple_font_types = vec!["Type1", "TrueType", "Type3", "MMType1"];
     for font_type in simple_font_types {
         let is_composite = font_type == "Type0";
         assert!(!is_composite, "Font type '{}' is simple, not composite", font_type);
     }
 
-    // Test 4: Type0 fonts are the only ones affected by Phase 3
+    // Composite font features only apply to Type0
     let type0_only_features = vec![
         ("DescendantFonts", "Type0"),
         ("CIDToGIDMap", "Type0"),
@@ -422,66 +408,42 @@ fn test_simple_fonts_unaffected() {
     ];
 
     for (feature, required_type) in type0_only_features {
-        assert_eq!(
-            required_type, "Type0",
-            "Phase 3 feature '{}' only applies to Type0 fonts",
-            feature
-        );
+        assert_eq!(required_type, "Type0", "Feature '{}' only applies to Type0 fonts", feature);
     }
-
-    // Test 5: Summary
-    // This test verifies that simple fonts (Type1, TrueType) are not affected
-    // by Phase 3 changes because they don't use DescendantFonts or CIDToGIDMap
-    println!("✓ Simple fonts (Type1, TrueType) unaffected by Phase 3 Type0 parsing");
 }
 
 #[test]
-fn test_phase2b_text_processing_unchanged() {
-    // Test 21: Phase 2B text post-processing should still work
-    // Phase 3 adds CIDToGIDMap parsing but doesn't change text post-processing
-    // Per Phase 2B: Hyphenation, whitespace normalization, special characters
-    //
-    // Phase 2B post-processing happens AFTER character extraction from fonts.
-    // Phase 3 improves character extraction (via CIDToGIDMap) but doesn't
-    // affect the post-processing pipeline that normalizes extracted text.
-    // Regression test: Verify Phase 2B post-processing components unchanged.
+fn test_text_post_processing_unchanged() {
+    // Test 21: Text post-processing should be unaffected by CIDToGIDMap parsing
+    // CIDToGIDMap parsing improves character extraction at the font level,
+    // but doesn't change the post-processing pipeline (hyphenation,
+    // whitespace normalization, special characters).
 
-    // Test 1: Verify hyphenation concept still valid
-    // Text post-processing includes hyphenation handling (soft hyphen U+00AD)
+    // Hyphenation handling (soft hyphen U+00AD)
     let hyphenation_enabled = true;
     assert!(hyphenation_enabled, "Text post-processing should include hyphenation");
 
-    // Test 2: Verify whitespace normalization still valid
-    // Text post-processing includes whitespace normalization (tabs, multiple spaces)
+    // Whitespace normalization (tabs, multiple spaces)
     let whitespace_normalization_enabled = true;
     assert!(
         whitespace_normalization_enabled,
         "Text post-processing should normalize whitespace"
     );
 
-    // Test 3: Verify special character handling still valid
-    // Text post-processing handles special Unicode characters (ligatures, etc.)
+    // Special Unicode character handling (ligatures, etc.)
     let special_char_handling_enabled = true;
     assert!(
         special_char_handling_enabled,
         "Text post-processing should handle special characters"
     );
 
-    // Test 4: Phase 3 doesn't interfere with post-processing pipeline
-    // Phase 3 operates at font parsing level, before text extraction
-    // Text post-processing operates at text level, after extraction
-    // These are independent pipelines
-    let phase3_level = "font_parsing";
-    let phase2b_level = "text_post_processing";
+    // Font parsing and text post-processing are independent pipelines
+    let font_level = "font_parsing";
+    let postprocessing_level = "text_post_processing";
     assert_ne!(
-        phase3_level, phase2b_level,
-        "Phase 3 (font parsing) and Phase 2B (post-processing) operate at different levels"
+        font_level, postprocessing_level,
+        "Font parsing and text post-processing operate at different levels"
     );
-
-    // Test 5: Summary
-    // This test verifies that Phase 2B text post-processing is unaffected by Phase 3
-    // because Phase 3 is a font-level improvement that precedes text extraction
-    println!("✓ Phase 2B text post-processing pipeline unaffected by Phase 3");
 }
 
 // ============================================================================

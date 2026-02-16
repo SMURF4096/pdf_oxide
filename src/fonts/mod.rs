@@ -9,9 +9,6 @@
 //! - `truetype_parser` - Parse TTF/OTF fonts for embedding
 //! - `font_subsetter` - Subset fonts to reduce file size
 //! - `encoding` - Unicode encoding support for CID fonts
-//!
-//! Phase 4: Initial implementation
-//! Phase 3: Enhanced with non-text content detection
 
 mod adobe_glyph_list;
 pub mod character_mapper;

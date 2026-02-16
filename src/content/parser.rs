@@ -23,38 +23,29 @@ use nom::IResult;
 use nom::Parser;
 use std::collections::HashMap;
 
+/// Maximum number of operators to parse from a single content stream.
+///
+/// Prevents pathological inputs (e.g., Isartor 6.1.12) from consuming
+/// unbounded time and memory.
+const MAX_OPERATORS: usize = 1_000_000;
+
+/// Maximum consecutive parse errors (byte skips) before bailing out.
+///
+/// If we skip this many bytes without finding a valid operator, the
+/// remaining data is likely junk, not a parseable content stream.
+const MAX_CONSECUTIVE_ERRORS: usize = 1024;
+
 /// Parse a content stream into a sequence of operators.
 ///
 /// Content streams use postfix notation where operands precede the operator.
 /// For example: `100 200 Td` means "move text position to (100, 200)".
 ///
-/// # Arguments
-///
-/// * `data` - The raw content stream data (already decoded if it was compressed)
-///
-/// # Returns
-///
-/// A vector of operators in sequence, or an error if parsing fails.
-///
-/// # Examples
-///
-/// ```
-/// use pdf_oxide::content::parse_content_stream;
-///
-/// let stream = b"BT /F1 12 Tf 100 700 Td (Hello) Tj ET";
-/// let operators = parse_content_stream(stream).unwrap();
-/// assert!(operators.len() > 0);
-/// ```
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - The content stream contains invalid syntax
-/// - Operands cannot be parsed as PDF objects
-/// - Operators have the wrong number of operands
+/// Includes safety limits: bails out after [`MAX_OPERATORS`] operators or
+/// [`MAX_CONSECUTIVE_ERRORS`] consecutive parse failures.
 pub fn parse_content_stream(data: &[u8]) -> Result<Vec<Operator>> {
     let mut operators = Vec::new();
     let mut input = data;
+    let mut consecutive_errors: usize = 0;
 
     // Parse until we consume all input
     while !input.is_empty() {
@@ -73,8 +64,23 @@ pub fn parse_content_stream(data: &[u8]) -> Result<Vec<Operator>> {
             Ok((rest, op)) => {
                 operators.push(op);
                 input = rest;
+                consecutive_errors = 0;
+
+                if operators.len() >= MAX_OPERATORS {
+                    log::warn!("Content stream exceeded {} operators, truncating", MAX_OPERATORS);
+                    break;
+                }
             },
             Err(_) => {
+                consecutive_errors += 1;
+                if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                    log::warn!(
+                        "Content stream had {} consecutive parse errors, bailing out ({} bytes remaining)",
+                        MAX_CONSECUTIVE_ERRORS,
+                        input.len()
+                    );
+                    break;
+                }
                 // If we can't parse, skip the problematic byte and continue
                 // This makes us more resilient to malformed streams
                 if input.len() > 1 {
@@ -742,7 +748,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix parsing edge case with consecutive operator names
     fn test_parse_color_operators() {
         // Add proper spacing between operators
         let stream = b"1 0 0 rg\n0 1 0 RG";
@@ -862,5 +867,24 @@ mod tests {
             },
             _ => panic!("Expected Td operator"),
         }
+    }
+
+    #[test]
+    fn test_content_stream_operator_limit() {
+        // Build a stream with more than MAX_OPERATORS simple operators.
+        // Each "q\n" is a SaveState operator (1 byte + newline).
+        let count = super::MAX_OPERATORS + 1000;
+        let stream: Vec<u8> = "q\n".repeat(count).into_bytes();
+        let ops = parse_content_stream(&stream).unwrap();
+        assert_eq!(ops.len(), super::MAX_OPERATORS);
+    }
+
+    #[test]
+    fn test_content_stream_consecutive_error_bailout() {
+        // A stream of junk bytes that can't be parsed as any operator.
+        // The parser should bail out after MAX_CONSECUTIVE_ERRORS skips.
+        let junk = vec![0xFFu8; super::MAX_CONSECUTIVE_ERRORS + 500];
+        let ops = parse_content_stream(&junk).unwrap();
+        assert!(ops.is_empty());
     }
 }

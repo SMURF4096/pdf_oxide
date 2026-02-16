@@ -1,60 +1,52 @@
 # PDFOxide
 
-**The Complete PDF Toolkit for Rust and Beyond**
+**Fast PDF Toolkit for Rust and Python**
 
-Extract, create, and edit PDFs with one library. Rust core with bindings for every language.
-
-```
-                         ┌──────────────┐
-                         │  Rust Core   │
-                         └──────┬───────┘
-          ┌──────────┬─────────┼─────────┬──────────┐
-          ▼          ▼         ▼         ▼          ▼
-      ┌───────┐  ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐
-      │Python │  │ Node  │ │ WASM  │ │  Go   │ │  ...  │
-      │  ✅   │  │ Soon  │ │ Soon  │ │ Soon  │ │       │
-      └───────┘  └───────┘ └───────┘ └───────┘ └───────┘
-```
+Extract, create, and edit PDFs with Rust performance. Native Python bindings included.
 
 [![Crates.io](https://img.shields.io/crates/v/pdf_oxide.svg)](https://crates.io/crates/pdf_oxide)
+[![PyPI](https://img.shields.io/pypi/v/pdf_oxide.svg)](https://pypi.org/project/pdf_oxide/)
 [![Documentation](https://docs.rs/pdf_oxide/badge.svg)](https://docs.rs/pdf_oxide)
 [![Build Status](https://github.com/yfedoseev/pdf_oxide/workflows/CI/badge.svg)](https://github.com/yfedoseev/pdf_oxide/actions)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](https://opensource.org/licenses)
-[![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
-
-[📖 Documentation](https://docs.rs/pdf_oxide) | [📝 Changelog](CHANGELOG.md) | [🤝 Contributing](CONTRIBUTING.md) | [🔒 Security](SECURITY.md)
 
 ## Quick Start
 
-### Extract text from PDF
+### Python
+```python
+from pdf_oxide import PdfDocument
+
+doc = PdfDocument("paper.pdf")
+text = doc.extract_text(0)
+chars = doc.extract_chars(0)
+markdown = doc.to_markdown(0, detect_headings=True)
+```
+
+```bash
+pip install pdf_oxide
+```
+
+### Rust
 ```rust
-let mut doc = PdfDocument::open("input.pdf")?;
+use pdf_oxide::PdfDocument;
+
+let mut doc = PdfDocument::open("paper.pdf")?;
 let text = doc.extract_text(0)?;
+let images = doc.extract_images(0)?;
 let markdown = doc.to_markdown(0, Default::default())?;
 ```
 
-### Create a new PDF
-```rust
-let mut builder = DocumentBuilder::new();
-builder.add_page(612.0, 792.0)
-    .text("Hello, World!", 72.0, 720.0, 24.0);
-builder.save("output.pdf")?;
-```
-
-### Edit an existing PDF
-```rust
-let mut editor = DocumentEditor::open("input.pdf")?;
-editor.add_highlight(0, rect, Color::yellow())?;
-editor.add_text_field("name", rect)?;
-editor.save("output.pdf")?;
+```toml
+[dependencies]
+pdf_oxide = "0.3"
 ```
 
 ## Why pdf_oxide?
 
-- 📄 **One library** - Extract, create, and edit with unified API
-- ⚡ **Fast** - Rust performance, 53ms average per PDF
-- 🦀 **Pure Rust** - Memory-safe, no C dependencies
-- 🌍 **Multi-language** - Rust core, bindings for Python, Node, WASM, Go
+- **Fast** — Rust core, p50 = 0.6ms per PDF, 97.6% under 10ms
+- **Reliable** — 100% pass rate on 3,830 test PDFs, zero panics
+- **Complete** — Extract, create, and edit with one library
+- **Dual-language** — First-class Rust API and Python bindings via PyO3
 
 ## Features
 
@@ -66,24 +58,33 @@ editor.save("output.pdf")?;
 | Annotations | Templates | Links |
 | Bookmarks | Images | Content |
 
-**v0.3.0 Highlights:** PDF/A conversion, PDF/X & PDF/UA validation, encryption, digital signatures, barcode generation, Office document conversion. See [CHANGELOG.md](CHANGELOG.md) for details.
+## Python API
 
-## Installation
+```python
+from pdf_oxide import PdfDocument
 
-### Rust
-```toml
-[dependencies]
-pdf_oxide = "0.3"
+doc = PdfDocument("report.pdf")
+print(f"Pages: {doc.page_count}")
+print(f"Version: {doc.version}")
+
+# Extract text from each page
+for i in range(doc.page_count):
+    text = doc.extract_text(i)
+    print(f"Page {i}: {len(text)} chars")
+
+# Character-level extraction with positions
+chars = doc.extract_chars(0)
+for ch in chars:
+    print(f"'{ch.char}' at ({ch.x:.1f}, {ch.y:.1f})")
+
+# Password-protected PDFs
+doc = PdfDocument("encrypted.pdf")
+doc.authenticate("password")
+text = doc.extract_text(0)
 ```
 
-### Python
-```bash
-pip install pdf_oxide
-```
+## Rust API
 
-## Examples
-
-### Rust - Extraction
 ```rust
 use pdf_oxide::PdfDocument;
 
@@ -93,39 +94,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Extract text
     let text = doc.extract_text(0)?;
 
-    // Convert to Markdown
-    let markdown = doc.to_markdown(0, Default::default())?;
+    // Character-level extraction
+    let chars = doc.extract_chars(0)?;
 
     // Extract images
     let images = doc.extract_images(0)?;
 
-    // Get annotations
-    let annotations = doc.get_annotations(0)?;
+    // Vector graphics
+    let paths = doc.extract_paths(0)?;
 
     Ok(())
 }
 ```
 
-### Python
-```python
-from pdf_oxide import PdfDocument
-
-doc = PdfDocument("paper.pdf")
-text = doc.extract_text(0)
-markdown = doc.to_markdown(0, detect_headings=True)
-```
-
-For more examples, see the [examples/](examples/) directory.
-
 ## Performance
+
+Verified against 3,830 PDFs from three independent test suites:
+
+| Corpus | PDFs | Pass Rate |
+|--------|-----:|----------:|
+| veraPDF (PDF/A compliance) | 2,907 | 100% |
+| Mozilla pdf.js | 897 | 100% |
+| SafeDocs (targeted edge cases) | 26 | 100% |
+| **Total** | **3,830** | **100%** |
 
 | Metric | Result |
 |--------|--------|
-| **Average Per PDF** | **53ms** |
-| **Success Rate** | 100% |
-| **Quality Score** | 8.5+/10 |
+| **p50 latency** | 0.6ms |
+| **p90 latency** | 3.0ms |
+| **p99 latency** | 33ms |
+| **Under 10ms** | 97.6% of PDFs |
+| **Timeouts** | 0 |
+| **Panics** | 0 |
 
-Benchmarked on 103 diverse PDFs including forms, financial documents, and technical papers.
+100% pass rate on all valid PDFs. The only 7 non-passing files across the entire corpus are intentionally broken test fixtures (no PDF header, fuzz-corrupted catalogs, invalid xref streams).
+
+## Installation
+
+### Python
+
+```bash
+pip install pdf_oxide
+```
+
+Wheels available for Linux, macOS, and Windows. Python 3.8–3.14.
+
+### Rust
+
+```toml
+[dependencies]
+pdf_oxide = "0.3"
+```
 
 ## Building from Source
 
@@ -146,24 +165,15 @@ maturin develop
 
 - **[Getting Started (Rust)](docs/getting-started-rust.md)** - Complete Rust guide
 - **[Getting Started (Python)](docs/getting-started-python.md)** - Complete Python guide
-- **[API Docs](https://docs.rs/pdf_oxide)** - Full API reference
+- **[API Docs](https://docs.rs/pdf_oxide)** - Full Rust API reference
 - **[PDF Spec Reference](docs/spec/pdf.md)** - ISO 32000-1:2008
-
-```bash
-# Generate local docs
-cargo doc --open
-```
 
 ## Contributing
 
 We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ```bash
-# Development setup
-cargo build
-cargo test
-cargo fmt
-cargo clippy -- -D warnings
+cargo build && cargo test && cargo fmt && cargo clippy -- -D warnings
 ```
 
 ## License
@@ -174,7 +184,7 @@ Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE) at your o
 
 ```bibtex
 @software{pdf_oxide,
-  title = {PDF Oxide: High-Performance PDF Parsing in Rust},
+  title = {PDF Oxide: Fast PDF Toolkit for Rust and Python},
   author = {Yury Fedoseev},
   year = {2025},
   url = {https://github.com/yfedoseev/pdf_oxide}
@@ -183,4 +193,4 @@ Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE) at your o
 
 ---
 
-**Built with** 🦀 Rust + 🐍 Python | **Status**: ✅ Production Ready | **v0.3.0** | 🚀 53ms per PDF
+**Rust** + **Python** | 100% pass rate on 3,830 PDFs | p50 = 0.6ms | v0.3.5

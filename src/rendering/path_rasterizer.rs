@@ -55,6 +55,48 @@ impl PathRasterizer {
         pixmap.stroke_path(path, &paint, &stroke, transform, None);
     }
 
+    /// Fill a path with optional clip mask.
+    pub fn fill_path_clipped(
+        &self,
+        pixmap: &mut Pixmap,
+        path: &Path,
+        transform: Transform,
+        gs: &GraphicsState,
+        fill_rule: FillRule,
+        clip_mask: Option<&tiny_skia::Mask>,
+    ) {
+        let paint = create_fill_paint(gs, &gs.blend_mode);
+        pixmap.fill_path(path, &paint, fill_rule, transform, clip_mask);
+    }
+
+    /// Stroke a path with optional clip mask.
+    pub fn stroke_path_clipped(
+        &self,
+        pixmap: &mut Pixmap,
+        path: &Path,
+        transform: Transform,
+        gs: &GraphicsState,
+        clip_mask: Option<&tiny_skia::Mask>,
+    ) {
+        let paint = create_stroke_paint(gs, &gs.blend_mode);
+
+        let dash = if !gs.dash_pattern.0.is_empty() {
+            tiny_skia::StrokeDash::new(gs.dash_pattern.0.clone(), gs.dash_pattern.1)
+        } else {
+            None
+        };
+
+        let stroke = Stroke {
+            width: gs.line_width,
+            line_cap: self.pdf_line_cap_to_skia(gs.line_cap),
+            line_join: self.pdf_line_join_to_skia(gs.line_join),
+            miter_limit: gs.miter_limit,
+            dash,
+        };
+
+        pixmap.stroke_path(path, &paint, &stroke, transform, clip_mask);
+    }
+
     /// Convert PDF line cap style to tiny-skia.
     fn pdf_line_cap_to_skia(&self, cap: u8) -> LineCap {
         match cap {

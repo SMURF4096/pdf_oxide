@@ -94,6 +94,30 @@ impl PyPdfDocument {
         self.inner.version()
     }
 
+    /// Authenticate with a password to decrypt an encrypted PDF.
+    ///
+    /// If the PDF is encrypted, opening it automatically tries an empty password.
+    /// Call this method to authenticate with a non-empty password.
+    ///
+    /// Args:
+    ///     password (str): The password to authenticate with
+    ///
+    /// Returns:
+    ///     bool: True if authentication succeeded, False if the password was wrong
+    ///
+    /// Raises:
+    ///     RuntimeError: If encryption initialization fails
+    ///
+    /// Example:
+    ///     >>> doc = PdfDocument("encrypted.pdf")
+    ///     >>> doc.authenticate("secret123")
+    ///     True
+    fn authenticate(&mut self, password: &str) -> PyResult<bool> {
+        self.inner
+            .authenticate(password.as_bytes())
+            .map_err(|e| PyRuntimeError::new_err(format!("Authentication failed: {}", e)))
+    }
+
     /// Get number of pages in the document.
     ///
     /// Returns:

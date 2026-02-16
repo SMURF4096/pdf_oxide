@@ -31,8 +31,6 @@ else
     echo "⚠️  Warning: hooks/pre-commit not found"
 fi
 
-# TODO: Add more hooks here as needed (pre-push, commit-msg, etc.)
-
 echo ""
 echo "✅ Git hooks setup complete!"
 echo ""

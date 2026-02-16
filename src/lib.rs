@@ -132,9 +132,6 @@ pub mod extractors;
 pub mod fonts;
 pub mod text;
 
-// Image extraction
-pub mod images;
-
 // Document structure
 /// Core annotation types and enums per PDF spec
 pub mod annotation_types;

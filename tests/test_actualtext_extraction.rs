@@ -1,10 +1,9 @@
-//! ActualText Extraction Tests for Phase 2
+//! ActualText Extraction Tests
 //!
 //! Tests for integrating ActualText into the character mapping priority chain
 //! per PDF Spec 32000-1:2008 Section 9.10.2.
 //!
-//! Phase 2 implements proper ActualText support where marked content with
-//! ActualText properties provides the canonical Unicode mapping for characters
+//! ActualText support provides the canonical Unicode mapping for characters
 //! that might otherwise be unmappable through font encoding alone.
 //!
 //! This is critical for:

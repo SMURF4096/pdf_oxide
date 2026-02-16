@@ -41,6 +41,7 @@ impl TextRasterizer {
         gs: &GraphicsState,
         _resources: &Object,
         _doc: &mut PdfDocument,
+        clip_mask: Option<&tiny_skia::Mask>,
     ) -> Result<()> {
         // Get text position from text matrix combined with CTM
         let text_matrix = &gs.text_matrix;
@@ -55,7 +56,17 @@ impl TextRasterizer {
 
         // For now, we render text as simple shapes
         // Real implementation would use font glyph outlines
-        self.render_text_simple(pixmap, text, x, y, font_size, &paint, base_transform, gs)?;
+        self.render_text_simple(
+            pixmap,
+            text,
+            x,
+            y,
+            font_size,
+            &paint,
+            base_transform,
+            gs,
+            clip_mask,
+        )?;
 
         Ok(())
     }
@@ -69,6 +80,7 @@ impl TextRasterizer {
         gs: &GraphicsState,
         _resources: &Object,
         _doc: &mut PdfDocument,
+        clip_mask: Option<&tiny_skia::Mask>,
     ) -> Result<()> {
         let paint = create_fill_paint(gs, "Normal");
 
@@ -90,6 +102,7 @@ impl TextRasterizer {
                         &paint,
                         base_transform,
                         gs,
+                        clip_mask,
                     )?;
                     // Advance position based on text width (simplified)
                     let char_count = text.len() as f32;
@@ -121,6 +134,7 @@ impl TextRasterizer {
         paint: &Paint,
         base_transform: Transform,
         gs: &GraphicsState,
+        clip_mask: Option<&tiny_skia::Mask>,
     ) -> Result<()> {
         // Calculate transform including text matrix
         let text_transform = Transform::from_row(
@@ -189,7 +203,7 @@ impl TextRasterizer {
             }
 
             if let Some(path) = path.finish() {
-                pixmap.fill_path(&path, paint, tiny_skia::FillRule::Winding, transform, None);
+                pixmap.fill_path(&path, paint, tiny_skia::FillRule::Winding, transform, clip_mask);
             }
 
             // Advance position

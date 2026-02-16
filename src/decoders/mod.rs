@@ -87,6 +87,66 @@ pub trait StreamDecoder {
     fn name(&self) -> &str;
 }
 
+/// Normalize a PDF filter name, handling spec abbreviations and case variations.
+///
+/// PDF Spec: ISO 32000-1:2008, Table 6 — Standard filter abbreviations.
+fn normalize_filter_name(name: &str) -> Result<&'static str> {
+    // Fast path: exact match
+    match name {
+        "FlateDecode" => return Ok("FlateDecode"),
+        "ASCIIHexDecode" => return Ok("ASCIIHexDecode"),
+        "ASCII85Decode" => return Ok("ASCII85Decode"),
+        "LZWDecode" => return Ok("LZWDecode"),
+        "RunLengthDecode" => return Ok("RunLengthDecode"),
+        "DCTDecode" => return Ok("DCTDecode"),
+        "CCITTFaxDecode" => return Ok("CCITTFaxDecode"),
+        "JBIG2Decode" => return Ok("JBIG2Decode"),
+        _ => {},
+    }
+
+    // PDF spec abbreviations (Table 6)
+    match name {
+        "Fl" => return Ok("FlateDecode"),
+        "AHx" => return Ok("ASCIIHexDecode"),
+        "A85" => return Ok("ASCII85Decode"),
+        "LZW" => return Ok("LZWDecode"),
+        "RL" => return Ok("RunLengthDecode"),
+        "DCT" => return Ok("DCTDecode"),
+        "CCF" => return Ok("CCITTFaxDecode"),
+        _ => {},
+    }
+
+    // Case-insensitive fallback
+    let lower = name.to_ascii_lowercase();
+    match lower.as_str() {
+        "flatedecode" => Ok("FlateDecode"),
+        "asciihexdecode" => Ok("ASCIIHexDecode"),
+        "ascii85decode" => Ok("ASCII85Decode"),
+        "lzwdecode" => Ok("LZWDecode"),
+        "runlengthdecode" => Ok("RunLengthDecode"),
+        "dctdecode" => Ok("DCTDecode"),
+        "ccittfaxdecode" => Ok("CCITTFaxDecode"),
+        "jbig2decode" => Ok("JBIG2Decode"),
+        _ => Err(Error::UnsupportedFilter(name.to_string())),
+    }
+}
+
+fn create_decoder(filter_name: &str) -> Result<Box<dyn StreamDecoder>> {
+    let canonical = normalize_filter_name(filter_name)?;
+    Ok(match canonical {
+        "FlateDecode" => Box::new(FlateDecoder),
+        "ASCIIHexDecode" => Box::new(AsciiHexDecoder),
+        "ASCII85Decode" => Box::new(Ascii85Decoder),
+        "LZWDecode" => Box::new(LzwDecoder),
+        "RunLengthDecode" => Box::new(RunLengthDecoder),
+        "DCTDecode" => Box::new(DctDecoder),
+        "CCITTFaxDecode" => Box::new(CcittFaxDecoder),
+        "JBIG2Decode" => Box::new(Jbig2Decoder),
+        // normalize_filter_name already returns Err for unknown filters
+        _ => unreachable!(),
+    })
+}
+
 /// Decode stream data using a filter pipeline.
 ///
 /// PDF streams can have multiple filters applied in sequence. This function
@@ -155,17 +215,7 @@ pub fn decode_stream_with_options(
 
     // Apply filters in order
     for filter_name in filters {
-        let decoder: Box<dyn StreamDecoder> = match filter_name.as_str() {
-            "FlateDecode" => Box::new(FlateDecoder),
-            "ASCIIHexDecode" => Box::new(AsciiHexDecoder),
-            "ASCII85Decode" => Box::new(Ascii85Decoder),
-            "LZWDecode" => Box::new(LzwDecoder),
-            "RunLengthDecode" => Box::new(RunLengthDecoder),
-            "DCTDecode" => Box::new(DctDecoder),
-            "CCITTFaxDecode" => Box::new(CcittFaxDecoder),
-            "JBIG2Decode" => Box::new(Jbig2Decoder),
-            _ => return Err(Error::UnsupportedFilter(filter_name.clone())),
-        };
+        let decoder = create_decoder(filter_name)?;
 
         current = decoder.decode(&current)?;
 
@@ -228,17 +278,7 @@ pub fn decode_stream_with_params(
 
     // Apply filters in order
     for filter_name in filters {
-        let decoder: Box<dyn StreamDecoder> = match filter_name.as_str() {
-            "FlateDecode" => Box::new(FlateDecoder),
-            "ASCIIHexDecode" => Box::new(AsciiHexDecoder),
-            "ASCII85Decode" => Box::new(Ascii85Decoder),
-            "LZWDecode" => Box::new(LzwDecoder),
-            "RunLengthDecode" => Box::new(RunLengthDecoder),
-            "DCTDecode" => Box::new(DctDecoder),
-            "CCITTFaxDecode" => Box::new(CcittFaxDecoder),
-            "JBIG2Decode" => Box::new(Jbig2Decoder),
-            _ => return Err(crate::error::Error::UnsupportedFilter(filter_name.clone())),
-        };
+        let decoder = create_decoder(filter_name)?;
 
         current = decoder.decode(&current)?;
     }
@@ -283,6 +323,46 @@ mod tests {
         // Test with ASCIIHexDecode
         let data = b"48656C6C6F"; // "Hello" in hex
         let filters = vec!["ASCIIHexDecode".to_string()];
+        let result = decode_stream(data, &filters).unwrap();
+        assert_eq!(result, b"Hello");
+    }
+
+    #[test]
+    fn test_normalize_filter_abbreviations() {
+        assert_eq!(normalize_filter_name("A85").unwrap(), "ASCII85Decode");
+        assert_eq!(normalize_filter_name("AHx").unwrap(), "ASCIIHexDecode");
+        assert_eq!(normalize_filter_name("LZW").unwrap(), "LZWDecode");
+        assert_eq!(normalize_filter_name("Fl").unwrap(), "FlateDecode");
+        assert_eq!(normalize_filter_name("RL").unwrap(), "RunLengthDecode");
+        assert_eq!(normalize_filter_name("CCF").unwrap(), "CCITTFaxDecode");
+        assert_eq!(normalize_filter_name("DCT").unwrap(), "DCTDecode");
+    }
+
+    #[test]
+    fn test_normalize_filter_case_insensitive() {
+        assert_eq!(normalize_filter_name("Flatedecode").unwrap(), "FlateDecode");
+        assert_eq!(normalize_filter_name("FLATEDECODE").unwrap(), "FlateDecode");
+        assert_eq!(normalize_filter_name("flatedecode").unwrap(), "FlateDecode");
+        assert_eq!(normalize_filter_name("ascii85decode").unwrap(), "ASCII85Decode");
+        assert_eq!(normalize_filter_name("ASCIIHEXDECODE").unwrap(), "ASCIIHexDecode");
+    }
+
+    #[test]
+    fn test_normalize_filter_unknown() {
+        let result = normalize_filter_name("BogusFilter");
+        assert!(result.is_err());
+        match result {
+            Err(crate::error::Error::UnsupportedFilter(name)) => {
+                assert_eq!(name, "BogusFilter");
+            },
+            _ => panic!("Expected UnsupportedFilter error"),
+        }
+    }
+
+    #[test]
+    fn test_decode_stream_with_abbreviation() {
+        let data = b"48656C6C6F"; // "Hello" in hex
+        let filters = vec!["AHx".to_string()];
         let result = decode_stream(data, &filters).unwrap();
         assert_eq!(result, b"Hello");
     }

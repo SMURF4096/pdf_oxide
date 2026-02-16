@@ -251,8 +251,28 @@ fn parse_k_children(
                     },
 
                     Object::Reference(obj_ref) => {
-                        // Object reference to another StructElem
-                        parent.add_child(StructChild::ObjectRef(obj_ref.id, obj_ref.gen));
+                        // Resolve indirect reference and try to parse as StructElem
+                        match document.load_object(*obj_ref) {
+                            Ok(resolved) => {
+                                if let Some(child_elem) =
+                                    parse_struct_elem(document, &resolved, role_map, page_map)?
+                                {
+                                    parent.add_child(StructChild::StructElem(Box::new(child_elem)));
+                                } else if let Some(mcr) =
+                                    parse_marked_content_ref(&resolved, page_map)?
+                                {
+                                    parent.add_child(mcr);
+                                }
+                            },
+                            Err(e) => {
+                                log::warn!(
+                                    "Failed to resolve ObjectRef {} {}: {}",
+                                    obj_ref.id,
+                                    obj_ref.gen,
+                                    e
+                                );
+                            },
+                        }
                     },
 
                     _ => {
@@ -275,8 +295,21 @@ fn parse_k_children(
         },
 
         Object::Reference(obj_ref) => {
-            // Object reference to another StructElem
-            parent.add_child(StructChild::ObjectRef(obj_ref.id, obj_ref.gen));
+            // Resolve indirect reference and try to parse as StructElem
+            match document.load_object(*obj_ref) {
+                Ok(resolved) => {
+                    if let Some(child_elem) =
+                        parse_struct_elem(document, &resolved, role_map, page_map)?
+                    {
+                        parent.add_child(StructChild::StructElem(Box::new(child_elem)));
+                    } else if let Some(mcr) = parse_marked_content_ref(&resolved, page_map)? {
+                        parent.add_child(mcr);
+                    }
+                },
+                Err(e) => {
+                    log::warn!("Failed to resolve ObjectRef {} {}: {}", obj_ref.id, obj_ref.gen, e);
+                },
+            }
         },
 
         _ => {

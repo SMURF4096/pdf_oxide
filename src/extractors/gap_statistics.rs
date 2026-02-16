@@ -980,37 +980,4 @@ mod tests {
         assert_eq!(result.threshold_pt, 0.1);
         assert!(result.stats.is_none());
     }
-
-    // ========== DocumentType Tests (disabled - type not yet implemented) ==========
-    // TODO: Implement DocumentType::detect() and re-enable these tests
-    /*
-    #[test]
-    fn test_document_type_policy_detection() {
-        // Policy documents: tight gaps (< 0.8pt) with low variance
-        let gaps = vec![0.2, 0.25, 0.3, 0.25, 0.2, 0.28, 0.22, 0.26, 0.24, 0.23];
-        let doc_type = DocumentType::detect(&gaps);
-        assert_eq!(doc_type, DocumentType::Policy, "Expected Policy type for tight spacing");
-    }
-
-    #[test]
-    fn test_document_type_academic_detection() {
-        // Academic documents: high variance from column boundaries
-        // Tight gaps (within columns): ~1pt
-        // Wide gaps (between columns): ~20pt
-        // Result: high coefficient of variation
-        let gaps = vec![
-            1.0, 1.2, 0.9, 1.1, 1.0, 1.3, 0.8, 1.2,  // Column 1: tight spacing
-            25.0, // Column boundary
-            1.1, 0.9, 1.2, 1.0, 1.1, 0.9, 1.2,  // Column 2: tight spacing
-            24.0, // Column boundary
-            1.0, 1.1, 0.95, 1.15, // Column 3: tight spacing
-        ];
-        let doc_type = DocumentType::detect(&gaps);
-        assert_eq!(
-            doc_type,
-            DocumentType::Academic,
-            "Expected Academic type for high gap variance"
-        );
-    }
-    */
 }

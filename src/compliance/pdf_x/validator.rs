@@ -253,8 +253,62 @@ impl PdfXValidator {
             );
         }
 
-        // TODO: Parse XMP and validate PDF/X identification
-        // The XMP should contain pdfxid:GTS_PDFXVersion
+        // Parse XMP and validate PDF/X identification (pdfxid:GTS_PDFXVersion)
+        match crate::extractors::xmp::XmpExtractor::extract(document) {
+            Ok(Some(xmp)) => {
+                let pdfx_version = xmp.custom.get("pdfxid:GTS_PDFXVersion");
+
+                if pdfx_version.is_none() {
+                    result.add_warning(
+                        XComplianceError::warning(
+                            XErrorCode::XmpMetadataInvalid,
+                            "XMP metadata missing pdfxid:GTS_PDFXVersion identification",
+                        )
+                        .with_clause("6.7.2"),
+                    );
+                } else if let Some(version_str) = pdfx_version {
+                    // Validate version matches declared level
+                    let expected = self.level.xmp_version();
+                    if version_str != expected {
+                        result.add_warning(
+                            XComplianceError::warning(
+                                XErrorCode::XmpMetadataInvalid,
+                                format!(
+                                    "XMP pdfxid:GTS_PDFXVersion is '{}' but validating against {} (expected '{}')",
+                                    version_str, self.level, expected
+                                ),
+                            )
+                            .with_clause("6.7.2"),
+                        );
+                    }
+
+                    // Try to detect level from XMP
+                    if let Some(detected) = PdfXLevel::from_gts_version(version_str) {
+                        if result.detected_level.is_none() {
+                            result.detected_level = Some(detected);
+                        }
+                    }
+                }
+            },
+            Ok(None) => {
+                result.add_warning(
+                    XComplianceError::warning(
+                        XErrorCode::XmpMetadataInvalid,
+                        "Could not extract XMP metadata for PDF/X identification",
+                    )
+                    .with_clause("6.7.2"),
+                );
+            },
+            Err(_) => {
+                result.add_warning(
+                    XComplianceError::warning(
+                        XErrorCode::XmpMetadataInvalid,
+                        "Failed to parse XMP metadata for PDF/X identification",
+                    )
+                    .with_clause("6.7.2"),
+                );
+            },
+        }
 
         Ok(())
     }
@@ -386,7 +440,68 @@ impl PdfXValidator {
                     );
                 }
 
-                // TODO: Validate box relationships (TrimBox within BleedBox within MediaBox)
+                // Validate box relationships: TrimBox ⊆ BleedBox ⊆ MediaBox
+                if let Some(media_box) = Self::parse_box(page_dict.get("MediaBox")) {
+                    let bleed_box = Self::parse_box(page_dict.get("BleedBox"));
+                    let trim_box = Self::parse_box(page_dict.get("TrimBox"));
+                    let art_box = Self::parse_box(page_dict.get("ArtBox"));
+
+                    // BleedBox must be within MediaBox
+                    if let Some(bb) = bleed_box {
+                        if !Self::box_contains(&media_box, &bb) {
+                            result.add_error(
+                                XComplianceError::new(
+                                    XErrorCode::BleedBoxInvalid,
+                                    "BleedBox extends beyond MediaBox",
+                                )
+                                .with_page(page_num)
+                                .with_clause("6.1.1"),
+                            );
+                        }
+
+                        // TrimBox must be within BleedBox (if BleedBox exists)
+                        if let Some(tb) = trim_box {
+                            if !Self::box_contains(&bb, &tb) {
+                                result.add_error(
+                                    XComplianceError::new(
+                                        XErrorCode::TrimBoxInvalid,
+                                        "TrimBox extends beyond BleedBox",
+                                    )
+                                    .with_page(page_num)
+                                    .with_clause("6.1.1"),
+                                );
+                            }
+                        }
+                    }
+
+                    // TrimBox must be within MediaBox
+                    if let Some(tb) = trim_box {
+                        if !Self::box_contains(&media_box, &tb) {
+                            result.add_error(
+                                XComplianceError::new(
+                                    XErrorCode::TrimBoxInvalid,
+                                    "TrimBox extends beyond MediaBox",
+                                )
+                                .with_page(page_num)
+                                .with_clause("6.1.1"),
+                            );
+                        }
+                    }
+
+                    // ArtBox must be within MediaBox
+                    if let Some(ab) = art_box {
+                        if !Self::box_contains(&media_box, &ab) {
+                            result.add_error(
+                                XComplianceError::new(
+                                    XErrorCode::BoxesInconsistent,
+                                    "ArtBox extends beyond MediaBox",
+                                )
+                                .with_page(page_num)
+                                .with_clause("6.1.1"),
+                            );
+                        }
+                    }
+                }
             }
         }
 
@@ -433,8 +548,127 @@ impl PdfXValidator {
             }
         }
 
-        // TODO: Check ExtGState for SMask, CA, ca, BM entries
-        // TODO: Check for transparency in XObjects
+        // Check ExtGState for transparency-related entries (SMask, CA, ca, BM)
+        let page_count2 = document.page_count()?;
+        for page_num in 0..page_count2 {
+            if let Ok(page_dict) = self.get_page_dict(document, page_num) {
+                let resources = match page_dict.get("Resources") {
+                    Some(Object::Dictionary(d)) => d.clone(),
+                    Some(Object::Reference(r)) => match document.load_object(*r)? {
+                        Object::Dictionary(d) => d,
+                        _ => continue,
+                    },
+                    _ => continue,
+                };
+
+                let ext_gstate = match resources.get("ExtGState") {
+                    Some(Object::Dictionary(d)) => d.clone(),
+                    Some(Object::Reference(r)) => match document.load_object(*r)? {
+                        Object::Dictionary(d) => d,
+                        _ => continue,
+                    },
+                    _ => continue,
+                };
+
+                for (gs_name, gs_obj) in &ext_gstate {
+                    let gs_dict = match gs_obj {
+                        Object::Dictionary(d) => d.clone(),
+                        Object::Reference(r) => match document.load_object(*r)? {
+                            Object::Dictionary(d) => d,
+                            _ => continue,
+                        },
+                        _ => continue,
+                    };
+
+                    // Check SMask (not /None means transparency)
+                    if let Some(smask) = gs_dict.get("SMask") {
+                        let is_none = matches!(smask, Object::Name(n) if n == "None");
+                        if !is_none {
+                            result.add_error(
+                                XComplianceError::new(
+                                    XErrorCode::SMaskNotAllowed,
+                                    format!(
+                                        "ExtGState '{}' has SMask (transparency not allowed)",
+                                        gs_name
+                                    ),
+                                )
+                                .with_page(page_num)
+                                .with_clause("6.3"),
+                            );
+                            result.stats.has_transparency = true;
+                        }
+                    }
+
+                    // Check CA (fill opacity) < 1.0
+                    if let Some(ca_val) = gs_dict.get("CA") {
+                        let opacity = match ca_val {
+                            Object::Real(v) => Some(*v),
+                            Object::Integer(v) => Some(*v as f64),
+                            _ => None,
+                        };
+                        if let Some(op) = opacity {
+                            if op < 1.0 {
+                                result.add_error(
+                                    XComplianceError::new(
+                                        XErrorCode::TransparencyNotAllowed,
+                                        format!(
+                                            "ExtGState '{}' has non-opaque CA={} (transparency not allowed)",
+                                            gs_name, op
+                                        ),
+                                    )
+                                    .with_page(page_num)
+                                    .with_clause("6.3"),
+                                );
+                                result.stats.has_transparency = true;
+                            }
+                        }
+                    }
+
+                    // Check ca (stroke opacity) < 1.0
+                    if let Some(ca_val) = gs_dict.get("ca") {
+                        let opacity = match ca_val {
+                            Object::Real(v) => Some(*v),
+                            Object::Integer(v) => Some(*v as f64),
+                            _ => None,
+                        };
+                        if let Some(op) = opacity {
+                            if op < 1.0 {
+                                result.add_error(
+                                    XComplianceError::new(
+                                        XErrorCode::TransparencyNotAllowed,
+                                        format!(
+                                            "ExtGState '{}' has non-opaque ca={} (transparency not allowed)",
+                                            gs_name, op
+                                        ),
+                                    )
+                                    .with_page(page_num)
+                                    .with_clause("6.3"),
+                                );
+                                result.stats.has_transparency = true;
+                            }
+                        }
+                    }
+
+                    // Check BM (blend mode) not Normal/Compatible
+                    if let Some(Object::Name(bm)) = gs_dict.get("BM") {
+                        if bm != "Normal" && bm != "Compatible" {
+                            result.add_error(
+                                XComplianceError::new(
+                                    XErrorCode::BlendModeNotAllowed,
+                                    format!(
+                                        "ExtGState '{}' has blend mode '{}' (only Normal/Compatible allowed)",
+                                        gs_name, bm
+                                    ),
+                                )
+                                .with_page(page_num)
+                                .with_clause("6.3"),
+                            );
+                            result.stats.has_transparency = true;
+                        }
+                    }
+                }
+            }
+        }
 
         Ok(())
     }
@@ -477,8 +711,61 @@ impl PdfXValidator {
             }
         }
 
-        // TODO: Check for device-dependent colors without output intent
-        // TODO: Validate ICC profiles
+        // Check for device-dependent colors without output intent
+        // and validate ICC profiles in color space resources
+        let has_output_intent = result.stats.output_intent.is_some();
+        let page_count2 = document.page_count()?;
+        for page_num in 0..page_count2 {
+            if let Ok(page_dict) = self.get_page_dict(document, page_num) {
+                let resources = match page_dict.get("Resources") {
+                    Some(Object::Dictionary(d)) => d.clone(),
+                    Some(Object::Reference(r)) => match document.load_object(*r)? {
+                        Object::Dictionary(d) => d,
+                        _ => continue,
+                    },
+                    _ => continue,
+                };
+
+                if let Some(colorspaces_obj) = resources.get("ColorSpace") {
+                    let colorspaces = match colorspaces_obj {
+                        Object::Dictionary(d) => d.clone(),
+                        Object::Reference(r) => match document.load_object(*r)? {
+                            Object::Dictionary(d) => d,
+                            _ => continue,
+                        },
+                        _ => continue,
+                    };
+
+                    for (cs_name, cs_obj) in &colorspaces {
+                        let cs_type = self.get_colorspace_name(cs_obj, document)?;
+
+                        // Device-dependent colors without output intent
+                        if !has_output_intent
+                            && (cs_type == "DeviceRGB"
+                                || cs_type == "DeviceCMYK"
+                                || cs_type == "DeviceGray")
+                        {
+                            result.add_error(
+                                XComplianceError::new(
+                                    XErrorCode::DeviceColorWithoutIntent,
+                                    format!(
+                                        "Device color space '{}' ({}) used without output intent",
+                                        cs_name, cs_type
+                                    ),
+                                )
+                                .with_page(page_num)
+                                .with_clause("6.2.3"),
+                            );
+                        }
+
+                        // Validate ICCBased color space profiles
+                        if cs_type == "ICCBased" {
+                            self.validate_icc_profile(cs_obj, cs_name, page_num, document, result)?;
+                        }
+                    }
+                }
+            }
+        }
 
         Ok(())
     }
@@ -905,6 +1192,100 @@ impl PdfXValidator {
                 },
                 _ => {},
             }
+        }
+
+        Ok(())
+    }
+
+    /// Parse a PDF rectangle array [llx, lly, urx, ury] into [f64; 4].
+    fn parse_box(obj: Option<&Object>) -> Option<[f64; 4]> {
+        let arr = match obj? {
+            Object::Array(a) => a,
+            _ => return None,
+        };
+        if arr.len() < 4 {
+            return None;
+        }
+        let to_f64 = |o: &Object| -> Option<f64> {
+            match o {
+                Object::Real(v) => Some(*v),
+                Object::Integer(v) => Some(*v as f64),
+                _ => None,
+            }
+        };
+        Some([
+            to_f64(&arr[0])?,
+            to_f64(&arr[1])?,
+            to_f64(&arr[2])?,
+            to_f64(&arr[3])?,
+        ])
+    }
+
+    /// Check if outer box fully contains inner box (with 0.01pt tolerance).
+    fn box_contains(outer: &[f64; 4], inner: &[f64; 4]) -> bool {
+        const TOLERANCE: f64 = 0.01;
+        // outer[0] <= inner[0] (left)
+        // outer[1] <= inner[1] (bottom)
+        // outer[2] >= inner[2] (right)
+        // outer[3] >= inner[3] (top)
+        (outer[0] - TOLERANCE) <= inner[0]
+            && (outer[1] - TOLERANCE) <= inner[1]
+            && (outer[2] + TOLERANCE) >= inner[2]
+            && (outer[3] + TOLERANCE) >= inner[3]
+    }
+
+    /// Validate an ICCBased color space profile stream.
+    fn validate_icc_profile(
+        &self,
+        cs_obj: &Object,
+        cs_name: &str,
+        page_num: usize,
+        document: &mut PdfDocument,
+        result: &mut XValidationResult,
+    ) -> Result<()> {
+        // ICCBased is [/ICCBased, stream_ref]
+        let arr = match cs_obj {
+            Object::Array(a) => a.clone(),
+            Object::Reference(r) => match document.load_object(*r)? {
+                Object::Array(a) => a,
+                _ => return Ok(()),
+            },
+            _ => return Ok(()),
+        };
+        if arr.len() < 2 {
+            return Ok(());
+        }
+
+        // Get the ICC profile stream dictionary
+        let profile_dict = match &arr[1] {
+            Object::Dictionary(d) => d.clone(),
+            Object::Reference(r) => match document.load_object(*r)? {
+                Object::Dictionary(d) => d,
+                _ => {
+                    result.add_error(
+                        XComplianceError::new(
+                            XErrorCode::IccProfileInvalid,
+                            format!("ICC profile for '{}' is not a valid stream", cs_name),
+                        )
+                        .with_page(page_num)
+                        .with_clause("6.2.3"),
+                    );
+                    return Ok(());
+                },
+            },
+            _ => return Ok(()),
+        };
+
+        // Check /N entry (number of color components)
+        if !profile_dict.contains_key("N") {
+            result.add_error(
+                XComplianceError::new(
+                    XErrorCode::IccProfileInvalid,
+                    format!("ICC profile for '{}' missing required /N entry", cs_name),
+                )
+                .with_page(page_num)
+                .with_clause("6.2.3"),
+            );
         }
 
         Ok(())

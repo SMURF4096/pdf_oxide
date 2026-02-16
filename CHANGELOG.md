@@ -2,6 +2,128 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [0.3.5] - 2026-02-15
+
+### Performance
+
+- **Font caching across pages** — Document-level font cache keyed by `ObjectRef` avoids re-parsing shared fonts on every page. For a 1000-page document sharing 20 fonts, this reduces font parsing from 40,000 operations to 20
+- **Page object caching** — `get_page()` caches resolved page objects in a `HashMap<usize, Object>`, eliminating repeated page tree traversal for multi-page extraction
+- **Structure tree caching** — Structure tree result cached after first access, avoiding redundant parsing on every `extract_text()` call (major impact on tagged PDFs like PDF32000_2008.pdf)
+- **BT operator early-out** — `extract_spans()`, `extract_spans_with_config()`, and `extract_chars()` skip the full text extraction pipeline for image-only pages that contain no `BT` (Begin Text) operators
+- **Larger I/O buffer for big files** — `BufReader` capacity increased from 8 KB to 256 KB for files >100 MB, reducing syscall overhead on 1.5 GB newspaper archives
+- **Xref reconstruction threshold removed** — Eliminated the `xref.len() < 5` heuristic that triggered full-file reconstruction on valid portfolio PDFs with few objects (5-13s → <100ms)
+
+### Verified — 3,830-PDF Corpus
+
+- **100% pass rate** on 3,830 PDFs across three independent test suites: veraPDF (2,907), Mozilla pdf.js (897), SafeDocs (26)
+- **Zero timeouts, zero panics** — every PDF completes within 120 seconds
+- **p50 = 0.6ms, p90 = 3.0ms, p99 = 33ms** — 97.6% of PDFs complete in under 10ms
+- Added `verify_corpus` example binary for reproducible batch verification with CSV output, timeout handling, and per-corpus breakdown
+
+### Added - Encryption
+
+- **Owner password authentication** (Algorithm 7 for R≤4, Algorithm 12 for R≥5)
+  - R≤4: Derives RC4 key from owner password via MD5 hash chain, decrypts `/O` value to recover user password, then validates via user password authentication
+  - R≥5: SHA-256 verification with SASLprep normalization and owner validation/key salts per PDF spec §7.6.3.4
+  - Both algorithms now fully wired into `EncryptionHandler::authenticate()`
+- **R≥5 user password verification with SASLprep** — Full AES-256 password verification using SHA-256 with validation and key salts per PDF spec §7.6.4.3.3
+- **Public password authentication API** — `Pdf::authenticate(password)` and `PdfDocument::authenticate(password)` exposed for user-facing password entry
+
+### Added - PDF/A Compliance Validation
+
+- **XMP metadata validation** — Parses XMP metadata stream and checks for `pdfaid:part` and `pdfaid:conformance` identification entries (clause 6.7.11)
+- **Color space validation** — Scans page content streams for device-dependent color operators (`rg`, `RG`, `k`, `K`, `g`, `G`) without output intent (clause 6.2)
+- **AFRelationship validation** — For PDF/A-3 documents with embedded files, validates each file specification dictionary contains the required `AFRelationship` key (clause 6.8)
+
+### Added - PDF/X Compliance Validation
+
+- **XMP PDF/X identification** — Parses XMP metadata for `pdfxid:GTS_PDFXVersion`, validates against declared level (clause 6.7.2)
+- **Page box relationship validation** — Validates TrimBox ⊆ BleedBox ⊆ MediaBox and ArtBox ⊆ MediaBox with 0.01pt tolerance (clause 6.1.1)
+- **ExtGState transparency detection** — Checks `SMask` (not `/None`), `CA`/`ca` < 1.0, and `BM` not `Normal`/`Compatible` in extended graphics state dictionaries (clause 6.3)
+- **Device-dependent color detection** — Flags DeviceRGB/CMYK/Gray color spaces used without output intent (clause 6.2.3)
+- **ICC profile validation** — Validates ICCBased color space profile streams contain required `/N` entry (clause 6.2.3)
+
+### Added - Rendering
+
+- **Spec-correct clipping** (PDF §8.5.4) — Clip state scoped to `q`/`Q` save/restore via clip stack; new clips intersect with existing clip region; `W`/`W*` no longer consume the current path (deferred to next paint operator); clip mask applied to all painting operations including text and images
+- **Glyph advance width calculation** — Text position advances per PDF spec §9.4.4: `tx = (w0/1000 × Tfs + Tc + Tw) × Th` with 600-unit default glyph width
+- **Form XObject rendering** — Parses `/Matrix` transform, uses form's `/Resources` (or inherits from parent), and recursively executes form content stream operators
+
+### Fixed - Error Recovery (28+ real-world PDFs)
+
+- **Missing objects resolve to Null** — Per PDF spec §7.3.10, unresolvable indirect references now return `Null` instead of errors, fixing 16 files across veraPDF/pdf.js corpora
+- **Lenient header version parsing** — Fixed fast-path bug where valid headers with unusual version strings were rejected
+- **Non-standard encryption algorithm matching** — V=1,R=3 combinations now handled leniently instead of rejected
+- **Non-dictionary Resources** — Pages with invalid `/Resources` entries (e.g., Null, Integer) treated as empty resources instead of erroring
+- **Null nodes in page tree** — Null or non-dictionary child nodes in page tree gracefully skipped during traversal
+- **Corrupt content streams** — Malformed content streams return empty content instead of propagating parse errors
+- **Enhanced page tree scanning** — `/Resources`+`/Parent` heuristic and `/Kids` direct resolution added as fallback passes for damaged page trees
+
+### Fixed - DoS Protection
+
+- **Bogus /Count bounds checking** — Page count validated against PDF spec Annex C.2 limit (8,388,607) and total object count; unreasonable values fall back to tree scanning
+
+### Fixed - Image Extraction
+- **Content stream image extraction** — `extract_images()` now processes page content streams to find `Do` operator calls, extracting images referenced via XObjects that were previously missed
+- **Nested Form XObject images** — Recursive extraction with cycle detection handles images inside Form XObjects
+- **Inline images** — `BI`...`ID`...`EI` sequences parsed with abbreviation expansion per PDF spec
+- **CTM transformations** — Image bounding boxes correctly transformed using full 4-corner affine transform (handles rotation, shear, and negative scaling)
+- **ColorSpace indirect references** — Resolved indirect references (e.g., `7 0 R`) in image color space entries before extraction
+
+### Fixed - Parser Robustness
+
+- **Multi-line object headers** — Parser now handles `1 0\nobj` format used by Google-generated PDFs instead of requiring `1 0 obj` on a single line
+- **Extended header search** — Header search window extended from 1024 to 8192 bytes to handle PDFs with large binary prefixes
+- **Lenient version parsing** — Malformed version strings like `%PDF-1.a` or truncated headers no longer cause parse failures in lenient mode
+
+### Fixed - Page Access Robustness
+
+- **Missing Contents entry** — Pages without a `/Contents` key now return empty content data instead of erroring
+- **Cyclic page tree detection** — Page tree traversal tracks visited nodes to prevent stack overflow on malformed circular references
+- **Null stream references** — Null or invalid stream references handled gracefully instead of panicking
+- **Wider page scanning fallback** — Page scanning fallback triggers on more error conditions, improving compatibility with damaged PDFs
+- **Pages without /Type entry** — Page scanning now finds pages missing the `/Type /Page` entry by checking for `/MediaBox` or `/Contents` keys
+
+### Fixed - Encryption Robustness
+
+- **Short encryption key panic** — AES decryption with undersized keys now returns an error instead of panicking
+- **Xref stream parsing hardened** — Malformed xref streams with invalid entry sizes or out-of-bounds data no longer cause panics
+- **Indirect /Encrypt references** — `/Encrypt` dictionary values that are indirect references are now resolved before parsing
+
+### Fixed - Content Stream Processing
+
+- **Dictionary-as-Stream fallback** — When a stream object is a bare dictionary (no stream data), it is now treated as an empty stream instead of causing a decode error
+- **Filter abbreviations** — Abbreviated filter names (`AHx`, `A85`, `LZW`, `Fl`, `RL`, `CCF`, `DCT`) and case-insensitive matching now supported
+- **Operator limit** — Content stream parsing enforces a configurable operator limit (default 1,000,000) to prevent pathological slowdowns on malformed streams
+
+### Fixed - Code Quality
+
+- **Structure tree indirect object references** — `ObjectRef` variants in structure tree `/K` entries are now resolved at parse time instead of being silently skipped, ensuring complete structure tree traversal
+- **Lexer `R` token disambiguation** — `tag(b"R")` no longer matches the `R` prefix of `RG`/`ri`/`re` operators; `1 0 RG` is now correctly parsed as a color operator instead of indirect reference `1 0 R` + orphan `G`
+- **Stream whitespace trimming** — `trim_leading_stream_whitespace` now only strips CR/LF (0x0D/0x0A), no longer strips NUL bytes (0x00) or spaces from binary stream data (fixes grayscale image extraction and object stream parsing)
+
+### Tests
+
+- **8 previously ignored tests un-ignored and fixed**:
+  - `test_extract_raw_grayscale_image_from_xobject` — Fixed stream trimming stripping binary pixel data
+  - `test_parse_object_stream_with_whitespace` — Fixed stream trimming affecting object stream offsets
+  - `test_parse_object_stream_graceful_failure` — Relaxed assertion for improved parser recovery
+  - `test_markdown_reading_order_top_to_bottom` — Fixed test coordinates to use PDF convention (Y increases upward)
+  - `test_html_layout_multiple_elements` — Fixed assertions for per-character positioning
+  - `test_reading_order_graph_based_simple` — Fixed test coordinates to PDF convention
+  - `test_reading_order_two_columns` — Fixed test coordinates to PDF convention
+  - `test_parse_color_operators` — Fixed lexer R/RG token disambiguation
+
+### Removed
+
+- Deleted empty `PdfImage` stub (`src/images.rs`) and its module export — image extraction uses `ImageInfo` from `src/extractors/images.rs`
+- Deleted commented-out `DocumentType::detect()` test block in `src/extractors/gap_statistics.rs`
+- Removed stale TODO comments in `scripts/setup-hooks.sh`, `src/bin/analyze_pdf_features.rs`, `src/document.rs`
+
+### 🏆 Community Contributors
+
+🥇 **@SeanPedersen** — Huge thanks to Sean for reporting multiple issues (#41, #44, #45, #46) that drove the entire stability focus of this release. His real-world testing uncovered a parser bug with Google-generated PDFs, image extraction failures on content stream references, and performance problems — each report triggering deep investigation and significant fixes. The parser robustness, image extraction, and testing infrastructure improvements in v0.3.5 all trace back to Sean's thorough bug reports. 🙏🔍
+
 ## [0.3.4] - 2026-02-12
 
 ### ⚠️ Breaking Changes

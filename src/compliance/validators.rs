@@ -55,15 +55,67 @@ pub fn validate_xmp_metadata(
         return Ok(());
     }
 
-    // TODO: Parse XMP metadata and check for PDF/A identification
-    // For now, we just check that the Metadata entry exists
+    // Parse XMP metadata and check for PDF/A identification
+    match crate::extractors::xmp::XmpExtractor::extract(document) {
+        Ok(Some(xmp)) => {
+            let part = xmp.custom.get("pdfaid:part");
+            let conformance = xmp.custom.get("pdfaid:conformance");
 
-    // The XMP metadata should contain:
-    // - pdfaid:part (1, 2, or 3)
-    // - pdfaid:conformance (A, B, or U)
+            if part.is_none() {
+                result.add_error(
+                    ComplianceError::new(
+                        ErrorCode::MissingXmpMetadata,
+                        "XMP metadata missing pdfaid:part identification",
+                    )
+                    .with_clause("6.7.11"),
+                );
+            }
 
-    // Suppress unused variable warning
-    let _ = level;
+            if conformance.is_none() {
+                result.add_error(
+                    ComplianceError::new(
+                        ErrorCode::MissingXmpMetadata,
+                        "XMP metadata missing pdfaid:conformance identification",
+                    )
+                    .with_clause("6.7.11"),
+                );
+            }
+
+            // Validate part matches declared level
+            if let Some(part_val) = part {
+                let expected_part = level.xmp_part();
+                if part_val != expected_part {
+                    result.add_warning(ComplianceWarning::new(
+                        WarningCode::MissingRecommendedMetadata,
+                        format!(
+                            "XMP pdfaid:part is '{}' but validating against PDF/A-{} (expected '{}')",
+                            part_val, expected_part, expected_part
+                        ),
+                    ));
+                }
+            }
+
+            // Store detected level
+            if let (Some(p), Some(c)) = (part, conformance) {
+                result.detected_level = PdfALevel::from_xmp(p, c);
+            }
+        },
+        Ok(None) => {
+            result.add_error(
+                ComplianceError::new(
+                    ErrorCode::MissingXmpMetadata,
+                    "Could not extract XMP metadata from document",
+                )
+                .with_clause("6.7.11"),
+            );
+        },
+        Err(_) => {
+            result.add_warning(ComplianceWarning::new(
+                WarningCode::PartialCheck,
+                "Failed to parse XMP metadata for PDF/A identification",
+            ));
+        },
+    }
 
     Ok(())
 }
@@ -115,11 +167,42 @@ pub fn validate_colors(
         ));
     }
 
-    // TODO: Validate color spaces in content streams
-    // This requires parsing content streams and checking:
-    // - DeviceRGB, DeviceCMYK, DeviceGray usage
-    // - ICC-based color spaces
-    // - Spot colors
+    // Validate color spaces in content streams
+    let page_count = document.page_count()?;
+    for page_idx in 0..page_count {
+        let content_data = match document.get_page_content_data(page_idx) {
+            Ok(data) => data,
+            Err(_) => continue,
+        };
+
+        let operators = match crate::content::parser::parse_content_stream(&content_data) {
+            Ok(ops) => ops,
+            Err(_) => continue,
+        };
+
+        for op in &operators {
+            let uses_device_color = matches!(
+                op,
+                crate::content::operators::Operator::SetFillRgb { .. }
+                    | crate::content::operators::Operator::SetStrokeRgb { .. }
+                    | crate::content::operators::Operator::SetFillCmyk { .. }
+                    | crate::content::operators::Operator::SetStrokeCmyk { .. }
+                    | crate::content::operators::Operator::SetFillGray { .. }
+                    | crate::content::operators::Operator::SetStrokeGray { .. }
+            );
+
+            if uses_device_color && !has_output_intent {
+                result.add_warning(ComplianceWarning::new(
+                    WarningCode::MissingRecommendedMetadata,
+                    format!(
+                        "Page {} uses device-dependent color operators without output intent",
+                        page_idx + 1
+                    ),
+                ));
+                break; // One warning per page is sufficient
+            }
+        }
+    }
 
     Ok(())
 }
@@ -320,12 +403,40 @@ pub fn validate_embedded_files(
                 .with_clause("6.9"),
             );
         } else {
-            // For PDF/A-3, check that files have AF relationship
-            // TODO: Validate AFRelationship entries
-            result.add_warning(ComplianceWarning::new(
-                WarningCode::MissingRecommendedMetadata,
-                "Embedded files should have AFRelationship specified",
-            ));
+            // For PDF/A-3, validate that each embedded file has AFRelationship
+            if let Some(names) = catalog_dict.get("Names") {
+                let resolved_names = document.resolve_references(names, 1)?;
+                if let Object::Dictionary(names_dict) = resolved_names {
+                    if let Some(ef) = names_dict.get("EmbeddedFiles") {
+                        let resolved_ef = document.resolve_references(ef, 1)?;
+                        if let Object::Dictionary(ef_dict) = resolved_ef {
+                            if let Some(Object::Array(names_arr)) = ef_dict.get("Names") {
+                                // Names array: [name1, filespec1, name2, filespec2, ...]
+                                for (idx, item) in names_arr.iter().enumerate() {
+                                    if idx % 2 == 1 {
+                                        // This is a filespec
+                                        let resolved_fs = document.resolve_references(item, 1)?;
+                                        if let Object::Dictionary(fs_dict) = resolved_fs {
+                                            if !fs_dict.contains_key("AFRelationship") {
+                                                result.add_error(
+                                                    ComplianceError::new(
+                                                        ErrorCode::EmbeddedFileNotAllowed,
+                                                        format!(
+                                                            "Embedded file at index {} missing required AFRelationship",
+                                                            idx / 2
+                                                        ),
+                                                    )
+                                                    .with_clause("6.8"),
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 

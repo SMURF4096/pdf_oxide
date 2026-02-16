@@ -113,9 +113,13 @@ fn test_object_caching() {
 fn test_load_nonexistent_object() {
     let mut pdf = PdfDocument::open(SIMPLE_PDF_PATH).expect("Failed to open simple.pdf");
 
-    // Try to load object 999 which doesn't exist
+    // Per PDF spec §7.3.10, missing object references "shall be treated as null"
     let result = pdf.load_object(ObjectRef::new(999, 0));
-    assert!(result.is_err(), "Loading nonexistent object should fail");
+    assert!(result.is_ok(), "Loading nonexistent object should return Ok(Null) per §7.3.10");
+    assert!(
+        matches!(result.unwrap(), pdf_oxide::object::Object::Null),
+        "Nonexistent object should resolve to Null"
+    );
 }
 
 #[test]

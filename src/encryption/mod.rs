@@ -230,6 +230,19 @@ impl EncryptDict {
             (2, 3) => Ok(Algorithm::Rc4_128),
             (4, 4) => Ok(Algorithm::Aes128),
             (5, 5) | (5, 6) => Ok(Algorithm::Aes256),
+            // Lenient: V determines algorithm, R may be non-standard
+            (1, r) => {
+                log::warn!("Non-standard encryption V=1, R={}, using RC4-40", r);
+                Ok(Algorithm::RC4_40)
+            },
+            (2, r) => {
+                log::warn!("Non-standard encryption V=2, R={}, using RC4-128", r);
+                Ok(Algorithm::Rc4_128)
+            },
+            (4, r) => {
+                log::warn!("Non-standard encryption V=4, R={}, using AES-128", r);
+                Ok(Algorithm::Aes128)
+            },
             _ => Err(Error::Unsupported(format!(
                 "Unsupported encryption version V={}, R={}",
                 self.version, self.revision

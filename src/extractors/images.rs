@@ -160,6 +160,11 @@ impl PdfImage {
         self.bbox.as_ref()
     }
 
+    /// Set the bounding box for this image.
+    pub fn set_bbox(&mut self, bbox: Rect) {
+        self.bbox = Some(bbox);
+    }
+
     /// Set CCITT decompression parameters for this image.
     pub fn set_ccitt_params(&mut self, params: crate::decoders::CcittParams) {
         self.ccitt_params = Some(params);
@@ -917,6 +922,39 @@ fn save_raw_as_jpeg(
                 .map_err(|e| Error::Image(format!("Failed to save JPEG: {}", e)))
         },
     }
+}
+
+/// Expand abbreviated inline image dictionary keys to their full names.
+///
+/// Per PDF spec (ISO 32000-1:2008 Section 8.9.7), inline images use abbreviated
+/// dictionary keys for efficiency. This function converts them to standard names.
+pub fn expand_inline_image_dict(
+    dict: std::collections::HashMap<String, crate::object::Object>,
+) -> std::collections::HashMap<String, crate::object::Object> {
+    use std::collections::HashMap;
+
+    let mut expanded = HashMap::new();
+
+    for (key, value) in dict {
+        let expanded_key = match key.as_str() {
+            "W" => "Width",
+            "H" => "Height",
+            "CS" => "ColorSpace",
+            "BPC" => "BitsPerComponent",
+            "F" => "Filter",
+            "DP" => "DecodeParms",
+            "IM" => "ImageMask",
+            "I" => "Interpolate",
+            "D" => "Decode",
+            "EF" => "EFontFile",
+            "Intent" => "Intent",
+            _ => &key, // Keep unknown keys as-is
+        };
+
+        expanded.insert(expanded_key.to_string(), value);
+    }
+
+    expanded
 }
 
 #[cfg(test)]

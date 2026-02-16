@@ -1,13 +1,11 @@
 #![allow(warnings)]
-//! Integration tests for Phase 4 spacing fixes (PDF-spec compliant only)
-//!
-//! Phase 4: Spacing & Word Boundary Fixes
+//! Integration tests for spacing and word boundary detection (PDF-spec compliant only)
 //!
 //! These tests validate spacing logic against realistic PDF scenarios:
 //! - Justified text with variable TJ offsets (real PDFs often use this)
 //! - Multi-line text with proper line break handling
 //! - Consensus-based spacing decision making
-//! - Regression testing for Phase 1-3 features
+//! - Regression testing for TrueType cmap and text post-processing
 //!
 //! All tests use ONLY PDF-spec-defined signals per ISO 32000-1:2008:
 //! - TJ array offsets (Section 9.4.4) - typographic hints
@@ -16,7 +14,6 @@
 //!
 //! NOTE: These tests use mock TextSpan data simulating real PDF extraction
 //! because we're validating the algorithm logic before implementation.
-//! Once the actual extraction is implemented, we can add real PDF loading tests.
 
 use pdf_oxide::extractors::{SpanMergingConfig, TextExtractionConfig};
 use pdf_oxide::geometry::Rect;
@@ -82,7 +79,7 @@ fn create_line_of_text(word_specs: Vec<(&str, f32, f32)>) -> Vec<TextSpan> {
 //   Justified: "The quick brown fox jumps" might have:
 //   - TJ offsets: [-50, -120, -80, -150, -200, -100] (high variance)
 //   - Current (broken): Inserts space within words like "inform ation"
-//   - Expected (Phase 4): No space insertion in hyphenated/justified text
+//   - Expected: No space insertion in hyphenated/justified text
 //
 // Spec Reference: ISO 32000-1:2008 Section 9.4.4 (TJ array offsets)
 
@@ -142,7 +139,7 @@ fn test_justified_text_variable_tj_offsets_no_false_spaces() {
 //   Line 1 end: "habitat"
 //   Line 2 start: "quality"
 //   Current (broken): "habitatquality" (no space between lines)
-//   Expected (Phase 4): "habitat quality" (space inserted at line break)
+//   Expected: "habitat quality" (space inserted at line break)
 //
 // Spec Reference: ISO 32000-1:2008 Section 5.2 (coordinate system & positioning)
 
@@ -247,67 +244,57 @@ fn test_multicolumn_line_break_spacing_hard_break() {
 }
 
 // ============================================================================
-// Test 6: Regression Tests - Phase 2A/2B Compatibility
+// Test 6: Regression Tests - Font & Text Processing Compatibility
 // ============================================================================
 //
-// CRITICAL: Phase 4 must not break Phase 1-3 functionality
-//
-// Phase 1: Identity encoding for CID-keyed fonts
-// Phase 2A: TrueType cmap fallback
-// Phase 2B: Text post-processing (hyphenation, whitespace, special chars)
-// Phase 3: CIDToGIDMap parsing for Type0 fonts
+// Spacing changes must not break existing functionality:
+// - Identity encoding for CID-keyed fonts
+// - TrueType cmap fallback
+// - Text post-processing (hyphenation, whitespace, special chars)
+// - CIDToGIDMap parsing for Type0 fonts
 //
 // Spec Reference: ISO 32000-1:2008 Sections 9 (Text), 14 (Structure)
 
 #[test]
-fn test_regression_phase2a_truetype_cmap_unaffected() {
-    //! Test: Phase 2A TrueType cmap functionality unchanged
+fn test_regression_truetype_cmap_unaffected() {
+    //! Test: TrueType cmap functionality unchanged by spacing logic
     //!
-    //! Phase 2A: Implemented TrueType cmap fallback when ToUnicode CMap unavailable
-    //! This test verifies Phase 4 spacing changes don't interfere with cmap logic.
+    //! TrueType cmap fallback (used when ToUnicode CMap unavailable)
+    //! should not be affected by spacing/word boundary changes.
     //!
     //! Spec: ISO 32000-1:2008 Section 9.10 (Character-to-Unicode mapping)
-    //!
-    //! Note: This is a placeholder test for the actual extraction system.
-    //! In full implementation, would load real Type1/TrueType PDF and verify
-    //! character mapping still works after Phase 4 spacing implementation.
 
-    // Verify that Phase 4 only affects Type0/CFF fonts, not TrueType
-    // (This will be validated in actual PDF extraction tests)
-
-    // Configuration for Phase 2A still works with default settings
+    // Default extraction configs should remain valid
     let config = TextExtractionConfig::default();
     let span_config = SpanMergingConfig::default();
 
-    // Basic sanity check: configs are valid
     assert!(config.word_margin_ratio > 0.0);
     assert!(span_config.space_threshold_em_ratio > 0.0);
 }
 
 #[test]
-fn test_regression_phase2b_text_processing_pipeline() {
-    //! Test: Phase 2B text post-processing pipeline intact
+fn test_regression_text_processing_pipeline() {
+    //! Test: Text post-processing pipeline intact
     //!
-    //! Phase 2B: Implemented text post-processing for:
+    //! Text post-processing includes:
     //! - Hyphenation removal (soft hyphens at line breaks)
     //! - Whitespace normalization (multiple spaces → single space)
     //! - Special character handling (Greek letters, mathematical symbols)
     //!
-    //! This test verifies Phase 4 doesn't break the post-processing pipeline.
+    //! Spacing changes should not break the post-processing pipeline.
     //!
     //! Spec: ISO 32000-1:2008 Section 9.10 (Text extraction semantics)
 
-    // Phase 2B special character handling example:
-    // Greek letters should be preserved in output
+    // Special character handling: Greek letters preserved in output
     let greek_text = "The variable α represents alpha";
     assert!(greek_text.contains('α'));
 
-    // Post-processing should normalize whitespace patterns
-    let text_with_multiple_spaces = "Hello   world"; // Multiple spaces
-    let normalized = text_with_multiple_spaces.replace("   ", " "); // Normalize
+    // Whitespace normalization
+    let text_with_multiple_spaces = "Hello   world";
+    let normalized = text_with_multiple_spaces.replace("   ", " ");
     assert_eq!(normalized, "Hello world");
 
-    // Soft hyphenation pattern (Phase 2B handles this)
+    // Soft hyphenation handling
     let hyphenated_word = "habi-tat";
     assert!(hyphenated_word.contains('-'));
 }
@@ -316,7 +303,7 @@ fn test_regression_phase2b_text_processing_pipeline() {
 // Test 7: Consensus-Based Spacing Decision Logic
 // ============================================================================
 //
-// NEW in Phase 4: Instead of relying on TJ offsets alone,
+// Instead of relying on TJ offsets alone,
 // require multiple spec-defined signals to agree before inserting spaces.
 //
 // This reduces false positives in justified text while maintaining
@@ -367,7 +354,7 @@ fn test_consensus_spacing_all_scenarios() {
 // Test 8: PDF-Spec Compliance Verification
 // ============================================================================
 //
-// This test ensures Phase 4 implementation uses ONLY spec-defined signals
+// This test ensures the implementation uses ONLY spec-defined signals
 // and does NOT include application-level heuristics like URL detection,
 // regex patterns, or linguistic analysis.
 //

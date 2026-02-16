@@ -136,9 +136,10 @@ pub fn pad_password(password: &[u8]) -> Vec<u8> {
     padded
 }
 
-/// Authenticate the user password (Algorithm 4/5).
+/// Authenticate the user password (Algorithm 4/5 for R<=4, Algorithm 11 for R>=5).
 ///
 /// PDF Spec: Section 7.6.3.4 - Algorithm 4/5: User password authentication
+/// PDF 2.0 Spec: Algorithm 11 - Authenticating user password for R>=5
 ///
 /// Returns the encryption key if authentication succeeds.
 pub fn authenticate_user_password(
@@ -151,6 +152,11 @@ pub fn authenticate_user_password(
     key_length: usize,
     encrypt_metadata: bool,
 ) -> Option<Vec<u8>> {
+    // R>=5 uses SHA-256 based verification (Algorithm 11)
+    if revision >= 5 {
+        return authenticate_user_password_r5(password, user_key);
+    }
+
     // Compute encryption key from password
     let key = compute_encryption_key(
         password,
@@ -170,12 +176,65 @@ pub fn authenticate_user_password(
     };
 
     // Compare first 16 bytes (constant-time comparison)
+    if user_key.len() < 16 || expected_user_key.len() < 16 {
+        return None;
+    }
     let matches = constant_time_compare(&user_key[..16], &expected_user_key[..16]);
 
     if matches {
         Some(key)
     } else {
         None
+    }
+}
+
+/// Verify user password for R>=5 (PDF 2.0 Algorithm 11).
+///
+/// PDF 2.0 Spec (ISO 32000-2:2020): Algorithm 11 — Authenticating the user password
+///
+/// 1. SASLprep and truncate password to 127 UTF-8 bytes
+/// 2. SHA-256(password || user_validation_salt) where validation_salt = U[32..40]
+/// 3. Compare with U[0..32]
+/// 4. If match: file encryption key = SHA-256(password || user_key_salt) where key_salt = U[40..48]
+fn authenticate_user_password_r5(password: &[u8], user_key: &[u8]) -> Option<Vec<u8>> {
+    if user_key.len() < 48 {
+        return None;
+    }
+
+    let password = saslprep_password(password);
+    let password = truncate_password_utf8(&password);
+
+    let validation_salt = &user_key[32..40];
+    let key_salt = &user_key[40..48];
+
+    // Step 1: Verify — SHA-256(password || validation_salt)
+    let mut hasher = Sha256::new();
+    hasher.update(&password);
+    hasher.update(validation_salt);
+    let hash = hasher.finalize();
+
+    if constant_time_compare(&hash, &user_key[..32]) {
+        // Step 2: Derive file encryption key — SHA-256(password || key_salt)
+        let mut hasher = Sha256::new();
+        hasher.update(&password);
+        hasher.update(key_salt);
+        Some(hasher.finalize().to_vec())
+    } else {
+        None
+    }
+}
+
+/// Apply SASLprep (RFC 4013) normalization to a password.
+///
+/// PDF 2.0 Spec requires SASLprep for Unicode passwords in R>=5.
+/// Falls back to raw bytes if the input is not valid UTF-8 or normalization fails.
+fn saslprep_password(password: &[u8]) -> Vec<u8> {
+    let Ok(password_str) = std::str::from_utf8(password) else {
+        return password.to_vec();
+    };
+    match stringprep::saslprep(password_str) {
+        Ok(normalized) => normalized.as_bytes().to_vec(),
+        Err(_) => password.to_vec(),
     }
 }
 
@@ -417,6 +476,123 @@ fn truncate_password_utf8(password: &[u8]) -> Vec<u8> {
     result
 }
 
+/// Authenticate the owner password (Algorithm 7 for R≤4, Algorithm 12 for R≥5).
+///
+/// PDF Spec: Section 7.6.3.4 - Algorithm 7: Owner password authentication
+/// PDF 2.0 Spec: Algorithm 12 - Authenticating owner password for R>=5
+///
+/// Returns the encryption key if authentication succeeds.
+pub fn authenticate_owner_password(
+    owner_password: &[u8],
+    user_key: &[u8],
+    owner_key: &[u8],
+    permissions: i32,
+    file_id: &[u8],
+    revision: u32,
+    key_length: usize,
+    encrypt_metadata: bool,
+) -> Option<Vec<u8>> {
+    if revision >= 5 {
+        return authenticate_owner_password_r5(owner_password, owner_key, user_key);
+    }
+
+    // Algorithm 7: Authenticate owner password for R≤4
+    //
+    // Steps a-d: Compute RC4 key from owner password (same as Algorithm 3 steps a-d)
+    let password = if owner_password.is_empty() {
+        return None;
+    } else {
+        owner_password
+    };
+
+    let padded_password = pad_password(password);
+
+    let mut hasher = Md5::new();
+    hasher.update(&padded_password);
+    let mut hash = hasher.finalize().to_vec();
+
+    if revision >= 3 {
+        for _ in 0..50 {
+            let mut h = Md5::new();
+            h.update(&hash[..key_length.min(16)]);
+            hash = h.finalize().to_vec();
+        }
+    }
+
+    let rc4_key_len = key_length.min(16);
+    let rc4_key = &hash[..rc4_key_len];
+
+    // Step e: Decrypt the /O value to recover the padded user password
+    let user_password_padded = if revision == 2 {
+        // R=2: Single RC4 decryption
+        super::rc4::rc4_crypt(rc4_key, owner_key)
+    } else {
+        // R≥3: 20 RC4 decryptions with XOR'd keys (19 down to 0)
+        let mut result = owner_key.to_vec();
+        for i in (0..=19).rev() {
+            let mut modified_key = rc4_key.to_vec();
+            for byte in &mut modified_key {
+                *byte ^= i as u8;
+            }
+            result = super::rc4::rc4_crypt(&modified_key, &result);
+        }
+        result
+    };
+
+    // Step f: Use recovered user password to authenticate via Algorithm 6
+    authenticate_user_password(
+        &user_password_padded,
+        user_key,
+        owner_key,
+        permissions,
+        file_id,
+        revision,
+        key_length,
+        encrypt_metadata,
+    )
+}
+
+/// Verify owner password for R>=5 (PDF 2.0 Algorithm 12).
+///
+/// 1. SASLprep + truncate password to 127 UTF-8 bytes
+/// 2. SHA-256(password || O[32..40] owner_validation_salt || U[0..48])
+/// 3. Compare hash with O[0..32]
+/// 4. If match: file encryption key = SHA-256(password || O[40..48] owner_key_salt || U[0..48])
+fn authenticate_owner_password_r5(
+    password: &[u8],
+    owner_key: &[u8],
+    user_key: &[u8],
+) -> Option<Vec<u8>> {
+    if owner_key.len() < 48 || user_key.len() < 48 {
+        return None;
+    }
+
+    let password = saslprep_password(password);
+    let password = truncate_password_utf8(&password);
+
+    let owner_validation_salt = &owner_key[32..40];
+    let owner_key_salt = &owner_key[40..48];
+    let u_value = &user_key[..48];
+
+    // Step 1: Verify — SHA-256(password || owner_validation_salt || U[0..48])
+    let mut hasher = Sha256::new();
+    hasher.update(&password);
+    hasher.update(owner_validation_salt);
+    hasher.update(u_value);
+    let hash = hasher.finalize();
+
+    if constant_time_compare(&hash, &owner_key[..32]) {
+        // Step 2: Derive file encryption key — SHA-256(password || owner_key_salt || U[0..48])
+        let mut hasher = Sha256::new();
+        hasher.update(&password);
+        hasher.update(owner_key_salt);
+        hasher.update(u_value);
+        Some(hasher.finalize().to_vec())
+    } else {
+        None
+    }
+}
+
 /// Constant-time comparison to prevent timing attacks.
 ///
 /// Returns true if the slices are equal.
@@ -650,5 +826,264 @@ mod tests {
 
         assert!(auth_result.is_some());
         assert_eq!(auth_result.unwrap(), encryption_key);
+    }
+
+    #[test]
+    fn test_authenticate_user_password_short_user_key() {
+        // /U value shorter than 16 bytes should return None, not panic
+        let short_user_key = vec![0u8; 10];
+        let owner_key = vec![0u8; 32];
+        let result = authenticate_user_password(
+            b"",
+            &short_user_key,
+            &owner_key,
+            -1,
+            b"file_id",
+            2,
+            5,
+            true,
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_saslprep_ascii_passthrough() {
+        // Plain ASCII should pass through unchanged
+        let password = b"hello123";
+        let result = saslprep_password(password);
+        assert_eq!(result, b"hello123");
+    }
+
+    #[test]
+    fn test_saslprep_unicode_normalization() {
+        // NFKC normalization: fullwidth 'A' (U+FF21) should map to 'A' (U+0041)
+        let password = "\u{FF21}".as_bytes();
+        let result = saslprep_password(password);
+        assert_eq!(result, b"A");
+    }
+
+    #[test]
+    fn test_authenticate_user_r5_correct_password() {
+        // Manually build a 48-byte U value for password "test"
+        let password = b"test";
+        let validation_salt = [0x01u8; 8];
+        let key_salt = [0x02u8; 8];
+
+        // Compute expected hash: SHA-256("test" || validation_salt)
+        let mut hasher = Sha256::new();
+        hasher.update(password);
+        hasher.update(validation_salt);
+        let hash = hasher.finalize();
+
+        // Build U = hash[0..32] || validation_salt || key_salt
+        let mut user_key = hash.to_vec();
+        user_key.extend_from_slice(&validation_salt);
+        user_key.extend_from_slice(&key_salt);
+        assert_eq!(user_key.len(), 48);
+
+        let result = authenticate_user_password(
+            password, &user_key, &[0u8; 48], // owner_key unused for R>=5
+            -1, b"", 5, 32, true,
+        );
+        assert!(result.is_some());
+
+        // Verify the returned key is SHA-256("test" || key_salt)
+        let mut hasher = Sha256::new();
+        hasher.update(password);
+        hasher.update(key_salt);
+        let expected_key = hasher.finalize().to_vec();
+        assert_eq!(result.unwrap(), expected_key);
+    }
+
+    #[test]
+    fn test_authenticate_user_r5_wrong_password() {
+        let password = b"test";
+        let validation_salt = [0x01u8; 8];
+        let key_salt = [0x02u8; 8];
+
+        let mut hasher = Sha256::new();
+        hasher.update(password);
+        hasher.update(validation_salt);
+        let hash = hasher.finalize();
+
+        let mut user_key = hash.to_vec();
+        user_key.extend_from_slice(&validation_salt);
+        user_key.extend_from_slice(&key_salt);
+
+        let result =
+            authenticate_user_password(b"wrong", &user_key, &[0u8; 48], -1, b"", 5, 32, true);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_authenticate_user_r5_short_u_value() {
+        // U value shorter than 48 bytes should return None
+        let result = authenticate_user_password(
+            b"test", &[0u8; 40], // too short
+            &[0u8; 48], -1, b"", 5, 32, true,
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_authenticate_owner_password_r2_roundtrip() {
+        let owner_pass = b"owner123";
+        let user_pass = b"user123";
+        let file_id = b"test_file_id_123";
+        let permissions = -1i32;
+        let revision = 2;
+        let key_length = 5;
+
+        // Create encryption dict values
+        let owner_hash = compute_owner_password_hash(owner_pass, user_pass, revision, key_length);
+        let encryption_key = compute_encryption_key(
+            user_pass,
+            &owner_hash,
+            permissions,
+            file_id,
+            revision,
+            key_length,
+            true,
+        );
+        let user_hash = compute_user_password_hash(&encryption_key, file_id, revision);
+
+        // Owner password should authenticate
+        let result = authenticate_owner_password(
+            owner_pass,
+            &user_hash,
+            &owner_hash,
+            permissions,
+            file_id,
+            revision,
+            key_length,
+            true,
+        );
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), encryption_key);
+    }
+
+    #[test]
+    fn test_authenticate_owner_password_r3_roundtrip() {
+        let owner_pass = b"owner456";
+        let user_pass = b"user456";
+        let file_id = b"test_file_id_456";
+        let permissions = -1i32;
+        let revision = 3;
+        let key_length = 16;
+
+        let owner_hash = compute_owner_password_hash(owner_pass, user_pass, revision, key_length);
+        let encryption_key = compute_encryption_key(
+            user_pass,
+            &owner_hash,
+            permissions,
+            file_id,
+            revision,
+            key_length,
+            true,
+        );
+        let user_hash = compute_user_password_hash(&encryption_key, file_id, revision);
+
+        let result = authenticate_owner_password(
+            owner_pass,
+            &user_hash,
+            &owner_hash,
+            permissions,
+            file_id,
+            revision,
+            key_length,
+            true,
+        );
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), encryption_key);
+    }
+
+    #[test]
+    fn test_authenticate_owner_password_wrong_password() {
+        let owner_pass = b"owner123";
+        let user_pass = b"user123";
+        let file_id = b"test_file_id_123";
+        let permissions = -1i32;
+        let revision = 3;
+        let key_length = 16;
+
+        let owner_hash = compute_owner_password_hash(owner_pass, user_pass, revision, key_length);
+        let encryption_key = compute_encryption_key(
+            user_pass,
+            &owner_hash,
+            permissions,
+            file_id,
+            revision,
+            key_length,
+            true,
+        );
+        let user_hash = compute_user_password_hash(&encryption_key, file_id, revision);
+
+        let result = authenticate_owner_password(
+            b"wrong",
+            &user_hash,
+            &owner_hash,
+            permissions,
+            file_id,
+            revision,
+            key_length,
+            true,
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_authenticate_owner_password_r5_roundtrip() {
+        let password = b"ownerpass";
+        let owner_validation_salt = [0x11u8; 8];
+        let owner_key_salt = [0x22u8; 8];
+
+        // Build a fake U value (48 bytes)
+        let user_key = [0xAAu8; 48];
+
+        // Compute expected O hash: SHA-256(password || owner_validation_salt || U[0..48])
+        let mut hasher = Sha256::new();
+        hasher.update(password.as_slice());
+        hasher.update(owner_validation_salt);
+        hasher.update(&user_key[..48]);
+        let hash = hasher.finalize();
+
+        // Build O = hash[0..32] || owner_validation_salt || owner_key_salt
+        let mut owner_key = hash.to_vec();
+        owner_key.extend_from_slice(&owner_validation_salt);
+        owner_key.extend_from_slice(&owner_key_salt);
+
+        let result =
+            authenticate_owner_password(password, &user_key, &owner_key, -1, b"", 5, 32, true);
+        assert!(result.is_some());
+
+        // Verify the returned key is SHA-256(password || owner_key_salt || U[0..48])
+        let mut hasher = Sha256::new();
+        hasher.update(password.as_slice());
+        hasher.update(owner_key_salt);
+        hasher.update(&user_key[..48]);
+        let expected_key = hasher.finalize().to_vec();
+        assert_eq!(result.unwrap(), expected_key);
+    }
+
+    #[test]
+    fn test_authenticate_owner_password_r5_wrong_password() {
+        let password = b"ownerpass";
+        let owner_validation_salt = [0x11u8; 8];
+        let owner_key_salt = [0x22u8; 8];
+        let user_key = [0xAAu8; 48];
+
+        let mut hasher = Sha256::new();
+        hasher.update(password.as_slice());
+        hasher.update(owner_validation_salt);
+        hasher.update(&user_key[..48]);
+        let hash = hasher.finalize();
+
+        let mut owner_key = hash.to_vec();
+        owner_key.extend_from_slice(&owner_validation_salt);
+        owner_key.extend_from_slice(&owner_key_salt);
+
+        let result =
+            authenticate_owner_password(b"wrong", &user_key, &owner_key, -1, b"", 5, 32, true);
+        assert!(result.is_none());
     }
 }

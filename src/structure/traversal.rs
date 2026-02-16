@@ -114,8 +114,9 @@ fn traverse_element(
             },
 
             StructChild::ObjectRef(_obj_num, _gen) => {
-                // TODO: Resolve object reference and traverse
-                // For MVP, skip object references
+                // ObjectRef should be resolved at parse time (structure/parser.rs).
+                // If we encounter one here, it means the reference couldn't be resolved.
+                log::debug!("Skipping unresolved ObjectRef({}, {})", _obj_num, _gen);
             },
         }
     }

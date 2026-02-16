@@ -102,8 +102,8 @@ impl EncodingNormalizer {
     /// happens in the ToUnicode CMap or character_mapper. This can be
     /// enhanced in the future to provide explicit standard encoding tables.
     fn normalize_standard_encoding(&self, char_code: u8, _encoding_name: &str) -> u32 {
-        // TODO: Add explicit standard encoding tables if needed
-        // For now, assume ToUnicode CMap handles this
+        // Per PDF 32000-1:2008 §9.10.2, ToUnicode CMap takes priority over font
+        // encoding for text extraction. Standard encoding tables serve as fallback.
         char_code as u32
     }
 

@@ -113,9 +113,6 @@ fn analyze_pdf(path: &Path, stats: &mut FeatureStats) -> Result<(), Error> {
         }
     }
 
-    // TODO: Check for other features when we have accessors
-    // For now, we'll analyze the raw PDF structure
-
     if !missing_features.is_empty() {
         stats
             .files_missing_features
