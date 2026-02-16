@@ -1656,30 +1656,36 @@ impl PdfDocument {
             return Ok(cached.clone());
         }
 
-        // Load catalog
+        // On first cache miss, walk the page tree once and populate ALL pages.
+        // This turns O(n) per-page lookups into a single O(n) walk, avoiding
+        // O(n²) total cost when iterating sequentially through many pages.
+        if let Err(e) = self.populate_page_cache() {
+            log::warn!("Bulk page tree walk failed ({}), falling back to per-page traversal", e);
+        }
+
+        // Check cache again after bulk population
+        if let Some(cached) = self.page_cache.get(&page_index) {
+            return Ok(cached.clone());
+        }
+
+        // Fallback: per-page tree traversal (for malformed page trees where bulk walk fails)
         let catalog = self.catalog()?;
         let catalog_dict = catalog.as_dict().ok_or_else(|| Error::InvalidObjectType {
             expected: "Dictionary".to_string(),
             found: catalog.type_name().to_string(),
         })?;
 
-        // Get /Pages reference
         let pages_ref = catalog_dict
             .get("Pages")
             .ok_or_else(|| Error::InvalidPdf("Catalog missing /Pages entry".to_string()))?
             .as_reference()
             .ok_or_else(|| Error::InvalidPdf("/Pages is not a reference".to_string()))?;
 
-        // Initialize inherited attributes map
-        // PDF Spec: ISO 32000-1:2008, Section 7.7.3.3
-        // "An attribute of a page can be inherited from its ancestor nodes in the page tree"
         let mut inherited = HashMap::new();
 
-        // Load page tree and find the requested page
         let page = match self.get_page_from_tree(pages_ref, page_index, &mut 0, &mut inherited) {
             Ok(page) => Ok(page),
             Err(e) => {
-                // If tree traversal fails (malformed page tree), try fallback scanning
                 if matches!(
                     e,
                     Error::InvalidPdf(_)
@@ -1695,9 +1701,97 @@ impl PdfDocument {
             },
         }?;
 
-        // Cache for future calls
         self.page_cache.insert(page_index, page.clone());
         Ok(page)
+    }
+
+    /// Walk the page tree once and populate page_cache for ALL pages.
+    /// This avoids O(n²) cost when pages are accessed sequentially.
+    fn populate_page_cache(&mut self) -> Result<()> {
+        let catalog = self.catalog()?;
+        let catalog_dict = catalog.as_dict().ok_or_else(|| Error::InvalidObjectType {
+            expected: "Dictionary".to_string(),
+            found: catalog.type_name().to_string(),
+        })?;
+
+        let pages_ref = catalog_dict
+            .get("Pages")
+            .ok_or_else(|| Error::InvalidPdf("Catalog missing /Pages entry".to_string()))?
+            .as_reference()
+            .ok_or_else(|| Error::InvalidPdf("/Pages is not a reference".to_string()))?;
+
+        let mut page_index = 0usize;
+        let mut inherited = HashMap::new();
+        self.collect_all_pages(pages_ref, &mut page_index, &mut inherited, &mut HashSet::new())?;
+        log::debug!("Populated page cache with {} pages", page_index);
+        Ok(())
+    }
+
+    /// Recursively walk the page tree and collect all pages into page_cache.
+    fn collect_all_pages(
+        &mut self,
+        node_ref: ObjectRef,
+        page_index: &mut usize,
+        inherited: &mut HashMap<String, Object>,
+        visited: &mut HashSet<ObjectRef>,
+    ) -> Result<()> {
+        if !visited.insert(node_ref) {
+            return Err(Error::CircularReference(node_ref));
+        }
+
+        let node = self.load_object(node_ref)?;
+        let node_dict = match node.as_dict() {
+            Some(d) => d,
+            None => return Ok(()), // Skip non-dict nodes gracefully
+        };
+
+        let node_type = node_dict
+            .get("Type")
+            .and_then(|obj| obj.as_name())
+            .unwrap_or("");
+
+        match node_type {
+            "Page" => {
+                // Apply inherited attributes
+                let mut page_dict = node_dict.clone();
+                for attr_name in &["Resources", "MediaBox", "CropBox", "Rotate"] {
+                    if !page_dict.contains_key(*attr_name) {
+                        if let Some(inherited_value) = inherited.get(*attr_name) {
+                            page_dict.insert(attr_name.to_string(), inherited_value.clone());
+                        }
+                    }
+                }
+                self.page_cache.insert(*page_index, Object::Dictionary(page_dict));
+                *page_index += 1;
+            },
+            "Pages" => {
+                // Save inherited state so siblings don't see each other's overrides
+                let saved = inherited.clone();
+
+                for attr_name in &["Resources", "MediaBox", "CropBox", "Rotate"] {
+                    if let Some(attr_value) = node_dict.get(*attr_name) {
+                        inherited
+                            .entry(attr_name.to_string())
+                            .or_insert_with(|| attr_value.clone());
+                    }
+                }
+
+                if let Some(kids) = node_dict.get("Kids").and_then(|obj| obj.as_array()) {
+                    for kid in kids {
+                        if let Some(kid_ref) = kid.as_reference() {
+                            if let Err(e) = self.collect_all_pages(kid_ref, page_index, inherited, visited) {
+                                log::warn!("Error collecting page from tree: {}, skipping branch", e);
+                            }
+                        }
+                    }
+                }
+
+                *inherited = saved;
+            },
+            _ => {}, // Unknown node type, skip
+        }
+
+        Ok(())
     }
 
     /// Get a page by scanning all objects in the PDF (fallback for broken page trees)
