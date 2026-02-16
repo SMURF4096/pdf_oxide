@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "pdf_oxide"
-version = "0.3.5"
+version = "0.3.6"
 description = "The Complete PDF Toolkit: extract, create, and edit PDFs with one library. Rust core with Python bindings."
 readme = "README.md"
 requires-python = ">=3.8"
