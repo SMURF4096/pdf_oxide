@@ -1,6 +1,6 @@
-# PDF Oxide
+# PDF Oxide — The Fastest PDF Library for Python and Rust
 
-> PDF Oxide is a high-performance PDF library for Python and Rust.
+> The fastest PDF library for Python and Rust.
 > Text extraction, image extraction, PDF creation, editing, and markdown conversion.
 > Mean 2.1ms per document. 100% pass rate on 3,830 real-world PDFs.
 > MIT / Apache-2.0 license. Current version: 0.3.6.
