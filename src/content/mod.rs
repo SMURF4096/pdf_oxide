@@ -12,3 +12,4 @@ pub mod parser;
 pub use graphics_state::{GraphicsState, GraphicsStateStack, Matrix};
 pub use operators::{Operator, TextElement};
 pub use parser::parse_content_stream;
+pub use parser::parse_content_stream_text_only;

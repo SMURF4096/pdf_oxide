@@ -7,7 +7,7 @@
 use crate::config::ExtractionProfile;
 use crate::content::graphics_state::{GraphicsStateStack, Matrix};
 use crate::content::operators::{Operator, TextElement};
-use crate::content::parse_content_stream;
+use crate::content::parse_content_stream_text_only;
 use crate::error::Result;
 use crate::extract_log_debug;
 use crate::fonts::FontInfo;
@@ -2341,7 +2341,7 @@ impl TextExtractor {
 
         // Parse content stream into operators
         extract_log_debug!("Parsing content stream for text extraction");
-        let operators = parse_content_stream(content_stream)?;
+        let operators = parse_content_stream_text_only(content_stream)?;
 
         // Execute each operator
         for op in operators {
@@ -2410,7 +2410,7 @@ impl TextExtractor {
         self.chars.clear();
 
         // Parse content stream into operators
-        let operators = parse_content_stream(content_stream)?;
+        let operators = parse_content_stream_text_only(content_stream)?;
 
         // Execute each operator
         for op in operators {
@@ -4221,10 +4221,7 @@ impl TextExtractor {
                 // stream, which avoids expensive FlateDecode decompression.
                 if let Some(xobj_resources) = xobject_dict.get("Resources") {
                     let xobj_res = if let Some(res_ref) = xobj_resources.as_reference() {
-                        match doc.load_object(res_ref) {
-                            Ok(obj) => Some(obj),
-                            Err(_) => None,
-                        }
+                        doc.load_object(res_ref).ok()
                     } else {
                         Some(xobj_resources.clone())
                     };
@@ -4307,7 +4304,7 @@ impl TextExtractor {
                 }
 
                 // Parse and execute operators from the Form XObject
-                let operators = match parse_content_stream(&stream_data) {
+                let operators = match parse_content_stream_text_only(&stream_data) {
                     Ok(ops) => ops,
                     Err(e) => {
                         log::warn!(
