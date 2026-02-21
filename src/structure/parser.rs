@@ -2,13 +2,24 @@
 //!
 //! Parses StructTreeRoot and StructElem dictionaries according to PDF spec Section 14.7.
 
-use super::types::{
-    ParentTree, ParentTreeEntry, StructChild, StructElem, StructTreeRoot, StructType,
-};
+use super::types::{StructChild, StructElem, StructTreeRoot, StructType};
 use crate::document::PdfDocument;
 use crate::error::Error;
 use crate::object::Object;
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
+
+/// Maximum time allowed for structure tree parsing.
+/// Documents with huge trees (50K+ elements) would take 5-10s;
+/// a 200ms budget lets small/medium trees parse fully while
+/// large trees fall back to content-stream order gracefully.
+const STRUCT_TREE_PARSE_BUDGET: Duration = Duration::from_millis(200);
+
+/// Maximum number of structure elements to parse.
+/// Trees larger than this cause expensive traversal (seconds for 50K+ elements).
+/// 10K elements is sufficient for any normal document; larger trees indicate
+/// deeply structured books where content-stream order works equally well.
+const MAX_STRUCT_ELEMENTS: usize = 10_000;
 
 /// Decode a PDF text string (UTF-16BE/LE with BOM, or PDFDocEncoding).
 fn decode_pdf_text_string(bytes: &[u8]) -> String {
@@ -47,30 +58,79 @@ fn resolve_object(document: &mut PdfDocument, obj: &Object) -> Result<Object, Er
 
 /// Build a mapping from page object IDs to page indices.
 /// This allows resolving /Pg references in marked content references.
+///
+/// Uses a single-pass traversal of the page tree (O(n)) instead of
+/// calling get_page_ref per page (which is O(n) per call → O(n²) total).
 fn build_page_map(document: &mut PdfDocument) -> HashMap<u32, u32> {
     let mut page_map = HashMap::new();
-    let page_count = document.page_count().unwrap_or(0);
-    for i in 0..page_count {
-        if let Ok(page_ref) = document.get_page_ref(i) {
-            page_map.insert(page_ref.id, i as u32);
-        }
-    }
+
+    // Get the root Pages node from the catalog
+    let pages_ref = match document.catalog().ok().and_then(|cat| {
+        cat.as_dict()
+            .and_then(|d| d.get("Pages"))
+            .and_then(|p| p.as_reference())
+    }) {
+        Some(r) => r,
+        None => return page_map,
+    };
+
+    let mut index: u32 = 0;
+    build_page_map_recursive(document, pages_ref, &mut page_map, &mut index);
     page_map
+}
+
+/// Recursively walk the page tree once, collecting page object IDs.
+fn build_page_map_recursive(
+    document: &mut PdfDocument,
+    node_ref: crate::object::ObjectRef,
+    page_map: &mut HashMap<u32, u32>,
+    index: &mut u32,
+) {
+    let node = match document.load_object(node_ref) {
+        Ok(n) => n,
+        Err(_) => return,
+    };
+    let dict = match node.as_dict() {
+        Some(d) => d,
+        None => return,
+    };
+    let node_type = dict.get("Type").and_then(|t| t.as_name()).unwrap_or("");
+
+    match node_type {
+        "Page" => {
+            page_map.insert(node_ref.id, *index);
+            *index += 1;
+        }
+        "Pages" => {
+            if let Some(kids) = dict.get("Kids").and_then(|k| k.as_array()) {
+                let kid_refs: Vec<_> = kids.iter().filter_map(|k| k.as_reference()).collect();
+                for kid_ref in kid_refs {
+                    build_page_map_recursive(document, kid_ref, page_map, index);
+                }
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Parse the structure tree from a PDF document.
 ///
 /// Reads the StructTreeRoot from the document catalog and recursively parses
-/// all structure elements.
+/// all structure elements. Uses a time budget to avoid spending seconds on
+/// documents with very large structure trees (50K+ elements). When the budget
+/// is exceeded, returns `Ok(None)` so the caller falls back to content-stream
+/// order (extract_spans).
 ///
 /// # Arguments
 /// * `document` - The PDF document
 ///
 /// # Returns
-/// * `Ok(Some(StructTreeRoot))` - If the document has a structure tree
-/// * `Ok(None)` - If the document is not tagged (no StructTreeRoot)
+/// * `Ok(Some(StructTreeRoot))` - If the document has a structure tree and it parsed in time
+/// * `Ok(None)` - If the document is not tagged or the tree is too large to parse in budget
 /// * `Err(Error)` - If parsing fails
 pub fn parse_structure_tree(document: &mut PdfDocument) -> Result<Option<StructTreeRoot>, Error> {
+    let parse_start = Instant::now();
+
     // Get catalog
     let catalog = document.catalog()?;
 
@@ -86,6 +146,9 @@ pub fn parse_structure_tree(document: &mut PdfDocument) -> Result<Option<StructT
 
     // Build page map for resolving /Pg references
     let page_map = build_page_map(document);
+
+    // Start the deadline AFTER page map building (which is fixed cost)
+    let deadline = Instant::now() + STRUCT_TREE_PARSE_BUDGET;
 
     // Resolve the StructTreeRoot object
     let struct_tree_root_obj = resolve_object(document, struct_tree_root_ref)?;
@@ -115,6 +178,8 @@ pub fn parse_structure_tree(document: &mut PdfDocument) -> Result<Option<StructT
     // (MCID → StructElem), which are not used in the extraction pipeline.
 
     // Parse K (children) - can be a single element or array of elements
+    let mut element_count: usize = 0;
+
     if let Some(k_obj) = struct_tree_dict.get("K") {
         let k_obj = resolve_object(document, k_obj)?;
 
@@ -122,8 +187,22 @@ pub fn parse_structure_tree(document: &mut PdfDocument) -> Result<Option<StructT
             Object::Array(arr) => {
                 // Multiple root elements
                 for elem_obj in arr {
+                    if Instant::now() > deadline {
+                        log::debug!(
+                            "Structure tree parse budget exceeded ({:?}), falling back to content order",
+                            STRUCT_TREE_PARSE_BUDGET
+                        );
+                        return Ok(None);
+                    }
+                    if element_count > MAX_STRUCT_ELEMENTS {
+                        log::debug!(
+                            "Structure tree too large (>{} elements), falling back to content order",
+                            MAX_STRUCT_ELEMENTS
+                        );
+                        return Ok(None);
+                    }
                     if let Some(elem) =
-                        parse_struct_elem(document, &elem_obj, &struct_tree.role_map, &page_map)?
+                        parse_struct_elem(document, &elem_obj, &struct_tree.role_map, &page_map, deadline, &mut element_count)?
                     {
                         struct_tree.add_root_element(elem);
                     }
@@ -132,7 +211,7 @@ pub fn parse_structure_tree(document: &mut PdfDocument) -> Result<Option<StructT
             _ => {
                 // Single root element
                 if let Some(elem) =
-                    parse_struct_elem(document, &k_obj, &struct_tree.role_map, &page_map)?
+                    parse_struct_elem(document, &k_obj, &struct_tree.role_map, &page_map, deadline, &mut element_count)?
                 {
                     struct_tree.add_root_element(elem);
                 }
@@ -140,27 +219,40 @@ pub fn parse_structure_tree(document: &mut PdfDocument) -> Result<Option<StructT
         }
     }
 
+    log::debug!(
+        "Structure tree parsed: {} elements, {} root elements in {:?}",
+        element_count, struct_tree.root_elements.len(), parse_start.elapsed()
+    );
+
+    if element_count > MAX_STRUCT_ELEMENTS {
+        log::debug!(
+            "Structure tree too large ({} elements > {}), falling back to content order",
+            element_count, MAX_STRUCT_ELEMENTS
+        );
+        return Ok(None);
+    }
+
     Ok(Some(struct_tree))
 }
 
 /// Parse a structure element (StructElem) from a PDF object.
 ///
-/// # Arguments
-/// * `document` - The PDF document
-/// * `obj` - The object to parse (should be a dictionary)
-/// * `role_map` - RoleMap for custom structure types
-/// * `page_map` - Mapping from page object IDs to page indices
-///
-/// # Returns
-/// * `Ok(Some(StructElem))` - Successfully parsed structure element
-/// * `Ok(None)` - Not a valid structure element
-/// * `Err(Error)` - Parsing error
+/// Returns `Ok(None)` if the deadline is exceeded, causing the caller to
+/// abandon the tree and fall back to content-stream order.
 fn parse_struct_elem(
     document: &mut PdfDocument,
     obj: &Object,
     role_map: &HashMap<String, String>,
     page_map: &HashMap<u32, u32>,
+    deadline: Instant,
+    element_count: &mut usize,
 ) -> Result<Option<StructElem>, Error> {
+    // Check budgets before doing work
+    if Instant::now() > deadline || *element_count > MAX_STRUCT_ELEMENTS {
+        return Ok(None);
+    }
+    *element_count += 1;
+
     let obj = resolve_object(document, obj)?;
 
     let dict = match obj.as_dict() {
@@ -178,12 +270,14 @@ fn parse_struct_elem(
     }
 
     // Get /S (structure type) - REQUIRED
-    let s_obj = dict
-        .get("S")
-        .ok_or_else(|| Error::InvalidPdf("StructElem missing /S".into()))?;
-    let s_name = s_obj
-        .as_name()
-        .ok_or_else(|| Error::InvalidPdf("StructElem /S is not a name".into()))?;
+    let s_obj = match dict.get("S") {
+        Some(obj) => obj,
+        None => return Ok(None), // Missing /S, skip gracefully
+    };
+    let s_name = match s_obj.as_name() {
+        Some(name) => name,
+        None => return Ok(None), // /S not a name, skip
+    };
 
     // Map custom types to standard types using RoleMap
     let struct_type_str = role_map.get(s_name).map(|s| s.as_str()).unwrap_or(s_name);
@@ -198,25 +292,8 @@ fn parse_struct_elem(
         }
     }
 
-    // Get /A (attributes) - optional
-    if let Some(attr_obj) = dict.get("A") {
-        let attr_obj = resolve_object(document, attr_obj)?;
-        if let Some(attr_dict) = attr_obj.as_dict() {
-            for (key, value) in attr_dict.iter() {
-                struct_elem.attributes.insert(key.clone(), value.clone());
-            }
-        }
-    }
-
-    // Get /Alt (alternate description) - optional, per PDF spec Section 14.9.3
-    // This provides a human-readable description of the element's content
-    // (e.g., for formulas: "E equals m c squared")
-    if let Some(alt_obj) = dict.get("Alt") {
-        let alt_obj = resolve_object(document, alt_obj)?;
-        if let Some(alt_bytes) = alt_obj.as_string() {
-            struct_elem.alt_text = Some(String::from_utf8_lossy(alt_bytes).to_string());
-        }
-    }
+    // Skip /A (attributes) during text extraction — not needed for reading order.
+    // Skip /Alt (alternate description) — not needed for text extraction.
 
     // Get /ActualText (replacement text) - optional, per PDF spec Section 14.9.4
     // When present, this text replaces all descendant content for the element.
@@ -230,14 +307,10 @@ fn parse_struct_elem(
         }
     }
 
-    // Parse /K (children) - can be:
-    // 1. A single integer (MCID)
-    // 2. A dictionary (marked content reference with MCID and Pg)
-    // 3. An array of any of the above or StructElems
-    // 4. Another StructElem (dictionary with /Type /StructElem)
+    // Parse /K (children)
     if let Some(k_obj) = dict.get("K") {
         let k_obj = resolve_object(document, k_obj)?;
-        parse_k_children(document, &k_obj, &mut struct_elem, role_map, page_map)?;
+        parse_k_children(document, &k_obj, &mut struct_elem, role_map, page_map, deadline, element_count)?;
     }
 
     Ok(Some(struct_elem))
@@ -250,6 +323,8 @@ fn parse_k_children(
     parent: &mut StructElem,
     role_map: &HashMap<String, String>,
     page_map: &HashMap<u32, u32>,
+    deadline: Instant,
+    element_count: &mut usize,
 ) -> Result<(), Error> {
     match k_obj {
         Object::Integer(mcid) => {
@@ -263,6 +338,11 @@ fn parse_k_children(
         Object::Array(arr) => {
             // Array of children
             for child_obj in arr {
+                // Check both time and element count budgets
+                if Instant::now() > deadline || *element_count > MAX_STRUCT_ELEMENTS {
+                    return Ok(());
+                }
+
                 let child_obj = resolve_object(document, child_obj)?;
 
                 match &child_obj {
@@ -277,7 +357,7 @@ fn parse_k_children(
                     Object::Dictionary(_) => {
                         // Could be a StructElem or marked content reference
                         if let Some(child_elem) =
-                            parse_struct_elem(document, &child_obj, role_map, page_map)?
+                            parse_struct_elem(document, &child_obj, role_map, page_map, deadline, element_count)?
                         {
                             parent.add_child(StructChild::StructElem(Box::new(child_elem)));
                         } else {
@@ -293,7 +373,7 @@ fn parse_k_children(
                         match document.load_object(*obj_ref) {
                             Ok(resolved) => {
                                 if let Some(child_elem) =
-                                    parse_struct_elem(document, &resolved, role_map, page_map)?
+                                    parse_struct_elem(document, &resolved, role_map, page_map, deadline, element_count)?
                                 {
                                     parent.add_child(StructChild::StructElem(Box::new(child_elem)));
                                 } else if let Some(mcr) =
@@ -322,7 +402,7 @@ fn parse_k_children(
 
         Object::Dictionary(_) => {
             // Single dictionary child
-            if let Some(child_elem) = parse_struct_elem(document, k_obj, role_map, page_map)? {
+            if let Some(child_elem) = parse_struct_elem(document, k_obj, role_map, page_map, deadline, element_count)? {
                 parent.add_child(StructChild::StructElem(Box::new(child_elem)));
             } else {
                 // Try parsing as marked content reference
@@ -337,7 +417,7 @@ fn parse_k_children(
             match document.load_object(*obj_ref) {
                 Ok(resolved) => {
                     if let Some(child_elem) =
-                        parse_struct_elem(document, &resolved, role_map, page_map)?
+                        parse_struct_elem(document, &resolved, role_map, page_map, deadline, element_count)?
                     {
                         parent.add_child(StructChild::StructElem(Box::new(child_elem)));
                     } else if let Some(mcr) = parse_marked_content_ref(&resolved, page_map)? {
@@ -383,10 +463,10 @@ fn parse_marked_content_ref(
     }
 
     // Get /MCID
-    let mcid = dict
-        .get("MCID")
-        .and_then(|obj| obj.as_integer())
-        .ok_or_else(|| Error::InvalidPdf("MCR missing /MCID".into()))?;
+    let mcid = match dict.get("MCID").and_then(|obj| obj.as_integer()) {
+        Some(mcid) => mcid,
+        None => return Ok(None), // Missing /MCID, skip gracefully
+    };
 
     // Get /Pg (page reference) and resolve to page number
     let page = dict
@@ -404,146 +484,6 @@ fn parse_marked_content_ref(
         mcid: mcid as u32,
         page,
     }))
-}
-
-/// Parse the ParentTree from a PDF object.
-///
-/// The ParentTree is a number tree that maps MCIDs to structure elements.
-/// According to PDF spec Section 7.9.7, number trees use /Nums (simple case)
-/// or /Kids (complex case with intermediate nodes).
-///
-/// This implementation handles:
-/// 1. Simple number trees with /Nums array (key-value pairs)
-/// 2. Complex number trees with /Kids array (recursive node traversal)
-#[allow(dead_code)]
-fn parse_parent_tree(document: &mut PdfDocument, obj: &Object) -> Result<ParentTree, Error> {
-    let obj = resolve_object(document, obj)?;
-
-    let dict = match obj.as_dict() {
-        Some(d) => d,
-        None => return Ok(ParentTree::new()), // Not a dict, return empty
-    };
-
-    let mut parent_tree = ParentTree::new();
-
-    // Try simple case first: /Nums array with key-value pairs
-    if let Some(nums_obj) = dict.get("Nums") {
-        let nums_obj = resolve_object(document, nums_obj)?;
-        if let Some(nums_array) = nums_obj.as_array() {
-            // /Nums is an array of alternating keys and values
-            // [key1, value1, key2, value2, ...]
-            let mut i = 0;
-            while i + 1 < nums_array.len() {
-                if let Some(key) = nums_array[i].as_integer() {
-                    let entry = parse_parent_tree_entry(document, &nums_array[i + 1])?;
-                    // Store in parent_tree with page=0 and mcid=key
-                    // In practice, MCIDs are page-specific, so we use page 0 as default
-                    parent_tree
-                        .page_mappings
-                        .entry(0)
-                        .or_default()
-                        .insert(key as u32, entry);
-                }
-                i += 2;
-            }
-            return Ok(parent_tree);
-        }
-    }
-
-    // Try complex case: /Kids array with intermediate nodes
-    if let Some(kids_obj) = dict.get("Kids") {
-        let kids_obj = resolve_object(document, kids_obj)?;
-        if let Some(kids_array) = kids_obj.as_array() {
-            // Recursively parse each kid node
-            for kid_obj in kids_array {
-                parse_number_tree_kid(document, kid_obj, &mut parent_tree)?;
-            }
-            return Ok(parent_tree);
-        }
-    }
-
-    // Neither /Nums nor /Kids found, return empty parent tree
-    Ok(parent_tree)
-}
-
-/// Parse a single entry in the parent tree (can be StructElem or ObjectRef)
-#[allow(dead_code)]
-fn parse_parent_tree_entry(
-    document: &mut PdfDocument,
-    obj: &Object,
-) -> Result<ParentTreeEntry, Error> {
-    let obj = resolve_object(document, obj)?;
-
-    // Note: Parent tree entries don't need page resolution since they're
-    // used for reverse lookups, not for primary structure traversal
-    let empty_page_map = HashMap::new();
-
-    match obj {
-        Object::Dictionary(_) => {
-            // Could be a StructElem dictionary or ObjectRef
-            if let Some(struct_elem) =
-                parse_struct_elem(document, &obj, &HashMap::new(), &empty_page_map)?
-            {
-                Ok(ParentTreeEntry::StructElem(Box::new(struct_elem)))
-            } else {
-                // Fallback: treat as empty StructElem
-                Ok(ParentTreeEntry::StructElem(Box::new(StructElem::new(StructType::Document))))
-            }
-        },
-        Object::Reference(obj_ref) => {
-            // Object reference to a StructElem
-            Ok(ParentTreeEntry::ObjectRef(obj_ref.id, obj_ref.gen))
-        },
-        _ => {
-            // Unknown type, treat as empty StructElem
-            Ok(ParentTreeEntry::StructElem(Box::new(StructElem::new(StructType::Document))))
-        },
-    }
-}
-
-/// Recursively parse a number tree kid node
-#[allow(dead_code)]
-fn parse_number_tree_kid(
-    document: &mut PdfDocument,
-    kid_obj: &Object,
-    parent_tree: &mut ParentTree,
-) -> Result<(), Error> {
-    let kid_obj = resolve_object(document, kid_obj)?;
-
-    let kid_dict = match kid_obj.as_dict() {
-        Some(d) => d,
-        None => return Ok(()), // Not a dict, skip
-    };
-
-    // Check if this is a leaf node (has /Nums) or intermediate node (has /Kids)
-    if let Some(nums_obj) = kid_dict.get("Nums") {
-        let nums_obj = resolve_object(document, nums_obj)?;
-        if let Some(nums_array) = nums_obj.as_array() {
-            // Leaf node: parse key-value pairs
-            let mut i = 0;
-            while i + 1 < nums_array.len() {
-                if let Some(key) = nums_array[i].as_integer() {
-                    let entry = parse_parent_tree_entry(document, &nums_array[i + 1])?;
-                    parent_tree
-                        .page_mappings
-                        .entry(0)
-                        .or_default()
-                        .insert(key as u32, entry);
-                }
-                i += 2;
-            }
-        }
-    } else if let Some(kids_obj) = kid_dict.get("Kids") {
-        let kids_obj = resolve_object(document, kids_obj)?;
-        if let Some(kids_array) = kids_obj.as_array() {
-            // Intermediate node: recursively parse children
-            for child_kid_obj in kids_array {
-                parse_number_tree_kid(document, child_kid_obj, parent_tree)?;
-            }
-        }
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]
