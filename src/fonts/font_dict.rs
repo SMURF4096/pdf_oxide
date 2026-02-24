@@ -2313,7 +2313,21 @@ impl FontInfo {
         }
 
         // ==================================================================================
-        // PRIORITY 4: Fallback - No Mapping Found
+        // PRIORITY 4: TrueType cmap fallback for simple fonts
+        // ==================================================================================
+        // When all encoding-based lookups fail, try the embedded TrueType cmap as a last
+        // resort. For subset fonts, character codes may be GIDs that the encoding table
+        // doesn't cover. The cmap provides GID → Unicode mapping.
+        if self.subtype != "Type0" {
+            if let Some(ref tt_cmap) = self.truetype_cmap {
+                if let Some(unicode_char) = tt_cmap.get_unicode(char_code as u16) {
+                    return Some(unicode_char.to_string());
+                }
+            }
+        }
+
+        // ==================================================================================
+        // PRIORITY 5: Fallback - No Mapping Found
         // ==================================================================================
         // If we reach here, the character is either:
         // - A control character (0x00-0x1F, 0x7F-0x9F) - intentionally omitted
