@@ -2451,6 +2451,16 @@ impl PdfDocument {
                     // Same line but significant horizontal gap - insert space
                     // This handles PDFs that don't include space characters (ISO 32000-1:2008 Section 9.3.3)
                     text.push(' ');
+                } else {
+                    // Check for column boundary: same line with very large gap
+                    // When should_insert_space returns false due to gap >= 5×font,
+                    // this indicates a column boundary — insert line break
+                    let prev_end_x = prev.bbox.x + prev.bbox.width;
+                    let col_gap = span.bbox.x - prev_end_x;
+                    let fs = span.font_size.max(prev.font_size).max(6.0);
+                    if col_gap > fs * 3.0 {
+                        text.push('\n');
+                    }
                 }
             }
 

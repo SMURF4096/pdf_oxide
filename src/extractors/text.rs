@@ -2655,9 +2655,10 @@ impl TextExtractor {
                     in_gap = true;
                 }
             } else if in_gap {
-                // End of gap - only record if gap is significant (>5% of page width)
+                // End of gap - record if significant
+                // Use 2% of page width OR absolute 15pt minimum (catches narrow column gutters)
                 let gap_width = (i - gap_start) as f32 * bin_width;
-                if gap_width > page_width * 0.05 {
+                if gap_width > (page_width * 0.02).max(15.0) {
                     let gap_x = min_x + gap_start as f32 * bin_width;
                     gaps.push(gap_x);
                 }
