@@ -4863,7 +4863,7 @@ impl TextExtractor {
 
         // Step 3: Convert characters to Unicode string
         // Use same decoding as existing code
-        let unicode_text = if let Some(font_name) = state.font_name.as_ref() {
+        let mut unicode_text = if let Some(font_name) = state.font_name.as_ref() {
             if let Some(font) = self.fonts.get(font_name) {
                 let mut text = String::new();
                 for char_info in cluster {
@@ -4878,6 +4878,15 @@ impl TextExtractor {
         } else {
             String::new()
         };
+
+        // Step 3b: RTL text correction — reverse character order for RTL rendering
+        // When text_matrix.a is negative, text is rendered right-to-left (visual order).
+        // PDF stores characters in rendering order, but text extraction should produce
+        // logical order. Reverse the characters to correct RTL runs.
+        let combined_matrix = ctm.multiply(&text_matrix);
+        if combined_matrix.a < 0.0 && unicode_text.len() > 1 {
+            unicode_text = unicode_text.chars().rev().collect();
+        }
 
         // Step 4: Determine font weight
         let font_weight = if let Some(font_name) = state.font_name.as_ref() {
