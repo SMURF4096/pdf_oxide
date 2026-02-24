@@ -8,6 +8,7 @@ pub mod complex_script_detector;
 pub mod document_classifier;
 pub mod hyphenation;
 pub mod justification;
+pub mod kangxi;
 pub mod ligature_processor;
 pub mod rtl_detector;
 pub mod script_detector;

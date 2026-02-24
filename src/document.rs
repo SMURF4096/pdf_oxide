@@ -2475,6 +2475,10 @@ impl PdfDocument {
         // Some PDFs embed inline color space definitions that get parsed as text
         let text = Self::filter_leaked_metadata(&text);
 
+        // Normalize Kangxi Radicals (U+2F00-U+2FD5) and CJK Radicals Supplement
+        // (U+2E80-U+2EFF) to CJK Unified Ideographs for proper search/matching
+        let text = Self::normalize_kangxi_radicals(&text);
+
         // Apply whitespace cleanup for better readability
         // This normalizes excessive double spaces and blank lines
         let cleaned_text = crate::converters::whitespace::cleanup_plain_text(&text);
@@ -2632,6 +2636,26 @@ impl PdfDocument {
         }
 
         result
+    }
+
+    /// Normalize Kangxi Radical characters to CJK Unified Ideographs.
+    ///
+    /// Some PDF fonts/CMaps emit Kangxi Radicals (U+2F00–U+2FD5) or CJK Radicals
+    /// Supplement (U+2E80–U+2EFF) instead of the standard CJK Unified Ideographs.
+    /// While visually similar, these are different Unicode codepoints and will break
+    /// text search, string matching, and NLP pipelines.
+    fn normalize_kangxi_radicals(text: &str) -> String {
+        // Quick check: if no characters in the Kangxi/Supplement range, return as-is
+        if !text.chars().any(|c| {
+            let cp = c as u32;
+            (0x2E80..=0x2EFF).contains(&cp) || (0x2F00..=0x2FD5).contains(&cp)
+        }) {
+            return text.to_string();
+        }
+
+        text.chars()
+            .map(|c| crate::text::kangxi::kangxi_to_unified(c).unwrap_or(c))
+            .collect()
     }
 
     /// # Returns
