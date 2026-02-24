@@ -224,6 +224,92 @@ pub fn parse_xref<R: Read + Seek>(reader: &mut R, offset: u64) -> Result<CrossRe
     parse_xref_recursive(reader, offset, 0)
 }
 
+/// Try to find the actual xref start near the given offset.
+///
+/// Some PDF producers miscalculate the startxref offset by a few bytes.
+/// This function scans a small window around the given offset to find either
+/// the "xref" keyword (traditional table) or an object header like "N 0 obj"
+/// (cross-reference stream). This tolerance is common in PDF readers (MuPDF,
+/// poppler, etc.) because startxref misalignment is a well-known PDF producer bug.
+fn find_actual_xref_offset<R: Read + Seek>(reader: &mut R, offset: u64) -> Result<u64> {
+    // First, check if the offset is already correct
+    reader.seek(SeekFrom::Start(offset))?;
+    let mut peek = [0u8; 64];
+    let n = reader.read(&mut peek)?;
+    let peek_str = String::from_utf8_lossy(&peek[..n]);
+    let trimmed = peek_str.trim_start();
+    if trimmed.starts_with("xref") || trimmed.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        return Ok(offset);
+    }
+
+    // Offset is misaligned — scan a window around it.
+    // We scan backward (up to 32 bytes) and forward (up to 64 bytes).
+    const SCAN_BACK: u64 = 32;
+    const SCAN_FWD: u64 = 64;
+    let scan_start = offset.saturating_sub(SCAN_BACK);
+    let scan_len = (SCAN_BACK + SCAN_FWD) as usize;
+
+    reader.seek(SeekFrom::Start(scan_start))?;
+    let mut buf = vec![0u8; scan_len];
+    let bytes_read = reader.read(&mut buf)?;
+    buf.truncate(bytes_read);
+
+    // Look for "xref" keyword preceded by a line break or at buffer start
+    for i in 0..bytes_read.saturating_sub(3) {
+        if &buf[i..i + 4] == b"xref" {
+            // Ensure it's at a line boundary (start of buffer, or preceded by CR/LF)
+            if i == 0 || buf[i - 1] == b'\r' || buf[i - 1] == b'\n' {
+                let found_offset = scan_start + i as u64;
+                log::debug!(
+                    "Corrected xref offset: {} -> {} (found 'xref' keyword)",
+                    offset,
+                    found_offset
+                );
+                return Ok(found_offset);
+            }
+        }
+    }
+
+    // Look for object header pattern at line boundaries: "\r<digits>" or "\n<digits>"
+    // followed by " <gen> obj". This handles cross-reference streams.
+    for i in 0..bytes_read {
+        // Must be at a line boundary
+        let at_line_start =
+            i == 0 || buf[i - 1] == b'\r' || buf[i - 1] == b'\n';
+        if !at_line_start || !buf[i].is_ascii_digit() {
+            continue;
+        }
+
+        // Found a digit at a line boundary — check for "N N obj" pattern
+        let remaining = &buf[i..bytes_read];
+        let remaining_str = String::from_utf8_lossy(remaining);
+        if let Some(obj_pos) = remaining_str.find(" obj") {
+            let before_obj = &remaining_str[..obj_pos];
+            let parts: Vec<&str> = before_obj.split_whitespace().collect();
+            if parts.len() == 2
+                && parts[0].chars().all(|c| c.is_ascii_digit())
+                && parts[1].chars().all(|c| c.is_ascii_digit())
+            {
+                let found_offset = scan_start + i as u64;
+                log::debug!(
+                    "Corrected xref offset: {} -> {} (found object header '{} obj')",
+                    offset,
+                    found_offset,
+                    before_obj.trim()
+                );
+                return Ok(found_offset);
+            }
+        }
+    }
+
+    // Could not find xref nearby — return original offset and let downstream handle the error
+    log::debug!(
+        "Could not find xref near offset {}, using original",
+        offset
+    );
+    Ok(offset)
+}
+
 /// Parse xref table recursively, following /Prev pointers for incremental updates.
 ///
 /// The depth parameter prevents infinite loops from circular /Prev chains.
@@ -237,36 +323,41 @@ fn parse_xref_recursive<R: Read + Seek>(
         return Err(Error::InvalidPdf("xref /Prev chain depth exceeded 100".to_string()));
     }
 
-    reader.seek(SeekFrom::Start(offset))?;
+    // Determine the actual xref offset, tolerating misalignment from PDF producers.
+    // Some PDF writers miscalculate startxref by a few bytes, so we scan nearby.
+    let actual_offset = find_actual_xref_offset(reader, offset)?;
+
+    reader.seek(SeekFrom::Start(actual_offset))?;
 
     // Peek at the first few bytes to determine xref type
     let mut peek_buf = [0u8; 64]; // Handle leading whitespace in linearized PDFs
     let bytes_read = reader.read(&mut peek_buf)?;
-    reader.seek(SeekFrom::Start(offset))?; // Reset position
+    reader.seek(SeekFrom::Start(actual_offset))?; // Reset position
 
     let peek_str = String::from_utf8_lossy(&peek_buf[..bytes_read]);
     let trimmed = peek_str.trim_start(); // Skip leading whitespace
 
     log::debug!(
-        "Parsing xref at offset {}, peek: {:?}",
+        "Parsing xref at offset {} (original: {}), peek: {:?}",
+        actual_offset,
         offset,
         &peek_str[..peek_str.len().min(15)]
     );
 
     // Parse the current xref (either traditional or stream)
     let mut xref = if trimmed.starts_with("xref") {
-        log::debug!("Detected traditional xref at offset {}", offset);
-        parse_traditional_xref(reader, offset)?
+        log::debug!("Detected traditional xref at offset {}", actual_offset);
+        parse_traditional_xref(reader, actual_offset)?
     } else if trimmed.chars().next().is_some_and(|c| c.is_ascii_digit()) {
         // Try parsing as xref stream first
-        match parse_xref_stream(reader, offset) {
+        match parse_xref_stream(reader, actual_offset) {
             Ok(xref) => xref,
             Err(e) => {
                 // Log the xref stream parsing error for debugging
                 log::debug!("Failed to parse as xref stream: {}", e);
                 // Fall back to traditional if stream parsing fails
-                reader.seek(SeekFrom::Start(offset))?;
-                match parse_traditional_xref(reader, offset) {
+                reader.seek(SeekFrom::Start(actual_offset))?;
+                match parse_traditional_xref(reader, actual_offset) {
                     Ok(xref) => xref,
                     Err(trad_err) => {
                         // Both failed, return the xref stream error as it's more informative
@@ -282,7 +373,7 @@ fn parse_xref_recursive<R: Read + Seek>(
     } else {
         log::debug!(
             "Xref at offset {} starts with unexpected data: {:?}",
-            offset,
+            actual_offset,
             &trimmed[..trimmed.len().min(20)]
         );
         return Err(Error::InvalidXref);
