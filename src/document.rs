@@ -2479,6 +2479,10 @@ impl PdfDocument {
         // (U+2E80-U+2EFF) to CJK Unified Ideographs for proper search/matching
         let text = Self::normalize_kangxi_radicals(&text);
 
+        // Normalize Arabic Presentation Forms (U+FB50-U+FDFF, U+FE70-U+FEFF) to
+        // base Unicode characters for proper text search and matching
+        let text = Self::normalize_arabic_presentation_forms(&text);
+
         // Apply whitespace cleanup for better readability
         // This normalizes excessive double spaces and blank lines
         let cleaned_text = crate::converters::whitespace::cleanup_plain_text(&text);
@@ -2655,6 +2659,134 @@ impl PdfDocument {
 
         text.chars()
             .map(|c| crate::text::kangxi::kangxi_to_unified(c).unwrap_or(c))
+            .collect()
+    }
+
+    /// Normalize Arabic Presentation Forms to base Unicode characters.
+    ///
+    /// Arabic PDFs often use presentation forms (U+FE70-U+FEFF for Forms-B,
+    /// U+FB50-U+FDFF for Forms-A) which represent contextual glyph shapes.
+    /// For text extraction, these should be normalized to base characters.
+    fn normalize_arabic_presentation_forms(text: &str) -> String {
+        // Quick check: skip if no Arabic presentation form characters
+        if !text.chars().any(|c| {
+            let cp = c as u32;
+            (0xFB50..=0xFDFF).contains(&cp) || (0xFE70..=0xFEFF).contains(&cp)
+        }) {
+            return text.to_string();
+        }
+
+        text.chars()
+            .map(|c| {
+                let cp = c as u32;
+                // Arabic Presentation Forms-B (U+FE70-U+FEFF): contextual forms
+                // Each base letter has isolated/final/initial/medial forms
+                let base = match cp {
+                    // Hamza forms
+                    0xFE80 => 0x0621,
+                    // Alef with Madda
+                    0xFE81 | 0xFE82 => 0x0622,
+                    // Alef with Hamza Above
+                    0xFE83 | 0xFE84 => 0x0623,
+                    // Waw with Hamza
+                    0xFE85 | 0xFE86 => 0x0624,
+                    // Alef with Hamza Below
+                    0xFE87 | 0xFE88 => 0x0625,
+                    // Yeh with Hamza
+                    0xFE89..=0xFE8C => 0x0626,
+                    // Alef
+                    0xFE8D | 0xFE8E => 0x0627,
+                    // Beh
+                    0xFE8F..=0xFE92 => 0x0628,
+                    // Teh Marbuta
+                    0xFE93 | 0xFE94 => 0x0629,
+                    // Teh
+                    0xFE95..=0xFE98 => 0x062A,
+                    // Theh
+                    0xFE99..=0xFE9C => 0x062B,
+                    // Jeem
+                    0xFE9D..=0xFEA0 => 0x062C,
+                    // Hah
+                    0xFEA1..=0xFEA4 => 0x062D,
+                    // Khah
+                    0xFEA5..=0xFEA8 => 0x062E,
+                    // Dal
+                    0xFEA9 | 0xFEAA => 0x062F,
+                    // Thal
+                    0xFEAB | 0xFEAC => 0x0630,
+                    // Reh
+                    0xFEAD | 0xFEAE => 0x0631,
+                    // Zain
+                    0xFEAF | 0xFEB0 => 0x0632,
+                    // Seen
+                    0xFEB1..=0xFEB4 => 0x0633,
+                    // Sheen
+                    0xFEB5..=0xFEB8 => 0x0634,
+                    // Sad
+                    0xFEB9..=0xFEBC => 0x0635,
+                    // Dad
+                    0xFEBD..=0xFEC0 => 0x0636,
+                    // Tah
+                    0xFEC1..=0xFEC4 => 0x0637,
+                    // Zah
+                    0xFEC5..=0xFEC8 => 0x0638,
+                    // Ain
+                    0xFEC9..=0xFECC => 0x0639,
+                    // Ghain
+                    0xFECD..=0xFED0 => 0x063A,
+                    // Feh
+                    0xFED1..=0xFED4 => 0x0641,
+                    // Qaf
+                    0xFED5..=0xFED8 => 0x0642,
+                    // Kaf
+                    0xFED9..=0xFEDC => 0x0643,
+                    // Lam
+                    0xFEDD..=0xFEE0 => 0x0644,
+                    // Meem
+                    0xFEE1..=0xFEE4 => 0x0645,
+                    // Noon
+                    0xFEE5..=0xFEE8 => 0x0646,
+                    // Heh
+                    0xFEE9..=0xFEEC => 0x0647,
+                    // Waw
+                    0xFEED | 0xFEEE => 0x0648,
+                    // Alef Maksura
+                    0xFEEF | 0xFEF0 => 0x0649,
+                    // Yeh
+                    0xFEF1..=0xFEF4 => 0x064A,
+                    // Lam-Alef ligatures → expand to two characters
+                    0xFEF5 | 0xFEF6 => {
+                        // Lam + Alef with Madda
+                        return '\u{0644}'; // Just return Lam; Alef is separate
+                    },
+                    0xFEF7 | 0xFEF8 => {
+                        return '\u{0644}'; // Lam + Alef with Hamza Above
+                    },
+                    0xFEF9 | 0xFEFA => {
+                        return '\u{0644}'; // Lam + Alef with Hamza Below
+                    },
+                    0xFEFB | 0xFEFC => {
+                        return '\u{0644}'; // Lam + Alef
+                    },
+                    // Tatweel (kashida)
+                    0xFE70 => 0x064B, // Fathatan isolated
+                    0xFE71 => 0x064B, // Tatweel + Fathatan
+                    0xFE72 => 0x064C, // Dammatan isolated
+                    0xFE74 => 0x064D, // Kasratan isolated
+                    0xFE76 => 0x064E, // Fatha isolated
+                    0xFE77 => 0x064E, // Fatha medial
+                    0xFE78 => 0x064F, // Damma isolated
+                    0xFE79 => 0x064F, // Damma medial
+                    0xFE7A => 0x0650, // Kasra isolated
+                    0xFE7B => 0x0650, // Kasra medial
+                    0xFE7C => 0x0651, // Shadda isolated
+                    0xFE7D => 0x0651, // Shadda medial
+                    0xFE7E => 0x0652, // Sukun isolated
+                    0xFE7F => 0x0652, // Sukun medial
+                    _ => cp, // Pass through unchanged
+                };
+                char::from_u32(base).unwrap_or(c)
+            })
             .collect()
     }
 
