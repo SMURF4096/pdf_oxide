@@ -213,6 +213,10 @@ pub fn parse_content_stream_text_only(data: &[u8]) -> Result<Vec<Operator>> {
                     input = trigger_start;
                     consecutive_errors = 0;
                 },
+                ScanResult::SimpleOp { op, rest } => {
+                    operators.push(op);
+                    input = rest;
+                },
                 ScanResult::TooManyErrors { remaining } => {
                     log::warn!(
                         "Content stream had {} consecutive parse errors, bailing out ({} bytes remaining)",
@@ -343,6 +347,11 @@ where
                     input = trigger_start;
                     consecutive_errors = 0;
                 },
+                ScanResult::SimpleOp { op, rest } => {
+                    handler(op)?;
+                    op_count += 1;
+                    input = rest;
+                },
                 ScanResult::TooManyErrors { remaining } => {
                     log::warn!(
                         "Content stream had {} consecutive parse errors, bailing out ({} bytes remaining)",
@@ -439,6 +448,10 @@ pub fn parse_content_stream_images_only(data: &[u8]) -> Result<Vec<Operator>> {
                     }
                     input = trigger_start;
                     consecutive_errors = 0;
+                },
+                ScanResult::SimpleOp { op, rest } => {
+                    operators.push(op);
+                    input = rest;
                 },
                 ScanResult::TooManyErrors { .. } => break,
             }
@@ -1328,8 +1341,30 @@ enum ScanResult<'a> {
         deferred_start: &'a [u8],
         trigger_start: &'a [u8],
     },
+    /// A simple no-operand operator that can be emitted directly without
+    /// nom parsing. Used for unmatched Q (RestoreGraphicsState) to avoid
+    /// expensive full-parse fallback.
+    SimpleOp {
+        op: Operator,
+        rest: &'a [u8],
+    },
     /// Too many consecutive errors; remaining data is likely junk.
     TooManyErrors { remaining: &'a [u8] },
+}
+
+/// Parse 6 float operands from a raw byte slice (for inline `cm` parsing).
+/// Returns None if the slice doesn't contain exactly 6 parseable numbers.
+#[inline]
+fn parse_six_floats(data: &[u8]) -> Option<(f32, f32, f32, f32, f32, f32)> {
+    let s = std::str::from_utf8(data).ok()?;
+    let mut iter = s.split_ascii_whitespace();
+    let a = iter.next()?.parse::<f32>().ok()?;
+    let b = iter.next()?.parse::<f32>().ok()?;
+    let c = iter.next()?.parse::<f32>().ok()?;
+    let d = iter.next()?.parse::<f32>().ok()?;
+    let e = iter.next()?.parse::<f32>().ok()?;
+    let f = iter.next()?.parse::<f32>().ok()?;
+    Some((a, b, c, d, e, f))
 }
 
 /// Byte-level check for pure graphics operators that can be skipped during
@@ -1354,38 +1389,6 @@ fn is_skippable_graphics_op_bytes(op: &[u8]) -> bool {
 // index position instead of IResult. On malformed input, Option variants
 // return None so the caller can skip one byte (matching current error
 // recovery).
-
-#[inline]
-fn skip_whitespace_raw(data: &[u8], mut pos: usize) -> usize {
-    while pos < data.len() && is_whitespace(data[pos]) {
-        pos += 1;
-    }
-    pos
-}
-
-#[inline]
-fn skip_number_raw(data: &[u8], mut i: usize) -> Option<usize> {
-    if i < data.len() && (data[i] == b'+' || data[i] == b'-') {
-        i += 1;
-    }
-    let start = i;
-    let mut has_dot = false;
-    while i < data.len() {
-        if data[i].is_ascii_digit() {
-            i += 1;
-        } else if data[i] == b'.' && !has_dot {
-            has_dot = true;
-            i += 1;
-        } else {
-            break;
-        }
-    }
-    if i == start {
-        None
-    } else {
-        Some(i)
-    }
-}
 
 fn skip_literal_string_raw(data: &[u8], mut i: usize) -> Option<usize> {
     i += 1; // past opening '('
@@ -1973,6 +1976,62 @@ fn parse_text_operator_fast(input: &[u8]) -> Option<(&[u8], Operator)> {
                         let name = match &operands[0] { Some(FastOperand::Name(n)) => n.clone(), _ => "DeviceGray".to_string() };
                         Operator::SetStrokeColorSpace { name }
                     },
+                    b"sc" => {
+                        let components: Vec<f32> = operands[..op_count].iter()
+                            .filter_map(|o| match o { Some(FastOperand::Number(n)) => Some(*n), _ => None })
+                            .collect();
+                        Operator::SetFillColor { components }
+                    },
+                    b"SC" => {
+                        let components: Vec<f32> = operands[..op_count].iter()
+                            .filter_map(|o| match o { Some(FastOperand::Number(n)) => Some(*n), _ => None })
+                            .collect();
+                        Operator::SetStrokeColor { components }
+                    },
+                    b"scn" => {
+                        let name = match &operands[op_count.saturating_sub(1)] {
+                            Some(FastOperand::Name(n)) => Some(n.clone()),
+                            _ => None,
+                        };
+                        let components: Vec<f32> = operands[..op_count].iter()
+                            .filter_map(|o| match o { Some(FastOperand::Number(n)) => Some(*n), _ => None })
+                            .collect();
+                        Operator::SetFillColorN { components, name }
+                    },
+                    b"SCN" => {
+                        let name = match &operands[op_count.saturating_sub(1)] {
+                            Some(FastOperand::Name(n)) => Some(n.clone()),
+                            _ => None,
+                        };
+                        let components: Vec<f32> = operands[..op_count].iter()
+                            .filter_map(|o| match o { Some(FastOperand::Number(n)) => Some(*n), _ => None })
+                            .collect();
+                        Operator::SetStrokeColorN { components, name }
+                    },
+                    b"gs" => {
+                        let dict_name = match &operands[0] { Some(FastOperand::Name(n)) => n.clone(), _ => String::new() };
+                        Operator::SetExtGState { dict_name }
+                    },
+                    b"Do" => {
+                        let name = match &operands[0] { Some(FastOperand::Name(n)) => n.clone(), _ => String::new() };
+                        Operator::Do { name }
+                    },
+                    b"w" => {
+                        let width = match &operands[0] { Some(FastOperand::Number(n)) => *n, _ => 1.0 };
+                        Operator::SetLineWidth { width }
+                    },
+                    b"J" => {
+                        let cap_style = match &operands[0] { Some(FastOperand::Number(n)) => *n as u8, _ => 0 };
+                        Operator::SetLineCap { cap_style }
+                    },
+                    b"j" => {
+                        let join_style = match &operands[0] { Some(FastOperand::Number(n)) => *n as u8, _ => 0 };
+                        Operator::SetLineJoin { join_style }
+                    },
+                    b"i" => {
+                        let tolerance = match &operands[0] { Some(FastOperand::Number(n)) => *n, _ => 0.0 };
+                        Operator::SetFlatness { tolerance }
+                    },
                     _ => {
                         // Unknown operator inside BT/ET — fall back to generic parser
                         return None;
@@ -1989,95 +2048,93 @@ fn parse_text_operator_fast(input: &[u8]) -> Option<(&[u8], Operator)> {
     }
 }
 
+// Byte classification for fast graphics scanning.
+// 0 = skip (whitespace, digits, dot, sign) — bulk-skippable
+// 1 = alpha/quote/star — operator start
+// 2 = '(' — literal string start
+// 3 = '<' — hex string or dict start
+// 4 = '[' — array start
+// 5 = '/' — name start
+// 6 = '%' — comment start
+// 7 = other (unknown byte)
+const SCAN_SKIP: u8 = 0;
+const SCAN_ALPHA: u8 = 1;
+const SCAN_PAREN: u8 = 2;
+const SCAN_ANGLE: u8 = 3;
+const SCAN_BRACKET: u8 = 4;
+const SCAN_SLASH: u8 = 5;
+const SCAN_PERCENT: u8 = 6;
+const SCAN_OTHER: u8 = 7;
+
+static BYTE_CLASS: [u8; 256] = {
+    let mut t = [SCAN_OTHER; 256];
+    // Whitespace
+    t[b' ' as usize] = SCAN_SKIP;
+    t[b'\t' as usize] = SCAN_SKIP;
+    t[b'\n' as usize] = SCAN_SKIP;
+    t[b'\r' as usize] = SCAN_SKIP;
+    t[0x00] = SCAN_SKIP;  // null
+    t[0x0C] = SCAN_SKIP;  // form feed
+    // Digits
+    t[b'0' as usize] = SCAN_SKIP;
+    t[b'1' as usize] = SCAN_SKIP;
+    t[b'2' as usize] = SCAN_SKIP;
+    t[b'3' as usize] = SCAN_SKIP;
+    t[b'4' as usize] = SCAN_SKIP;
+    t[b'5' as usize] = SCAN_SKIP;
+    t[b'6' as usize] = SCAN_SKIP;
+    t[b'7' as usize] = SCAN_SKIP;
+    t[b'8' as usize] = SCAN_SKIP;
+    t[b'9' as usize] = SCAN_SKIP;
+    // Number punctuation
+    t[b'.' as usize] = SCAN_SKIP;
+    t[b'+' as usize] = SCAN_SKIP;
+    t[b'-' as usize] = SCAN_SKIP;
+    // Alpha (uppercase)
+    let mut c = b'A';
+    while c <= b'Z' {
+        t[c as usize] = SCAN_ALPHA;
+        c += 1;
+    }
+    // Alpha (lowercase)
+    c = b'a';
+    while c <= b'z' {
+        t[c as usize] = SCAN_ALPHA;
+        c += 1;
+    }
+    // Quote/star operators
+    t[b'\'' as usize] = SCAN_ALPHA;
+    t[b'"' as usize] = SCAN_ALPHA;
+    t[b'*' as usize] = SCAN_ALPHA;
+    // Delimiters
+    t[b'(' as usize] = SCAN_PAREN;
+    t[b'<' as usize] = SCAN_ANGLE;
+    t[b'[' as usize] = SCAN_BRACKET;
+    t[b'/' as usize] = SCAN_SLASH;
+    t[b'%' as usize] = SCAN_PERCENT;
+    t
+};
+
 fn scan_graphics_region<'a>(data: &'a [u8], consecutive_errors: &mut usize) -> ScanResult<'a> {
     let mut i: usize = 0;
     let mut operand_start: usize = 0;
     let mut deferred_depth: u32 = 0;
     let mut deferred_start: usize = 0;
+    let len = data.len();
 
     loop {
-        i = skip_whitespace_raw(data, i);
-        if i >= data.len() {
+        // Bulk-skip whitespace, digits, dots, signs — the most common bytes in graphics streams
+        while i < len && BYTE_CLASS[data[i] as usize] == SCAN_SKIP {
+            i += 1;
+        }
+        if i >= len {
             return ScanResult::EndOfData;
         }
 
-        match data[i] {
-            // Numbers: digits, dot, sign
-            b'0'..=b'9' | b'.' | b'+' | b'-' => match skip_number_raw(data, i) {
-                Some(end) => {
-                    i = end;
-                    *consecutive_errors = 0;
-                },
-                None => {
-                    i += 1;
-                    *consecutive_errors += 1;
-                },
-            },
-
-            // Literal string
-            b'(' => match skip_literal_string_raw(data, i) {
-                Some(end) => {
-                    i = end;
-                    *consecutive_errors = 0;
-                },
-                None => {
-                    i += 1;
-                    *consecutive_errors += 1;
-                },
-            },
-
-            // Dict or hex string
-            b'<' if i + 1 < data.len() && data[i + 1] == b'<' => match skip_dict_raw(data, i) {
-                Some(end) => {
-                    i = end;
-                    *consecutive_errors = 0;
-                },
-                None => {
-                    i += 1;
-                    *consecutive_errors += 1;
-                },
-            },
-            b'<' => match skip_hex_string_raw(data, i) {
-                Some(end) => {
-                    i = end;
-                    *consecutive_errors = 0;
-                },
-                None => {
-                    i += 1;
-                    *consecutive_errors += 1;
-                },
-            },
-
-            // Array
-            b'[' => match skip_array_raw(data, i) {
-                Some(end) => {
-                    i = end;
-                    *consecutive_errors = 0;
-                },
-                None => {
-                    i += 1;
-                    *consecutive_errors += 1;
-                },
-            },
-
-            // Name
-            b'/' => {
-                i = skip_name_raw(data, i);
-                *consecutive_errors = 0;
-            },
-
-            // Comment — skip to end of line
-            b'%' => {
-                while i < data.len() && data[i] != b'\n' && data[i] != b'\r' {
-                    i += 1;
-                }
-                *consecutive_errors = 0;
-            },
-
-            // Operator or keyword operand
-            c if c.is_ascii_alphabetic() || c == b'\'' || c == b'"' || c == b'*' => {
+        match BYTE_CLASS[data[i] as usize] {
+            SCAN_ALPHA => {
                 let op_start = i;
-                while i < data.len()
+                while i < len
                     && (data[i].is_ascii_alphanumeric()
                         || data[i] == b'\''
                         || data[i] == b'"'
@@ -2108,20 +2165,21 @@ fn scan_graphics_region<'a>(data: &'a [u8], consecutive_errors: &mut usize) -> S
                         operand_start = i;
                         continue;
                     }
-                    // Unmatched Q outside deferred — emit normally
-                    return ScanResult::NeedFullParse {
-                        operand_start: &data[operand_start..],
-                        after_op: &data[i..],
+                    // Unmatched Q outside deferred — emit directly.
+                    // Q has no operands; NeedFullParse invokes full nom parser
+                    // for a trivial no-operand op (116K triggers for Penrose).
+                    return ScanResult::SimpleOp {
+                        op: Operator::RestoreState,
+                        rest: &data[i..],
                     };
                 } else if deferred_depth > 0 {
                     // Inside a deferred q block — check if this op needs flushing
-                    if op == b"cm" || is_skippable_graphics_op_bytes(op) {
+                    if op == b"cm" || op == b"gs"
+                        || is_skippable_graphics_op_bytes(op)
+                    {
                         operand_start = i;
                         continue;
                     }
-                    // Non-skippable op (BT, BI, Do, gs, etc.) — flush deferred state.
-                    // Return operand_start so caller resumes at the trigger's operands;
-                    // the next scan_graphics_region call handles the trigger itself.
                     return ScanResult::DeferredThenText {
                         deferred_start: &data[deferred_start..],
                         trigger_start: &data[operand_start..],
@@ -2130,6 +2188,20 @@ fn scan_graphics_region<'a>(data: &'a [u8], consecutive_errors: &mut usize) -> S
                     return ScanResult::FoundBT { rest: &data[i..] };
                 } else if op == b"BI" {
                     return ScanResult::InlineImage { rest: &data[i..] };
+                } else if op == b"cm" {
+                    // ConcatMatrix: parse 6 floats inline to avoid nom overhead
+                    // (171K triggers/PDF for Murphy). Falls back to NeedFullParse
+                    // on malformed operands.
+                    if let Some((a, b, c, d, e, f)) = parse_six_floats(&data[operand_start..op_start]) {
+                        return ScanResult::SimpleOp {
+                            op: Operator::Cm { a, b, c, d, e, f },
+                            rest: &data[i..],
+                        };
+                    }
+                    return ScanResult::NeedFullParse {
+                        operand_start: &data[operand_start..],
+                        after_op: &data[i..],
+                    };
                 } else if is_skippable_graphics_op_bytes(op) {
                     operand_start = i;
                     continue;
@@ -2141,7 +2213,66 @@ fn scan_graphics_region<'a>(data: &'a [u8], consecutive_errors: &mut usize) -> S
                 }
             },
 
-            // Unknown byte
+            SCAN_PAREN => match skip_literal_string_raw(data, i) {
+                Some(end) => {
+                    i = end;
+                    *consecutive_errors = 0;
+                },
+                None => {
+                    i += 1;
+                    *consecutive_errors += 1;
+                },
+            },
+
+            SCAN_ANGLE => {
+                if i + 1 < len && data[i + 1] == b'<' {
+                    match skip_dict_raw(data, i) {
+                        Some(end) => {
+                            i = end;
+                            *consecutive_errors = 0;
+                        },
+                        None => {
+                            i += 1;
+                            *consecutive_errors += 1;
+                        },
+                    }
+                } else {
+                    match skip_hex_string_raw(data, i) {
+                        Some(end) => {
+                            i = end;
+                            *consecutive_errors = 0;
+                        },
+                        None => {
+                            i += 1;
+                            *consecutive_errors += 1;
+                        },
+                    }
+                }
+            },
+
+            SCAN_BRACKET => match skip_array_raw(data, i) {
+                Some(end) => {
+                    i = end;
+                    *consecutive_errors = 0;
+                },
+                None => {
+                    i += 1;
+                    *consecutive_errors += 1;
+                },
+            },
+
+            SCAN_SLASH => {
+                i = skip_name_raw(data, i);
+                *consecutive_errors = 0;
+            },
+
+            SCAN_PERCENT => {
+                while i < len && data[i] != b'\n' && data[i] != b'\r' {
+                    i += 1;
+                }
+                *consecutive_errors = 0;
+            },
+
             _ => {
                 i += 1;
                 *consecutive_errors += 1;

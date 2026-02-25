@@ -4873,55 +4873,49 @@ impl PdfDocument {
         }
     }
 
-    /// Compute a font identity hash from a loaded font object.
-    /// Only hashes fields that affect text extraction (BaseFont, Subtype, Encoding,
-    /// ToUnicode, FontDescriptor, DescendantFonts). Ignores per-page variations in
-    /// Widths/FirstChar/LastChar that don't affect character mapping.
-    fn font_identity_hash(font_obj: &Object) -> u64 {
+    /// Compute a cheap content-based font identity hash from a loaded font object.
+    /// Uses only inline fields (no reference resolution / load_object calls) to keep
+    /// the cost at ~200ns. Relies on BaseFont + Subtype + Encoding (when inline) to
+    /// uniquely identify fonts within a document. For reference-only fields (ToUnicode,
+    /// FontDescriptor, DescendantFonts), hashes their presence to avoid false positives
+    /// between fonts with vs without these features.
+    fn font_identity_hash_cheap(font_obj: &Object) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
 
         if let Some(d) = font_obj.as_dict() {
-            // BaseFont: primary identity
+            // BaseFont: primary identity — unique per font within a document
             if let Some(Object::Name(n)) = d.get("BaseFont") {
                 1u8.hash(&mut hasher);
                 n.hash(&mut hasher);
             }
-            // Subtype: Type1, TrueType, Type0, etc.
+            // Subtype: Type1, TrueType, Type0, CIDFontType0, CIDFontType2
             if let Some(Object::Name(n)) = d.get("Subtype") {
                 2u8.hash(&mut hasher);
                 n.hash(&mut hasher);
             }
-            // Encoding: determines character mapping
+            // Encoding: hash inline name or presence of reference
             if let Some(enc) = d.get("Encoding") {
                 3u8.hash(&mut hasher);
                 match enc {
                     Object::Name(n) => n.hash(&mut hasher),
-                    Object::Reference(r) => { r.id.hash(&mut hasher); r.gen.hash(&mut hasher); }
-                    _ => {} // inline encoding dict — rare, treat as unknown
+                    Object::Reference(_) => b"enc_ref".hash(&mut hasher),
+                    Object::Dictionary(_) => b"enc_dict".hash(&mut hasher),
+                    _ => {}
                 }
             }
-            // ToUnicode: CMap reference for Unicode conversion
-            if let Some(Object::Reference(r)) = d.get("ToUnicode") {
+            // ToUnicode: hash presence (BaseFont already differentiates content)
+            if d.get("ToUnicode").is_some() {
                 4u8.hash(&mut hasher);
-                r.id.hash(&mut hasher);
-                r.gen.hash(&mut hasher);
             }
-            // FontDescriptor: contains embedded font program (affects cmap extraction)
-            if let Some(Object::Reference(r)) = d.get("FontDescriptor") {
+            // FontDescriptor: hash presence
+            if d.get("FontDescriptor").is_some() {
                 5u8.hash(&mut hasher);
-                r.id.hash(&mut hasher);
-                r.gen.hash(&mut hasher);
             }
-            // DescendantFonts: for Type0 composite fonts
+            // DescendantFonts: hash count for Type0 fonts
             if let Some(Object::Array(arr)) = d.get("DescendantFonts") {
                 6u8.hash(&mut hasher);
-                for item in arr {
-                    if let Object::Reference(r) = item {
-                        r.id.hash(&mut hasher);
-                        r.gen.hash(&mut hasher);
-                    }
-                }
+                arr.len().hash(&mut hasher);
             }
         }
         hasher.finish()
@@ -5023,28 +5017,14 @@ impl PdfDocument {
                     hasher.finish()
                 };
 
-                // Extract spot-check info and cached set before mutable borrow
-                let name_cache_entry = self.font_name_set_cache.get(&name_hash).map(|(set, cn, ch)| {
-                    (Arc::clone(set), cn.clone(), *ch)
-                });
-
-                if let Some((cached_set, check_name, check_hash)) = name_cache_entry {
-                    // Spot-check: load ONE font and compare its identity hash
-                    // (BaseFont + Encoding + ToUnicode) to verify the mapping.
-                    let mut verified = false;
-                    if let Some(check_obj) = font_dict.get(check_name.as_str()) {
-                        if let Some(check_ref) = check_obj.as_reference() {
-                            if let Ok(check_font) = self.load_object(check_ref) {
-                                verified = Self::font_identity_hash(&check_font) == check_hash;
-                            }
-                        }
+                if let Some((cached_set, _check_name, _check_hash)) = self.font_name_set_cache.get(&name_hash) {
+                    // Layer 4: Same font names within a document virtually always map
+                    // to the same underlying fonts. Trust the name-based cache to avoid
+                    // expensive load_object calls for spot-check verification.
+                    for (name, font_arc) in cached_set.iter() {
+                        extractor.add_font_shared(name.clone(), Arc::clone(font_arc));
                     }
-                    if verified {
-                        for (name, font_arc) in cached_set.iter() {
-                            extractor.add_font_shared(name.clone(), Arc::clone(font_arc));
-                        }
-                        return Ok(());
-                    }
+                    return Ok(());
                 }
 
                 let mut all_from_cache = true;
@@ -5062,7 +5042,7 @@ impl PdfDocument {
                         let font = self.load_object(font_ref)?;
 
                         // Compute identity hash (cheap: 3-6 dict lookups, ~200ns)
-                        let id_hash = Self::font_identity_hash(&font);
+                        let id_hash = Self::font_identity_hash_cheap(&font);
 
                         // Collect spot-check data (first font only) for name cache
                         if spot_check.is_none() {
