@@ -233,6 +233,187 @@ pub fn parse_content_stream_text_only(data: &[u8]) -> Result<Vec<Operator>> {
     Ok(operators)
 }
 
+/// SIMD-accelerated pre-scan to identify text-bearing regions in large content streams.
+///
+/// For streams > 256KB that are mostly graphics (path operators, color ops), this uses
+/// memchr to locate BT/Do operator positions in ~1ms instead of byte-by-byte scanning
+/// at ~500ms. Returns parse regions that cover BT..ET blocks and Do operators, plus
+/// preceding graphics state (q..cm) needed for correct CTM.
+///
+/// Returns `None` on ambiguous cases (fallback to full scan).
+fn prescan_text_regions(data: &[u8]) -> Option<Vec<(usize, usize)>> {
+    fn is_boundary(b: u8) -> bool {
+        b.is_ascii_whitespace()
+            || matches!(
+                b,
+                b'(' | b')' | b'<' | b'>' | b'[' | b']' | b'{' | b'}' | b'/' | b'%'
+            )
+    }
+
+    let len = data.len();
+    // Collect positions of BT and Do operators (text-bearing operators)
+    let mut text_positions: Vec<usize> = Vec::new();
+    let mut offset = 0;
+
+    // Use memchr to find 'B' and 'D' candidates (SIMD-accelerated)
+    loop {
+        match memchr::memchr2(b'B', b'D', &data[offset..]) {
+            None => break,
+            Some(rel_pos) => {
+                let pos = offset + rel_pos;
+                offset = pos + 1;
+
+                // Check for "BT" at boundary
+                if data[pos] == b'B' && pos + 1 < len && data[pos + 1] == b'T' {
+                    let before_ok = pos == 0 || is_boundary(data[pos - 1]);
+                    let after_ok = pos + 2 >= len || is_boundary(data[pos + 2]);
+                    if before_ok && after_ok {
+                        text_positions.push(pos);
+                    }
+                }
+                // Check for "Do" at boundary
+                else if data[pos] == b'D' && pos + 1 < len && data[pos + 1] == b'o' {
+                    let before_ok = pos == 0 || is_boundary(data[pos - 1]);
+                    let after_ok = pos + 2 >= len || is_boundary(data[pos + 2]);
+                    if before_ok && after_ok {
+                        text_positions.push(pos);
+                    }
+                }
+            }
+        }
+    }
+
+    if text_positions.is_empty() {
+        // No text operators — caller can skip the entire stream
+        return Some(Vec::new());
+    }
+
+    // For each text position, scan backwards to find the nearest unmatched 'q'
+    // to capture CTM state (cm operators between q and BT/Do).
+    let mut regions: Vec<(usize, usize)> = Vec::new();
+
+    for &tp in &text_positions {
+        // Find region start: scan backwards for unmatched q
+        let region_start = find_region_start(data, tp);
+
+        // Find region end: for BT, find matching ET; for Do, end after "Do"
+        let region_end = if data[tp] == b'B' {
+            // Find matching ET
+            find_matching_et(data, tp + 2).unwrap_or(len)
+        } else {
+            // Do operator: include operands before and the operator itself
+            tp + 2
+        };
+
+        let end = region_end.min(len);
+        regions.push((region_start, end));
+    }
+
+    // Merge overlapping/adjacent regions
+    if regions.is_empty() {
+        return Some(Vec::new());
+    }
+    regions.sort_unstable_by_key(|r| r.0);
+    let mut merged: Vec<(usize, usize)> = Vec::new();
+    for r in regions {
+        if let Some(last) = merged.last_mut() {
+            if r.0 <= last.1 {
+                last.1 = last.1.max(r.1);
+                continue;
+            }
+        }
+        merged.push(r);
+    }
+
+    Some(merged)
+}
+
+/// Scan backwards from `pos` to find the start of the graphics state context.
+/// Looks for an unmatched 'q' operator, handling nesting.
+fn find_region_start(data: &[u8], pos: usize) -> usize {
+    // Simple backward scan: find the nearest line that starts with 'q' or
+    // the beginning of data. We limit backward scan to 4KB for performance.
+    let scan_start = pos.saturating_sub(4096);
+    let region = &data[scan_start..pos];
+
+    // Find the last unmatched q by tracking Q/q balance backwards
+    let mut q_depth: i32 = 0;
+    let mut best_q_pos = pos; // Default: start from text position itself
+    let mut i = region.len();
+
+    while i > 0 {
+        i -= 1;
+        let b = region[i];
+
+        // Look for 'q' or 'Q' at operator boundaries
+        if b == b'q' || b == b'Q' {
+            let abs_pos = scan_start + i;
+            // Verify it's a standalone operator (boundary check)
+            let before_ok = i == 0 || {
+                let prev = region[i - 1];
+                prev.is_ascii_whitespace() || matches!(prev, b')' | b'>' | b']')
+            };
+            let after_ok = i + 1 >= region.len() || {
+                let next = region[i + 1];
+                next.is_ascii_whitespace()
+                    || matches!(next, b'(' | b'<' | b'[' | b'/' | b'%')
+                    || next.is_ascii_digit()
+                    || next == b'-'
+                    || next == b'.'
+            };
+
+            if before_ok && after_ok {
+                if b == b'Q' {
+                    q_depth += 1;
+                } else {
+                    // 'q'
+                    if q_depth > 0 {
+                        q_depth -= 1;
+                    } else {
+                        // Unmatched q — this is our region start
+                        best_q_pos = abs_pos;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    best_q_pos
+}
+
+/// Find the position after matching "ET" for a BT starting at `start`.
+fn find_matching_et(data: &[u8], start: usize) -> Option<usize> {
+    let mut offset = start;
+    let len = data.len();
+    // Use memchr to find 'E' candidates
+    loop {
+        match memchr::memchr(b'E', &data[offset..]) {
+            None => return None,
+            Some(rel) => {
+                let pos = offset + rel;
+                offset = pos + 1;
+                if pos + 1 < len && data[pos + 1] == b'T' {
+                    let before_ok = pos == 0
+                        || data[pos - 1].is_ascii_whitespace()
+                        || matches!(
+                            data[pos - 1],
+                            b')' | b'>' | b']' | b'}' | b'/' | b'%'
+                        );
+                    let after_ok = pos + 2 >= len || {
+                        let next = data[pos + 2];
+                        next.is_ascii_whitespace()
+                            || matches!(next, b'(' | b'<' | b'[' | b'/' | b'%')
+                    };
+                    if before_ok && after_ok {
+                        return Some(pos + 2);
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Streaming text-only parser: parse operators and call handler immediately.
 ///
 /// Same logic as `parse_content_stream_text_only` but avoids allocating a Vec<Operator>.
@@ -242,6 +423,23 @@ pub fn parse_and_execute_text_only<F>(data: &[u8], mut handler: F) -> Result<()>
 where
     F: FnMut(Operator) -> Result<()>,
 {
+    // For large streams (>256KB), use SIMD pre-scan to identify text regions.
+    // This avoids byte-by-byte scanning of megabytes of path/color operators.
+    if data.len() > 256 * 1024 {
+        if let Some(regions) = prescan_text_regions(data) {
+            if regions.is_empty() {
+                return Ok(()); // No text operators in stream
+            }
+            // Parse only the identified text-bearing regions
+            for (start, end) in &regions {
+                let region_data = &data[*start..*end];
+                parse_region_text_only(region_data, &mut handler)?;
+            }
+            return Ok(());
+        }
+        // Fallback: pre-scan inconclusive, use full scan below
+    }
+
     let mut input = data;
     let mut consecutive_errors: usize = 0;
     let mut inside_text = false;
@@ -364,6 +562,123 @@ where
                     );
                     break;
                 },
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Parse a sub-region of a content stream for text operators.
+/// Used by the pre-scan path to parse only identified text-bearing regions.
+fn parse_region_text_only<F>(data: &[u8], handler: &mut F) -> Result<()>
+where
+    F: FnMut(Operator) -> Result<()>,
+{
+    let mut input = data;
+    let mut consecutive_errors: usize = 0;
+    let mut inside_text = false;
+    let mut op_count: usize = 0;
+
+    while !input.is_empty() {
+        while !input.is_empty() && input[0].is_ascii_whitespace() {
+            input = &input[1..];
+        }
+        if input.is_empty() {
+            break;
+        }
+
+        if op_count >= MAX_OPERATORS {
+            break;
+        }
+
+        if inside_text {
+            if let Some((rest, op)) = parse_text_operator_fast(input) {
+                if matches!(op, Operator::EndText) {
+                    inside_text = false;
+                }
+                handler(op)?;
+                op_count += 1;
+                input = rest;
+                consecutive_errors = 0;
+            } else {
+                match parse_operator_with_operands(input) {
+                    Ok((rest, op)) => {
+                        if matches!(op, Operator::EndText) {
+                            inside_text = false;
+                        }
+                        handler(op)?;
+                        op_count += 1;
+                        input = rest;
+                        consecutive_errors = 0;
+                    },
+                    Err(_) => {
+                        consecutive_errors += 1;
+                        if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                            break;
+                        }
+                        if input.len() > 1 {
+                            input = &input[1..];
+                        } else {
+                            break;
+                        }
+                    },
+                }
+            }
+        } else {
+            match scan_graphics_region(input, &mut consecutive_errors) {
+                ScanResult::EndOfData => break,
+                ScanResult::FoundBT { rest } => {
+                    handler(Operator::BeginText)?;
+                    op_count += 1;
+                    input = rest;
+                    inside_text = true;
+                },
+                ScanResult::InlineImage { rest } => match parse_inline_image(rest) {
+                    Ok((rest2, _)) => input = rest2,
+                    Err(_) => input = rest,
+                },
+                ScanResult::NeedFullParse {
+                    operand_start,
+                    after_op,
+                } => match parse_operator_with_operands(operand_start) {
+                    Ok((rest2, op)) => {
+                        handler(op)?;
+                        op_count += 1;
+                        input = rest2;
+                    },
+                    Err(_) => input = after_op,
+                },
+                ScanResult::DeferredThenText {
+                    deferred_start,
+                    trigger_start,
+                } => {
+                    let mut remaining = deferred_start;
+                    while remaining.len() > trigger_start.len() {
+                        match parse_operator_with_operands(remaining) {
+                            Ok((rest2, op)) => {
+                                handler(op)?;
+                                op_count += 1;
+                                remaining = rest2;
+                            },
+                            Err(_) => {
+                                if remaining.len() > 1 {
+                                    remaining = &remaining[1..];
+                                } else {
+                                    break;
+                                }
+                            },
+                        }
+                    }
+                    input = trigger_start;
+                    consecutive_errors = 0;
+                },
+                ScanResult::SimpleOp { op, rest } => {
+                    handler(op)?;
+                    op_count += 1;
+                    input = rest;
+                },
+                ScanResult::TooManyErrors { .. } => break,
             }
         }
     }
