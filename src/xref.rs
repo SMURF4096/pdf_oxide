@@ -10,7 +10,7 @@ use crate::error::{Error, Result};
 use crate::object::Object;
 use crate::parser::parse_object;
 use std::collections::{HashMap, HashSet};
-use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom};
 
 /// Cross-reference table entry type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -224,6 +224,32 @@ pub fn parse_xref<R: Read + Seek>(reader: &mut R, offset: u64) -> Result<CrossRe
     parse_xref_iterative(reader, offset)
 }
 
+/// Extract /Length value from raw bytes of an xref stream object header.
+///
+/// Searches for `/Length` followed by an integer in the raw dictionary bytes.
+/// Returns `None` if not found or not parseable. This avoids full object parsing
+/// just to determine how much data to read.
+fn find_stream_length(data: &[u8]) -> Option<usize> {
+    // Search for "/Length" (case-sensitive, per PDF spec)
+    let keyword = b"/Length";
+    let pos = data.windows(keyword.len()).position(|w| w == keyword)?;
+    let after = &data[pos + keyword.len()..];
+
+    // Skip whitespace
+    let start = after.iter().position(|&b| !b.is_ascii_whitespace())?;
+    let after = &after[start..];
+
+    // If the next token is a digit, parse the integer
+    if after.first()?.is_ascii_digit() {
+        let end = after.iter().position(|b| !b.is_ascii_digit()).unwrap_or(after.len());
+        let num_str = std::str::from_utf8(&after[..end]).ok()?;
+        num_str.parse::<usize>().ok()
+    } else {
+        // /Length is an indirect reference — we can't resolve it without full parsing
+        None
+    }
+}
+
 /// Try to find the actual xref start near the given offset.
 ///
 /// Some PDF producers miscalculate the startxref offset by a few bytes.
@@ -424,9 +450,11 @@ fn parse_traditional_xref<R: Read + Seek>(reader: &mut R, offset: u64) -> Result
     log::debug!("parse_traditional_xref: Starting at offset {}", offset);
     reader.seek(SeekFrom::Start(offset))?;
 
-    // Read all content and split into lines (handles CR, LF, CRLF)
-    let lines = read_all_and_split_lines(reader).map_err(|e| {
-        log::error!("Failed to read lines: {}", e);
+    // Read only until "trailer" or "startxref" instead of the entire remaining file.
+    // For linearized PDFs, the first xref may be near byte 0, and read_to_end would
+    // load the entire file (e.g., 375MB) just to parse an 8-entry xref table.
+    let lines = read_until_trailer(reader).map_err(|e| {
+        log::error!("Failed to read xref lines: {}", e);
         Error::InvalidXref
     })?;
 
@@ -578,6 +606,23 @@ fn parse_traditional_xref<R: Read + Seek>(reader: &mut R, offset: u64) -> Result
         }
     }
 
+    // Parse the trailer dictionary from the remaining lines.
+    // After the "trailer" keyword, the lines contain the trailer dict (e.g., "<< /Size 100 /Root 1 0 R /Prev 12345 >>").
+    // We concatenate remaining lines and parse the dictionary so that /Prev and other
+    // trailer entries are available via xref.trailer().
+    let remaining_text: String = lines[line_idx..].join("\n");
+    if !remaining_text.trim().is_empty() {
+        // The trailer dict should start with "<<" after optional whitespace
+        let trimmed = remaining_text.trim();
+        if trimmed.starts_with("<<") || trimmed.starts_with("<< ") || trimmed.starts_with("<<\n") || trimmed.starts_with("<<\r") {
+            if let Ok((_, trailer_obj)) = parse_object(trimmed.as_bytes()) {
+                if let Some(dict) = trailer_obj.as_dict() {
+                    xref.set_trailer(dict.clone());
+                }
+            }
+        }
+    }
+
     Ok(xref)
 }
 
@@ -600,11 +645,47 @@ fn parse_xref_stream<R: Read + Seek>(reader: &mut R, offset: u64) -> Result<Cros
 
     reader.seek(SeekFrom::Start(offset))?;
 
-    // Read enough data to parse the xref stream object
-    // We need to read until we hit endobj or enough to parse the stream
-    let mut buf_reader = BufReader::new(reader);
-    let mut content = Vec::new();
-    buf_reader.read_to_end(&mut content)?;
+    // Read a bounded amount of data for the xref stream object.
+    // We avoid read_to_end because for linearized PDFs the first xref may be
+    // near the start of the file, and reading to end would load the entire file.
+    //
+    // Strategy: read an initial 256KB chunk, then check /Length to see if we
+    // need more. Most xref streams are <64KB.
+    let file_len = reader.seek(SeekFrom::End(0))?;
+    reader.seek(SeekFrom::Start(offset))?;
+
+    let remaining = (file_len - offset) as usize;
+    let initial_read = remaining.min(256 * 1024);
+    let mut content = vec![0u8; initial_read];
+    let bytes_read = reader.read(&mut content)?;
+    content.truncate(bytes_read);
+
+    // Check if we need more data based on /Length or endobj presence
+    let needs_more = if let Some(length_val) = find_stream_length(&content) {
+        let stream_kw_pos = content.windows(6)
+            .position(|w| w == b"stream")
+            .unwrap_or(0);
+        let needed = stream_kw_pos + 20 + length_val + 30;
+        if needed > bytes_read { Some(needed) } else { None }
+    } else if content.windows(6).any(|w| w == b"endobj") {
+        None
+    } else {
+        // No /Length and no endobj in 256KB — read more (capped at 16MB)
+        Some(remaining.min(16 * 1024 * 1024))
+    };
+
+    if let Some(needed) = needs_more {
+        let total = needed.min(remaining);
+        reader.seek(SeekFrom::Start(offset))?;
+        content = vec![0u8; total];
+        let mut total_read = 0;
+        while total_read < total {
+            let n = reader.read(&mut content[total_read..])?;
+            if n == 0 { break; }
+            total_read += n;
+        }
+        content.truncate(total_read);
+    }
 
     // Parse the indirect object wrapper: "obj_num gen obj"
     let input = &content[..];
@@ -904,14 +985,70 @@ fn split_lines(text: &str) -> Vec<String> {
 /// Standard BufReader::read_line() only handles LF and CRLF, but some PDFs use
 /// standalone CR (Mac-style line endings). This function handles all three by
 /// reading the entire buffer and splitting manually.
-fn read_all_and_split_lines<R: Read>(reader: &mut R) -> std::io::Result<Vec<String>> {
-    let mut content = Vec::new();
-    reader.read_to_end(&mut content)?;
+/// Read the xref table and trailer from reader, bounded by finding "trailer" + dict.
+///
+/// This avoids `read_to_end` which would read the entire remaining file for
+/// linearized PDFs where the first xref is near byte 0. Instead, we read in
+/// chunks and search for the "trailer" keyword in raw bytes, which correctly
+/// handles all line ending styles (CR, LF, CRLF).
+fn read_until_trailer<R: Read + Seek>(reader: &mut R) -> std::io::Result<Vec<String>> {
+    // Read in chunks until we find "trailer" keyword followed by a dict,
+    // followed by "startxref" or ">>" closing the dict.
+    // Most xref tables are <1MB. We cap at 32MB to prevent runaway reads.
+    const CHUNK_SIZE: usize = 256 * 1024;
+    const MAX_TOTAL: usize = 32 * 1024 * 1024;
 
-    let text = String::from_utf8_lossy(&content);
+    let mut data = Vec::with_capacity(CHUNK_SIZE);
+    let mut total_read = 0usize;
+    let mut found_end = false;
 
-    // Use the shared split_lines function to handle CR, LF, and CRLF
+    loop {
+        let prev_len = data.len();
+        data.resize(prev_len + CHUNK_SIZE, 0);
+        let n = reader.read(&mut data[prev_len..])?;
+        data.truncate(prev_len + n);
+        total_read += n;
+
+        if n == 0 {
+            break; // EOF
+        }
+
+        // Search for the end of the trailer section: look for ">>" after "trailer"
+        // then "startxref" or "%%EOF"
+        if let Some(trailer_pos) = find_bytes(&data, b"trailer") {
+            // Find the closing ">>" of the trailer dict after "trailer"
+            let after_trailer = &data[trailer_pos + 7..];
+            if let Some(dict_end) = find_bytes(after_trailer, b">>") {
+                // Check if we also have "startxref" after ">>"
+                let after_dict = &after_trailer[dict_end + 2..];
+                if find_bytes(after_dict, b"startxref").is_some() || after_dict.len() > 20 {
+                    found_end = true;
+                    // Truncate to just past the trailer dict + a bit more
+                    let end_pos = trailer_pos + 7 + dict_end + 2 + 50.min(after_dict.len());
+                    data.truncate(end_pos);
+                    break;
+                }
+            }
+        }
+
+        if total_read >= MAX_TOTAL {
+            break;
+        }
+    }
+
+    if !found_end {
+        // Fallback: if we didn't find trailer end in 32MB, use what we have
+        log::warn!("Could not find trailer end marker within {}MB of xref", total_read / (1024*1024));
+    }
+
+    // Split into lines handling CR, LF, and CRLF
+    let text = String::from_utf8_lossy(&data);
     Ok(split_lines(&text))
+}
+
+/// Find the position of a byte pattern in a byte slice.
+fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|w| w == needle)
 }
 
 #[cfg(test)]

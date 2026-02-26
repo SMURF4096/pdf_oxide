@@ -17,8 +17,61 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Cursor, Read, Seek, SeekFrom};
 #[cfg(not(target_arch = "wasm32"))]
+use std::fs::File;
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 use std::sync::Arc;
+
+/// Reader enum that dispatches between file-backed (native) and memory-backed (WASM) I/O.
+///
+/// On native builds, `open()` uses `BufReader<File>` to avoid reading the entire file
+/// into memory up front. On WASM (or when using `open_from_bytes()`), uses
+/// `BufReader<Cursor<Vec<u8>>>` for in-memory access.
+enum PdfReader {
+    /// File-backed reader for native builds — avoids reading entire file into memory.
+    #[cfg(not(target_arch = "wasm32"))]
+    File(BufReader<File>),
+    /// Memory-backed reader for WASM or `open_from_bytes()`.
+    Memory(BufReader<Cursor<Vec<u8>>>),
+}
+
+impl Read for PdfReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            #[cfg(not(target_arch = "wasm32"))]
+            PdfReader::File(r) => r.read(buf),
+            PdfReader::Memory(r) => r.read(buf),
+        }
+    }
+}
+
+impl Seek for PdfReader {
+    fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+        match self {
+            #[cfg(not(target_arch = "wasm32"))]
+            PdfReader::File(r) => r.seek(pos),
+            PdfReader::Memory(r) => r.seek(pos),
+        }
+    }
+}
+
+impl BufRead for PdfReader {
+    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+        match self {
+            #[cfg(not(target_arch = "wasm32"))]
+            PdfReader::File(r) => r.fill_buf(),
+            PdfReader::Memory(r) => r.fill_buf(),
+        }
+    }
+
+    fn consume(&mut self, amt: usize) {
+        match self {
+            #[cfg(not(target_arch = "wasm32"))]
+            PdfReader::File(r) => r.consume(amt),
+            PdfReader::Memory(r) => r.consume(amt),
+        }
+    }
+}
 
 /// Maximum recursion depth for object resolution
 const MAX_RECURSION_DEPTH: u32 = 100;
@@ -53,10 +106,8 @@ pub struct PageInfo {
 /// # Ok::<(), pdf_oxide::error::Error>(())
 /// ```
 pub struct PdfDocument {
-    /// Buffered reader backed by in-memory PDF data.
-    /// Files are read into memory at open time for portability (WASM support)
-    /// and to enable Send (required for parallel extraction).
-    reader: BufReader<Cursor<Vec<u8>>>,
+    /// PDF reader — file-backed on native, memory-backed on WASM.
+    reader: PdfReader,
     /// PDF version (major, minor)
     version: (u8, u8),
     /// Cross-reference table mapping object IDs to byte offsets
@@ -169,7 +220,7 @@ impl PdfDocument {
     ///
     /// Returns an error if the PDF data is invalid or cannot be parsed.
     pub fn open_from_bytes(data: Vec<u8>) -> Result<Self> {
-        let reader = BufReader::new(Cursor::new(data));
+        let reader = PdfReader::Memory(BufReader::new(Cursor::new(data)));
         Self::open_from_reader(reader)
     }
 
@@ -196,11 +247,12 @@ impl PdfDocument {
     /// ```
     #[cfg(not(target_arch = "wasm32"))]
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        let data = std::fs::read(path.as_ref())?;
-        Self::open_from_bytes(data)
+        let file = File::open(path.as_ref())?;
+        let reader = PdfReader::File(BufReader::new(file));
+        Self::open_from_reader(reader)
     }
 
-    fn open_from_reader(mut reader: BufReader<Cursor<Vec<u8>>>) -> Result<Self> {
+    fn open_from_reader(mut reader: PdfReader) -> Result<Self> {
         // Parse header with lenient mode by default (handle PDFs with binary prefixes)
         let (major, minor, header_offset) = parse_header(&mut reader, true)?;
         let version = (major, minor);
