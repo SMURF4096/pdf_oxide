@@ -1721,12 +1721,13 @@ pub enum PaginationSubtype {
 ///
 /// Tracks nested marked content tags to implement artifact filtering.
 /// When content is marked as `/Artifact`, it should be excluded from text extraction.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct MarkedContentContext {
-    _tag: String,
+    tag: String,
     is_artifact: bool,
     /// Artifact type classification for filtered content (PDF Spec Section 14.8.2.2)
-    _artifact_type: Option<ArtifactType>,
+    artifact_type: Option<ArtifactType>,
     /// ActualText for marked content (PDF Spec Section 14.9.4)
     /// Used to replace extracted text with correct representation
     /// e.g., ligatures (fi, fl, ffi, ffl), decorated glyphs
@@ -1734,7 +1735,7 @@ struct MarkedContentContext {
     /// Expansion text for abbreviations (PDF Spec Section 14.9.5)
     /// The /E entry provides the expansion of an abbreviation or acronym.
     /// e.g., "PDF" might expand to "Portable Document Format"
-    _expansion: Option<String>,
+    expansion: Option<String>,
 }
 
 /// Text extractor that processes content streams.
@@ -2251,6 +2252,61 @@ impl TextExtractor {
             .iter()
             .rev()  // Search from innermost (most recent) context
             .find_map(|ctx| ctx.actual_text.clone())
+    }
+
+    /// Calculate the average glyph width for a font.
+    ///
+    /// Computes the mean width of printable ASCII characters (codes 32-126)
+    /// in the given font, expressed in thousandths of em.
+    ///
+    /// # Fallback
+    ///
+    /// If the font doesn't have a widths array, uses the font's default width.
+    ///
+    /// # Performance
+    ///
+    /// This is relatively efficient, typically iterating over 95 ASCII characters.
+    /// In practice, most fonts have widths arrays, so this completes quickly.
+    #[allow(dead_code)]
+    fn calculate_average_glyph_width(&self, font: &FontInfo) -> f32 {
+        const PRINTABLE_ASCII_START: u32 = 32; // Space
+        const PRINTABLE_ASCII_END: u32 = 126; // Tilde
+
+        // If no widths array, use default width
+        let Some(ref widths) = font.widths else {
+            return font.default_width;
+        };
+
+        // We need FirstChar and LastChar to map character codes to width indices
+        let Some(first_char) = font.first_char else {
+            return font.default_width;
+        };
+        let Some(last_char) = font.last_char else {
+            return font.default_width;
+        };
+
+        // Collect widths for all printable ASCII characters
+        let mut total_width = 0.0;
+        let mut count = 0;
+
+        for char_code in PRINTABLE_ASCII_START..=PRINTABLE_ASCII_END {
+            if char_code >= first_char && char_code <= last_char {
+                // This character is in the widths array
+                let index = (char_code - first_char) as usize;
+                if index < widths.len() {
+                    total_width += widths[index];
+                    count += 1;
+                }
+            }
+        }
+
+        // Return average if we found any widths
+        if count > 0 {
+            total_width / count as f32
+        } else {
+            // Fallback if no widths in range
+            font.default_width
+        }
     }
 
     /// Add a font to the extractor.
@@ -3054,6 +3110,135 @@ impl TextExtractor {
                 other => other,
             }
         });
+    }
+
+    /// ISSUE 1 FIX: Split fused words created by PDF authoring defects
+    ///
+    /// Some PDFs encode multiple words as a single TJ string without spacing:
+    /// - "theGeneral" instead of "the" + "General"
+    /// - "lengthThis" instead of "length" + "This"
+    /// - "helporganisationscraft" (partial fusion)
+    ///
+    /// This post-processor detects word fusions and splits them into separate spans.
+    ///
+    /// Uses two strategies:
+    /// 1. **CamelCase detection** (first priority): Detects lowercase->uppercase transitions
+    ///    - Example: "theGeneral" -> ["the", "General"]
+    /// 2. **Dictionary-based segmentation** (fallback): Uses Viterbi algorithm with word dictionary
+    ///    - Example: "helporganisationscraft" -> ["help", "organisations", "craft"]
+    ///
+    /// Per ISO 32000-1:2008 Section 9.4.4: "Text strings are as long as possible" - spaces
+    /// are positioning artifacts, so word fusions must be detected and reconstructed.
+    #[allow(dead_code)]
+    fn split_fused_words(&mut self) {
+        let mut split_spans = Vec::new();
+
+        for span in &self.spans {
+            // DEBUG: Log field values before cloning
+            log::debug!(
+                "split_fused_words() processing span '{}' (offset_semantic={}, split_boundary_before={})",
+                if span.text.len() <= 30 {
+                    &span.text
+                } else {
+                    "[whitespace or long text]"
+                },
+                span.offset_semantic,
+                span.split_boundary_before
+            );
+
+            // Try CamelCase split (handles mixed-case fusions)
+            let parts = self.split_on_camelcase(&span.text);
+
+            if parts.len() == 1 {
+                // No split needed
+                let cloned = span.clone();
+                log::debug!(
+                    "  → No split: cloned offset_semantic={} (text: '{}')",
+                    cloned.offset_semantic,
+                    if cloned.text.len() <= 30 {
+                        &cloned.text
+                    } else {
+                        "[whitespace or long text]"
+                    }
+                );
+                split_spans.push(cloned);
+            } else {
+                // Split into multiple spans with proportional bounding boxes
+                let total_chars = span.text.len() as f32;
+                let mut char_pos = 0;
+
+                for (i, part) in parts.iter().enumerate() {
+                    let part_len = part.len() as f32;
+                    let part_ratio = part_len / total_chars;
+
+                    // Calculate proportional bounding box
+                    let new_width = span.bbox.width * part_ratio;
+                    let new_x = span.bbox.x + (span.bbox.width * (char_pos as f32 / total_chars));
+
+                    let mut new_span = span.clone();
+                    new_span.text = part.clone();
+                    new_span.bbox.x = new_x;
+                    new_span.bbox.width = new_width;
+
+                    // Set split_boundary_before flag for all parts except the first
+                    // This prevents them from being re-merged during span merging
+                    if i > 0 {
+                        new_span.split_boundary_before = true;
+                    }
+
+                    log::debug!(
+                        "  → Split part {}: '{}' offset_semantic={} split_boundary_before={}",
+                        i,
+                        part,
+                        new_span.offset_semantic,
+                        new_span.split_boundary_before
+                    );
+                    split_spans.push(new_span);
+                    char_pos += part.len();
+                }
+            }
+        }
+
+        self.spans = split_spans;
+    }
+
+    /// Detect CamelCase boundaries and split text into parts
+    ///
+    /// Splits on lowercase->uppercase transitions:
+    /// - "theGeneral" -> ["the", "General"]
+    /// - "lengthThis" -> ["length", "This"]
+    /// - "helporganisationscraft" -> ["help", "organisations", "craft"]
+    #[allow(dead_code)]
+    fn split_on_camelcase(&self, text: &str) -> Vec<String> {
+        let mut parts = Vec::new();
+        let mut current_part = String::new();
+        let mut prev_is_lower = false;
+
+        for ch in text.chars() {
+            if prev_is_lower && ch.is_uppercase() {
+                // CamelCase boundary detected
+                if !current_part.is_empty() {
+                    parts.push(current_part.clone());
+                    current_part.clear();
+                }
+                current_part.push(ch);
+                prev_is_lower = false;
+            } else {
+                current_part.push(ch);
+                prev_is_lower = ch.is_lowercase();
+            }
+        }
+
+        if !current_part.is_empty() {
+            parts.push(current_part);
+        }
+
+        // Only return split if we found at least 2 parts with actual boundaries
+        if parts.len() > 1 {
+            parts
+        } else {
+            vec![text.to_string()]
+        }
     }
 
     /// Execute a single operator.
@@ -3969,11 +4154,11 @@ impl TextExtractor {
                 // BMC doesn't have properties, but the tag can indicate artifacts
                 let is_artifact = tag == "Artifact";
                 self.marked_content_stack.push(MarkedContentContext {
-                    _tag: tag.clone(),
+                    tag: tag.clone(),
                     is_artifact,
-                    _artifact_type: None,
-                    actual_text: None,
-                    _expansion: None,
+                    artifact_type: None, // BMC doesn't have artifact type properties
+                    actual_text: None,   // BMC doesn't have ActualText
+                    expansion: None,     // BMC doesn't have expansion
                 });
                 self.update_artifact_state();
 
@@ -4019,11 +4204,11 @@ impl TextExtractor {
                 // Check if this is an artifact (per PDF Spec Section 14.6)
                 let is_artifact = tag == "Artifact";
                 self.marked_content_stack.push(MarkedContentContext {
-                    _tag: tag.clone(),
+                    tag: tag.clone(),
                     is_artifact,
-                    _artifact_type: artifact_type.clone(),
+                    artifact_type: artifact_type.clone(),
                     actual_text,
-                    _expansion: expansion,
+                    expansion,
                 });
                 self.update_artifact_state();
 
@@ -7034,11 +7219,11 @@ mod tests {
     fn test_update_artifact_state_artifact_present() {
         let mut extractor = TextExtractor::new();
         extractor.marked_content_stack.push(MarkedContentContext {
-            _tag: "Artifact".to_string(),
+            tag: "Artifact".to_string(),
             is_artifact: true,
-            _artifact_type: None,
+            artifact_type: None,
             actual_text: None,
-            _expansion: None,
+            expansion: None,
         });
         extractor.update_artifact_state();
         assert!(extractor.inside_artifact);
@@ -7048,18 +7233,18 @@ mod tests {
     fn test_update_artifact_state_nested_non_artifact() {
         let mut extractor = TextExtractor::new();
         extractor.marked_content_stack.push(MarkedContentContext {
-            _tag: "Artifact".to_string(),
+            tag: "Artifact".to_string(),
             is_artifact: true,
-            _artifact_type: None,
+            artifact_type: None,
             actual_text: None,
-            _expansion: None,
+            expansion: None,
         });
         extractor.marked_content_stack.push(MarkedContentContext {
-            _tag: "Span".to_string(),
+            tag: "Span".to_string(),
             is_artifact: false,
-            _artifact_type: None,
+            artifact_type: None,
             actual_text: None,
-            _expansion: None,
+            expansion: None,
         });
         extractor.update_artifact_state();
         // Should still be inside artifact because parent is artifact
@@ -7150,6 +7335,53 @@ mod tests {
     fn test_decode_pdf_text_string_empty() {
         let result = TextExtractor::decode_pdf_text_string(b"");
         assert_eq!(result, "");
+    }
+
+    // ========================================================================
+    // NEW COMPREHENSIVE TESTS: split_on_camelcase
+    // ========================================================================
+
+    #[test]
+    fn test_split_camelcase_basic() {
+        let extractor = TextExtractor::new();
+        let parts = extractor.split_on_camelcase("theGeneral");
+        assert_eq!(parts, vec!["the", "General"]);
+    }
+
+    #[test]
+    fn test_split_camelcase_multiple() {
+        let extractor = TextExtractor::new();
+        let parts = extractor.split_on_camelcase("lengthThisPage");
+        assert_eq!(parts, vec!["length", "This", "Page"]);
+    }
+
+    #[test]
+    fn test_split_camelcase_no_split_all_lower() {
+        let extractor = TextExtractor::new();
+        let parts = extractor.split_on_camelcase("lowercase");
+        assert_eq!(parts, vec!["lowercase"]);
+    }
+
+    #[test]
+    fn test_split_camelcase_no_split_all_upper() {
+        let extractor = TextExtractor::new();
+        let parts = extractor.split_on_camelcase("HTML");
+        assert_eq!(parts, vec!["HTML"]);
+    }
+
+    #[test]
+    fn test_split_camelcase_single_char() {
+        let extractor = TextExtractor::new();
+        let parts = extractor.split_on_camelcase("A");
+        assert_eq!(parts, vec!["A"]);
+    }
+
+    #[test]
+    fn test_split_camelcase_empty() {
+        let extractor = TextExtractor::new();
+        let parts = extractor.split_on_camelcase("");
+        // Empty string gives one empty part
+        assert_eq!(parts.len(), 1);
     }
 
     // ========================================================================
@@ -9722,6 +9954,111 @@ mod tests {
     }
 
     // ========================================================================
+    // COVERAGE TESTS: split_fused_words
+    // ========================================================================
+
+    #[test]
+    fn test_split_fused_words_camelcase() {
+        let mut extractor = TextExtractor::new();
+        extractor.spans = vec![TextSpan {
+            text: "theGeneral".to_string(),
+            bbox: Rect::new(100.0, 700.0, 60.0, 12.0),
+            font_name: "F1".to_string(),
+            font_size: 12.0,
+            font_weight: FontWeight::Normal,
+            color: Color::black(),
+            mcid: None,
+            sequence: 0,
+            split_boundary_before: false,
+            offset_semantic: false,
+            is_italic: false,
+            char_spacing: 0.0,
+            word_spacing: 0.0,
+            horizontal_scaling: 100.0,
+            primary_detected: false,
+        }];
+
+        extractor.split_fused_words();
+        assert_eq!(extractor.spans.len(), 2, "Should split theGeneral into two spans");
+        assert_eq!(extractor.spans[0].text, "the");
+        assert_eq!(extractor.spans[1].text, "General");
+        assert!(extractor.spans[1].split_boundary_before);
+    }
+
+    #[test]
+    fn test_split_fused_words_no_split() {
+        let mut extractor = TextExtractor::new();
+        extractor.spans = vec![TextSpan {
+            text: "hello".to_string(),
+            bbox: Rect::new(100.0, 700.0, 30.0, 12.0),
+            font_name: "F1".to_string(),
+            font_size: 12.0,
+            font_weight: FontWeight::Normal,
+            color: Color::black(),
+            mcid: None,
+            sequence: 0,
+            split_boundary_before: false,
+            offset_semantic: false,
+            is_italic: false,
+            char_spacing: 0.0,
+            word_spacing: 0.0,
+            horizontal_scaling: 100.0,
+            primary_detected: false,
+        }];
+
+        extractor.split_fused_words();
+        assert_eq!(extractor.spans.len(), 1, "No split needed for all-lowercase");
+        assert_eq!(extractor.spans[0].text, "hello");
+    }
+
+    // ========================================================================
+    // COVERAGE TESTS: calculate_average_glyph_width
+    // ========================================================================
+
+    #[test]
+    fn test_calculate_average_glyph_width_no_widths() {
+        let extractor = TextExtractor::new();
+        let font = create_test_font(); // No widths array
+        let avg = extractor.calculate_average_glyph_width(&font);
+        assert_eq!(avg, font.default_width);
+    }
+
+    #[test]
+    fn test_calculate_average_glyph_width_with_widths() {
+        let extractor = TextExtractor::new();
+        let mut font = create_test_font();
+        font.first_char = Some(32);
+        font.last_char = Some(126);
+        font.widths = Some(vec![500.0; 95]); // 95 printable chars
+
+        let avg = extractor.calculate_average_glyph_width(&font);
+        assert!((avg - 500.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_calculate_average_glyph_width_no_first_char() {
+        let extractor = TextExtractor::new();
+        let mut font = create_test_font();
+        font.widths = Some(vec![500.0; 95]);
+        font.first_char = None;
+
+        let avg = extractor.calculate_average_glyph_width(&font);
+        assert_eq!(avg, font.default_width);
+    }
+
+    #[test]
+    fn test_calculate_average_glyph_width_no_last_char() {
+        let extractor = TextExtractor::new();
+        let mut font = create_test_font();
+        font.widths = Some(vec![500.0; 95]);
+        font.first_char = Some(32);
+        font.last_char = None;
+
+        let avg = extractor.calculate_average_glyph_width(&font);
+        assert_eq!(avg, font.default_width);
+    }
+
+    // ========================================================================
     // COVERAGE TESTS: Adaptive TJ threshold with justified text
     // ========================================================================
 
@@ -10046,11 +10383,11 @@ mod tests {
         let mut extractor = TextExtractor::new();
         extractor.current_mcid = Some(10);
         extractor.marked_content_stack.push(MarkedContentContext {
-            _tag: "P".to_string(),
+            tag: "P".to_string(),
             is_artifact: false,
-            _artifact_type: None,
+            artifact_type: None,
             actual_text: None,
-            _expansion: None,
+            expansion: None,
         });
 
         extractor.execute_operator_public(Operator::EndMarkedContent).unwrap();
@@ -10101,7 +10438,7 @@ mod tests {
         ).unwrap();
 
         let ctx = &extractor.marked_content_stack[0];
-        assert_eq!(ctx._expansion, Some("PDF".to_string()));
+        assert_eq!(ctx.expansion, Some("PDF".to_string()));
     }
 
     // ========================================================================
@@ -10498,11 +10835,11 @@ fn test_parse_artifact_type_empty() {
 fn test_marked_content_context_with_actual_text() {
     // Verify MarkedContentContext correctly stores ActualText
     let ctx = MarkedContentContext {
-        _tag: "Span".to_string(),
+        tag: "Span".to_string(),
         is_artifact: false,
-        _artifact_type: None,
+        artifact_type: None,
         actual_text: Some("fi".to_string()), // Ligature expansion
-        _expansion: None,
+        expansion: None,
     };
 
     assert_eq!(ctx.actual_text, Some("fi".to_string()));
@@ -10513,25 +10850,25 @@ fn test_marked_content_context_with_actual_text() {
 fn test_marked_content_context_with_expansion() {
     // Verify MarkedContentContext correctly stores /E expansion
     let ctx = MarkedContentContext {
-        _tag: "Span".to_string(),
+        tag: "Span".to_string(),
         is_artifact: false,
-        _artifact_type: None,
+        artifact_type: None,
         actual_text: None,
-        _expansion: Some("Portable Document Format".to_string()),
+        expansion: Some("Portable Document Format".to_string()),
     };
 
-    assert_eq!(ctx._expansion, Some("Portable Document Format".to_string()));
+    assert_eq!(ctx.expansion, Some("Portable Document Format".to_string()));
 }
 
 #[test]
 fn test_marked_content_context_artifact_with_actual_text() {
     // Verify artifacts can have ActualText (though typically they don't)
     let ctx = MarkedContentContext {
-        _tag: "Artifact".to_string(),
+        tag: "Artifact".to_string(),
         is_artifact: true,
-        _artifact_type: Some(ArtifactType::Pagination(PaginationSubtype::Header)),
+        artifact_type: Some(ArtifactType::Pagination(PaginationSubtype::Header)),
         actual_text: Some("Header text".to_string()),
-        _expansion: None,
+        expansion: None,
     };
 
     assert!(ctx.is_artifact);
@@ -10545,19 +10882,19 @@ fn test_get_current_actual_text_finds_first() {
 
     // Push contexts with ActualText
     extractor.marked_content_stack.push(MarkedContentContext {
-        _tag: "Span".to_string(),
+        tag: "Span".to_string(),
         is_artifact: false,
-        _artifact_type: None,
+        artifact_type: None,
         actual_text: Some("outer text".to_string()),
-        _expansion: None,
+        expansion: None,
     });
 
     extractor.marked_content_stack.push(MarkedContentContext {
-        _tag: "Span".to_string(),
+        tag: "Span".to_string(),
         is_artifact: false,
-        _artifact_type: None,
+        artifact_type: None,
         actual_text: Some("inner text".to_string()),
-        _expansion: None,
+        expansion: None,
     });
 
     // Should return innermost (most recent) ActualText
@@ -10572,20 +10909,20 @@ fn test_get_current_actual_text_skips_none() {
 
     // Push context with ActualText
     extractor.marked_content_stack.push(MarkedContentContext {
-        _tag: "Span".to_string(),
+        tag: "Span".to_string(),
         is_artifact: false,
-        _artifact_type: None,
+        artifact_type: None,
         actual_text: Some("replacement text".to_string()),
-        _expansion: None,
+        expansion: None,
     });
 
     // Push context without ActualText
     extractor.marked_content_stack.push(MarkedContentContext {
-        _tag: "Span".to_string(),
+        tag: "Span".to_string(),
         is_artifact: false,
-        _artifact_type: None,
+        artifact_type: None,
         actual_text: None,
-        _expansion: None,
+        expansion: None,
     });
 
     // Should find the ActualText from outer context

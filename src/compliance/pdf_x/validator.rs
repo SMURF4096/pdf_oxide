@@ -1708,14 +1708,17 @@ mod tests {
         // Test via finalize approach: manually simulate what check_action does
         if let Object::Dictionary(d) = &action {
             if let Some(Object::Name(action_type)) = d.get("S") {
-                if action_type.as_str() == "JavaScript" {
-                    result.add_error(
-                        XComplianceError::new(
-                            XErrorCode::JavaScriptNotAllowed,
-                            "JavaScript actions not allowed",
-                        )
-                        .with_clause("6.6.1"),
-                    );
+                match action_type.as_str() {
+                    "JavaScript" => {
+                        result.add_error(
+                            XComplianceError::new(
+                                XErrorCode::JavaScriptNotAllowed,
+                                "JavaScript actions not allowed",
+                            )
+                            .with_clause("6.6.1"),
+                        );
+                    }
+                    _ => {}
                 }
             }
         }

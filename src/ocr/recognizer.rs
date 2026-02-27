@@ -31,7 +31,8 @@ pub struct TextRecognizer {
     /// ONNX Runtime session (Mutex for thread-safe mutable access)
     session: Mutex<Option<Session>>,
     /// Model bytes for reference
-    _model_bytes: Option<Vec<u8>>,
+    #[allow(dead_code)]
+    model_bytes: Option<Vec<u8>>,
     dictionary: Vec<char>,
     config: OcrConfig,
 }
@@ -96,7 +97,7 @@ impl TextRecognizer {
 
         Ok(Self {
             session: Mutex::new(Some(session)),
-            _model_bytes: Some(model_bytes.to_vec()),
+            model_bytes: Some(model_bytes.to_vec()),
             dictionary,
             config,
         })

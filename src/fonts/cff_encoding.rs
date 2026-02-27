@@ -1636,8 +1636,13 @@ mod tests {
 
     /// Helper: builds a minimal CFF font binary with specified encoding and charset offsets.
     fn build_minimal_cff(encoding_offset: i32, charset_offset: i32) -> Vec<u8> {
+        let mut data = Vec::new();
+
         // CFF Header: major=1, minor=0, hdrSize=4, offSize=1
-        let mut data = vec![1, 0, 4, 1];
+        data.push(1); // major
+        data.push(0); // minor
+        data.push(4); // hdrSize
+        data.push(1); // offSize
 
         // Name INDEX: 1 entry "Test"
         append_index(&mut data, &[b"Test"]);

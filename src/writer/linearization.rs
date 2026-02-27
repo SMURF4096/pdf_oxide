@@ -377,6 +377,9 @@ pub struct ObjectInfo {
 pub struct LinearizationAnalyzer {
     /// All objects in the document.
     objects: Vec<ObjectInfo>,
+    /// Number of pages.
+    #[allow(dead_code)]
+    num_pages: usize,
     /// First page index.
     first_page: usize,
     /// Objects belonging to first page.
@@ -392,6 +395,7 @@ impl LinearizationAnalyzer {
     pub fn new(num_pages: usize, first_page: usize) -> Self {
         Self {
             objects: Vec::new(),
+            num_pages,
             first_page,
             first_page_objects: HashSet::new(),
             shared_objects: HashSet::new(),
@@ -466,16 +470,19 @@ impl LinearizationAnalyzer {
 
 /// Builder for creating linearized PDFs.
 pub struct LinearizedPdfBuilder {
+    #[allow(dead_code)]
+    config: LinearizationConfig,
     params: LinearizationParams,
     hint_tables: HintTables,
 }
 
 impl LinearizedPdfBuilder {
     /// Create a new linearized PDF builder.
-    pub fn new(num_pages: u32, _config: LinearizationConfig) -> Self {
+    pub fn new(num_pages: u32, config: LinearizationConfig) -> Self {
         let params = LinearizationParams::new(num_pages);
 
         Self {
+            config,
             params,
             hint_tables: HintTables::new(),
         }
