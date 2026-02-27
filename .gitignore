@@ -63,6 +63,10 @@ python/pdf_oxide.egg-info/
 # WASM
 pkg/
 wasm-pack.log
+# Generated wasm-bindgen output (build artifacts, not source)
+examples/wasm_node/*.wasm
+examples/wasm_node/*.js
+examples/wasm_node/*.d.ts
 
 # IDEs
 .vscode/
@@ -220,6 +224,26 @@ pdf_exports/
 # Claude Code
 Claude.md
 CLAUDE.md
+
+# Stray stdout captures
+stdout
+
+# Debug/profiling example scripts (local development only)
+examples/bench_*.rs
+examples/debug_*.rs
+examples/profile_*.rs
+examples/deep_profile.rs
+examples/dump_content.rs
+examples/perf_target.rs
+examples/phase_bench.rs
+examples/space_spans.rs
+examples/span_count.rs
+examples/span_count2.rs
+examples/content_stream_sizes.rs
+examples/bottleneck_analysis.rs
+examples/verify_text.rs
+examples/xobject_investigation.rs
+examples/test_issue*.rs
 
 # Generated planning and analysis documents (auto-generated during work)
 PHASE_*.md
