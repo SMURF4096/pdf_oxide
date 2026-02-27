@@ -2,20 +2,53 @@
 
 use std::path::PathBuf;
 
+/// Detection image resize strategy.
+///
+/// Controls how input images are resized before detection.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DetResizeStrategy {
+    /// Scale DOWN so the longest side fits within `max_side` (PP-OCRv3/v4 default).
+    /// Good for mobile models that expect smaller inputs.
+    MaxSide {
+        /// Maximum side length (default: 960)
+        max_side: u32,
+    },
+    /// Scale UP so the shortest side is at least `min_side`, but cap at `max_side_limit`
+    /// (PP-OCRv5 default). Preserves high resolution for server models.
+    MinSide {
+        /// Minimum side length — images smaller than this are scaled up (default: 64)
+        min_side: u32,
+        /// Maximum allowed side length (default: 4000)
+        max_side_limit: u32,
+    },
+}
+
+impl Default for DetResizeStrategy {
+    fn default() -> Self {
+        // Default to v3/v4 strategy for backward compatibility
+        DetResizeStrategy::MaxSide { max_side: 960 }
+    }
+}
+
 /// Configuration for OCR processing.
 #[derive(Debug, Clone)]
 pub struct OcrConfig {
     /// Detection confidence threshold (0.0 - 1.0, default: 0.3)
     pub det_threshold: f32,
 
-    /// Box confidence threshold for filtering (0.0 - 1.0, default: 0.5)
+    /// Box confidence threshold for filtering (0.0 - 1.0, default: 0.6)
     pub box_threshold: f32,
 
     /// Recognition confidence threshold (0.0 - 1.0, default: 0.5)
     pub rec_threshold: f32,
 
-    /// Maximum side length for detection input (default: 960)
+    /// Maximum side length for detection input (default: 960).
+    /// Ignored when `det_resize_strategy` is set; kept for backward compatibility.
     pub det_max_side: u32,
+
+    /// Detection image resize strategy (default: MaxSide { max_side: 960 }).
+    /// Use `MinSide` for PP-OCRv5 server models that benefit from high-resolution input.
+    pub det_resize_strategy: DetResizeStrategy,
 
     /// Target height for recognition input (default: 48)
     pub rec_target_height: u32,
@@ -46,9 +79,10 @@ impl Default for OcrConfig {
     fn default() -> Self {
         Self {
             det_threshold: 0.3,
-            box_threshold: 0.5,
+            box_threshold: 0.6,
             rec_threshold: 0.5,
             det_max_side: 960,
+            det_resize_strategy: DetResizeStrategy::default(),
             rec_target_height: 48,
             num_threads: 4,
             unclip_ratio: 1.5,
@@ -65,6 +99,21 @@ impl OcrConfig {
     /// Create a new configuration with default values.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Create a configuration tuned for PP-OCRv5 server models.
+    ///
+    /// Uses `MinSide` resize strategy to preserve high-resolution input,
+    /// which is essential for PP-OCRv5 server detection models.
+    pub fn v5() -> Self {
+        Self {
+            det_resize_strategy: DetResizeStrategy::MinSide {
+                min_side: 64,
+                max_side_limit: 4000,
+            },
+            box_threshold: 0.6,
+            ..Default::default()
+        }
     }
 
     /// Create a builder for custom configuration.
@@ -105,9 +154,21 @@ impl OcrConfigBuilder {
         self
     }
 
-    /// Set maximum side length for detection.
+    /// Set maximum side length for detection (v3/v4 MaxSide strategy).
+    ///
+    /// This also sets `det_resize_strategy` to `MaxSide`.
     pub fn det_max_side(mut self, max_side: u32) -> Self {
-        self.config.det_max_side = max_side.max(32);
+        let max_side = max_side.max(32);
+        self.config.det_max_side = max_side;
+        self.config.det_resize_strategy = DetResizeStrategy::MaxSide { max_side };
+        self
+    }
+
+    /// Set detection resize strategy.
+    ///
+    /// Use `DetResizeStrategy::MinSide` for PP-OCRv5 server models.
+    pub fn det_resize_strategy(mut self, strategy: DetResizeStrategy) -> Self {
+        self.config.det_resize_strategy = strategy;
         self
     }
 
@@ -173,8 +234,25 @@ mod tests {
     fn test_default_config() {
         let config = OcrConfig::default();
         assert!((config.det_threshold - 0.3).abs() < f32::EPSILON);
+        assert!((config.box_threshold - 0.6).abs() < f32::EPSILON);
         assert_eq!(config.num_threads, 4);
         assert!(config.detect_styles);
+        assert_eq!(
+            config.det_resize_strategy,
+            DetResizeStrategy::MaxSide { max_side: 960 }
+        );
+    }
+
+    #[test]
+    fn test_v5_config() {
+        let config = OcrConfig::v5();
+        assert!(matches!(
+            config.det_resize_strategy,
+            DetResizeStrategy::MinSide {
+                min_side: 64,
+                max_side_limit: 4000
+            }
+        ));
     }
 
     #[test]

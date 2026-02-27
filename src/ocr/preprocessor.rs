@@ -7,6 +7,7 @@
 use image::{DynamicImage, GenericImageView, Rgb, RgbImage};
 use ndarray::Array4;
 
+use super::config::DetResizeStrategy;
 use super::error::{OcrError, OcrResult};
 
 /// Mean values for ImageNet normalization (RGB order).
@@ -18,7 +19,7 @@ const IMAGENET_STD: [f32; 3] = [0.229, 0.224, 0.225];
 /// Preprocess an image for text detection (DBNet++).
 ///
 /// Performs the following operations:
-/// 1. Resize to fit within max_side while maintaining aspect ratio
+/// 1. Resize according to the given strategy while maintaining aspect ratio
 /// 2. Pad to multiple of 32 (required by DBNet++)
 /// 3. Normalize using ImageNet mean/std
 /// 4. Convert to CHW tensor format with batch dimension
@@ -26,14 +27,14 @@ const IMAGENET_STD: [f32; 3] = [0.229, 0.224, 0.225];
 /// # Arguments
 ///
 /// * `image` - Input image
-/// * `max_side` - Maximum side length (typically 960)
+/// * `strategy` - Resize strategy (MaxSide for v3/v4, MinSide for v5)
 ///
 /// # Returns
 ///
-/// A 4D tensor of shape `[1, 3, H, W]` (NCHW format).
+/// A 4D tensor of shape `[1, 3, H, W]` (NCHW format) and the applied scale ratio.
 pub fn preprocess_for_detection(
     image: &DynamicImage,
-    max_side: u32,
+    strategy: &DetResizeStrategy,
 ) -> OcrResult<(Array4<f32>, f32)> {
     let (orig_w, orig_h) = image.dimensions();
 
@@ -41,12 +42,36 @@ pub fn preprocess_for_detection(
         return Err(OcrError::InvalidImage("Image has zero dimensions".to_string()));
     }
 
-    // Calculate resize ratio to fit within max_side
-    let max_dim = orig_w.max(orig_h);
-    let ratio = if max_dim > max_side {
-        max_side as f32 / max_dim as f32
-    } else {
-        1.0
+    // Calculate resize ratio based on strategy
+    let ratio = match strategy {
+        DetResizeStrategy::MaxSide { max_side } => {
+            // PP-OCRv3/v4: scale DOWN so longest side fits within max_side
+            let max_dim = orig_w.max(orig_h);
+            if max_dim > *max_side {
+                *max_side as f32 / max_dim as f32
+            } else {
+                1.0
+            }
+        }
+        DetResizeStrategy::MinSide {
+            min_side,
+            max_side_limit,
+        } => {
+            // PP-OCRv5: scale UP so shortest side is at least min_side,
+            // but cap at max_side_limit
+            let min_dim = orig_w.min(orig_h);
+            let mut r = if min_dim < *min_side {
+                *min_side as f32 / min_dim as f32
+            } else {
+                1.0
+            };
+            // Cap: don't exceed max_side_limit on the longest side
+            let max_dim_after = (orig_w.max(orig_h) as f32 * r) as u32;
+            if max_dim_after > *max_side_limit {
+                r = *max_side_limit as f32 / orig_w.max(orig_h) as f32;
+            }
+            r
+        }
     };
 
     let new_w = ((orig_w as f32 * ratio) as u32).max(1);
@@ -216,9 +241,10 @@ mod tests {
     }
 
     #[test]
-    fn test_preprocess_for_detection_aspect_ratio() {
+    fn test_preprocess_for_detection_max_side() {
         let img = create_test_image(800, 600);
-        let (tensor, ratio) = preprocess_for_detection(&img, 640).unwrap();
+        let strategy = DetResizeStrategy::MaxSide { max_side: 640 };
+        let (tensor, ratio) = preprocess_for_detection(&img, &strategy).unwrap();
 
         // Check shape: [1, 3, H, W]
         assert_eq!(tensor.shape()[0], 1);
@@ -233,9 +259,10 @@ mod tests {
     }
 
     #[test]
-    fn test_preprocess_for_detection_small_image() {
+    fn test_preprocess_for_detection_small_image_max_side() {
         let img = create_test_image(100, 100);
-        let (tensor, ratio) = preprocess_for_detection(&img, 640).unwrap();
+        let strategy = DetResizeStrategy::MaxSide { max_side: 640 };
+        let (tensor, ratio) = preprocess_for_detection(&img, &strategy).unwrap();
 
         // Small image should not be scaled up, ratio = 1.0
         assert!((ratio - 1.0).abs() < f32::EPSILON);
@@ -243,6 +270,39 @@ mod tests {
         // Should still be padded to multiple of 32
         assert!(tensor.shape()[2] % 32 == 0);
         assert!(tensor.shape()[3] % 32 == 0);
+    }
+
+    #[test]
+    fn test_preprocess_for_detection_min_side_upscale() {
+        let img = create_test_image(30, 20);
+        let strategy = DetResizeStrategy::MinSide {
+            min_side: 64,
+            max_side_limit: 4000,
+        };
+        let (tensor, ratio) = preprocess_for_detection(&img, &strategy).unwrap();
+
+        // Small image should be scaled UP so min side >= 64
+        assert!(ratio > 1.0);
+        assert!(tensor.shape()[2] % 32 == 0);
+        assert!(tensor.shape()[3] % 32 == 0);
+    }
+
+    #[test]
+    fn test_preprocess_for_detection_min_side_passthrough() {
+        let img = create_test_image(2480, 3508);
+        let strategy = DetResizeStrategy::MinSide {
+            min_side: 64,
+            max_side_limit: 4000,
+        };
+        let (tensor, ratio) = preprocess_for_detection(&img, &strategy).unwrap();
+
+        // Large image should pass through at original resolution (ratio = 1.0)
+        assert!((ratio - 1.0).abs() < f32::EPSILON);
+        assert!(tensor.shape()[2] % 32 == 0);
+        assert!(tensor.shape()[3] % 32 == 0);
+        // Should be close to original dimensions (padded to 32)
+        assert!(tensor.shape()[2] >= 3508);
+        assert!(tensor.shape()[3] >= 2480);
     }
 
     #[test]
@@ -262,7 +322,8 @@ mod tests {
     #[test]
     fn test_normalize_values_detection() {
         let img = create_test_image(64, 64);
-        let (tensor, _) = preprocess_for_detection(&img, 640).unwrap();
+        let strategy = DetResizeStrategy::MaxSide { max_side: 640 };
+        let (tensor, _) = preprocess_for_detection(&img, &strategy).unwrap();
 
         // Check that values are in reasonable range for ImageNet normalization
         let min_val = tensor.iter().cloned().fold(f32::MAX, f32::min);

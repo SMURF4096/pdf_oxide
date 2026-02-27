@@ -92,7 +92,8 @@ impl TextDetector {
     /// ```
     pub fn detect(&self, image: &DynamicImage) -> OcrResult<Vec<DetectedBox>> {
         // Preprocess image
-        let (input_tensor, scale) = preprocess_for_detection(image, self.config.det_max_side)?;
+        let (input_tensor, scale) =
+            preprocess_for_detection(image, &self.config.det_resize_strategy)?;
 
         // Run inference
         let prob_map = self.run_inference(&input_tensor)?;

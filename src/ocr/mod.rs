@@ -46,7 +46,7 @@ mod preprocessor;
 mod recognizer;
 
 // Re-exports
-pub use config::{OcrConfig, OcrConfigBuilder};
+pub use config::{DetResizeStrategy, OcrConfig, OcrConfigBuilder};
 pub use detector::TextDetector;
 pub use engine::{OcrEngine, OcrOutput, OcrSpan};
 pub use error::OcrError;
@@ -113,7 +113,11 @@ pub enum PageType {
 ///
 /// The detected [`PageType`].
 pub fn detect_page_type(doc: &mut PdfDocument, page: usize) -> Result<PageType> {
-    let native_text = doc.extract_text(page).unwrap_or_default();
+    // IMPORTANT: Use extract_spans() instead of extract_text() to avoid infinite
+    // recursion. extract_text() calls needs_ocr() which calls detect_page_type(),
+    // creating a stack overflow loop when the OCR feature is enabled.
+    let spans = doc.extract_spans(page).unwrap_or_default();
+    let native_text: String = spans.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join(" ");
     let trimmed = native_text.trim();
     let text_len = trimmed.len();
 

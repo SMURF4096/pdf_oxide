@@ -104,8 +104,13 @@ impl TextRecognizer {
     }
 
     /// Parse character dictionary from string.
+    ///
+    /// PaddleOCR convention: model output index 0 is the CTC blank token,
+    /// and dictionary characters map to indices 1..N. We insert a blank
+    /// placeholder at index 0 so that `dictionary[model_index]` gives
+    /// the correct character.
     fn parse_dictionary(content: &str) -> OcrResult<Vec<char>> {
-        let mut chars: Vec<char> = content
+        let chars: Vec<char> = content
             .lines()
             .filter(|line| !line.is_empty())
             .filter_map(|line| line.chars().next())
@@ -115,10 +120,12 @@ impl TextRecognizer {
             return Err(OcrError::DictionaryError("Dictionary is empty".to_string()));
         }
 
-        // Add blank character at the end (for CTC decoding)
-        chars.push('\0');
+        // Prepend blank character at index 0 (PaddleOCR CTC blank convention)
+        let mut dict = Vec::with_capacity(chars.len() + 1);
+        dict.push('\0'); // index 0 = CTC blank
+        dict.extend(chars);
 
-        Ok(chars)
+        Ok(dict)
     }
 
     /// Recognize text from a single cropped text region.
@@ -210,7 +217,7 @@ impl TextRecognizer {
             },
         };
 
-        let blank_idx = self.dictionary.len() - 1;
+        let blank_idx = 0; // PaddleOCR CTC blank is always index 0
         let mut text = String::new();
         let mut char_confidences = Vec::new();
         let mut prev_idx = blank_idx;
@@ -282,11 +289,11 @@ mod tests {
         let dict_content = "a\nb\nc\n1\n2\n3";
         let dict = TextRecognizer::parse_dictionary(dict_content).unwrap();
 
-        // Should have 6 chars + 1 blank
+        // Should have 1 blank + 6 chars
         assert_eq!(dict.len(), 7);
-        assert_eq!(dict[0], 'a');
-        assert_eq!(dict[5], '3');
-        assert_eq!(dict[6], '\0'); // Blank at end
+        assert_eq!(dict[0], '\0'); // Blank at index 0 (PaddleOCR CTC convention)
+        assert_eq!(dict[1], 'a');
+        assert_eq!(dict[6], '3');
     }
 
     #[test]
