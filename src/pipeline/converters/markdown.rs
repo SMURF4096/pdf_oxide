@@ -89,21 +89,34 @@ impl MarkdownOutputConverter {
 
     /// Apply linkification to text (URLs and emails).
     fn linkify(&self, text: &str) -> String {
-        // First replace URLs
-        let mut result = RE_URL
-            .replace_all(text, |caps: &regex::Captures| {
-                let url = &caps[0];
-                format!("[{}]({})", url, url)
-            })
-            .to_string();
+        // Quick pre-check: skip regex for spans that can't contain URLs or emails.
+        // This avoids regex overhead for ~95% of regular text spans.
+        let might_have_url = text.contains("://") || text.contains("www.");
+        let might_have_email = text.contains('@');
 
-        // Then replace emails
-        result = RE_EMAIL
-            .replace_all(&result, |caps: &regex::Captures| {
-                let email = &caps[0];
-                format!("[{}](mailto:{})", email, email)
-            })
-            .to_string();
+        if !might_have_url && !might_have_email {
+            return text.to_string();
+        }
+
+        let mut result = if might_have_url {
+            RE_URL
+                .replace_all(text, |caps: &regex::Captures| {
+                    let url = &caps[0];
+                    format!("[{}]({})", url, url)
+                })
+                .to_string()
+        } else {
+            text.to_string()
+        };
+
+        if might_have_email {
+            result = RE_EMAIL
+                .replace_all(&result, |caps: &regex::Captures| {
+                    let email = &caps[0];
+                    format!("[{}](mailto:{})", email, email)
+                })
+                .to_string();
+        }
 
         result
     }

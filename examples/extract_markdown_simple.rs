@@ -14,7 +14,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pdf_path = &args[1];
     let mut doc = PdfDocument::open(pdf_path)?;
     let page_count = doc.page_count()?;
-    let options = ConversionOptions::default();
+    let options = ConversionOptions {
+        include_images: false,
+        ..ConversionOptions::default()
+    };
 
     for page_idx in 0..page_count {
         let md = doc.to_markdown(page_idx, &options)?;

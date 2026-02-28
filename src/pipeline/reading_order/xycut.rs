@@ -81,128 +81,133 @@ impl XYCutStrategy {
     ///
     /// Public for use by MarkdownConverter's ColumnAware reading order mode.
     pub fn partition_region(&self, spans: &[TextSpan]) -> Vec<Vec<TextSpan>> {
-        if spans.is_empty() {
+        let indices: Vec<usize> = (0..spans.len()).collect();
+        let index_groups = self.partition_indexed(spans, &indices);
+        // Clone spans only once at the end (not at every recursion level)
+        index_groups
+            .into_iter()
+            .map(|group| group.into_iter().map(|i| spans[i].clone()).collect())
+            .collect()
+    }
+
+    /// Index-based recursive partitioning — returns groups of indices into the input span slice.
+    ///
+    /// Avoids cloning TextSpan at every recursive split level. Spans are only
+    /// read through shared reference; indices are partitioned instead.
+    fn partition_indexed(&self, all_spans: &[TextSpan], indices: &[usize]) -> Vec<Vec<usize>> {
+        if indices.is_empty() {
             return Vec::new();
         }
 
         // Base case: small region, don't split further
-        if spans.len() < self.min_spans_for_split {
-            let sorted: Vec<TextSpan> = self.sort_spans(spans).into_iter().cloned().collect();
-            return vec![sorted];
+        if indices.len() < self.min_spans_for_split {
+            return vec![self.sort_indices(all_spans, indices)];
         }
 
         // Try horizontal partitioning (vertical line split)
-        if let Some((left, _split_x, right)) = self.find_horizontal_split(spans) {
-            let mut result = self.partition_region(&left);
-            result.extend(self.partition_region(&right));
+        if let Some((left, right)) = self.find_horizontal_split_indexed(all_spans, indices) {
+            let mut result = self.partition_indexed(all_spans, &left);
+            result.extend(self.partition_indexed(all_spans, &right));
             return result;
         }
 
         // Try vertical partitioning (horizontal line split)
-        if let Some((top, _split_y, bottom)) = self.find_vertical_split(spans) {
-            let mut result = self.partition_region(&top);
-            result.extend(self.partition_region(&bottom));
+        if let Some((top, bottom)) = self.find_vertical_split_indexed(all_spans, indices) {
+            let mut result = self.partition_indexed(all_spans, &top);
+            result.extend(self.partition_indexed(all_spans, &bottom));
             return result;
         }
 
         // No split found, return as single group
-        let sorted: Vec<TextSpan> = self.sort_spans(spans).into_iter().cloned().collect();
-        vec![sorted]
+        vec![self.sort_indices(all_spans, indices)]
     }
 
-    /// Find vertical line (X-axis) split in spans based on horizontal projection profile.
-    fn find_horizontal_split(
+    /// Find vertical line (X-axis) split using index-based partitioning.
+    fn find_horizontal_split_indexed(
         &self,
-        spans: &[TextSpan],
-    ) -> Option<(Vec<TextSpan>, f32, Vec<TextSpan>)> {
-        // Calculate projection profile on X-axis
-        let profile = self.horizontal_projection(spans)?;
-
-        // Find valley (gap) with minimum density
+        all_spans: &[TextSpan],
+        indices: &[usize],
+    ) -> Option<(Vec<usize>, Vec<usize>)> {
+        let profile = self.horizontal_projection_indexed(all_spans, indices)?;
         let (valley_start, valley_end, valley_width) = self.find_valley(&profile)?;
 
-        // Check if valley is wide enough
         if valley_width < self.min_valley_width {
             return None;
         }
 
-        // Split at valley center
         let split_x = profile.x_min + (valley_start + valley_end) as f32 / 2.0;
 
-        // Partition spans by X coordinate
-        let (left, right): (Vec<_>, Vec<_>) = spans
+        let (left, right): (Vec<usize>, Vec<usize>) = indices
             .iter()
-            .cloned()
-            .partition(|s| s.bbox.right() <= split_x);
+            .partition(|&&i| all_spans[i].bbox.right() <= split_x);
 
         if left.is_empty() || right.is_empty() {
             return None;
         }
 
-        Some((left, split_x, right))
+        Some((left, right))
     }
 
-    /// Find horizontal line (Y-axis) split in spans based on vertical projection profile.
-    fn find_vertical_split(
+    /// Find horizontal line (Y-axis) split using index-based partitioning.
+    fn find_vertical_split_indexed(
         &self,
-        spans: &[TextSpan],
-    ) -> Option<(Vec<TextSpan>, f32, Vec<TextSpan>)> {
-        // Calculate projection profile on Y-axis
-        let profile = self.vertical_projection(spans)?;
-
-        // Find valley (gap) with minimum density
+        all_spans: &[TextSpan],
+        indices: &[usize],
+    ) -> Option<(Vec<usize>, Vec<usize>)> {
+        let profile = self.vertical_projection_indexed(all_spans, indices)?;
         let (valley_start, valley_end, valley_width) = self.find_valley(&profile)?;
 
-        // Check if valley is wide enough
         if valley_width < self.min_valley_width {
             return None;
         }
 
-        // Split at valley center
         let split_y = profile.y_min + (valley_start + valley_end) as f32 / 2.0;
 
-        // Partition spans by Y coordinate
-        let (top, bottom): (Vec<_>, Vec<_>) =
-            spans.iter().cloned().partition(|s| s.bbox.top() <= split_y);
+        let (top, bottom): (Vec<usize>, Vec<usize>) = indices
+            .iter()
+            .partition(|&&i| all_spans[i].bbox.top() <= split_y);
 
         if top.is_empty() || bottom.is_empty() {
             return None;
         }
 
-        Some((top, split_y, bottom))
+        Some((top, bottom))
     }
 
-    /// Calculate horizontal projection profile (density across X-axis).
-    fn horizontal_projection(&self, spans: &[TextSpan]) -> Option<ProjectionProfile> {
-        if spans.is_empty() {
+    /// Calculate horizontal projection profile from indexed spans.
+    fn horizontal_projection_indexed(
+        &self,
+        all_spans: &[TextSpan],
+        indices: &[usize],
+    ) -> Option<ProjectionProfile> {
+        if indices.is_empty() {
             return None;
         }
 
-        // Find bounding box
         let mut x_min = f32::MAX;
         let mut x_max = f32::MIN;
         let mut y_min = f32::MAX;
         let mut y_max = f32::MIN;
 
-        for span in spans {
+        for &i in indices {
+            let span = &all_spans[i];
             x_min = x_min.min(span.bbox.left());
             x_max = x_max.max(span.bbox.right());
             y_min = y_min.min(span.bbox.top());
             y_max = y_max.max(span.bbox.bottom());
         }
 
-        // Discretize X-axis into bins (1 point per bin for precision)
         let width = (x_max - x_min).ceil() as usize;
         let mut density = vec![0.0; width];
 
-        // Accumulate span heights for each X bin
-        for span in spans {
+        for &i in indices {
+            let span = &all_spans[i];
             let x_start = (span.bbox.left() - x_min).max(0.0).ceil() as usize;
             let x_end = (span.bbox.right() - x_min).ceil() as usize;
             let height = span.bbox.bottom() - span.bbox.top();
 
-            for i in x_start..x_end.min(width) {
-                density[i] += height;
+            for j in x_start..x_end.min(width) {
+                density[j] += height;
             }
         }
 
@@ -213,37 +218,40 @@ impl XYCutStrategy {
         })
     }
 
-    /// Calculate vertical projection profile (density across Y-axis).
-    fn vertical_projection(&self, spans: &[TextSpan]) -> Option<ProjectionProfile> {
-        if spans.is_empty() {
+    /// Calculate vertical projection profile from indexed spans.
+    fn vertical_projection_indexed(
+        &self,
+        all_spans: &[TextSpan],
+        indices: &[usize],
+    ) -> Option<ProjectionProfile> {
+        if indices.is_empty() {
             return None;
         }
 
-        // Find bounding box
         let mut x_min = f32::MAX;
         let mut x_max = f32::MIN;
         let mut y_min = f32::MAX;
         let mut y_max = f32::MIN;
 
-        for span in spans {
+        for &i in indices {
+            let span = &all_spans[i];
             x_min = x_min.min(span.bbox.left());
             x_max = x_max.max(span.bbox.right());
             y_min = y_min.min(span.bbox.top());
             y_max = y_max.max(span.bbox.bottom());
         }
 
-        // Discretize Y-axis into bins (1 point per bin for precision)
         let height = (y_max - y_min).ceil() as usize;
         let mut density = vec![0.0; height];
 
-        // Accumulate span widths for each Y bin
-        for span in spans {
+        for &i in indices {
+            let span = &all_spans[i];
             let y_start = (span.bbox.top() - y_min).max(0.0).ceil() as usize;
             let y_end = (span.bbox.bottom() - y_min).ceil() as usize;
-            let width = span.bbox.right() - span.bbox.left();
+            let w = span.bbox.right() - span.bbox.left();
 
-            for i in y_start..y_end.min(height) {
-                density[i] += width;
+            for j in y_start..y_end.min(height) {
+                density[j] += w;
             }
         }
 
@@ -296,7 +304,22 @@ impl XYCutStrategy {
             .max_by(|a, b| crate::utils::safe_float_cmp(a.2, b.2))
     }
 
+    /// Test-only wrapper for horizontal projection on a contiguous slice.
+    #[cfg(test)]
+    fn horizontal_projection(&self, spans: &[TextSpan]) -> Option<ProjectionProfile> {
+        let indices: Vec<usize> = (0..spans.len()).collect();
+        self.horizontal_projection_indexed(spans, &indices)
+    }
+
+    /// Test-only wrapper for vertical projection on a contiguous slice.
+    #[cfg(test)]
+    fn vertical_projection(&self, spans: &[TextSpan]) -> Option<ProjectionProfile> {
+        let indices: Vec<usize> = (0..spans.len()).collect();
+        self.vertical_projection_indexed(spans, &indices)
+    }
+
     /// Sort spans in reading order (top-to-bottom, left-to-right).
+    #[cfg(test)]
     fn sort_spans<'a>(&self, spans: &'a [TextSpan]) -> Vec<&'a TextSpan> {
         let mut sorted: Vec<_> = spans.iter().collect();
 
@@ -310,6 +333,20 @@ impl XYCutStrategy {
             crate::utils::safe_float_cmp(a.bbox.left(), b.bbox.left())
         });
 
+        sorted
+    }
+
+    /// Sort indices in reading order (top-to-bottom, left-to-right).
+    fn sort_indices(&self, all_spans: &[TextSpan], indices: &[usize]) -> Vec<usize> {
+        let mut sorted: Vec<usize> = indices.to_vec();
+        sorted.sort_by(|&a, &b| {
+            let y_cmp =
+                crate::utils::safe_float_cmp(all_spans[b].bbox.top(), all_spans[a].bbox.top());
+            if y_cmp != std::cmp::Ordering::Equal {
+                return y_cmp;
+            }
+            crate::utils::safe_float_cmp(all_spans[a].bbox.left(), all_spans[b].bbox.left())
+        });
         sorted
     }
 }
@@ -330,21 +367,26 @@ impl ReadingOrderStrategy for XYCutStrategy {
         spans: Vec<TextSpan>,
         _context: &ReadingOrderContext,
     ) -> Result<Vec<OrderedTextSpan>> {
-        // Partition spans using XY-Cut algorithm
-        let groups = self.partition_region(&spans);
+        // Use index-based partitioning to avoid cloning during recursion
+        let indices: Vec<usize> = (0..spans.len()).collect();
+        let index_groups = self.partition_indexed(&spans, &indices);
 
-        // Assign order indices based on group sequence
-        let mut ordered = Vec::new();
+        // Build result — moves spans out by index (no extra clone)
+        let mut ordered = Vec::with_capacity(spans.len());
+        // Convert spans to indexable storage for O(1) moves
+        let mut span_slots: Vec<Option<TextSpan>> = spans.into_iter().map(Some).collect();
         let mut order_index = 0usize;
 
-        for group in groups {
-            for span in group {
-                ordered.push(OrderedTextSpan::with_info(
-                    span.clone(),
-                    order_index,
-                    ReadingOrderInfo::xycut(),
-                ));
-                order_index += 1;
+        for group in index_groups {
+            for i in group {
+                if let Some(span) = span_slots[i].take() {
+                    ordered.push(OrderedTextSpan::with_info(
+                        span,
+                        order_index,
+                        ReadingOrderInfo::xycut(),
+                    ));
+                    order_index += 1;
+                }
             }
         }
 

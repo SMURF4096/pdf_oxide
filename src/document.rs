@@ -6087,8 +6087,6 @@ impl PdfDocument {
         page_index: usize,
         options: &crate::converters::ConversionOptions,
     ) -> Result<String> {
-        use crate::structure::traversal::extract_reading_order;
-
         // Step 1: Extract raw spans (unchanged - this is the foundation)
         let mut spans = self.extract_spans(page_index)?;
 
@@ -6108,34 +6106,65 @@ impl PdfDocument {
         let pipeline_config = TextPipelineConfig::from_conversion_options(options);
 
         // Step 4: Handle structure tree context for reading order
-        // Try to extract MCID order for StructureTreeFirst mode
-        if let Ok(Some(struct_tree)) = self.structure_tree() {
-            match extract_reading_order(&struct_tree, page_index as u32) {
-                Ok(mcid_order) if !mcid_order.is_empty() => {
+        // Use cached structure tree (same cache as extract_text) to avoid
+        // re-traversing the entire tree for each page — O(1) lookup instead of O(tree_size).
+        let mcid_order = {
+            // Ensure structure tree is cached (Arc clone = cheap ref count bump)
+            let cached_tree = match &self.structure_tree_cache {
+                Some(cached) => cached.clone(),
+                None => {
+                    let tree = self.structure_tree().ok().flatten().map(Arc::new);
+                    self.structure_tree_cache = Some(tree.clone());
+                    tree
+                },
+            };
+
+            if let Some(ref struct_tree) = cached_tree {
+                // Build per-page traversal cache once, then O(1) lookup per page
+                if self.structure_content_cache.is_none() {
+                    let all_content =
+                        crate::structure::traverse_structure_tree_all_pages(struct_tree);
+                    self.structure_content_cache = Some(all_content);
+                }
+
+                // Extract MCID order from cached content for this page
+                let order: Vec<u32> = self
+                    .structure_content_cache
+                    .as_ref()
+                    .and_then(|cache| cache.get(&(page_index as u32)))
+                    .map(|content| content.iter().filter_map(|c| c.mcid).collect())
+                    .unwrap_or_default();
+
+                if !order.is_empty() {
                     log::debug!(
-                        "Extracted {} MCIDs from structure tree for page {}",
-                        mcid_order.len(),
+                        "Extracted {} MCIDs from cached structure tree for page {}",
+                        order.len(),
                         page_index
                     );
-                },
-                _ => {
+                    Some(order)
+                } else {
                     log::debug!(
                         "No MCIDs found for page {}, reading order strategy will use geometric fallback",
                         page_index
                     );
-                },
+                    None
+                }
+            } else {
+                log::debug!(
+                    "No structure tree found, reading order strategy will use geometric fallback"
+                );
+                None
             }
-        } else {
-            log::debug!(
-                "No structure tree found, reading order strategy will use geometric fallback"
-            );
-        }
+        };
 
         // Step 5: Create pipeline with config
         let pipeline = TextPipeline::with_config(pipeline_config.clone());
 
-        // Step 6: Build reading order context
-        let context = ReadingOrderContext::new().with_page(page_index as u32);
+        // Step 6: Build reading order context (pass mcid_order if available)
+        let mut context = ReadingOrderContext::new().with_page(page_index as u32);
+        if let Some(order) = mcid_order {
+            context = context.with_mcid_order(order);
+        }
 
         // Step 7: Process through pipeline (applies reading order strategy)
         let ordered_spans = pipeline.process(spans, context)?;
