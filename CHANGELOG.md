@@ -52,6 +52,12 @@ All notable changes to PDFOxide are documented here.
 
 - **Large document performance** (#132) — Parallel extraction + global font cache + SmallVec + image-only skip combine to bring 1000-page PDFs well under 1 second on multi-core hardware.
 
+### Community Contributors
+
+Thanks to everyone who reported issues and contributed to v0.3.10:
+
+- **@dhdaines** — Reported circular XObject segfault (#163) and outdated dataset URLs in benchmark docs (#162)
+- **@bhaswata08** — Reported missing `extract_text_ocr` in Python bindings (#171)
 
 ## [0.3.9] - 2026-02-24
 > Performance: 20+ Micro-Optimizations — 40% Faster Text Extraction
