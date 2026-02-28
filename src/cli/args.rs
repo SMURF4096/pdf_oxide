@@ -130,4 +130,125 @@ pub enum Command {
         /// Input PDF file
         file: PathBuf,
     },
+
+    /// Rotate pages by 90, 180, or 270 degrees
+    Rotate {
+        /// Input PDF file
+        file: PathBuf,
+
+        /// Rotation angle in degrees (90, 180, 270, or -90)
+        #[arg(long)]
+        degrees: i32,
+    },
+
+    /// Remove specific pages from a PDF
+    Delete {
+        /// Input PDF file
+        file: PathBuf,
+    },
+
+    /// Reorder pages in a PDF
+    Reorder {
+        /// Input PDF file
+        file: PathBuf,
+
+        /// New page order as comma-separated 1-indexed numbers (e.g. "3,1,2,5,4")
+        #[arg(long)]
+        order: String,
+    },
+
+    /// Read, edit, or strip PDF metadata
+    Metadata {
+        /// Input PDF file
+        file: PathBuf,
+
+        /// Set document title
+        #[arg(long)]
+        title: Option<String>,
+
+        /// Set document author
+        #[arg(long)]
+        author: Option<String>,
+
+        /// Set document subject
+        #[arg(long)]
+        subject: Option<String>,
+
+        /// Set document keywords
+        #[arg(long)]
+        keywords: Option<String>,
+
+        /// Strip all metadata fields
+        #[arg(long)]
+        strip: bool,
+    },
+
+    /// Add a text watermark to pages
+    Watermark {
+        /// Input PDF file
+        file: PathBuf,
+
+        /// Watermark text (presets: CONFIDENTIAL, DRAFT, SAMPLE, "DO NOT COPY")
+        text: String,
+
+        /// Opacity (0.0-1.0)
+        #[arg(long, default_value = "0.3")]
+        opacity: f32,
+
+        /// Rotation angle in degrees
+        #[arg(long, default_value = "45")]
+        rotation: f32,
+
+        /// Font size in points
+        #[arg(long, default_value = "48")]
+        font_size: f32,
+
+        /// Text color as R,G,B (0.0-1.0 each, e.g. "0.8,0,0")
+        #[arg(long)]
+        color: Option<String>,
+    },
+
+    /// List document bookmarks/outline
+    Bookmarks {
+        /// Input PDF file
+        file: PathBuf,
+    },
+
+    /// Flatten annotations and/or form fields
+    Flatten {
+        /// Input PDF file
+        file: PathBuf,
+
+        /// Flatten form fields
+        #[arg(long)]
+        forms: bool,
+
+        /// Flatten annotations
+        #[arg(long)]
+        annotations: bool,
+    },
+
+    /// Crop page margins
+    Crop {
+        /// Input PDF file
+        file: PathBuf,
+
+        /// Margins as left,right,top,bottom in points (e.g. "50,50,50,50")
+        #[arg(long)]
+        margins: String,
+    },
+
+    /// List, fill, or export form fields
+    Forms {
+        /// Input PDF file
+        file: PathBuf,
+
+        /// Fill fields as key=value pairs (e.g. "name=John,age=30")
+        #[arg(long)]
+        fill: Option<String>,
+
+        /// Export form data (fdf or xfdf)
+        #[arg(long, value_parser = ["fdf", "xfdf"])]
+        export: Option<String>,
+    },
 }

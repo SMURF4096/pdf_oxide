@@ -93,6 +93,82 @@ fn dispatch(
         Command::Images { ref file } => {
             commands::images::run(file, pages, output, password, json)
         }
+        Command::Rotate { ref file, degrees } => {
+            commands::rotate::run(file, degrees, pages, output, password)
+        }
+        Command::Delete { ref file } => {
+            commands::delete::run(file, pages, output, password)
+        }
+        Command::Reorder { ref file, ref order } => {
+            commands::reorder::run(file, order, output, password)
+        }
+        Command::Metadata {
+            ref file,
+            ref title,
+            ref author,
+            ref subject,
+            ref keywords,
+            strip,
+        } => {
+            commands::metadata::run(
+                file,
+                title.as_deref(),
+                author.as_deref(),
+                subject.as_deref(),
+                keywords.as_deref(),
+                strip,
+                output,
+                password,
+                json,
+            )
+        }
+        Command::Watermark {
+            ref file,
+            ref text,
+            opacity,
+            rotation,
+            font_size,
+            ref color,
+        } => {
+            commands::watermark::run(
+                file,
+                text,
+                opacity,
+                rotation,
+                font_size,
+                color.as_deref(),
+                pages,
+                output,
+                password,
+            )
+        }
+        Command::Bookmarks { ref file } => {
+            commands::bookmarks::run(file, password, json)
+        }
+        Command::Flatten {
+            ref file,
+            forms,
+            annotations,
+        } => {
+            commands::flatten::run(file, forms, annotations, output, password)
+        }
+        Command::Crop { ref file, ref margins } => {
+            commands::crop::run(file, margins, pages, output, password)
+        }
+        Command::Forms {
+            ref file,
+            ref fill,
+            ref export,
+        } => {
+            commands::forms::run(
+                file,
+                fill.as_deref(),
+                export.as_deref(),
+                output,
+                password,
+                json,
+            )
+        }
     };
 
     if let Some(start) = start {

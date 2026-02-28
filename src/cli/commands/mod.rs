@@ -10,6 +10,15 @@ pub mod encrypt;
 pub mod decrypt;
 pub mod search;
 pub mod images;
+pub mod rotate;
+pub mod delete;
+pub mod reorder;
+pub mod metadata;
+pub mod watermark;
+pub mod bookmarks;
+pub mod flatten;
+pub mod crop;
+pub mod forms;
 
 use crate::PdfDocument;
 use std::path::Path;
