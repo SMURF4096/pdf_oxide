@@ -244,6 +244,10 @@ examples/bottleneck_analysis.rs
 examples/verify_text.rs
 examples/xobject_investigation.rs
 examples/test_issue*.rs
+examples/test_irs_*.rs
+
+# Root-level temporary PDFs (local dev artifacts)
+/*.pdf
 
 # Generated planning and analysis documents (auto-generated during work)
 PHASE_*.md
