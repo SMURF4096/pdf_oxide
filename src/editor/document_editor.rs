@@ -6314,17 +6314,15 @@ mod tests {
     /// Helper to create a minimal DocumentEditor for internal method testing.
     /// Returns a DocumentEditor from a minimal valid PDF.
     fn create_test_editor() -> DocumentEditor {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+
         let pdf_bytes = minimal_pdf_bytes();
-        let tmp = std::env::temp_dir().join(format!(
-            "pdf_oxide_test_{}.pdf",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let tmp =
+            std::env::temp_dir().join(format!("pdf_oxide_test_{}_{id}.pdf", std::process::id()));
         std::fs::write(&tmp, &pdf_bytes).unwrap();
         let editor = DocumentEditor::open(&tmp).unwrap();
-        // Clean up temp file (editor keeps the path but has already opened it)
         let _ = std::fs::remove_file(&tmp);
         editor
     }

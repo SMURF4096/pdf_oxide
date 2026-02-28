@@ -233,8 +233,15 @@ fn test_multiline_header_with_extra_whitespace() {
 #[test]
 #[ignore] // Requires external test corpus
 fn test_pdfjs_issue9418_multiline_header() {
-    let path = std::path::Path::new(env!("HOME"))
-        .join("projects/pdf_oxide_tests/pdfs_pdfjs/issue9418.pdf");
+    let home = match std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+        Ok(h) => h,
+        Err(_) => {
+            eprintln!("Skipping: HOME not set");
+            return;
+        },
+    };
+    let path =
+        std::path::Path::new(&home).join("projects/pdf_oxide_tests/pdfs_pdfjs/issue9418.pdf");
     if !path.exists() {
         eprintln!("Skipping: {} not found", path.display());
         return;
@@ -253,7 +260,14 @@ fn test_pdfjs_issue9418_multiline_header() {
 #[test]
 #[ignore] // Requires external test corpus
 fn test_isartor_multiline_header() {
-    let path = std::path::Path::new(env!("HOME"))
+    let home = match std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+        Ok(h) => h,
+        Err(_) => {
+            eprintln!("Skipping: HOME not set");
+            return;
+        },
+    };
+    let path = std::path::Path::new(&home)
         .join("projects/veraPDF-corpus/PDF_A-1b/6.1 File structure/6.1.2 File header/isartor-6-1-2-t01-fail-a.pdf");
     if !path.exists() {
         eprintln!("Skipping: {} not found", path.display());
@@ -272,7 +286,14 @@ fn test_isartor_multiline_header() {
 #[test]
 #[ignore] // Requires external test corpus
 fn test_redhat_corrupt_xref() {
-    let path = std::path::Path::new(env!("HOME")).join(
+    let home = match std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+        Ok(h) => h,
+        Err(_) => {
+            eprintln!("Skipping: HOME not set");
+            return;
+        },
+    };
+    let path = std::path::Path::new(&home).join(
         "projects/veraPDF-corpus/PDF_A-1b/6.7 Metadata/6.7.2 Metadata stream/REDHAT-1531897-0.pdf",
     );
     if !path.exists() {

@@ -1719,10 +1719,8 @@ impl PyPdfDocument {
                 dict.set_item("field_value", val)?;
             }
             // Extract URI from link action
-            if let Some(ref action) = ann.action {
-                if let crate::annotations::LinkAction::Uri(ref uri) = action {
-                    dict.set_item("action_uri", uri)?;
-                }
+            if let Some(crate::annotations::LinkAction::Uri(ref uri)) = ann.action {
+                dict.set_item("action_uri", uri)?;
             }
 
             py_list.append(dict)?;
@@ -2233,6 +2231,7 @@ pub struct PyFormField {
 impl PyFormField {
     /// Full qualified field name (e.g., "topmostSubform[0].Page1[0].f1_01[0]").
     #[getter]
+    #[allow(clippy::misnamed_getters)]
     fn name(&self) -> &str {
         &self.inner.full_name
     }
@@ -2284,7 +2283,7 @@ impl PyFormField {
     fn is_readonly(&self) -> bool {
         self.inner
             .flags
-            .map_or(false, |f| f & field_flags::READ_ONLY != 0)
+            .is_some_and(|f| f & field_flags::READ_ONLY != 0)
     }
 
     /// Whether this field is required.
@@ -2292,7 +2291,7 @@ impl PyFormField {
     fn is_required(&self) -> bool {
         self.inner
             .flags
-            .map_or(false, |f| f & field_flags::REQUIRED != 0)
+            .is_some_and(|f| f & field_flags::REQUIRED != 0)
     }
 
     fn __repr__(&self) -> String {
