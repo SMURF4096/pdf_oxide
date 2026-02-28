@@ -254,7 +254,10 @@ fn find_stream_length(data: &[u8]) -> Option<usize> {
 
     // If the next token is a digit, parse the integer
     if after.first()?.is_ascii_digit() {
-        let end = after.iter().position(|b| !b.is_ascii_digit()).unwrap_or(after.len());
+        let end = after
+            .iter()
+            .position(|b| !b.is_ascii_digit())
+            .unwrap_or(after.len());
         let num_str = std::str::from_utf8(&after[..end]).ok()?;
         num_str.parse::<usize>().ok()
     } else {
@@ -350,7 +353,10 @@ fn find_actual_xref_offset<R: Read + Seek>(reader: &mut R, offset: u64) -> Resul
 /// Uses a `HashSet` of visited offsets to detect circular /Prev chains instead of
 /// an arbitrary depth limit. This supports PDFs with hundreds of incremental saves
 /// (e.g., 177+ /Prev links) without falling back to expensive full-file reconstruction.
-fn parse_xref_iterative<R: Read + Seek>(reader: &mut R, start_offset: u64) -> Result<CrossRefTable> {
+fn parse_xref_iterative<R: Read + Seek>(
+    reader: &mut R,
+    start_offset: u64,
+) -> Result<CrossRefTable> {
     let mut visited = HashSet::new();
     let mut offset = start_offset;
     let mut result_xref: Option<CrossRefTable> = None;
@@ -418,7 +424,8 @@ fn parse_xref_iterative<R: Read + Seek>(reader: &mut R, start_offset: u64) -> Re
         };
 
         // Extract /Prev pointer before merging
-        let prev_offset = xref.trailer()
+        let prev_offset = xref
+            .trailer()
             .and_then(|t| t.get("Prev"))
             .and_then(|o| o.as_integer())
             .map(|v| v as u64);
@@ -627,7 +634,11 @@ fn parse_traditional_xref<R: Read + Seek>(reader: &mut R, offset: u64) -> Result
     if !remaining_text.trim().is_empty() {
         // The trailer dict should start with "<<" after optional whitespace
         let trimmed = remaining_text.trim();
-        if trimmed.starts_with("<<") || trimmed.starts_with("<< ") || trimmed.starts_with("<<\n") || trimmed.starts_with("<<\r") {
+        if trimmed.starts_with("<<")
+            || trimmed.starts_with("<< ")
+            || trimmed.starts_with("<<\n")
+            || trimmed.starts_with("<<\r")
+        {
             if let Ok((_, trailer_obj)) = parse_object(trimmed.as_bytes()) {
                 if let Some(dict) = trailer_obj.as_dict() {
                     xref.set_trailer(dict.clone());
@@ -675,11 +686,13 @@ fn parse_xref_stream<R: Read + Seek>(reader: &mut R, offset: u64) -> Result<Cros
 
     // Check if we need more data based on /Length or endobj presence
     let needs_more = if let Some(length_val) = find_stream_length(&content) {
-        let stream_kw_pos = content.windows(6)
-            .position(|w| w == b"stream")
-            .unwrap_or(0);
+        let stream_kw_pos = content.windows(6).position(|w| w == b"stream").unwrap_or(0);
         let needed = stream_kw_pos + 20 + length_val + 30;
-        if needed > bytes_read { Some(needed) } else { None }
+        if needed > bytes_read {
+            Some(needed)
+        } else {
+            None
+        }
     } else if content.windows(6).any(|w| w == b"endobj") {
         None
     } else {
@@ -694,7 +707,9 @@ fn parse_xref_stream<R: Read + Seek>(reader: &mut R, offset: u64) -> Result<Cros
         let mut total_read = 0;
         while total_read < total {
             let n = reader.read(&mut content[total_read..])?;
-            if n == 0 { break; }
+            if n == 0 {
+                break;
+            }
             total_read += n;
         }
         content.truncate(total_read);
@@ -1051,7 +1066,10 @@ fn read_until_trailer<R: Read + Seek>(reader: &mut R) -> std::io::Result<Vec<Str
 
     if !found_end {
         // Fallback: if we didn't find trailer end in 32MB, use what we have
-        log::warn!("Could not find trailer end marker within {}MB of xref", total_read / (1024*1024));
+        log::warn!(
+            "Could not find trailer end marker within {}MB of xref",
+            total_read / (1024 * 1024)
+        );
     }
 
     // Split into lines handling CR, LF, and CRLF

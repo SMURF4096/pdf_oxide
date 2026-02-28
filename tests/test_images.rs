@@ -538,10 +538,7 @@ fn test_jpeg_with_flatedecode_chain() {
     dict.insert("Width".to_string(), Object::Integer(100));
     dict.insert("Height".to_string(), Object::Integer(100));
     dict.insert("BitsPerComponent".to_string(), Object::Integer(8));
-    dict.insert(
-        "ColorSpace".to_string(),
-        Object::Name("DeviceRGB".to_string()),
-    );
+    dict.insert("ColorSpace".to_string(), Object::Name("DeviceRGB".to_string()));
     // Filter chain: FlateDecode first, then DCTDecode
     dict.insert(
         "Filter".to_string(),
@@ -582,15 +579,9 @@ fn test_jpeg_single_dctdecode_passthrough() {
     dict.insert("Width".to_string(), Object::Integer(50));
     dict.insert("Height".to_string(), Object::Integer(50));
     dict.insert("BitsPerComponent".to_string(), Object::Integer(8));
-    dict.insert(
-        "ColorSpace".to_string(),
-        Object::Name("DeviceRGB".to_string()),
-    );
+    dict.insert("ColorSpace".to_string(), Object::Name("DeviceRGB".to_string()));
     // Single DCTDecode filter — raw pass-through
-    dict.insert(
-        "Filter".to_string(),
-        Object::Name("DCTDecode".to_string()),
-    );
+    dict.insert("Filter".to_string(), Object::Name("DCTDecode".to_string()));
 
     let xobject = Object::Stream {
         dict,
@@ -618,15 +609,9 @@ fn test_jpeg_single_dctdecode_in_array_passthrough() {
     dict.insert("Width".to_string(), Object::Integer(50));
     dict.insert("Height".to_string(), Object::Integer(50));
     dict.insert("BitsPerComponent".to_string(), Object::Integer(8));
-    dict.insert(
-        "ColorSpace".to_string(),
-        Object::Name("DeviceRGB".to_string()),
-    );
+    dict.insert("ColorSpace".to_string(), Object::Name("DeviceRGB".to_string()));
     // DCTDecode in a single-element array
-    dict.insert(
-        "Filter".to_string(),
-        Object::Array(vec![Object::Name("DCTDecode".to_string())]),
-    );
+    dict.insert("Filter".to_string(), Object::Array(vec![Object::Name("DCTDecode".to_string())]));
 
     let xobject = Object::Stream {
         dict,

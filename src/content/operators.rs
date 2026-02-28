@@ -1018,9 +1018,12 @@ mod tests {
     #[test]
     fn test_validate_curveto_valid() {
         let operands = vec![
-            Object::Integer(1), Object::Integer(2),
-            Object::Integer(3), Object::Integer(4),
-            Object::Integer(5), Object::Integer(6),
+            Object::Integer(1),
+            Object::Integer(2),
+            Object::Integer(3),
+            Object::Integer(4),
+            Object::Integer(5),
+            Object::Integer(6),
         ];
         assert!(Operator::validate_operands_for_raw_operator("c", &operands).is_ok());
     }
@@ -1034,8 +1037,10 @@ mod tests {
     #[test]
     fn test_validate_curveto_v_valid() {
         let operands = vec![
-            Object::Integer(1), Object::Integer(2),
-            Object::Integer(3), Object::Integer(4),
+            Object::Integer(1),
+            Object::Integer(2),
+            Object::Integer(3),
+            Object::Integer(4),
         ];
         assert!(Operator::validate_operands_for_raw_operator("v", &operands).is_ok());
     }
@@ -1049,8 +1054,10 @@ mod tests {
     #[test]
     fn test_validate_curveto_y_valid() {
         let operands = vec![
-            Object::Integer(1), Object::Integer(2),
-            Object::Integer(3), Object::Integer(4),
+            Object::Integer(1),
+            Object::Integer(2),
+            Object::Integer(3),
+            Object::Integer(4),
         ];
         assert!(Operator::validate_operands_for_raw_operator("y", &operands).is_ok());
     }
@@ -1076,8 +1083,10 @@ mod tests {
     #[test]
     fn test_validate_rectangle_valid() {
         let operands = vec![
-            Object::Integer(0), Object::Integer(0),
-            Object::Integer(100), Object::Integer(200),
+            Object::Integer(0),
+            Object::Integer(0),
+            Object::Integer(100),
+            Object::Integer(200),
         ];
         assert!(Operator::validate_operands_for_raw_operator("re", &operands).is_ok());
     }
@@ -1115,9 +1124,12 @@ mod tests {
     #[test]
     fn test_validate_tm_valid() {
         let operands = vec![
-            Object::Real(1.0), Object::Real(0.0),
-            Object::Real(0.0), Object::Real(1.0),
-            Object::Real(72.0), Object::Real(720.0),
+            Object::Real(1.0),
+            Object::Real(0.0),
+            Object::Real(0.0),
+            Object::Real(1.0),
+            Object::Real(72.0),
+            Object::Real(720.0),
         ];
         assert!(Operator::validate_operands_for_raw_operator("Tm", &operands).is_ok());
     }
@@ -1302,9 +1314,12 @@ mod tests {
     #[test]
     fn test_validate_cm_valid() {
         let operands = vec![
-            Object::Real(1.0), Object::Real(0.0),
-            Object::Real(0.0), Object::Real(1.0),
-            Object::Real(0.0), Object::Real(0.0),
+            Object::Real(1.0),
+            Object::Real(0.0),
+            Object::Real(0.0),
+            Object::Real(1.0),
+            Object::Real(0.0),
+            Object::Real(0.0),
         ];
         assert!(Operator::validate_operands_for_raw_operator("cm", &operands).is_ok());
     }
@@ -1366,8 +1381,10 @@ mod tests {
     #[test]
     fn test_validate_k_valid() {
         let operands = vec![
-            Object::Real(0.0), Object::Real(0.0),
-            Object::Real(0.0), Object::Real(1.0),
+            Object::Real(0.0),
+            Object::Real(0.0),
+            Object::Real(0.0),
+            Object::Real(1.0),
         ];
         assert!(Operator::validate_operands_for_raw_operator("k", &operands).is_ok());
     }
@@ -1381,8 +1398,10 @@ mod tests {
     #[test]
     fn test_validate_k_uppercase_valid() {
         let operands = vec![
-            Object::Real(0.0), Object::Real(1.0),
-            Object::Real(0.0), Object::Real(0.0),
+            Object::Real(0.0),
+            Object::Real(1.0),
+            Object::Real(0.0),
+            Object::Real(0.0),
         ];
         assert!(Operator::validate_operands_for_raw_operator("K", &operands).is_ok());
     }
@@ -1550,9 +1569,12 @@ mod tests {
     #[test]
     fn test_operator_cm() {
         let op = Operator::Cm {
-            a: 2.0, b: 0.0,
-            c: 0.0, d: 2.0,
-            e: 10.0, f: 20.0,
+            a: 2.0,
+            b: 0.0,
+            c: 0.0,
+            d: 2.0,
+            e: 10.0,
+            f: 20.0,
         };
         match op {
             Operator::Cm { a, b, c, d, e, f } => {
@@ -1570,7 +1592,9 @@ mod tests {
     #[test]
     fn test_operator_stroke_rgb() {
         let op = Operator::SetStrokeRgb {
-            r: 0.0, g: 0.5, b: 1.0,
+            r: 0.0,
+            g: 0.5,
+            b: 1.0,
         };
         match op {
             Operator::SetStrokeRgb { r, g, b } => {
@@ -1597,7 +1621,10 @@ mod tests {
     #[test]
     fn test_operator_fill_cmyk() {
         let op = Operator::SetFillCmyk {
-            c: 1.0, m: 0.0, y: 0.0, k: 0.0,
+            c: 1.0,
+            m: 0.0,
+            y: 0.0,
+            k: 0.0,
         };
         match op {
             Operator::SetFillCmyk { c, m, y, k } => {
@@ -1613,7 +1640,10 @@ mod tests {
     #[test]
     fn test_operator_stroke_cmyk() {
         let op = Operator::SetStrokeCmyk {
-            c: 0.0, m: 1.0, y: 0.0, k: 0.0,
+            c: 0.0,
+            m: 1.0,
+            y: 0.0,
+            k: 0.0,
         };
         match op {
             Operator::SetStrokeCmyk { c, m, y, k } => {
@@ -1628,7 +1658,9 @@ mod tests {
 
     #[test]
     fn test_operator_fill_color_space() {
-        let op = Operator::SetFillColorSpace { name: "DeviceRGB".to_string() };
+        let op = Operator::SetFillColorSpace {
+            name: "DeviceRGB".to_string(),
+        };
         match op {
             Operator::SetFillColorSpace { name } => assert_eq!(name, "DeviceRGB"),
             _ => panic!("Wrong operator type"),
@@ -1637,7 +1669,9 @@ mod tests {
 
     #[test]
     fn test_operator_stroke_color_space() {
-        let op = Operator::SetStrokeColorSpace { name: "DeviceCMYK".to_string() };
+        let op = Operator::SetStrokeColorSpace {
+            name: "DeviceCMYK".to_string(),
+        };
         match op {
             Operator::SetStrokeColorSpace { name } => assert_eq!(name, "DeviceCMYK"),
             _ => panic!("Wrong operator type"),
@@ -1646,7 +1680,9 @@ mod tests {
 
     #[test]
     fn test_operator_fill_color() {
-        let op = Operator::SetFillColor { components: vec![0.1, 0.2, 0.3] };
+        let op = Operator::SetFillColor {
+            components: vec![0.1, 0.2, 0.3],
+        };
         match op {
             Operator::SetFillColor { components } => {
                 assert_eq!(components, vec![0.1, 0.2, 0.3]);
@@ -1657,7 +1693,9 @@ mod tests {
 
     #[test]
     fn test_operator_stroke_color() {
-        let op = Operator::SetStrokeColor { components: vec![0.5] };
+        let op = Operator::SetStrokeColor {
+            components: vec![0.5],
+        };
         match op {
             Operator::SetStrokeColor { components } => {
                 assert_eq!(components, vec![0.5]);
@@ -1719,7 +1757,9 @@ mod tests {
 
     #[test]
     fn test_operator_do() {
-        let op = Operator::Do { name: "Im1".to_string() };
+        let op = Operator::Do {
+            name: "Im1".to_string(),
+        };
         match op {
             Operator::Do { name } => assert_eq!(name, "Im1"),
             _ => panic!("Wrong operator type"),
@@ -1753,12 +1793,22 @@ mod tests {
     #[test]
     fn test_operator_curveto() {
         let op = Operator::CurveTo {
-            x1: 1.0, y1: 2.0,
-            x2: 3.0, y2: 4.0,
-            x3: 5.0, y3: 6.0,
+            x1: 1.0,
+            y1: 2.0,
+            x2: 3.0,
+            y2: 4.0,
+            x3: 5.0,
+            y3: 6.0,
         };
         match op {
-            Operator::CurveTo { x1, y1, x2, y2, x3, y3 } => {
+            Operator::CurveTo {
+                x1,
+                y1,
+                x2,
+                y2,
+                x3,
+                y3,
+            } => {
                 assert_eq!(x1, 1.0);
                 assert_eq!(y1, 2.0);
                 assert_eq!(x2, 3.0);
@@ -1773,8 +1823,10 @@ mod tests {
     #[test]
     fn test_operator_curveto_v() {
         let op = Operator::CurveToV {
-            x2: 10.0, y2: 20.0,
-            x3: 30.0, y3: 40.0,
+            x2: 10.0,
+            y2: 20.0,
+            x3: 30.0,
+            y3: 40.0,
         };
         match op {
             Operator::CurveToV { x2, y2, x3, y3 } => {
@@ -1790,8 +1842,10 @@ mod tests {
     #[test]
     fn test_operator_curveto_y() {
         let op = Operator::CurveToY {
-            x1: 10.0, y1: 20.0,
-            x3: 30.0, y3: 40.0,
+            x1: 10.0,
+            y1: 20.0,
+            x3: 30.0,
+            y3: 40.0,
         };
         match op {
             Operator::CurveToY { x1, y1, x3, y3 } => {
@@ -1812,11 +1866,18 @@ mod tests {
     #[test]
     fn test_operator_rectangle() {
         let op = Operator::Rectangle {
-            x: 10.0, y: 20.0,
-            width: 100.0, height: 50.0,
+            x: 10.0,
+            y: 20.0,
+            width: 100.0,
+            height: 50.0,
         };
         match op {
-            Operator::Rectangle { x, y, width, height } => {
+            Operator::Rectangle {
+                x,
+                y,
+                width,
+                height,
+            } => {
                 assert_eq!(x, 10.0);
                 assert_eq!(y, 20.0);
                 assert_eq!(width, 100.0);
@@ -1882,7 +1943,9 @@ mod tests {
 
     #[test]
     fn test_operator_set_rendering_intent() {
-        let op = Operator::SetRenderingIntent { intent: "Perceptual".to_string() };
+        let op = Operator::SetRenderingIntent {
+            intent: "Perceptual".to_string(),
+        };
         match op {
             Operator::SetRenderingIntent { intent } => assert_eq!(intent, "Perceptual"),
             _ => panic!("Wrong operator type"),
@@ -1897,7 +1960,9 @@ mod tests {
 
     #[test]
     fn test_operator_set_ext_gstate() {
-        let op = Operator::SetExtGState { dict_name: "GS1".to_string() };
+        let op = Operator::SetExtGState {
+            dict_name: "GS1".to_string(),
+        };
         match op {
             Operator::SetExtGState { dict_name } => assert_eq!(dict_name, "GS1"),
             _ => panic!("Wrong operator type"),
@@ -1906,7 +1971,9 @@ mod tests {
 
     #[test]
     fn test_operator_paint_shading() {
-        let op = Operator::PaintShading { name: "Sh1".to_string() };
+        let op = Operator::PaintShading {
+            name: "Sh1".to_string(),
+        };
         match op {
             Operator::PaintShading { name } => assert_eq!(name, "Sh1"),
             _ => panic!("Wrong operator type"),
@@ -1933,7 +2000,9 @@ mod tests {
 
     #[test]
     fn test_operator_begin_marked_content() {
-        let op = Operator::BeginMarkedContent { tag: "Span".to_string() };
+        let op = Operator::BeginMarkedContent {
+            tag: "Span".to_string(),
+        };
         match op {
             Operator::BeginMarkedContent { tag } => assert_eq!(tag, "Span"),
             _ => panic!("Wrong operator type"),

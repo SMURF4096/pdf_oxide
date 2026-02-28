@@ -974,7 +974,7 @@ mod tests {
         match obj {
             Object::Array(arr) => {
                 assert_eq!(arr.len(), 3);
-            }
+            },
             _ => panic!("Expected array"),
         }
     }
@@ -986,12 +986,12 @@ mod tests {
         match obj {
             Object::Array(arr) => {
                 assert_eq!(arr.len(), 4); // 3 values + dash array
-                // Last element should be an array
+                                          // Last element should be an array
                 match &arr[3] {
                     Object::Array(dash) => assert_eq!(dash.len(), 2),
                     _ => panic!("Expected dash array"),
                 }
-            }
+            },
             _ => panic!("Expected array"),
         }
     }
@@ -1006,7 +1006,7 @@ mod tests {
                 // First two should be the radius values
                 assert_eq!(arr[0], Object::Real(3.0));
                 assert_eq!(arr[1], Object::Real(3.0));
-            }
+            },
             _ => panic!("Expected array"),
         }
     }
@@ -1019,26 +1019,20 @@ mod tests {
 
     #[test]
     fn test_link_annotation_goto_named() {
-        let link = LinkAnnotation::goto_named(
-            Rect::new(0.0, 0.0, 50.0, 10.0),
-            "chapter1",
-        );
+        let link = LinkAnnotation::goto_named(Rect::new(0.0, 0.0, 50.0, 10.0), "chapter1");
         assert!(matches!(link.action, LinkAction::GoToNamed(_)));
     }
 
     #[test]
     fn test_link_annotation_build_goto_named() {
-        let link = LinkAnnotation::goto_named(
-            Rect::new(0.0, 0.0, 50.0, 10.0),
-            "chapter1",
-        );
+        let link = LinkAnnotation::goto_named(Rect::new(0.0, 0.0, 50.0, 10.0), "chapter1");
         let page_refs = vec![ObjectRef::new(10, 0)];
         let dict = link.build(&page_refs);
         assert!(dict.contains_key("Dest"));
         match dict.get("Dest") {
             Some(Object::String(s)) => {
                 assert_eq!(s, b"chapter1");
-            }
+            },
             _ => panic!("Expected string Dest"),
         }
     }
@@ -1062,7 +1056,7 @@ mod tests {
         match dict.get("A") {
             Some(Object::Dictionary(action)) => {
                 assert_eq!(action.get("S"), Some(&Object::Name("GoToR".to_string())));
-            }
+            },
             _ => panic!("Expected action dict"),
         }
     }
@@ -1082,7 +1076,7 @@ mod tests {
         match dict.get("A") {
             Some(Object::Dictionary(action)) => {
                 assert_eq!(action.get("S"), Some(&Object::Name("Launch".to_string())));
-            }
+            },
             _ => panic!("Expected action dict"),
         }
     }
@@ -1102,7 +1096,7 @@ mod tests {
         match dict.get("A") {
             Some(Object::Dictionary(action)) => {
                 assert_eq!(action.get("S"), Some(&Object::Name("JavaScript".to_string())));
-            }
+            },
             _ => panic!("Expected action dict"),
         }
     }
@@ -1117,7 +1111,7 @@ mod tests {
             Some(Object::Array(arr)) => {
                 assert_eq!(arr.len(), 3);
                 assert_eq!(arr[0], Object::Real(1.0));
-            }
+            },
             _ => panic!("Expected color array"),
         }
     }
@@ -1456,10 +1450,7 @@ mod tests {
 
     #[test]
     fn test_link_build_rect_values() {
-        let link = LinkAnnotation::uri(
-            Rect::new(72.0, 720.0, 100.0, 12.0),
-            "https://example.com",
-        );
+        let link = LinkAnnotation::uri(Rect::new(72.0, 720.0, 100.0, 12.0), "https://example.com");
         let dict = link.build(&[]);
         match dict.get("Rect") {
             Some(Object::Array(arr)) => {
@@ -1468,7 +1459,7 @@ mod tests {
                 assert_eq!(arr[1], Object::Real(720.0));
                 assert_eq!(arr[2], Object::Real(172.0)); // x + width
                 assert_eq!(arr[3], Object::Real(732.0)); // y + height
-            }
+            },
             _ => panic!("Expected Rect array"),
         }
     }

@@ -502,10 +502,7 @@ mod tests {
     #[test]
     fn test_validation_result_add_warning() {
         let mut result = ValidationResult::new(PdfALevel::A2b);
-        result.add_warning(ComplianceWarning::new(
-            WarningCode::PartialCheck,
-            "Partial check only",
-        ));
+        result.add_warning(ComplianceWarning::new(WarningCode::PartialCheck, "Partial check only"));
         assert!(!result.warnings.is_empty());
         assert!(!result.has_errors());
     }
@@ -513,22 +510,16 @@ mod tests {
     #[test]
     fn test_validation_result_add_multiple_errors() {
         let mut result = ValidationResult::new(PdfALevel::A1b);
-        result.add_error(ComplianceError::new(
-            ErrorCode::EncryptionNotAllowed,
-            "Encrypted",
-        ));
-        result.add_error(ComplianceError::new(
-            ErrorCode::JavaScriptNotAllowed,
-            "Has JavaScript",
-        ));
+        result.add_error(ComplianceError::new(ErrorCode::EncryptionNotAllowed, "Encrypted"));
+        result.add_error(ComplianceError::new(ErrorCode::JavaScriptNotAllowed, "Has JavaScript"));
         assert_eq!(result.errors.len(), 2);
         assert!(result.has_errors());
     }
 
     #[test]
     fn test_compliance_error_with_clause() {
-        let error = ComplianceError::new(ErrorCode::MissingXmpMetadata, "No XMP")
-            .with_clause("6.7.2");
+        let error =
+            ComplianceError::new(ErrorCode::MissingXmpMetadata, "No XMP").with_clause("6.7.2");
         assert_eq!(error.code, ErrorCode::MissingXmpMetadata);
         assert_eq!(error.clause.as_deref(), Some("6.7.2"));
     }

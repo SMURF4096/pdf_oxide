@@ -7,7 +7,9 @@
 
 use pdf_oxide::api::{Pdf, PdfBuilder};
 use pdf_oxide::document::PdfDocument;
-use pdf_oxide::writer::{ContentStreamBuilder, DocumentBuilder, DocumentMetadata, LineCap, LineJoin, PageSize};
+use pdf_oxide::writer::{
+    ContentStreamBuilder, DocumentBuilder, DocumentMetadata, LineCap, LineJoin, PageSize,
+};
 
 // ===========================================================================
 // Tests: ContentStreamBuilder
@@ -64,9 +66,7 @@ fn test_content_stream_builder_path_ops() {
 #[test]
 fn test_content_stream_builder_fill_ops() {
     let mut builder = ContentStreamBuilder::new();
-    builder
-        .rect(0.0, 0.0, 100.0, 100.0)
-        .fill();
+    builder.rect(0.0, 0.0, 100.0, 100.0).fill();
 
     let data = builder.build().unwrap();
     let content = String::from_utf8_lossy(&data);
@@ -76,9 +76,7 @@ fn test_content_stream_builder_fill_ops() {
 #[test]
 fn test_content_stream_builder_fill_even_odd() {
     let mut builder = ContentStreamBuilder::new();
-    builder
-        .rect(0.0, 0.0, 100.0, 100.0)
-        .fill_even_odd();
+    builder.rect(0.0, 0.0, 100.0, 100.0).fill_even_odd();
 
     let data = builder.build().unwrap();
     let content = String::from_utf8_lossy(&data);
@@ -88,9 +86,7 @@ fn test_content_stream_builder_fill_even_odd() {
 #[test]
 fn test_content_stream_builder_fill_stroke() {
     let mut builder = ContentStreamBuilder::new();
-    builder
-        .rect(0.0, 0.0, 100.0, 100.0)
-        .fill_stroke();
+    builder.rect(0.0, 0.0, 100.0, 100.0).fill_stroke();
 
     let data = builder.build().unwrap();
     let content = String::from_utf8_lossy(&data);
@@ -113,10 +109,7 @@ fn test_content_stream_builder_close_fill_stroke() {
 #[test]
 fn test_content_stream_builder_close_path() {
     let mut builder = ContentStreamBuilder::new();
-    builder
-        .move_to(0.0, 0.0)
-        .line_to(100.0, 100.0)
-        .close_path();
+    builder.move_to(0.0, 0.0).line_to(100.0, 100.0).close_path();
 
     let data = builder.build().unwrap();
     let content = String::from_utf8_lossy(&data);
@@ -126,10 +119,7 @@ fn test_content_stream_builder_close_path() {
 #[test]
 fn test_content_stream_builder_clip() {
     let mut builder = ContentStreamBuilder::new();
-    builder
-        .rect(0.0, 0.0, 100.0, 100.0)
-        .clip()
-        .end_path();
+    builder.rect(0.0, 0.0, 100.0, 100.0).clip().end_path();
 
     let data = builder.build().unwrap();
     let content = String::from_utf8_lossy(&data);
@@ -261,9 +251,7 @@ fn test_content_stream_builder_curves() {
 #[test]
 fn test_content_stream_builder_circle() {
     let mut builder = ContentStreamBuilder::new();
-    builder
-        .circle(200.0, 400.0, 50.0)
-        .stroke();
+    builder.circle(200.0, 400.0, 50.0).stroke();
 
     let data = builder.build().unwrap();
     assert!(!data.is_empty());
@@ -272,9 +260,7 @@ fn test_content_stream_builder_circle() {
 #[test]
 fn test_content_stream_builder_ellipse() {
     let mut builder = ContentStreamBuilder::new();
-    builder
-        .ellipse(200.0, 400.0, 100.0, 50.0)
-        .fill();
+    builder.ellipse(200.0, 400.0, 100.0, 50.0).fill();
 
     let data = builder.build().unwrap();
     assert!(!data.is_empty());
@@ -361,11 +347,7 @@ fn test_content_stream_builder_shading() {
 #[test]
 fn test_document_builder_simple() {
     let mut builder = DocumentBuilder::new();
-    builder = builder.metadata(
-        DocumentMetadata::new()
-            .title("Test")
-            .author("Author"),
-    );
+    builder = builder.metadata(DocumentMetadata::new().title("Test").author("Author"));
     {
         let page = builder.page(PageSize::Letter);
         page.at(72.0, 720.0).text("Hello World").done();
@@ -383,9 +365,7 @@ fn test_document_builder_multi_page() {
     let mut builder = DocumentBuilder::new();
     for i in 0..3 {
         let page = builder.page(PageSize::Letter);
-        page.at(72.0, 720.0)
-            .text(&format!("Page {}", i + 1))
-            .done();
+        page.at(72.0, 720.0).text(&format!("Page {}", i + 1)).done();
     }
     let pdf_bytes = builder.build().unwrap();
 
@@ -617,9 +597,7 @@ fn test_round_trip_multi_page() {
     let mut builder = DocumentBuilder::new();
     for i in 0..5 {
         let page = builder.page(PageSize::Letter);
-        page.at(72.0, 720.0)
-            .text(&format!("Content {}", i))
-            .done();
+        page.at(72.0, 720.0).text(&format!("Content {}", i)).done();
     }
     let pdf_bytes = builder.build().unwrap();
 

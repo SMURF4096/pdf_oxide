@@ -19,10 +19,7 @@ fn punctuation_preserved_at_word_boundaries() {
     assert_eq!(TextPostProcessor::repair_ligatures("Hello!"), "Hello!");
     assert_eq!(TextPostProcessor::repair_ligatures("$100"), "$100");
     assert_eq!(TextPostProcessor::repair_ligatures("50%"), "50%");
-    assert_eq!(
-        TextPostProcessor::repair_ligatures("\"hello\""),
-        "\"hello\""
-    );
+    assert_eq!(TextPostProcessor::repair_ligatures("\"hello\""), "\"hello\"");
 }
 
 #[test]

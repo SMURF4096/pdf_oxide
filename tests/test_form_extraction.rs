@@ -37,9 +37,7 @@ fn create_form_pdf_bytes() -> Vec<u8> {
         );
 
         // Checkbox — unchecked
-        page.add_checkbox(
-            CheckboxWidget::new("newsletter", Rect::new(72.0, 610.0, 15.0, 15.0)),
-        );
+        page.add_checkbox(CheckboxWidget::new("newsletter", Rect::new(72.0, 610.0, 15.0, 15.0)));
 
         // Combo box
         page.add_combo_box(
@@ -62,8 +60,7 @@ fn create_form_pdf_bytes() -> Vec<u8> {
 fn open_pdf_from_bytes(bytes: &[u8]) -> (NamedTempFile, PdfDocument) {
     let mut temp = NamedTempFile::new().expect("Failed to create temp file");
     temp.write_all(bytes).expect("Failed to write temp file");
-    let doc = PdfDocument::open(temp.path().to_str().unwrap())
-        .expect("Failed to open test PDF");
+    let doc = PdfDocument::open(temp.path().to_str().unwrap()).expect("Failed to open test PDF");
     (temp, doc)
 }
 
@@ -79,11 +76,7 @@ fn test_extract_form_fields_basic() {
     let fields = FormExtractor::extract_fields(&mut doc).expect("Failed to extract fields");
 
     // We should get at least 6 fields (name, ssn, agree, newsletter, country, interests)
-    assert!(
-        fields.len() >= 6,
-        "Expected at least 6 fields, got {}",
-        fields.len()
-    );
+    assert!(fields.len() >= 6, "Expected at least 6 fields, got {}", fields.len());
 }
 
 #[test]
@@ -113,10 +106,7 @@ fn test_extract_text_field_readonly_flag() {
     let ssn_field = ssn_field.unwrap();
 
     // Check read-only flag (bit 1)
-    assert!(
-        ssn_field.flags.is_some_and(|f| f & 1 != 0),
-        "SSN field should be read-only"
-    );
+    assert!(ssn_field.flags.is_some_and(|f| f & 1 != 0), "SSN field should be read-only");
 }
 
 #[test]
@@ -167,10 +157,7 @@ fn test_form_field_has_bounds() {
 
     // Most fields should have bounds (bounding box)
     let with_bounds = fields.iter().filter(|f| f.bounds.is_some()).count();
-    assert!(
-        with_bounds > 0,
-        "At least some fields should have bounding boxes"
-    );
+    assert!(with_bounds > 0, "At least some fields should have bounding boxes");
 }
 
 // ============================================================================
@@ -256,11 +243,7 @@ fn test_editor_get_form_fields() {
         .expect("Failed to open editor");
 
     let fields = editor.get_form_fields().expect("Failed to get form fields");
-    assert!(
-        fields.len() >= 6,
-        "Expected at least 6 fields via editor, got {}",
-        fields.len()
-    );
+    assert!(fields.len() >= 6, "Expected at least 6 fields via editor, got {}", fields.len());
 }
 
 #[test]
@@ -288,10 +271,7 @@ fn test_editor_get_set_form_field_value() {
     let updated = editor
         .get_form_field_value("name")
         .expect("Failed to get updated value");
-    assert_eq!(
-        updated,
-        Some(FormFieldValue::Text("Jane Doe".to_string()))
-    );
+    assert_eq!(updated, Some(FormFieldValue::Text("Jane Doe".to_string())));
 }
 
 // ============================================================================
@@ -303,8 +283,7 @@ fn test_has_xfa_on_non_xfa_pdf() {
     let bytes = create_form_pdf_bytes();
     let (_temp, mut doc) = open_pdf_from_bytes(&bytes);
 
-    let has_xfa = pdf_oxide::xfa::XfaExtractor::has_xfa(&mut doc)
-        .expect("Failed to check XFA");
+    let has_xfa = pdf_oxide::xfa::XfaExtractor::has_xfa(&mut doc).expect("Failed to check XFA");
 
     // Our PdfWriter-created forms don't have XFA
     assert!(!has_xfa, "Writer-created form should not have XFA");
@@ -317,8 +296,7 @@ fn test_has_xfa_on_plain_pdf() {
         .into_bytes();
     let (_temp, mut doc) = open_pdf_from_bytes(&bytes);
 
-    let has_xfa = pdf_oxide::xfa::XfaExtractor::has_xfa(&mut doc)
-        .expect("Failed to check XFA");
+    let has_xfa = pdf_oxide::xfa::XfaExtractor::has_xfa(&mut doc).expect("Failed to check XFA");
 
     assert!(!has_xfa, "Plain text PDF should not have XFA");
 }
@@ -404,7 +382,9 @@ fn test_to_markdown_includes_form_fields() {
         include_form_fields: true,
         ..Default::default()
     };
-    let markdown = doc.to_markdown(0, &options).expect("Failed to convert to markdown");
+    let markdown = doc
+        .to_markdown(0, &options)
+        .expect("Failed to convert to markdown");
 
     assert!(
         markdown.contains("John Doe"),
@@ -444,7 +424,9 @@ fn test_to_markdown_exclude_form_fields() {
         include_form_fields: false,
         ..Default::default()
     };
-    let markdown = doc.to_markdown(0, &options).expect("Failed to convert to markdown");
+    let markdown = doc
+        .to_markdown(0, &options)
+        .expect("Failed to convert to markdown");
 
     // With include_form_fields=false, form field values should NOT appear
     // (unless they come from content streams, which our test PDF doesn't have)
@@ -484,8 +466,7 @@ fn test_save_incremental_persists_text_value() {
     temp.write_all(&bytes).expect("write temp");
 
     // Open in editor, set text value, save incremental
-    let mut editor =
-        DocumentEditor::open(temp.path().to_str().unwrap()).expect("open editor");
+    let mut editor = DocumentEditor::open(temp.path().to_str().unwrap()).expect("open editor");
     editor
         .set_form_field_value("name", FormFieldValue::Text("Jane Doe".into()))
         .expect("set value");
@@ -496,10 +477,8 @@ fn test_save_incremental_persists_text_value() {
         .expect("save incremental");
 
     // Reopen and verify via FormExtractor
-    let mut reopened =
-        PdfDocument::open(out.path().to_str().unwrap()).expect("reopen");
-    let fields =
-        FormExtractor::extract_fields(&mut reopened).expect("extract fields");
+    let mut reopened = PdfDocument::open(out.path().to_str().unwrap()).expect("reopen");
+    let fields = FormExtractor::extract_fields(&mut reopened).expect("extract fields");
     let name_field = fields.iter().find(|f| f.full_name == "name");
     assert!(name_field.is_some(), "name field should exist after save");
     assert_eq!(
@@ -519,8 +498,7 @@ fn test_save_incremental_persists_checkbox() {
     temp.write_all(&bytes).expect("write temp");
 
     // The "newsletter" checkbox starts unchecked — check it
-    let mut editor =
-        DocumentEditor::open(temp.path().to_str().unwrap()).expect("open editor");
+    let mut editor = DocumentEditor::open(temp.path().to_str().unwrap()).expect("open editor");
     editor
         .set_form_field_value("newsletter", FormFieldValue::Boolean(true))
         .expect("set checkbox");
@@ -531,10 +509,8 @@ fn test_save_incremental_persists_checkbox() {
         .expect("save incremental");
 
     // Reopen and verify the checkbox value
-    let mut reopened =
-        PdfDocument::open(out.path().to_str().unwrap()).expect("reopen");
-    let fields =
-        FormExtractor::extract_fields(&mut reopened).expect("extract fields");
+    let mut reopened = PdfDocument::open(out.path().to_str().unwrap()).expect("reopen");
+    let fields = FormExtractor::extract_fields(&mut reopened).expect("extract fields");
     let newsletter = fields.iter().find(|f| f.full_name == "newsletter");
     assert!(newsletter.is_some(), "newsletter field should exist");
 
@@ -542,11 +518,7 @@ fn test_save_incremental_persists_checkbox() {
     let val = &newsletter.unwrap().value;
     let is_checked = matches!(val, FieldValue::Boolean(true))
         || matches!(val, FieldValue::Name(n) if n == "Yes");
-    assert!(
-        is_checked,
-        "Checkbox should be checked after save, got {:?}",
-        val
-    );
+    assert!(is_checked, "Checkbox should be checked after save, got {:?}", val);
 
     // Also verify [x] in extract_text
     let text = reopened.extract_text(0).expect("extract text");
@@ -569,8 +541,7 @@ fn test_save_incremental_text_value_inline() {
     let mut temp = NamedTempFile::new().expect("create temp");
     temp.write_all(&bytes).expect("write temp");
 
-    let mut editor =
-        DocumentEditor::open(temp.path().to_str().unwrap()).expect("open editor");
+    let mut editor = DocumentEditor::open(temp.path().to_str().unwrap()).expect("open editor");
     editor
         .set_form_field_value("name", FormFieldValue::Text("Alice Smith".into()))
         .expect("set value");
@@ -581,8 +552,7 @@ fn test_save_incremental_text_value_inline() {
         .expect("save incremental");
 
     // Verify the value appears inline in extract_text
-    let mut reopened =
-        PdfDocument::open(out.path().to_str().unwrap()).expect("reopen");
+    let mut reopened = PdfDocument::open(out.path().to_str().unwrap()).expect("reopen");
     let text = reopened.extract_text(0).expect("extract text");
     assert!(
         text.contains("Alice Smith"),
@@ -601,8 +571,7 @@ fn test_save_incremental_to_markdown_with_values() {
     let mut temp = NamedTempFile::new().expect("create temp");
     temp.write_all(&bytes).expect("write temp");
 
-    let mut editor =
-        DocumentEditor::open(temp.path().to_str().unwrap()).expect("open editor");
+    let mut editor = DocumentEditor::open(temp.path().to_str().unwrap()).expect("open editor");
     editor
         .set_form_field_value("name", FormFieldValue::Text("Bob Jones".into()))
         .expect("set value");
@@ -612,15 +581,12 @@ fn test_save_incremental_to_markdown_with_values() {
         .save_with_options(out.path().to_str().unwrap(), SaveOptions::incremental())
         .expect("save incremental");
 
-    let mut reopened =
-        PdfDocument::open(out.path().to_str().unwrap()).expect("reopen");
+    let mut reopened = PdfDocument::open(out.path().to_str().unwrap()).expect("reopen");
     let opts = ConversionOptions {
         include_form_fields: true,
         ..Default::default()
     };
-    let md = reopened
-        .to_markdown(0, &opts)
-        .expect("to_markdown");
+    let md = reopened.to_markdown(0, &opts).expect("to_markdown");
 
     assert!(
         md.contains("Bob Jones"),

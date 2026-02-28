@@ -435,7 +435,7 @@ impl WasmPdfDocument {
                 let json = outline_to_json(&items);
                 serde_wasm_bindgen::to_value(&json)
                     .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))
-            }
+            },
         }
     }
 
@@ -474,17 +474,17 @@ impl WasmPdfDocument {
                     obj.insert("creation_date".into(), serde_json::Value::from(date.as_str()));
                 }
                 if let Some(ref date) = ann.modification_date {
-                    obj.insert(
-                        "modification_date".into(),
-                        serde_json::Value::from(date.as_str()),
-                    );
+                    obj.insert("modification_date".into(), serde_json::Value::from(date.as_str()));
                 }
                 if let Some(ref subject) = ann.subject {
                     obj.insert("subject".into(), serde_json::Value::from(subject.as_str()));
                 }
                 if let Some(ref color) = ann.color {
                     if color.len() >= 3 {
-                        obj.insert("color".into(), serde_json::json!([color[0], color[1], color[2]]));
+                        obj.insert(
+                            "color".into(),
+                            serde_json::json!([color[0], color[1], color[2]]),
+                        );
                     }
                 }
                 if let Some(opacity) = ann.opacity {
@@ -598,7 +598,7 @@ impl WasmPdfDocument {
     /// - is_required: boolean
     #[wasm_bindgen(js_name = "getFormFields")]
     pub fn get_form_fields(&mut self) -> Result<JsValue, JsValue> {
-        use crate::extractors::forms::{FieldType, FieldValue, FormExtractor, field_flags};
+        use crate::extractors::forms::{field_flags, FieldType, FieldValue, FormExtractor};
 
         let fields = FormExtractor::extract_fields(&mut self.inner)
             .map_err(|e| JsValue::from_str(&format!("Failed to extract form fields: {}", e)))?;
@@ -624,7 +624,9 @@ impl WasmPdfDocument {
                     FieldValue::Name(s) => serde_json::Value::from(s.as_str()),
                     FieldValue::Boolean(b) => serde_json::Value::from(*b),
                     FieldValue::Array(v) => serde_json::Value::Array(
-                        v.iter().map(|s| serde_json::Value::from(s.as_str())).collect(),
+                        v.iter()
+                            .map(|s| serde_json::Value::from(s.as_str()))
+                            .collect(),
                     ),
                     FieldValue::None => serde_json::Value::Null,
                 };
@@ -636,7 +638,9 @@ impl WasmPdfDocument {
                 };
 
                 match &field.bounds {
-                    Some(b) => obj.insert("bounds".into(), serde_json::json!([b[0], b[1], b[2], b[3]])),
+                    Some(b) => {
+                        obj.insert("bounds".into(), serde_json::json!([b[0], b[1], b[2], b[3]]))
+                    },
                     None => obj.insert("bounds".into(), serde_json::Value::Null),
                 };
 
@@ -651,12 +655,12 @@ impl WasmPdfDocument {
                             "is_required".into(),
                             serde_json::Value::from(f & field_flags::REQUIRED != 0),
                         );
-                    }
+                    },
                     None => {
                         obj.insert("flags".into(), serde_json::Value::Null);
                         obj.insert("is_readonly".into(), serde_json::Value::from(false));
                         obj.insert("is_required".into(), serde_json::Value::from(false));
-                    }
+                    },
                 };
 
                 match field.max_length {
@@ -702,9 +706,12 @@ impl WasmPdfDocument {
             "xfdf" => editor
                 .export_form_data_xfdf(tmp_path)
                 .map_err(|e| JsValue::from_str(&format!("Failed to export XFDF: {}", e)))?,
-            _ => return Err(JsValue::from_str(&format!(
-                "Unknown format '{}'. Use 'fdf' or 'xfdf'.", fmt
-            ))),
+            _ => {
+                return Err(JsValue::from_str(&format!(
+                    "Unknown format '{}'. Use 'fdf' or 'xfdf'.",
+                    fmt
+                )))
+            },
         }
 
         let bytes = std::fs::read(tmp_path)
@@ -763,13 +770,21 @@ impl WasmPdfDocument {
 
         let arr = js_sys::Array::new();
         for img in &images {
-            let png_data = img
-                .to_png_bytes()
-                .map_err(|e| JsValue::from_str(&format!("Failed to convert image to PNG: {}", e)))?;
+            let png_data = img.to_png_bytes().map_err(|e| {
+                JsValue::from_str(&format!("Failed to convert image to PNG: {}", e))
+            })?;
 
             let obj = js_sys::Object::new();
-            js_sys::Reflect::set(&obj, &JsValue::from_str("width"), &JsValue::from(img.width() as u32))?;
-            js_sys::Reflect::set(&obj, &JsValue::from_str("height"), &JsValue::from(img.height() as u32))?;
+            js_sys::Reflect::set(
+                &obj,
+                &JsValue::from_str("width"),
+                &JsValue::from(img.width() as u32),
+            )?;
+            js_sys::Reflect::set(
+                &obj,
+                &JsValue::from_str("height"),
+                &JsValue::from(img.height() as u32),
+            )?;
             js_sys::Reflect::set(&obj, &JsValue::from_str("format"), &JsValue::from_str("png"))?;
             let uint8_array = js_sys::Uint8Array::from(png_data.as_slice());
             js_sys::Reflect::set(&obj, &JsValue::from_str("data"), &uint8_array)?;
@@ -894,7 +909,10 @@ impl WasmPdfDocument {
                     obj.insert(
                         "dc_creator".into(),
                         serde_json::Value::Array(
-                            xmp.dc_creator.iter().map(|s| serde_json::Value::from(s.as_str())).collect(),
+                            xmp.dc_creator
+                                .iter()
+                                .map(|s| serde_json::Value::from(s.as_str()))
+                                .collect(),
                         ),
                     );
                 }
@@ -905,7 +923,10 @@ impl WasmPdfDocument {
                     obj.insert(
                         "dc_subject".into(),
                         serde_json::Value::Array(
-                            xmp.dc_subject.iter().map(|s| serde_json::Value::from(s.as_str())).collect(),
+                            xmp.dc_subject
+                                .iter()
+                                .map(|s| serde_json::Value::from(s.as_str()))
+                                .collect(),
                         ),
                     );
                 }
@@ -930,7 +951,7 @@ impl WasmPdfDocument {
 
                 serde_wasm_bindgen::to_value(&serde_json::Value::Object(obj))
                     .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))
-            }
+            },
         }
     }
 
@@ -985,11 +1006,7 @@ impl WasmPdfDocument {
 
     /// Set the rotation of a page (0, 90, 180, or 270 degrees).
     #[wasm_bindgen(js_name = "setPageRotation")]
-    pub fn set_page_rotation(
-        &mut self,
-        page_index: usize,
-        degrees: i32,
-    ) -> Result<(), JsValue> {
+    pub fn set_page_rotation(&mut self, page_index: usize, degrees: i32) -> Result<(), JsValue> {
         let editor = self.ensure_editor()?;
         editor
             .set_page_rotation(page_index, degrees)
@@ -1110,15 +1127,9 @@ impl WasmPdfDocument {
     /// @param page_index - Zero-based page number
     /// @param rects - Flat array of coordinates [llx1,lly1,urx1,ury1, llx2,lly2,urx2,ury2, ...]
     #[wasm_bindgen(js_name = "eraseRegions")]
-    pub fn erase_regions(
-        &mut self,
-        page_index: usize,
-        rects: &[f32],
-    ) -> Result<(), JsValue> {
+    pub fn erase_regions(&mut self, page_index: usize, rects: &[f32]) -> Result<(), JsValue> {
         if rects.len() % 4 != 0 {
-            return Err(JsValue::from_str(
-                "rects must have a length that is a multiple of 4",
-            ));
+            return Err(JsValue::from_str("rects must have a length that is a multiple of 4"));
         }
         let rect_arrays: Vec<[f32; 4]> = rects
             .chunks_exact(4)
@@ -1279,9 +1290,7 @@ impl WasmPdfDocument {
         allow_modify: Option<bool>,
         allow_annotate: Option<bool>,
     ) -> Result<Vec<u8>, JsValue> {
-        let owner_pwd = owner_password
-            .as_deref()
-            .unwrap_or(user_password);
+        let owner_pwd = owner_password.as_deref().unwrap_or(user_password);
 
         let permissions = Permissions {
             print: allow_print.unwrap_or(true),
@@ -1480,7 +1489,7 @@ fn wasm_form_field_value_to_js(
                 arr.push(&JsValue::from_str(s));
             }
             Ok(arr.into())
-        }
+        },
         FormFieldValue::None => Ok(JsValue::NULL),
     }
 }
@@ -1526,14 +1535,14 @@ fn outline_to_json(items: &[crate::outline::OutlineItem]) -> Vec<serde_json::Val
             match &item.dest {
                 Some(crate::outline::Destination::PageIndex(idx)) => {
                     obj.insert("page".into(), serde_json::Value::from(*idx));
-                }
+                },
                 Some(crate::outline::Destination::Named(name)) => {
                     obj.insert("page".into(), serde_json::Value::Null);
                     obj.insert("dest_name".into(), serde_json::Value::from(name.as_str()));
-                }
+                },
                 None => {
                     obj.insert("page".into(), serde_json::Value::Null);
-                }
+                },
             }
 
             let children = outline_to_json(&item.children);
@@ -1678,11 +1687,7 @@ mod tests {
     fn test_extract_text_preserves_content() {
         let mut doc = doc_from_text("Test content 12345");
         let text = doc.extract_text(0).unwrap();
-        assert!(
-            text.contains("12345"),
-            "should preserve numeric content, got: {}",
-            text
-        );
+        assert!(text.contains("12345"), "should preserve numeric content, got: {}", text);
     }
 
     // ========================================================================
@@ -2119,10 +2124,7 @@ mod tests {
     fn test_save_to_bytes_pdf_header() {
         let mut doc = doc_from_text("Hello header");
         let bytes = doc.save_to_bytes().unwrap();
-        assert!(
-            bytes.starts_with(b"%PDF"),
-            "saved bytes should start with PDF header"
-        );
+        assert!(bytes.starts_with(b"%PDF"), "saved bytes should start with PDF header");
     }
 
     #[test]
@@ -2143,11 +2145,7 @@ mod tests {
 
         let mut doc2 = WasmPdfDocument::new(&bytes).unwrap();
         let text = doc2.extract_text(0).unwrap();
-        assert!(
-            text.contains("Roundtrip"),
-            "roundtrip should preserve text, got: {}",
-            text
-        );
+        assert!(text.contains("Roundtrip"), "roundtrip should preserve text, got: {}", text);
     }
 
     // ========================================================================

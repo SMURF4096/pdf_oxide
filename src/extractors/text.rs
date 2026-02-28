@@ -2880,7 +2880,7 @@ impl TextExtractor {
                 None => {
                     current_span = Some(span);
                     continue;
-                }
+                },
             };
 
             // Check if this span should be merged with the current one
@@ -4439,9 +4439,11 @@ impl TextExtractor {
                         Ok(data) => {
                             // Cache if under 50MB total
                             const MAX_STREAM_CACHE_BYTES: usize = 50 * 1024 * 1024;
-                            if doc.xobject_stream_cache_bytes + data.len() <= MAX_STREAM_CACHE_BYTES {
+                            if doc.xobject_stream_cache_bytes + data.len() <= MAX_STREAM_CACHE_BYTES
+                            {
                                 doc.xobject_stream_cache_bytes += data.len();
-                                doc.xobject_stream_cache.insert(xobject_ref, std::sync::Arc::new(data.clone()));
+                                doc.xobject_stream_cache
+                                    .insert(xobject_ref, std::sync::Arc::new(data.clone()));
                             }
                             data
                         },
@@ -4484,7 +4486,8 @@ impl TextExtractor {
 
                     // Safety: has_own_resources was set by contains_key("Resources")
                     // so get("Resources") will always return Some here
-                    let xobj_resources = xobject_dict.get("Resources")
+                    let xobj_resources = xobject_dict
+                        .get("Resources")
                         .expect("contains_key confirmed Resources exists");
                     let xobj_res = if let Some(res_ref) = xobj_resources.as_reference() {
                         match doc.load_object(res_ref) {
@@ -5244,7 +5247,10 @@ impl TextExtractor {
         // Disjoint field borrows: cached_current_font (immutable) + tj_span_buffer (mutable)
         let font = self.cached_current_font.as_deref();
         // Safety: tj_span_buffer is always initialized via begin_text_object()
-        let buffer = self.tj_span_buffer.as_mut().expect("tj_span_buffer initialized in begin_text_object");
+        let buffer = self
+            .tj_span_buffer
+            .as_mut()
+            .expect("tj_span_buffer initialized in begin_text_object");
 
         let total_width = if let Some(font) = font {
             if font.subtype != "Type0" {
@@ -6388,8 +6394,8 @@ mod tests {
 
     #[test]
     fn test_text_extraction_config_with_profile() {
-        let config = TextExtractionConfig::new()
-            .with_profile(crate::config::ExtractionProfile::ACADEMIC);
+        let config =
+            TextExtractionConfig::new().with_profile(crate::config::ExtractionProfile::ACADEMIC);
         assert!(config.profile.is_some());
         let profile = config.profile.unwrap();
         assert_eq!(profile.name, "Academic");
@@ -6713,9 +6719,21 @@ mod tests {
         let r_char = chars.iter().find(|c| c.char == 'R').expect("Should find R");
         let b_char = chars.iter().find(|c| c.char == 'B').expect("Should find B");
         // R should be red (set inside q)
-        assert!((r_char.color.r - 1.0).abs() < 0.01, "R should be red, got ({}, {}, {})", r_char.color.r, r_char.color.g, r_char.color.b);
+        assert!(
+            (r_char.color.r - 1.0).abs() < 0.01,
+            "R should be red, got ({}, {}, {})",
+            r_char.color.r,
+            r_char.color.g,
+            r_char.color.b
+        );
         // B should be blue (restored by Q)
-        assert!((b_char.color.b - 1.0).abs() < 0.01, "B should be blue after Q restore, got ({}, {}, {})", b_char.color.r, b_char.color.g, b_char.color.b);
+        assert!(
+            (b_char.color.b - 1.0).abs() < 0.01,
+            "B should be blue after Q restore, got ({}, {}, {})",
+            b_char.color.r,
+            b_char.color.g,
+            b_char.color.b
+        );
     }
 
     #[test]
@@ -6750,7 +6768,11 @@ mod tests {
 
         assert!(!spans.is_empty());
         // Find the span containing "Hello World"
-        let text: String = spans.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join("");
+        let text: String = spans
+            .iter()
+            .map(|s| s.text.as_str())
+            .collect::<Vec<_>>()
+            .join("");
         assert!(text.contains("Hello"), "Expected 'Hello' in extracted text, got: {}", text);
         assert!(text.contains("World"), "Expected 'World' in extracted text, got: {}", text);
     }
@@ -6766,7 +6788,11 @@ mod tests {
         let stream = b"BT /F1 12 Tf 100 700 Td (He) Tj (llo) Tj ET";
         let spans = extractor.extract_text_spans(stream).unwrap();
 
-        let text: String = spans.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join("");
+        let text: String = spans
+            .iter()
+            .map(|s| s.text.as_str())
+            .collect::<Vec<_>>()
+            .join("");
         assert!(text.contains("Hello"), "Expected 'Hello' in spans, got: {}", text);
     }
 
@@ -6782,8 +6808,11 @@ mod tests {
 
         assert!(!spans.is_empty());
         let span = &spans[0];
-        assert!(span.font_name.contains("F1") || span.font_name.contains("Times"),
-            "Font name should reference F1 or Times, got: {}", span.font_name);
+        assert!(
+            span.font_name.contains("F1") || span.font_name.contains("Times"),
+            "Font name should reference F1 or Times, got: {}",
+            span.font_name
+        );
         assert!(span.font_size > 0.0, "Font size should be positive");
     }
 
@@ -6824,7 +6853,11 @@ mod tests {
         let stream = b"BT /F1 12 Tf 100 700 Td [(H) -20 (ello)] TJ ET";
         let spans = extractor.extract_text_spans(stream).unwrap();
 
-        let text: String = spans.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join("");
+        let text: String = spans
+            .iter()
+            .map(|s| s.text.as_str())
+            .collect::<Vec<_>>()
+            .join("");
         assert!(text.contains("Hello"), "Small TJ offset should not split word, got: {}", text);
     }
 
@@ -6839,10 +6872,17 @@ mod tests {
         let stream = b"BT /F1 12 Tf 100 700 Td [(Hello) -300 (World)] TJ ET";
         let spans = extractor.extract_text_spans(stream).unwrap();
 
-        let text: String = spans.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join("");
+        let text: String = spans
+            .iter()
+            .map(|s| s.text.as_str())
+            .collect::<Vec<_>>()
+            .join("");
         // Should have space between Hello and World
-        assert!(text.contains("Hello") && text.contains("World"),
-            "Should extract both words, got: {}", text);
+        assert!(
+            text.contains("Hello") && text.contains("World"),
+            "Should extract both words, got: {}",
+            text
+        );
     }
 
     // ========================================================================
@@ -7059,7 +7099,7 @@ mod tests {
             Some(&next_bbox),
             12.0,
             12.0,
-            7.2,  // 60% of 12 = 0.6, within 0.5-0.75 range
+            7.2, // 60% of 12 = 0.6, within 0.5-0.75 range
         );
         assert!(result, "Should detect citation context");
     }
@@ -7074,7 +7114,7 @@ mod tests {
             Some(&next_bbox),
             12.0,
             12.0,
-            12.0,  // Same font size = not a citation
+            12.0, // Same font size = not a citation
         );
         assert!(!result, "Should not detect citation when same size");
     }
@@ -7092,8 +7132,7 @@ mod tests {
 
     #[test]
     fn test_extractor_with_merging_config() {
-        let extractor = TextExtractor::new()
-            .with_merging_config(SpanMergingConfig::aggressive());
+        let extractor = TextExtractor::new().with_merging_config(SpanMergingConfig::aggressive());
         assert_eq!(extractor.merging_config.space_threshold_em_ratio, 0.15);
     }
 
@@ -7424,7 +7463,11 @@ mod tests {
         assert_eq!(chars[0].char, 'A');
         assert_eq!(chars[1].char, 'B');
         // B should be at origin (BT resets text matrix)
-        assert!(chars[1].bbox.x < 10.0, "Second BT should reset text matrix, x={}", chars[1].bbox.x);
+        assert!(
+            chars[1].bbox.x < 10.0,
+            "Second BT should reset text matrix, x={}",
+            chars[1].bbox.x
+        );
     }
 
     #[test]
@@ -7452,15 +7495,17 @@ mod tests {
         extractor.add_font("F1".to_string(), font);
 
         // Use execute_operator_public for fine-grained testing
-        extractor.execute_operator_public(
-            crate::content::operators::Operator::BeginMarkedContent { tag: "Artifact".to_string() }
-        ).unwrap();
+        extractor
+            .execute_operator_public(crate::content::operators::Operator::BeginMarkedContent {
+                tag: "Artifact".to_string(),
+            })
+            .unwrap();
 
         assert!(extractor.inside_artifact, "Should be inside artifact after BMC Artifact");
 
-        extractor.execute_operator_public(
-            crate::content::operators::Operator::EndMarkedContent
-        ).unwrap();
+        extractor
+            .execute_operator_public(crate::content::operators::Operator::EndMarkedContent)
+            .unwrap();
 
         assert!(!extractor.inside_artifact, "Should be outside artifact after EMC");
     }
@@ -7469,9 +7514,11 @@ mod tests {
     fn test_bmc_non_artifact() {
         let mut extractor = TextExtractor::new();
 
-        extractor.execute_operator_public(
-            crate::content::operators::Operator::BeginMarkedContent { tag: "Span".to_string() }
-        ).unwrap();
+        extractor
+            .execute_operator_public(crate::content::operators::Operator::BeginMarkedContent {
+                tag: "Span".to_string(),
+            })
+            .unwrap();
 
         assert!(!extractor.inside_artifact, "Non-artifact BMC should not set inside_artifact");
     }
@@ -7508,7 +7555,11 @@ mod tests {
         let stream = b"BT /F1 12 Tf /F1 12 Tf 100 700 Td (Test) Tj ET";
         let spans = extractor.extract_text_spans(stream).unwrap();
 
-        let text: String = spans.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join("");
+        let text: String = spans
+            .iter()
+            .map(|s| s.text.as_str())
+            .collect::<Vec<_>>()
+            .join("");
         assert!(text.contains("Test"), "Should extract text, got: {}", text);
     }
 
@@ -7543,7 +7594,11 @@ mod tests {
 
         assert_eq!(chars.len(), 1);
         // Position should be scaled: (50*2, 100*2) = (100, 200)
-        assert!((chars[0].bbox.x - 100.0).abs() < 2.0, "X should be ~100 (got {})", chars[0].bbox.x);
+        assert!(
+            (chars[0].bbox.x - 100.0).abs() < 2.0,
+            "X should be ~100 (got {})",
+            chars[0].bbox.x
+        );
     }
 
     // ========================================================================
@@ -8093,14 +8148,26 @@ mod tests {
         let extractor = TextExtractor::new();
         let chars = vec![
             CharacterInfo {
-                code: 65, glyph_id: None, width: 10.0, x_position: 0.0,
-                tj_offset: None, font_size: 12.0, is_ligature: false,
-                original_ligature: None, protected_from_split: false,
+                code: 65,
+                glyph_id: None,
+                width: 10.0,
+                x_position: 0.0,
+                tj_offset: None,
+                font_size: 12.0,
+                is_ligature: false,
+                original_ligature: None,
+                protected_from_split: false,
             },
             CharacterInfo {
-                code: 66, glyph_id: None, width: 10.0, x_position: 10.0,
-                tj_offset: None, font_size: 12.0, is_ligature: false,
-                original_ligature: None, protected_from_split: false,
+                code: 66,
+                glyph_id: None,
+                width: 10.0,
+                x_position: 10.0,
+                tj_offset: None,
+                font_size: 12.0,
+                is_ligature: false,
+                original_ligature: None,
+                protected_from_split: false,
             },
         ];
 
@@ -8114,19 +8181,37 @@ mod tests {
         let extractor = TextExtractor::new();
         let chars = vec![
             CharacterInfo {
-                code: 65, glyph_id: None, width: 10.0, x_position: 0.0,
-                tj_offset: None, font_size: 12.0, is_ligature: false,
-                original_ligature: None, protected_from_split: false,
+                code: 65,
+                glyph_id: None,
+                width: 10.0,
+                x_position: 0.0,
+                tj_offset: None,
+                font_size: 12.0,
+                is_ligature: false,
+                original_ligature: None,
+                protected_from_split: false,
             },
             CharacterInfo {
-                code: 66, glyph_id: None, width: 10.0, x_position: 10.0,
-                tj_offset: None, font_size: 12.0, is_ligature: false,
-                original_ligature: None, protected_from_split: false,
+                code: 66,
+                glyph_id: None,
+                width: 10.0,
+                x_position: 10.0,
+                tj_offset: None,
+                font_size: 12.0,
+                is_ligature: false,
+                original_ligature: None,
+                protected_from_split: false,
             },
             CharacterInfo {
-                code: 67, glyph_id: None, width: 10.0, x_position: 25.0,
-                tj_offset: None, font_size: 12.0, is_ligature: false,
-                original_ligature: None, protected_from_split: false,
+                code: 67,
+                glyph_id: None,
+                width: 10.0,
+                x_position: 25.0,
+                tj_offset: None,
+                font_size: 12.0,
+                is_ligature: false,
+                original_ligature: None,
+                protected_from_split: false,
             },
         ];
 
@@ -8164,14 +8249,8 @@ mod tests {
         let prev_bbox = Rect::new(10.0, 100.0, 50.0, 12.0);
         let next_bbox = Rect::new(65.0, 100.0, 40.0, 12.0);
 
-        let (chars, ctx) = build_boundary_characters(
-            "Hello",
-            "World",
-            &prev_bbox,
-            &next_bbox,
-            12.0,
-            false,
-        );
+        let (chars, ctx) =
+            build_boundary_characters("Hello", "World", &prev_bbox, &next_bbox, 12.0, false);
 
         assert_eq!(chars.len(), 2);
         assert_eq!(chars[0].code, 'o' as u32); // Last char of "Hello"
@@ -8184,14 +8263,8 @@ mod tests {
         let prev_bbox = Rect::new(10.0, 100.0, 50.0, 12.0);
         let next_bbox = Rect::new(65.0, 100.0, 40.0, 12.0);
 
-        let (chars, _ctx) = build_boundary_characters(
-            "Hello",
-            "World",
-            &prev_bbox,
-            &next_bbox,
-            12.0,
-            true,
-        );
+        let (chars, _ctx) =
+            build_boundary_characters("Hello", "World", &prev_bbox, &next_bbox, 12.0, true);
 
         assert_eq!(chars[0].tj_offset, Some(-200)); // TJ offset triggered
         assert_eq!(chars[1].tj_offset, None);
@@ -8348,9 +8421,18 @@ mod tests {
         let next_bbox = Rect::new(100.0, 680.0, 200.0, 12.0);
 
         let decision = should_insert_space(
-            "end of line", "start of next",
-            0.0, 12.0, "F1", &fonts, false, &config,
-            Some(&prev_bbox), Some(&next_bbox), 12.0, 12.0,
+            "end of line",
+            "start of next",
+            0.0,
+            12.0,
+            "F1",
+            &fonts,
+            false,
+            &config,
+            Some(&prev_bbox),
+            Some(&next_bbox),
+            12.0,
+            12.0,
         );
         // Line break detected, same column, not ending with hyphen => insert space
         assert!(decision.insert_space, "Hard line break should insert space");
@@ -8366,9 +8448,18 @@ mod tests {
         let next_bbox = Rect::new(100.0, 680.0, 200.0, 12.0);
 
         let decision = should_insert_space(
-            "self-contain-", "ed text",
-            0.0, 12.0, "F1", &fonts, false, &config,
-            Some(&prev_bbox), Some(&next_bbox), 12.0, 12.0,
+            "self-contain-",
+            "ed text",
+            0.0,
+            12.0,
+            "F1",
+            &fonts,
+            false,
+            &config,
+            Some(&prev_bbox),
+            Some(&next_bbox),
+            12.0,
+            12.0,
         );
         assert!(!decision.insert_space, "Hyphenated line break should not insert space");
     }
@@ -8383,7 +8474,8 @@ mod tests {
         let font = create_test_font();
         extractor.add_font("F1".to_string(), font);
 
-        let stream = b"BT /F1 12 Tf 100 700 Td (First) Tj ET BT /F1 12 Tf 100 680 Td (Second) Tj ET";
+        let stream =
+            b"BT /F1 12 Tf 100 700 Td (First) Tj ET BT /F1 12 Tf 100 680 Td (Second) Tj ET";
         let chars = extractor.extract(stream).unwrap();
 
         let text: String = chars.iter().map(|c| c.char).collect();
@@ -8403,7 +8495,11 @@ mod tests {
         let spans = extractor.extract_text_spans(stream).unwrap();
 
         assert!(!spans.is_empty());
-        let text: String = spans.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join("\n");
+        let text: String = spans
+            .iter()
+            .map(|s| s.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(text.contains("First"), "Should contain first line");
         assert!(text.contains("Second"), "Should contain second line");
     }
@@ -8481,7 +8577,11 @@ mod tests {
         let stream = b"BT /F1 12 Tf 1 0 0 1 100 700 Tm (H) Tj 1 0 0 1 106 700 Tm (i) Tj ET";
         let spans = extractor.extract_text_spans(stream).unwrap();
 
-        let text: String = spans.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join("");
+        let text: String = spans
+            .iter()
+            .map(|s| s.text.as_str())
+            .collect::<Vec<_>>()
+            .join("");
         assert!(text.contains("Hi"), "Should batch Tm+Tj on same line, got: {}", text);
     }
 
@@ -8497,11 +8597,17 @@ mod tests {
         let spans = extractor.extract_text_spans(stream).unwrap();
 
         // Should have at least 2 spans (different lines)
-        assert!(spans.len() >= 2 || {
-            // Or could be merged if within merge range
-            let text: String = spans.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join("");
-            text.contains("A") && text.contains("B")
-        });
+        assert!(
+            spans.len() >= 2 || {
+                // Or could be merged if within merge range
+                let text: String = spans
+                    .iter()
+                    .map(|s| s.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join("");
+                text.contains("A") && text.contains("B")
+            }
+        );
     }
 
     // ========================================================================
@@ -8555,12 +8661,16 @@ mod tests {
         extractor.add_font("F1".to_string(), font);
 
         // cs sets color space, then sc sets color components
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "DeviceGray".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetFillColor {
-            components: vec![0.5],
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "DeviceGray".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColor {
+                components: vec![0.5],
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.fill_color_rgb.0 - 0.5).abs() < 0.01);
@@ -8571,12 +8681,16 @@ mod tests {
     #[test]
     fn test_set_fill_color_device_rgb() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "DeviceRGB".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetFillColor {
-            components: vec![0.2, 0.4, 0.6],
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "DeviceRGB".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColor {
+                components: vec![0.2, 0.4, 0.6],
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.fill_color_rgb.0 - 0.2).abs() < 0.01);
@@ -8587,12 +8701,16 @@ mod tests {
     #[test]
     fn test_set_fill_color_device_cmyk() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "DeviceCMYK".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetFillColor {
-            components: vec![0.0, 0.0, 0.0, 1.0], // pure black
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "DeviceCMYK".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColor {
+                components: vec![0.0, 0.0, 0.0, 1.0], // pure black
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.fill_color_rgb.0 - 0.0).abs() < 0.01);
@@ -8604,12 +8722,16 @@ mod tests {
     #[test]
     fn test_set_fill_color_lab() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "Lab".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetFillColor {
-            components: vec![50.0, 20.0, -10.0],
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "Lab".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColor {
+                components: vec![50.0, 20.0, -10.0],
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         // Lab simplified to grayscale: L/100
@@ -8619,12 +8741,16 @@ mod tests {
     #[test]
     fn test_set_fill_color_iccbased_rgb() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "ICCBased".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetFillColor {
-            components: vec![0.1, 0.2, 0.3],
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "ICCBased".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColor {
+                components: vec![0.1, 0.2, 0.3],
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.fill_color_rgb.0 - 0.1).abs() < 0.01);
@@ -8635,12 +8761,16 @@ mod tests {
     #[test]
     fn test_set_fill_color_iccbased_gray() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "ICCBased".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetFillColor {
-            components: vec![0.7],
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "ICCBased".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColor {
+                components: vec![0.7],
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.fill_color_rgb.0 - 0.7).abs() < 0.01);
@@ -8649,12 +8779,16 @@ mod tests {
     #[test]
     fn test_set_fill_color_iccbased_cmyk() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "ICCBased".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetFillColor {
-            components: vec![1.0, 0.0, 0.0, 0.0], // cyan
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "ICCBased".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColor {
+                components: vec![1.0, 0.0, 0.0, 0.0], // cyan
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!(state.fill_color_cmyk.is_some());
@@ -8663,12 +8797,16 @@ mod tests {
     #[test]
     fn test_set_fill_color_separation() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "Separation".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetFillColor {
-            components: vec![0.8], // tint
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "Separation".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColor {
+                components: vec![0.8], // tint
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         // gray = 1.0 - tint = 0.2
@@ -8678,12 +8816,16 @@ mod tests {
     #[test]
     fn test_set_fill_color_devicen_cmyk() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "DeviceN".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetFillColor {
-            components: vec![0.0, 0.0, 0.0, 0.5], // 4-component DeviceN
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "DeviceN".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColor {
+                components: vec![0.0, 0.0, 0.0, 0.5], // 4-component DeviceN
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!(state.fill_color_cmyk.is_some());
@@ -8692,12 +8834,16 @@ mod tests {
     #[test]
     fn test_set_fill_color_devicen_single() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "DeviceN".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetFillColor {
-            components: vec![0.3], // single-component DeviceN
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "DeviceN".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColor {
+                components: vec![0.3], // single-component DeviceN
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         // gray = 1.0 - 0.3 = 0.7
@@ -8707,24 +8853,32 @@ mod tests {
     #[test]
     fn test_set_fill_color_unknown_space() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "CustomUnknown".to_string(),
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "CustomUnknown".to_string(),
+            })
+            .unwrap();
         // This should log warning but not panic
-        extractor.execute_operator_public(Operator::SetFillColor {
-            components: vec![0.5, 0.5],
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColor {
+                components: vec![0.5, 0.5],
+            })
+            .unwrap();
     }
 
     #[test]
     fn test_set_fill_color_cal_gray() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "CalGray".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetFillColor {
-            components: vec![0.8],
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "CalGray".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColor {
+                components: vec![0.8],
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.fill_color_rgb.0 - 0.8).abs() < 0.01);
@@ -8733,12 +8887,16 @@ mod tests {
     #[test]
     fn test_set_fill_color_cal_rgb() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "CalRGB".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetFillColor {
-            components: vec![0.9, 0.1, 0.5],
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "CalRGB".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColor {
+                components: vec![0.9, 0.1, 0.5],
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.fill_color_rgb.0 - 0.9).abs() < 0.01);
@@ -8753,12 +8911,16 @@ mod tests {
     #[test]
     fn test_set_stroke_color_device_gray() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeColorSpace {
-            name: "DeviceGray".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetStrokeColor {
-            components: vec![0.4],
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorSpace {
+                name: "DeviceGray".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColor {
+                components: vec![0.4],
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.stroke_color_rgb.0 - 0.4).abs() < 0.01);
@@ -8767,12 +8929,16 @@ mod tests {
     #[test]
     fn test_set_stroke_color_device_rgb() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeColorSpace {
-            name: "DeviceRGB".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetStrokeColor {
-            components: vec![0.1, 0.2, 0.3],
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorSpace {
+                name: "DeviceRGB".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColor {
+                components: vec![0.1, 0.2, 0.3],
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.stroke_color_rgb.0 - 0.1).abs() < 0.01);
@@ -8781,12 +8947,16 @@ mod tests {
     #[test]
     fn test_set_stroke_color_lab() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeColorSpace {
-            name: "Lab".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetStrokeColor {
-            components: vec![75.0, 10.0, -5.0],
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorSpace {
+                name: "Lab".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColor {
+                components: vec![75.0, 10.0, -5.0],
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.stroke_color_rgb.0 - 0.75).abs() < 0.01);
@@ -8795,12 +8965,16 @@ mod tests {
     #[test]
     fn test_set_stroke_color_device_cmyk() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeColorSpace {
-            name: "DeviceCMYK".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetStrokeColor {
-            components: vec![0.0, 1.0, 0.0, 0.0], // magenta
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorSpace {
+                name: "DeviceCMYK".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColor {
+                components: vec![0.0, 1.0, 0.0, 0.0], // magenta
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!(state.stroke_color_cmyk.is_some());
@@ -8809,12 +8983,16 @@ mod tests {
     #[test]
     fn test_set_stroke_color_iccbased_gray() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeColorSpace {
-            name: "ICCBased".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetStrokeColor {
-            components: vec![0.3],
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorSpace {
+                name: "ICCBased".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColor {
+                components: vec![0.3],
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.stroke_color_rgb.0 - 0.3).abs() < 0.01);
@@ -8823,12 +9001,16 @@ mod tests {
     #[test]
     fn test_set_stroke_color_iccbased_rgb() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeColorSpace {
-            name: "ICCBased".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetStrokeColor {
-            components: vec![0.9, 0.8, 0.7],
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorSpace {
+                name: "ICCBased".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColor {
+                components: vec![0.9, 0.8, 0.7],
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.stroke_color_rgb.0 - 0.9).abs() < 0.01);
@@ -8837,12 +9019,16 @@ mod tests {
     #[test]
     fn test_set_stroke_color_iccbased_cmyk() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeColorSpace {
-            name: "ICCBased".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetStrokeColor {
-            components: vec![0.1, 0.2, 0.3, 0.4],
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorSpace {
+                name: "ICCBased".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColor {
+                components: vec![0.1, 0.2, 0.3, 0.4],
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!(state.stroke_color_cmyk.is_some());
@@ -8851,12 +9037,16 @@ mod tests {
     #[test]
     fn test_set_stroke_color_separation() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeColorSpace {
-            name: "Separation".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetStrokeColor {
-            components: vec![0.6],
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorSpace {
+                name: "Separation".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColor {
+                components: vec![0.6],
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         // gray = 1.0 - 0.6 = 0.4
@@ -8866,12 +9056,16 @@ mod tests {
     #[test]
     fn test_set_stroke_color_devicen_cmyk() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeColorSpace {
-            name: "DeviceN".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetStrokeColor {
-            components: vec![0.1, 0.2, 0.3, 0.4],
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorSpace {
+                name: "DeviceN".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColor {
+                components: vec![0.1, 0.2, 0.3, 0.4],
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!(state.stroke_color_cmyk.is_some());
@@ -8880,12 +9074,16 @@ mod tests {
     #[test]
     fn test_set_stroke_color_devicen_single() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeColorSpace {
-            name: "DeviceN".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetStrokeColor {
-            components: vec![0.5],
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorSpace {
+                name: "DeviceN".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColor {
+                components: vec![0.5],
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.stroke_color_rgb.0 - 0.5).abs() < 0.01);
@@ -8894,12 +9092,16 @@ mod tests {
     #[test]
     fn test_set_stroke_color_cal_rgb() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeColorSpace {
-            name: "CalRGB".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetStrokeColor {
-            components: vec![0.5, 0.6, 0.7],
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorSpace {
+                name: "CalRGB".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColor {
+                components: vec![0.5, 0.6, 0.7],
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.stroke_color_rgb.0 - 0.5).abs() < 0.01);
@@ -8908,12 +9110,16 @@ mod tests {
     #[test]
     fn test_set_stroke_color_cal_gray() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeColorSpace {
-            name: "CalGray".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetStrokeColor {
-            components: vec![0.9],
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorSpace {
+                name: "CalGray".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColor {
+                components: vec![0.9],
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.stroke_color_rgb.0 - 0.9).abs() < 0.01);
@@ -8922,12 +9128,16 @@ mod tests {
     #[test]
     fn test_set_stroke_color_unknown() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeColorSpace {
-            name: "UnknownCS".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetStrokeColor {
-            components: vec![0.5],
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorSpace {
+                name: "UnknownCS".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColor {
+                components: vec![0.5],
+            })
+            .unwrap();
         // Should not panic
     }
 
@@ -8939,23 +9149,29 @@ mod tests {
     fn test_set_fill_color_n_with_pattern() {
         let mut extractor = TextExtractor::new();
         // Pattern color space with name
-        extractor.execute_operator_public(Operator::SetFillColorN {
-            components: vec![],
-            name: Some(Box::new("P1".to_string())),
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorN {
+                components: vec![],
+                name: Some(Box::new("P1".to_string())),
+            })
+            .unwrap();
         // Should not panic (pattern ignored)
     }
 
     #[test]
     fn test_set_fill_color_n_without_pattern_gray() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "DeviceGray".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetFillColorN {
-            components: vec![0.3],
-            name: None,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "DeviceGray".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorN {
+                components: vec![0.3],
+                name: None,
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.fill_color_rgb.0 - 0.3).abs() < 0.01);
@@ -8964,13 +9180,17 @@ mod tests {
     #[test]
     fn test_set_fill_color_n_without_pattern_rgb() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "DeviceRGB".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetFillColorN {
-            components: vec![0.1, 0.2, 0.3],
-            name: None,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "DeviceRGB".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorN {
+                components: vec![0.1, 0.2, 0.3],
+                name: None,
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.fill_color_rgb.0 - 0.1).abs() < 0.01);
@@ -8979,13 +9199,17 @@ mod tests {
     #[test]
     fn test_set_fill_color_n_lab() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "Lab".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetFillColorN {
-            components: vec![80.0, 0.0, 0.0],
-            name: None,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "Lab".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorN {
+                components: vec![80.0, 0.0, 0.0],
+                name: None,
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.fill_color_rgb.0 - 0.8).abs() < 0.01);
@@ -8994,13 +9218,17 @@ mod tests {
     #[test]
     fn test_set_fill_color_n_cmyk() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "DeviceCMYK".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetFillColorN {
-            components: vec![0.0, 0.0, 0.0, 0.0],
-            name: None,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "DeviceCMYK".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorN {
+                components: vec![0.0, 0.0, 0.0, 0.0],
+                name: None,
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         // White (no ink)
@@ -9010,13 +9238,17 @@ mod tests {
     #[test]
     fn test_set_fill_color_n_iccbased() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "ICCBased".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetFillColorN {
-            components: vec![0.5, 0.6, 0.7],
-            name: None,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "ICCBased".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorN {
+                components: vec![0.5, 0.6, 0.7],
+                name: None,
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.fill_color_rgb.0 - 0.5).abs() < 0.01);
@@ -9025,13 +9257,17 @@ mod tests {
     #[test]
     fn test_set_fill_color_n_iccbased_gray() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "ICCBased".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetFillColorN {
-            components: vec![0.9],
-            name: None,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "ICCBased".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorN {
+                components: vec![0.9],
+                name: None,
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.fill_color_rgb.0 - 0.9).abs() < 0.01);
@@ -9040,13 +9276,17 @@ mod tests {
     #[test]
     fn test_set_fill_color_n_iccbased_cmyk() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "ICCBased".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetFillColorN {
-            components: vec![0.1, 0.2, 0.3, 0.4],
-            name: None,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "ICCBased".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorN {
+                components: vec![0.1, 0.2, 0.3, 0.4],
+                name: None,
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!(state.fill_color_cmyk.is_some());
@@ -9055,13 +9295,17 @@ mod tests {
     #[test]
     fn test_set_fill_color_n_separation() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "Separation".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetFillColorN {
-            components: vec![0.4],
-            name: None,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "Separation".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorN {
+                components: vec![0.4],
+                name: None,
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.fill_color_rgb.0 - 0.6).abs() < 0.01);
@@ -9070,13 +9314,17 @@ mod tests {
     #[test]
     fn test_set_fill_color_n_devicen() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "DeviceN".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetFillColorN {
-            components: vec![0.1, 0.2, 0.3, 0.4],
-            name: None,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "DeviceN".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorN {
+                components: vec![0.1, 0.2, 0.3, 0.4],
+                name: None,
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!(state.fill_color_cmyk.is_some());
@@ -9085,13 +9333,17 @@ mod tests {
     #[test]
     fn test_set_fill_color_n_devicen_single() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "DeviceN".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetFillColorN {
-            components: vec![0.2],
-            name: None,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "DeviceN".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorN {
+                components: vec![0.2],
+                name: None,
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.fill_color_rgb.0 - 0.8).abs() < 0.01);
@@ -9100,23 +9352,29 @@ mod tests {
     #[test]
     fn test_set_stroke_color_n_with_pattern() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeColorN {
-            components: vec![],
-            name: Some(Box::new("P2".to_string())),
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorN {
+                components: vec![],
+                name: Some(Box::new("P2".to_string())),
+            })
+            .unwrap();
         // Should not panic
     }
 
     #[test]
     fn test_set_stroke_color_n_gray() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeColorSpace {
-            name: "DeviceGray".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetStrokeColorN {
-            components: vec![0.6],
-            name: None,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorSpace {
+                name: "DeviceGray".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorN {
+                components: vec![0.6],
+                name: None,
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.stroke_color_rgb.0 - 0.6).abs() < 0.01);
@@ -9125,13 +9383,17 @@ mod tests {
     #[test]
     fn test_set_stroke_color_n_rgb() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeColorSpace {
-            name: "DeviceRGB".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetStrokeColorN {
-            components: vec![0.8, 0.7, 0.6],
-            name: None,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorSpace {
+                name: "DeviceRGB".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorN {
+                components: vec![0.8, 0.7, 0.6],
+                name: None,
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.stroke_color_rgb.0 - 0.8).abs() < 0.01);
@@ -9140,13 +9402,17 @@ mod tests {
     #[test]
     fn test_set_stroke_color_n_lab() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeColorSpace {
-            name: "Lab".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetStrokeColorN {
-            components: vec![60.0, 0.0, 0.0],
-            name: None,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorSpace {
+                name: "Lab".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorN {
+                components: vec![60.0, 0.0, 0.0],
+                name: None,
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.stroke_color_rgb.0 - 0.6).abs() < 0.01);
@@ -9155,13 +9421,17 @@ mod tests {
     #[test]
     fn test_set_stroke_color_n_cmyk() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeColorSpace {
-            name: "DeviceCMYK".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetStrokeColorN {
-            components: vec![0.0, 0.0, 1.0, 0.0], // yellow
-            name: None,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorSpace {
+                name: "DeviceCMYK".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorN {
+                components: vec![0.0, 0.0, 1.0, 0.0], // yellow
+                name: None,
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!(state.stroke_color_cmyk.is_some());
@@ -9170,13 +9440,17 @@ mod tests {
     #[test]
     fn test_set_stroke_color_n_iccbased_rgb() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeColorSpace {
-            name: "ICCBased".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetStrokeColorN {
-            components: vec![0.2, 0.3, 0.4],
-            name: None,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorSpace {
+                name: "ICCBased".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorN {
+                components: vec![0.2, 0.3, 0.4],
+                name: None,
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.stroke_color_rgb.0 - 0.2).abs() < 0.01);
@@ -9185,13 +9459,17 @@ mod tests {
     #[test]
     fn test_set_stroke_color_n_iccbased_gray() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeColorSpace {
-            name: "ICCBased".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetStrokeColorN {
-            components: vec![0.5],
-            name: None,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorSpace {
+                name: "ICCBased".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorN {
+                components: vec![0.5],
+                name: None,
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.stroke_color_rgb.0 - 0.5).abs() < 0.01);
@@ -9200,13 +9478,17 @@ mod tests {
     #[test]
     fn test_set_stroke_color_n_iccbased_cmyk() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeColorSpace {
-            name: "ICCBased".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetStrokeColorN {
-            components: vec![0.1, 0.2, 0.3, 0.4],
-            name: None,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorSpace {
+                name: "ICCBased".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorN {
+                components: vec![0.1, 0.2, 0.3, 0.4],
+                name: None,
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!(state.stroke_color_cmyk.is_some());
@@ -9215,13 +9497,17 @@ mod tests {
     #[test]
     fn test_set_stroke_color_n_separation() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeColorSpace {
-            name: "Separation".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetStrokeColorN {
-            components: vec![1.0],
-            name: None,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorSpace {
+                name: "Separation".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorN {
+                components: vec![1.0],
+                name: None,
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.stroke_color_rgb.0 - 0.0).abs() < 0.01);
@@ -9230,13 +9516,17 @@ mod tests {
     #[test]
     fn test_set_stroke_color_n_devicen_cmyk() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeColorSpace {
-            name: "DeviceN".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetStrokeColorN {
-            components: vec![0.5, 0.5, 0.5, 0.5],
-            name: None,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorSpace {
+                name: "DeviceN".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorN {
+                components: vec![0.5, 0.5, 0.5, 0.5],
+                name: None,
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!(state.stroke_color_cmyk.is_some());
@@ -9245,13 +9535,17 @@ mod tests {
     #[test]
     fn test_set_stroke_color_n_devicen_single() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeColorSpace {
-            name: "DeviceN".to_string(),
-        }).unwrap();
-        extractor.execute_operator_public(Operator::SetStrokeColorN {
-            components: vec![0.1],
-            name: None,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorSpace {
+                name: "DeviceN".to_string(),
+            })
+            .unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorN {
+                components: vec![0.1],
+                name: None,
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.stroke_color_rgb.0 - 0.9).abs() < 0.01);
@@ -9264,37 +9558,47 @@ mod tests {
     #[test]
     fn test_set_line_cap() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetLineCap { cap_style: 2 }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetLineCap { cap_style: 2 })
+            .unwrap();
         assert_eq!(extractor.state_stack.current().line_cap, 2);
     }
 
     #[test]
     fn test_set_line_join() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetLineJoin { join_style: 1 }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetLineJoin { join_style: 1 })
+            .unwrap();
         assert_eq!(extractor.state_stack.current().line_join, 1);
     }
 
     #[test]
     fn test_set_miter_limit() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetMiterLimit { limit: 5.0 }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetMiterLimit { limit: 5.0 })
+            .unwrap();
         assert!((extractor.state_stack.current().miter_limit - 5.0).abs() < 0.01);
     }
 
     #[test]
     fn test_set_rendering_intent() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetRenderingIntent {
-            intent: "RelativeColorimetric".to_string(),
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetRenderingIntent {
+                intent: "RelativeColorimetric".to_string(),
+            })
+            .unwrap();
         assert_eq!(extractor.state_stack.current().rendering_intent, "RelativeColorimetric");
     }
 
     #[test]
     fn test_set_flatness() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetFlatness { tolerance: 0.5 }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFlatness { tolerance: 0.5 })
+            .unwrap();
         assert!((extractor.state_stack.current().flatness - 0.5).abs() < 0.01);
     }
 
@@ -9302,18 +9606,22 @@ mod tests {
     fn test_set_ext_gstate() {
         let mut extractor = TextExtractor::new();
         // Should not panic, just logs debug info
-        extractor.execute_operator_public(Operator::SetExtGState {
-            dict_name: "GS1".to_string(),
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetExtGState {
+                dict_name: "GS1".to_string(),
+            })
+            .unwrap();
     }
 
     #[test]
     fn test_paint_shading() {
         let mut extractor = TextExtractor::new();
         // Should not panic, just logs debug info
-        extractor.execute_operator_public(Operator::PaintShading {
-            name: "sh1".to_string(),
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::PaintShading {
+                name: "sh1".to_string(),
+            })
+            .unwrap();
     }
 
     #[test]
@@ -9322,10 +9630,12 @@ mod tests {
         let mut dict = HashMap::new();
         dict.insert("W".to_string(), Object::Integer(100));
         dict.insert("H".to_string(), Object::Integer(50));
-        extractor.execute_operator_public(Operator::InlineImage {
-            dict: Box::new(dict),
-            data: vec![0u8; 100],
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::InlineImage {
+                dict: Box::new(dict),
+                data: vec![0u8; 100],
+            })
+            .unwrap();
         // Should not panic and not produce text
     }
 
@@ -9333,10 +9643,12 @@ mod tests {
     fn test_inline_image_no_dimensions() {
         let mut extractor = TextExtractor::new();
         let dict = HashMap::new(); // no W/H
-        extractor.execute_operator_public(Operator::InlineImage {
-            dict: Box::new(dict),
-            data: vec![0u8; 10],
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::InlineImage {
+                dict: Box::new(dict),
+                data: vec![0u8; 10],
+            })
+            .unwrap();
     }
 
     // ========================================================================
@@ -9379,7 +9691,18 @@ mod tests {
 
         // Email context with gap below threshold: suppress space
         let decision = should_insert_space(
-            "user@domain", ".com", 1.0, 12.0, "F1", &fonts, false, &config, None, None, 12.0, 12.0,
+            "user@domain",
+            ".com",
+            1.0,
+            12.0,
+            "F1",
+            &fonts,
+            false,
+            &config,
+            None,
+            None,
+            12.0,
+            12.0,
         );
         assert!(!decision.insert_space, "Email context should suppress space for small gap");
     }
@@ -9395,7 +9718,18 @@ mod tests {
 
         // Email context with very large gap: insert space
         let decision = should_insert_space(
-            "user@domain", ".com", 100.0, 12.0, "F1", &fonts, false, &config, None, None, 12.0, 12.0,
+            "user@domain",
+            ".com",
+            100.0,
+            12.0,
+            "F1",
+            &fonts,
+            false,
+            &config,
+            None,
+            None,
+            12.0,
+            12.0,
         );
         assert!(decision.insert_space, "Email context should insert space for large gap");
     }
@@ -9412,7 +9746,18 @@ mod tests {
 
         // Email context uses font metrics for threshold
         let decision = should_insert_space(
-            "user@domain", ".com", 1.0, 12.0, "F1", &fonts, false, &config, None, None, 12.0, 12.0,
+            "user@domain",
+            ".com",
+            1.0,
+            12.0,
+            "F1",
+            &fonts,
+            false,
+            &config,
+            None,
+            None,
+            12.0,
+            12.0,
         );
         assert!(!decision.insert_space);
     }
@@ -9434,8 +9779,18 @@ mod tests {
         let next_bbox = Rect::new(60.0, 105.0, 10.0, 7.0); // Raised, smaller
 
         let decision = should_insert_space(
-            "text", "1", 2.0, 12.0, "F1", &fonts, true, &config,
-            Some(&prev_bbox), Some(&next_bbox), 12.0, 7.2,
+            "text",
+            "1",
+            2.0,
+            12.0,
+            "F1",
+            &fonts,
+            true,
+            &config,
+            Some(&prev_bbox),
+            Some(&next_bbox),
+            12.0,
+            7.2,
         );
         assert!(decision.insert_space, "Citation context with TJ should insert space");
     }
@@ -9453,8 +9808,18 @@ mod tests {
 
         // Citation context with large geometric gap
         let decision = should_insert_space(
-            "text", "1", 10.0, 12.0, "F1", &fonts, false, &config,
-            Some(&prev_bbox), Some(&next_bbox), 12.0, 7.2,
+            "text",
+            "1",
+            10.0,
+            12.0,
+            "F1",
+            &fonts,
+            false,
+            &config,
+            Some(&prev_bbox),
+            Some(&next_bbox),
+            12.0,
+            7.2,
         );
         assert!(decision.insert_space, "Citation context with large gap should insert space");
     }
@@ -9472,8 +9837,18 @@ mod tests {
         let next_bbox = Rect::new(60.0, 105.0, 10.0, 7.0);
 
         let decision = should_insert_space(
-            "text", "1", 5.0, 12.0, "F1", &fonts, true, &config,
-            Some(&prev_bbox), Some(&next_bbox), 12.0, 7.2,
+            "text",
+            "1",
+            5.0,
+            12.0,
+            "F1",
+            &fonts,
+            true,
+            &config,
+            Some(&prev_bbox),
+            Some(&next_bbox),
+            12.0,
+            7.2,
         );
         assert!(decision.insert_space);
     }
@@ -9492,8 +9867,18 @@ mod tests {
         let next_bbox = Rect::new(400.0, 680.0, 200.0, 12.0);
 
         let decision = should_insert_space(
-            "end", "start", 0.0, 12.0, "F1", &fonts, false, &config,
-            Some(&prev_bbox), Some(&next_bbox), 12.0, 12.0,
+            "end",
+            "start",
+            0.0,
+            12.0,
+            "F1",
+            &fonts,
+            false,
+            &config,
+            Some(&prev_bbox),
+            Some(&next_bbox),
+            12.0,
+            12.0,
         );
         // Different column - should not trigger same_column line break path
         // The default no space path should apply
@@ -9509,8 +9894,18 @@ mod tests {
         let next_bbox = Rect::new(100.0, 699.0, 200.0, 12.0);
 
         let decision = should_insert_space(
-            "word", "next", 0.0, 12.0, "F1", &fonts, false, &config,
-            Some(&prev_bbox), Some(&next_bbox), 12.0, 12.0,
+            "word",
+            "next",
+            0.0,
+            12.0,
+            "F1",
+            &fonts,
+            false,
+            &config,
+            Some(&prev_bbox),
+            Some(&next_bbox),
+            12.0,
+            12.0,
         );
         // Small vertical gap should not trigger line break
     }
@@ -9530,8 +9925,18 @@ mod tests {
         // TJ triggered but gap does not suggest space (conflict)
         // Should go through tiebreaker
         let decision = should_insert_space(
-            "word", "next", 1.0, 12.0, "F1", &fonts, true, &config,
-            Some(&prev_bbox), Some(&next_bbox), 12.0, 12.0,
+            "word",
+            "next",
+            1.0,
+            12.0,
+            "F1",
+            &fonts,
+            true,
+            &config,
+            Some(&prev_bbox),
+            Some(&next_bbox),
+            12.0,
+            12.0,
         );
         // Result depends on WordBoundaryDetector
     }
@@ -9546,8 +9951,18 @@ mod tests {
 
         // No TJ but gap suggests space (conflict with no TJ)
         let decision = should_insert_space(
-            "word", "next", 5.0, 12.0, "F1", &fonts, false, &config,
-            Some(&prev_bbox), Some(&next_bbox), 12.0, 12.0,
+            "word",
+            "next",
+            5.0,
+            12.0,
+            "F1",
+            &fonts,
+            false,
+            &config,
+            Some(&prev_bbox),
+            Some(&next_bbox),
+            12.0,
+            12.0,
         );
         // Geometric alone - should go through tiebreaker path
     }
@@ -9722,17 +10137,23 @@ mod tests {
     fn test_set_fill_color_space_resets_color() {
         let mut extractor = TextExtractor::new();
         // Set RGB color first
-        extractor.execute_operator_public(Operator::SetFillRgb {
-            r: 1.0, g: 0.0, b: 0.0,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillRgb {
+                r: 1.0,
+                g: 0.0,
+                b: 0.0,
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.fill_color_rgb.0 - 1.0).abs() < 0.01);
 
         // Change color space should reset to black
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "DeviceGray".to_string(),
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "DeviceGray".to_string(),
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.fill_color_rgb.0 - 0.0).abs() < 0.01);
@@ -9742,13 +10163,19 @@ mod tests {
     #[test]
     fn test_set_stroke_color_space_resets_color() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeRgb {
-            r: 0.0, g: 1.0, b: 0.0,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeRgb {
+                r: 0.0,
+                g: 1.0,
+                b: 0.0,
+            })
+            .unwrap();
 
-        extractor.execute_operator_public(Operator::SetStrokeColorSpace {
-            name: "DeviceRGB".to_string(),
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeColorSpace {
+                name: "DeviceRGB".to_string(),
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.stroke_color_rgb.0 - 0.0).abs() < 0.01);
@@ -9762,9 +10189,14 @@ mod tests {
     #[test]
     fn test_set_stroke_cmyk() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeCmyk {
-            c: 1.0, m: 0.0, y: 0.0, k: 0.0,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeCmyk {
+                c: 1.0,
+                m: 0.0,
+                y: 0.0,
+                k: 0.0,
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!(state.stroke_color_cmyk.is_some());
@@ -9775,7 +10207,9 @@ mod tests {
     #[test]
     fn test_set_stroke_gray() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeGray { gray: 0.7 }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeGray { gray: 0.7 })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.stroke_color_rgb.0 - 0.7).abs() < 0.01);
@@ -9786,9 +10220,13 @@ mod tests {
     #[test]
     fn test_set_stroke_rgb() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetStrokeRgb {
-            r: 0.3, g: 0.6, b: 0.9,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetStrokeRgb {
+                r: 0.3,
+                g: 0.6,
+                b: 0.9,
+            })
+            .unwrap();
 
         let state = extractor.state_stack.current();
         assert!((state.stroke_color_rgb.0 - 0.3).abs() < 0.01);
@@ -9886,7 +10324,7 @@ mod tests {
                 primary_detected: false,
             },
             TextSpan {
-                text: "Hello World".to_string(), // Same text but far apart
+                text: "Hello World".to_string(),           // Same text but far apart
                 bbox: Rect::new(500.0, 700.0, 60.0, 12.0), // X > 5pt difference
                 font_name: "F1".to_string(),
                 font_size: 12.0,
@@ -10086,7 +10524,9 @@ mod tests {
 
         // Simulate justified text (high CV)
         for i in 0..100 {
-            extractor.tj_offset_history.push(if i % 2 == 0 { -50.0 } else { -200.0 });
+            extractor
+                .tj_offset_history
+                .push(if i % 2 == 0 { -50.0 } else { -200.0 });
         }
 
         let threshold = extractor.calculate_adaptive_tj_threshold();
@@ -10135,7 +10575,11 @@ mod tests {
         let stream = b"BT /F1 12 Tf 14 TL 100 700 Td (Line1) Tj (Line2) ' ET";
         let spans = extractor.extract_text_spans(stream).unwrap();
 
-        let text: String = spans.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join("");
+        let text: String = spans
+            .iter()
+            .map(|s| s.text.as_str())
+            .collect::<Vec<_>>()
+            .join("");
         assert!(text.contains("Line1"), "Should contain Line1, got: {}", text);
         assert!(text.contains("Line2"), "Should contain Line2, got: {}", text);
     }
@@ -10150,7 +10594,11 @@ mod tests {
         let stream = b"BT /F1 12 Tf 14 TL 100 700 Td 1 2 (Text) \" ET";
         let spans = extractor.extract_text_spans(stream).unwrap();
 
-        let text: String = spans.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join("");
+        let text: String = spans
+            .iter()
+            .map(|s| s.text.as_str())
+            .collect::<Vec<_>>()
+            .join("");
         assert!(text.contains("Text"), "Should extract text, got: {}", text);
     }
 
@@ -10237,7 +10685,11 @@ mod tests {
         let stream = b"BT /F1 12 Tf 100 700 Td (Hello) Tj ET";
         let spans = extractor.extract_text_spans(stream).unwrap();
 
-        let text: String = spans.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join("");
+        let text: String = spans
+            .iter()
+            .map(|s| s.text.as_str())
+            .collect::<Vec<_>>()
+            .join("");
         assert!(text.contains("Hello"), "Primary mode should still extract text, got: {}", text);
     }
 
@@ -10269,7 +10721,7 @@ mod tests {
                 primary_detected: false,
             },
             TextSpan {
-                text: " World".to_string(), // starts with space
+                text: " World".to_string(),                // starts with space
                 bbox: Rect::new(136.0, 700.0, 35.0, 12.0), // 1pt gap
                 font_name: "F1".to_string(),
                 font_size: 12.0,
@@ -10316,14 +10768,26 @@ mod tests {
         let extractor = TextExtractor::new();
         let chars = vec![
             CharacterInfo {
-                code: 65, glyph_id: None, width: 10.0, x_position: 0.0,
-                tj_offset: None, font_size: 12.0, is_ligature: false,
-                original_ligature: None, protected_from_split: false,
+                code: 65,
+                glyph_id: None,
+                width: 10.0,
+                x_position: 0.0,
+                tj_offset: None,
+                font_size: 12.0,
+                is_ligature: false,
+                original_ligature: None,
+                protected_from_split: false,
             },
             CharacterInfo {
-                code: 66, glyph_id: None, width: 10.0, x_position: 10.0,
-                tj_offset: None, font_size: 12.0, is_ligature: false,
-                original_ligature: None, protected_from_split: false,
+                code: 66,
+                glyph_id: None,
+                width: 10.0,
+                x_position: 10.0,
+                tj_offset: None,
+                font_size: 12.0,
+                is_ligature: false,
+                original_ligature: None,
+                protected_from_split: false,
             },
         ];
 
@@ -10340,15 +10804,22 @@ mod tests {
     #[test]
     fn test_fill_cmyk_then_change_color_space() {
         let mut extractor = TextExtractor::new();
-        extractor.execute_operator_public(Operator::SetFillCmyk {
-            c: 0.5, m: 0.5, y: 0.5, k: 0.5,
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillCmyk {
+                c: 0.5,
+                m: 0.5,
+                y: 0.5,
+                k: 0.5,
+            })
+            .unwrap();
         assert!(extractor.state_stack.current().fill_color_cmyk.is_some());
 
         // Changing color space should reset CMYK
-        extractor.execute_operator_public(Operator::SetFillColorSpace {
-            name: "DeviceRGB".to_string(),
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::SetFillColorSpace {
+                name: "DeviceRGB".to_string(),
+            })
+            .unwrap();
         assert!(extractor.state_stack.current().fill_color_cmyk.is_none());
     }
 
@@ -10362,12 +10833,12 @@ mod tests {
         let mut props = HashMap::new();
         props.insert("MCID".to_string(), Object::Integer(5));
 
-        extractor.execute_operator_public(
-            Operator::BeginMarkedContentDict {
+        extractor
+            .execute_operator_public(Operator::BeginMarkedContentDict {
                 tag: "P".to_string(),
                 properties: Box::new(Object::Dictionary(props)),
-            }
-        ).unwrap();
+            })
+            .unwrap();
 
         assert_eq!(extractor.current_mcid, Some(5));
         assert!(!extractor.inside_artifact);
@@ -10380,12 +10851,12 @@ mod tests {
         props.insert("Type".to_string(), Object::Name("Pagination".to_string()));
         props.insert("Subtype".to_string(), Object::Name("Header".to_string()));
 
-        extractor.execute_operator_public(
-            Operator::BeginMarkedContentDict {
+        extractor
+            .execute_operator_public(Operator::BeginMarkedContentDict {
                 tag: "Artifact".to_string(),
                 properties: Box::new(Object::Dictionary(props)),
-            }
-        ).unwrap();
+            })
+            .unwrap();
 
         assert!(extractor.inside_artifact);
     }
@@ -10402,7 +10873,9 @@ mod tests {
             expansion: None,
         });
 
-        extractor.execute_operator_public(Operator::EndMarkedContent).unwrap();
+        extractor
+            .execute_operator_public(Operator::EndMarkedContent)
+            .unwrap();
 
         assert_eq!(extractor.current_mcid, None);
         assert!(extractor.marked_content_stack.is_empty());
@@ -10412,7 +10885,9 @@ mod tests {
     fn test_emc_with_empty_stack() {
         let mut extractor = TextExtractor::new();
         // Should not panic
-        extractor.execute_operator_public(Operator::EndMarkedContent).unwrap();
+        extractor
+            .execute_operator_public(Operator::EndMarkedContent)
+            .unwrap();
     }
 
     // ========================================================================
@@ -10425,12 +10900,12 @@ mod tests {
         let mut props = HashMap::new();
         props.insert("ActualText".to_string(), Object::String(b"fi".to_vec()));
 
-        extractor.execute_operator_public(
-            Operator::BeginMarkedContentDict {
+        extractor
+            .execute_operator_public(Operator::BeginMarkedContentDict {
                 tag: "Span".to_string(),
                 properties: Box::new(Object::Dictionary(props)),
-            }
-        ).unwrap();
+            })
+            .unwrap();
 
         let actual = extractor.get_current_actual_text();
         assert_eq!(actual, Some("fi".to_string()));
@@ -10442,12 +10917,12 @@ mod tests {
         let mut props = HashMap::new();
         props.insert("E".to_string(), Object::String(b"PDF".to_vec()));
 
-        extractor.execute_operator_public(
-            Operator::BeginMarkedContentDict {
+        extractor
+            .execute_operator_public(Operator::BeginMarkedContentDict {
                 tag: "Span".to_string(),
                 properties: Box::new(Object::Dictionary(props)),
-            }
-        ).unwrap();
+            })
+            .unwrap();
 
         let ctx = &extractor.marked_content_stack[0];
         assert_eq!(ctx.expansion, Some("PDF".to_string()));
@@ -10461,9 +10936,11 @@ mod tests {
     fn test_do_operator_without_document() {
         let mut extractor = TextExtractor::new();
         // Do without document set should not panic
-        extractor.execute_operator_public(Operator::Do {
-            name: "Im1".to_string(),
-        }).unwrap();
+        extractor
+            .execute_operator_public(Operator::Do {
+                name: "Im1".to_string(),
+            })
+            .unwrap();
     }
 
     // ========================================================================
@@ -10474,11 +10951,7 @@ mod tests {
     fn test_flush_tj_span_buffer_empty_buffer() {
         let mut extractor = TextExtractor::new();
         let state = extractor.state_stack.current().clone();
-        extractor.tj_span_buffer = Some(TjBuffer::new(
-            &state,
-            None,
-            None,
-        ));
+        extractor.tj_span_buffer = Some(TjBuffer::new(&state, None, None));
         // Empty buffer should not produce a span
         let before = extractor.spans.len();
         extractor.flush_tj_span_buffer().unwrap();
@@ -10519,7 +10992,11 @@ mod tests {
         let stream = b"BT /F1 12 Tf 100 700 Td [(Word1) -500 (Word2)] TJ ET";
         let spans = extractor.extract_text_spans(stream).unwrap();
 
-        let text: String = spans.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join("");
+        let text: String = spans
+            .iter()
+            .map(|s| s.text.as_str())
+            .collect::<Vec<_>>()
+            .join("");
         assert!(text.contains("Word1"), "Should contain Word1");
         assert!(text.contains("Word2"), "Should contain Word2");
     }
@@ -10640,8 +11117,8 @@ mod tests {
 
     #[test]
     fn test_extractor_with_config_and_profile() {
-        let config = TextExtractionConfig::new()
-            .with_profile(crate::config::ExtractionProfile::POLICY);
+        let config =
+            TextExtractionConfig::new().with_profile(crate::config::ExtractionProfile::POLICY);
 
         let mut extractor = TextExtractor::with_config(config);
         let font = create_test_font();

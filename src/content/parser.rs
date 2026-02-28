@@ -244,10 +244,7 @@ pub fn parse_content_stream_text_only(data: &[u8]) -> Result<Vec<Operator>> {
 fn prescan_text_regions(data: &[u8]) -> Option<Vec<(usize, usize)>> {
     fn is_boundary(b: u8) -> bool {
         b.is_ascii_whitespace()
-            || matches!(
-                b,
-                b'(' | b')' | b'<' | b'>' | b'[' | b']' | b'{' | b'}' | b'/' | b'%'
-            )
+            || matches!(b, b'(' | b')' | b'<' | b'>' | b'[' | b']' | b'{' | b'}' | b'/' | b'%')
     }
 
     let len = data.len();
@@ -280,7 +277,7 @@ fn prescan_text_regions(data: &[u8]) -> Option<Vec<(usize, usize)>> {
                         text_positions.push(pos);
                     }
                 }
-            }
+            },
         }
     }
 
@@ -397,10 +394,7 @@ fn find_matching_et(data: &[u8], start: usize) -> Option<usize> {
                 if pos + 1 < len && data[pos + 1] == b'T' {
                     let before_ok = pos == 0
                         || data[pos - 1].is_ascii_whitespace()
-                        || matches!(
-                            data[pos - 1],
-                            b')' | b'>' | b']' | b'}' | b'/' | b'%'
-                        );
+                        || matches!(data[pos - 1], b')' | b'>' | b']' | b'}' | b'/' | b'%');
                     let after_ok = pos + 2 >= len || {
                         let next = data[pos + 2];
                         next.is_ascii_whitespace()
@@ -410,7 +404,7 @@ fn find_matching_et(data: &[u8], start: usize) -> Option<usize> {
                         return Some(pos + 2);
                     }
                 }
-            }
+            },
         }
     }
 }
@@ -3239,10 +3233,7 @@ mod tests {
         assert!(regions.is_some());
         let regions = regions.unwrap();
         // Should have 1-3 regions (may merge adjacent ones)
-        assert!(
-            !regions.is_empty(),
-            "Should find regions for 3 BT/ET blocks"
-        );
+        assert!(!regions.is_empty(), "Should find regions for 3 BT/ET blocks");
     }
 
     #[test]
@@ -3313,7 +3304,9 @@ mod tests {
         let stream = b"BI /W 4 /H 4 /BPC 8 /CS /DeviceGray ID ABCD EI";
         let ops = parse_content_stream(stream).unwrap();
         // The parser should produce at least one InlineImage
-        assert!(ops.iter().any(|op| matches!(op, Operator::InlineImage { .. })));
+        assert!(ops
+            .iter()
+            .any(|op| matches!(op, Operator::InlineImage { .. })));
         // Check that the inline image dict contains expected keys
         for op in &ops {
             if let Operator::InlineImage { dict, data } = op {
@@ -3330,7 +3323,9 @@ mod tests {
         // Inline image with minimal data
         let stream = b"BI /W 1 /H 1 ID X EI";
         let ops = parse_content_stream(stream).unwrap();
-        assert!(ops.iter().any(|op| matches!(op, Operator::InlineImage { .. })));
+        assert!(ops
+            .iter()
+            .any(|op| matches!(op, Operator::InlineImage { .. })));
     }
 
     #[test]
@@ -3341,7 +3336,9 @@ mod tests {
         assert!(ops.len() >= 3);
         assert!(matches!(ops[0], Operator::SaveState));
         assert!(matches!(ops[1], Operator::Cm { .. }));
-        assert!(ops.iter().any(|op| matches!(op, Operator::InlineImage { .. })));
+        assert!(ops
+            .iter()
+            .any(|op| matches!(op, Operator::InlineImage { .. })));
         assert!(ops.iter().any(|op| matches!(op, Operator::RestoreState)));
     }
 
@@ -3790,7 +3787,14 @@ mod tests {
         let ops = parse_content_stream(stream).unwrap();
         assert_eq!(ops.len(), 1);
         match &ops[0] {
-            Operator::CurveTo { x1, y1, x2, y2, x3, y3 } => {
+            Operator::CurveTo {
+                x1,
+                y1,
+                x2,
+                y2,
+                x3,
+                y3,
+            } => {
                 assert_eq!(*x1, 10.0);
                 assert_eq!(*y1, 20.0);
                 assert_eq!(*x2, 30.0);
@@ -3875,7 +3879,12 @@ mod tests {
         let ops = parse_content_stream(stream).unwrap();
         assert_eq!(ops.len(), 1);
         match &ops[0] {
-            Operator::Rectangle { x, y, width, height } => {
+            Operator::Rectangle {
+                x,
+                y,
+                width,
+                height,
+            } => {
                 assert_eq!(*x, 10.0);
                 assert_eq!(*y, 20.0);
                 assert_eq!(*width, 100.0);
@@ -3909,7 +3918,11 @@ mod tests {
         let ops = parse_content_stream(stream).unwrap();
         assert_eq!(ops.len(), 1);
         match &ops[0] {
-            Operator::DoubleQuote { word_space, char_space, text } => {
+            Operator::DoubleQuote {
+                word_space,
+                char_space,
+                text,
+            } => {
                 assert!((word_space - 1.5).abs() < 0.001);
                 assert!((char_space - 0.5).abs() < 0.001);
                 assert_eq!(text, b"Hello");
@@ -3986,7 +3999,9 @@ mod tests {
         let stream = b"q 1 0 0 1 0 0 cm /Im1 Do Q";
         let ops = parse_content_stream_images_only(stream).unwrap();
         // Should capture q, cm, Do, Q
-        assert!(ops.iter().any(|op| matches!(op, Operator::Do { ref name } if name == "Im1")));
+        assert!(ops
+            .iter()
+            .any(|op| matches!(op, Operator::Do { ref name } if name == "Im1")));
         assert!(ops.iter().any(|op| matches!(op, Operator::SaveState)));
         assert!(ops.iter().any(|op| matches!(op, Operator::RestoreState)));
         assert!(ops.iter().any(|op| matches!(op, Operator::Cm { .. })));
@@ -4026,7 +4041,9 @@ mod tests {
         let stream = b"q 1 0 0 1 0 0 cm BI /W 2 /H 2 ID AB EI Q";
         let ops = parse_content_stream_images_only(stream).unwrap();
         // Should capture the inline image
-        assert!(ops.iter().any(|op| matches!(op, Operator::InlineImage { .. })));
+        assert!(ops
+            .iter()
+            .any(|op| matches!(op, Operator::InlineImage { .. })));
     }
 
     #[test]
@@ -4060,7 +4077,9 @@ mod tests {
         let stream = b"BI /W 2 /H 2 ID XY EI BT (Hi) Tj ET";
         let ops = parse_content_stream_text_only(stream).unwrap();
         // Inline image outside text block should be skipped in text-only mode
-        assert!(!ops.iter().any(|op| matches!(op, Operator::InlineImage { .. })));
+        assert!(!ops
+            .iter()
+            .any(|op| matches!(op, Operator::InlineImage { .. })));
         assert!(ops.iter().any(|op| matches!(op, Operator::Tj { .. })));
     }
 
@@ -4199,7 +4218,9 @@ mod tests {
         assert!(ops.iter().any(|op| matches!(op, Operator::TStar)));
         assert!(ops.iter().any(|op| matches!(op, Operator::EndText)));
         assert!(ops.iter().any(|op| matches!(op, Operator::RestoreState)));
-        assert!(ops.iter().any(|op| matches!(op, Operator::Rectangle { .. })));
+        assert!(ops
+            .iter()
+            .any(|op| matches!(op, Operator::Rectangle { .. })));
         assert!(ops.iter().any(|op| matches!(op, Operator::Stroke)));
     }
 
@@ -4263,8 +4284,14 @@ mod tests {
         let ops = parse_content_stream(stream).unwrap();
         // 3 blocks * 3 ops each = 9 ops
         assert_eq!(ops.len(), 9);
-        let bt_count = ops.iter().filter(|op| matches!(op, Operator::BeginText)).count();
-        let et_count = ops.iter().filter(|op| matches!(op, Operator::EndText)).count();
+        let bt_count = ops
+            .iter()
+            .filter(|op| matches!(op, Operator::BeginText))
+            .count();
+        let et_count = ops
+            .iter()
+            .filter(|op| matches!(op, Operator::EndText))
+            .count();
         assert_eq!(bt_count, 3);
         assert_eq!(et_count, 3);
     }
@@ -4305,7 +4332,9 @@ mod tests {
     fn test_fast_parser_tm_operator() {
         let stream = b"BT 1 0 0 1 72 700 Tm ET";
         let ops = parse_content_stream_text_only(stream).unwrap();
-        assert!(ops.iter().any(|op| matches!(op, Operator::Tm { a, b, c, d, e, f }
+        assert!(ops
+            .iter()
+            .any(|op| matches!(op, Operator::Tm { a, b, c, d, e, f }
             if *a == 1.0 && *b == 0.0 && *c == 0.0 && *d == 1.0 && *e == 72.0 && *f == 700.0)));
     }
 
@@ -4333,7 +4362,9 @@ mod tests {
     fn test_fast_parser_tj_array() {
         let stream = b"BT [(AB) -100 (CD)] TJ ET";
         let ops = parse_content_stream_text_only(stream).unwrap();
-        assert!(ops.iter().any(|op| matches!(op, Operator::TJ { array } if array.len() == 3)));
+        assert!(ops
+            .iter()
+            .any(|op| matches!(op, Operator::TJ { array } if array.len() == 3)));
     }
 
     #[test]
@@ -4347,29 +4378,39 @@ mod tests {
     fn test_fast_parser_double_quote_operator() {
         let stream = b"BT 1 2 (text) \" ET";
         let ops = parse_content_stream_text_only(stream).unwrap();
-        assert!(ops.iter().any(|op| matches!(op, Operator::DoubleQuote { .. })));
+        assert!(ops
+            .iter()
+            .any(|op| matches!(op, Operator::DoubleQuote { .. })));
     }
 
     #[test]
     fn test_fast_parser_color_ops_inside_bt() {
         let stream = b"BT 1 0 0 rg 0 g ET";
         let ops = parse_content_stream_text_only(stream).unwrap();
-        assert!(ops.iter().any(|op| matches!(op, Operator::SetFillRgb { .. })));
-        assert!(ops.iter().any(|op| matches!(op, Operator::SetFillGray { .. })));
+        assert!(ops
+            .iter()
+            .any(|op| matches!(op, Operator::SetFillRgb { .. })));
+        assert!(ops
+            .iter()
+            .any(|op| matches!(op, Operator::SetFillGray { .. })));
     }
 
     #[test]
     fn test_fast_parser_gs_inside_bt() {
         let stream = b"BT /GS1 gs ET";
         let ops = parse_content_stream_text_only(stream).unwrap();
-        assert!(ops.iter().any(|op| matches!(op, Operator::SetExtGState { ref dict_name } if dict_name == "GS1")));
+        assert!(ops.iter().any(
+            |op| matches!(op, Operator::SetExtGState { ref dict_name } if dict_name == "GS1")
+        ));
     }
 
     #[test]
     fn test_fast_parser_do_inside_bt() {
         let stream = b"BT /XObj1 Do ET";
         let ops = parse_content_stream_text_only(stream).unwrap();
-        assert!(ops.iter().any(|op| matches!(op, Operator::Do { ref name } if name == "XObj1")));
+        assert!(ops
+            .iter()
+            .any(|op| matches!(op, Operator::Do { ref name } if name == "XObj1")));
     }
 
     // ── Helper function tests ───────────────────────────────────────
@@ -4744,7 +4785,13 @@ mod tests {
         let data = b"Q";
         let mut errors = 0usize;
         let result = scan_graphics_region(data, &mut errors);
-        assert!(matches!(result, ScanResult::SimpleOp { op: Operator::RestoreState, .. }));
+        assert!(matches!(
+            result,
+            ScanResult::SimpleOp {
+                op: Operator::RestoreState,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -4763,7 +4810,10 @@ mod tests {
         let mut errors = 0usize;
         let result = scan_graphics_region(data, &mut errors);
         match result {
-            ScanResult::SimpleOp { op: Operator::Cm { a, b, c, d, e, f }, .. } => {
+            ScanResult::SimpleOp {
+                op: Operator::Cm { a, b, c, d, e, f },
+                ..
+            } => {
                 assert_eq!(a, 1.0);
                 assert_eq!(b, 0.0);
                 assert_eq!(c, 0.0);
@@ -4771,15 +4821,18 @@ mod tests {
                 assert_eq!(e, 72.0);
                 assert_eq!(f, 700.0);
             },
-            _ => panic!("Expected SimpleOp with Cm, got {:?}", match result {
-                ScanResult::EndOfData => "EndOfData",
-                ScanResult::FoundBT { .. } => "FoundBT",
-                ScanResult::InlineImage { .. } => "InlineImage",
-                ScanResult::NeedFullParse { .. } => "NeedFullParse",
-                ScanResult::DeferredThenText { .. } => "DeferredThenText",
-                ScanResult::SimpleOp { .. } => "SimpleOp (wrong variant)",
-                ScanResult::TooManyErrors { .. } => "TooManyErrors",
-            }),
+            _ => panic!(
+                "Expected SimpleOp with Cm, got {:?}",
+                match result {
+                    ScanResult::EndOfData => "EndOfData",
+                    ScanResult::FoundBT { .. } => "FoundBT",
+                    ScanResult::InlineImage { .. } => "InlineImage",
+                    ScanResult::NeedFullParse { .. } => "NeedFullParse",
+                    ScanResult::DeferredThenText { .. } => "DeferredThenText",
+                    ScanResult::SimpleOp { .. } => "SimpleOp (wrong variant)",
+                    ScanResult::TooManyErrors { .. } => "TooManyErrors",
+                }
+            ),
         }
     }
 
@@ -5069,10 +5122,18 @@ mod tests {
     #[test]
     fn test_byte_class_alpha() {
         for c in b'A'..=b'Z' {
-            assert_eq!(BYTE_CLASS[c as usize], SCAN_ALPHA, "uppercase {} should be ALPHA", c as char);
+            assert_eq!(
+                BYTE_CLASS[c as usize], SCAN_ALPHA,
+                "uppercase {} should be ALPHA",
+                c as char
+            );
         }
         for c in b'a'..=b'z' {
-            assert_eq!(BYTE_CLASS[c as usize], SCAN_ALPHA, "lowercase {} should be ALPHA", c as char);
+            assert_eq!(
+                BYTE_CLASS[c as usize], SCAN_ALPHA,
+                "lowercase {} should be ALPHA",
+                c as char
+            );
         }
         assert_eq!(BYTE_CLASS[b'\'' as usize], SCAN_ALPHA);
         assert_eq!(BYTE_CLASS[b'"' as usize], SCAN_ALPHA);

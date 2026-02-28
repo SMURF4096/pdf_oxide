@@ -440,7 +440,7 @@ impl TextPostProcessor {
             | '·'  // U+00B7 MIDDLE DOT
             | '․'  // U+2024 ONE DOT LEADER
             | '‥'  // U+2025 TWO DOT LEADER
-            | '…'  // U+2026 HORIZONTAL ELLIPSIS
+            | '…' // U+2026 HORIZONTAL ELLIPSIS
         )
     }
 
@@ -815,10 +815,7 @@ mod tests {
             TextPostProcessor::normalize_leader_dots("e.g. this is normal"),
             "e.g. this is normal"
         );
-        assert_eq!(
-            TextPostProcessor::normalize_leader_dots("wait for it..."),
-            "wait for it..."
-        );
+        assert_eq!(TextPostProcessor::normalize_leader_dots("wait for it..."), "wait for it...");
     }
 
     #[test]

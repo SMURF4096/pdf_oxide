@@ -1334,10 +1334,20 @@ mod tests {
         assert!(names.len() >= 14);
         // Check all 14 base fonts
         for name in &[
-            "Helvetica", "Helvetica-Bold", "Helvetica-Oblique", "Helvetica-BoldOblique",
-            "Times-Roman", "Times-Bold", "Times-Italic", "Times-BoldItalic",
-            "Courier", "Courier-Bold", "Courier-Oblique", "Courier-BoldOblique",
-            "Symbol", "ZapfDingbats",
+            "Helvetica",
+            "Helvetica-Bold",
+            "Helvetica-Oblique",
+            "Helvetica-BoldOblique",
+            "Times-Roman",
+            "Times-Bold",
+            "Times-Italic",
+            "Times-BoldItalic",
+            "Courier",
+            "Courier-Bold",
+            "Courier-Oblique",
+            "Courier-BoldOblique",
+            "Symbol",
+            "ZapfDingbats",
         ] {
             assert!(manager.get_font(name).is_some(), "Missing font: {}", name);
             assert!(manager.is_base14(name), "Not base14: {}", name);
@@ -1394,28 +1404,64 @@ mod tests {
         let manager = FontManager::new();
 
         // All Helvetica
-        assert_eq!(manager.select_font(FontFamily::Helvetica, FontWeight::Normal, false), "Helvetica");
-        assert_eq!(manager.select_font(FontFamily::Helvetica, FontWeight::Bold, false), "Helvetica-Bold");
-        assert_eq!(manager.select_font(FontFamily::Helvetica, FontWeight::Normal, true), "Helvetica-Oblique");
-        assert_eq!(manager.select_font(FontFamily::Helvetica, FontWeight::Bold, true), "Helvetica-BoldOblique");
+        assert_eq!(
+            manager.select_font(FontFamily::Helvetica, FontWeight::Normal, false),
+            "Helvetica"
+        );
+        assert_eq!(
+            manager.select_font(FontFamily::Helvetica, FontWeight::Bold, false),
+            "Helvetica-Bold"
+        );
+        assert_eq!(
+            manager.select_font(FontFamily::Helvetica, FontWeight::Normal, true),
+            "Helvetica-Oblique"
+        );
+        assert_eq!(
+            manager.select_font(FontFamily::Helvetica, FontWeight::Bold, true),
+            "Helvetica-BoldOblique"
+        );
 
         // All Times
-        assert_eq!(manager.select_font(FontFamily::Times, FontWeight::Normal, false), "Times-Roman");
+        assert_eq!(
+            manager.select_font(FontFamily::Times, FontWeight::Normal, false),
+            "Times-Roman"
+        );
         assert_eq!(manager.select_font(FontFamily::Times, FontWeight::Bold, false), "Times-Bold");
-        assert_eq!(manager.select_font(FontFamily::Times, FontWeight::Normal, true), "Times-Italic");
-        assert_eq!(manager.select_font(FontFamily::Times, FontWeight::Bold, true), "Times-BoldItalic");
+        assert_eq!(
+            manager.select_font(FontFamily::Times, FontWeight::Normal, true),
+            "Times-Italic"
+        );
+        assert_eq!(
+            manager.select_font(FontFamily::Times, FontWeight::Bold, true),
+            "Times-BoldItalic"
+        );
 
         // All Courier
         assert_eq!(manager.select_font(FontFamily::Courier, FontWeight::Normal, false), "Courier");
-        assert_eq!(manager.select_font(FontFamily::Courier, FontWeight::Bold, false), "Courier-Bold");
-        assert_eq!(manager.select_font(FontFamily::Courier, FontWeight::Normal, true), "Courier-Oblique");
-        assert_eq!(manager.select_font(FontFamily::Courier, FontWeight::Bold, true), "Courier-BoldOblique");
+        assert_eq!(
+            manager.select_font(FontFamily::Courier, FontWeight::Bold, false),
+            "Courier-Bold"
+        );
+        assert_eq!(
+            manager.select_font(FontFamily::Courier, FontWeight::Normal, true),
+            "Courier-Oblique"
+        );
+        assert_eq!(
+            manager.select_font(FontFamily::Courier, FontWeight::Bold, true),
+            "Courier-BoldOblique"
+        );
 
         // Symbol and ZapfDingbats (weight/italic ignored)
         assert_eq!(manager.select_font(FontFamily::Symbol, FontWeight::Normal, false), "Symbol");
         assert_eq!(manager.select_font(FontFamily::Symbol, FontWeight::Bold, true), "Symbol");
-        assert_eq!(manager.select_font(FontFamily::ZapfDingbats, FontWeight::Normal, false), "ZapfDingbats");
-        assert_eq!(manager.select_font(FontFamily::ZapfDingbats, FontWeight::Bold, true), "ZapfDingbats");
+        assert_eq!(
+            manager.select_font(FontFamily::ZapfDingbats, FontWeight::Normal, false),
+            "ZapfDingbats"
+        );
+        assert_eq!(
+            manager.select_font(FontFamily::ZapfDingbats, FontWeight::Bold, true),
+            "ZapfDingbats"
+        );
     }
 
     #[test]

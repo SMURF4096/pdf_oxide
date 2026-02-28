@@ -15,9 +15,9 @@ use crate::xref::{find_xref_offset, parse_xref, CrossRefTable};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::io::{BufRead, BufReader, Cursor, Read, Seek, SeekFrom};
 #[cfg(not(target_arch = "wasm32"))]
 use std::fs::File;
+use std::io::{BufRead, BufReader, Cursor, Read, Seek, SeekFrom};
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 use std::sync::Arc;
@@ -317,7 +317,9 @@ impl PdfDocument {
         // Validate the /Root catalog is actually loadable. If not, the xref data is
         // corrupt despite parsing successfully — fall back to reconstruction.
         let (xref, trailer) = if !validate_root_loadable(&mut reader, &xref, &trailer) {
-            log::warn!("Root object not loadable after xref parse, falling back to xref reconstruction");
+            log::warn!(
+                "Root object not loadable after xref parse, falling back to xref reconstruction"
+            );
             match Self::try_reconstruct_xref(&mut reader) {
                 Ok(result) => result,
                 Err(_) => (xref, trailer), // Use original if reconstruction also fails
@@ -1130,9 +1132,9 @@ impl PdfDocument {
         let parts: Vec<&str> = full_header.split_whitespace().collect();
 
         // Find standalone "obj" keyword (not "endobj")
-        let obj_pos = parts.iter().position(|&p| {
-            p == "obj" || (p.starts_with("obj") && !p.starts_with("endobj"))
-        });
+        let obj_pos = parts
+            .iter()
+            .position(|&p| p == "obj" || (p.starts_with("obj") && !p.starts_with("endobj")));
 
         // Validate object header has proper format: <id> <gen> obj
         let obj_pos = match obj_pos {
@@ -2061,17 +2063,9 @@ impl PdfDocument {
         xobj_refs.dedup();
 
         // Sort by xref offset for sequential I/O
-        xobj_refs.sort_by_key(|r| {
-            self.xref
-                .get(r.id)
-                .map(|e| e.offset)
-                .unwrap_or(u64::MAX)
-        });
+        xobj_refs.sort_by_key(|r| self.xref.get(r.id).map(|e| e.offset).unwrap_or(u64::MAX));
 
-        log::debug!(
-            "Prefetching XObject subtypes for {} unique refs",
-            xobj_refs.len()
-        );
+        log::debug!("Prefetching XObject subtypes for {} unique refs", xobj_refs.len());
 
         // Peek each ref — populates image_xobject_cache as a side effect
         for obj_ref in xobj_refs {
@@ -2712,11 +2706,19 @@ impl PdfDocument {
 
         // Sort combined spans by position: Y descending (top→bottom), then X ascending (left→right)
         spans.sort_by(|a, b| {
-            let y_cmp = b.bbox.y.partial_cmp(&a.bbox.y).unwrap_or(std::cmp::Ordering::Equal);
+            let y_cmp = b
+                .bbox
+                .y
+                .partial_cmp(&a.bbox.y)
+                .unwrap_or(std::cmp::Ordering::Equal);
             if y_cmp != std::cmp::Ordering::Equal {
                 return y_cmp;
             }
-            let x_cmp = a.bbox.x.partial_cmp(&b.bbox.x).unwrap_or(std::cmp::Ordering::Equal);
+            let x_cmp = a
+                .bbox
+                .x
+                .partial_cmp(&b.bbox.x)
+                .unwrap_or(std::cmp::Ordering::Equal);
             if x_cmp != std::cmp::Ordering::Equal {
                 return x_cmp;
             }
@@ -3276,39 +3278,51 @@ impl PdfDocument {
                         match item {
                             Object::Integer(n) => coords[i] = *n as f32,
                             Object::Real(f) => coords[i] = *f as f32,
-                            _ => { ok = false; break; },
+                            _ => {
+                                ok = false;
+                                break;
+                            },
                         }
                     }
-                    if !ok { continue; }
+                    if !ok {
+                        continue;
+                    }
                     let x = coords[0].min(coords[2]);
                     let y = coords[1].min(coords[3]);
                     let w = (coords[2] - coords[0]).abs();
                     let h = (coords[3] - coords[1]).abs();
-                    if w < 0.1 || h < 0.1 { continue; } // skip zero-area rects
+                    if w < 0.1 || h < 0.1 {
+                        continue;
+                    } // skip zero-area rects
                     Rect::new(x, y, w, h)
                 },
-                Some(Object::Reference(r)) => {
-                    match self.load_object(*r) {
-                        Ok(Object::Array(arr)) if arr.len() == 4 => {
-                            let mut coords = [0.0f32; 4];
-                            let mut ok = true;
-                            for (i, item) in arr.iter().enumerate() {
-                                match item {
-                                    Object::Integer(n) => coords[i] = *n as f32,
-                                    Object::Real(f) => coords[i] = *f as f32,
-                                    _ => { ok = false; break; },
-                                }
+                Some(Object::Reference(r)) => match self.load_object(*r) {
+                    Ok(Object::Array(arr)) if arr.len() == 4 => {
+                        let mut coords = [0.0f32; 4];
+                        let mut ok = true;
+                        for (i, item) in arr.iter().enumerate() {
+                            match item {
+                                Object::Integer(n) => coords[i] = *n as f32,
+                                Object::Real(f) => coords[i] = *f as f32,
+                                _ => {
+                                    ok = false;
+                                    break;
+                                },
                             }
-                            if !ok { continue; }
-                            let x = coords[0].min(coords[2]);
-                            let y = coords[1].min(coords[3]);
-                            let w = (coords[2] - coords[0]).abs();
-                            let h = (coords[3] - coords[1]).abs();
-                            if w < 0.1 || h < 0.1 { continue; }
-                            Rect::new(x, y, w, h)
-                        },
-                        _ => continue,
-                    }
+                        }
+                        if !ok {
+                            continue;
+                        }
+                        let x = coords[0].min(coords[2]);
+                        let y = coords[1].min(coords[3]);
+                        let w = (coords[2] - coords[0]).abs();
+                        let h = (coords[3] - coords[1]).abs();
+                        if w < 0.1 || h < 0.1 {
+                            continue;
+                        }
+                        Rect::new(x, y, w, h)
+                    },
+                    _ => continue,
                 },
                 _ => continue,
             };
@@ -3344,11 +3358,14 @@ impl PdfDocument {
                             Some(v) if !v.trim().is_empty() => Some(v.trim().to_string()),
                             _ => {
                                 // Fallback: try AP stream text
-                                self.extract_text_from_ap_stream(&dict)
-                                    .and_then(|t| {
-                                        let t = t.trim().to_string();
-                                        if t.is_empty() { None } else { Some(t) }
-                                    })
+                                self.extract_text_from_ap_stream(&dict).and_then(|t| {
+                                    let t = t.trim().to_string();
+                                    if t.is_empty() {
+                                        None
+                                    } else {
+                                        Some(t)
+                                    }
+                                })
                             },
                         }
                     }
@@ -3381,19 +3398,26 @@ impl PdfDocument {
                     match value {
                         Some(Object::Array(arr)) => {
                             // Multiple selections: join with ", "
-                            let items: Vec<String> = arr.iter()
+                            let items: Vec<String> = arr
+                                .iter()
                                 .filter_map(|item| Self::parse_string_value_static(Some(item)))
                                 .collect();
-                            if items.is_empty() { None } else { Some(items.join(", ")) }
+                            if items.is_empty() {
+                                None
+                            } else {
+                                Some(items.join(", "))
+                            }
                         },
-                        other => {
-                            Self::parse_string_value_static(other)
-                                .or_else(|| self.resolve_inherited_field_value(&dict))
-                                .and_then(|v| {
-                                    let t = v.trim().to_string();
-                                    if t.is_empty() { None } else { Some(t) }
-                                })
-                        },
+                        other => Self::parse_string_value_static(other)
+                            .or_else(|| self.resolve_inherited_field_value(&dict))
+                            .and_then(|v| {
+                                let t = v.trim().to_string();
+                                if t.is_empty() {
+                                    None
+                                } else {
+                                    Some(t)
+                                }
+                            }),
                     }
                 },
                 Some("Sig") => {
@@ -3406,7 +3430,11 @@ impl PdfDocument {
                         .or_else(|| self.resolve_inherited_field_value(&dict))
                         .and_then(|v| {
                             let t = v.trim().to_string();
-                            if t.is_empty() { None } else { Some(t) }
+                            if t.is_empty() {
+                                None
+                            } else {
+                                Some(t)
+                            }
                         })
                 },
             };
@@ -3450,7 +3478,11 @@ impl PdfDocument {
                 font_size,
                 font_weight: crate::layout::text_block::FontWeight::Normal,
                 is_italic: false,
-                color: crate::layout::text_block::Color { r: 0.0, g: 0.0, b: 0.0 },
+                color: crate::layout::text_block::Color {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.0,
+                },
                 mcid: None,
                 sequence: base_sequence + idx,
                 split_boundary_before: false,
@@ -3682,7 +3714,8 @@ impl PdfDocument {
                     }
                     // Fall back to parent annotation's /Contents
                     if !got_text {
-                        if let Some(parent_ref) = dict.get("Parent").and_then(|o| o.as_reference()) {
+                        if let Some(parent_ref) = dict.get("Parent").and_then(|o| o.as_reference())
+                        {
                             if let Ok(parent_obj) = self.load_object(parent_ref) {
                                 if let Some(parent_dict) = parent_obj.as_dict() {
                                     if let Some(Object::String(s)) = parent_dict.get("Contents") {
@@ -4428,11 +4461,18 @@ impl PdfDocument {
             );
             // Sort by Y descending (top→bottom), then X ascending (left→right)
             spans_without_mcid.sort_by(|a, b| {
-                let y_cmp = b.bbox.y.partial_cmp(&a.bbox.y).unwrap_or(std::cmp::Ordering::Equal);
+                let y_cmp = b
+                    .bbox
+                    .y
+                    .partial_cmp(&a.bbox.y)
+                    .unwrap_or(std::cmp::Ordering::Equal);
                 if y_cmp != std::cmp::Ordering::Equal {
                     return y_cmp;
                 }
-                a.bbox.x.partial_cmp(&b.bbox.x).unwrap_or(std::cmp::Ordering::Equal)
+                a.bbox
+                    .x
+                    .partial_cmp(&b.bbox.x)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             });
             for span in &spans_without_mcid {
                 if let Some(prev) = prev_span {
@@ -6754,9 +6794,12 @@ impl PdfDocument {
                             .last()
                             .copied()
                             .unwrap_or_else(crate::content::Matrix::identity);
-                        if let Ok(mut xobj_images) =
-                            self.extract_images_from_xobject_do(&name, res, current_ctm, &mut xobject_stack)
-                        {
+                        if let Ok(mut xobj_images) = self.extract_images_from_xobject_do(
+                            &name,
+                            res,
+                            current_ctm,
+                            &mut xobject_stack,
+                        ) {
                             images.append(&mut xobj_images);
                         }
                     }
@@ -7007,9 +7050,12 @@ impl PdfDocument {
                         .last()
                         .copied()
                         .unwrap_or_else(crate::content::Matrix::identity);
-                    if let Ok(mut xobj_images) =
-                        self.extract_images_from_xobject_do(&name, &form_resources, current_ctm, xobject_stack)
-                    {
+                    if let Ok(mut xobj_images) = self.extract_images_from_xobject_do(
+                        &name,
+                        &form_resources,
+                        current_ctm,
+                        xobject_stack,
+                    ) {
                         images.append(&mut xobj_images);
                     }
                 },
@@ -7248,10 +7294,7 @@ pub enum ImageFormat {
 
 /// Extract the /Root reference from a trailer dictionary.
 fn get_root_ref_from_trailer(trailer: &Object) -> Option<ObjectRef> {
-    trailer
-        .as_dict()?
-        .get("Root")?
-        .as_reference()
+    trailer.as_dict()?.get("Root")?.as_reference()
 }
 
 /// Check whether the object at the xref offset for `obj_ref` looks like a valid header.
@@ -7278,7 +7321,9 @@ fn validate_object_at_offset<R: Read + Seek>(
     // first token should be a number (obj id)
     let first_is_num = parts.next().is_some_and(|t| t.parse::<u32>().is_ok());
     let second_is_num = parts.next().is_some_and(|t| t.parse::<u16>().is_ok());
-    let third_is_obj = parts.next().is_some_and(|t| t == "obj" || t.starts_with("obj"));
+    let third_is_obj = parts
+        .next()
+        .is_some_and(|t| t == "obj" || t.starts_with("obj"));
     first_is_num && second_is_num && third_is_obj
 }
 
@@ -7792,7 +7837,9 @@ mod tests {
         assert!(images.is_empty()); // No real images, just circular forms
 
         // to_markdown should not hang or crash
-        let md = doc.to_markdown(0, &crate::converters::ConversionOptions::default()).unwrap();
+        let md = doc
+            .to_markdown(0, &crate::converters::ConversionOptions::default())
+            .unwrap();
         drop(md); // Just verify it completes
     }
 
@@ -7811,7 +7858,9 @@ mod tests {
 
         let off4 = pdf.len();
         let content = b"/X0 Do";
-        pdf.extend_from_slice(format!("4 0 obj\n<< /Length {} >>\nstream\n", content.len()).as_bytes());
+        pdf.extend_from_slice(
+            format!("4 0 obj\n<< /Length {} >>\nstream\n", content.len()).as_bytes(),
+        );
         pdf.extend_from_slice(content);
         pdf.extend_from_slice(b"\nendstream\nendobj\n");
 
@@ -7836,7 +7885,10 @@ mod tests {
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off4).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off5).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off6).as_bytes());
-        pdf.extend_from_slice(format!("trailer\n<< /Size 7 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off).as_bytes());
+        pdf.extend_from_slice(
+            format!("trailer\n<< /Size 7 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off)
+                .as_bytes(),
+        );
 
         pdf
     }
@@ -7876,11 +7928,8 @@ mod tests {
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off3).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off4).as_bytes());
         pdf.extend_from_slice(
-            format!(
-                "trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
-                xref_off
-            )
-            .as_bytes(),
+            format!("trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off)
+                .as_bytes(),
         );
 
         pdf
@@ -8037,11 +8086,8 @@ mod tests {
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off1).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off2).as_bytes());
         pdf.extend_from_slice(
-            format!(
-                "trailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
-                xref_off
-            )
-            .as_bytes(),
+            format!("trailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off)
+                .as_bytes(),
         );
 
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
@@ -8748,10 +8794,7 @@ mod tests {
     #[test]
     fn test_find_references_dictionary() {
         let mut dict = std::collections::HashMap::new();
-        dict.insert(
-            "Key1".to_string(),
-            Object::Reference(ObjectRef::new(3, 0)),
-        );
+        dict.insert("Key1".to_string(), Object::Reference(ObjectRef::new(3, 0)));
         dict.insert("Key2".to_string(), Object::Integer(1));
         let obj = Object::Dictionary(dict);
         let refs = PdfDocument::find_references(&obj);
@@ -8761,10 +8804,7 @@ mod tests {
     #[test]
     fn test_find_references_stream() {
         let mut dict = std::collections::HashMap::new();
-        dict.insert(
-            "Length".to_string(),
-            Object::Reference(ObjectRef::new(10, 0)),
-        );
+        dict.insert("Length".to_string(), Object::Reference(ObjectRef::new(10, 0)));
         let obj = Object::Stream {
             dict,
             data: bytes::Bytes::from_static(b""),
@@ -8796,10 +8836,7 @@ mod tests {
         let inner = Object::Array(vec![Object::Reference(ObjectRef::new(7, 0))]);
         let mut dict = std::collections::HashMap::new();
         dict.insert("Inner".to_string(), inner);
-        dict.insert(
-            "Direct".to_string(),
-            Object::Reference(ObjectRef::new(8, 0)),
-        );
+        dict.insert("Direct".to_string(), Object::Reference(ObjectRef::new(8, 0)));
         let obj = Object::Dictionary(dict);
         let refs = PdfDocument::find_references(&obj);
         assert_eq!(refs.len(), 2);
@@ -9012,10 +9049,7 @@ mod tests {
         dict1.insert("BaseFont".to_string(), Object::Name("Helvetica".to_string()));
 
         let mut dict2 = std::collections::HashMap::new();
-        dict2.insert(
-            "BaseFont".to_string(),
-            Object::Name("Times-Roman".to_string()),
-        );
+        dict2.insert("BaseFont".to_string(), Object::Name("Times-Roman".to_string()));
 
         let hash1 = PdfDocument::font_identity_hash_cheap(&Object::Dictionary(dict1));
         let hash2 = PdfDocument::font_identity_hash_cheap(&Object::Dictionary(dict2));
@@ -9089,11 +9123,8 @@ mod tests {
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off1).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off2).as_bytes());
         pdf.extend_from_slice(
-            format!(
-                "trailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
-                xref_off
-            )
-            .as_bytes(),
+            format!("trailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off)
+                .as_bytes(),
         );
 
         let doc = PdfDocument::open_from_bytes(pdf).unwrap();
@@ -9557,9 +9588,7 @@ mod tests {
         );
 
         let off3 = pdf.len();
-        pdf.extend_from_slice(
-            b"3 0 obj\n<< /Type /Page /Parent 2 0 R >>\nendobj\n",
-        );
+        pdf.extend_from_slice(b"3 0 obj\n<< /Type /Page /Parent 2 0 R >>\nendobj\n");
 
         let xref_off = pdf.len();
         pdf.extend_from_slice(b"xref\n0 4\n");
@@ -9568,11 +9597,8 @@ mod tests {
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off2).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off3).as_bytes());
         pdf.extend_from_slice(
-            format!(
-                "trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
-                xref_off
-            )
-            .as_bytes(),
+            format!("trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off)
+                .as_bytes(),
         );
 
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
@@ -9628,11 +9654,8 @@ mod tests {
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off4).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off5).as_bytes());
         pdf.extend_from_slice(
-            format!(
-                "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
-                xref_off
-            )
-            .as_bytes(),
+            format!("trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off)
+                .as_bytes(),
         );
 
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
@@ -9686,9 +9709,7 @@ mod tests {
         pdf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
 
         let off2 = pdf.len();
-        pdf.extend_from_slice(
-            b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 2 >>\nendobj\n",
-        );
+        pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 2 >>\nendobj\n");
 
         // Intermediate Pages node
         let off3 = pdf.len();
@@ -9715,11 +9736,8 @@ mod tests {
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off4).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off5).as_bytes());
         pdf.extend_from_slice(
-            format!(
-                "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
-                xref_off
-            )
-            .as_bytes(),
+            format!("trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off)
+                .as_bytes(),
         );
 
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
@@ -9740,9 +9758,7 @@ mod tests {
         );
 
         let off2 = pdf.len();
-        pdf.extend_from_slice(
-            b"2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n",
-        );
+        pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
 
         let xref_off = pdf.len();
         pdf.extend_from_slice(b"xref\n0 3\n");
@@ -9750,11 +9766,8 @@ mod tests {
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off1).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off2).as_bytes());
         pdf.extend_from_slice(
-            format!(
-                "trailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
-                xref_off
-            )
-            .as_bytes(),
+            format!("trailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off)
+                .as_bytes(),
         );
 
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
@@ -10070,7 +10083,10 @@ mod tests {
 
     #[test]
     fn test_strip_xhtml_tags_multiple() {
-        assert_eq!(PdfDocument::strip_xhtml_tags("<b>Bold</b> and <i>Italic</i>"), "Bold and Italic");
+        assert_eq!(
+            PdfDocument::strip_xhtml_tags("<b>Bold</b> and <i>Italic</i>"),
+            "Bold and Italic"
+        );
     }
 
     // ========================================================================
@@ -10169,7 +10185,10 @@ mod tests {
         let mut d = std::collections::HashMap::new();
         d.insert("BaseFont".to_string(), Object::Name("CIDFont".to_string()));
         d.insert("Subtype".to_string(), Object::Name("Type0".to_string()));
-        d.insert("DescendantFonts".to_string(), Object::Array(vec![Object::Reference(ObjectRef::new(20, 0))]));
+        d.insert(
+            "DescendantFonts".to_string(),
+            Object::Array(vec![Object::Reference(ObjectRef::new(20, 0))]),
+        );
         assert_ne!(PdfDocument::font_identity_hash_cheap(&Object::Dictionary(d)), 0);
     }
 
@@ -10189,9 +10208,11 @@ mod tests {
         offsets.push((2, off2));
         pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
 
-        let annot_refs: String = annot_objects.iter()
+        let annot_refs: String = annot_objects
+            .iter()
             .map(|(num, _)| format!("{} 0 R", num))
-            .collect::<Vec<_>>().join(" ");
+            .collect::<Vec<_>>()
+            .join(" ");
 
         let off3 = pdf.len();
         offsets.push((3, off3));
@@ -10219,7 +10240,12 @@ mod tests {
             }
         }
         pdf.extend_from_slice(
-            format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", max_obj + 1, xref_off).as_bytes(),
+            format!(
+                "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
+                max_obj + 1,
+                xref_off
+            )
+            .as_bytes(),
         );
         pdf
     }
@@ -10235,7 +10261,8 @@ mod tests {
 
     #[test]
     fn test_annotation_text_type() {
-        let annot = b"4 0 obj\n<< /Type /Annot /Subtype /Text /Contents (Sticky note) >>\nendobj\n".to_vec();
+        let annot = b"4 0 obj\n<< /Type /Annot /Subtype /Text /Contents (Sticky note) >>\nendobj\n"
+            .to_vec();
         let pdf = build_pdf_with_annotations(vec![(4, annot)]);
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
         assert!(doc.extract_text(0).unwrap().contains("Sticky note"));
@@ -10243,7 +10270,8 @@ mod tests {
 
     #[test]
     fn test_annotation_stamp() {
-        let annot = b"4 0 obj\n<< /Type /Annot /Subtype /Stamp /Contents (APPROVED) >>\nendobj\n".to_vec();
+        let annot =
+            b"4 0 obj\n<< /Type /Annot /Subtype /Stamp /Contents (APPROVED) >>\nendobj\n".to_vec();
         let pdf = build_pdf_with_annotations(vec![(4, annot)]);
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
         assert!(doc.extract_text(0).unwrap().contains("APPROVED"));
@@ -10251,7 +10279,8 @@ mod tests {
 
     #[test]
     fn test_annotation_link() {
-        let annot = b"4 0 obj\n<< /Type /Annot /Subtype /Link /Contents (Click here) >>\nendobj\n".to_vec();
+        let annot =
+            b"4 0 obj\n<< /Type /Annot /Subtype /Link /Contents (Click here) >>\nendobj\n".to_vec();
         let pdf = build_pdf_with_annotations(vec![(4, annot)]);
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
         assert!(doc.extract_text(0).unwrap().contains("Click here"));
@@ -10259,7 +10288,9 @@ mod tests {
 
     #[test]
     fn test_annotation_highlight() {
-        let annot = b"4 0 obj\n<< /Type /Annot /Subtype /Highlight /Contents (Highlighted) >>\nendobj\n".to_vec();
+        let annot =
+            b"4 0 obj\n<< /Type /Annot /Subtype /Highlight /Contents (Highlighted) >>\nendobj\n"
+                .to_vec();
         let pdf = build_pdf_with_annotations(vec![(4, annot)]);
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
         assert!(doc.extract_text(0).unwrap().contains("Highlighted"));
@@ -10267,7 +10298,9 @@ mod tests {
 
     #[test]
     fn test_annotation_hidden_flag() {
-        let annot = b"4 0 obj\n<< /Type /Annot /Subtype /FreeText /F 2 /Contents (Hidden) >>\nendobj\n".to_vec();
+        let annot =
+            b"4 0 obj\n<< /Type /Annot /Subtype /FreeText /F 2 /Contents (Hidden) >>\nendobj\n"
+                .to_vec();
         let pdf = build_pdf_with_annotations(vec![(4, annot)]);
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
         assert!(!doc.extract_text(0).unwrap().contains("Hidden"));
@@ -10275,7 +10308,9 @@ mod tests {
 
     #[test]
     fn test_annotation_invisible_flag() {
-        let annot = b"4 0 obj\n<< /Type /Annot /Subtype /FreeText /F 1 /Contents (Invisible) >>\nendobj\n".to_vec();
+        let annot =
+            b"4 0 obj\n<< /Type /Annot /Subtype /FreeText /F 1 /Contents (Invisible) >>\nendobj\n"
+                .to_vec();
         let pdf = build_pdf_with_annotations(vec![(4, annot)]);
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
         assert!(!doc.extract_text(0).unwrap().contains("Invisible"));
@@ -10283,7 +10318,9 @@ mod tests {
 
     #[test]
     fn test_annotation_noview_flag() {
-        let annot = b"4 0 obj\n<< /Type /Annot /Subtype /Text /F 32 /Contents (NoView) >>\nendobj\n".to_vec();
+        let annot =
+            b"4 0 obj\n<< /Type /Annot /Subtype /Text /F 32 /Contents (NoView) >>\nendobj\n"
+                .to_vec();
         let pdf = build_pdf_with_annotations(vec![(4, annot)]);
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
         assert!(!doc.extract_text(0).unwrap().contains("NoView"));
@@ -10291,7 +10328,9 @@ mod tests {
 
     #[test]
     fn test_annotation_unknown_subtype() {
-        let annot = b"4 0 obj\n<< /Type /Annot /Subtype /CustomType /Contents (Custom) >>\nendobj\n".to_vec();
+        let annot =
+            b"4 0 obj\n<< /Type /Annot /Subtype /CustomType /Contents (Custom) >>\nendobj\n"
+                .to_vec();
         let pdf = build_pdf_with_annotations(vec![(4, annot)]);
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
         assert!(doc.extract_text(0).unwrap().contains("Custom"));
@@ -10299,8 +10338,10 @@ mod tests {
 
     #[test]
     fn test_annotation_multiple() {
-        let a1 = b"4 0 obj\n<< /Type /Annot /Subtype /FreeText /Contents (First) >>\nendobj\n".to_vec();
-        let a2 = b"5 0 obj\n<< /Type /Annot /Subtype /Text /Contents (Second) >>\nendobj\n".to_vec();
+        let a1 =
+            b"4 0 obj\n<< /Type /Annot /Subtype /FreeText /Contents (First) >>\nendobj\n".to_vec();
+        let a2 =
+            b"5 0 obj\n<< /Type /Annot /Subtype /Text /Contents (Second) >>\nendobj\n".to_vec();
         let pdf = build_pdf_with_annotations(vec![(4, a1), (5, a2)]);
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
         let text = doc.extract_text(0).unwrap();
@@ -10343,7 +10384,9 @@ mod tests {
         let mut dict = std::collections::HashMap::new();
         dict.insert("CatalogRef".to_string(), Object::Reference(ObjectRef::new(1, 0)));
         dict.insert("Direct".to_string(), Object::Integer(42));
-        let resolved = doc.resolve_references(&Object::Dictionary(dict), 3).unwrap();
+        let resolved = doc
+            .resolve_references(&Object::Dictionary(dict), 3)
+            .unwrap();
         let rd = resolved.as_dict().unwrap();
         assert!(rd.get("CatalogRef").unwrap().as_dict().is_some());
         assert_eq!(rd.get("Direct").unwrap().as_integer(), Some(42));
@@ -10407,7 +10450,10 @@ mod tests {
         pdf.extend_from_slice(b"0000000000 65535 f \n");
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off1).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off2).as_bytes());
-        pdf.extend_from_slice(format!("trailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off).as_bytes());
+        pdf.extend_from_slice(
+            format!("trailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off)
+                .as_bytes(),
+        );
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
         assert!(doc.extract_all_text().unwrap().is_empty());
     }
@@ -10437,21 +10483,27 @@ mod tests {
     fn test_to_html_out_of_bounds() {
         let pdf = build_minimal_pdf(b"");
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
-        assert!(doc.to_html(999, &crate::converters::ConversionOptions::default()).is_err());
+        assert!(doc
+            .to_html(999, &crate::converters::ConversionOptions::default())
+            .is_err());
     }
 
     #[test]
     fn test_to_markdown_out_of_bounds() {
         let pdf = build_minimal_pdf(b"");
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
-        assert!(doc.to_markdown(999, &crate::converters::ConversionOptions::default()).is_err());
+        assert!(doc
+            .to_markdown(999, &crate::converters::ConversionOptions::default())
+            .is_err());
     }
 
     #[test]
     fn test_to_plain_text_out_of_bounds() {
         let pdf = build_minimal_pdf(b"");
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
-        assert!(doc.to_plain_text(999, &crate::converters::ConversionOptions::default()).is_err());
+        assert!(doc
+            .to_plain_text(999, &crate::converters::ConversionOptions::default())
+            .is_err());
     }
 
     #[test]
@@ -10486,7 +10538,12 @@ mod tests {
     fn test_extract_paths_in_rect_with_content() {
         let pdf = build_minimal_pdf(b"100 200 300 400 re S");
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
-        let region = crate::geometry::Rect { x: 0.0, y: 0.0, width: 612.0, height: 792.0 };
+        let region = crate::geometry::Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 612.0,
+            height: 792.0,
+        };
         assert!(!doc.extract_paths_in_rect(0, region).unwrap().is_empty());
     }
 
@@ -10515,7 +10572,10 @@ mod tests {
         pdf.extend_from_slice(b"0000000000 65535 f \n");
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off1).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off2).as_bytes());
-        pdf.extend_from_slice(format!("trailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off).as_bytes());
+        pdf.extend_from_slice(
+            format!("trailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off)
+                .as_bytes(),
+        );
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
         let mi = doc.mark_info().unwrap();
         assert!(mi.marked);
@@ -10535,14 +10595,19 @@ mod tests {
         let off2 = pdf.len();
         pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 999 >>\nendobj\n");
         let off3 = pdf.len();
-        pdf.extend_from_slice(b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n");
+        pdf.extend_from_slice(
+            b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n",
+        );
         let xref_off = pdf.len();
         pdf.extend_from_slice(b"xref\n0 4\n");
         pdf.extend_from_slice(b"0000000000 65535 f \n");
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off1).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off2).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off3).as_bytes());
-        pdf.extend_from_slice(format!("trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off).as_bytes());
+        pdf.extend_from_slice(
+            format!("trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off)
+                .as_bytes(),
+        );
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
         assert_eq!(doc.page_count().unwrap(), 1);
     }
@@ -10559,7 +10624,9 @@ mod tests {
         let off2 = pdf.len();
         pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 595 842] /Resources << >> >>\nendobj\n");
         let off3 = pdf.len();
-        pdf.extend_from_slice(b"3 0 obj\n<< /Type /Pages /Kids [4 0 R] /Count 1 /Parent 2 0 R >>\nendobj\n");
+        pdf.extend_from_slice(
+            b"3 0 obj\n<< /Type /Pages /Kids [4 0 R] /Count 1 /Parent 2 0 R >>\nendobj\n",
+        );
         let off4 = pdf.len();
         pdf.extend_from_slice(b"4 0 obj\n<< /Type /Page /Parent 3 0 R >>\nendobj\n");
         let xref_off = pdf.len();
@@ -10569,7 +10636,10 @@ mod tests {
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off2).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off3).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off4).as_bytes());
-        pdf.extend_from_slice(format!("trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off).as_bytes());
+        pdf.extend_from_slice(
+            format!("trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off)
+                .as_bytes(),
+        );
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
         assert_eq!(doc.page_count().unwrap(), 1);
         let page = doc.get_page(0).unwrap();
@@ -10630,7 +10700,10 @@ mod tests {
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off4).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off5).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off6).as_bytes());
-        pdf.extend_from_slice(format!("trailer\n<< /Size 7 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off).as_bytes());
+        pdf.extend_from_slice(
+            format!("trailer\n<< /Size 7 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off)
+                .as_bytes(),
+        );
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
         let data = doc.get_page_content_data(0).unwrap();
         let text = String::from_utf8_lossy(&data);
@@ -10653,7 +10726,10 @@ mod tests {
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off1).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off2).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off3).as_bytes());
-        pdf.extend_from_slice(format!("trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off).as_bytes());
+        pdf.extend_from_slice(
+            format!("trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off)
+                .as_bytes(),
+        );
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
         assert!(doc.get_page_content_data(0).unwrap().is_empty());
     }
@@ -10670,7 +10746,9 @@ mod tests {
         let off2 = pdf.len();
         pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
         let off3 = pdf.len();
-        pdf.extend_from_slice(b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n");
+        pdf.extend_from_slice(
+            b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n",
+        );
         let _off5 = pdf.len();
         pdf.extend_from_slice(b"5 0 obj\n<< /Type /Metadata /Subtype /XML >>\nendobj\n");
         let xref_off = pdf.len();
@@ -10679,7 +10757,10 @@ mod tests {
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off1).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off2).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off3).as_bytes());
-        pdf.extend_from_slice(format!("trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off).as_bytes());
+        pdf.extend_from_slice(
+            format!("trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off)
+                .as_bytes(),
+        );
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
         let obj = doc.load_object(ObjectRef::new(5, 0)).unwrap();
         assert!(obj.as_dict().is_some());
@@ -10697,7 +10778,9 @@ mod tests {
         let pdf = build_minimal_pdf(b"BT (Hello) Tj ET");
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
         let stream_obj = doc.load_object(ObjectRef::new(4, 0)).unwrap();
-        assert!(doc.decode_stream_with_encryption(&stream_obj, ObjectRef::new(4, 0)).is_ok());
+        assert!(doc
+            .decode_stream_with_encryption(&stream_obj, ObjectRef::new(4, 0))
+            .is_ok());
     }
 
     #[test]
@@ -10705,7 +10788,9 @@ mod tests {
         let pdf = build_minimal_pdf(b"");
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
         let mut ext = crate::extractors::TextExtractor::new();
-        assert!(doc.load_fonts_public(&Object::Dictionary(std::collections::HashMap::new()), &mut ext).is_ok());
+        assert!(doc
+            .load_fonts_public(&Object::Dictionary(std::collections::HashMap::new()), &mut ext)
+            .is_ok());
     }
 
     #[test]
@@ -10713,7 +10798,9 @@ mod tests {
         let pdf = build_minimal_pdf(b"");
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
         let mut ext = crate::extractors::TextExtractor::new();
-        assert!(doc.load_fonts_public(&Object::Integer(42), &mut ext).is_ok());
+        assert!(doc
+            .load_fonts_public(&Object::Integer(42), &mut ext)
+            .is_ok());
     }
 
     #[test]
@@ -10780,14 +10867,19 @@ mod tests {
     fn test_extract_spans_with_config_adaptive() {
         let pdf = build_minimal_pdf(b"");
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
-        assert!(doc.extract_spans_with_config(0, crate::extractors::SpanMergingConfig::adaptive()).unwrap().is_empty());
+        assert!(doc
+            .extract_spans_with_config(0, crate::extractors::SpanMergingConfig::adaptive())
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
     fn test_extract_spans_with_config_out_of_bounds() {
         let pdf = build_minimal_pdf(b"");
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
-        assert!(doc.extract_spans_with_config(999, crate::extractors::SpanMergingConfig::default()).is_err());
+        assert!(doc
+            .extract_spans_with_config(999, crate::extractors::SpanMergingConfig::default())
+            .is_err());
     }
 
     #[test]
@@ -10828,7 +10920,10 @@ mod tests {
         pdf.extend_from_slice(b"0000000000 65535 f \n");
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off1).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off2).as_bytes());
-        pdf.extend_from_slice(format!("trailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off).as_bytes());
+        pdf.extend_from_slice(
+            format!("trailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off)
+                .as_bytes(),
+        );
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
         assert!(doc.catalog().unwrap().as_dict().is_some());
     }
@@ -10845,7 +10940,10 @@ mod tests {
         pdf.extend_from_slice(b"0000000000 65535 f \n");
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off1).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off2).as_bytes());
-        pdf.extend_from_slice(format!("trailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off).as_bytes());
+        pdf.extend_from_slice(
+            format!("trailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off)
+                .as_bytes(),
+        );
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
         assert!(doc.catalog().unwrap().as_dict().is_some());
     }
@@ -10862,13 +10960,18 @@ mod tests {
         pdf.extend_from_slice(b"0000000000 65535 f \n");
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off1).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off2).as_bytes());
-        pdf.extend_from_slice(format!("trailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off).as_bytes());
+        pdf.extend_from_slice(
+            format!("trailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off)
+                .as_bytes(),
+        );
         assert_eq!(PdfDocument::open_from_bytes(pdf).unwrap().version(), (2, 0));
     }
 
     #[test]
     fn test_extract_text_annotations_only() {
-        let annot = b"4 0 obj\n<< /Type /Annot /Subtype /FreeText /Contents (Only annotation) >>\nendobj\n".to_vec();
+        let annot =
+            b"4 0 obj\n<< /Type /Annot /Subtype /FreeText /Contents (Only annotation) >>\nendobj\n"
+                .to_vec();
         let pdf = build_pdf_with_annotations(vec![(4, annot)]);
         let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
         assert!(doc.extract_text(0).unwrap().contains("Only annotation"));
@@ -10897,7 +11000,10 @@ mod tests {
         pdf.extend_from_slice(b"0000000000 65535 f \n");
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off1).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off2).as_bytes());
-        pdf.extend_from_slice(format!("trailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off).as_bytes());
+        pdf.extend_from_slice(
+            format!("trailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off)
+                .as_bytes(),
+        );
         assert_eq!(PdfDocument::open_from_bytes(pdf).unwrap().page_count_u32(), 0);
     }
 }

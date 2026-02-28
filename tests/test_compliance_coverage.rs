@@ -5,11 +5,11 @@
 //! compliant -- the goal is to verify that the validators execute without
 //! panicking and produce meaningful, correctly-categorized errors.
 
+use pdf_oxide::compliance::{validate_pdf_ua, PdfUaLevel, UaErrorCode};
 use pdf_oxide::compliance::{
     validate_pdf_x, PdfALevel, PdfAValidator, PdfXLevel, PdfXValidator, XComplianceError,
     XErrorCode, XSeverity,
 };
-use pdf_oxide::compliance::{validate_pdf_ua, PdfUaLevel, UaErrorCode};
 use pdf_oxide::document::PdfDocument;
 use pdf_oxide::writer::{DocumentBuilder, DocumentMetadata, PageSize};
 
@@ -67,7 +67,9 @@ fn test_pdf_x_validator_new_x1a2001() {
     // confirm the level is wired through.
     let pdf = build_minimal_pdf();
     let mut doc = open_document(&pdf);
-    let result = validator.validate(&mut doc).expect("validate must not fail");
+    let result = validator
+        .validate(&mut doc)
+        .expect("validate must not fail");
     assert_eq!(result.level, PdfXLevel::X1a2001);
 }
 
@@ -76,7 +78,9 @@ fn test_pdf_x_validator_new_x32003() {
     let validator = PdfXValidator::new(PdfXLevel::X32003);
     let pdf = build_minimal_pdf();
     let mut doc = open_document(&pdf);
-    let result = validator.validate(&mut doc).expect("validate must not fail");
+    let result = validator
+        .validate(&mut doc)
+        .expect("validate must not fail");
     assert_eq!(result.level, PdfXLevel::X32003);
 }
 
@@ -85,7 +89,9 @@ fn test_pdf_x_validator_new_x4() {
     let validator = PdfXValidator::new(PdfXLevel::X4);
     let pdf = build_minimal_pdf();
     let mut doc = open_document(&pdf);
-    let result = validator.validate(&mut doc).expect("validate must not fail");
+    let result = validator
+        .validate(&mut doc)
+        .expect("validate must not fail");
     assert_eq!(result.level, PdfXLevel::X4);
 }
 
@@ -94,7 +100,9 @@ fn test_pdf_x_validator_new_x6() {
     let validator = PdfXValidator::new(PdfXLevel::X6);
     let pdf = build_minimal_pdf();
     let mut doc = open_document(&pdf);
-    let result = validator.validate(&mut doc).expect("validate must not fail");
+    let result = validator
+        .validate(&mut doc)
+        .expect("validate must not fail");
     assert_eq!(result.level, PdfXLevel::X6);
 }
 
@@ -254,7 +262,8 @@ fn test_validate_pdf_x_convenience_function() {
     let pdf = build_minimal_pdf();
     let mut doc = open_document(&pdf);
 
-    let result = validate_pdf_x(&mut doc, PdfXLevel::X1a2003).expect("convenience fn must not fail");
+    let result =
+        validate_pdf_x(&mut doc, PdfXLevel::X1a2003).expect("convenience fn must not fail");
 
     assert!(!result.is_compliant, "Minimal PDF must not be PDF/X compliant");
     assert!(result.has_errors());
@@ -353,11 +362,7 @@ fn test_pdf_x_all_levels_validate_without_panic() {
             .validate(&mut doc)
             .unwrap_or_else(|e| panic!("Validation failed for {:?}: {}", level, e));
 
-        assert!(
-            !result.is_compliant,
-            "Minimal PDF should not be compliant for {:?}",
-            level
-        );
+        assert!(!result.is_compliant, "Minimal PDF should not be compliant for {:?}", level);
         assert_eq!(result.level, *level);
     }
 }
@@ -439,10 +444,7 @@ fn test_pdf_a_validator_on_minimal_pdf() {
         .validate(&mut doc, PdfALevel::A2b)
         .expect("PDF/A validation must not fail");
 
-    assert!(
-        !result.is_compliant,
-        "Minimal PDF should not be PDF/A-2b compliant"
-    );
+    assert!(!result.is_compliant, "Minimal PDF should not be PDF/A-2b compliant");
     assert!(result.has_errors(), "Should produce at least one error");
     assert_eq!(result.level, PdfALevel::A2b);
 }
@@ -495,11 +497,7 @@ fn test_pdf_a_multiple_levels() {
             .validate(&mut doc, *level)
             .unwrap_or_else(|e| panic!("PDF/A validation failed for {:?}: {}", level, e));
 
-        assert!(
-            !result.is_compliant,
-            "Minimal PDF should not be compliant for {:?}",
-            level
-        );
+        assert!(!result.is_compliant, "Minimal PDF should not be compliant for {:?}", level);
         assert_eq!(result.level, *level);
     }
 }
@@ -513,12 +511,10 @@ fn test_pdf_ua_validator_on_minimal_pdf() {
     let pdf = build_minimal_pdf();
     let mut doc = open_document(&pdf);
 
-    let result = validate_pdf_ua(&mut doc, PdfUaLevel::Ua1).expect("PDF/UA validation must not fail");
+    let result =
+        validate_pdf_ua(&mut doc, PdfUaLevel::Ua1).expect("PDF/UA validation must not fail");
 
-    assert!(
-        !result.is_compliant,
-        "Minimal PDF should not be PDF/UA-1 compliant"
-    );
+    assert!(!result.is_compliant, "Minimal PDF should not be PDF/UA-1 compliant");
     assert!(result.has_errors(), "Should produce at least one error");
     assert_eq!(result.level, PdfUaLevel::Ua1);
 
@@ -555,12 +551,10 @@ fn test_x_validation_result_total_issues() {
 #[test]
 fn test_x_compliance_error_display_format() {
     // Construct an error manually and verify Display output.
-    let error = XComplianceError::new(
-        XErrorCode::OutputIntentMissing,
-        "OutputIntents array is required",
-    )
-    .with_page(2)
-    .with_object_id(42);
+    let error =
+        XComplianceError::new(XErrorCode::OutputIntentMissing, "OutputIntents array is required")
+            .with_page(2)
+            .with_object_id(42);
 
     let display = format!("{}", error);
     assert!(
@@ -573,11 +567,7 @@ fn test_x_compliance_error_display_format() {
         "Display should show 1-indexed page number; got: {}",
         display
     );
-    assert!(
-        display.contains("object 42"),
-        "Display should show object id; got: {}",
-        display
-    );
+    assert!(display.contains("object 42"), "Display should show object id; got: {}", display);
 }
 
 // ---------------------------------------------------------------------------
@@ -586,32 +576,25 @@ fn test_x_compliance_error_display_format() {
 
 #[test]
 fn test_x_compliance_error_warning_constructor() {
-    let warning = XComplianceError::warning(
-        XErrorCode::TrappedKeyMissing,
-        "Trapped key should be present",
-    );
+    let warning =
+        XComplianceError::warning(XErrorCode::TrappedKeyMissing, "Trapped key should be present");
     assert_eq!(warning.severity, XSeverity::Warning);
     assert_eq!(warning.code, XErrorCode::TrappedKeyMissing);
 }
 
 #[test]
 fn test_x_compliance_error_with_clause() {
-    let error = XComplianceError::new(
-        XErrorCode::FontNotEmbedded,
-        "Font must be embedded",
-    )
-    .with_clause("6.3.5");
+    let error = XComplianceError::new(XErrorCode::FontNotEmbedded, "Font must be embedded")
+        .with_clause("6.3.5");
     assert_eq!(error.clause, Some("6.3.5".to_string()));
 }
 
 #[test]
 fn test_x_compliance_error_with_page_and_object() {
-    let error = XComplianceError::new(
-        XErrorCode::TrimOrArtBoxMissing,
-        "TrimBox or ArtBox required",
-    )
-    .with_page(5)
-    .with_object_id(100);
+    let error =
+        XComplianceError::new(XErrorCode::TrimOrArtBoxMissing, "TrimBox or ArtBox required")
+            .with_page(5)
+            .with_object_id(100);
 
     assert_eq!(error.page, Some(5));
     assert_eq!(error.object_id, Some(100));
@@ -689,11 +672,7 @@ fn test_pdf_x_level_xmp_version() {
 
     for level in &levels {
         let xmp = level.xmp_version();
-        assert!(
-            !xmp.is_empty(),
-            "xmp_version() for {:?} should not be empty",
-            level
-        );
+        assert!(!xmp.is_empty(), "xmp_version() for {:?} should not be empty", level);
     }
 }
 
@@ -762,7 +741,10 @@ fn test_pdf_x_validate_x1a_disallows_rgb() {
         .unwrap();
 
     // Should not have RgbColorNotAllowed since minimal PDF has no color spaces
-    let has_rgb = result.errors.iter().any(|e| e.code == XErrorCode::RgbColorNotAllowed);
+    let has_rgb = result
+        .errors
+        .iter()
+        .any(|e| e.code == XErrorCode::RgbColorNotAllowed);
     // This is fine either way - just exercising the code path
     let _ = has_rgb;
 }
@@ -773,9 +755,14 @@ fn test_pdf_x_validate_encryption_check() {
     let pdf = build_minimal_pdf();
     let mut doc = open_document(&pdf);
 
-    let result = PdfXValidator::new(PdfXLevel::X4).validate(&mut doc).unwrap();
+    let result = PdfXValidator::new(PdfXLevel::X4)
+        .validate(&mut doc)
+        .unwrap();
 
-    let has_encryption = result.errors.iter().any(|e| e.code == XErrorCode::EncryptionNotAllowed);
+    let has_encryption = result
+        .errors
+        .iter()
+        .any(|e| e.code == XErrorCode::EncryptionNotAllowed);
     assert!(!has_encryption, "Minimal PDF should not trigger encryption error");
 }
 
@@ -784,7 +771,9 @@ fn test_pdf_x_validate_font_checking() {
     let pdf = build_pdf_with_metadata_and_text();
     let mut doc = open_document(&pdf);
 
-    let result = PdfXValidator::new(PdfXLevel::X1a2003).validate(&mut doc).unwrap();
+    let result = PdfXValidator::new(PdfXLevel::X1a2003)
+        .validate(&mut doc)
+        .unwrap();
 
     // Builder PDFs should have fonts - check that stats track them
     // The stats.fonts_checked may be > 0 since the PDF has text
@@ -798,9 +787,14 @@ fn test_pdf_x_validate_transparency_x1a_no_transparency() {
     let mut doc = open_document(&pdf);
 
     // X-1a doesn't allow transparency
-    let result = PdfXValidator::new(PdfXLevel::X1a2001).validate(&mut doc).unwrap();
+    let result = PdfXValidator::new(PdfXLevel::X1a2001)
+        .validate(&mut doc)
+        .unwrap();
     // Minimal PDF has no transparency groups, so this should not trigger
-    let has_transparency = result.errors.iter().any(|e| e.code == XErrorCode::TransparencyNotAllowed);
+    let has_transparency = result
+        .errors
+        .iter()
+        .any(|e| e.code == XErrorCode::TransparencyNotAllowed);
     assert!(!has_transparency, "Minimal PDF should not have transparency");
     assert!(!result.stats.has_transparency);
 }
@@ -810,7 +804,9 @@ fn test_pdf_x_validate_annotations_checking() {
     let pdf = build_minimal_pdf();
     let mut doc = open_document(&pdf);
 
-    let result = PdfXValidator::new(PdfXLevel::X4).validate(&mut doc).unwrap();
+    let result = PdfXValidator::new(PdfXLevel::X4)
+        .validate(&mut doc)
+        .unwrap();
     // Minimal PDF has no annotations, so annotations_checked should be 0
     assert_eq!(result.stats.annotations_checked, 0);
 }
@@ -820,9 +816,14 @@ fn test_pdf_x_validate_actions_checking() {
     let pdf = build_minimal_pdf();
     let mut doc = open_document(&pdf);
 
-    let result = PdfXValidator::new(PdfXLevel::X4).validate(&mut doc).unwrap();
+    let result = PdfXValidator::new(PdfXLevel::X4)
+        .validate(&mut doc)
+        .unwrap();
     // Minimal PDF has no JavaScript or Actions
-    let has_js = result.errors.iter().any(|e| e.code == XErrorCode::JavaScriptNotAllowed);
+    let has_js = result
+        .errors
+        .iter()
+        .any(|e| e.code == XErrorCode::JavaScriptNotAllowed);
     assert!(!has_js);
 }
 
@@ -833,9 +834,14 @@ fn test_pdf_x_validate_actions_checking() {
 #[test]
 fn test_pdf_a_level_display_and_debug() {
     let levels = [
-        PdfALevel::A1a, PdfALevel::A1b,
-        PdfALevel::A2a, PdfALevel::A2b, PdfALevel::A2u,
-        PdfALevel::A3a, PdfALevel::A3b, PdfALevel::A3u,
+        PdfALevel::A1a,
+        PdfALevel::A1b,
+        PdfALevel::A2a,
+        PdfALevel::A2b,
+        PdfALevel::A2u,
+        PdfALevel::A3a,
+        PdfALevel::A3b,
+        PdfALevel::A3u,
     ];
     for level in &levels {
         let display = format!("{}", level);
@@ -854,7 +860,8 @@ fn test_pdf_ua_level_ua2() {
     let pdf = build_minimal_pdf();
     let mut doc = open_document(&pdf);
 
-    let result = validate_pdf_ua(&mut doc, PdfUaLevel::Ua2).expect("PDF/UA-2 validation must not fail");
+    let result =
+        validate_pdf_ua(&mut doc, PdfUaLevel::Ua2).expect("PDF/UA-2 validation must not fail");
     assert!(!result.is_compliant);
     assert_eq!(result.level, PdfUaLevel::Ua2);
 }

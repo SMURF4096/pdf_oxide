@@ -70,8 +70,7 @@ fn test_encryption_config_all_algorithms() {
     ];
 
     for alg in &algorithms {
-        let config = EncryptionConfig::new("user", "owner")
-            .with_algorithm(*alg);
+        let config = EncryptionConfig::new("user", "owner").with_algorithm(*alg);
         assert_eq!(config.algorithm, *alg);
     }
 }
@@ -102,23 +101,67 @@ fn test_encryption_config_clone() {
 fn test_permissions_individual_bits() {
     // Test each permission flag individually
     let test_cases = [
-        (Permissions { print: true, ..Default::default() }, 1 << 2),
-        (Permissions { modify: true, ..Default::default() }, 1 << 3),
-        (Permissions { copy: true, ..Default::default() }, 1 << 4),
-        (Permissions { annotate: true, ..Default::default() }, 1 << 5),
-        (Permissions { fill_forms: true, ..Default::default() }, 1 << 8),
-        (Permissions { accessibility: true, ..Default::default() }, 1 << 9),
-        (Permissions { assemble: true, ..Default::default() }, 1 << 10),
-        (Permissions { print_high_quality: true, ..Default::default() }, 1 << 11),
+        (
+            Permissions {
+                print: true,
+                ..Default::default()
+            },
+            1 << 2,
+        ),
+        (
+            Permissions {
+                modify: true,
+                ..Default::default()
+            },
+            1 << 3,
+        ),
+        (
+            Permissions {
+                copy: true,
+                ..Default::default()
+            },
+            1 << 4,
+        ),
+        (
+            Permissions {
+                annotate: true,
+                ..Default::default()
+            },
+            1 << 5,
+        ),
+        (
+            Permissions {
+                fill_forms: true,
+                ..Default::default()
+            },
+            1 << 8,
+        ),
+        (
+            Permissions {
+                accessibility: true,
+                ..Default::default()
+            },
+            1 << 9,
+        ),
+        (
+            Permissions {
+                assemble: true,
+                ..Default::default()
+            },
+            1 << 10,
+        ),
+        (
+            Permissions {
+                print_high_quality: true,
+                ..Default::default()
+            },
+            1 << 11,
+        ),
     ];
 
     for (perms, expected_bit) in &test_cases {
         let bits = perms.to_bits();
-        assert!(
-            bits & expected_bit != 0,
-            "Permission bit {} should be set",
-            expected_bit
-        );
+        assert!(bits & expected_bit != 0, "Permission bit {} should be set", expected_bit);
     }
 }
 

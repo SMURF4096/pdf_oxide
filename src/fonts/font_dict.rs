@@ -188,7 +188,7 @@ impl FontInfo {
                             cmap.len()
                         );
                         Some(cmap)
-                    }
+                    },
                     Ok(_) => None,
                     Err(e) => {
                         log::warn!(
@@ -197,7 +197,7 @@ impl FontInfo {
                             e
                         );
                         None
-                    }
+                    },
                 }
             })
             .as_ref()
@@ -5210,10 +5210,7 @@ mod tests {
         let mut dict: HashMap<String, Object> = HashMap::new();
         dict.insert(
             "W".to_string(),
-            Object::Array(vec![
-                Object::Integer(5),
-                Object::Array(vec![Object::Real(123.5)]),
-            ]),
+            Object::Array(vec![Object::Integer(5), Object::Array(vec![Object::Real(123.5)])]),
         );
         let widths = FontInfo::parse_cid_widths(&dict, "Test").unwrap();
         assert_eq!(widths.get(&5), Some(&123.5));
@@ -5269,10 +5266,7 @@ mod tests {
         let mut dict: HashMap<String, Object> = HashMap::new();
         dict.insert(
             "W".to_string(),
-            Object::Array(vec![
-                Object::Integer(10),
-                Object::Name("bad".to_string()),
-            ]),
+            Object::Array(vec![Object::Integer(10), Object::Name("bad".to_string())]),
         );
         // Should produce empty widths
         assert!(FontInfo::parse_cid_widths(&dict, "Test").is_none());
@@ -5340,14 +5334,8 @@ mod tests {
 
     #[test]
     fn test_standard_encoding_lookup_standard_encoding_ascii() {
-        assert_eq!(
-            standard_encoding_lookup("StandardEncoding", b'A'),
-            Some("A".to_string())
-        );
-        assert_eq!(
-            standard_encoding_lookup("StandardEncoding", b' '),
-            Some(" ".to_string())
-        );
+        assert_eq!(standard_encoding_lookup("StandardEncoding", b'A'), Some("A".to_string()));
+        assert_eq!(standard_encoding_lookup("StandardEncoding", b' '), Some(" ".to_string()));
     }
 
     #[test]
@@ -5379,10 +5367,7 @@ mod tests {
 
     #[test]
     fn test_standard_encoding_lookup_macroman_ascii() {
-        assert_eq!(
-            standard_encoding_lookup("MacRomanEncoding", b'Z'),
-            Some("Z".to_string())
-        );
+        assert_eq!(standard_encoding_lookup("MacRomanEncoding", b'Z'), Some("Z".to_string()));
     }
 
     #[test]
@@ -5418,20 +5403,11 @@ mod tests {
     #[test]
     fn test_standard_encoding_lookup_winansi_extended() {
         // 0x80 → Euro sign (U+20AC)
-        assert_eq!(
-            standard_encoding_lookup("WinAnsiEncoding", 0x80),
-            Some("\u{20AC}".to_string())
-        );
+        assert_eq!(standard_encoding_lookup("WinAnsiEncoding", 0x80), Some("\u{20AC}".to_string()));
         // 0x96 → En dash (U+2013)
-        assert_eq!(
-            standard_encoding_lookup("WinAnsiEncoding", 0x96),
-            Some("\u{2013}".to_string())
-        );
+        assert_eq!(standard_encoding_lookup("WinAnsiEncoding", 0x96), Some("\u{2013}".to_string()));
         // 0xA0 → NBSP direct ISO-8859-1 mapping
-        assert_eq!(
-            standard_encoding_lookup("WinAnsiEncoding", 0xA0),
-            Some("\u{00A0}".to_string())
-        );
+        assert_eq!(standard_encoding_lookup("WinAnsiEncoding", 0xA0), Some("\u{00A0}".to_string()));
     }
 
     #[test]
@@ -5445,39 +5421,21 @@ mod tests {
     #[test]
     fn test_standard_encoding_lookup_pdfdoc() {
         // 0x80 → bullet (U+2022)
-        assert_eq!(
-            standard_encoding_lookup("PDFDocEncoding", 0x80),
-            Some("\u{2022}".to_string())
-        );
+        assert_eq!(standard_encoding_lookup("PDFDocEncoding", 0x80), Some("\u{2022}".to_string()));
         // 0x84 → emdash (U+2014)
-        assert_eq!(
-            standard_encoding_lookup("PDFDocEncoding", 0x84),
-            Some("\u{2014}".to_string())
-        );
+        assert_eq!(standard_encoding_lookup("PDFDocEncoding", 0x84), Some("\u{2014}".to_string()));
         // ASCII range
-        assert_eq!(
-            standard_encoding_lookup("PDFDocEncoding", b'B'),
-            Some("B".to_string())
-        );
+        assert_eq!(standard_encoding_lookup("PDFDocEncoding", b'B'), Some("B".to_string()));
     }
 
     #[test]
     fn test_standard_encoding_lookup_unknown_encoding() {
         // Unknown encoding: ASCII passthrough for printable chars
-        assert_eq!(
-            standard_encoding_lookup("SomeWeirdEncoding", b'X'),
-            Some("X".to_string())
-        );
+        assert_eq!(standard_encoding_lookup("SomeWeirdEncoding", b'X'), Some("X".to_string()));
         // Non-printable or < 32 → None
-        assert_eq!(
-            standard_encoding_lookup("SomeWeirdEncoding", 0x01),
-            None
-        );
+        assert_eq!(standard_encoding_lookup("SomeWeirdEncoding", 0x01), None);
         // High byte → None (not ASCII)
-        assert_eq!(
-            standard_encoding_lookup("SomeWeirdEncoding", 0x80),
-            None
-        );
+        assert_eq!(standard_encoding_lookup("SomeWeirdEncoding", 0x80), None);
     }
 
     // =========================================================================
@@ -5628,49 +5586,34 @@ mod tests {
     #[test]
     fn test_glyph_name_to_unicode_string_simple() {
         // Single char should just return it as string
-        assert_eq!(
-            glyph_name_to_unicode_string("A"),
-            Some("A".to_string())
-        );
+        assert_eq!(glyph_name_to_unicode_string("A"), Some("A".to_string()));
     }
 
     #[test]
     fn test_glyph_name_to_unicode_string_compound_ff() {
         // glyph_name_to_unicode("f_f") returns Some('f') — first component via AGL
         // So glyph_name_to_unicode_string wraps it as "f" (single-char short-circuit)
-        assert_eq!(
-            glyph_name_to_unicode_string("f_f"),
-            Some("f".to_string())
-        );
+        assert_eq!(glyph_name_to_unicode_string("f_f"), Some("f".to_string()));
     }
 
     #[test]
     fn test_glyph_name_to_unicode_string_compound_all_known() {
         // Use a compound name where each component is known individually.
         // "T_h" → glyph_name_to_unicode finds 'T' (first component) → returns "T"
-        assert_eq!(
-            glyph_name_to_unicode_string("T_h"),
-            Some("T".to_string())
-        );
+        assert_eq!(glyph_name_to_unicode_string("T_h"), Some("T".to_string()));
     }
 
     #[test]
     fn test_glyph_name_to_unicode_string_compound_unknown_part() {
         // "f_unknownglyph" — glyph_name_to_unicode finds 'f' (first component via underscore rule)
         // So it returns Some("f") not None
-        assert_eq!(
-            glyph_name_to_unicode_string("f_unknownglyph"),
-            Some("f".to_string())
-        );
+        assert_eq!(glyph_name_to_unicode_string("f_unknownglyph"), Some("f".to_string()));
     }
 
     #[test]
     fn test_glyph_name_to_unicode_string_totally_unknown_compound() {
         // Both parts unknown — should return None
-        assert_eq!(
-            glyph_name_to_unicode_string("xyzzy_plugh"),
-            None
-        );
+        assert_eq!(glyph_name_to_unicode_string("xyzzy_plugh"), None);
     }
 
     #[test]
@@ -5733,14 +5676,14 @@ mod tests {
         let font = make_font(|f| {
             f.widths = Some(vec![200.0, 300.0, 400.0, 500.0]);
             f.first_char = Some(65); // 'A'
-            f.last_char = Some(68);  // 'D'
+            f.last_char = Some(68); // 'D'
             f.default_width = 600.0;
         });
         assert_eq!(font.get_glyph_width(65), 200.0); // 'A'
         assert_eq!(font.get_glyph_width(66), 300.0); // 'B'
         assert_eq!(font.get_glyph_width(67), 400.0); // 'C'
         assert_eq!(font.get_glyph_width(68), 500.0); // 'D'
-        // Out of range → default_width
+                                                     // Out of range → default_width
         assert_eq!(font.get_glyph_width(64), 600.0);
         assert_eq!(font.get_glyph_width(69), 600.0);
     }
@@ -5773,7 +5716,7 @@ mod tests {
     fn test_get_space_glyph_width_from_array() {
         let font = make_font(|f| {
             f.widths = Some(vec![250.0]); // only one entry
-            f.first_char = Some(32);      // space = 0x20 = 32
+            f.first_char = Some(32); // space = 0x20 = 32
             f.last_char = Some(32);
         });
         assert_eq!(font.get_space_glyph_width(), 250.0);
@@ -6492,15 +6435,9 @@ mod tests {
         // CID > 0xFFFF: TrueType cmap lookup returns early with None,
         // AGL fallback also returns early for large CIDs,
         // then CID-as-Unicode fallback kicks in: 0x10000 is valid Unicode (Linear B Syllable B008 A)
-        assert_eq!(
-            font.char_to_unicode(0x10000),
-            Some("\u{10000}".to_string())
-        );
+        assert_eq!(font.char_to_unicode(0x10000), Some("\u{10000}".to_string()));
         // But a CID that maps to a control character should return FFFD
-        assert_eq!(
-            font.char_to_unicode(0x01),
-            Some("\u{FFFD}".to_string())
-        );
+        assert_eq!(font.char_to_unicode(0x01), Some("\u{FFFD}".to_string()));
     }
 
     // =========================================================================
@@ -6623,19 +6560,10 @@ mod tests {
     #[test]
     fn test_standard_encoding_winansi_full_extended() {
         // 0x85 → Horizontal ellipsis (U+2026)
-        assert_eq!(
-            standard_encoding_lookup("WinAnsiEncoding", 0x85),
-            Some("\u{2026}".to_string())
-        );
+        assert_eq!(standard_encoding_lookup("WinAnsiEncoding", 0x85), Some("\u{2026}".to_string()));
         // 0x99 → Trade mark sign (U+2122)
-        assert_eq!(
-            standard_encoding_lookup("WinAnsiEncoding", 0x99),
-            Some("\u{2122}".to_string())
-        );
+        assert_eq!(standard_encoding_lookup("WinAnsiEncoding", 0x99), Some("\u{2122}".to_string()));
         // 0xFF → Latin small letter y with diaeresis
-        assert_eq!(
-            standard_encoding_lookup("WinAnsiEncoding", 0xFF),
-            Some("\u{00FF}".to_string())
-        );
+        assert_eq!(standard_encoding_lookup("WinAnsiEncoding", 0xFF), Some("\u{00FF}".to_string()));
     }
 }

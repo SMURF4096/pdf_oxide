@@ -117,7 +117,11 @@ pub fn detect_page_type(doc: &mut PdfDocument, page: usize) -> Result<PageType> 
     // recursion. extract_text() calls needs_ocr() which calls detect_page_type(),
     // creating a stack overflow loop when the OCR feature is enabled.
     let spans = doc.extract_spans(page).unwrap_or_default();
-    let native_text: String = spans.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join(" ");
+    let native_text: String = spans
+        .iter()
+        .map(|s| s.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
     let trimmed = native_text.trim();
     let text_len = trimmed.len();
 
@@ -394,14 +398,18 @@ pub fn extract_text_with_ocr(
                             // OCR found significantly more content — use it
                             log::debug!(
                                 "Hybrid page {}: OCR ({} chars) >> native ({} chars), using OCR",
-                                page, ocr_len, native_len
+                                page,
+                                ocr_len,
+                                native_len
                             );
                             Ok(ocr_text)
                         } else {
                             // Native text is comparable or better — prefer it (higher quality)
                             log::debug!(
                                 "Hybrid page {}: native ({} chars) >= OCR ({} chars), using native",
-                                page, native_len, ocr_len
+                                page,
+                                native_len,
+                                ocr_len
                             );
                             Ok(native_text)
                         }

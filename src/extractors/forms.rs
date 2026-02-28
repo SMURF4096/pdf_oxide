@@ -838,15 +838,9 @@ mod tests {
         let unknown = FieldType::Unknown("Custom".to_string());
         assert!(matches!(unknown, FieldType::Unknown(ref s) if s == "Custom"));
         // Two Unknown with same string should be equal
-        assert_eq!(
-            FieldType::Unknown("X".to_string()),
-            FieldType::Unknown("X".to_string())
-        );
+        assert_eq!(FieldType::Unknown("X".to_string()), FieldType::Unknown("X".to_string()));
         // Two Unknown with different strings should differ
-        assert_ne!(
-            FieldType::Unknown("X".to_string()),
-            FieldType::Unknown("Y".to_string())
-        );
+        assert_ne!(FieldType::Unknown("X".to_string()), FieldType::Unknown("Y".to_string()));
     }
 
     #[test]
@@ -1108,10 +1102,7 @@ mod tests {
         let mut dict = HashMap::new();
         dict.insert("W".to_string(), Object::Real(2.0));
         dict.insert("S".to_string(), Object::Name("D".to_string()));
-        dict.insert(
-            "D".to_string(),
-            Object::Array(vec![Object::Integer(3), Object::Integer(1)]),
-        );
+        dict.insert("D".to_string(), Object::Array(vec![Object::Integer(3), Object::Integer(1)]));
         let obj = Object::Dictionary(dict);
         let bs = FormExtractor::parse_border_style(&obj).unwrap();
         assert_eq!(bs.width, 2.0);

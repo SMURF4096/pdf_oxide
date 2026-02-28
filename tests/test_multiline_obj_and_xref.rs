@@ -16,9 +16,7 @@ use pdf_oxide::document::PdfDocument;
 /// between obj_num, gen_num, and "obj".
 ///
 /// `header_fmt` takes (obj_num, gen_num) and returns the header string.
-fn build_pdf_custom_headers(
-    header_fmt: impl Fn(u32, u16) -> String,
-) -> Vec<u8> {
+fn build_pdf_custom_headers(header_fmt: impl Fn(u32, u16) -> String) -> Vec<u8> {
     let mut pdf = b"%PDF-1.4\n".to_vec();
 
     let off1 = pdf.len();
@@ -30,11 +28,7 @@ fn build_pdf_custom_headers(
     let off2 = pdf.len();
     let h2 = header_fmt(2, 0);
     pdf.extend_from_slice(
-        format!(
-            "{}\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
-            h2
-        )
-        .as_bytes(),
+        format!("{}\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n", h2).as_bytes(),
     );
 
     let off3 = pdf.len();
@@ -50,14 +44,7 @@ fn build_pdf_custom_headers(
     let off4 = pdf.len();
     let h4 = header_fmt(4, 0);
     let content = "BT /F1 12 Tf 72 720 Td (Hello World) Tj ET";
-    pdf.extend_from_slice(
-        format!(
-            "{}\n<< /Length {} >>\nstream\n",
-            h4,
-            content.len()
-        )
-        .as_bytes(),
-    );
+    pdf.extend_from_slice(format!("{}\n<< /Length {} >>\nstream\n", h4, content.len()).as_bytes());
     pdf.extend_from_slice(content.as_bytes());
     pdf.extend_from_slice(b"\nendstream\nendobj\n");
 
@@ -126,8 +113,8 @@ fn test_multiline_object_header_full_newline() {
 fn test_multiline_object_header_mixed() {
     // "1\n0 obj" format (obj_num on separate line, gen+obj on one line)
     let pdf = build_pdf_custom_headers(|id, gen| format!("{}\n{} obj", id, gen));
-    let mut doc = PdfDocument::open_from_bytes(pdf)
-        .expect("should open PDF with mixed multi-line headers");
+    let mut doc =
+        PdfDocument::open_from_bytes(pdf).expect("should open PDF with mixed multi-line headers");
     assert_eq!(doc.page_count().expect("page count"), 1);
 }
 
@@ -138,8 +125,8 @@ fn test_multiline_object_header_mixed() {
 #[test]
 fn test_multiline_object_header_crlf() {
     let pdf = build_pdf_custom_headers(|id, gen| format!("{}\r\n{}\r\nobj", id, gen));
-    let mut doc = PdfDocument::open_from_bytes(pdf)
-        .expect("should open PDF with CRLF multi-line headers");
+    let mut doc =
+        PdfDocument::open_from_bytes(pdf).expect("should open PDF with CRLF multi-line headers");
     assert_eq!(doc.page_count().expect("page count"), 1);
 }
 
@@ -204,8 +191,8 @@ fn test_corrupt_xref_triggers_reconstruction() {
     }
 
     // Should still open via xref reconstruction
-    let mut doc =
-        PdfDocument::open_from_bytes(pdf).expect("should open PDF with corrupt xref via reconstruction");
+    let mut doc = PdfDocument::open_from_bytes(pdf)
+        .expect("should open PDF with corrupt xref via reconstruction");
     assert_eq!(doc.page_count().expect("page count"), 1);
 }
 
@@ -234,8 +221,8 @@ fn test_endobj_not_confused_with_obj() {
 fn test_multiline_header_with_extra_whitespace() {
     // Extra spaces and tabs between tokens
     let pdf = build_pdf_custom_headers(|id, gen| format!("{}  \t {}  \t obj", id, gen));
-    let mut doc = PdfDocument::open_from_bytes(pdf)
-        .expect("should handle extra whitespace in headers");
+    let mut doc =
+        PdfDocument::open_from_bytes(pdf).expect("should handle extra whitespace in headers");
     assert_eq!(doc.page_count().expect("page count"), 1);
 }
 
@@ -272,8 +259,8 @@ fn test_isartor_multiline_header() {
         eprintln!("Skipping: {} not found", path.display());
         return;
     }
-    let mut doc = PdfDocument::open(&path)
-        .unwrap_or_else(|e| panic!("isartor PDF should open: {}", e));
+    let mut doc =
+        PdfDocument::open(&path).unwrap_or_else(|e| panic!("isartor PDF should open: {}", e));
     let count = doc.page_count().expect("page count");
     assert!(count > 0, "should have at least 1 page");
 }
@@ -285,14 +272,15 @@ fn test_isartor_multiline_header() {
 #[test]
 #[ignore] // Requires external test corpus
 fn test_redhat_corrupt_xref() {
-    let path = std::path::Path::new(env!("HOME"))
-        .join("projects/veraPDF-corpus/PDF_A-1b/6.7 Metadata/6.7.2 Metadata stream/REDHAT-1531897-0.pdf");
+    let path = std::path::Path::new(env!("HOME")).join(
+        "projects/veraPDF-corpus/PDF_A-1b/6.7 Metadata/6.7.2 Metadata stream/REDHAT-1531897-0.pdf",
+    );
     if !path.exists() {
         eprintln!("Skipping: {} not found", path.display());
         return;
     }
-    let mut doc = PdfDocument::open(&path)
-        .unwrap_or_else(|e| panic!("REDHAT PDF should open: {}", e));
+    let mut doc =
+        PdfDocument::open(&path).unwrap_or_else(|e| panic!("REDHAT PDF should open: {}", e));
     let count = doc.page_count().expect("page count");
     assert!(count > 0, "should have at least 1 page");
 }

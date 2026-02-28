@@ -237,10 +237,7 @@ mod tests {
         assert!((config.box_threshold - 0.6).abs() < f32::EPSILON);
         assert_eq!(config.num_threads, 4);
         assert!(config.detect_styles);
-        assert_eq!(
-            config.det_resize_strategy,
-            DetResizeStrategy::MaxSide { max_side: 960 }
-        );
+        assert_eq!(config.det_resize_strategy, DetResizeStrategy::MaxSide { max_side: 960 });
     }
 
     #[test]

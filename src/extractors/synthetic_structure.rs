@@ -447,7 +447,9 @@ mod tests {
         let page_bbox = Rect::new(0.0, 0.0, 595.0, 842.0);
         // 10 elements very close together (should all be in one paragraph)
         let elements: Vec<ContentElement> = (0..10)
-            .map(|i| make_text_element(&format!("Line {}", i), 10.0, 100.0 + i as f32 * 1.0, 200.0, 12.0))
+            .map(|i| {
+                make_text_element(&format!("Line {}", i), 10.0, 100.0 + i as f32 * 1.0, 200.0, 12.0)
+            })
             .collect();
         let result = generator.generate(&elements, page_bbox).unwrap();
         assert_eq!(result.structure_type, "Document");

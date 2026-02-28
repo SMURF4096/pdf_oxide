@@ -30,11 +30,6 @@ fn test_table_detection_deterministic() {
         let tables1 = detector.detect_tables(&spans1);
         let tables2 = detector.detect_tables(&spans2);
 
-        assert_eq!(
-            tables1.len(),
-            tables2.len(),
-            "Page {}: table count should be deterministic",
-            p
-        );
+        assert_eq!(tables1.len(), tables2.len(), "Page {}: table count should be deterministic", p);
     }
 }

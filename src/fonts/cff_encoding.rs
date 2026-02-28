@@ -1151,15 +1151,9 @@ mod tests {
     fn test_parse_dict_operand_five_byte_int32() {
         // b0=29, then 32-bit signed int
         // 0x00, 0x00, 0x00, 0x01 => 1
-        assert_eq!(
-            parse_dict_operand(&[29, 0x00, 0x00, 0x00, 0x01], 0),
-            Some((1, 5))
-        );
+        assert_eq!(parse_dict_operand(&[29, 0x00, 0x00, 0x00, 0x01], 0), Some((1, 5)));
         // 0xFF, 0xFF, 0xFF, 0xFF => -1
-        assert_eq!(
-            parse_dict_operand(&[29, 0xFF, 0xFF, 0xFF, 0xFF], 0),
-            Some((-1, 5))
-        );
+        assert_eq!(parse_dict_operand(&[29, 0xFF, 0xFF, 0xFF, 0xFF], 0), Some((-1, 5)));
     }
 
     #[test]
@@ -1420,7 +1414,7 @@ mod tests {
     #[test]
     fn test_parse_encoding_table_unknown_format() {
         let data = vec![0x02]; // format 2 doesn't exist for encoding
-        // 0x02 & 0x7F = 2
+                               // 0x02 & 0x7F = 2
         assert_eq!(parse_encoding_table(&data, 0), None);
     }
 
@@ -1487,37 +1481,19 @@ mod tests {
     #[test]
     fn test_resolve_glyph_name_predefined() {
         let string_index: Vec<&[u8]> = vec![];
-        assert_eq!(
-            resolve_glyph_name(0, &string_index),
-            Some(".notdef".to_string())
-        );
-        assert_eq!(
-            resolve_glyph_name(1, &string_index),
-            Some("space".to_string())
-        );
-        assert_eq!(
-            resolve_glyph_name(34, &string_index),
-            Some("A".to_string())
-        );
-        assert_eq!(
-            resolve_glyph_name(390, &string_index),
-            Some("Semibold".to_string())
-        );
+        assert_eq!(resolve_glyph_name(0, &string_index), Some(".notdef".to_string()));
+        assert_eq!(resolve_glyph_name(1, &string_index), Some("space".to_string()));
+        assert_eq!(resolve_glyph_name(34, &string_index), Some("A".to_string()));
+        assert_eq!(resolve_glyph_name(390, &string_index), Some("Semibold".to_string()));
     }
 
     #[test]
     fn test_resolve_glyph_name_custom_string() {
         let custom: Vec<&[u8]> = vec![b"MyGlyph", b"AnotherGlyph"];
         // SID 391 => index 0 in string_index
-        assert_eq!(
-            resolve_glyph_name(391, &custom),
-            Some("MyGlyph".to_string())
-        );
+        assert_eq!(resolve_glyph_name(391, &custom), Some("MyGlyph".to_string()));
         // SID 392 => index 1
-        assert_eq!(
-            resolve_glyph_name(392, &custom),
-            Some("AnotherGlyph".to_string())
-        );
+        assert_eq!(resolve_glyph_name(392, &custom), Some("AnotherGlyph".to_string()));
     }
 
     #[test]
@@ -1585,9 +1561,7 @@ mod tests {
     fn test_extract_cff_from_opentype_truncated_table_dir() {
         // OTTO with 1 table but data too short
         let data = vec![
-            0x4F, 0x54, 0x54, 0x4F,
-            0x00, 0x01,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x4F, 0x54, 0x54, 0x4F, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             // table record starts but is truncated
             b'C', b'F',
         ];
@@ -1661,7 +1635,7 @@ mod tests {
         // Encode encoding_offset as operand, then op 16
         encode_dict_int(&mut dict, encoding_offset);
         dict.push(16); // encoding operator
-        // Encode charset_offset as operand, then op 15
+                       // Encode charset_offset as operand, then op 15
         encode_dict_int(&mut dict, charset_offset);
         dict.push(15); // charset operator
         dict

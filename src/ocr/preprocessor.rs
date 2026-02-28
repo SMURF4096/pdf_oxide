@@ -52,7 +52,7 @@ pub fn preprocess_for_detection(
             } else {
                 1.0
             }
-        }
+        },
         DetResizeStrategy::MinSide {
             min_side,
             max_side_limit,
@@ -71,7 +71,7 @@ pub fn preprocess_for_detection(
                 r = *max_side_limit as f32 / orig_w.max(orig_h) as f32;
             }
             r
-        }
+        },
     };
 
     let new_w = ((orig_w as f32 * ratio) as u32).max(1);

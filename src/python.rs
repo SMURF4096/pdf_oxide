@@ -1602,12 +1602,7 @@ impl PyPdfDocument {
     fn extract_spans(&mut self, page: usize) -> PyResult<Vec<PyTextSpan>> {
         self.inner
             .extract_spans(page)
-            .map(|spans| {
-                spans
-                    .into_iter()
-                    .map(|s| PyTextSpan { inner: s })
-                    .collect()
-            })
+            .map(|spans| spans.into_iter().map(|s| PyTextSpan { inner: s }).collect())
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to extract spans: {}", e)))
     }
 
@@ -1640,7 +1635,7 @@ impl PyPdfDocument {
             Some(items) => {
                 let result = outline_items_to_py(py, &items)?;
                 Ok(Some(result))
-            }
+            },
         }
     }
 
@@ -1767,10 +1762,7 @@ impl PyPdfDocument {
         let py_list = pyo3::types::PyList::empty(py);
         for path in &paths {
             let dict = pyo3::types::PyDict::new(py);
-            dict.set_item(
-                "bbox",
-                (path.bbox.x, path.bbox.y, path.bbox.width, path.bbox.height),
-            )?;
+            dict.set_item("bbox", (path.bbox.x, path.bbox.y, path.bbox.width, path.bbox.height))?;
             dict.set_item("stroke_width", path.stroke_width)?;
 
             if let Some(ref color) = path.stroke_color {
@@ -1830,11 +1822,7 @@ impl PyPdfDocument {
     ///     >>> text = doc.extract_text_ocr(0, engine)
     #[cfg(feature = "ocr")]
     #[pyo3(signature = (page, engine=None))]
-    fn extract_text_ocr(
-        &mut self,
-        page: usize,
-        engine: Option<&PyOcrEngine>,
-    ) -> PyResult<String> {
+    fn extract_text_ocr(&mut self, page: usize, engine: Option<&PyOcrEngine>) -> PyResult<String> {
         let ocr_engine = engine.map(|e| &e.inner);
         let options = crate::ocr::OcrExtractOptions::default();
         self.inner
@@ -1866,10 +1854,14 @@ impl PyPdfDocument {
     fn get_form_fields(&mut self) -> PyResult<Vec<PyFormField>> {
         use crate::extractors::forms::FormExtractor;
 
-        let fields = FormExtractor::extract_fields(&mut self.inner)
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to extract form fields: {}", e)))?;
+        let fields = FormExtractor::extract_fields(&mut self.inner).map_err(|e| {
+            PyRuntimeError::new_err(format!("Failed to extract form fields: {}", e))
+        })?;
 
-        Ok(fields.into_iter().map(|f| PyFormField { inner: f }).collect())
+        Ok(fields
+            .into_iter()
+            .map(|f| PyFormField { inner: f })
+            .collect())
     }
 
     /// Get the value of a specific form field by name.
@@ -1965,9 +1957,10 @@ impl PyPdfDocument {
             "xfdf" => editor
                 .export_form_data_xfdf(path)
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to export XFDF: {}", e))),
-            _ => Err(PyRuntimeError::new_err(
-                format!("Unknown format '{}'. Use 'fdf' or 'xfdf'.", format),
-            )),
+            _ => Err(PyRuntimeError::new_err(format!(
+                "Unknown format '{}'. Use 'fdf' or 'xfdf'.",
+                format
+            ))),
         }
     }
 
@@ -1997,9 +1990,9 @@ impl PyPdfDocument {
 
         let py_list = pyo3::types::PyList::empty(py);
         for img in &images {
-            let png_data = img
-                .to_png_bytes()
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to convert image to PNG: {}", e)))?;
+            let png_data = img.to_png_bytes().map_err(|e| {
+                PyRuntimeError::new_err(format!("Failed to convert image to PNG: {}", e))
+            })?;
 
             let dict = pyo3::types::PyDict::new(py);
             dict.set_item("width", img.width())?;
@@ -2042,9 +2035,9 @@ impl PyPdfDocument {
     fn flatten_forms_on_page(&mut self, page: usize) -> PyResult<()> {
         self.ensure_editor()?;
         if let Some(ref mut editor) = self.editor {
-            editor
-                .flatten_forms_on_page(page)
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to flatten forms on page: {}", e)))
+            editor.flatten_forms_on_page(page).map_err(|e| {
+                PyRuntimeError::new_err(format!("Failed to flatten forms on page: {}", e))
+            })
         } else {
             Err(PyRuntimeError::new_err("No document loaded"))
         }
@@ -2079,9 +2072,7 @@ impl PyPdfDocument {
                 .merge_from_bytes(&data)
                 .map_err(|e| PyRuntimeError::new_err(format!("Failed to merge PDF: {}", e)))
         } else {
-            Err(PyRuntimeError::new_err(
-                "source must be a file path (str) or PDF bytes",
-            ))
+            Err(PyRuntimeError::new_err("source must be a file path (str) or PDF bytes"))
         }
     }
 
@@ -2193,7 +2184,7 @@ impl PyPdfDocument {
                     dict.set_item("pdf_keywords", keywords)?;
                 }
                 Ok(dict.into())
-            }
+            },
         }
     }
 
@@ -2209,8 +2200,8 @@ impl PyPdfDocument {
 // === Form Field Type ===
 
 use crate::extractors::forms::{
-    FieldType as RustFieldType, FieldValue as RustFieldValue,
-    FormField as RustFormField, field_flags,
+    field_flags, FieldType as RustFieldType, FieldValue as RustFieldValue,
+    FormField as RustFormField,
 };
 
 /// A form field extracted from a PDF AcroForm.
@@ -2291,13 +2282,17 @@ impl PyFormField {
     /// Whether this field is read-only.
     #[getter]
     fn is_readonly(&self) -> bool {
-        self.inner.flags.map_or(false, |f| f & field_flags::READ_ONLY != 0)
+        self.inner
+            .flags
+            .map_or(false, |f| f & field_flags::READ_ONLY != 0)
     }
 
     /// Whether this field is required.
     #[getter]
     fn is_required(&self) -> bool {
-        self.inner.flags.map_or(false, |f| f & field_flags::REQUIRED != 0)
+        self.inner
+            .flags
+            .map_or(false, |f| f & field_flags::REQUIRED != 0)
     }
 
     fn __repr__(&self) -> String {
@@ -2358,9 +2353,7 @@ fn python_to_form_field_value(
     } else if value.is_none() {
         Ok(FormFieldValue::None)
     } else {
-        Err(PyRuntimeError::new_err(
-            "Value must be str, bool, list[str], or None",
-        ))
+        Err(PyRuntimeError::new_err("Value must be str, bool, list[str], or None"))
     }
 }
 
@@ -2534,8 +2527,9 @@ impl PyPdf {
     #[staticmethod]
     fn from_image(path: &str) -> PyResult<Self> {
         use crate::api::Pdf;
-        let pdf = Pdf::from_image(path)
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to create PDF from image: {}", e)))?;
+        let pdf = Pdf::from_image(path).map_err(|e| {
+            PyRuntimeError::new_err(format!("Failed to create PDF from image: {}", e))
+        })?;
         Ok(PyPdf {
             bytes: pdf.into_bytes(),
         })
@@ -2556,8 +2550,9 @@ impl PyPdf {
     #[staticmethod]
     fn from_images(paths: Vec<String>) -> PyResult<Self> {
         use crate::api::Pdf;
-        let pdf = Pdf::from_images(&paths)
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to create PDF from images: {}", e)))?;
+        let pdf = Pdf::from_images(&paths).map_err(|e| {
+            PyRuntimeError::new_err(format!("Failed to create PDF from images: {}", e))
+        })?;
         Ok(PyPdf {
             bytes: pdf.into_bytes(),
         })
@@ -2576,8 +2571,9 @@ impl PyPdf {
     #[staticmethod]
     fn from_image_bytes(data: &[u8]) -> PyResult<Self> {
         use crate::api::Pdf;
-        let pdf = Pdf::from_image_bytes(data)
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to create PDF from image bytes: {}", e)))?;
+        let pdf = Pdf::from_image_bytes(data).map_err(|e| {
+            PyRuntimeError::new_err(format!("Failed to create PDF from image bytes: {}", e))
+        })?;
         Ok(PyPdf {
             bytes: pdf.into_bytes(),
         })
@@ -3626,7 +3622,10 @@ impl PyTextSpan {
 // === Outline Helper ===
 
 /// Convert OutlineItem tree to Python nested dicts.
-fn outline_items_to_py(py: Python<'_>, items: &[crate::outline::OutlineItem]) -> PyResult<Py<PyAny>> {
+fn outline_items_to_py(
+    py: Python<'_>,
+    items: &[crate::outline::OutlineItem],
+) -> PyResult<Py<PyAny>> {
     let py_list = pyo3::types::PyList::empty(py);
     for item in items {
         let dict = pyo3::types::PyDict::new(py);
@@ -3635,14 +3634,14 @@ fn outline_items_to_py(py: Python<'_>, items: &[crate::outline::OutlineItem]) ->
         match &item.dest {
             Some(crate::outline::Destination::PageIndex(idx)) => {
                 dict.set_item("page", *idx)?;
-            }
+            },
             Some(crate::outline::Destination::Named(name)) => {
                 dict.set_item("page", py.None())?;
                 dict.set_item("dest_name", name)?;
-            }
+            },
             None => {
                 dict.set_item("page", py.None())?;
-            }
+            },
         }
 
         let children = outline_items_to_py(py, &item.children)?;
@@ -3694,11 +3693,12 @@ impl PyOcrEngine {
         dict_path: &str,
         config: Option<&PyOcrConfig>,
     ) -> PyResult<Self> {
-        let ocr_config = config
-            .map(|c| c.inner.clone())
-            .unwrap_or_default();
-        let engine = crate::ocr::OcrEngine::new(det_model_path, rec_model_path, dict_path, ocr_config)
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to create OCR engine: {}", e)))?;
+        let ocr_config = config.map(|c| c.inner.clone()).unwrap_or_default();
+        let engine =
+            crate::ocr::OcrEngine::new(det_model_path, rec_model_path, dict_path, ocr_config)
+                .map_err(|e| {
+                    PyRuntimeError::new_err(format!("Failed to create OCR engine: {}", e))
+                })?;
         Ok(PyOcrEngine { inner: engine })
     }
 

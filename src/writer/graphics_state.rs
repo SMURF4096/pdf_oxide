@@ -472,14 +472,8 @@ mod tests {
             .build();
         if let Object::Dictionary(dict) = gs {
             if let Some(Object::Dictionary(smask_dict)) = dict.get("SMask") {
-                assert_eq!(
-                    smask_dict.get("S"),
-                    Some(&Object::Name("Alpha".to_string()))
-                );
-                assert_eq!(
-                    smask_dict.get("Type"),
-                    Some(&Object::Name("Mask".to_string()))
-                );
+                assert_eq!(smask_dict.get("S"), Some(&Object::Name("Alpha".to_string())));
+                assert_eq!(smask_dict.get("Type"), Some(&Object::Name("Mask".to_string())));
                 assert!(!smask_dict.contains_key("BC"));
             } else {
                 panic!("Expected Dictionary for SMask");
@@ -499,10 +493,7 @@ mod tests {
             .build();
         if let Object::Dictionary(dict) = gs {
             if let Some(Object::Dictionary(smask_dict)) = dict.get("SMask") {
-                assert_eq!(
-                    smask_dict.get("S"),
-                    Some(&Object::Name("Luminosity".to_string()))
-                );
+                assert_eq!(smask_dict.get("S"), Some(&Object::Name("Luminosity".to_string())));
                 assert!(smask_dict.contains_key("BC"));
                 if let Some(Object::Array(bc)) = smask_dict.get("BC") {
                     assert_eq!(bc.len(), 3);
@@ -559,10 +550,7 @@ mod tests {
         if let Object::Dictionary(dict) = gs {
             // Should only have "Type" key since nothing else was set
             assert_eq!(dict.len(), 1);
-            assert_eq!(
-                dict.get("Type"),
-                Some(&Object::Name("ExtGState".to_string()))
-            );
+            assert_eq!(dict.get("Type"), Some(&Object::Name("ExtGState".to_string())));
         }
     }
 
@@ -599,14 +587,9 @@ mod tests {
 
     #[test]
     fn test_soft_mask_none_variant() {
-        let gs = ExtGStateBuilder::new()
-            .soft_mask(SoftMask::None)
-            .build();
+        let gs = ExtGStateBuilder::new().soft_mask(SoftMask::None).build();
         if let Object::Dictionary(dict) = gs {
-            assert_eq!(
-                dict.get("SMask"),
-                Some(&Object::Name("None".to_string()))
-            );
+            assert_eq!(dict.get("SMask"), Some(&Object::Name("None".to_string())));
         }
     }
 }

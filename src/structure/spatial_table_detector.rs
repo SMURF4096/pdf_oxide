@@ -595,11 +595,7 @@ fn extract_cell_text(cell_span_indices: &[usize], spans: &[TextSpan]) -> String 
     // Collect spans with their Y centers
     let mut span_entries: Vec<(f32, &str)> = cell_span_indices
         .iter()
-        .filter_map(|&idx| {
-            spans
-                .get(idx)
-                .map(|s| (s.bbox.center().y, s.text.as_str()))
-        })
+        .filter_map(|&idx| spans.get(idx).map(|s| (s.bbox.center().y, s.text.as_str())))
         .collect();
 
     if span_entries.is_empty() {

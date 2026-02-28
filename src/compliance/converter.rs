@@ -812,24 +812,16 @@ mod tests {
     #[test]
     fn test_conversion_result_add_action() {
         let mut result = ConversionResult::new(PdfALevel::A1b);
-        result.add_action(ConversionAction::new(
-            ActionType::RemovedJavaScript,
-            "Removed JS",
-        ));
-        result.add_action(ConversionAction::new(
-            ActionType::RemovedEncryption,
-            "Removed encryption",
-        ));
+        result.add_action(ConversionAction::new(ActionType::RemovedJavaScript, "Removed JS"));
+        result
+            .add_action(ConversionAction::new(ActionType::RemovedEncryption, "Removed encryption"));
         assert_eq!(result.actions.len(), 2);
     }
 
     #[test]
     fn test_conversion_result_add_error() {
         let mut result = ConversionResult::new(PdfALevel::A1b);
-        result.add_error(ConversionError::new(
-            ErrorCode::FontNotEmbedded,
-            "Cannot embed font",
-        ));
+        result.add_error(ConversionError::new(ErrorCode::FontNotEmbedded, "Cannot embed font"));
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].error_code, ErrorCode::FontNotEmbedded);
         assert_eq!(result.errors[0].reason, "Cannot embed font");

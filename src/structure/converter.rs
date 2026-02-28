@@ -320,12 +320,15 @@ mod tests {
         use crate::geometry::Rect;
 
         let mut mcid_map: HashMap<u32, Vec<ContentElement>> = HashMap::new();
-        mcid_map.insert(0, vec![ContentElement::Text(TextContent::new(
-            "Hello",
-            Rect::new(10.0, 20.0, 100.0, 12.0),
-            FontSpec::default(),
-            TextStyle::default(),
-        ))]);
+        mcid_map.insert(
+            0,
+            vec![ContentElement::Text(TextContent::new(
+                "Hello",
+                Rect::new(10.0, 20.0, 100.0, 12.0),
+                FontSpec::default(),
+                TextStyle::default(),
+            ))],
+        );
 
         let converter = StructureConverter::new(mcid_map);
 
@@ -384,8 +387,10 @@ mod tests {
         let converter = StructureConverter::new(mcid_map);
 
         let mut elem = StructElem::new(StructType::Figure);
-        elem.attributes.insert("Alt".to_string(), Object::String(b"A photo".to_vec()));
-        elem.attributes.insert("Lang".to_string(), Object::String(b"en".to_vec()));
+        elem.attributes
+            .insert("Alt".to_string(), Object::String(b"A photo".to_vec()));
+        elem.attributes
+            .insert("Lang".to_string(), Object::String(b"en".to_vec()));
 
         let result = converter.convert_struct_elem(&elem).unwrap();
         assert_eq!(result.alt_text, Some("A photo".to_string()));

@@ -418,8 +418,7 @@ mod tests {
     #[test]
     fn test_ordered_text_span_with_order_info() {
         let span = make_span("Test", 10.0, 20.0, 50.0, 12.0);
-        let ordered = OrderedTextSpan::new(span, 0)
-            .with_order_info(ReadingOrderInfo::xycut());
+        let ordered = OrderedTextSpan::new(span, 0).with_order_info(ReadingOrderInfo::xycut());
         assert_eq!(ordered.source(), ReadingOrderSource::XYCut);
     }
 

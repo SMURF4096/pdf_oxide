@@ -753,11 +753,8 @@ mod tests {
         pdf.extend_from_slice(format!("{:010} 00000 n \r\n", off2).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \r\n", off3).as_bytes());
         pdf.extend_from_slice(
-            format!(
-                "trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
-                xref_offset
-            )
-            .as_bytes(),
+            format!("trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_offset)
+                .as_bytes(),
         );
         pdf
     }

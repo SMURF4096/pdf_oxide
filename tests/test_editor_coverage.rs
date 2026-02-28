@@ -84,12 +84,7 @@ fn build_multi_page_pdf(page_count: usize) -> Vec<u8> {
         let off = pdf.len();
         offsets.push(off);
         pdf.extend_from_slice(
-            format!(
-                "{} 0 obj\n<< /Length {} >>\nstream\n",
-                content_num,
-                content.len()
-            )
-            .as_bytes(),
+            format!("{} 0 obj\n<< /Length {} >>\nstream\n", content_num, content.len()).as_bytes(),
         );
         pdf.extend_from_slice(content.as_bytes());
         pdf.extend_from_slice(b"\nendstream\nendobj\n");
@@ -344,15 +339,13 @@ fn test_encryption_config_default() {
 
 #[test]
 fn test_encryption_config_with_algorithm() {
-    let config = EncryptionConfig::new("u", "o")
-        .with_algorithm(EncryptionAlgorithm::Aes128);
+    let config = EncryptionConfig::new("u", "o").with_algorithm(EncryptionAlgorithm::Aes128);
     assert_eq!(config.algorithm, EncryptionAlgorithm::Aes128);
 }
 
 #[test]
 fn test_encryption_config_with_permissions() {
-    let config = EncryptionConfig::new("u", "o")
-        .with_permissions(Permissions::read_only());
+    let config = EncryptionConfig::new("u", "o").with_permissions(Permissions::read_only());
     assert!(!config.permissions.print);
     assert!(config.permissions.accessibility);
 }
@@ -428,9 +421,7 @@ fn test_editor_metadata_roundtrip() {
     let path = write_temp_pdf(&pdf, "editor_roundtrip.pdf");
     let mut editor = DocumentEditor::open(&path).unwrap();
 
-    let info = DocumentInfo::new()
-        .title("RT Title")
-        .author("RT Author");
+    let info = DocumentInfo::new().title("RT Title").author("RT Author");
     editor.set_info(info).unwrap();
 
     let retrieved = editor.get_info().unwrap();
@@ -480,7 +471,9 @@ fn test_editor_save_full_rewrite() {
     let out_path = write_temp_pdf(&[], "editor_save_out.pdf");
     let mut editor = DocumentEditor::open(&path).unwrap();
     editor.set_title("Saved Doc");
-    editor.save_with_options(&out_path, SaveOptions::full_rewrite()).unwrap();
+    editor
+        .save_with_options(&out_path, SaveOptions::full_rewrite())
+        .unwrap();
 
     // Verify saved file is valid
     let mut doc = PdfDocument::open(&out_path).unwrap();
@@ -567,7 +560,9 @@ fn test_editor_set_page_media_box() {
     let pdf = build_minimal_pdf();
     let path = write_temp_pdf(&pdf, "editor_set_mediabox.pdf");
     let mut editor = DocumentEditor::open(&path).unwrap();
-    editor.set_page_media_box(0, [0.0, 0.0, 595.0, 842.0]).unwrap();
+    editor
+        .set_page_media_box(0, [0.0, 0.0, 595.0, 842.0])
+        .unwrap();
     assert!(editor.is_modified());
     let _ = std::fs::remove_file(&path);
 }
@@ -587,7 +582,9 @@ fn test_editor_set_crop_box() {
     let pdf = build_minimal_pdf();
     let path = write_temp_pdf(&pdf, "editor_set_cropbox.pdf");
     let mut editor = DocumentEditor::open(&path).unwrap();
-    editor.set_page_crop_box(0, [50.0, 50.0, 562.0, 742.0]).unwrap();
+    editor
+        .set_page_crop_box(0, [50.0, 50.0, 562.0, 742.0])
+        .unwrap();
     assert!(editor.is_modified());
     let _ = std::fs::remove_file(&path);
 }
@@ -611,7 +608,9 @@ fn test_editor_erase_region() {
     let pdf = build_minimal_pdf();
     let path = write_temp_pdf(&pdf, "editor_erase.pdf");
     let mut editor = DocumentEditor::open(&path).unwrap();
-    editor.erase_region(0, [100.0, 100.0, 200.0, 200.0]).unwrap();
+    editor
+        .erase_region(0, [100.0, 100.0, 200.0, 200.0])
+        .unwrap();
     assert!(editor.is_modified());
     let _ = std::fs::remove_file(&path);
 }
@@ -621,10 +620,9 @@ fn test_editor_erase_regions_multiple() {
     let pdf = build_minimal_pdf();
     let path = write_temp_pdf(&pdf, "editor_erase_multi.pdf");
     let mut editor = DocumentEditor::open(&path).unwrap();
-    editor.erase_regions(0, &[
-        [100.0, 100.0, 200.0, 200.0],
-        [300.0, 300.0, 400.0, 400.0],
-    ]).unwrap();
+    editor
+        .erase_regions(0, &[[100.0, 100.0, 200.0, 200.0], [300.0, 300.0, 400.0, 400.0]])
+        .unwrap();
     assert!(editor.is_modified());
     let _ = std::fs::remove_file(&path);
 }
@@ -634,7 +632,9 @@ fn test_editor_clear_erase_regions() {
     let pdf = build_minimal_pdf();
     let path = write_temp_pdf(&pdf, "editor_clear_erase.pdf");
     let mut editor = DocumentEditor::open(&path).unwrap();
-    editor.erase_region(0, [100.0, 100.0, 200.0, 200.0]).unwrap();
+    editor
+        .erase_region(0, [100.0, 100.0, 200.0, 200.0])
+        .unwrap();
     editor.clear_erase_regions(0);
     let _ = std::fs::remove_file(&path);
 }
@@ -710,7 +710,9 @@ fn test_editor_embed_file() {
     let pdf = build_minimal_pdf();
     let path = write_temp_pdf(&pdf, "editor_embed.pdf");
     let mut editor = DocumentEditor::open(&path).unwrap();
-    editor.embed_file("test.txt", b"Hello embedded".to_vec()).unwrap();
+    editor
+        .embed_file("test.txt", b"Hello embedded".to_vec())
+        .unwrap();
     assert_eq!(editor.pending_embedded_files().len(), 1);
     assert!(editor.is_modified());
     let _ = std::fs::remove_file(&path);
@@ -1014,7 +1016,10 @@ fn test_editor_extract_pages_returns_error() {
 
     // extract_pages is currently a placeholder that returns an error
     let result = editor.extract_pages(&[0, 1], &out_path);
-    assert!(result.is_err(), "extract_pages is expected to return error (not fully implemented)");
+    assert!(
+        result.is_err(),
+        "extract_pages is expected to return error (not fully implemented)"
+    );
 
     let _ = std::fs::remove_file(&path);
     let _ = std::fs::remove_file(&out_path);
@@ -1244,10 +1249,12 @@ fn test_editor_edit_page_closure() {
     let path = write_temp_pdf(&pdf, "editor_edit_page.pdf");
     let mut editor = DocumentEditor::open(&path).unwrap();
 
-    editor.edit_page(0, |_page| {
-        // Just verify the closure is called
-        Ok(())
-    }).unwrap();
+    editor
+        .edit_page(0, |_page| {
+            // Just verify the closure is called
+            Ok(())
+        })
+        .unwrap();
     assert!(editor.is_modified());
 
     let _ = std::fs::remove_file(&path);
@@ -1450,10 +1457,8 @@ fn test_editor_set_form_field_rect_not_found() {
     let path = write_temp_pdf(&pdf, "editor_ff_rect.pdf");
     let mut editor = DocumentEditor::open(&path).unwrap();
 
-    let result = editor.set_form_field_rect(
-        "nonexistent",
-        pdf_oxide::geometry::Rect::new(0.0, 0.0, 100.0, 20.0),
-    );
+    let result = editor
+        .set_form_field_rect("nonexistent", pdf_oxide::geometry::Rect::new(0.0, 0.0, 100.0, 20.0));
     assert!(result.is_err());
 
     let _ = std::fs::remove_file(&path);
@@ -1766,8 +1771,12 @@ fn test_editor_combined_rotate_and_crop() {
     let mut editor = DocumentEditor::open(&path).unwrap();
 
     editor.set_page_rotation(0, 90).unwrap();
-    editor.set_page_crop_box(0, [10.0, 10.0, 600.0, 780.0]).unwrap();
-    editor.set_page_media_box(0, [0.0, 0.0, 595.0, 842.0]).unwrap();
+    editor
+        .set_page_crop_box(0, [10.0, 10.0, 600.0, 780.0])
+        .unwrap();
+    editor
+        .set_page_media_box(0, [0.0, 0.0, 595.0, 842.0])
+        .unwrap();
 
     assert!(editor.is_modified());
 

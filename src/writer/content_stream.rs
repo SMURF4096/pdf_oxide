@@ -1738,7 +1738,11 @@ mod tests {
     #[test]
     fn test_fill_color() {
         let mut builder = ContentStreamBuilder::new();
-        builder.fill_color(Color { r: 1.0, g: 0.0, b: 0.0 });
+        builder.fill_color(Color {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+        });
 
         let bytes = builder.build().unwrap();
         let content = String::from_utf8_lossy(&bytes);
@@ -1748,7 +1752,11 @@ mod tests {
     #[test]
     fn test_stroke_color() {
         let mut builder = ContentStreamBuilder::new();
-        builder.stroke_color(Color { r: 0.0, g: 1.0, b: 0.0 });
+        builder.stroke_color(Color {
+            r: 0.0,
+            g: 1.0,
+            b: 0.0,
+        });
 
         let bytes = builder.build().unwrap();
         let content = String::from_utf8_lossy(&bytes);
@@ -1878,7 +1886,10 @@ mod tests {
     #[test]
     fn test_clip_even_odd() {
         let mut builder = ContentStreamBuilder::new();
-        builder.rect(10.0, 10.0, 200.0, 200.0).clip_even_odd().end_path();
+        builder
+            .rect(10.0, 10.0, 200.0, 200.0)
+            .clip_even_odd()
+            .end_path();
 
         let bytes = builder.build().unwrap();
         let content = String::from_utf8_lossy(&bytes);
@@ -1920,7 +1931,9 @@ mod tests {
     #[test]
     fn test_curve_to() {
         let mut builder = ContentStreamBuilder::new();
-        builder.move_to(0.0, 0.0).curve_to(10.0, 20.0, 30.0, 40.0, 50.0, 60.0);
+        builder
+            .move_to(0.0, 0.0)
+            .curve_to(10.0, 20.0, 30.0, 40.0, 50.0, 60.0);
 
         let bytes = builder.build().unwrap();
         let content = String::from_utf8_lossy(&bytes);
@@ -2447,10 +2460,7 @@ mod tests {
         };
 
         let mut builder = ContentStreamBuilder::new();
-        builder.add_elements(&[
-            ContentElement::Text(text1),
-            ContentElement::Text(text2),
-        ]);
+        builder.add_elements(&[ContentElement::Text(text1), ContentElement::Text(text2)]);
 
         let bytes = builder.build().unwrap();
         let content = String::from_utf8_lossy(&bytes);
@@ -2547,7 +2557,11 @@ mod tests {
                 PathOperation::ClosePath,
             ],
             stroke_color: Some(Color::black()),
-            fill_color: Some(Color { r: 1.0, g: 0.0, b: 0.0 }),
+            fill_color: Some(Color {
+                r: 1.0,
+                g: 0.0,
+                b: 0.0,
+            }),
             stroke_width: 2.0,
             bbox: Rect::new(0.0, 0.0, 100.0, 100.0),
             line_cap: Default::default(),
@@ -2594,11 +2608,13 @@ mod tests {
         use crate::elements::PathContent;
 
         let path = PathContent {
-            operations: vec![
-                PathOperation::Rectangle(0.0, 0.0, 100.0, 100.0),
-            ],
+            operations: vec![PathOperation::Rectangle(0.0, 0.0, 100.0, 100.0)],
             stroke_color: None,
-            fill_color: Some(Color { r: 0.0, g: 0.0, b: 1.0 }),
+            fill_color: Some(Color {
+                r: 0.0,
+                g: 0.0,
+                b: 1.0,
+            }),
             stroke_width: 0.0,
             bbox: Rect::new(0.0, 0.0, 100.0, 100.0),
             line_cap: Default::default(),

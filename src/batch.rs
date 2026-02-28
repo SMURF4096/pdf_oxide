@@ -134,8 +134,7 @@ impl BatchProcessor {
     pub fn extract_text_from_directory(&self, dir: &Path) -> Result<Vec<BatchResult>, Error> {
         let mut pdf_paths: Vec<PathBuf> = Vec::new();
 
-        let entries = std::fs::read_dir(dir)
-            .map_err(Error::Io)?;
+        let entries = std::fs::read_dir(dir).map_err(Error::Io)?;
 
         for entry in entries.flatten() {
             let path = entry.path();
@@ -248,10 +247,9 @@ mod tests {
 
     #[test]
     fn test_batch_processor_with_progress() {
-        let processor = BatchProcessor::new()
-            .with_progress(Box::new(|done, total| {
-                assert!(done <= total);
-            }));
+        let processor = BatchProcessor::new().with_progress(Box::new(|done, total| {
+            assert!(done <= total);
+        }));
         assert!(processor.progress.is_some());
     }
 

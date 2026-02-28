@@ -57,9 +57,11 @@ fn test_tf_buffer_flush_across_three_fonts() {
     let text: String = chars.iter().map(|c| c.char).collect();
 
     assert_eq!(
-        chars.len(), 11,
+        chars.len(),
+        11,
         "Expected 11 chars (One+Two+Three), got {}: '{}'",
-        chars.len(), text
+        chars.len(),
+        text
     );
 }
 
@@ -91,7 +93,10 @@ fn test_space_ratio_below_threshold() {
             assert!(
                 ratio < 0.5,
                 "Page {}: space ratio {:.2} too high ({} spaces / {} chars)",
-                p, ratio, spaces, non_ws
+                p,
+                ratio,
+                spaces,
+                non_ws
             );
         }
     }

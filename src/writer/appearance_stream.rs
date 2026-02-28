@@ -1184,10 +1184,7 @@ mod tests {
         let builder = AppearanceStreamBuilder::new(Rect::new(0.0, 0.0, 50.0, 50.0));
         let (dict, content) = builder.build();
         assert!(content.is_empty());
-        assert_eq!(
-            dict.get("Length"),
-            Some(&Object::Integer(0))
-        );
+        assert_eq!(dict.get("Length"), Some(&Object::Integer(0)));
     }
 
     // ==========================================
@@ -1252,10 +1249,7 @@ mod tests {
         let rect = Rect::new(0.0, 0.0, 100.0, 20.0);
         let ap = AppearanceStreamBuilder::for_highlight(rect, AnnotationColor::red(), 1.0);
         let (dict, content) = ap.build();
-        assert_eq!(
-            dict.get("Length"),
-            Some(&Object::Integer(content.len() as i64))
-        );
+        assert_eq!(dict.get("Length"), Some(&Object::Integer(content.len() as i64)));
     }
 
     // ==========================================
@@ -1297,17 +1291,16 @@ mod tests {
     #[test]
     fn test_color_stroke_cmyk() {
         assert_eq!(
-            AppearanceStreamBuilder::color_to_stroke_ops(&AnnotationColor::Cmyk(0.0, 1.0, 0.0, 0.0)),
+            AppearanceStreamBuilder::color_to_stroke_ops(&AnnotationColor::Cmyk(
+                0.0, 1.0, 0.0, 0.0
+            )),
             Some("0 1 0 0 K\n".to_string())
         );
     }
 
     #[test]
     fn test_color_stroke_none() {
-        assert_eq!(
-            AppearanceStreamBuilder::color_to_stroke_ops(&AnnotationColor::None),
-            None
-        );
+        assert_eq!(AppearanceStreamBuilder::color_to_stroke_ops(&AnnotationColor::None), None);
     }
 
     // ==========================================
@@ -1594,11 +1587,8 @@ mod tests {
     fn test_stamp_small_rect() {
         // Small rect should limit corner radius
         let rect = Rect::new(0.0, 0.0, 12.0, 6.0);
-        let ap = AppearanceStreamBuilder::for_stamp(
-            rect,
-            StampType::Approved,
-            AnnotationColor::green(),
-        );
+        let ap =
+            AppearanceStreamBuilder::for_stamp(rect, StampType::Approved, AnnotationColor::green());
         let (_, content) = ap.build();
         assert!(!content.is_empty());
     }
@@ -1623,7 +1613,7 @@ mod tests {
 
         assert!(dict.contains_key("Matrix"));
         assert!(content_str.contains("l S")); // main line
-        // Open arrow: two separate line strokes
+                                              // Open arrow: two separate line strokes
     }
 
     #[test]
@@ -1723,12 +1713,7 @@ mod tests {
     #[test]
     fn test_rectangle_stroke_only() {
         let rect = Rect::new(0.0, 0.0, 100.0, 50.0);
-        let ap = AppearanceStreamBuilder::for_rectangle(
-            rect,
-            AnnotationColor::red(),
-            None,
-            2.0,
-        );
+        let ap = AppearanceStreamBuilder::for_rectangle(rect, AnnotationColor::red(), None, 2.0);
 
         let (_, content) = ap.build();
         let content_str = String::from_utf8_lossy(&content);
@@ -1762,12 +1747,7 @@ mod tests {
     #[test]
     fn test_circle_stroke_only() {
         let rect = Rect::new(0.0, 0.0, 50.0, 50.0);
-        let ap = AppearanceStreamBuilder::for_circle(
-            rect,
-            AnnotationColor::blue(),
-            None,
-            1.0,
-        );
+        let ap = AppearanceStreamBuilder::for_circle(rect, AnnotationColor::blue(), None, 1.0);
 
         let (_, content) = ap.build();
         let content_str = String::from_utf8_lossy(&content);
@@ -1797,12 +1777,7 @@ mod tests {
     #[test]
     fn test_circle_four_bezier_segments() {
         let rect = Rect::new(0.0, 0.0, 100.0, 100.0);
-        let ap = AppearanceStreamBuilder::for_circle(
-            rect,
-            AnnotationColor::red(),
-            None,
-            1.0,
-        );
+        let ap = AppearanceStreamBuilder::for_circle(rect, AnnotationColor::red(), None, 1.0);
 
         let (_, content) = ap.build();
         let content_str = String::from_utf8_lossy(&content);
@@ -1889,7 +1864,8 @@ mod tests {
     #[test]
     fn test_caret_none_symbol() {
         let rect = Rect::new(0.0, 0.0, 20.0, 30.0);
-        let ap = AppearanceStreamBuilder::for_caret(rect, CaretSymbol::None, AnnotationColor::blue());
+        let ap =
+            AppearanceStreamBuilder::for_caret(rect, CaretSymbol::None, AnnotationColor::blue());
 
         let (_, content) = ap.build();
         let content_str = String::from_utf8_lossy(&content);
@@ -1933,10 +1909,8 @@ mod tests {
     #[test]
     fn test_redact_custom_color() {
         let rect = Rect::new(0.0, 0.0, 100.0, 20.0);
-        let ap = AppearanceStreamBuilder::for_redact(
-            rect,
-            Some(AnnotationColor::Rgb(0.5, 0.5, 0.5)),
-        );
+        let ap =
+            AppearanceStreamBuilder::for_redact(rect, Some(AnnotationColor::Rgb(0.5, 0.5, 0.5)));
 
         let (_, content) = ap.build();
         let content_str = String::from_utf8_lossy(&content);
@@ -2005,7 +1979,12 @@ mod tests {
     #[test]
     fn test_draw_line_ending_none() {
         let s = AppearanceStreamBuilder::draw_line_ending(
-            0.0, 0.0, 100.0, 0.0, LineEndingStyle::None, false,
+            0.0,
+            0.0,
+            100.0,
+            0.0,
+            LineEndingStyle::None,
+            false,
         );
         assert!(s.is_empty());
     }
@@ -2013,7 +1992,12 @@ mod tests {
     #[test]
     fn test_draw_line_ending_open_arrow() {
         let s = AppearanceStreamBuilder::draw_line_ending(
-            0.0, 0.0, 100.0, 0.0, LineEndingStyle::OpenArrow, false,
+            0.0,
+            0.0,
+            100.0,
+            0.0,
+            LineEndingStyle::OpenArrow,
+            false,
         );
         assert!(!s.is_empty());
         assert!(s.contains("l S")); // two line strokes
@@ -2022,7 +2006,12 @@ mod tests {
     #[test]
     fn test_draw_line_ending_closed_arrow() {
         let s = AppearanceStreamBuilder::draw_line_ending(
-            0.0, 0.0, 100.0, 0.0, LineEndingStyle::ClosedArrow, false,
+            0.0,
+            0.0,
+            100.0,
+            0.0,
+            LineEndingStyle::ClosedArrow,
+            false,
         );
         assert!(!s.is_empty());
         assert!(s.contains("h f")); // filled triangle
@@ -2031,7 +2020,12 @@ mod tests {
     #[test]
     fn test_draw_line_ending_circle() {
         let s = AppearanceStreamBuilder::draw_line_ending(
-            0.0, 0.0, 100.0, 0.0, LineEndingStyle::Circle, false,
+            0.0,
+            0.0,
+            100.0,
+            0.0,
+            LineEndingStyle::Circle,
+            false,
         );
         assert!(!s.is_empty());
         assert!(s.contains("c S")); // Bezier circle
@@ -2040,7 +2034,12 @@ mod tests {
     #[test]
     fn test_draw_line_ending_square() {
         let s = AppearanceStreamBuilder::draw_line_ending(
-            0.0, 0.0, 100.0, 0.0, LineEndingStyle::Square, false,
+            0.0,
+            0.0,
+            100.0,
+            0.0,
+            LineEndingStyle::Square,
+            false,
         );
         assert!(!s.is_empty());
         assert!(s.contains("re S")); // rectangle stroke
@@ -2049,7 +2048,12 @@ mod tests {
     #[test]
     fn test_draw_line_ending_diamond() {
         let s = AppearanceStreamBuilder::draw_line_ending(
-            0.0, 0.0, 100.0, 0.0, LineEndingStyle::Diamond, false,
+            0.0,
+            0.0,
+            100.0,
+            0.0,
+            LineEndingStyle::Diamond,
+            false,
         );
         assert!(!s.is_empty());
         assert!(s.contains("h S")); // closed diamond
@@ -2059,10 +2063,20 @@ mod tests {
     fn test_draw_line_ending_at_start() {
         // Arrow at start should point in opposite direction
         let s_start = AppearanceStreamBuilder::draw_line_ending(
-            0.0, 0.0, 100.0, 0.0, LineEndingStyle::OpenArrow, true,
+            0.0,
+            0.0,
+            100.0,
+            0.0,
+            LineEndingStyle::OpenArrow,
+            true,
         );
         let s_end = AppearanceStreamBuilder::draw_line_ending(
-            0.0, 0.0, 100.0, 0.0, LineEndingStyle::OpenArrow, false,
+            0.0,
+            0.0,
+            100.0,
+            0.0,
+            LineEndingStyle::OpenArrow,
+            false,
         );
         // They should be different (different angles)
         assert_ne!(s_start, s_end);
@@ -2072,7 +2086,12 @@ mod tests {
     fn test_draw_line_ending_butt_fallthrough() {
         // Butt style goes through the _ => {} branch
         let s = AppearanceStreamBuilder::draw_line_ending(
-            0.0, 0.0, 100.0, 0.0, LineEndingStyle::Butt, false,
+            0.0,
+            0.0,
+            100.0,
+            0.0,
+            LineEndingStyle::Butt,
+            false,
         );
         assert!(s.is_empty()); // Butt falls through to default empty
     }
@@ -2084,11 +2103,7 @@ mod tests {
     #[test]
     fn test_ext_gstate_opacity_values() {
         let rect = Rect::new(0.0, 0.0, 100.0, 20.0);
-        let ap = AppearanceStreamBuilder::for_highlight(
-            rect,
-            AnnotationColor::yellow(),
-            0.3,
-        );
+        let ap = AppearanceStreamBuilder::for_highlight(rect, AnnotationColor::yellow(), 0.3);
 
         let (dict, _) = ap.build();
         // Check resources contain ExtGState with CA and ca values
@@ -2102,10 +2117,7 @@ mod tests {
                     if let Some(Object::Real(ca)) = gs1.get("ca") {
                         assert!((*ca - 0.3).abs() < 0.01);
                     }
-                    assert_eq!(
-                        gs1.get("Type"),
-                        Some(&Object::Name("ExtGState".to_string()))
-                    );
+                    assert_eq!(gs1.get("Type"), Some(&Object::Name("ExtGState".to_string())));
                 } else {
                     panic!("GS1 not found in ExtGState");
                 }

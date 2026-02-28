@@ -33,11 +33,7 @@ fn build_minimal_pdf(text_content: Option<&str>) -> Vec<u8> {
         let off4 = pdf.len();
         let content = format!("BT /F1 12 Tf 72 720 Td ({}) Tj ET", text);
         pdf.extend_from_slice(
-            format!(
-                "4 0 obj\n<< /Length {} >>\nstream\n",
-                content.len()
-            )
-            .as_bytes(),
+            format!("4 0 obj\n<< /Length {} >>\nstream\n", content.len()).as_bytes(),
         );
         pdf.extend_from_slice(content.as_bytes());
         pdf.extend_from_slice(b"\nendstream\nendobj\n");
@@ -107,12 +103,7 @@ fn build_multi_page_pdf(page_count: usize) -> Vec<u8> {
         let off = pdf.len();
         offsets.push(off);
         pdf.extend_from_slice(
-            format!(
-                "{} 0 obj\n<< /Length {} >>\nstream\n",
-                content_num,
-                content.len()
-            )
-            .as_bytes(),
+            format!("{} 0 obj\n<< /Length {} >>\nstream\n", content_num, content.len()).as_bytes(),
         );
         pdf.extend_from_slice(content.as_bytes());
         pdf.extend_from_slice(b"\nendstream\nendobj\n");
@@ -353,7 +344,9 @@ fn test_extract_spans_invalid_page() {
 fn test_to_markdown_basic() {
     let pdf = build_minimal_pdf(Some("Markdown test"));
     let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
-    let md = doc.to_markdown(0, &pdf_oxide::converters::ConversionOptions::default()).unwrap();
+    let md = doc
+        .to_markdown(0, &pdf_oxide::converters::ConversionOptions::default())
+        .unwrap();
     // Main point: to_markdown doesn't crash on a minimal PDF
     let _ = md;
 }
@@ -362,7 +355,9 @@ fn test_to_markdown_basic() {
 fn test_to_html_basic() {
     let pdf = build_minimal_pdf(Some("HTML test"));
     let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
-    let html = doc.to_html(0, &pdf_oxide::converters::ConversionOptions::default()).unwrap();
+    let html = doc
+        .to_html(0, &pdf_oxide::converters::ConversionOptions::default())
+        .unwrap();
     // Should produce some output without crashing
     let _ = html;
 }
@@ -371,7 +366,9 @@ fn test_to_html_basic() {
 fn test_to_plain_text_basic() {
     let pdf = build_minimal_pdf(Some("Plain text test"));
     let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
-    let text = doc.to_plain_text(0, &pdf_oxide::converters::ConversionOptions::default()).unwrap();
+    let text = doc
+        .to_plain_text(0, &pdf_oxide::converters::ConversionOptions::default())
+        .unwrap();
     let _ = text;
 }
 
@@ -379,7 +376,9 @@ fn test_to_plain_text_basic() {
 fn test_to_markdown_all() {
     let pdf = build_multi_page_pdf(2);
     let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
-    let md = doc.to_markdown_all(&pdf_oxide::converters::ConversionOptions::default()).unwrap();
+    let md = doc
+        .to_markdown_all(&pdf_oxide::converters::ConversionOptions::default())
+        .unwrap();
     let _ = md;
 }
 
@@ -387,7 +386,9 @@ fn test_to_markdown_all() {
 fn test_to_plain_text_all() {
     let pdf = build_multi_page_pdf(2);
     let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
-    let text = doc.to_plain_text_all(&pdf_oxide::converters::ConversionOptions::default()).unwrap();
+    let text = doc
+        .to_plain_text_all(&pdf_oxide::converters::ConversionOptions::default())
+        .unwrap();
     let _ = text;
 }
 
@@ -395,7 +396,9 @@ fn test_to_plain_text_all() {
 fn test_to_html_all() {
     let pdf = build_multi_page_pdf(2);
     let mut doc = PdfDocument::open_from_bytes(pdf).unwrap();
-    let html = doc.to_html_all(&pdf_oxide::converters::ConversionOptions::default()).unwrap();
+    let html = doc
+        .to_html_all(&pdf_oxide::converters::ConversionOptions::default())
+        .unwrap();
     let _ = html;
 }
 
@@ -627,7 +630,8 @@ fn test_content_stream_with_color_operators() {
         b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n",
     );
     let off4 = pdf.len();
-    let content = b"BT /F1 12 Tf 1 0 0 rg 0 0 0 RG 0.5 g 0.3 G 0 1 0 1 k 1 0 1 0 K 72 720 Td (Colored) Tj ET";
+    let content =
+        b"BT /F1 12 Tf 1 0 0 rg 0 0 0 RG 0.5 g 0.3 G 0 1 0 1 k 1 0 1 0 K 72 720 Td (Colored) Tj ET";
     pdf.extend_from_slice(format!("4 0 obj\n<< /Length {} >>\nstream\n", content.len()).as_bytes());
     pdf.extend_from_slice(content);
     pdf.extend_from_slice(b"\nendstream\nendobj\n");

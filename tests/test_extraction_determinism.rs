@@ -33,9 +33,7 @@ fn test_large_stream_with_no_text_extracts_empty() {
     pdf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n\n");
 
     let obj2_offset = pdf.len();
-    pdf.extend_from_slice(
-        b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n\n",
-    );
+    pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n\n");
 
     let mut content_stream = Vec::new();
     for i in 0..500 {
@@ -44,10 +42,7 @@ fn test_large_stream_with_no_text_extracts_empty() {
     }
 
     let obj4_offset = pdf.len();
-    let content_header = format!(
-        "4 0 obj\n<< /Length {} >>\nstream\n",
-        content_stream.len()
-    );
+    let content_header = format!("4 0 obj\n<< /Length {} >>\nstream\n", content_stream.len());
     pdf.extend_from_slice(content_header.as_bytes());
     pdf.extend_from_slice(&content_stream);
     pdf.extend_from_slice(b"\nendstream\nendobj\n\n");
@@ -66,10 +61,8 @@ fn test_large_stream_with_no_text_extracts_empty() {
     pdf.extend_from_slice(format!("{:010} 00000 n \r\n", obj3_offset).as_bytes());
     pdf.extend_from_slice(format!("{:010} 00000 n \r\n", obj4_offset).as_bytes());
 
-    let trailer = format!(
-        "trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
-        xref_offset
-    );
+    let trailer =
+        format!("trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_offset);
     pdf.extend_from_slice(trailer.as_bytes());
 
     let path = write_temp_pdf(&pdf, "large_no_text.pdf");
@@ -119,9 +112,7 @@ fn test_text_page_not_skipped() {
     pdf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n\n");
 
     let obj2_offset = pdf.len();
-    pdf.extend_from_slice(
-        b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n\n",
-    );
+    pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n\n");
 
     let obj4_offset = pdf.len();
     pdf.extend_from_slice(
@@ -131,10 +122,7 @@ fn test_text_page_not_skipped() {
 
     let content = b"BT /F1 12 Tf 72 700 Td (NotSkipped) Tj ET";
     let obj5_offset = pdf.len();
-    let content_header = format!(
-        "5 0 obj\n<< /Length {} >>\nstream\n",
-        content.len()
-    );
+    let content_header = format!("5 0 obj\n<< /Length {} >>\nstream\n", content.len());
     pdf.extend_from_slice(content_header.as_bytes());
     pdf.extend_from_slice(content);
     pdf.extend_from_slice(b"\nendstream\nendobj\n\n");
@@ -154,10 +142,8 @@ fn test_text_page_not_skipped() {
     pdf.extend_from_slice(format!("{:010} 00000 n \r\n", obj4_offset).as_bytes());
     pdf.extend_from_slice(format!("{:010} 00000 n \r\n", obj5_offset).as_bytes());
 
-    let trailer = format!(
-        "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
-        xref_offset
-    );
+    let trailer =
+        format!("trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_offset);
     pdf.extend_from_slice(trailer.as_bytes());
 
     let path = write_temp_pdf(&pdf, "text_not_skipped.pdf");

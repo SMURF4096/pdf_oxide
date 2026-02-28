@@ -1397,11 +1397,7 @@ mod tests {
 
     #[test]
     fn test_parse_box_too_few_elements() {
-        let obj = Object::Array(vec![
-            Object::Real(0.0),
-            Object::Real(0.0),
-            Object::Real(100.0),
-        ]);
+        let obj = Object::Array(vec![Object::Real(0.0), Object::Real(0.0), Object::Real(100.0)]);
         assert_eq!(PdfXValidator::parse_box(Some(&obj)), None);
     }
 
@@ -1560,11 +1556,7 @@ mod tests {
         for name in &standard14 {
             let mut font_dict = HashMap::new();
             font_dict.insert("BaseFont".to_string(), Object::Name(name.to_string()));
-            assert!(
-                validator.is_standard14_font(&font_dict),
-                "{} should be standard14",
-                name
-            );
+            assert!(validator.is_standard14_font(&font_dict), "{} should be standard14", name);
         }
     }
 
@@ -1574,11 +1566,7 @@ mod tests {
         for name in &["Arial", "TimesNewRoman", "Verdana", "Georgia", "Calibri"] {
             let mut font_dict = HashMap::new();
             font_dict.insert("BaseFont".to_string(), Object::Name(name.to_string()));
-            assert!(
-                !validator.is_standard14_font(&font_dict),
-                "{} should NOT be standard14",
-                name
-            );
+            assert!(!validator.is_standard14_font(&font_dict), "{} should NOT be standard14", name);
         }
     }
 
@@ -1593,10 +1581,7 @@ mod tests {
     fn test_standard14_wrong_basefont_type() {
         let validator = PdfXValidator::new(PdfXLevel::X1a2003);
         let mut font_dict = HashMap::new();
-        font_dict.insert(
-            "BaseFont".to_string(),
-            Object::String(b"Helvetica".to_vec()),
-        );
+        font_dict.insert("BaseFont".to_string(), Object::String(b"Helvetica".to_vec()));
         assert!(!validator.is_standard14_font(&font_dict));
     }
 
@@ -1615,7 +1600,7 @@ mod tests {
                 } else {
                     "Unknown".to_string()
                 }
-            }
+            },
             _ => "Unknown".to_string(),
         }
     }
@@ -1661,10 +1646,7 @@ mod tests {
     fn test_should_stop_false_when_disabled() {
         let validator = PdfXValidator::new(PdfXLevel::X1a2003);
         let mut result = XValidationResult::new(PdfXLevel::X1a2003);
-        result.add_error(XComplianceError::new(
-            XErrorCode::FontNotEmbedded,
-            "error",
-        ));
+        result.add_error(XComplianceError::new(XErrorCode::FontNotEmbedded, "error"));
         assert!(!validator.should_stop(&result));
     }
 
@@ -1672,10 +1654,7 @@ mod tests {
     fn test_should_stop_true_when_enabled_with_errors() {
         let validator = PdfXValidator::new(PdfXLevel::X1a2003).stop_on_first_error(true);
         let mut result = XValidationResult::new(PdfXLevel::X1a2003);
-        result.add_error(XComplianceError::new(
-            XErrorCode::FontNotEmbedded,
-            "error",
-        ));
+        result.add_error(XComplianceError::new(XErrorCode::FontNotEmbedded, "error"));
         assert!(validator.should_stop(&result));
     }
 
@@ -1741,8 +1720,8 @@ mod tests {
                         )
                         .with_clause("6.6.1"),
                     );
-                }
-                _ => {}
+                },
+                _ => {},
             }
         }
         assert!(result.has_errors());
@@ -1765,8 +1744,8 @@ mod tests {
                         XErrorCode::ActionNotAllowed,
                         "Not allowed",
                     ));
-                }
-                _ => {}
+                },
+                _ => {},
             }
         }
         assert!(!result.has_errors());
@@ -1800,10 +1779,7 @@ mod tests {
     fn test_finalize_with_warnings_and_errors() {
         let validator = PdfXValidator::new(PdfXLevel::X1a2003);
         let mut result = XValidationResult::new(PdfXLevel::X1a2003);
-        result.add_error(XComplianceError::new(
-            XErrorCode::FontNotEmbedded,
-            "Font not embedded",
-        ));
+        result.add_error(XComplianceError::new(XErrorCode::FontNotEmbedded, "Font not embedded"));
         result.add_warning(XComplianceError::warning(
             XErrorCode::TrappedKeyMissing,
             "Trapped key missing",
@@ -1833,18 +1809,9 @@ mod tests {
     fn test_finalize_strips_warnings_when_configured() {
         let validator = PdfXValidator::new(PdfXLevel::X1a2003).include_warnings(false);
         let mut result = XValidationResult::new(PdfXLevel::X1a2003);
-        result.add_warning(XComplianceError::warning(
-            XErrorCode::TrappedKeyMissing,
-            "w1",
-        ));
-        result.add_warning(XComplianceError::warning(
-            XErrorCode::XmpMetadataInvalid,
-            "w2",
-        ));
-        result.add_error(XComplianceError::new(
-            XErrorCode::FontNotEmbedded,
-            "e1",
-        ));
+        result.add_warning(XComplianceError::warning(XErrorCode::TrappedKeyMissing, "w1"));
+        result.add_warning(XComplianceError::warning(XErrorCode::XmpMetadataInvalid, "w2"));
+        result.add_error(XComplianceError::new(XErrorCode::FontNotEmbedded, "e1"));
 
         let finalized = validator.finalize_result(result);
         assert!(!finalized.is_compliant);
@@ -1858,11 +1825,8 @@ mod tests {
 
     #[test]
     fn test_compliance_error_display_with_object_id() {
-        let error = XComplianceError::new(
-            XErrorCode::IccProfileMissing,
-            "Missing ICC profile",
-        )
-        .with_object_id(42);
+        let error = XComplianceError::new(XErrorCode::IccProfileMissing, "Missing ICC profile")
+            .with_object_id(42);
 
         let display = format!("{}", error);
         assert!(display.contains("[XCOLOR-004]"));
@@ -1871,12 +1835,9 @@ mod tests {
 
     #[test]
     fn test_compliance_error_display_with_page_and_object() {
-        let error = XComplianceError::new(
-            XErrorCode::TransparencyNotAllowed,
-            "Transparency found",
-        )
-        .with_page(2)
-        .with_object_id(100);
+        let error = XComplianceError::new(XErrorCode::TransparencyNotAllowed, "Transparency found")
+            .with_page(2)
+            .with_object_id(100);
 
         let display = format!("{}", error);
         assert!(display.contains("page 3")); // 0-indexed page 2 => display as "page 3"
@@ -1885,10 +1846,8 @@ mod tests {
 
     #[test]
     fn test_compliance_warning_is_not_error() {
-        let warning = XComplianceError::warning(
-            XErrorCode::TrappedKeyMissing,
-            "Trapped key missing",
-        );
+        let warning =
+            XComplianceError::warning(XErrorCode::TrappedKeyMissing, "Trapped key missing");
         assert!(!warning.is_error());
     }
 
@@ -1901,16 +1860,10 @@ mod tests {
         let mut result = XValidationResult::new(PdfXLevel::X4);
         assert_eq!(result.total_issues(), 0);
 
-        result.add_error(XComplianceError::new(
-            XErrorCode::FontNotEmbedded,
-            "e1",
-        ));
+        result.add_error(XComplianceError::new(XErrorCode::FontNotEmbedded, "e1"));
         assert_eq!(result.total_issues(), 1);
 
-        result.add_warning(XComplianceError::warning(
-            XErrorCode::TrappedKeyMissing,
-            "w1",
-        ));
+        result.add_warning(XComplianceError::warning(XErrorCode::TrappedKeyMissing, "w1"));
         assert_eq!(result.total_issues(), 2);
     }
 
@@ -1919,10 +1872,7 @@ mod tests {
         let mut result = XValidationResult::new(PdfXLevel::X4);
         assert!(!result.has_warnings());
 
-        result.add_warning(XComplianceError::warning(
-            XErrorCode::TrappedKeyMissing,
-            "warning",
-        ));
+        result.add_warning(XComplianceError::warning(XErrorCode::TrappedKeyMissing, "warning"));
         assert!(result.has_warnings());
     }
 
@@ -1931,10 +1881,7 @@ mod tests {
         let mut result = XValidationResult::new(PdfXLevel::X4);
         assert!(result.is_compliant);
 
-        result.add_error(XComplianceError::new(
-            XErrorCode::EncryptionNotAllowed,
-            "Encrypted",
-        ));
+        result.add_error(XComplianceError::new(XErrorCode::EncryptionNotAllowed, "Encrypted"));
         assert!(!result.is_compliant);
     }
 
@@ -1970,26 +1917,14 @@ mod tests {
         assert_eq!(format!("{}", XErrorCode::DeviceNInvalid), "XCOLOR-003");
         assert_eq!(format!("{}", XErrorCode::IccProfileMissing), "XCOLOR-004");
         assert_eq!(format!("{}", XErrorCode::IccProfileInvalid), "XCOLOR-005");
-        assert_eq!(
-            format!("{}", XErrorCode::DeviceColorWithoutIntent),
-            "XCOLOR-006"
-        );
+        assert_eq!(format!("{}", XErrorCode::DeviceColorWithoutIntent), "XCOLOR-006");
     }
 
     #[test]
     fn test_error_code_display_transparency_codes() {
-        assert_eq!(
-            format!("{}", XErrorCode::TransparencyNotAllowed),
-            "XTRANS-001"
-        );
-        assert_eq!(
-            format!("{}", XErrorCode::BlendModeNotAllowed),
-            "XTRANS-002"
-        );
-        assert_eq!(
-            format!("{}", XErrorCode::SoftMaskNotAllowed),
-            "XTRANS-003"
-        );
+        assert_eq!(format!("{}", XErrorCode::TransparencyNotAllowed), "XTRANS-001");
+        assert_eq!(format!("{}", XErrorCode::BlendModeNotAllowed), "XTRANS-002");
+        assert_eq!(format!("{}", XErrorCode::SoftMaskNotAllowed), "XTRANS-003");
         assert_eq!(format!("{}", XErrorCode::SMaskNotAllowed), "XTRANS-004");
     }
 
@@ -1998,51 +1933,24 @@ mod tests {
         assert_eq!(format!("{}", XErrorCode::FontNotEmbedded), "XFONT-001");
         assert_eq!(format!("{}", XErrorCode::Type3FontNotAllowed), "XFONT-002");
         assert_eq!(format!("{}", XErrorCode::FontMissingWidths), "XFONT-003");
-        assert_eq!(
-            format!("{}", XErrorCode::FontSubsetIncomplete),
-            "XFONT-004"
-        );
+        assert_eq!(format!("{}", XErrorCode::FontSubsetIncomplete), "XFONT-004");
     }
 
     #[test]
     fn test_error_code_display_metadata_codes() {
-        assert_eq!(
-            format!("{}", XErrorCode::OutputIntentMissing),
-            "XMETA-001"
-        );
-        assert_eq!(
-            format!("{}", XErrorCode::OutputIntentInvalid),
-            "XMETA-002"
-        );
-        assert_eq!(
-            format!("{}", XErrorCode::OutputConditionMissing),
-            "XMETA-003"
-        );
+        assert_eq!(format!("{}", XErrorCode::OutputIntentMissing), "XMETA-001");
+        assert_eq!(format!("{}", XErrorCode::OutputIntentInvalid), "XMETA-002");
+        assert_eq!(format!("{}", XErrorCode::OutputConditionMissing), "XMETA-003");
         assert_eq!(format!("{}", XErrorCode::TrappedKeyMissing), "XMETA-004");
-        assert_eq!(
-            format!("{}", XErrorCode::XmpMetadataMissing),
-            "XMETA-005"
-        );
-        assert_eq!(
-            format!("{}", XErrorCode::XmpMetadataInvalid),
-            "XMETA-006"
-        );
-        assert_eq!(
-            format!("{}", XErrorCode::GtsPdfxVersionMissing),
-            "XMETA-007"
-        );
-        assert_eq!(
-            format!("{}", XErrorCode::GtsPdfxConformanceMissing),
-            "XMETA-008"
-        );
+        assert_eq!(format!("{}", XErrorCode::XmpMetadataMissing), "XMETA-005");
+        assert_eq!(format!("{}", XErrorCode::XmpMetadataInvalid), "XMETA-006");
+        assert_eq!(format!("{}", XErrorCode::GtsPdfxVersionMissing), "XMETA-007");
+        assert_eq!(format!("{}", XErrorCode::GtsPdfxConformanceMissing), "XMETA-008");
     }
 
     #[test]
     fn test_error_code_display_box_codes() {
-        assert_eq!(
-            format!("{}", XErrorCode::TrimOrArtBoxMissing),
-            "XBOX-001"
-        );
+        assert_eq!(format!("{}", XErrorCode::TrimOrArtBoxMissing), "XBOX-001");
         assert_eq!(format!("{}", XErrorCode::BleedBoxInvalid), "XBOX-002");
         assert_eq!(format!("{}", XErrorCode::TrimBoxInvalid), "XBOX-003");
         assert_eq!(format!("{}", XErrorCode::MediaBoxMissing), "XBOX-004");
@@ -2051,46 +1959,19 @@ mod tests {
 
     #[test]
     fn test_error_code_display_content_codes() {
-        assert_eq!(
-            format!("{}", XErrorCode::EncryptionNotAllowed),
-            "XCONT-001"
-        );
-        assert_eq!(
-            format!("{}", XErrorCode::JavaScriptNotAllowed),
-            "XCONT-002"
-        );
-        assert_eq!(
-            format!("{}", XErrorCode::ExternalContentNotAllowed),
-            "XCONT-003"
-        );
-        assert_eq!(
-            format!("{}", XErrorCode::EmbeddedFileNotAllowed),
-            "XCONT-004"
-        );
-        assert_eq!(
-            format!("{}", XErrorCode::FormXObjectInvalid),
-            "XCONT-005"
-        );
-        assert_eq!(
-            format!("{}", XErrorCode::PostScriptXObjectNotAllowed),
-            "XCONT-006"
-        );
-        assert_eq!(
-            format!("{}", XErrorCode::ReferenceXObjectNotAllowed),
-            "XCONT-007"
-        );
+        assert_eq!(format!("{}", XErrorCode::EncryptionNotAllowed), "XCONT-001");
+        assert_eq!(format!("{}", XErrorCode::JavaScriptNotAllowed), "XCONT-002");
+        assert_eq!(format!("{}", XErrorCode::ExternalContentNotAllowed), "XCONT-003");
+        assert_eq!(format!("{}", XErrorCode::EmbeddedFileNotAllowed), "XCONT-004");
+        assert_eq!(format!("{}", XErrorCode::FormXObjectInvalid), "XCONT-005");
+        assert_eq!(format!("{}", XErrorCode::PostScriptXObjectNotAllowed), "XCONT-006");
+        assert_eq!(format!("{}", XErrorCode::ReferenceXObjectNotAllowed), "XCONT-007");
     }
 
     #[test]
     fn test_error_code_display_annotation_codes() {
-        assert_eq!(
-            format!("{}", XErrorCode::AnnotationNotAllowed),
-            "XANNOT-001"
-        );
-        assert_eq!(
-            format!("{}", XErrorCode::PrinterMarkInvalid),
-            "XANNOT-002"
-        );
+        assert_eq!(format!("{}", XErrorCode::AnnotationNotAllowed), "XANNOT-001");
+        assert_eq!(format!("{}", XErrorCode::PrinterMarkInvalid), "XANNOT-002");
         assert_eq!(format!("{}", XErrorCode::TrapNetInvalid), "XANNOT-003");
     }
 
@@ -2101,23 +1982,11 @@ mod tests {
 
     #[test]
     fn test_error_code_display_other_codes() {
-        assert_eq!(
-            format!("{}", XErrorCode::TransferFunctionNotAllowed),
-            "XOTHER-001"
-        );
-        assert_eq!(
-            format!("{}", XErrorCode::HalftoneTypeNotAllowed),
-            "XOTHER-002"
-        );
-        assert_eq!(
-            format!("{}", XErrorCode::AlternateImageNotAllowed),
-            "XOTHER-003"
-        );
+        assert_eq!(format!("{}", XErrorCode::TransferFunctionNotAllowed), "XOTHER-001");
+        assert_eq!(format!("{}", XErrorCode::HalftoneTypeNotAllowed), "XOTHER-002");
+        assert_eq!(format!("{}", XErrorCode::AlternateImageNotAllowed), "XOTHER-003");
         assert_eq!(format!("{}", XErrorCode::OpiNotAllowed), "XOTHER-004");
-        assert_eq!(
-            format!("{}", XErrorCode::PreseparatedNotAllowed),
-            "XOTHER-005"
-        );
+        assert_eq!(format!("{}", XErrorCode::PreseparatedNotAllowed), "XOTHER-005");
     }
 
     // ==========================================
@@ -2159,64 +2028,25 @@ mod tests {
 
     #[test]
     fn test_pdf_x_level_from_gts_all_versions() {
-        assert_eq!(
-            PdfXLevel::from_gts_version("PDF/X-1a:2001"),
-            Some(PdfXLevel::X1a2001)
-        );
-        assert_eq!(
-            PdfXLevel::from_gts_version("PDF/X-1:2001"),
-            Some(PdfXLevel::X1a2001)
-        );
-        assert_eq!(
-            PdfXLevel::from_gts_version("PDF/X-1a:2003"),
-            Some(PdfXLevel::X1a2003)
-        );
-        assert_eq!(
-            PdfXLevel::from_gts_version("PDF/X-1:2003"),
-            Some(PdfXLevel::X1a2003)
-        );
-        assert_eq!(
-            PdfXLevel::from_gts_version("PDF/X-3:2002"),
-            Some(PdfXLevel::X32002)
-        );
-        assert_eq!(
-            PdfXLevel::from_gts_version("PDF/X-3:2003"),
-            Some(PdfXLevel::X32003)
-        );
-        assert_eq!(
-            PdfXLevel::from_gts_version("PDF/X-4"),
-            Some(PdfXLevel::X4)
-        );
-        assert_eq!(
-            PdfXLevel::from_gts_version("PDF/X-4p"),
-            Some(PdfXLevel::X4p)
-        );
-        assert_eq!(
-            PdfXLevel::from_gts_version("PDF/X-5g"),
-            Some(PdfXLevel::X5g)
-        );
-        assert_eq!(
-            PdfXLevel::from_gts_version("PDF/X-5n"),
-            Some(PdfXLevel::X5n)
-        );
-        assert_eq!(
-            PdfXLevel::from_gts_version("PDF/X-5pg"),
-            Some(PdfXLevel::X5pg)
-        );
-        assert_eq!(
-            PdfXLevel::from_gts_version("PDF/X-6"),
-            Some(PdfXLevel::X6)
-        );
+        assert_eq!(PdfXLevel::from_gts_version("PDF/X-1a:2001"), Some(PdfXLevel::X1a2001));
+        assert_eq!(PdfXLevel::from_gts_version("PDF/X-1:2001"), Some(PdfXLevel::X1a2001));
+        assert_eq!(PdfXLevel::from_gts_version("PDF/X-1a:2003"), Some(PdfXLevel::X1a2003));
+        assert_eq!(PdfXLevel::from_gts_version("PDF/X-1:2003"), Some(PdfXLevel::X1a2003));
+        assert_eq!(PdfXLevel::from_gts_version("PDF/X-3:2002"), Some(PdfXLevel::X32002));
+        assert_eq!(PdfXLevel::from_gts_version("PDF/X-3:2003"), Some(PdfXLevel::X32003));
+        assert_eq!(PdfXLevel::from_gts_version("PDF/X-4"), Some(PdfXLevel::X4));
+        assert_eq!(PdfXLevel::from_gts_version("PDF/X-4p"), Some(PdfXLevel::X4p));
+        assert_eq!(PdfXLevel::from_gts_version("PDF/X-5g"), Some(PdfXLevel::X5g));
+        assert_eq!(PdfXLevel::from_gts_version("PDF/X-5n"), Some(PdfXLevel::X5n));
+        assert_eq!(PdfXLevel::from_gts_version("PDF/X-5pg"), Some(PdfXLevel::X5pg));
+        assert_eq!(PdfXLevel::from_gts_version("PDF/X-6"), Some(PdfXLevel::X6));
         assert_eq!(PdfXLevel::from_gts_version("garbage"), None);
         assert_eq!(PdfXLevel::from_gts_version(""), None);
     }
 
     #[test]
     fn test_pdf_x_level_from_gts_with_whitespace() {
-        assert_eq!(
-            PdfXLevel::from_gts_version("  PDF/X-4  "),
-            Some(PdfXLevel::X4)
-        );
+        assert_eq!(PdfXLevel::from_gts_version("  PDF/X-4  "), Some(PdfXLevel::X4));
     }
 
     #[test]

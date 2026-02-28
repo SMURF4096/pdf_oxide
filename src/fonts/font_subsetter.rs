@@ -99,7 +99,9 @@ impl FontSubsetter {
             self.subset_tag = Some(tag);
         }
         // Safety: subset_tag is set to Some on the line above
-        self.subset_tag.as_ref().expect("subset_tag set on prior line")
+        self.subset_tag
+            .as_ref()
+            .expect("subset_tag set on prior line")
     }
 
     /// Get the subset tag if already generated.

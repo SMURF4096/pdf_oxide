@@ -538,11 +538,7 @@ mod tests {
         };
         let font = TrueTypeFont::parse(&data).unwrap();
         let upem = font.units_per_em();
-        assert!(
-            upem > 0,
-            "Units per em should be positive, got: {}",
-            upem
-        );
+        assert!(upem > 0, "Units per em should be positive, got: {}", upem);
         // Common values are 1000 or 2048
         assert!(
             upem == 1000 || upem == 2048,
@@ -603,18 +599,8 @@ mod tests {
         };
         let font = TrueTypeFont::parse(&data).unwrap();
         let (x_min, y_min, x_max, y_max) = font.bbox();
-        assert!(
-            x_max > x_min,
-            "x_max ({}) should be > x_min ({})",
-            x_max,
-            x_min
-        );
-        assert!(
-            y_max > y_min,
-            "y_max ({}) should be > y_min ({})",
-            y_max,
-            y_min
-        );
+        assert!(x_max > x_min, "x_max ({}) should be > x_min ({})", x_max, x_min);
+        assert!(y_max > y_min, "y_max ({}) should be > y_min ({})", y_max, y_min);
     }
 
     #[test]
@@ -625,11 +611,7 @@ mod tests {
         };
         let font = TrueTypeFont::parse(&data).unwrap();
         // DejaVu Sans (regular) should have italic angle of 0
-        assert_eq!(
-            font.italic_angle(),
-            0.0,
-            "Regular font should have italic angle 0"
-        );
+        assert_eq!(font.italic_angle(), 0.0, "Regular font should have italic angle 0");
     }
 
     #[test]
@@ -639,10 +621,7 @@ mod tests {
             None => return,
         };
         let font = TrueTypeFont::parse(&data).unwrap();
-        assert!(
-            !font.is_bold(),
-            "DejaVu Sans (regular) should not be bold"
-        );
+        assert!(!font.is_bold(), "DejaVu Sans (regular) should not be bold");
     }
 
     #[test]
@@ -662,10 +641,7 @@ mod tests {
             None => return,
         };
         let font = TrueTypeFont::parse(&data).unwrap();
-        assert!(
-            !font.is_italic(),
-            "DejaVu Sans (regular) should not be italic"
-        );
+        assert!(!font.is_italic(), "DejaVu Sans (regular) should not be italic");
     }
 
     #[test]
@@ -711,11 +687,7 @@ mod tests {
         // Get width for 'A'
         if let Some(gid) = font.glyph_id(0x0041) {
             let width = font.glyph_width(gid);
-            assert!(
-                width > 0,
-                "Width for 'A' should be positive, got: {}",
-                width
-            );
+            assert!(width > 0, "Width for 'A' should be positive, got: {}", width);
         }
     }
 
@@ -749,12 +721,7 @@ mod tests {
         // Typically, 'W' is wider than 'i'
         let w_big = font.char_width(0x0057); // 'W'
         let w_small = font.char_width(0x0069); // 'i'
-        assert!(
-            w_big > w_small,
-            "'W' width ({}) should be > 'i' width ({})",
-            w_big,
-            w_small
-        );
+        assert!(w_big > w_small, "'W' width ({}) should be > 'i' width ({})", w_big, w_small);
     }
 
     #[test]
@@ -775,16 +742,8 @@ mod tests {
             None => return,
         };
         let font = TrueTypeFont::parse(&data).unwrap();
-        assert_eq!(
-            font.raw_data().len(),
-            data.len(),
-            "raw_data should match input length"
-        );
-        assert_eq!(
-            font.raw_data(),
-            data.as_slice(),
-            "raw_data should match input bytes"
-        );
+        assert_eq!(font.raw_data().len(), data.len(), "raw_data should match input length");
+        assert_eq!(font.raw_data(), data.as_slice(), "raw_data should match input bytes");
     }
 
     #[test]
@@ -805,10 +764,7 @@ mod tests {
             assert!(w[0] <= w[1], "Codepoints should be sorted");
         }
         // Basic Latin should be present
-        assert!(
-            codepoints.contains(&0x0041),
-            "Should support 'A' (U+0041)"
-        );
+        assert!(codepoints.contains(&0x0041), "Should support 'A' (U+0041)");
     }
 
     #[test]
@@ -838,17 +794,10 @@ mod tests {
         let flags = font.font_flags();
 
         // Nonsymbolic flag (bit 6, i.e., 1 << 5 = 32) should be set
-        assert!(
-            flags & (1 << 5) != 0,
-            "Nonsymbolic flag should be set, got flags: {}",
-            flags
-        );
+        assert!(flags & (1 << 5) != 0, "Nonsymbolic flag should be set, got flags: {}", flags);
 
         // Not italic
-        assert!(
-            flags & (1 << 6) == 0,
-            "Italic flag should not be set for regular font"
-        );
+        assert!(flags & (1 << 6) == 0, "Italic flag should not be set for regular font");
     }
 
     #[test]
@@ -932,10 +881,7 @@ mod tests {
         assert!(cmap.contains("endcmap"), "CMap should contain endcmap");
         assert!(cmap.contains("beginbfchar"), "CMap should contain beginbfchar");
         assert!(cmap.contains("endbfchar"), "CMap should contain endbfchar");
-        assert!(
-            cmap.contains("<0041>"),
-            "CMap should contain Unicode for 'A'"
-        );
+        assert!(cmap.contains("<0041>"), "CMap should contain Unicode for 'A'");
     }
 
     #[test]
@@ -954,10 +900,7 @@ mod tests {
         let cmap = font.generate_tounicode_cmap(&used_chars);
 
         // Supplementary plane characters should produce surrogate pairs
-        assert!(
-            cmap.contains("begincmap"),
-            "CMap should contain begincmap"
-        );
+        assert!(cmap.contains("begincmap"), "CMap should contain begincmap");
         // For U+1F600: high surrogate = 0xD83D, low surrogate = 0xDE00
         assert!(
             cmap.contains("<D83D"),
@@ -979,10 +922,7 @@ mod tests {
         assert!(cmap.contains("begincmap"), "CMap should contain header");
         assert!(cmap.contains("endcmap"), "CMap should contain footer");
         // No bfchar entries
-        assert!(
-            !cmap.contains("beginbfchar"),
-            "Empty chars should not produce bfchar section"
-        );
+        assert!(!cmap.contains("beginbfchar"), "Empty chars should not produce bfchar section");
     }
 
     // =========================================================================
@@ -1119,19 +1059,13 @@ mod tests {
         // First 4 bytes of a TrueType file (version tag) but nothing else
         let truncated = vec![0x00, 0x01, 0x00, 0x00];
         let result = TrueTypeFont::parse(&truncated);
-        assert!(
-            result.is_err(),
-            "Truncated font data should fail to parse"
-        );
+        assert!(result.is_err(), "Truncated font data should fail to parse");
     }
 
     #[test]
     fn test_parse_random_bytes() {
         let random_data = vec![0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00];
         let result = TrueTypeFont::parse(&random_data);
-        assert!(
-            result.is_err(),
-            "Random bytes should fail to parse as font"
-        );
+        assert!(result.is_err(), "Random bytes should fail to parse as font");
     }
 }

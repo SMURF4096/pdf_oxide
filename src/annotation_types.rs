@@ -1317,7 +1317,8 @@ mod tests {
 
         assert_eq!(BorderEffectStyle::from_pdf_name("S"), BorderEffectStyle::None);
         assert_eq!(BorderEffectStyle::from_pdf_name("C"), BorderEffectStyle::Cloudy);
-        assert_eq!(BorderEffectStyle::from_pdf_name("X"), BorderEffectStyle::None); // default
+        assert_eq!(BorderEffectStyle::from_pdf_name("X"), BorderEffectStyle::None);
+        // default
     }
 
     #[test]
@@ -1354,8 +1355,10 @@ mod tests {
         for (style, name) in &styles {
             assert_eq!(style.pdf_name(), *name, "pdf_name mismatch for {:?}", style);
             assert_eq!(
-                LineEndingStyle::from_pdf_name(name), *style,
-                "from_pdf_name mismatch for {}", name
+                LineEndingStyle::from_pdf_name(name),
+                *style,
+                "from_pdf_name mismatch for {}",
+                name
             );
         }
     }
@@ -1426,10 +1429,7 @@ mod tests {
         );
         // Invalid sizes default to None
         assert_eq!(AnnotationColor::from_array(&[1.0, 2.0]), AnnotationColor::None);
-        assert_eq!(
-            AnnotationColor::from_array(&[1.0, 2.0, 3.0, 4.0, 5.0]),
-            AnnotationColor::None
-        );
+        assert_eq!(AnnotationColor::from_array(&[1.0, 2.0, 3.0, 4.0, 5.0]), AnnotationColor::None);
     }
 
     #[test]
@@ -1521,7 +1521,12 @@ mod tests {
         ];
         for (stamp, name) in &stamps {
             assert_eq!(stamp.pdf_name(), *name, "pdf_name mismatch for {:?}", stamp);
-            assert_eq!(StampType::from_pdf_name(name), *stamp, "from_pdf_name mismatch for {}", name);
+            assert_eq!(
+                StampType::from_pdf_name(name),
+                *stamp,
+                "from_pdf_name mismatch for {}",
+                name
+            );
         }
     }
 
@@ -1728,7 +1733,9 @@ mod tests {
 
     #[test]
     fn test_widget_field_type_radio() {
-        let radio = WidgetFieldType::Radio { selected: Some("Option1".to_string()) };
+        let radio = WidgetFieldType::Radio {
+            selected: Some("Option1".to_string()),
+        };
         match radio {
             WidgetFieldType::Radio { selected } => {
                 assert_eq!(selected, Some("Option1".to_string()));
@@ -1768,8 +1775,8 @@ mod tests {
     #[test]
     fn test_quad_points_parse() {
         let flat: Vec<f64> = vec![
-            0.0, 0.0, 100.0, 0.0, 100.0, 50.0, 0.0, 50.0,
-            200.0, 200.0, 300.0, 200.0, 300.0, 250.0, 200.0, 250.0,
+            0.0, 0.0, 100.0, 0.0, 100.0, 50.0, 0.0, 50.0, 200.0, 200.0, 300.0, 200.0, 300.0, 250.0,
+            200.0, 250.0,
         ];
         let quads = quad_points::parse(&flat);
         assert_eq!(quads.len(), 2);
@@ -1813,9 +1820,7 @@ mod tests {
 
     #[test]
     fn test_quad_points_roundtrip() {
-        let original: Vec<[f64; 8]> = vec![
-            [10.0, 20.0, 110.0, 20.0, 110.0, 40.0, 10.0, 40.0],
-        ];
+        let original: Vec<[f64; 8]> = vec![[10.0, 20.0, 110.0, 20.0, 110.0, 40.0, 10.0, 40.0]];
         let flat = quad_points::flatten(&original);
         let recovered = quad_points::parse(&flat);
         assert_eq!(recovered, original);

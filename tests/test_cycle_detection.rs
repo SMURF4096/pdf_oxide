@@ -97,10 +97,7 @@ endobj
         pdf.extend_from_slice(format!("{:010} 00000 n \r\n", 9).as_bytes());
         pdf.extend_from_slice(format!("{:010} 00000 n \r\n", 58).as_bytes());
 
-        let trailer = format!(
-            "trailer\n<< /Size 3 /Root 1 0 R /Prev {} >>\n",
-            xref_start
-        );
+        let trailer = format!("trailer\n<< /Size 3 /Root 1 0 R /Prev {} >>\n", xref_start);
         pdf.extend_from_slice(trailer.as_bytes());
         pdf.extend_from_slice(format!("startxref\n{}\n%%EOF\n", xref_start).as_bytes());
         pdf
@@ -132,10 +129,7 @@ endobj
         let offset_b = pdf.len();
         pdf.extend_from_slice(b"xref\n0 1\n");
         pdf.extend_from_slice(b"0000000000 65535 f \r\n");
-        let trailer_b = format!(
-            "trailer\n<< /Size 3 /Root 1 0 R /Prev {} >>\n",
-            offset_a
-        );
+        let trailer_b = format!("trailer\n<< /Size 3 /Root 1 0 R /Prev {} >>\n", offset_a);
         pdf.extend_from_slice(trailer_b.as_bytes());
 
         let offset_b_str = format!("{:<10}", offset_b);
@@ -190,9 +184,7 @@ mod circular_xobject {
         pdf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n\n");
 
         let obj2 = pdf.len();
-        pdf.extend_from_slice(
-            b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n\n",
-        );
+        pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n\n");
 
         let obj3 = pdf.len();
         pdf.extend_from_slice(
@@ -230,9 +222,7 @@ mod circular_xobject {
         pdf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n\n");
 
         let obj2 = pdf.len();
-        pdf.extend_from_slice(
-            b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n\n",
-        );
+        pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n\n");
 
         let obj3 = pdf.len();
         pdf.extend_from_slice(
@@ -281,9 +271,7 @@ mod circular_xobject {
         pdf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n\n");
 
         let obj2 = pdf.len();
-        pdf.extend_from_slice(
-            b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n\n",
-        );
+        pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n\n");
 
         let obj3 = pdf.len();
         pdf.extend_from_slice(
@@ -344,9 +332,7 @@ mod circular_xobject {
         pdf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n\n");
 
         let obj2 = pdf.len();
-        pdf.extend_from_slice(
-            b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n\n",
-        );
+        pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n\n");
 
         let obj3 = pdf.len();
         pdf.extend_from_slice(

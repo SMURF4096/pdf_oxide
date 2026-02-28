@@ -248,10 +248,7 @@ mod tests {
     #[test]
     fn test_get_filters_single_name() {
         let mut dict = HashMap::new();
-        dict.insert(
-            "Filter".to_string(),
-            Object::Name("FlateDecode".to_string()),
-        );
+        dict.insert("Filter".to_string(), Object::Name("FlateDecode".to_string()));
         let filters = XfaExtractor::get_filters(&dict);
         assert_eq!(filters, vec!["FlateDecode"]);
     }
@@ -329,10 +326,7 @@ mod tests {
     #[test]
     fn test_decode_stream_data_with_asciihex_filter() {
         let mut dict = HashMap::new();
-        dict.insert(
-            "Filter".to_string(),
-            Object::Name("ASCIIHexDecode".to_string()),
-        );
+        dict.insert("Filter".to_string(), Object::Name("ASCIIHexDecode".to_string()));
         let data = b"48656C6C6F"; // "Hello" in hex
         let result = XfaExtractor::decode_stream_data(&dict, data).unwrap();
         assert_eq!(result, b"Hello");

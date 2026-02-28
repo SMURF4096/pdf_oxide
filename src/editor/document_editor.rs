@@ -1190,20 +1190,14 @@ impl DocumentEditor {
                     let acroform = self.source.load_object(acroform_ref)?;
                     if let Some(af_dict) = acroform.as_dict() {
                         let mut new_af = af_dict.clone();
-                        new_af.insert(
-                            "NeedAppearances".to_string(),
-                            Object::Boolean(true),
-                        );
+                        new_af.insert("NeedAppearances".to_string(), Object::Boolean(true));
                         self.modified_objects
                             .insert(acroform_ref.id, Object::Dictionary(new_af));
                     }
                 } else if let Some(af_dict) = acroform_obj.as_dict() {
                     // AcroForm is an inline dictionary in the catalog — modify catalog
                     let mut new_af = af_dict.clone();
-                    new_af.insert(
-                        "NeedAppearances".to_string(),
-                        Object::Boolean(true),
-                    );
+                    new_af.insert("NeedAppearances".to_string(), Object::Boolean(true));
                     let mut new_catalog = catalog_dict.clone();
                     new_catalog.insert("AcroForm".to_string(), Object::Dictionary(new_af));
 
@@ -6284,8 +6278,7 @@ mod tests {
 
     #[test]
     fn test_encryption_config_with_permissions() {
-        let config =
-            EncryptionConfig::new("u", "o").with_permissions(Permissions::read_only());
+        let config = EncryptionConfig::new("u", "o").with_permissions(Permissions::read_only());
         assert!(!config.permissions.print);
         assert!(config.permissions.accessibility);
     }
@@ -6367,12 +6360,11 @@ mod tests {
             crop_box: None,
         };
 
-        let result = editor.apply_page_props_to_object(&page_obj, &props).unwrap();
+        let result = editor
+            .apply_page_props_to_object(&page_obj, &props)
+            .unwrap();
         let dict = result.as_dict().unwrap();
-        assert_eq!(
-            dict.get("Rotate").unwrap().as_integer().unwrap(),
-            90
-        );
+        assert_eq!(dict.get("Rotate").unwrap().as_integer().unwrap(), 90);
     }
 
     #[test]
@@ -6389,7 +6381,9 @@ mod tests {
             crop_box: None,
         };
 
-        let result = editor.apply_page_props_to_object(&page_obj, &props).unwrap();
+        let result = editor
+            .apply_page_props_to_object(&page_obj, &props)
+            .unwrap();
         let dict = result.as_dict().unwrap();
         let mb = dict.get("MediaBox").unwrap().as_array().unwrap();
         assert_eq!(mb.len(), 4);
@@ -6409,7 +6403,9 @@ mod tests {
             crop_box: Some([10.0, 10.0, 602.0, 782.0]),
         };
 
-        let result = editor.apply_page_props_to_object(&page_obj, &props).unwrap();
+        let result = editor
+            .apply_page_props_to_object(&page_obj, &props)
+            .unwrap();
         let dict = result.as_dict().unwrap();
         assert!(dict.contains_key("CropBox"));
     }
@@ -6428,7 +6424,9 @@ mod tests {
             crop_box: Some([20.0, 20.0, 480.0, 680.0]),
         };
 
-        let result = editor.apply_page_props_to_object(&page_obj, &props).unwrap();
+        let result = editor
+            .apply_page_props_to_object(&page_obj, &props)
+            .unwrap();
         let dict = result.as_dict().unwrap();
         assert!(dict.contains_key("Rotate"));
         assert!(dict.contains_key("MediaBox"));
@@ -6469,7 +6467,9 @@ mod tests {
     #[test]
     fn test_generate_erase_overlay_single_region() {
         let mut editor = create_test_editor();
-        editor.erase_regions.insert(0, vec![[10.0, 20.0, 100.0, 200.0]]);
+        editor
+            .erase_regions
+            .insert(0, vec![[10.0, 20.0, 100.0, 200.0]]);
 
         let content = editor.generate_erase_overlay(0).unwrap();
         let content_str = String::from_utf8(content).unwrap();
@@ -6483,13 +6483,9 @@ mod tests {
     #[test]
     fn test_generate_erase_overlay_multiple_regions() {
         let mut editor = create_test_editor();
-        editor.erase_regions.insert(
-            0,
-            vec![
-                [10.0, 20.0, 100.0, 200.0],
-                [300.0, 400.0, 500.0, 600.0],
-            ],
-        );
+        editor
+            .erase_regions
+            .insert(0, vec![[10.0, 20.0, 100.0, 200.0], [300.0, 400.0, 500.0, 600.0]]);
 
         let content = editor.generate_erase_overlay(0).unwrap();
         let content_str = String::from_utf8(content).unwrap();
@@ -6646,17 +6642,11 @@ mod tests {
         let editor = create_test_editor();
         let mut output = Vec::new();
 
-        editor.serialize_operator(
-            &mut output,
-            &crate::content::operators::Operator::SaveState,
-        );
+        editor.serialize_operator(&mut output, &crate::content::operators::Operator::SaveState);
         assert_eq!(&output, b"q\n");
 
         output.clear();
-        editor.serialize_operator(
-            &mut output,
-            &crate::content::operators::Operator::RestoreState,
-        );
+        editor.serialize_operator(&mut output, &crate::content::operators::Operator::RestoreState);
         assert_eq!(&output, b"Q\n");
     }
 
@@ -6690,18 +6680,12 @@ mod tests {
 
         // BT
         let mut output = Vec::new();
-        editor.serialize_operator(
-            &mut output,
-            &crate::content::operators::Operator::BeginText,
-        );
+        editor.serialize_operator(&mut output, &crate::content::operators::Operator::BeginText);
         assert_eq!(&output, b"BT\n");
 
         // ET
         output.clear();
-        editor.serialize_operator(
-            &mut output,
-            &crate::content::operators::Operator::EndText,
-        );
+        editor.serialize_operator(&mut output, &crate::content::operators::Operator::EndText);
         assert_eq!(&output, b"ET\n");
 
         // Tf
@@ -6842,50 +6826,33 @@ mod tests {
 
         // Stroke
         let mut output = Vec::new();
-        editor.serialize_operator(
-            &mut output,
-            &crate::content::operators::Operator::Stroke,
-        );
+        editor.serialize_operator(&mut output, &crate::content::operators::Operator::Stroke);
         assert_eq!(&output, b"S\n");
 
         // Fill
         output.clear();
-        editor.serialize_operator(
-            &mut output,
-            &crate::content::operators::Operator::Fill,
-        );
+        editor.serialize_operator(&mut output, &crate::content::operators::Operator::Fill);
         assert_eq!(&output, b"f\n");
 
         // FillEvenOdd
         output.clear();
-        editor.serialize_operator(
-            &mut output,
-            &crate::content::operators::Operator::FillEvenOdd,
-        );
+        editor.serialize_operator(&mut output, &crate::content::operators::Operator::FillEvenOdd);
         assert_eq!(&output, b"f*\n");
 
         // EndPath
         output.clear();
-        editor.serialize_operator(
-            &mut output,
-            &crate::content::operators::Operator::EndPath,
-        );
+        editor.serialize_operator(&mut output, &crate::content::operators::Operator::EndPath);
         assert_eq!(&output, b"n\n");
 
         // ClosePath
         output.clear();
-        editor.serialize_operator(
-            &mut output,
-            &crate::content::operators::Operator::ClosePath,
-        );
+        editor.serialize_operator(&mut output, &crate::content::operators::Operator::ClosePath);
         assert_eq!(&output, b"h\n");
 
         // CloseFillStroke
         output.clear();
-        editor.serialize_operator(
-            &mut output,
-            &crate::content::operators::Operator::CloseFillStroke,
-        );
+        editor
+            .serialize_operator(&mut output, &crate::content::operators::Operator::CloseFillStroke);
         assert_eq!(&output, b"b\n");
     }
 
@@ -6894,17 +6861,11 @@ mod tests {
         let editor = create_test_editor();
 
         let mut output = Vec::new();
-        editor.serialize_operator(
-            &mut output,
-            &crate::content::operators::Operator::ClipNonZero,
-        );
+        editor.serialize_operator(&mut output, &crate::content::operators::Operator::ClipNonZero);
         assert_eq!(&output, b"W\n");
 
         output.clear();
-        editor.serialize_operator(
-            &mut output,
-            &crate::content::operators::Operator::ClipEvenOdd,
-        );
+        editor.serialize_operator(&mut output, &crate::content::operators::Operator::ClipEvenOdd);
         assert_eq!(&output, b"W*\n");
     }
 
@@ -6978,10 +6939,7 @@ mod tests {
     fn test_serialize_operator_tstar() {
         let editor = create_test_editor();
         let mut output = Vec::new();
-        editor.serialize_operator(
-            &mut output,
-            &crate::content::operators::Operator::TStar,
-        );
+        editor.serialize_operator(&mut output, &crate::content::operators::Operator::TStar);
         assert_eq!(&output, b"T*\n");
     }
 
@@ -7179,7 +7137,12 @@ mod tests {
         editor.serialize_operator(
             &mut output,
             &crate::content::operators::Operator::CurveTo {
-                x1: 1.0, y1: 2.0, x2: 3.0, y2: 4.0, x3: 5.0, y3: 6.0,
+                x1: 1.0,
+                y1: 2.0,
+                x2: 3.0,
+                y2: 4.0,
+                x3: 5.0,
+                y3: 6.0,
             },
         );
         let s = String::from_utf8(output).unwrap();
@@ -7190,7 +7153,10 @@ mod tests {
         editor.serialize_operator(
             &mut output,
             &crate::content::operators::Operator::CurveToV {
-                x2: 1.0, y2: 2.0, x3: 3.0, y3: 4.0,
+                x2: 1.0,
+                y2: 2.0,
+                x3: 3.0,
+                y3: 4.0,
             },
         );
         let s = String::from_utf8(output).unwrap();
@@ -7201,7 +7167,10 @@ mod tests {
         editor.serialize_operator(
             &mut output,
             &crate::content::operators::Operator::CurveToY {
-                x1: 1.0, y1: 2.0, x3: 3.0, y3: 4.0,
+                x1: 1.0,
+                y1: 2.0,
+                x3: 3.0,
+                y3: 4.0,
             },
         );
         let s = String::from_utf8(output).unwrap();
@@ -7332,10 +7301,7 @@ mod tests {
     fn test_serialize_object_reference() {
         let editor = create_test_editor();
         let mut output = Vec::new();
-        editor.serialize_object(
-            &mut output,
-            &Object::Reference(ObjectRef::new(5, 0)),
-        );
+        editor.serialize_object(&mut output, &Object::Reference(ObjectRef::new(5, 0)));
         assert_eq!(&output, b"5 0 R");
     }
 
@@ -7557,7 +7523,11 @@ mod tests {
         );
 
         let obj = DocumentEditor::build_image_xobject(&image);
-        if let Object::Stream { dict, data: stream_data } = obj {
+        if let Object::Stream {
+            dict,
+            data: stream_data,
+        } = obj
+        {
             assert_eq!(dict.get("Length").unwrap().as_integer().unwrap(), 5);
             assert_eq!(stream_data.as_ref(), &data[..]);
         } else {
@@ -7651,7 +7621,7 @@ mod tests {
         let mut pdf_data = Vec::new();
         pdf_data.extend_from_slice(b"%PDF-1.4\n"); // 9 bytes
         pdf_data.extend_from_slice(b"startxref\n12345\n%%EOF\n"); // startxref at byte 9
-        // Pad to ensure len - 100 >= 9 (i.e., len >= 109)
+                                                                  // Pad to ensure len - 100 >= 9 (i.e., len >= 109)
         while pdf_data.len() < 120 {
             pdf_data.push(b'\n');
         }
@@ -7900,10 +7870,7 @@ mod tests {
         assert!(!editor.is_modified());
         editor.set_title("New Title");
         assert!(editor.is_modified());
-        assert_eq!(
-            editor.modified_info.as_ref().unwrap().title,
-            Some("New Title".to_string())
-        );
+        assert_eq!(editor.modified_info.as_ref().unwrap().title, Some("New Title".to_string()));
     }
 
     #[test]
@@ -7911,10 +7878,7 @@ mod tests {
         let mut editor = create_test_editor();
         editor.set_author("New Author");
         assert!(editor.is_modified());
-        assert_eq!(
-            editor.modified_info.as_ref().unwrap().author,
-            Some("New Author".to_string())
-        );
+        assert_eq!(editor.modified_info.as_ref().unwrap().author, Some("New Author".to_string()));
     }
 
     #[test]
@@ -7922,10 +7886,7 @@ mod tests {
         let mut editor = create_test_editor();
         editor.set_subject("New Subject");
         assert!(editor.is_modified());
-        assert_eq!(
-            editor.modified_info.as_ref().unwrap().subject,
-            Some("New Subject".to_string())
-        );
+        assert_eq!(editor.modified_info.as_ref().unwrap().subject, Some("New Subject".to_string()));
     }
 
     #[test]
@@ -7933,10 +7894,7 @@ mod tests {
         let mut editor = create_test_editor();
         editor.set_keywords("kw1, kw2");
         assert!(editor.is_modified());
-        assert_eq!(
-            editor.modified_info.as_ref().unwrap().keywords,
-            Some("kw1, kw2".to_string())
-        );
+        assert_eq!(editor.modified_info.as_ref().unwrap().keywords, Some("kw1, kw2".to_string()));
     }
 
     #[test]
@@ -7977,10 +7935,7 @@ mod tests {
     #[test]
     fn test_erase_regions_multiple() {
         let mut editor = create_test_editor();
-        let rects = &[
-            [10.0, 20.0, 100.0, 200.0],
-            [200.0, 300.0, 400.0, 500.0],
-        ];
+        let rects = &[[10.0, 20.0, 100.0, 200.0], [200.0, 300.0, 400.0, 500.0]];
         let result = editor.erase_regions(0, rects);
         assert!(result.is_ok());
         assert_eq!(editor.erase_regions.get(&0).unwrap().len(), 2);
@@ -8141,7 +8096,9 @@ mod tests {
     #[test]
     fn test_set_image_bounds_out_of_range() {
         let mut editor = create_test_editor();
-        assert!(editor.set_image_bounds(99, "Im1", 10.0, 20.0, 300.0, 200.0).is_err());
+        assert!(editor
+            .set_image_bounds(99, "Im1", 10.0, 20.0, 300.0, 200.0)
+            .is_err());
     }
 
     #[test]
@@ -8227,7 +8184,9 @@ mod tests {
     #[test]
     fn test_set_page_media_box_out_of_range() {
         let mut editor = create_test_editor();
-        assert!(editor.set_page_media_box(99, [0.0, 0.0, 500.0, 700.0]).is_err());
+        assert!(editor
+            .set_page_media_box(99, [0.0, 0.0, 500.0, 700.0])
+            .is_err());
     }
 
     #[test]
@@ -8241,7 +8200,9 @@ mod tests {
     #[test]
     fn test_set_page_crop_box_out_of_range() {
         let mut editor = create_test_editor();
-        assert!(editor.set_page_crop_box(99, [10.0, 10.0, 602.0, 782.0]).is_err());
+        assert!(editor
+            .set_page_crop_box(99, [10.0, 10.0, 602.0, 782.0])
+            .is_err());
     }
 
     // =========================================================================
@@ -8270,7 +8231,9 @@ mod tests {
         let mut editor = create_test_editor();
 
         // Set info via the trait
-        let info = DocumentInfo::new().title("Modified Title").author("Modified Author");
+        let info = DocumentInfo::new()
+            .title("Modified Title")
+            .author("Modified Author");
         EditableDocument::set_info(&mut editor, info).unwrap();
 
         // Get should return the modified version
@@ -8425,10 +8388,8 @@ mod tests {
 
         // Object 2: Pages
         let pages_offset = pdf.len();
-        let pages_str = format!(
-            "2 0 obj\n<< /Type /Pages /Kids {} /Count {} >>\nendobj\n",
-            kids, n
-        );
+        let pages_str =
+            format!("2 0 obj\n<< /Type /Pages /Kids {} /Count {} >>\nendobj\n", kids, n);
         pdf.extend_from_slice(pages_str.as_bytes());
 
         // Page objects
@@ -8660,7 +8621,12 @@ mod tests {
         editor.serialize_operator(
             &mut output,
             &crate::content::operators::Operator::Tm {
-                a: 1.0, b: 0.0, c: 0.0, d: 1.0, e: 72.0, f: 700.0,
+                a: 1.0,
+                b: 0.0,
+                c: 0.0,
+                d: 1.0,
+                e: 72.0,
+                f: 700.0,
             },
         );
         let s = String::from_utf8(output).unwrap();
@@ -8734,7 +8700,10 @@ mod tests {
         editor.serialize_operator(
             &mut output,
             &crate::content::operators::Operator::SetStrokeCmyk {
-                c: 0.0, m: 1.0, y: 0.5, k: 0.0,
+                c: 0.0,
+                m: 1.0,
+                y: 0.5,
+                k: 0.0,
             },
         );
         let s = String::from_utf8(output).unwrap();
@@ -8748,7 +8717,9 @@ mod tests {
         editor.serialize_operator(
             &mut output,
             &crate::content::operators::Operator::SetStrokeRgb {
-                r: 0.0, g: 0.5, b: 1.0,
+                r: 0.0,
+                g: 0.5,
+                b: 1.0,
             },
         );
         let s = String::from_utf8(output).unwrap();

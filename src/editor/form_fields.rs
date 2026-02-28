@@ -1305,10 +1305,7 @@ mod tests {
             .with_parent("form");
         assert_eq!(config.field_type, Some(FormFieldType::Text));
         assert_eq!(config.flags, Some(3));
-        assert_eq!(
-            config.default_value,
-            Some(FormFieldValue::Text("default".to_string()))
-        );
+        assert_eq!(config.default_value, Some(FormFieldValue::Text("default".to_string())));
         assert_eq!(config.tooltip.as_deref(), Some("Enter address"));
         assert_eq!(config.parent_name.as_deref(), Some("form"));
     }

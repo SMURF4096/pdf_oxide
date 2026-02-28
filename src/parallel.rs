@@ -101,8 +101,7 @@ impl ParallelExtractor {
             .collect();
 
         // Flatten and sort by page index to guarantee order
-        let mut all_results: Vec<(usize, String)> =
-            batch_results?.into_iter().flatten().collect();
+        let mut all_results: Vec<(usize, String)> = batch_results?.into_iter().flatten().collect();
         all_results.sort_unstable_by_key(|(idx, _)| *idx);
         Ok(all_results.into_iter().map(|(_, text)| text).collect())
     }
@@ -159,8 +158,7 @@ impl ParallelExtractor {
             })
             .collect();
 
-        let mut all_results: Vec<(usize, String)> =
-            batch_results?.into_iter().flatten().collect();
+        let mut all_results: Vec<(usize, String)> = batch_results?.into_iter().flatten().collect();
         all_results.sort_unstable_by_key(|(idx, _)| *idx);
         Ok(all_results.into_iter().map(|(_, md)| md).collect())
     }
@@ -309,11 +307,7 @@ mod tests {
 
         assert_eq!(serial.len(), parallel.len());
         for (i, (s, p)) in serial.iter().zip(parallel.iter()).enumerate() {
-            assert_eq!(
-                s, p,
-                "page {} markdown differs between serial and parallel",
-                i
-            );
+            assert_eq!(s, p, "page {} markdown differs between serial and parallel", i);
         }
     }
 

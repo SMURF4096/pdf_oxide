@@ -690,10 +690,7 @@ mod tests {
             .type_name(),
             "Stream"
         );
-        assert_eq!(
-            Object::Reference(ObjectRef::new(1, 0)).type_name(),
-            "Reference"
-        );
+        assert_eq!(Object::Reference(ObjectRef::new(1, 0)).type_name(), "Reference");
     }
 
     // ---- Tests for as_* methods returning None on wrong type ----
@@ -731,9 +728,7 @@ mod tests {
         assert!(Object::String(vec![]).as_dict().is_none());
         assert!(Object::Name("X".to_string()).as_dict().is_none());
         assert!(Object::Array(vec![]).as_dict().is_none());
-        assert!(Object::Reference(ObjectRef::new(1, 0))
-            .as_dict()
-            .is_none());
+        assert!(Object::Reference(ObjectRef::new(1, 0)).as_dict().is_none());
     }
 
     #[test]
@@ -749,9 +744,7 @@ mod tests {
         assert!(Object::Null.as_reference().is_none());
         assert!(Object::Integer(1).as_reference().is_none());
         assert!(Object::Name("X".to_string()).as_reference().is_none());
-        assert!(Object::Dictionary(HashMap::new())
-            .as_reference()
-            .is_none());
+        assert!(Object::Dictionary(HashMap::new()).as_reference().is_none());
     }
 
     #[test]
@@ -1105,9 +1098,7 @@ mod tests {
             dict,
             data: bytes::Bytes::from_static(b"Hello"),
         };
-        let decoded = obj
-            .decode_stream_data_with_decryption(None, 0, 0)
-            .unwrap();
+        let decoded = obj.decode_stream_data_with_decryption(None, 0, 0).unwrap();
         assert_eq!(decoded, b"Hello");
     }
 
@@ -1136,9 +1127,8 @@ mod tests {
             data: bytes::Bytes::from_static(b"\x01\x02\x03"),
         };
         // "Decryption" that XOR-s with 0xFF
-        let decrypt_fn = |data: &[u8]| -> Result<Vec<u8>> {
-            Ok(data.iter().map(|b| b ^ 0xFF).collect())
-        };
+        let decrypt_fn =
+            |data: &[u8]| -> Result<Vec<u8>> { Ok(data.iter().map(|b| b ^ 0xFF).collect()) };
         let decoded = obj
             .decode_stream_data_with_decryption(Some(&decrypt_fn), 1, 0)
             .unwrap();
@@ -1196,16 +1186,10 @@ mod tests {
     fn test_decode_stream_with_decode_params() {
         // Test stream with ASCIIHexDecode and DecodeParms (params should be ignored for ASCIIHex)
         let mut dict = HashMap::new();
-        dict.insert(
-            "Filter".to_string(),
-            Object::Name("ASCIIHexDecode".to_string()),
-        );
+        dict.insert("Filter".to_string(), Object::Name("ASCIIHexDecode".to_string()));
         let mut decode_params = HashMap::new();
         decode_params.insert("Predictor".to_string(), Object::Integer(1));
-        dict.insert(
-            "DecodeParms".to_string(),
-            Object::Dictionary(decode_params),
-        );
+        dict.insert("DecodeParms".to_string(), Object::Dictionary(decode_params));
         let obj = Object::Stream {
             dict,
             data: bytes::Bytes::from_static(b"48656C6C6F"),
@@ -1223,14 +1207,8 @@ mod tests {
         assert_ne!(Object::Boolean(true), Object::Boolean(false));
         assert_eq!(Object::Integer(42), Object::Integer(42));
         assert_ne!(Object::Integer(42), Object::Integer(43));
-        assert_eq!(
-            Object::String(b"abc".to_vec()),
-            Object::String(b"abc".to_vec())
-        );
-        assert_ne!(
-            Object::String(b"abc".to_vec()),
-            Object::String(b"def".to_vec())
-        );
+        assert_eq!(Object::String(b"abc".to_vec()), Object::String(b"abc".to_vec()));
+        assert_ne!(Object::String(b"abc".to_vec()), Object::String(b"def".to_vec()));
         assert_ne!(Object::Null, Object::Integer(0));
     }
 
@@ -1254,13 +1232,7 @@ mod tests {
         };
         let result_dict = obj.as_dict().unwrap();
         assert_eq!(result_dict.len(), 2);
-        assert_eq!(
-            result_dict.get("Type").unwrap().as_name(),
-            Some("XObject")
-        );
-        assert_eq!(
-            result_dict.get("Subtype").unwrap().as_name(),
-            Some("Image")
-        );
+        assert_eq!(result_dict.get("Type").unwrap().as_name(), Some("XObject"));
+        assert_eq!(result_dict.get("Subtype").unwrap().as_name(), Some("Image"));
     }
 }

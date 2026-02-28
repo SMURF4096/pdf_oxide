@@ -2087,13 +2087,7 @@ mod tests {
     }
 
     fn create_test_image(x: f32, y: f32, w: u32, h: u32) -> ImageContent {
-        ImageContent::new(
-            Rect::new(x, y, 200.0, 150.0),
-            ImageFormat::Jpeg,
-            vec![0u8; 100],
-            w,
-            h,
-        )
+        ImageContent::new(Rect::new(x, y, 200.0, 150.0), ImageFormat::Jpeg, vec![0u8; 100], w, h)
     }
 
     fn create_test_path() -> PathContent {
@@ -2764,13 +2758,8 @@ mod tests {
     #[test]
     fn test_pdf_image_low_resolution() {
         // 72px in 72pt (1 inch) = 72 DPI => low
-        let low_res = ImageContent::new(
-            Rect::new(0.0, 0.0, 72.0, 72.0),
-            ImageFormat::Png,
-            vec![],
-            72,
-            72,
-        );
+        let low_res =
+            ImageContent::new(Rect::new(0.0, 0.0, 72.0, 72.0), ImageFormat::Png, vec![], 72, 72);
         let image = PdfImage {
             id: ElementId::new(),
             content: low_res,
@@ -2783,13 +2772,8 @@ mod tests {
     #[test]
     fn test_pdf_image_medium_resolution() {
         // 200px in 72pt (1 inch) = 200 DPI => medium
-        let med_res = ImageContent::new(
-            Rect::new(0.0, 0.0, 72.0, 72.0),
-            ImageFormat::Png,
-            vec![],
-            200,
-            200,
-        );
+        let med_res =
+            ImageContent::new(Rect::new(0.0, 0.0, 72.0, 72.0), ImageFormat::Png, vec![], 200, 200);
         let image = PdfImage {
             id: ElementId::new(),
             content: med_res,
@@ -3441,13 +3425,7 @@ mod tests {
     fn test_pdf_page_from_structure_with_annotations() {
         let root = StructureElement::default();
         let annot = AnnotationWrapper::from_read(create_read_annotation());
-        let page = PdfPage::from_structure_with_annotations(
-            1,
-            root,
-            595.0,
-            842.0,
-            vec![annot],
-        );
+        let page = PdfPage::from_structure_with_annotations(1, root, 595.0, 842.0, vec![annot]);
         assert_eq!(page.page_index, 1);
         assert_eq!(page.annotation_count(), 1);
     }
@@ -4022,10 +4000,7 @@ mod tests {
     fn test_annotation_wrapper_raw_dict_some() {
         let mut annot = create_read_annotation();
         let mut dict = std::collections::HashMap::new();
-        dict.insert(
-            "Custom".to_string(),
-            crate::object::Object::Name("value".to_string()),
-        );
+        dict.insert("Custom".to_string(), crate::object::Object::Name("value".to_string()));
         annot.raw_dict = Some(dict);
         let wrapper = AnnotationWrapper::from_read(annot);
         assert!(wrapper.raw_dict().is_some());

@@ -657,10 +657,7 @@ mod tests {
         let usage = layer.build_usage_dict().unwrap();
         assert!(usage.contains_key("View"));
         if let Some(Object::Dictionary(view_dict)) = usage.get("View") {
-            assert_eq!(
-                view_dict.get("ViewState"),
-                Some(&Object::Name("OFF".to_string()))
-            );
+            assert_eq!(view_dict.get("ViewState"), Some(&Object::Name("OFF".to_string())));
         }
     }
 
@@ -671,10 +668,7 @@ mod tests {
         let usage = layer.build_usage_dict().unwrap();
         assert!(usage.contains_key("Export"));
         if let Some(Object::Dictionary(export_dict)) = usage.get("Export") {
-            assert_eq!(
-                export_dict.get("ExportState"),
-                Some(&Object::Name("OFF".to_string()))
-            );
+            assert_eq!(export_dict.get("ExportState"), Some(&Object::Name("OFF".to_string())));
         }
     }
 
@@ -775,10 +769,7 @@ mod tests {
         let props = builder.build_oc_properties(&refs);
 
         if let Some(Object::Dictionary(d_dict)) = props.get("D") {
-            assert_eq!(
-                d_dict.get("BaseState"),
-                Some(&Object::Name("OFF".to_string()))
-            );
+            assert_eq!(d_dict.get("BaseState"), Some(&Object::Name("OFF".to_string())));
         }
     }
 
@@ -890,8 +881,7 @@ mod tests {
         ];
 
         for (policy, expected_name) in policies {
-            let membership =
-                LayerMembership::new(ObjectRef::new(1, 0)).policy(policy);
+            let membership = LayerMembership::new(ObjectRef::new(1, 0)).policy(policy);
             let dict = membership.build_ocmd_dict();
             if let Some(Object::Name(name)) = dict.get("P") {
                 assert_eq!(name, expected_name);

@@ -432,7 +432,7 @@ mod tests {
         let seg_count_x2 = (seg_count * 2) as u16;
 
         data.write_u16::<BigEndian>(4).unwrap(); // format
-        // length placeholder (we'll fill in later)
+                                                 // length placeholder (we'll fill in later)
         let length_pos = data.len();
         data.write_u16::<BigEndian>(0).unwrap(); // length
         data.write_u16::<BigEndian>(0).unwrap(); // language
@@ -498,7 +498,8 @@ mod tests {
 
         // format 6
         data.write_u16::<BigEndian>(6).unwrap(); // format
-        data.write_u16::<BigEndian>((10 + gids.len() * 2) as u16).unwrap(); // length
+        data.write_u16::<BigEndian>((10 + gids.len() * 2) as u16)
+            .unwrap(); // length
         data.write_u16::<BigEndian>(0).unwrap(); // language
         data.write_u16::<BigEndian>(first_code).unwrap();
         data.write_u16::<BigEndian>(gids.len() as u16).unwrap();
@@ -537,7 +538,8 @@ mod tests {
         // format 12
         data.write_u16::<BigEndian>(12).unwrap(); // format
         data.write_u16::<BigEndian>(0).unwrap(); // reserved
-        data.write_u32::<BigEndian>((16 + groups.len() * 12) as u32).unwrap(); // length
+        data.write_u32::<BigEndian>((16 + groups.len() * 12) as u32)
+            .unwrap(); // length
         data.write_u32::<BigEndian>(0).unwrap(); // language
         data.write_u32::<BigEndian>(groups.len() as u32).unwrap();
         for &(start, end, start_gid) in groups {
@@ -574,7 +576,7 @@ mod tests {
     fn test_opentype_version_accepted() {
         // Build data with OTTO version
         let mut data = build_truetype_with_cmap_format4(&[(65, 1)]); // 'A' -> gid 1
-        // Replace version with OTTO (0x4F54544F)
+                                                                     // Replace version with OTTO (0x4F54544F)
         data[0] = 0x4F;
         data[1] = 0x54;
         data[2] = 0x54;
@@ -722,7 +724,7 @@ mod tests {
         data.write_u16::<BigEndian>(3).unwrap(); // platform 3
         data.write_u16::<BigEndian>(1).unwrap(); // encoding 1
         data.write_u32::<BigEndian>(4 + 8).unwrap(); // subtable offset
-        // format 2 (unsupported)
+                                                     // format 2 (unsupported)
         data.write_u16::<BigEndian>(2).unwrap();
 
         let result = TrueTypeCMap::from_font_data(&data);
@@ -750,7 +752,9 @@ mod tests {
 
         let result = TrueTypeCMap::from_font_data(&data);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Unsupported cmap table version"));
+        assert!(result
+            .unwrap_err()
+            .contains("Unsupported cmap table version"));
     }
 
     #[test]
@@ -820,7 +824,7 @@ mod tests {
 
         // Both point to same subtable (format 12) for simplicity
         let subtable_off: u32 = 4 + 8 * 2; // cmap header + 2 records
-        // Record 1: platform 3, encoding 1
+                                           // Record 1: platform 3, encoding 1
         data.write_u16::<BigEndian>(3).unwrap();
         data.write_u16::<BigEndian>(1).unwrap();
         data.write_u32::<BigEndian>(subtable_off).unwrap();
