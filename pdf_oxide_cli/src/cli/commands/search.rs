@@ -12,14 +12,17 @@ pub fn run(
     let mut doc = super::open_doc(file, password)?;
     let page_count = doc.page_count()?;
 
-    let page_range = if let Some(ranges) = pages {
-        let indices = super::resolve_pages(Some(ranges), page_count)?;
-        let min = *indices.iter().min().unwrap_or(&0);
-        let max = *indices.iter().max().unwrap_or(&0);
-        Some((min, max))
+    let selected_pages = if let Some(ranges) = pages {
+        Some(super::resolve_pages(Some(ranges), page_count)?)
     } else {
         None
     };
+
+    let page_range = selected_pages.as_ref().map(|indices| {
+        let min = *indices.iter().min().unwrap_or(&0);
+        let max = *indices.iter().max().unwrap_or(&0);
+        (min, max)
+    });
 
     let options = SearchOptions {
         case_insensitive: ignore_case,
@@ -27,7 +30,13 @@ pub fn run(
         ..Default::default()
     };
 
-    let results = TextSearcher::search(&mut doc, pattern, &options)?;
+    let mut results = TextSearcher::search(&mut doc, pattern, &options)?;
+
+    // Filter to only the requested pages (page_range is a contiguous min..max
+    // but the user may have specified non-contiguous pages like "1,3,7")
+    if let Some(ref indices) = selected_pages {
+        results.retain(|r| indices.contains(&r.page));
+    }
 
     if json {
         let json_results: Vec<serde_json::Value> = results
