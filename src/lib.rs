@@ -335,7 +335,7 @@ pub(crate) mod utils {
         /// PDFs across 5 test datasets (issue found in v0.3.11-pre).
         #[test]
         fn test_sort_with_nan_does_not_panic() {
-            let mut values = vec![3.0_f32, f32::NAN, 1.0, f32::NAN, 2.0, f32::NAN, 0.5];
+            let mut values = [3.0_f32, f32::NAN, 1.0, f32::NAN, 2.0, f32::NAN, 0.5];
             values.sort_by(|a, b| safe_float_cmp(*a, *b));
             // NaN values should sort to the end (NaN > all numbers)
             assert!(values[0..4].iter().all(|v| !v.is_nan()));

@@ -21,7 +21,7 @@ All notable changes to PDFOxide are documented here.
 
 - **Markdown conversion 6x speedup** — replaced O(n²) DBSCAN line clustering with O(n log n) sort-based approach, eliminated redundant `extract_spans()` call in markdown pipeline (was extracting text twice per page), removed per-heading full-page font scan.
 
-- **Pre-decompression image filtering** — skip decompressing image streams when dimensions exceed `max_image_pixels` (default 25MP). Avoids allocating and decompressing multi-gigabyte streams for oversized images.
+- **Pre-decompression image filtering** — skip decompressing image streams when dimensions exceed `max_image_pixels` (default 16MP). Avoids allocating and decompressing multi-gigabyte streams for oversized images.
 
 - **Faster PNG encoding** — skip tiny glyph-fragment images (<8x8 pixels) that are font rendering artifacts, not real images. Skip base64 embedding for oversized images (>4MP) in markdown output.
 

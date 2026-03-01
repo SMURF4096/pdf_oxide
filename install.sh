@@ -29,7 +29,11 @@ detect_platform() {
     # Detect musl vs glibc on Linux
     MUSL_SUFFIX=""
     if [ "$PLATFORM" = "linux" ] && [ "$ARCH_NAME" = "x86_64" ]; then
-        if ldd --version 2>&1 | grep -qi musl; then
+        if command -v ldd >/dev/null 2>&1; then
+            if ldd --version 2>&1 | grep -qi musl; then
+                MUSL_SUFFIX="-musl"
+            fi
+        elif ls /lib/ld-musl-* >/dev/null 2>&1; then
             MUSL_SUFFIX="-musl"
         fi
     fi
