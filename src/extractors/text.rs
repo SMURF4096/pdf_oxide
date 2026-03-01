@@ -2913,6 +2913,20 @@ impl TextExtractor {
             // These should always be merged WITH a space, never without.
             let has_split_boundary = span.split_boundary_before;
 
+            // Font-change word boundary: when font name changes between
+            // adjacent spans on the same line, treat as a word boundary signal.
+            // Font changes mid-word are extremely rare in well-formed PDFs;
+            // font switches (e.g., regular→italic for product names) at word
+            // boundaries are the norm in LaTeX and other typesetting systems.
+            // Allow small negative gaps (overlaps up to 2pt) since span width
+            // computation may slightly overestimate, causing minor overlaps at
+            // font transitions even when visually there is whitespace.
+            let font_change_merge = same_line
+                && gap > -2.0
+                && gap < 3.0
+                && current.font_name != span.font_name
+                && !span.text.chars().all(|c| c.is_whitespace());
+
             // Merge threshold: Use configured values
             // Negative gaps: use severe_overlap_threshold_pt (default -0.5pt)
             // Positive gaps: use 3pt default (0.25em * 12pt)
@@ -2922,7 +2936,30 @@ impl TextExtractor {
                 && !large_gap_indicates_column
                 || (same_line && has_split_boundary);
 
-            if should_merge {
+            if font_change_merge {
+                // Font change: merge with space between font runs
+                log::debug!(
+                    "Font change word boundary: '{}' ({}) + '{}' ({}) gap={:.2}pt",
+                    &current.text[current.text.len().saturating_sub(10)..],
+                    current.font_name,
+                    &span.text[..span.text.len().min(10)],
+                    span.font_name,
+                    gap
+                );
+                // Insert space unless next span starts with punctuation
+                // (e.g., "Docling" + "," should NOT become "Docling ,")
+                let starts_with_punct = span.text.starts_with(|c: char| {
+                    matches!(c, ',' | '.' | ';' | ':' | '!' | '?' | ')' | ']' | '}' | '\'' | '"')
+                });
+                if !current.text.ends_with(' ') && !span.text.starts_with(' ') && !starts_with_punct {
+                    current.text.push(' ');
+                }
+                current.text.push_str(&span.text);
+                // Update font_name to the merged span's font so that subsequent
+                // font transitions (e.g., italic→regular for "[2]" after "PyTorch")
+                // are detected as font changes.
+                current.font_name = span.font_name.clone();
+            } else if should_merge {
                 // PHASE 1 FIX: Check if next span is entirely whitespace-only OR marked as offset_semantic space
                 // If either is true, never insert an additional space - just concatenate directly
                 // This prevents double-space issue when TJ processor creates space spans
@@ -2940,11 +2977,6 @@ impl TextExtractor {
                     );
                     current.text.push_str(&span.text);
                 } else {
-                    // Use unified space decision function with detected document type
-                    // If we have a split_boundary_before flag, FORCE a space by treating it like a TJ offset
-                    // This ensures "length" + "This" becomes "length This" not "lengthThis"
-                    // Document type adjustment: Use adaptive thresholds based on document characteristics
-                    // Fix 2: Use font-aware spacing thresholds instead of fixed 0.25em
                     let tj_offset_triggered_override = has_split_boundary;
                     let space_decision = should_insert_space(
                         &current.text,
@@ -2979,8 +3011,7 @@ impl TextExtractor {
                             );
                             current.text.push_str(&span.text);
                         } else {
-                            // NEW: Prevent double-space edge case
-                            // If current text ends with space AND next span starts with space, skip inserting space
+                            // Prevent double-space edge case
                             let would_create_double_space =
                                 current.text.ends_with(' ') && span.text.starts_with(' ');
 
@@ -2990,27 +3021,7 @@ impl TextExtractor {
                                 );
                                 current.text.push_str(&span.text);
                             } else {
-                                match space_decision.source {
-                                    SpaceSource::CharacterHeuristic => {
-                                        log::trace!(
-                                            "Space via heuristic: '{}' | '{}'",
-                                            current.text,
-                                            span.text
-                                        );
-                                    },
-                                    SpaceSource::GeometricGap => {
-                                        log::trace!(
-                                            "Space via gap (source={:?}): '{}' | '{}' (gap={:.2}pt)",
-                                            space_decision.source,
-                                            current.text,
-                                            span.text,
-                                            gap
-                                        );
-                                    },
-                                    _ => {
-                                        log::trace!("Space via {:?}", space_decision.source);
-                                    },
-                                }
+                                log::trace!("Space via {:?}", space_decision.source);
                                 current.text.push(' ');
                                 current.text.push_str(&span.text);
                             }
@@ -3023,8 +3034,10 @@ impl TextExtractor {
                         );
                         current.text.push_str(&span.text);
                     }
-                };
+                }
+            }
 
+            if font_change_merge || should_merge {
                 // Extend bounding box to include both spans
                 let new_width = (span.bbox.x + span.bbox.width) - current.bbox.x;
                 let new_height = current.bbox.height.max(span.bbox.height);

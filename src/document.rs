@@ -2801,9 +2801,25 @@ impl PdfDocument {
         let mut prev_span: Option<&TextSpan> = None;
 
         for span in &spans {
+            // Skip spans that are fully contained within the previous span's bbox.
+            // This happens when font-change merging creates a combined span but
+            // individual sub-spans survive as separate entries (e.g., "the" inside
+            // a merged "install the docling" span in LaTeX PDFs).
+            if let Some(prev) = prev_span {
+                let prev_end_x = prev.bbox.x + prev.bbox.width;
+                let span_end_x = span.bbox.x + span.bbox.width;
+                let y_same = (prev.bbox.y - span.bbox.y).abs() < 2.0;
+                if y_same && span.bbox.x >= prev.bbox.x - 0.5 && span_end_x <= prev_end_x + 0.5 {
+                    // Span is contained within previous — skip to avoid duplicates
+                    continue;
+                }
+            }
+
             // Check if we need to insert space or line break
             if let Some(prev) = prev_span {
                 let y_diff = (prev.bbox.y - span.bbox.y).abs();
+                let prev_end_x = prev.bbox.x + prev.bbox.width;
+                let gap = span.bbox.x - prev_end_x;
 
                 // New line if Y position changed significantly (more than 2pt)
                 if y_diff > 2.0 {
@@ -2816,18 +2832,24 @@ impl PdfDocument {
                     for _ in 0..num_breaks.clamp(1, 3) {
                         text.push('\n');
                     }
+                } else if gap < -1.0 {
+                    // Significant overlap: span starts inside previous span's bbox.
+                    // This typically occurs when font-change merging overestimates
+                    // the previous span's width. Insert a space as word boundary.
+                    let span_end_x = span.bbox.x + span.bbox.width;
+                    if span_end_x > prev_end_x + 0.5 {
+                        // Span extends beyond previous — it has new content, insert space
+                        if !text.ends_with(' ') && !text.ends_with('\n') {
+                            text.push(' ');
+                        }
+                    }
+                    // If span is fully contained, it was already skipped above
                 } else if Self::should_insert_space(prev, span) {
-                    // Same line but significant horizontal gap - insert space
-                    // This handles PDFs that don't include space characters (ISO 32000-1:2008 Section 9.3.3)
                     text.push(' ');
                 } else {
                     // Check for column boundary: same line with very large gap
-                    // When should_insert_space returns false due to gap >= 5×font,
-                    // this indicates a column boundary — insert line break
-                    let prev_end_x = prev.bbox.x + prev.bbox.width;
-                    let col_gap = span.bbox.x - prev_end_x;
                     let fs = span.font_size.max(prev.font_size).max(6.0);
-                    if col_gap > fs * 3.0 {
+                    if gap > fs * 3.0 {
                         text.push('\n');
                     }
                 }
@@ -3225,9 +3247,10 @@ impl PdfDocument {
         let prev_end_x = prev.bbox.x + prev.bbox.width;
         let gap = current.bbox.x - prev_end_x;
 
-        // Space threshold: 0.25 × font size (quarter of font size)
-        // This is based on testing with PyMuPDF4LLM and empirical observation
-        let space_threshold = font_size * 0.25;
+        // Space threshold: 0.15 × font size
+        // Typical space width is ~0.25em, so 0.15em catches gaps > 60% of a space.
+        // This aligns with the text extractor's font-aware threshold (~50% of space width).
+        let space_threshold = font_size * 0.15;
 
         // Insert space if gap is significant
         // Also check that gap is not too large (might indicate column boundary)
