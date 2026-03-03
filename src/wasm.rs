@@ -499,10 +499,8 @@ impl WasmPdfDocument {
                 if let Some(ref val) = ann.field_value {
                     obj.insert("field_value".into(), serde_json::Value::from(val.as_str()));
                 }
-                if let Some(ref action) = ann.action {
-                    if let crate::annotations::LinkAction::Uri(ref uri) = action {
-                        obj.insert("action_uri".into(), serde_json::Value::from(uri.as_str()));
-                    }
+                if let Some(crate::annotations::LinkAction::Uri(ref uri)) = ann.action {
+                    obj.insert("action_uri".into(), serde_json::Value::from(uri.as_str()));
                 }
 
                 serde_json::Value::Object(obj)
@@ -775,16 +773,8 @@ impl WasmPdfDocument {
             })?;
 
             let obj = js_sys::Object::new();
-            js_sys::Reflect::set(
-                &obj,
-                &JsValue::from_str("width"),
-                &JsValue::from(img.width() as u32),
-            )?;
-            js_sys::Reflect::set(
-                &obj,
-                &JsValue::from_str("height"),
-                &JsValue::from(img.height() as u32),
-            )?;
+            js_sys::Reflect::set(&obj, &JsValue::from_str("width"), &JsValue::from(img.width()))?;
+            js_sys::Reflect::set(&obj, &JsValue::from_str("height"), &JsValue::from(img.height()))?;
             js_sys::Reflect::set(&obj, &JsValue::from_str("format"), &JsValue::from_str("png"))?;
             let uint8_array = js_sys::Uint8Array::from(png_data.as_slice());
             js_sys::Reflect::set(&obj, &JsValue::from_str("data"), &uint8_array)?;

@@ -16,6 +16,7 @@ impl PathRasterizer {
     }
 
     /// Fill a path with the current fill color.
+    #[allow(dead_code)]
     pub fn fill_path(
         &self,
         pixmap: &mut Pixmap,
@@ -29,6 +30,7 @@ impl PathRasterizer {
     }
 
     /// Stroke a path with the current stroke color and line style.
+    #[allow(dead_code)]
     pub fn stroke_path(
         &self,
         pixmap: &mut Pixmap,

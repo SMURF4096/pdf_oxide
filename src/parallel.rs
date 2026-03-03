@@ -81,7 +81,7 @@ impl ParallelExtractor {
         // Each batch is processed by a single PdfDocument instance, amortizing
         // the cost of document open, xref parse, page tree walk, and font loading.
         let num_threads = rayon::current_num_threads().max(1);
-        let batch_size = (page_count + num_threads - 1) / num_threads;
+        let batch_size = page_count.div_ceil(num_threads);
         let batches: Vec<(usize, usize)> = (0..page_count)
             .step_by(batch_size)
             .map(|start| (start, (start + batch_size).min(page_count)))
@@ -139,7 +139,7 @@ impl ParallelExtractor {
         let options = options.clone();
 
         let num_threads = rayon::current_num_threads().max(1);
-        let batch_size = (page_count + num_threads - 1) / num_threads;
+        let batch_size = page_count.div_ceil(num_threads);
         let batches: Vec<(usize, usize)> = (0..page_count)
             .step_by(batch_size)
             .map(|start| (start, (start + batch_size).min(page_count)))

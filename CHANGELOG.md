@@ -2,6 +2,21 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [0.3.13] - 2026-03-02
+> Character Extraction Quality, Multi-byte Encoding (Issue #186)
+
+### Bug Fixes — Character Extraction (#186)
+
+Reported by **@cole-dda** — garbled output when using `extract_chars()` on PDFs with multi-byte encodings (CJK text, Type0 fonts).
+
+- **Multi-byte decoding in show_text** — fixed `extract_chars()` to correctly handle 2-byte and variable-width encodings (Identity-H/V, Shift-JIS, etc.). Previously, characters were processed byte-by-byte, causing multi-byte characters to be split and garbled. Now uses the same robust decoding logic as `extract_spans()`.
+- **Improved character positioning accuracy** — replaced the 0.5em fixed-width estimate in `show_text` with actual glyph widths from the font dictionary. This ensures that character bounding boxes (`bbox`) and origins are precisely positioned, matching the actual PDF rendering.
+- **Accurate character advancement** — character spacing (`Tc`) and word spacing (`Tw`) are now correctly scaled by horizontal scaling (`Th`) during character-level extraction, ensuring correct text matrix updates.
+
+### Community Contributors
+
+Thank you to **@cole-dda** for identifying and reporting the character extraction quality issue with an excellent reproduction case (#186). Your report directly led to identifying the divergence between our high-level and low-level extraction paths, making `extract_chars()` significantly more robust for CJK and other multi-byte documents. We really appreciate your contribution to making PDF Oxide better!
+
 ## [0.3.12] - 2026-03-01
 > Text Extraction Quality, Determinism, Performance, Markdown Conversion
 
@@ -9,7 +24,8 @@ All notable changes to PDFOxide are documented here.
 
 Reported by **@Goldziher** — systematic evaluation across 10 PDFs covering word merging, encoding failures, and RTL text.
 
-- **CID font width calculation** — fixed text-to-user space conversion for CID fonts. Glyph widths were not correctly scaled, causing word boundary detection to merge adjacent words (`destinationmachine` → `destination machine`, `helporganizeas` → `help organize as`).
+- **CID font width calculation** — fixed text-to-user space conversion for CID fonts.
+ Glyph widths were not correctly scaled, causing word boundary detection to merge adjacent words (`destinationmachine` → `destination machine`, `helporganizeas` → `help organize as`).
 
 - **Font-change word boundary detection** — when PDF font changes mid-line (e.g., regular→italic for product names in LaTeX), we now detect this as a word boundary even without explicit spacing. Fixes `introducesDocling` → `introduces Docling`, `PyTorch[2]` → `PyTorch [2]`.
 
@@ -40,7 +56,8 @@ Reported by **@Goldziher** — systematic evaluation across 10 PDFs covering wor
 
 Reported by **@yunho-c** — broken markdown output on the Analog Devices AD5940/AD5941 datasheet (two-column layout with bullet lists).
 
-- **Bullet character detection and list formatting** — PDF bullet characters (`►`, `•`, `▪`, `▸`, `‣`, `◦`, `●`, `■`, `◆`, `○`, `□`) were rendered as inline text with no line breaks. Now detected and converted to markdown `- ` list items with proper line separation. Page 0 of ad5940-5941.pdf: 0 → 57 properly formatted list items.
+- **Bullet character detection and list formatting** — PDF bullet characters (`►`, `•`, `▪`, `▸`, `‣`, `◦`, `●`, `■`, `◆`, `○`, `□`) were rendered as inline text with no line breaks.
+ Now detected and converted to markdown `- ` list items with proper line separation. Page 0 of ad5940-5941.pdf: 0 → 57 properly formatted list items.
 
 - **Heading over-detection** — base font size calculation included small bullet/subscript spans (8.8pt `►` characters), pulling the median down to ~8.8pt. This caused 11pt body text to exceed the 1.15× heading ratio threshold and get promoted to `### H3`. Fixed by excluding spans < 9pt from the median calculation. Page 0: 35 → 0 spurious headings.
 

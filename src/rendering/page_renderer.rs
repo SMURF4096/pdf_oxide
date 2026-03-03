@@ -864,7 +864,7 @@ fn cmyk_to_rgb(c: f32, m: f32, y: f32, k: f32) -> (f32, f32, f32) {
 /// intersected with the current clip region.
 fn apply_pending_clip(
     pending_clip: &mut Option<(tiny_skia::Path, FillRule)>,
-    clip_stack: &mut Vec<Option<tiny_skia::Mask>>,
+    clip_stack: &mut [Option<tiny_skia::Mask>],
     pixmap: &Pixmap,
     base_transform: Transform,
     gs_stack: &GraphicsStateStack,

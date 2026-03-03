@@ -11,8 +11,8 @@
 
 use image::{DynamicImage, GenericImageView, RgbImage};
 use pdf_oxide::ocr::{
-    crop_text_region, preprocess_for_detection, preprocess_for_recognition, OcrConfig,
-    OcrConfigBuilder, OcrExtractOptions, OcrOutput, OcrSpan,
+    crop_text_region, preprocess_for_detection, preprocess_for_recognition, DetResizeStrategy,
+    OcrConfig, OcrConfigBuilder, OcrExtractOptions, OcrOutput, OcrSpan,
 };
 
 /// Create a simple test image with solid color.
@@ -30,7 +30,8 @@ fn create_test_image(width: u32, height: u32) -> DynamicImage {
 #[test]
 fn test_preprocess_for_detection_basic() {
     let img = create_test_image(640, 480);
-    let (tensor, scale) = preprocess_for_detection(&img, 960).unwrap();
+    let strategy = DetResizeStrategy::MaxSide { max_side: 960 };
+    let (tensor, scale) = preprocess_for_detection(&img, &strategy).unwrap();
 
     // Check tensor shape [1, 3, H, W]
     assert_eq!(tensor.shape()[0], 1); // Batch size
@@ -47,7 +48,8 @@ fn test_preprocess_for_detection_basic() {
 #[test]
 fn test_preprocess_for_detection_large_image() {
     let img = create_test_image(2000, 1500);
-    let (tensor, scale) = preprocess_for_detection(&img, 960).unwrap();
+    let strategy = DetResizeStrategy::MaxSide { max_side: 960 };
+    let (tensor, scale) = preprocess_for_detection(&img, &strategy).unwrap();
 
     // Scale should be < 1.0 since image is larger than max_side
     assert!(scale < 1.0);

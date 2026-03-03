@@ -5689,8 +5689,6 @@ impl TextExtractor {
 
     fn show_text(&mut self, text: &[u8]) -> Result<()> {
         // PDF spec Section 7.3.4.2: implementation limit of 32,767 bytes per string.
-        // Malformed PDFs may exceed this (e.g., veraPDF 6-1-12-t03-fail-c.pdf with 65K chars).
-        // Cap to spec limit to prevent text blowup.
         let text = if text.len() > 32_767 {
             log::warn!(
                 "String exceeds PDF spec limit: {} bytes (max 32,767), truncating",
@@ -5700,75 +5698,115 @@ impl TextExtractor {
         } else {
             text
         };
-        for &byte in text {
-            let char_code = byte as u16;
 
-            // Get current state values (no borrow after this)
+        // Get current state values (used for all characters in this string)
+        let state = self.state_stack.current();
+        let font_name = state.font_name.clone();
+        let font_size = state.font_size;
+        let horizontal_scaling = state.horizontal_scaling;
+        let char_space = state.char_space;
+        let word_space = state.word_space;
+        let fill_color_rgb = state.fill_color_rgb;
+        let ctm = state.ctm;
+
+        // Get current font
+        let font = font_name.as_ref().and_then(|name| self.fonts.get(name));
+
+        // Determine byte grouping for Type0 CID fonts based on encoding.
+        let byte_mode = if let Some(font) = font {
+            if font.subtype == "Type0" {
+                match &font.encoding {
+                    crate::fonts::Encoding::Identity => ByteMode::TwoByte,
+                    crate::fonts::Encoding::Standard(name) => {
+                        if (name.contains("Identity") && !name.contains("OneByteIdentity"))
+                            || name.contains("UCS2")
+                            || name.contains("UTF16")
+                        {
+                            ByteMode::TwoByte
+                        } else if name.contains("RKSJ") {
+                            ByteMode::ShiftJIS
+                        } else if name.contains("EUC")
+                            || name.contains("GBK")
+                            || name.contains("GBpc")
+                            || name.contains("GB-")
+                            || name.contains("CNS")
+                            || name.contains("B5")
+                            || name.contains("KSC")
+                            || name.contains("KSCms")
+                        {
+                            ByteMode::TwoByte
+                        } else {
+                            ByteMode::OneByte
+                        }
+                    },
+                    _ => ByteMode::OneByte,
+                }
+            } else {
+                ByteMode::OneByte
+            }
+        } else {
+            ByteMode::OneByte
+        };
+
+        let mut i = 0;
+        while i < text.len() {
+            // Decode char_code based on byte_mode
+            let (char_code, bytes_consumed) = match byte_mode {
+                ByteMode::TwoByte if i + 1 < text.len() => {
+                    (((text[i] as u16) << 8) | (text[i + 1] as u16), 2)
+                },
+                ByteMode::ShiftJIS => {
+                    let b = text[i];
+                    let is_lead = (0x81..=0x9F).contains(&b) || (0xE0..=0xFC).contains(&b);
+                    if is_lead && i + 1 < text.len() {
+                        (((b as u16) << 8) | (text[i + 1] as u16), 2)
+                    } else {
+                        (b as u16, 1)
+                    }
+                },
+                _ => (text[i] as u16, 1),
+            };
+            i += bytes_consumed;
+
+            // Get current text matrix (may be updated by previous characters)
             let state = self.state_stack.current();
-            let font_name = state.font_name.clone();
             let text_matrix = state.text_matrix;
-            let ctm = state.ctm;
-            let font_size = state.font_size;
-            let horizontal_scaling = state.horizontal_scaling;
-            let char_space = state.char_space;
-            let word_space = state.word_space;
-            let fill_color_rgb = state.fill_color_rgb;
-
-            // Get current font
-            let font = font_name.as_ref().and_then(|name| self.fonts.get(name));
 
             // Get Unicode string using font mapping
-            // BUG FIX #2: Handle multi-character ligature expansion (e.g., "fi", "fl", "ff")
-            // char_to_unicode() returns a String which may contain multiple characters when
-            // a ligature glyph is expanded to its constituent ASCII characters.
             let unicode_string = if let Some(font) = font {
-                let result = font
-                    .char_to_unicode(char_code as u32)
-                    .unwrap_or_else(|| "?".to_string());
-
-                // DEBUG: Log when we get 'd' or ρ to trace the issue
-                if result == "d"
-                    || result.contains('ρ')
-                    || result.contains('r') && char_code == 0x72
-                {
-                    log::trace!(
-                        "Text extraction: font '{}', code 0x{:02X} → '{}' (bytes: {:?})",
-                        font_name.as_ref().unwrap_or(&String::from("?")),
-                        char_code,
-                        result,
-                        result.as_bytes()
-                    );
-                }
-
-                result
+                font.char_to_unicode(char_code as u32)
+                    .unwrap_or_else(|| fallback_char_to_unicode(char_code as u32))
+            } else if char_code < 256 && (char_code as u8).is_ascii() {
+                (char_code as u8 as char).to_string()
             } else {
-                // No font loaded, use identity mapping
-                if byte.is_ascii() {
-                    (byte as char).to_string()
-                } else {
-                    "?".to_string()
-                }
+                "?".to_string()
             };
 
             // Calculate character position in user space
-            // Per PDF Spec ISO 32000-1:2008 Section 9.4.4, the rendering matrix is:
-            // Trm = [fontSize 0 0 fontSize 0 rise] × Th × Tm × CTM
-            // To get position in user space, we apply: text_matrix × CTM
             let text_pos = text_matrix.transform_point(0.0, 0.0);
             let pos = ctm.transform_point(text_pos.x, text_pos.y);
 
-            // Calculate effective font size (accounting for CTM and text matrix scaling)
+            // Calculate effective font size
             let combined_char = ctm.multiply(&text_matrix);
             let effective_font_size = font_size
                 * (combined_char.d * combined_char.d + combined_char.b * combined_char.b).sqrt();
 
-            // Calculate character dimensions
-            // Use effective font size and better width estimate based on horizontal scaling
-            let char_width_ratio = 0.5; // Average character width-to-height ratio
-            let glyph_width = effective_font_size * horizontal_scaling / 100.0 * char_width_ratio;
-            let height = effective_font_size;
+            // Calculate character dimensions using accurate glyph width
+            let glyph_width_font_units = if let Some(font) = font {
+                font.get_glyph_width(char_code)
+            } else {
+                500.0 // Default 0.5em
+            };
 
-            // Determine font weight
+            let fs_factor = font_size / 1000.0;
+            let hs_factor = horizontal_scaling / 100.0;
+            let glyph_width_user_space = glyph_width_font_units * fs_factor * hs_factor;
+
+            // For TextChar, we use the device-space width
+            let glyph_width_device_space = glyph_width_user_space * combined_char.a.abs();
+            let height_device_space = effective_font_size;
+
+            // Determine font weight and style
             let font_weight = if let Some(font) = font {
                 if font.is_bold() {
                     FontWeight::Bold
@@ -5778,20 +5816,21 @@ impl TextExtractor {
             } else {
                 FontWeight::Normal
             };
+            let is_italic_char = if let Some(font) = font {
+                font.is_italic()
+            } else {
+                false
+            };
 
             // Get color
             let (r, g, b) = fill_color_rgb;
             let color = Color::new(r, g, b);
 
-            // Compose CTM and text_matrix for full transformation (v0.3.1)
-            // This gives us the complete transformation from text space to device space
+            // Compose CTM and text_matrix for full transformation
             let final_matrix = ctm.multiply(&text_matrix);
-            // Calculate rotation from matrix: atan2(b, a)
             let rotation_degrees = final_matrix.b.atan2(final_matrix.a).to_degrees();
 
-            // Guard against malformed fonts that map a single byte to an unreasonably
-            // long Unicode string (e.g., 1024 repeated chars from corrupted CMap/encoding).
-            // Normal mappings produce 1-4 chars (single char, ligature, or combining sequence).
+            // Guard against malformed fonts
             let unicode_string = if unicode_string.chars().count() > 8 {
                 log::warn!(
                     "Malformed character mapping: code 0x{:04X} maps to {} chars, truncating",
@@ -5803,19 +5842,20 @@ impl TextExtractor {
                 unicode_string
             };
 
-            // Process each character in the expanded string
-            // For ligatures (e.g., "fi" from ﬁ), we create multiple TextChar objects
-            // and distribute them horizontally across the glyph width
+            // Process each character in the expanded string (ligatures)
             let char_count = unicode_string.chars().count();
-            let char_width = if char_count > 0 {
-                glyph_width / char_count as f32
+            let char_width_device = if char_count > 0 {
+                glyph_width_device_space / char_count as f32
             } else {
-                glyph_width
+                glyph_width_device_space
+            };
+            let char_width_user = if char_count > 0 {
+                glyph_width_user_space / char_count as f32
+            } else {
+                glyph_width_user_space
             };
 
             for (char_index, unicode_char) in unicode_string.chars().enumerate() {
-                // Skip NULL characters (U+0000) and other control characters
-                // These are often artifacts from PDF encoding and should not be extracted
                 let should_skip = unicode_char == '\0'
                     || (unicode_char.is_control()
                         && unicode_char != '\t'
@@ -5823,42 +5863,36 @@ impl TextExtractor {
                         && unicode_char != '\r');
 
                 if !should_skip {
-                    // Calculate position for this character within the ligature
-                    // Distribute characters horizontally across the glyph width
-                    let x_offset = char_index as f32 * char_width;
+                    let x_offset_device = char_index as f32 * char_width_device;
+                    let x_offset_user = char_index as f32 * char_width_user;
 
-                    // Create TextChar with effective font size
-                    let font_name_str = font_name.clone().unwrap_or_default();
-                    let is_italic_char = font_name
-                        .as_ref()
-                        .and_then(|name| self.fonts.get(name))
-                        .map(|font| font.is_italic())
-                        .unwrap_or(false);
-
-                    // Calculate origin position for this character
-                    let char_origin_x = pos.x + x_offset;
+                    let char_origin_x = pos.x + x_offset_device;
                     let char_origin_y = pos.y;
 
                     let text_char = TextChar {
                         char: unicode_char,
-                        bbox: Rect::new(char_origin_x, char_origin_y, char_width, height),
-                        font_name: font_name_str,
+                        bbox: Rect::new(
+                            char_origin_x,
+                            char_origin_y,
+                            char_width_device,
+                            height_device_space,
+                        ),
+                        font_name: font_name.clone().unwrap_or_default(),
                         font_size: effective_font_size,
                         font_weight,
                         color,
                         mcid: self.current_mcid,
                         is_italic: is_italic_char,
-                        // Transformation properties (v0.3.1, Issue #27)
                         origin_x: char_origin_x,
                         origin_y: char_origin_y,
                         rotation_degrees,
-                        advance_width: char_width,
+                        advance_width: char_width_device,
                         matrix: Some([
                             final_matrix.a,
                             final_matrix.b,
                             final_matrix.c,
                             final_matrix.d,
-                            final_matrix.e + x_offset, // Adjust translation for char position
+                            final_matrix.e + x_offset_user,
                             final_matrix.f,
                         ]),
                     };
@@ -5867,20 +5901,14 @@ impl TextExtractor {
                 }
             }
 
-            // Advance text position (always do this once per PDF byte, not per expanded character)
-            // Tx = (w0 * Tfs + Tc + Tw) * Th / 100
-            // where w0 is glyph width (we estimate using char_width_ratio)
-            // Note: Use the nominal font_size here, not effective_font_size,
-            // because text matrix scaling is already applied to the text position
-            let mut tx = char_width_ratio * font_size;
-            tx += char_space;
-            // Check if ANY character in the expanded string is a space
-            if unicode_string.chars().any(|c| c == ' ') {
-                tx += word_space;
+            // Advance text position: Tx = (w0 * Tfs + Tc + Tw) * Th
+            let mut tx = glyph_width_user_space;
+            tx += char_space * hs_factor;
+            if char_code == 32 {
+                tx += word_space * hs_factor;
             }
-            tx *= horizontal_scaling / 100.0;
 
-            // Update text matrix
+            // Update text matrix in current state
             let state_mut = self.state_stack.current_mut();
             state_mut.text_matrix.e += tx;
         }
@@ -5954,7 +5982,8 @@ impl Default for TextExtractor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fonts::Encoding;
+    use crate::fonts::{Encoding, LazyCMap};
+    use std::sync::Arc;
 
     fn create_test_font() -> FontInfo {
         FontInfo {
@@ -6133,6 +6162,51 @@ mod tests {
         assert_eq!(chars.len(), 2);
         assert_eq!(chars[0].char, 'H');
         assert_eq!(chars[1].char, 'i');
+    }
+
+    /// Test extraction of multi-byte characters from Type0 fonts (Identity-H)
+    /// This verifies the fix for Issue #186 where extract_chars() was garbling CJK text.
+    #[test]
+    fn test_extract_type0_multibyte_character_extraction() {
+        let mut extractor = TextExtractor::new();
+
+        // Create a mock Type0 font with Identity-H encoding
+        let mut font = create_test_font();
+        font.subtype = "Type0".to_string();
+        font.encoding = Encoding::Standard("Identity-H".to_string());
+
+        // Create a valid ToUnicode CMap stream that maps CID 0x4E2D to '中' and 0x6587 to '文'
+        let cmap_data = b"
+            /CIDInit /ProcSet findresource begin
+            12 dict begin
+            begincmap
+            /CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def
+            /CMapName /Adobe-Identity-UCS def
+            /CMapType 2 def
+            1 begincodespacerange <0000> <FFFF> endcodespacerange
+            2 beginbfchar
+            <4E2D> <4E2D>
+            <6587> <6587>
+            endbfchar
+            endcmap
+            CMapName currentdict /CMap defineresource pop
+            end
+            end
+        ";
+
+        // Use public parse_tounicode_cmap to create CMap, then wrap in LazyCMap
+        let lazy_cmap = LazyCMap::new(cmap_data.to_vec());
+        font.to_unicode = Some(lazy_cmap);
+
+        extractor.add_font("F1".to_string(), font);
+
+        // Content stream with 2-byte CIDs for "中文" (0x4E2D 0x6587)
+        let stream = b"BT /F1 12 Tf 0 0 Td <4E2D6587> Tj ET";
+        let chars = extractor.extract(stream).unwrap();
+
+        assert_eq!(chars.len(), 2);
+        assert_eq!(chars[0].char, '中');
+        assert_eq!(chars[1].char, '文');
     }
 
     #[test]

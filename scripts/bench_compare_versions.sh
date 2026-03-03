@@ -1,5 +1,5 @@
 #!/bin/bash
-# Benchmark comparison across v0.3.10, v0.3.11, v0.3.12
+# Benchmark comparison across v0.3.11, v0.3.12, v0.3.13
 # Usage: bench_compare_versions.sh <version_label> <binary_path> <output_csv>
 # Runs a single version on all 6 datasets, outputs CSV with per-PDF timing
 

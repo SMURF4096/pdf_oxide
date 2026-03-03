@@ -154,14 +154,9 @@ pub fn detect_page_type(doc: &mut PdfDocument, page: usize) -> Result<PageType> 
     let high_coverage = largest_image_area > page_area * 4.0; // ~72 DPI equivalent
 
     if text_len <= 50 || text_is_garbled {
-        // No substantial (or garbled) text — classify based on images
-        if high_coverage {
-            Ok(PageType::ScannedPage)
-        } else if !images.is_empty() {
-            Ok(PageType::ScannedPage) // Small images but no text still needs OCR
-        } else {
-            Ok(PageType::NativeText)
-        }
+        // No substantial (or garbled) text, and we know images exist (early return above).
+        // Treat as scanned page.
+        Ok(PageType::ScannedPage)
     } else if high_coverage && text_len < 500 {
         // Some text but a large image covers the page — hybrid
         Ok(PageType::HybridPage)
