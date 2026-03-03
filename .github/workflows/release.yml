@@ -161,7 +161,7 @@ jobs:
 
       - name: Upload .deb artifact
         if: matrix.target == 'x86_64-unknown-linux-gnu'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: debian-package
           path: target/x86_64-unknown-linux-gnu/debian/*.deb
@@ -186,7 +186,7 @@ jobs:
           Compress-Archive -Path @("pdf-oxide.exe", "pdf-oxide-mcp.exe") -DestinationPath ../../../dist/${{ matrix.artifact_name }}-${VERSION}.zip
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact_name }}
           path: dist/*
@@ -231,7 +231,7 @@ jobs:
           cp wasm-pkg/README.md wasm-out/
 
       - name: Upload WASM artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: wasm-package
           path: wasm-out/
@@ -285,7 +285,7 @@ jobs:
         run: maturin build --release --features python --target ${{ matrix.target }} --out dist
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact_name }}
           path: dist/*.whl
@@ -471,7 +471,7 @@ jobs:
           cat pdf-oxide.json
 
       - name: Upload packaging artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: packaging-manifests
           path: |
