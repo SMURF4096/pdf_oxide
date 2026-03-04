@@ -246,7 +246,9 @@ impl PyPdfDocument {
             let _ = page;
             let _ = dpi;
             let _ = format;
-            Err(PyRuntimeError::new_err("Rendering feature not enabled. Please build with 'rendering' feature."))
+            Err(PyRuntimeError::new_err(
+                "Rendering feature not enabled. Please build with 'rendering' feature.",
+            ))
         }
     }
 
@@ -2134,7 +2136,12 @@ impl PyPdfDocument {
     ///     >>> engine = OcrEngine("det.onnx", "rec.onnx", "dict.txt")
     ///     >>> text = doc.extract_text_ocr(0, engine)
     #[pyo3(signature = (page, engine=None))]
-    fn extract_text_ocr(&mut self, _py: Python<'_>, page: usize, engine: Option<Bound<'_, PyAny>>) -> PyResult<String> {
+    fn extract_text_ocr(
+        &mut self,
+        _py: Python<'_>,
+        page: usize,
+        engine: Option<Bound<'_, PyAny>>,
+    ) -> PyResult<String> {
         #[cfg(feature = "ocr")]
         {
             let ocr_engine = if let Some(eng) = engine {
@@ -2961,31 +2968,53 @@ pub struct PyOfficeConverter;
 impl PyOfficeConverter {
     #[new]
     fn new() -> PyResult<Self> {
-        Err(PyRuntimeError::new_err("Office feature not enabled. Please build with 'office' feature."))
+        Err(PyRuntimeError::new_err(
+            "Office feature not enabled. Please build with 'office' feature.",
+        ))
     }
 
     #[staticmethod]
     #[pyo3(signature = (*_args, **_kwargs))]
-    fn convert(_args: &Bound<'_, PyTuple>, _kwargs: Option<Bound<'_, PyDict>>) -> PyResult<PyObject> {
-        Err(PyRuntimeError::new_err("Office feature not enabled. Please build with 'office' feature."))
+    fn convert(
+        _args: &Bound<'_, PyTuple>,
+        _kwargs: Option<Bound<'_, PyDict>>,
+    ) -> PyResult<PyObject> {
+        Err(PyRuntimeError::new_err(
+            "Office feature not enabled. Please build with 'office' feature.",
+        ))
     }
 
     #[staticmethod]
     #[pyo3(signature = (*_args, **_kwargs))]
-    fn from_docx(_args: &Bound<'_, PyTuple>, _kwargs: Option<Bound<'_, PyDict>>) -> PyResult<PyObject> {
-        Err(PyRuntimeError::new_err("Office feature not enabled. Please build with 'office' feature."))
+    fn from_docx(
+        _args: &Bound<'_, PyTuple>,
+        _kwargs: Option<Bound<'_, PyDict>>,
+    ) -> PyResult<PyObject> {
+        Err(PyRuntimeError::new_err(
+            "Office feature not enabled. Please build with 'office' feature.",
+        ))
     }
 
     #[staticmethod]
     #[pyo3(signature = (*_args, **_kwargs))]
-    fn from_xlsx(_args: &Bound<'_, PyTuple>, _kwargs: Option<Bound<'_, PyDict>>) -> PyResult<PyObject> {
-        Err(PyRuntimeError::new_err("Office feature not enabled. Please build with 'office' feature."))
+    fn from_xlsx(
+        _args: &Bound<'_, PyTuple>,
+        _kwargs: Option<Bound<'_, PyDict>>,
+    ) -> PyResult<PyObject> {
+        Err(PyRuntimeError::new_err(
+            "Office feature not enabled. Please build with 'office' feature.",
+        ))
     }
 
     #[staticmethod]
     #[pyo3(signature = (*_args, **_kwargs))]
-    fn from_pptx(_args: &Bound<'_, PyTuple>, _kwargs: Option<Bound<'_, PyDict>>) -> PyResult<PyObject> {
-        Err(PyRuntimeError::new_err("Office feature not enabled. Please build with 'office' feature."))
+    fn from_pptx(
+        _args: &Bound<'_, PyTuple>,
+        _kwargs: Option<Bound<'_, PyDict>>,
+    ) -> PyResult<PyObject> {
+        Err(PyRuntimeError::new_err(
+            "Office feature not enabled. Please build with 'office' feature.",
+        ))
     }
 }
 
