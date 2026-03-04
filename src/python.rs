@@ -2978,7 +2978,7 @@ impl PyOfficeConverter {
     fn convert(
         _args: &Bound<'_, PyTuple>,
         _kwargs: Option<Bound<'_, PyDict>>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         Err(PyRuntimeError::new_err(
             "Office feature not enabled. Please build with 'office' feature.",
         ))
@@ -2989,7 +2989,7 @@ impl PyOfficeConverter {
     fn from_docx(
         _args: &Bound<'_, PyTuple>,
         _kwargs: Option<Bound<'_, PyDict>>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         Err(PyRuntimeError::new_err(
             "Office feature not enabled. Please build with 'office' feature.",
         ))
@@ -3000,7 +3000,7 @@ impl PyOfficeConverter {
     fn from_xlsx(
         _args: &Bound<'_, PyTuple>,
         _kwargs: Option<Bound<'_, PyDict>>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         Err(PyRuntimeError::new_err(
             "Office feature not enabled. Please build with 'office' feature.",
         ))
@@ -3011,7 +3011,7 @@ impl PyOfficeConverter {
     fn from_pptx(
         _args: &Bound<'_, PyTuple>,
         _kwargs: Option<Bound<'_, PyDict>>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         Err(PyRuntimeError::new_err(
             "Office feature not enabled. Please build with 'office' feature.",
         ))
