@@ -10,7 +10,7 @@
 //! - Whitespace normalization
 
 use pdf_oxide::geometry::Rect;
-use pdf_oxide::layout::{Color, FontWeight, TextSpan};
+use pdf_oxide::layout::{FontWeight, TextSpan};
 use pdf_oxide::pipeline::config::{BoldMarkerBehavior, OutputConfig, TextPipelineConfig};
 use pdf_oxide::pipeline::converters::{MarkdownOutputConverter, OutputConverter};
 use pdf_oxide::pipeline::OrderedTextSpan;

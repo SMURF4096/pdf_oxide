@@ -12,7 +12,7 @@
 use pdf_oxide::converters::{ConversionOptions, MarkdownConverter};
 use pdf_oxide::extractors::{SpanMergingConfig, TextExtractionConfig};
 use pdf_oxide::geometry::Rect;
-use pdf_oxide::layout::{Color, FontWeight, TextChar};
+use pdf_oxide::layout::{FontWeight, TextChar};
 
 // Helper: Create a mock character
 fn mock_char(c: char, x: f32, y: f32, width: f32, font_size: f32, bold: bool) -> TextChar {

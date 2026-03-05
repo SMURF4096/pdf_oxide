@@ -8,7 +8,7 @@ use pdf_oxide::geometry::{Point, Rect};
 use pdf_oxide::layout::{
     clustering::{cluster_chars_into_words, cluster_words_into_lines},
     reading_order::graph_based_reading_order,
-    Color, FontWeight, TextBlock, TextChar,
+    FontWeight, TextBlock, TextChar,
 };
 
 // ============================================================================

@@ -15,7 +15,7 @@
 
 use pdf_oxide::extractors::{AdaptiveThresholdConfig, SpanMergingConfig, TextExtractionConfig};
 use pdf_oxide::geometry::Rect;
-use pdf_oxide::layout::{Color, FontWeight, TextSpan};
+use pdf_oxide::layout::TextSpan;
 
 // ============================================================================
 // Helper Functions

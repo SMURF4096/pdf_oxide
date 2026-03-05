@@ -7,7 +7,7 @@ use pdf_oxide::converters::{
     BoldMarkerBehavior, ConversionOptions, HtmlConverter, MarkdownConverter, ReadingOrderMode,
 };
 use pdf_oxide::geometry::Rect;
-use pdf_oxide::layout::{Color, FontWeight, TextChar};
+use pdf_oxide::layout::{FontWeight, TextChar};
 
 // Helper functions for creating mock text characters
 
