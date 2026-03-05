@@ -4,6 +4,7 @@
 //! with their geometric and styling information.
 
 use crate::geometry::{Point, Rect};
+use crate::extractors::text::ArtifactType;
 use std::collections::HashMap;
 
 /// A text span (complete string from a Tj/TJ operator).
@@ -77,6 +78,8 @@ pub struct TextSpan {
     /// are not re-merged during the span merging phase.
     /// Default is false for backward compatibility.
     pub primary_detected: bool,
+    /// Artifact type classification for filtered content (PDF Spec Section 14.8.2.2)
+    pub artifact_type: Option<ArtifactType>,
 }
 
 /// A single character with its position and styling.

@@ -920,6 +920,7 @@ impl MarkdownConverter {
                 word_spacing: 0.0,
                 horizontal_scaling: 100.0,
                 primary_detected: false,
+                artifact_type: None,
             })
             .collect();
 
