@@ -325,3 +325,4 @@ docs/planning/
 # Local working PDFs and verification results
 workdir_pdfs/
 verifications/
+debug_tools/

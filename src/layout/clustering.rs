@@ -72,7 +72,7 @@ pub fn cluster_chars_into_words(chars: &[TextChar], epsilon: f32) -> Vec<Vec<usi
     let mut indices: Vec<usize> = (0..chars.len()).collect();
     indices.sort_by(|&a, &b| {
         let y_cmp =
-            crate::utils::safe_float_cmp(chars[a].bbox.center().y, chars[b].bbox.center().y);
+            crate::utils::safe_float_cmp(chars[b].bbox.center().y, chars[a].bbox.center().y);
         if y_cmp != std::cmp::Ordering::Equal {
             return y_cmp;
         }
@@ -196,7 +196,7 @@ pub fn cluster_words_into_lines(words: &[TextBlock], epsilon_y: f32) -> Vec<Vec<
 
     let mut indices: Vec<usize> = (0..words.len()).collect();
     indices.sort_by(|&a, &b| {
-        let y_cmp = crate::utils::safe_float_cmp(words[a].bbox.y, words[b].bbox.y);
+        let y_cmp = crate::utils::safe_float_cmp(words[b].bbox.y, words[a].bbox.y);
         if y_cmp != std::cmp::Ordering::Equal {
             return y_cmp;
         }
@@ -254,7 +254,7 @@ pub fn cluster_chars_into_words(chars: &[TextChar], epsilon: f32) -> Vec<Vec<usi
     let mut indices: Vec<usize> = (0..chars.len()).collect();
     indices.sort_by(|&a, &b| {
         let y_cmp =
-            crate::utils::safe_float_cmp(chars[a].bbox.center().y, chars[b].bbox.center().y);
+            crate::utils::safe_float_cmp(chars[b].bbox.center().y, chars[a].bbox.center().y);
         if y_cmp != std::cmp::Ordering::Equal {
             return y_cmp;
         }
@@ -334,7 +334,7 @@ pub fn cluster_words_into_lines(words: &[TextBlock], epsilon_y: f32) -> Vec<Vec<
     // Sort indices by Y coordinate
     let mut indices: Vec<usize> = (0..words.len()).collect();
     indices.sort_by(|&a, &b| {
-        let y_cmp = crate::utils::safe_float_cmp(words[a].bbox.y, words[b].bbox.y);
+        let y_cmp = crate::utils::safe_float_cmp(words[b].bbox.y, words[a].bbox.y);
         if y_cmp != std::cmp::Ordering::Equal {
             return y_cmp;
         }
@@ -497,14 +497,14 @@ mod tests {
         // Should have 2 lines
         assert_eq!(lines.len(), 2);
 
-        // Verify clustering
-        // Line 1: words 0 and 1
-        assert!(lines[0].contains(&0));
-        assert!(lines[0].contains(&1));
+        // Verify clustering - Y-descending order
+        // Line 1: words 2 and 3 (y=30)
+        assert!(lines[0].contains(&2));
+        assert!(lines[0].contains(&3));
 
-        // Line 2: words 2 and 3
-        assert!(lines[1].contains(&2));
-        assert!(lines[1].contains(&3));
+        // Line 2: words 0 and 1 (y=0)
+        assert!(lines[1].contains(&0));
+        assert!(lines[1].contains(&1));
     }
 
     #[test]

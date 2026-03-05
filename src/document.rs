@@ -5045,6 +5045,17 @@ impl PdfDocument {
 
         let mut spans = extractor.extract_text_spans(&content_data)?;
 
+        // Sort spans by reading order (Y-descending, then X-ascending)
+        spans.sort_by(|a, b| {
+            // Y-descending (top-to-bottom)
+            let y_cmp = crate::utils::safe_float_cmp(b.bbox.y, a.bbox.y);
+            if y_cmp != std::cmp::Ordering::Equal {
+                return y_cmp;
+            }
+            // X-ascending (left-to-right)
+            crate::utils::safe_float_cmp(a.bbox.x, b.bbox.x)
+        });
+
         // Filter out spans in erase regions
         if let Some(regions) = self.erase_regions.get(&page_index) {
             spans.retain(|span| !regions.iter().any(|r| r.intersects(&span.bbox)));
@@ -5226,7 +5237,21 @@ impl PdfDocument {
         }
 
         // Extract characters directly (single-pass, no document classification)
-        extractor.extract(&content_data)
+        let mut chars = extractor.extract(&content_data)?;
+
+        // Sort characters by reading order (Y-descending, then X-ascending)
+        // This ensures extract_words and extract_text_lines process them in logical order.
+        chars.sort_by(|a, b| {
+            // Y-descending (top-to-bottom)
+            let y_cmp = crate::utils::safe_float_cmp(b.bbox.y, a.bbox.y);
+            if y_cmp != std::cmp::Ordering::Equal {
+                return y_cmp;
+            }
+            // X-ascending (left-to-right)
+            crate::utils::safe_float_cmp(a.bbox.x, b.bbox.x)
+        });
+
+        Ok(chars)
     }
 
     /// Extract words from a page.
@@ -5244,43 +5269,67 @@ impl PdfDocument {
     /// ```
     pub fn extract_words(&mut self, page_index: usize) -> Result<Vec<crate::layout::Word>> {
         use crate::layout::{clustering, AdaptiveLayoutParams, DocumentProperties, Word};
+        use crate::pipeline::reading_order::xycut::XYCutStrategy;
 
-        let chars = self.extract_chars(page_index)?;
-        if chars.is_empty() {
+        let spans = self.extract_spans(page_index)?;
+        if spans.is_empty() {
             return Ok(Vec::new());
         }
 
-        // Compute adaptive parameters
+        // Step 1: Partition page into logical blocks (columns/paragraphs) using XY-Cut
+        let strategy = XYCutStrategy::new();
+        let blocks = strategy.partition_region(&spans);
+
+        // Step 2: Compute adaptive parameters from all characters for consistent thresholds
         let media_box = self
             .get_page_media_box(page_index)
             .unwrap_or((0.0, 0.0, 612.0, 792.0));
         let page_bbox =
             crate::geometry::Rect::new(media_box.0, media_box.1, media_box.2, media_box.3);
 
+        let all_chars: Vec<_> = spans.iter().flat_map(|s| s.to_chars()).collect();
+        if all_chars.is_empty() {
+            return Ok(Vec::new());
+        }
         let props =
-            DocumentProperties::analyze(&chars, page_bbox).map_err(Error::LayoutAnalysis)?;
+            DocumentProperties::analyze(&all_chars, page_bbox).map_err(Error::LayoutAnalysis)?;
         let params = AdaptiveLayoutParams::from_properties(&props);
 
-        let clusters = clustering::cluster_chars_into_words(&chars, params.word_gap_threshold);
-
+        // Step 3: Extract words from each block independently
         let mut words = Vec::new();
-        for cluster_indices in clusters {
-            let cluster_chars: Vec<_> = cluster_indices.iter().map(|&i| chars[i].clone()).collect();
+        for block_spans in blocks {
+            for span in block_spans {
+                let span_chars = span.to_chars();
+                if span_chars.is_empty() {
+                    continue;
+                }
 
-            // Further split clusters by whitespace characters (semantic words)
-            let mut current_word_chars = Vec::new();
-            for c in cluster_chars {
-                if c.char.is_whitespace() {
+                // Group characters within THIS SPAN. Since PDF spans are often words or line fragments,
+                // this is much safer than global or block-level character clustering.
+                let clusters =
+                    clustering::cluster_chars_into_words(&span_chars, params.word_gap_threshold);
+
+                for cluster_indices in clusters {
+                    let cluster_chars: Vec<_> = cluster_indices
+                        .iter()
+                        .map(|&i| span_chars[i].clone())
+                        .collect();
+
+                    let mut current_word_chars = Vec::new();
+                    for c in cluster_chars {
+                        if c.char.is_whitespace() || c.char == '\n' || c.char == '\r' {
+                            if !current_word_chars.is_empty() {
+                                words.push(Word::from_chars(current_word_chars));
+                                current_word_chars = Vec::new();
+                            }
+                        } else {
+                            current_word_chars.push(c);
+                        }
+                    }
                     if !current_word_chars.is_empty() {
                         words.push(Word::from_chars(current_word_chars));
-                        current_word_chars = Vec::new();
                     }
-                } else {
-                    current_word_chars.push(c);
                 }
-            }
-            if !current_word_chars.is_empty() {
-                words.push(Word::from_chars(current_word_chars));
             }
         }
 
@@ -5303,34 +5352,28 @@ impl PdfDocument {
         &mut self,
         page_index: usize,
     ) -> Result<Vec<crate::layout::TextLine>> {
-        use crate::layout::{clustering, AdaptiveLayoutParams, DocumentProperties, TextLine, Word};
+        use crate::layout::{clustering, AdaptiveLayoutParams, DocumentProperties, TextLine};
 
-        let chars = self.extract_chars(page_index)?;
-        if chars.is_empty() {
+        // Reuse extract_words which now correctly respects reading order
+        let words = self.extract_words(page_index)?;
+        if words.is_empty() {
             return Ok(Vec::new());
         }
 
+        // Get page media box for layout analysis
         let media_box = self
             .get_page_media_box(page_index)
             .unwrap_or((0.0, 0.0, 612.0, 792.0));
         let page_bbox =
             crate::geometry::Rect::new(media_box.0, media_box.1, media_box.2, media_box.3);
 
+        // Analyze words for line-level properties
+        let all_chars: Vec<_> = words.iter().flat_map(|w| w.chars.clone()).collect();
         let props =
-            DocumentProperties::analyze(&chars, page_bbox).map_err(Error::LayoutAnalysis)?;
+            DocumentProperties::analyze(&all_chars, page_bbox).map_err(Error::LayoutAnalysis)?;
         let params = AdaptiveLayoutParams::from_properties(&props);
 
-        // 1. Cluster chars -> words
-        let word_clusters = clustering::cluster_chars_into_words(&chars, params.word_gap_threshold);
-        let words: Vec<_> = word_clusters
-            .into_iter()
-            .map(|indices| {
-                let cluster_chars: Vec<_> = indices.iter().map(|&i| chars[i].clone()).collect();
-                Word::from_chars(cluster_chars)
-            })
-            .collect();
-
-        // 2. Cluster words -> lines
+        // Cluster words -> lines, respecting the order provided by extract_words
         let line_clusters = clustering::cluster_words_into_lines(&words, params.line_gap_threshold);
 
         let mut lines = Vec::new();
@@ -6553,18 +6596,27 @@ impl PdfDocument {
                     _ => {},
                 }
             }
-            // ToUnicode: hash presence (BaseFont already differentiates content)
-            if d.get("ToUnicode").is_some() {
+            // ToUnicode: hash content via reference or inline presence
+            if let Some(to_unicode) = d.get("ToUnicode") {
                 4u8.hash(&mut hasher);
+                if let Some(r) = to_unicode.as_reference() {
+                    r.id.hash(&mut hasher);
+                    r.gen.hash(&mut hasher);
+                }
             }
             // FontDescriptor: hash presence
             if d.get("FontDescriptor").is_some() {
                 5u8.hash(&mut hasher);
             }
-            // DescendantFonts: hash count for Type0 fonts
+            // DescendantFonts: hash references for Type0 fonts
             if let Some(Object::Array(arr)) = d.get("DescendantFonts") {
                 6u8.hash(&mut hasher);
-                arr.len().hash(&mut hasher);
+                for item in arr {
+                    if let Some(r) = item.as_reference() {
+                        r.id.hash(&mut hasher);
+                        r.gen.hash(&mut hasher);
+                    }
+                }
             }
         }
         hasher.finish()

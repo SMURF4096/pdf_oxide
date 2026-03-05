@@ -54,6 +54,42 @@ pub struct TextSpan {
     pub artifact_type: Option<ArtifactType>,
 }
 
+impl TextSpan {
+    /// Decompose the span into individual characters.
+    pub fn to_chars(&self) -> Vec<TextChar> {
+        let char_count = self.text.chars().count();
+        if char_count == 0 {
+            return Vec::new();
+        }
+
+        let char_width = self.bbox.width / (char_count as f32);
+        self.text
+            .chars()
+            .enumerate()
+            .map(|(i, c)| TextChar {
+                char: c,
+                bbox: Rect::new(
+                    self.bbox.x + (i as f32) * char_width,
+                    self.bbox.y,
+                    char_width,
+                    self.bbox.height,
+                ),
+                font_name: self.font_name.clone(),
+                font_size: self.font_size,
+                font_weight: self.font_weight,
+                is_italic: self.is_italic,
+                color: self.color,
+                mcid: self.mcid,
+                origin_x: self.bbox.x + (i as f32) * char_width,
+                origin_y: self.bbox.y,
+                rotation_degrees: 0.0,
+                advance_width: char_width,
+                matrix: Some([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]),
+            })
+            .collect()
+    }
+}
+
 /// A single character with its position and styling.
 ///
 /// NOTE: This is kept for backward compatibility and special use cases.

@@ -10,10 +10,10 @@
 //! - [`XYCutStrategy`]: Recursive XY-Cut spatial partitioning (newspapers, academic papers)
 //! - [`SimpleStrategy`]: Simple top-to-bottom, left-to-right ordering
 
-mod geometric;
-mod simple;
-mod structure_tree;
-mod xycut;
+pub mod geometric;
+pub mod simple;
+pub mod structure_tree;
+pub mod xycut;
 
 pub use geometric::GeometricStrategy;
 pub use simple::SimpleStrategy;

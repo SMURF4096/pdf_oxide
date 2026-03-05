@@ -1589,7 +1589,6 @@ fn get_byte_mode(font: Option<&FontInfo>) -> ByteMode {
                         || name.contains("KSC")
                         || name.contains("KSCms")
                     {
-                        // CIDs are typically 2-byte values in these CMaps
                         ByteMode::TwoByte
                     } else {
                         ByteMode::OneByte
@@ -1677,6 +1676,7 @@ fn decode_text_to_unicode(bytes: &[u8], font: Option<&FontInfo>) -> String {
                 let char_str = font
                     .char_to_unicode(char_code as u32)
                     .unwrap_or_else(|| fallback_char_to_unicode(char_code as u32));
+
                 if char_str != "\u{FFFD}" {
                     result.push_str(&char_str);
                 }

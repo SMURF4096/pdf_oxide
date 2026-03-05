@@ -1007,4 +1007,81 @@ mod tests {
         assert_eq!(cmap.get(&0x11), Some(&"fi".to_string())); // code 0x11 -> "fi"
         assert_eq!(cmap.get(&0x12), Some(&"C".to_string())); // code 0x12 -> "C"
     }
+
+    #[test]
+    fn test_parse_zekat_cmap() {
+        let cmap_data = r#"
+/CIDInit /ProcSet findresource begin
+19 dict begin
+begincmap
+/CIDSystemInfo
+<< /Registry (Adobe)
+/Ordering (UCS)
+/Supplement 0
+>> def
+/CMapName /Adobe-Identity-UCS def
+/CMapType 2 def
+1 begincodespacerange
+<0000> <FFFF>
+endcodespacerange
+1 beginbfrange
+<0003> <0004> <0020>
+endbfrange
+3 beginbfchar
+<000F> <002C>
+<0011> <002E>
+<0024> <0041>
+endbfchar
+1 beginbfrange
+<0027> <0029> <0044>
+endbfrange
+2 beginbfchar
+<002C> <0049>
+<002E> <004B>
+endbfchar
+2 beginbfrange
+<0030> <0032> <004D>
+<0035> <0037> <0052>
+endbfrange
+2 beginbfchar
+<0039> <0056>
+<003D> <005A>
+endbfchar
+5 beginbfrange
+<0044> <0048> <0061>
+<004A> <004C> <0067>
+<004E> <0053> <006B>
+<0055> <0059> <0072>
+<005C> <005D> <0079>
+endbfrange
+5 beginbfchar
+<006B> <00E2>
+<006F> <00E7>
+<007C> <00F6>
+<0081> <00FC>
+<00AB> <2026>
+endbfchar
+1 beginbfrange
+<00B3> <00B4> <201C>
+endbfrange
+4 beginbfchar
+<00C6> <00C2>
+<00D5> <0131>
+<00F7> <011F>
+<00FA> <015F>
+endbfchar
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end
+"#
+        .as_bytes();
+
+        let cmap = parse_tounicode_cmap(cmap_data).expect("Failed to parse CMap");
+
+        // ZEKAT check
+        assert_eq!(cmap.get(&0x3D), Some(&"Z".to_string()));
+        assert_eq!(cmap.get(&0x24), Some(&"A".to_string()));
+        assert_eq!(cmap.get(&0xC6), Some(&"\u{00C2}".to_string())); // Â
+    }
 }

@@ -369,7 +369,8 @@ impl AdaptiveLayoutParams {
 
             // Line gap: 130% of median line spacing
             // (allows for slight variation in line spacing)
-            line_gap_threshold: props.median_line_spacing * 1.3,
+            // Capped at 80% of median font size to prevent merging separate lines (Issue 211)
+            line_gap_threshold: (props.median_line_spacing * 1.3).min(props.median_font_size * 0.8),
 
             // Column gap: 2× median font size
             // (columns typically separated by at least 2 characters worth of space)

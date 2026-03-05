@@ -520,28 +520,29 @@ impl FontInfo {
             .get("ToUnicode")
             .and_then(|obj| obj.as_reference())
         {
-            let stream_opt =
-                match doc.load_object(cmap_ref) {
-                    Ok(cmap_obj) => match doc.decode_stream_with_encryption(&cmap_obj, cmap_ref) {
+            let stream_opt = match doc.load_object(cmap_ref) {
+                Ok(cmap_obj) => {
+                    match doc.decode_stream_with_encryption(&cmap_obj, cmap_ref) {
                         Ok(data) => Some(data),
                         Err(e) => {
                             log::warn!(
-                            "Font '{}': Failed to decrypt/decode ToUnicode CMap stream {:?}: {}",
-                            base_font, cmap_ref, e
-                        );
+                                "Font '{}': Failed to decrypt/decode ToUnicode CMap stream {:?}: {}",
+                                base_font, cmap_ref, e
+                            );
                             None
                         },
-                    },
-                    Err(e) => {
-                        log::warn!(
-                            "Font '{}': Failed to load ToUnicode CMap object {:?}: {}",
-                            base_font,
-                            cmap_ref,
-                            e
-                        );
-                        None
-                    },
-                };
+                    }
+                },
+                Err(e) => {
+                    log::warn!(
+                        "Font '{}': Failed to load ToUnicode CMap object {:?}: {}",
+                        base_font,
+                        cmap_ref,
+                        e
+                    );
+                    None
+                },
+            };
 
             if let Some(stream_bytes) = stream_opt {
                 // Store raw bytes for lazy parsing — LazyCMap handles errors on first access.

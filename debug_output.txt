@@ -1,0 +1,2352 @@
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Basic' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Parsing ToUnicode CMap (351 bytes)
+DEBUG: CMap content:
+/CIDInit /ProcSet findresource begin
+10 dict begin
+begincmap
+/CIDSystemInfo
+<< /Registry (Adobe)
+/Ordering (UCS)
+/Supplement 0
+>> def
+/CMapName /Adobe-Identity-UCS def
+/CMapType 2 def
+1 begincodespacerange
+<0000> <FFFF>
+endcodespacerange
+2 beginbfchar
+<0003> <0020>
+<00F5> <FDFD>
+endbfchar
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Parsing ToUnicode CMap (1584 bytes)
+DEBUG: CMap content:
+/CIDInit /ProcSet findresource begin
+28 dict begin
+begincmap
+/CIDSystemInfo
+<< /Registry (Adobe)
+/Ordering (UCS)
+/Supplement 0
+>> def
+/CMapName /Adobe-Identity-UCS def
+/CMapType 2 def
+1 begincodespacerange
+<0000> <FFFF>
+endcodespacerange
+3 beginbfchar
+<0003> <0020>
+<004B> <0621>
+<0055> <0626>
+endbfchar
+1 beginbfrange
+<0057> <0058> <0626>
+endbfrange
+2 beginbfchar
+<0059> <0627>
+<005C> <0628>
+endbfchar
+1 beginbfrange
+<005E> <005F> [<0629> <0629>]
+endbfrange
+2 beginbfchar
+<0062> <062A>
+<006B> <062C>
+endbfchar
+1 beginbfrange
+<0072> <0073> [<062E> <062E>]
+endbfrange
+1 beginbfchar
+<0075> <062F>
+endbfchar
+1 beginbfrange
+<0078> <0079> [<0631> <0631>]
+endbfrange
+1 beginbfchar
+<007B> <0632>
+endbfchar
+2 beginbfrange
+<007E> <007F> [<0633> <0633>]
+<0086> <0087> [<0635> <0635>]
+endbfrange
+1 beginbfchar
+<008F> <0637>
+endbfchar
+1 beginbfrange
+<0096> <0097> [<0639> <0639>]
+endbfrange
+1 beginbfchar
+<009F> <0641>
+endbfchar
+8 beginbfrange
+<00A2> <00A3> [<0642> <0642>]
+<00A6> <00A6> [<0643>]
+<00A7> <00A8> <0643>
+<00AA> <00AB> [<0644> <0644>]
+<00AD> <00AE> [<0645> <0645>]
+<00AF> <00B0> <0645>
+<00B1> <00B2> [<0646> <0646>]
+<00B3> <00B4> <0646>
+endbfrange
+1 beginbfchar
+<00B5> <0647>
+endbfchar
+2 beginbfrange
+<00B8> <00B9> [<0648> <0648>]
+<00BF> <00C1> [<064A> <064A> <064A>]
+endbfrange
+2 beginbfchar
+<00C3> <06440644>
+<00CA> <06440650>
+endbfchar
+4 beginbfrange
+<00CF> <00CF> [<0020>]
+<00D0> <00D2> <064D>
+<00D3> <00D5> [<06510650> <0020> <0652>]
+<00DA> <00DB> [<0670> <06EA>]
+endbfrange
+1 beginbfchar
+<00E3> <064E06DC>
+endbfchar
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Basic' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Basic' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Parsing ToUnicode CMap (337 bytes)
+DEBUG: CMap content:
+/CIDInit /ProcSet findresource begin
+10 dict begin
+begincmap
+/CIDSystemInfo
+<< /Registry (Adobe)
+/Ordering (UCS)
+/Supplement 0
+>> def
+/CMapName /Adobe-Identity-UCS def
+/CMapType 2 def
+1 begincodespacerange
+<0000> <FFFF>
+endcodespacerange
+1 beginbfchar
+<001D> <003A>
+endbfchar
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end
+DEBUG: Font 'Times New Roman,Bold' code 0x001D -> ':'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x00AB -> '«'
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'ABCDEE+Shaikh Hamdullah Mushaf' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x003D -> '='
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0028 -> '('
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x002E -> '.'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x00C6 -> 'Æ'
+DEBUG: Font 'Times New Roman,Bold' code 0x0037 -> '7'
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' code 0x0039 -> '9'
+DEBUG: Font 'Times New Roman,Bold' code 0x0028 -> '('
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0029 -> ')'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x002C -> ','
+DEBUG: Font 'Times New Roman,Bold' code 0x0037 -> '7'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x002C -> ','
+DEBUG: Font 'Times New Roman,Bold' code 0x0035 -> '5'
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' code 0x0036 -> '6'
+DEBUG: Font 'Times New Roman,Bold' code 0x0024 -> '$'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0027 -> '’'
+DEBUG: Font 'Times New Roman,Bold' code 0x0024 -> '$'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x002E -> '.'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0024 -> '$'
+DEBUG: Font 'Times New Roman,Bold' code 0x0036 -> '6'
+DEBUG: Font 'Times New Roman,Bold' code 0x002C -> ','
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0030 -> 'M'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0058 -> 'X'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004B -> 'K'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0057 -> 'W'
+DEBUG: Font 'Times New Roman,Bold' code 0x0048 -> 'H'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0048 -> 'H'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0050 -> 'P'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0030 -> 'M'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0081 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0056 -> 'V'
+DEBUG: Font 'Times New Roman,Bold' code 0x004F -> 'O'
+DEBUG: Font 'Times New Roman,Bold' code 0x0081 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0050 -> 'P'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004F -> 'O'
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,Bold' code 0x0004 -> '!'
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Parsing ToUnicode CMap (1115 bytes)
+DEBUG: CMap content:
+/CIDInit /ProcSet findresource begin
+22 dict begin
+begincmap
+/CIDSystemInfo
+<< /Registry (Adobe)
+/Ordering (UCS)
+/Supplement 0
+>> def
+/CMapName /Adobe-Identity-UCS def
+/CMapType 2 def
+1 begincodespacerange
+<0000> <FFFF>
+endcodespacerange
+1 beginbfchar
+<0003> <0020>
+endbfchar
+1 beginbfrange
+<000B> <000C> <0028>
+endbfrange
+1 beginbfchar
+<000F> <002C>
+endbfchar
+1 beginbfrange
+<0011> <0014> <002E>
+endbfrange
+4 beginbfchar
+<0018> <0035>
+<001A> <0037>
+<001C> <0039>
+<001E> <003B>
+endbfchar
+1 beginbfrange
+<0024> <0026> <0041>
+endbfrange
+5 beginbfchar
+<0028> <0045>
+<002B> <0048>
+<002E> <004B>
+<0030> <004D>
+<0033> <0050>
+endbfchar
+6 beginbfrange
+<0035> <0037> <0052>
+<003C> <003D> <0059>
+<0044> <004C> <0061>
+<004E> <0053> <006B>
+<0055> <0059> <0072>
+<005C> <005D> <0079>
+endbfrange
+4 beginbfchar
+<006B> <00E2>
+<006F> <00E7>
+<0076> <00EE>
+<007C> <00F6>
+endbfchar
+1 beginbfrange
+<0080> <0081> <00FB>
+endbfrange
+2 beginbfchar
+<00B6> <2019>
+<00D5> <0131>
+endbfchar
+1 beginbfrange
+<00F7> <00F8> [<011F> <0130>]
+endbfrange
+1 beginbfchar
+<00FA> <015F>
+endbfchar
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0024 -> '$'
+DEBUG: Font 'Times New Roman,Bold' code 0x005D -> ']'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004C -> 'L'
+DEBUG: Font 'Times New Roman,Bold' code 0x005D -> ']'
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' code 0x0030 -> 'M'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0081 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0050 -> 'P'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004C -> 'L'
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004F -> 'O'
+DEBUG: Font 'Times New Roman,Bold' code 0x0048 -> 'H'
+DEBUG: Font 'Times New Roman,Bold' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0004 -> '!'
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x00B3 -> '³'
+DEBUG: Font 'Times New Roman,Bold' code 0x0032 -> '2'
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004F -> 'O'
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,Bold' code 0x00D5 -> 'Õ'
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0050 -> 'P'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x004F -> 'O'
+DEBUG: Font 'Times New Roman,Bold' code 0x004F -> 'O'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x00D5 -> 'Õ'
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0047 -> 'd'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0050 -> 'P'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0058 -> 'X'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004B -> 'K'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0057 -> 'W'
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x006F -> 'o'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0059 -> 'Y'
+DEBUG: Font 'Times New Roman,Bold' code 0x0048 -> 'H'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x005C -> '\'
+DEBUG: Font 'Times New Roman,Bold' code 0x0052 -> 'R'
+DEBUG: Font 'Times New Roman,Bold' code 0x004E -> 'N'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0056 -> 'V'
+DEBUG: Font 'Times New Roman,Bold' code 0x0058 -> 'X'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004F -> 'O'
+DEBUG: Font 'Times New Roman,Bold' code 0x004F -> 'O'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004C -> 'L'
+DEBUG: Font 'Times New Roman,Bold' code 0x006F -> 'o'
+DEBUG: Font 'Times New Roman,Bold' code 0x004C -> 'L'
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0045 -> 'E'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004C -> 'L'
+DEBUG: Font 'Times New Roman,Bold' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0053 -> 'S'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x005C -> '\'
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0059 -> 'Y'
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0047 -> 'd'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x00D5 -> 'Õ'
+DEBUG: Font 'Times New Roman,Bold' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,Bold' code 0x00B4 -> '´'
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x002E -> '.'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x00D5 -> 'Õ'
+DEBUG: Font 'Times New Roman,Bold' code 0x005C -> '\'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0050 -> 'P'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0048 -> 'H'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0057 -> 'W'
+DEBUG: Font 'Times New Roman,Bold' code 0x004F -> 'O'
+DEBUG: Font 'Times New Roman,Bold' code 0x004C -> 'L'
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' code 0x0030 -> 'M'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0081 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0056 -> 'V'
+DEBUG: Font 'Times New Roman,Bold' code 0x004F -> 'O'
+DEBUG: Font 'Times New Roman,Bold' code 0x0081 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0050 -> 'P'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004F -> 'O'
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,Bold' code 0x0004 -> '!'
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x00B3 -> '³'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x00AB -> '«'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x003D -> '='
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0048 -> 'H'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004E -> 'N'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x006B -> 'k'
+DEBUG: Font 'Times New Roman,Bold' code 0x0057 -> 'W'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x000F -> '�'
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0056 -> 'V'
+DEBUG: Font 'Times New Roman,Bold' code 0x0058 -> 'X'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x005C -> '\'
+DEBUG: Font 'Times New Roman,Bold' code 0x0058 -> 'X'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x0057 -> 'W'
+DEBUG: Font 'Times New Roman,Bold' code 0x0048 -> 'H'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x00FA -> 'ú'
+DEBUG: Font 'Times New Roman,Bold' code 0x004C -> 'L'
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0056 -> 'V'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x007C -> '|'
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0047 -> 'd'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0081 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0047 -> 'd'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0081 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x00F7 -> '÷'
+DEBUG: Font 'Times New Roman,Bold' code 0x0081 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004A -> 'J'
+DEBUG: Font 'Times New Roman,Bold' code 0x0081 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x004B -> 'K'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004F -> 'O'
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,Bold' code 0x00D5 -> 'Õ'
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' code 0x0056 -> 'V'
+DEBUG: Font 'Times New Roman,Bold' code 0x004C -> 'L'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004F -> 'O'
+DEBUG: Font 'Times New Roman,Bold' code 0x004C -> 'L'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0053 -> 'S'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x005C -> '\'
+DEBUG: Font 'Times New Roman,Bold' code 0x0052 -> 'R'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004E -> 'N'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' code 0x0048 -> 'H'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0047 -> 'd'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0048 -> 'H'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0011 -> '�'
+DEBUG: Font 'Times New Roman,Bold' code 0x00B4 -> '´'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0027 -> '’'
+DEBUG: Font 'Times New Roman,Bold' code 0x0048 -> 'H'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x00F7 -> '÷'
+DEBUG: Font 'Times New Roman,Bold' code 0x0048 -> 'H'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004F -> 'O'
+DEBUG: Font 'Times New Roman,Bold' code 0x004C -> 'L'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' code 0x0030 -> 'M'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0081 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0050 -> 'P'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004C -> 'L'
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004F -> 'O'
+DEBUG: Font 'Times New Roman,Bold' code 0x0048 -> 'H'
+DEBUG: Font 'Times New Roman,Bold' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0004 -> '!'
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0024 -> '$'
+DEBUG: Font 'Times New Roman,Bold' code 0x005D -> ']'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004C -> 'L'
+DEBUG: Font 'Times New Roman,Bold' code 0x005D -> ']'
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' code 0x0030 -> 'M'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0081 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0056 -> 'V'
+DEBUG: Font 'Times New Roman,Bold' code 0x004F -> 'O'
+DEBUG: Font 'Times New Roman,Bold' code 0x0081 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0050 -> 'P'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004F -> 'O'
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0004 -> '!'
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x00B3 -> '³'
+DEBUG: Font 'Times New Roman,Bold' code 0x0031 -> '1'
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x0050 -> 'P'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x005D -> ']'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x00D5 -> 'Õ'
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004E -> 'N'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x00D5 -> 'Õ'
+DEBUG: Font 'Times New Roman,Bold' code 0x004F -> 'O'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x00D5 -> 'Õ'
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x000F -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x005D -> ']'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0048 -> 'H'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004E -> 'N'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x006B -> 'k'
+DEBUG: Font 'Times New Roman,Bold' code 0x0057 -> 'W'
+DEBUG: Font 'Times New Roman,Bold' code 0x00D5 -> 'Õ'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0059 -> 'Y'
+DEBUG: Font 'Times New Roman,Bold' code 0x0048 -> 'H'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004C -> 'L'
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0011 -> '�'
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x002E -> '.'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0048 -> 'H'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0047 -> 'd'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004C -> 'L'
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004C -> 'L'
+DEBUG: Font 'Times New Roman,Bold' code 0x005D -> ']'
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004C -> 'L'
+DEBUG: Font 'Times New Roman,Bold' code 0x006F -> 'o'
+DEBUG: Font 'Times New Roman,Bold' code 0x004C -> 'L'
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x007C -> '|'
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0046 -> 'F'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0048 -> 'H'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0047 -> 'd'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0048 -> 'H'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0048 -> 'H'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004B -> 'K'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x005C -> '\'
+DEBUG: Font 'Times New Roman,Bold' code 0x00D5 -> 'Õ'
+DEBUG: Font 'Times New Roman,Bold' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x005C -> '\'
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x0053 -> 'S'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0056 -> 'V'
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x00D5 -> 'Õ'
+DEBUG: Font 'Times New Roman,Bold' code 0x005D -> ']'
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0024 -> '$'
+DEBUG: Font 'Times New Roman,Bold' code 0x004F -> 'O'
+DEBUG: Font 'Times New Roman,Bold' code 0x004F -> 'O'
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x004B -> 'K'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004E -> 'N'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x0057 -> 'W'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x00D5 -> 'Õ'
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0047 -> 'd'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0052 -> 'R'
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0058 -> 'X'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0045 -> 'E'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0058 -> 'X'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004F -> 'O'
+DEBUG: Font 'Times New Roman,Bold' code 0x0058 -> 'X'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0056 -> 'V'
+DEBUG: Font 'Times New Roman,Bold' code 0x0058 -> 'X'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0058 -> 'X'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x005D -> ']'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0011 -> '�'
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0030 -> 'M'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0058 -> 'X'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004B -> 'K'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x004E -> 'N'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004E -> 'N'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004E -> 'N'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004E -> 'N'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004C -> 'L'
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0024 -> '$'
+DEBUG: Font 'Times New Roman,Bold' code 0x004F -> 'O'
+DEBUG: Font 'Times New Roman,Bold' code 0x004F -> 'O'
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x004B -> 'K'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x000F -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x005C -> '\'
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x0053 -> 'S'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0057 -> 'W'
+DEBUG: Font 'Times New Roman,Bold' code 0x00D5 -> 'Õ'
+DEBUG: Font 'Times New Roman,Bold' code 0x004E -> 'N'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004F -> 'O'
+DEBUG: Font 'Times New Roman,Bold' code 0x0044 -> 'D'
+DEBUG: Font 'Times New Roman,Bold' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,Bold' code 0x00D5 -> 'Õ'
+DEBUG: Font 'Times New Roman,Bold' code 0x0051 -> 'Q'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x00D5 -> 'Õ'
+DEBUG: Font 'Times New Roman,Bold' code 0x005D -> ']'
+DEBUG: Font 'Times New Roman,Bold' code 0x00D5 -> 'Õ'
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0048 -> 'H'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004E -> 'N'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0056 -> 'V'
+DEBUG: Font 'Times New Roman,Bold' code 0x004C -> 'L'
+DEBUG: Font 'Times New Roman,Bold' code 0x004E -> 'N'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0056 -> 'V'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004C -> 'L'
+DEBUG: Font 'Times New Roman,Bold' code 0x005D -> ']'
+DEBUG: Font 'Times New Roman,Bold' code 0x0003 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x004A -> 'J'
+DEBUG: Font 'Times New Roman,Bold' code 0x007C -> '|'
+DEBUG: Font 'Times New Roman,Bold' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0081 -> '�'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,Bold' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,Bold' code 0x0011 -> '�'
+DEBUG: Font 'Times New Roman,Bold' code 0x00B4 -> '´'
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,BoldItalic' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Parsing ToUnicode CMap (662 bytes)
+DEBUG: CMap content:
+/CIDInit /ProcSet findresource begin
+16 dict begin
+begincmap
+/CIDSystemInfo
+<< /Registry (Adobe)
+/Ordering (UCS)
+/Supplement 0
+>> def
+/CMapName /Adobe-Identity-UCS def
+/CMapType 2 def
+1 begincodespacerange
+<0000> <FFFF>
+endcodespacerange
+2 beginbfchar
+<0003> <0020>
+<0027> <0044>
+endbfchar
+1 beginbfrange
+<002A> <002B> <0047>
+endbfrange
+1 beginbfchar
+<0030> <004D>
+endbfchar
+1 beginbfrange
+<0047> <0048> <0064>
+endbfrange
+1 beginbfchar
+<004C> <0069>
+endbfchar
+1 beginbfrange
+<004F> <0051> <006C>
+endbfrange
+5 beginbfchar
+<0055> <0072>
+<0057> <0074>
+<005D> <007A>
+<0081> <00FC>
+<00F7> <011F>
+endbfchar
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x0027 -> 'D'
+DEBUG: Font 'Times New Roman,BoldItalic' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x004C -> 'i'
+DEBUG: Font 'Times New Roman,BoldItalic' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x0051 -> 'n'
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x0003 -> ' '
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x002B -> 'H'
+DEBUG: Font 'Times New Roman,BoldItalic' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x004C -> 'i'
+DEBUG: Font 'Times New Roman,BoldItalic' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x005D -> 'z'
+DEBUG: Font 'Times New Roman,BoldItalic' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x0050 -> 'm'
+DEBUG: Font 'Times New Roman,BoldItalic' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x0048 -> 'e'
+DEBUG: Font 'Times New Roman,BoldItalic' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x0057 -> 't'
+DEBUG: Font 'Times New Roman,BoldItalic' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x004F -> 'l'
+DEBUG: Font 'Times New Roman,BoldItalic' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x0048 -> 'e'
+DEBUG: Font 'Times New Roman,BoldItalic' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x004C -> 'i'
+DEBUG: Font 'Times New Roman,BoldItalic' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x0003 -> ' '
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x002A -> 'G'
+DEBUG: Font 'Times New Roman,BoldItalic' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x0048 -> 'e'
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x0051 -> 'n'
+DEBUG: Font 'Times New Roman,BoldItalic' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x0048 -> 'e'
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x004F -> 'l'
+DEBUG: Font 'Times New Roman,BoldItalic' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x0003 -> ' '
+DEBUG: Font 'Times New Roman,BoldItalic' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x0030 -> 'M'
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x0081 -> 'ü'
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x0047 -> 'd'
+DEBUG: Font 'Times New Roman,BoldItalic' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x0081 -> 'ü'
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x0055 -> 'r'
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x004F -> 'l'
+DEBUG: Font 'Times New Roman,BoldItalic' (subtype=Type0) encoding=Identity -> ByteMode::TwoByte
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x0081 -> 'ü'
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x00F7 -> 'ğ'
+DEBUG: Font 'Times New Roman,BoldItalic' code 0x0081 -> 'ü'
