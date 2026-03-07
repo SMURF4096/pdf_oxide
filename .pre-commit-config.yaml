@@ -23,14 +23,14 @@ repos:
       language: system
       pass_filenames: false
       types: [rust]
-      
+
     - id: cargo-check
       name: cargo check
       entry: cargo check
       language: system
       pass_filenames: false
       types: [rust]
-      
+
     - id: cargo-clippy
       name: cargo clippy
       entry: cargo clippy -- -D warnings
@@ -45,17 +45,15 @@ repos:
       pass_filenames: false
       types: [rust]
 
-    - id: ty-check
-      name: ty type check (if .venv exists)
-      entry: python hooks/ty-check.py
-      language: python
-      pass_filenames: false
-      types: [python]
-      additional_dependencies: []
-
+- repo: https://github.com/allganize/ty-pre-commit
+  rev: v0.0.18
+  hooks:
+  # Run the type checker.
+  - id: ty-check
+    exclude: .*test.*.py$
 
 - repo: https://github.com/astral-sh/ruff-pre-commit
-  rev: v0.14.13
+  rev: v0.15.5
   hooks:
   - id: ruff-check
     args: [--fix]

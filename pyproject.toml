@@ -59,6 +59,7 @@ dev = [
     "pytest-cov>=4.0",
     # Type checking (optional)
     "mypy>=1.0",
+    "ty>=0.0.15",
     # Build tool for Python bindings
     "maturin>=1.0,<2.0",
 ]
