@@ -44,23 +44,39 @@ pub struct Rect {
 
 impl Rect {
     /// Create a new rectangle from position and dimensions.
+    /// Normalizes dimensions so width and height are always non-negative.
     ///
     /// # Examples
     ///
     /// ```
     /// use pdf_oxide::geometry::Rect;
     ///
-    /// let rect = Rect::new(0.0, 0.0, 100.0, 50.0);
-    /// assert_eq!(rect.width, 100.0);
+    /// let rect = Rect::new(0.0, 50.0, 100.0, -50.0);
+    /// assert_eq!(rect.y, 0.0);
     /// assert_eq!(rect.height, 50.0);
     /// ```
     pub fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
+        let (nx, nw) = if width < 0.0 {
+            (x + width, -width)
+        } else {
+            (x, width)
+        };
+        let (ny, nh) = if height < 0.0 {
+            (y + height, -height)
+        } else {
+            (y, height)
+        };
         Self {
-            x,
-            y,
-            width,
-            height,
+            x: nx,
+            y: ny,
+            width: nw,
+            height: nh,
         }
+    }
+
+    /// Ensure width and height are non-negative.
+    pub fn normalize(self) -> Self {
+        Self::new(self.x, self.y, self.width, self.height)
     }
 
     /// Create a rectangle from two corner points.

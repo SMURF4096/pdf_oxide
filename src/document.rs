@@ -2772,10 +2772,28 @@ impl PdfDocument {
     /// println!("Page 1 text: {}", text);
     /// # Ok::<(), pdf_oxide::error::Error>(())
     /// ```
+    /// Extract text from a page.
     pub fn extract_text(&mut self, page_index: usize) -> Result<String> {
-        // PDF Spec ISO 32000-1:2008 Section 14.8.2.3:
-        // For Tagged PDFs, use structure tree for reading order (spec-compliant)
-        // For Untagged PDFs, use page content order (spec-compliant)
+        self.extract_text_with_options(page_index, &crate::converters::ConversionOptions::default())
+    }
+
+    /// Extract text from a page with specific options (v0.3.16).
+    pub fn extract_text_with_options(
+        &mut self,
+        page_index: usize,
+        options: &crate::converters::ConversionOptions,
+    ) -> Result<String> {
+        // 1. Extract Spans Early (needed for table detection)
+        let mut all_spans = self.extract_spans(page_index)?;
+        let widget_spans = self.extract_widget_spans(page_index);
+        all_spans.extend(widget_spans);
+
+        // 2. Table Detection (if enabled)
+        let tables = if options.extract_tables {
+            self.extract_page_tables(page_index, &all_spans, options)
+        } else {
+            Vec::new()
+        };
 
         // Fast pre-check: skip pages that cannot produce text BEFORE the expensive
         // structure tree parse. This avoids paying 200ms+ structure tree cost for
@@ -2834,21 +2852,17 @@ impl PdfDocument {
             return self.extract_text_structure_order_cached(page_index);
         }
 
-        // Untagged PDF: Use page content order (current implementation)
-        log::debug!(
-            "Using page content order for Untagged PDF text extraction (page {})",
-            page_index
-        );
+        // Untagged PDF: Use page content order
+        let mut spans = all_spans;
 
-        // Use PDF spec-compliant TextSpan extraction (RECOMMENDED approach)
-        // This preserves the PDF's text positioning intent and avoids overlapping character issues
-        let mut spans = self.extract_spans(page_index)?;
-
-        // Merge widget annotation spans (form field values) with content spans
-        // Widget spans are positioned at their /Rect locations and will be sorted
-        // into the correct reading order alongside content stream spans.
-        let widget_spans = self.extract_widget_spans(page_index);
-        spans.extend(widget_spans);
+        // Exclude spans that are inside detected tables
+        if !tables.is_empty() {
+            spans.retain(|s| {
+                !tables
+                    .iter()
+                    .any(|t| t.bbox.is_some_and(|b| b.contains_rect(&s.bbox)))
+            });
+        }
 
         // Sort combined spans by position: Y descending (top→bottom), then X ascending (left→right)
         spans.sort_by(|a, b| {
@@ -3002,7 +3016,15 @@ impl PdfDocument {
 
         // Apply whitespace cleanup for better readability
         // This normalizes excessive double spaces and blank lines
-        let cleaned_text = crate::converters::whitespace::cleanup_plain_text(&text);
+        let mut cleaned_text = crate::converters::whitespace::cleanup_plain_text(&text);
+
+        // Append ASCII tables at the end
+        if !tables.is_empty() {
+            for table in tables {
+                cleaned_text.push_str("\n\n");
+                cleaned_text.push_str(&table.render_text());
+            }
+        }
 
         Ok(cleaned_text)
     }
@@ -3220,11 +3242,23 @@ impl PdfDocument {
         self.erase_page_area_content(page_index, PageArea::Header)
     }
 
+    /// Deprecated: Use `erase_header` instead.
+    #[deprecated(note = "use erase_header instead")]
+    pub fn edit_header(&mut self, page_index: usize) -> Result<()> {
+        self.erase_header(page_index)
+    }
+
     /// Erase existing footer content.
     ///
     /// Identifies existing text in the footer area (bottom 15%) and marks it for erasure.
     pub fn erase_footer(&mut self, page_index: usize) -> Result<()> {
         self.erase_page_area_content(page_index, PageArea::Footer)
+    }
+
+    /// Deprecated: Use `erase_footer` instead.
+    #[deprecated(note = "use erase_footer instead")]
+    pub fn edit_footer(&mut self, page_index: usize) -> Result<()> {
+        self.erase_footer(page_index)
     }
 
     /// Erase both header and footer content.
@@ -6971,7 +7005,9 @@ impl PdfDocument {
 
         // Strategy 2: Hybrid spatial detection (v0.3.14)
         let config = options.table_detection_config.clone().unwrap_or_default();
-        let lines = self.extract_lines(page_index).unwrap_or_default();
+
+        // Extract vector paths (lines/rects) for visual detection
+        let paths = self.extract_paths(page_index).unwrap_or_default();
 
         // Use words instead of raw spans for better granularity in untagged PDFs.
         // This ensures that strings with spaces are split into separate columns.
@@ -7011,7 +7047,7 @@ impl PdfDocument {
 
         let tables = crate::structure::spatial_table_detector::detect_tables_with_lines(
             input_spans,
-            &lines,
+            &paths,
             &config,
         );
 

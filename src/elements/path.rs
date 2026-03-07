@@ -103,9 +103,36 @@ impl PathContent {
     /// A path is a straight line if it has exactly 2 operations:
     /// MoveTo followed by LineTo.
     pub fn is_straight_line(&self) -> bool {
-        self.operations.len() == 2
+        (self.operations.len() == 2
             && matches!(self.operations[0], PathOperation::MoveTo(_, _))
-            && matches!(self.operations[1], PathOperation::LineTo(_, _))
+            && matches!(self.operations[1], PathOperation::LineTo(_, _)))
+            || (self.operations.len() == 3
+                && matches!(self.operations[0], PathOperation::MoveTo(_, _))
+                && matches!(self.operations[1], PathOperation::LineTo(_, _))
+                && matches!(self.operations[2], PathOperation::ClosePath))
+    }
+
+    /// Check if this path is a horizontal line within a tolerance (v0.3.16).
+    pub fn is_horizontal_line(&self, tolerance: f32) -> bool {
+        (self.is_straight_line() && self.bbox.height.abs() < tolerance)
+            || (self.is_rectangle() && self.bbox.height.abs() < tolerance)
+    }
+
+    /// Check if this path is a vertical line within a tolerance (v0.3.16).
+    pub fn is_vertical_line(&self, tolerance: f32) -> bool {
+        (self.is_straight_line() && self.bbox.width.abs() < tolerance)
+            || (self.is_rectangle() && self.bbox.width.abs() < tolerance)
+    }
+
+    /// Check if this path's bounding box is nearly touching another (v0.3.16).
+    pub fn is_nearly_touching(&self, other: &Rect, tolerance: f32) -> bool {
+        let expanded = Rect::new(
+            self.bbox.x - tolerance,
+            self.bbox.y - tolerance,
+            self.bbox.width + 2.0 * tolerance,
+            self.bbox.height + 2.0 * tolerance,
+        );
+        expanded.intersects(other)
     }
 
     /// Check if this path represents a single rectangle (v0.3.14).
@@ -120,13 +147,10 @@ impl PathContent {
             return true;
         }
 
-        // Case 2: MoveTo + 3x LineTo + ClosePath
-        if self.operations.len() == 5
-            && matches!(self.operations[0], PathOperation::MoveTo(_, _))
-            && matches!(self.operations[1], PathOperation::LineTo(_, _))
-            && matches!(self.operations[2], PathOperation::LineTo(_, _))
-            && matches!(self.operations[3], PathOperation::LineTo(_, _))
-            && matches!(self.operations[4], PathOperation::ClosePath)
+        // Case 2: MoveTo + 3x LineTo + (Optional ClosePath)
+        // Must be axis-aligned. We check that consecutive points share X or Y.
+        if (self.operations.len() == 5 && matches!(self.operations[4], PathOperation::ClosePath))
+            || (self.operations.len() == 4)
         {
             if let (
                 PathOperation::MoveTo(x0, y0),
@@ -139,17 +163,33 @@ impl PathContent {
                 &self.operations[2],
                 &self.operations[3],
             ) {
-                // Check if it's an axis-aligned rectangle
-                let horizontal = (y0 - y1).abs() < 0.01
-                    && (x1 - x2).abs() < 0.01
-                    && (y2 - y3).abs() < 0.01
-                    && (x3 - x0).abs() < 0.01;
-                let vertical = (x0 - x1).abs() < 0.01
-                    && (y1 - y2).abs() < 0.01
-                    && (x2 - x3).abs() < 0.01
-                    && (y3 - y0).abs() < 0.01;
-                return horizontal || vertical;
+                let tol = 0.1;
+                // Check if p0..p3 form 3 sides of an axis-aligned rect
+                let side1 = ((x0 - x1).abs() < tol) || ((y0 - y1).abs() < tol);
+                let side2 = ((x1 - x2).abs() < tol) || ((y1 - y2).abs() < tol);
+                let side3 = ((x2 - x3).abs() < tol) || ((y2 - y3).abs() < tol);
+
+                return side1 && side2 && side3;
             }
+        }
+
+        false
+    }
+
+    /// Check if this path is "box-like" or "line-like" based on its dimensions (v0.3.16).
+    /// This is a fuzzy heuristic for table detection.
+    pub fn is_table_primitive(&self) -> bool {
+        let w = self.bbox.width.abs();
+        let h = self.bbox.height.abs();
+
+        // Very thin horizontal or vertical line
+        if (w > 5.0 && h < 2.0) || (h > 5.0 && w < 2.0) {
+            return true;
+        }
+
+        // Rectangular-ish box (not too small, not too large)
+        if w > 5.0 && h > 5.0 && w < 1000.0 && h < 1000.0 {
+            return true;
         }
 
         false
