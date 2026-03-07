@@ -175,6 +175,12 @@ office = ["dep:calamine", "dep:zip"]
 # Parallel page extraction via rayon
 parallel = ["dep:rayon"]
 
+# Stub generator binary (requires python bindings)
+[[bin]]
+name = "stub_gen"
+path = "src/bin/stub_gen.rs"
+required-features = ["python"]
+
 [profile.release]
 opt-level = 3
 lto = true
