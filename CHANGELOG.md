@@ -6,7 +6,7 @@ All notable changes to PDFOxide are documented here.
 
 ### Features
 
-- **Auto-generated Python type stubs** — Added `pyo3-stub-gen` to generate `.pyi` stub files from Rust PyO3 bindings. New `stub_gen` binary (built with `--features python`) produces stubs; run via `uv run stub_gen`, `scripts/run_stub_gen.py`, or the release workflow before building Python wheels.
+- **Auto-generated Python type stubs** — Added `pyo3-stub-gen` to generate `.pyi` stub files from Rust PyO3 bindings. New `stub_gen` binary (built with `--features python`) produces stubs; run via `pdm run stub_gen`, `scripts/run_stub_gen.py`, or the release workflow before building Python wheels.
 
 ### ⚠️ Breaking Changes
 - **Python versions support** - Drop the support for python lower than 3.10
