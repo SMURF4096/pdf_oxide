@@ -69,7 +69,16 @@ def main() -> int:
     exe = project_root / "target" / "debug" / exe_name
     if not exe.is_file():
         exe = project_root / "target" / "release" / exe_name
-    return subprocess.run([str(exe)], env=env, cwd=project_root).returncode
+    r = subprocess.run([str(exe)], env=env, cwd=project_root)
+    if r.returncode != 0:
+        return r.returncode
+
+    # Remove top-level __init__.pyi if present; ty works correctly without it
+    # (re-exports from __init__.py are enough; the stub lives in pdf_oxide/pdf_oxide/).
+    top_level_stub = project_root / "python" / "pdf_oxide" / "__init__.pyi"
+    if top_level_stub.is_file():
+        top_level_stub.unlink()
+    return 0
 
 
 if __name__ == "__main__":

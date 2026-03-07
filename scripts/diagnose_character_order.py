@@ -39,11 +39,10 @@ def diagnose_character_order(pdf_path, page_num=0, max_chars=100):
     print("EXTRACTION ORDER (as they appear in PDF content stream):")
     print("=" * 80)
     for i, char in enumerate(chars[:max_chars]):
-        # Get character properties
-        c = char["char"]
-        x = char["bbox"]["x"]
-        y = char["bbox"]["y"]
-        font_size = char["font_size"]
+        # Get character properties (TextChar: .char, .bbox as (x, y, w, h), .font_size)
+        c = char.char
+        x, y = char.bbox[0], char.bbox[1]
+        font_size = char.font_size
 
         # Display character with position
         display_char = c if c.isprintable() and c != " " else f"[{c!r}]"
@@ -53,16 +52,15 @@ def diagnose_character_order(pdf_path, page_num=0, max_chars=100):
 
     # Sort by spatial position (Y descending, then X ascending)
     # In PDF coordinates, larger Y = higher on page
-    sorted_chars = sorted(chars[:max_chars], key=lambda ch: (-ch["bbox"]["y"], ch["bbox"]["x"]))
+    sorted_chars = sorted(chars[:max_chars], key=lambda ch: (-ch.bbox[1], ch.bbox[0]))
 
     print("=" * 80)
     print("SPATIAL ORDER (top-to-bottom, left-to-right):")
     print("=" * 80)
     for i, char in enumerate(sorted_chars):
-        c = char["char"]
-        x = char["bbox"]["x"]
-        y = char["bbox"]["y"]
-        font_size = char["font_size"]
+        c = char.char
+        x, y = char.bbox[0], char.bbox[1]
+        font_size = char.font_size
 
         display_char = c if c.isprintable() and c != " " else f"[{c!r}]"
         print(f"{i:3d}: '{display_char}' at X={x:6.1f} Y={y:6.1f} size={font_size:.1f}")
@@ -70,8 +68,8 @@ def diagnose_character_order(pdf_path, page_num=0, max_chars=100):
     print()
 
     # Reconstruct text in both orders
-    extraction_order_text = "".join(ch["char"] for ch in chars[:max_chars])
-    spatial_order_text = "".join(ch["char"] for ch in sorted_chars)
+    extraction_order_text = "".join(ch.char for ch in chars[:max_chars])
+    spatial_order_text = "".join(ch.char for ch in sorted_chars)
 
     print("=" * 80)
     print("TEXT COMPARISON:")
@@ -90,7 +88,7 @@ def diagnose_character_order(pdf_path, page_num=0, max_chars=100):
         print("This is the ROOT CAUSE of column mixing.")
 
         # Find first difference
-        for i, (c1, c2) in enumerate(zip(extraction_order_text, spatial_order_text)):
+        for i, (c1, c2) in enumerate(zip(extraction_order_text, spatial_order_text, strict=True)):
             if c1 != c2:
                 print(f"\nFirst difference at position {i}:")
                 print(f"  Extraction order: '{c1}'")
@@ -109,7 +107,7 @@ def diagnose_character_order(pdf_path, page_num=0, max_chars=100):
     # Group characters by Y coordinate (within 5 units tolerance)
     y_groups = {}
     for char in chars[:max_chars]:
-        y = char["bbox"]["y"]
+        y = char.bbox[1]
         # Find existing group within tolerance
         found_group = False
         for y_key in y_groups:
@@ -125,13 +123,13 @@ def diagnose_character_order(pdf_path, page_num=0, max_chars=100):
     print("\nLines with wide X range (potential multi-column):")
 
     for y, group in sorted(y_groups.items(), key=lambda x: -x[0])[:10]:
-        x_values = [ch["bbox"]["x"] for ch in group]
+        x_values = [ch.bbox[0] for ch in group]
         x_min, x_max = min(x_values), max(x_values)
         x_range = x_max - x_min
 
         # If X range is very large, likely multi-column
         if x_range > 200:
-            text = "".join(ch["char"] for ch in sorted(group, key=lambda c: c["bbox"]["x"]))
+            text = "".join(ch.char for ch in sorted(group, key=lambda c: c.bbox[0]))
             print(f"  Y={y:6.1f}: X range {x_min:6.1f} - {x_max:6.1f} (width: {x_range:6.1f})")
             print(f"            Text: {text[:80]}")
 
