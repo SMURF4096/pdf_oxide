@@ -160,7 +160,8 @@ fn test_config_adapter_defaults() {
     assert!(config.output.detect_headings);
     assert!(config.output.include_images);
     assert!(!config.output.preserve_layout);
-    assert!(!config.output.extract_tables);
+    // In v0.3.16, table extraction is enabled by default
+    assert!(config.output.extract_tables);
 }
 
 #[test]

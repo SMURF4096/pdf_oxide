@@ -82,6 +82,165 @@ impl ExtractedTable {
         }
     }
 
+    /// Render the table as ASCII text (v0.3.16).
+    pub fn render_text(&self) -> String {
+        if self.rows.is_empty() {
+            return String::new();
+        }
+
+        // 1. Calculate optimal column widths
+        // We aim for a max total width of ~100 characters for readability
+        let mut col_widths = vec![0; self.col_count];
+
+        for row in &self.rows {
+            let mut col_idx = 0;
+            for cell in &row.cells {
+                let cell_text = cell.text.trim();
+                if cell.colspan == 1 {
+                    col_widths[col_idx] = col_widths[col_idx].max(cell_text.chars().count());
+                }
+                col_idx += cell.colspan as usize;
+            }
+        }
+
+        // Cap individual columns and ensure minimums
+        for w in &mut col_widths {
+            // If column is very wide, cap it but allow more for single-column "tables"
+            let cap = if self.col_count == 1 { 80 } else { 40 };
+            *w = (*w).min(cap).max(3);
+        }
+
+        let mut output = String::new();
+
+        // Helper for horizontal line
+        let hr = |out: &mut String, widths: &[usize]| {
+            out.push('+');
+            for &w in widths {
+                for _ in 0..(w + 2) {
+                    out.push('-');
+                }
+                out.push('+');
+            }
+            out.push('\n');
+        };
+
+        // 2. Render rows with wrapping
+        hr(&mut output, &col_widths);
+        for (r_idx, row) in self.rows.iter().enumerate() {
+            // Prepare wrapped lines for this row
+            let mut row_cell_lines: Vec<Vec<String>> = Vec::new();
+            let mut max_lines = 1;
+
+            let mut col_idx = 0;
+            for cell in &row.cells {
+                let mut cell_total_width = 0;
+                for i in 0..cell.colspan as usize {
+                    if col_idx + i < col_widths.len() {
+                        cell_total_width += col_widths[col_idx + i] + 2;
+                    }
+                }
+                if cell.colspan > 1 {
+                    cell_total_width += cell.colspan as usize - 1;
+                }
+                let available_width = cell_total_width - 2;
+
+                let wrapped = self.wrap_text(cell.text.trim(), available_width);
+                max_lines = max_lines.max(wrapped.len());
+                row_cell_lines.push(wrapped);
+                col_idx += cell.colspan as usize;
+            }
+
+            // Print each line of the wrapped row
+            for line_idx in 0..max_lines {
+                output.push('|');
+                let mut cell_idx = 0;
+                let mut col_offset = 0;
+                for cell in &row.cells {
+                    let mut cell_total_width = 0;
+                    for i in 0..cell.colspan as usize {
+                        if col_offset + i < col_widths.len() {
+                            cell_total_width += col_widths[col_offset + i] + 2;
+                        }
+                    }
+                    if cell.colspan > 1 {
+                        cell_total_width += cell.colspan as usize - 1;
+                    }
+
+                    let available_width = cell_total_width.saturating_sub(2);
+                    let line_content = row_cell_lines[cell_idx]
+                        .get(line_idx)
+                        .cloned()
+                        .unwrap_or_default();
+
+                    output.push(' ');
+                    output.push_str(&line_content);
+                    let content_len = line_content.chars().count();
+                    for _ in 0..available_width.saturating_sub(content_len) {
+                        output.push(' ');
+                    }
+                    output.push(' ');
+                    output.push('|');
+
+                    col_offset += cell.colspan as usize;
+                    cell_idx += 1;
+                }
+                output.push('\n');
+            }
+
+            // Separator after header or first row if no header
+            if (row.is_header && (r_idx + 1 < self.rows.len() && !self.rows[r_idx + 1].is_header))
+                || (r_idx == 0 && !self.has_header)
+            {
+                hr(&mut output, &col_widths);
+            }
+        }
+        hr(&mut output, &col_widths);
+
+        output
+    }
+
+    fn wrap_text(&self, text: &str, width: usize) -> Vec<String> {
+        if text.is_empty() {
+            return vec![];
+        }
+        if width == 0 {
+            return vec![text.to_string()];
+        }
+
+        let mut lines = Vec::new();
+        let words: Vec<&str> = text.split_whitespace().collect();
+        let mut current_line = String::new();
+
+        for word in words {
+            if current_line.is_empty() {
+                current_line.push_str(word);
+            } else {
+                let current_len = current_line.chars().count();
+                let word_len = word.chars().count();
+                // +1 for the space between words
+                if current_len + 1 + word_len <= width {
+                    current_line.push(' ');
+                    current_line.push_str(word);
+                } else {
+                    lines.push(current_line);
+                    current_line = word.to_string();
+                }
+            }
+
+            // If a single word/line is too long, force split it on character boundaries
+            while current_line.chars().count() > width {
+                let head: String = current_line.chars().take(width).collect();
+                let tail: String = current_line.chars().skip(width).collect();
+                lines.push(head);
+                current_line = tail;
+            }
+        }
+        if !current_line.is_empty() {
+            lines.push(current_line);
+        }
+        lines
+    }
+
     /// Add a row to the table
     pub fn add_row(&mut self, row: TableRow) {
         if self.col_count == 0 && !row.cells.is_empty() {
@@ -103,6 +262,11 @@ impl TableRow {
             cells: Vec::new(),
             is_header,
         }
+    }
+
+    /// Check if any cell in this row has a colspan > 1 (v0.3.16).
+    pub fn has_colspan(&self) -> bool {
+        self.cells.iter().any(|c| c.colspan > 1)
     }
 
     /// Add a cell to the row

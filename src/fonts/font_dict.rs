@@ -243,14 +243,14 @@ impl FontInfo {
     /// use pdf_oxide::fonts::FontInfo;
     /// use pdf_oxide::object::ObjectRef;
     ///
-    /// # fn example(mut doc: PdfDocument, font_ref: ObjectRef) -> Result<(), Box<dyn std::error::Error>> {
+    /// # fn example(doc: PdfDocument, font_ref: ObjectRef) -> Result<(), Box<dyn std::error::Error>> {
     /// let font_obj = doc.load_object(font_ref)?;
-    /// let font_info = FontInfo::from_dict(&font_obj, &mut doc)?;
+    /// let font_info = FontInfo::from_dict(&font_obj, &doc)?;
     /// println!("Font: {}", font_info.base_font);
     /// # Ok(())
     /// # }
     /// ```
-    pub fn from_dict(dict: &Object, doc: &mut PdfDocument) -> Result<Self> {
+    pub fn from_dict(dict: &Object, doc: &PdfDocument) -> Result<Self> {
         let font_dict = dict.as_dict().ok_or_else(|| Error::ParseError {
             offset: 0,
             reason: "Font object is not a dictionary".to_string(),
@@ -714,7 +714,7 @@ impl FontInfo {
     /// Per PDF Spec ISO 32000-1:2008, Section 9.7.3
     fn parse_cidsysteminfo(
         cidfont_dict: &HashMap<String, Object>,
-        doc: &mut PdfDocument,
+        doc: &PdfDocument,
     ) -> Result<CIDSystemInfo> {
         let sysinfo_obj = cidfont_dict
             .get("CIDSystemInfo")
@@ -774,7 +774,7 @@ impl FontInfo {
     fn parse_descendant_fonts(
         font_dict: &HashMap<String, Object>,
         base_font: &str,
-        doc: &mut PdfDocument,
+        doc: &PdfDocument,
     ) -> Result<(
         Option<CIDToGIDMap>,
         Option<CIDSystemInfo>,
@@ -1015,7 +1015,7 @@ impl FontInfo {
     fn extract_truetype_cmap_from_descriptor(
         font_dict: &HashMap<String, Object>,
         base_font: &str,
-        doc: &mut PdfDocument,
+        doc: &PdfDocument,
     ) -> Option<TrueTypeCMap> {
         let desc_obj = font_dict.get("FontDescriptor")?;
         let desc = if let Some(r) = desc_obj.as_reference() {
@@ -1204,7 +1204,7 @@ impl FontInfo {
     /// Where integers specify starting codes, and names specify glyphs for consecutive codes.
     fn parse_encoding(
         enc_obj: &Object,
-        doc: &mut PdfDocument,
+        doc: &PdfDocument,
         font_program_encoding: Option<&HashMap<u8, char>>,
     ) -> Result<(Encoding, HashMap<u8, String>)> {
         let empty_map = HashMap::new();

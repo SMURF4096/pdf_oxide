@@ -4,10 +4,11 @@ build-backend = "maturin"
 
 [project]
 name = "pdf_oxide"
-version = "0.3.15"
+version = "0.3.16"
 description = "The fastest Python PDF library: 0.8ms mean, 5× faster than PyMuPDF. Text extraction, markdown conversion, PDF creation. 100% pass rate on 3,830 PDFs."
 readme = "README.md"
 requires-python = ">=3.8"
+
 license = {text = "MIT OR Apache-2.0"}
 authors = [
     {name = "PDF Oxide Contributors", email = "yfedoseev@gmail.com"},
@@ -61,6 +62,7 @@ dev = [
     "pytest-cov>=4.0",
     # Type checking (optional)
     "mypy>=1.0",
+    "ty>=0.0.15",
     # Build tool for Python bindings
     "maturin>=1.0,<2.0",
 ]
@@ -102,6 +104,8 @@ analyze-pdf-spacing = [
 features = ["python"]
 python-source = "python"
 module-name = "pdf_oxide.pdf_oxide"
+# Ensure generated .pyi stubs are packaged (they are gitignored, so include explicitly)
+include = ["pdf_oxide/**/*.pyi"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -181,3 +185,5 @@ python = "./.venv"
 [tool.pdm.scripts]
 fmt = {composite = ["cargo fmt", "ruff check . --select I --fix", "ruff format ."]}
 lint = {composite = ["cargo check", "cargo clippy -- -D warnings", "ruff check . --fix", "ty check ."]}
+# Generate .pyi from Rust (mypy stubgen). Use: pdm run stub_gen
+stub_gen = "uv run stubgen -p pdf_oxide -o python"

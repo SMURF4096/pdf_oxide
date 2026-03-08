@@ -9,6 +9,7 @@ Usage:
     python scripts/export_text_comparison.py [--limit N] [--output DIR]
 """
 
+import contextlib
 import csv
 import gc
 import multiprocessing
@@ -16,6 +17,14 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Protocol, cast
+
+
+class _MPContext(Protocol):
+    """Protocol for multiprocessing context (has Process, Queue). ForkContext not in typeshed on all platforms."""
+
+    def Process(self, *args, **kwargs): ...  # noqa: N802 (match multiprocessing API)
+    def Queue(self): ...  # noqa: N802 (match multiprocessing API)
 
 
 CORPORA = {
@@ -53,10 +62,8 @@ def _extract_pdf_oxide(pdf_path):
     doc = PdfDocument(pdf_path)
     for pw in PASSWORDS:
         if pw:
-            try:
-                doc.authenticate(pw.encode())
-            except Exception:
-                pass
+            with contextlib.suppress(Exception):
+                doc.authenticate(pw)
     count = doc.page_count()
     texts = []
     for i in range(count):
@@ -83,7 +90,7 @@ def _extract_pymupdf(pdf_path):
 
 def run_with_timeout(fn, pdf_path, timeout_sec):
     """Run extraction in a forked subprocess with timeout."""
-    ctx = multiprocessing.get_context("fork")
+    ctx = cast("_MPContext", multiprocessing.get_context("fork"))
     q = ctx.Queue()
 
     def worker():
@@ -163,27 +170,6 @@ def main():
 
     # CSV writer
     write_header = not args.resume or not csv_path.exists() or len(done_paths) == 0
-    csv_file = open(csv_path, "a" if args.resume and done_paths else "w", newline="")
-    writer = csv.writer(csv_file)
-    if write_header:
-        writer.writerow(
-            [
-                "pdf_path",
-                "pdf_filename",
-                "corpus",
-                "pages",
-                "oxide_chars",
-                "oxide_ms",
-                "oxide_error",
-                "mupdf_chars",
-                "mupdf_ms",
-                "mupdf_error",
-                "diff_chars",
-                "ratio",
-            ]
-        )
-        csv_file.flush()
-
     stats = {
         "pass": 0,
         "oxide_better": 0,
@@ -194,94 +180,115 @@ def main():
         "skipped": 0,
     }
 
-    for idx, (pdf_path, corpus) in enumerate(pdfs, 1):
-        if pdf_path in done_paths:
-            stats["skipped"] += 1
-            continue
+    with open(csv_path, "a" if args.resume and done_paths else "w", newline="") as csv_file:
+        writer = csv.writer(csv_file)
+        if write_header:
+            writer.writerow(
+                [
+                    "pdf_path",
+                    "pdf_filename",
+                    "corpus",
+                    "pages",
+                    "oxide_chars",
+                    "oxide_ms",
+                    "oxide_error",
+                    "mupdf_chars",
+                    "mupdf_ms",
+                    "mupdf_error",
+                    "diff_chars",
+                    "ratio",
+                ]
+            )
+            csv_file.flush()
 
-        filename = os.path.basename(pdf_path)
+        for idx, (pdf_path, corpus) in enumerate(pdfs, 1):
+            if pdf_path in done_paths:
+                stats["skipped"] += 1
+                continue
 
-        if filename in SKIP_FILES:
-            stats["skipped"] += 1
-            continue
-        safe_name = f"{corpus}__{filename}".replace(" ", "_")
-        txt_name = safe_name.rsplit(".", 1)[0] + ".txt"
+            filename = os.path.basename(pdf_path)
 
-        # Extract with pdf_oxide (with timeout)
-        t0 = time.perf_counter()
-        oxide_text, oxide_err, pages = run_with_timeout(_extract_pdf_oxide, pdf_path, TIMEOUT_SEC)
-        oxide_ms = (time.perf_counter() - t0) * 1000
-        oxide_chars = len(oxide_text) if oxide_text else 0
-        if oxide_err:
-            stats["oxide_fail"] += 1
+            if filename in SKIP_FILES:
+                stats["skipped"] += 1
+                continue
+            safe_name = f"{corpus}__{filename}".replace(" ", "_")
+            txt_name = safe_name.rsplit(".", 1)[0] + ".txt"
 
-        # Extract with pymupdf (with timeout)
-        t0 = time.perf_counter()
-        mupdf_text, mupdf_err, _ = run_with_timeout(_extract_pymupdf, pdf_path, TIMEOUT_SEC)
-        mupdf_ms = (time.perf_counter() - t0) * 1000
-        mupdf_chars = len(mupdf_text) if mupdf_text else 0
-        if mupdf_err:
-            stats["mupdf_fail"] += 1
-
-        # Save text files
-        if oxide_text:
-            (oxide_dir / txt_name).write_text(oxide_text, encoding="utf-8")
-        if mupdf_text:
-            (mupdf_dir / txt_name).write_text(mupdf_text, encoding="utf-8")
-
-        # Classify
-        diff = oxide_chars - mupdf_chars
-        ratio = (
-            oxide_chars / max(mupdf_chars, 1)
-            if mupdf_chars > 0
-            else (999 if oxide_chars > 0 else 0)
-        )
-
-        if oxide_chars == 0 and mupdf_chars == 0:
-            stats["both_empty"] += 1
-        elif not oxide_err and not mupdf_err:
-            stats["pass"] += 1
-            if oxide_chars < mupdf_chars * 0.5:
-                stats["mupdf_better"] += 1
-            elif oxide_chars > mupdf_chars * 1.5:
-                stats["oxide_better"] += 1
-
-        writer.writerow(
-            [
-                pdf_path,
-                filename,
-                corpus,
-                pages,
-                oxide_chars,
-                f"{oxide_ms:.1f}",
-                oxide_err,
-                mupdf_chars,
-                f"{mupdf_ms:.1f}",
-                mupdf_err,
-                diff,
-                f"{ratio:.3f}",
-            ]
-        )
-        csv_file.flush()
-
-        # Free large text strings to reduce memory for fork()
-        del oxide_text, mupdf_text
-        gc.collect()
-
-        # Progress every 100 or on errors
-        actual_idx = idx - stats["skipped"]
-        actual_total = total - len(done_paths)
-        if actual_idx % 100 == 0 or actual_idx == actual_total or oxide_err or mupdf_err:
-            tag = ""
+            # Extract with pdf_oxide (with timeout)
+            t0 = time.perf_counter()
+            oxide_text, oxide_err, pages = run_with_timeout(
+                _extract_pdf_oxide, pdf_path, TIMEOUT_SEC
+            )
+            oxide_ms = (time.perf_counter() - t0) * 1000
+            oxide_chars = len(oxide_text) if oxide_text else 0
             if oxide_err:
-                tag = f" [oxide err: {oxide_err[:40]}]"
-            elif mupdf_err:
-                tag = f" [mupdf err: {mupdf_err[:40]}]"
-            print(
-                f"  [{actual_idx}/{actual_total}] oxide={oxide_chars:>7} mupdf={mupdf_chars:>7} {filename[:50]}{tag}"
+                stats["oxide_fail"] += 1
+
+            # Extract with pymupdf (with timeout)
+            t0 = time.perf_counter()
+            mupdf_text, mupdf_err, _ = run_with_timeout(_extract_pymupdf, pdf_path, TIMEOUT_SEC)
+            mupdf_ms = (time.perf_counter() - t0) * 1000
+            mupdf_chars = len(mupdf_text) if mupdf_text else 0
+            if mupdf_err:
+                stats["mupdf_fail"] += 1
+
+            # Save text files
+            if oxide_text:
+                (oxide_dir / txt_name).write_text(oxide_text, encoding="utf-8")
+            if mupdf_text:
+                (mupdf_dir / txt_name).write_text(mupdf_text, encoding="utf-8")
+
+            # Classify
+            diff = oxide_chars - mupdf_chars
+            ratio = (
+                oxide_chars / max(mupdf_chars, 1)
+                if mupdf_chars > 0
+                else (999 if oxide_chars > 0 else 0)
             )
 
-    csv_file.close()
+            if oxide_chars == 0 and mupdf_chars == 0:
+                stats["both_empty"] += 1
+            elif not oxide_err and not mupdf_err:
+                stats["pass"] += 1
+                if oxide_chars < mupdf_chars * 0.5:
+                    stats["mupdf_better"] += 1
+                elif oxide_chars > mupdf_chars * 1.5:
+                    stats["oxide_better"] += 1
+
+            writer.writerow(
+                [
+                    pdf_path,
+                    filename,
+                    corpus,
+                    pages,
+                    oxide_chars,
+                    f"{oxide_ms:.1f}",
+                    oxide_err,
+                    mupdf_chars,
+                    f"{mupdf_ms:.1f}",
+                    mupdf_err,
+                    diff,
+                    f"{ratio:.3f}",
+                ]
+            )
+            csv_file.flush()
+
+            # Free large text strings to reduce memory for fork()
+            del oxide_text, mupdf_text
+            gc.collect()
+
+            # Progress every 100 or on errors
+            actual_idx = idx - stats["skipped"]
+            actual_total = total - len(done_paths)
+            if actual_idx % 100 == 0 or actual_idx == actual_total or oxide_err or mupdf_err:
+                tag = ""
+                if oxide_err:
+                    tag = f" [oxide err: {oxide_err[:40]}]"
+                elif mupdf_err:
+                    tag = f" [mupdf err: {mupdf_err[:40]}]"
+                print(
+                    f"  [{actual_idx}/{actual_total}] oxide={oxide_chars:>7} mupdf={mupdf_chars:>7} {filename[:50]}{tag}"
+                )
 
     # Summary
     print(f"\n{'=' * 70}")

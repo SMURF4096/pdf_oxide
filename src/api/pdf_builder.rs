@@ -982,8 +982,20 @@ impl Pdf {
     /// img.save("page1.png")?;
     /// ```
     #[cfg(feature = "rendering")]
-    pub fn render_page(&mut self, page_index: usize) -> Result<crate::rendering::RenderedImage> {
-        self.render_page_with_options(page_index, &crate::rendering::RenderOptions::default())
+    pub fn render_page(
+        &mut self,
+        page_index: usize,
+        options: Option<&crate::rendering::RenderOptions>,
+    ) -> Result<crate::rendering::RenderedImage> {
+        let default_opts;
+        let opts = match options {
+            Some(o) => o,
+            None => {
+                default_opts = crate::rendering::RenderOptions::default();
+                &default_opts
+            },
+        };
+        self.render_page_with_options(page_index, opts)
     }
 
     /// Render a page with custom options.

@@ -164,14 +164,17 @@ impl WasmPdfDocument {
     pub fn extract_text(
         &mut self,
         page_index: usize,
-        region: Option<Vec<f32>>,
+        region: JsValue, // Use JsValue to allow optional/undefined from JS
     ) -> Result<String, JsValue> {
         let mut inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
 
-        if let Some(r) = region {
+        if !region.is_undefined() && !region.is_null() {
+            let r: Vec<f32> = serde_wasm_bindgen::from_value(region)
+                .map_err(|_| JsValue::from_str("Invalid region format. Expected [x, y, w, h]"))?;
+
             if r.len() != 4 {
                 return Err(JsValue::from_str("Region must have exactly 4 elements [x, y, w, h]"));
             }
@@ -258,6 +261,12 @@ impl WasmPdfDocument {
             .map_err(|e| JsValue::from_str(&format!("Failed to erase header: {}", e)))
     }
 
+    /// Deprecated: Use eraseHeader instead.
+    #[wasm_bindgen(js_name = "editHeader")]
+    pub fn edit_header(&mut self, page_index: usize) -> Result<(), JsValue> {
+        self.erase_header(page_index)
+    }
+
     /// Erase existing footer content.
     ///
     /// Identifies existing text in the footer area (bottom 15%) and marks it for erasure.
@@ -270,6 +279,12 @@ impl WasmPdfDocument {
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?
             .erase_footer(page_index)
             .map_err(|e| JsValue::from_str(&format!("Failed to erase footer: {}", e)))
+    }
+
+    /// Deprecated: Use eraseFooter instead.
+    #[wasm_bindgen(js_name = "editFooter")]
+    pub fn edit_footer(&mut self, page_index: usize) -> Result<(), JsValue> {
+        self.erase_footer(page_index)
     }
 
     /// Erase both header and footer content.
@@ -1213,6 +1228,7 @@ pub struct WasmOcrConfig {}
 
 #[wasm_bindgen]
 impl WasmOcrConfig {
+    /// Create a new OCR configuration.
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         Self::default()
@@ -1225,6 +1241,7 @@ pub struct WasmOcrEngine {}
 
 #[wasm_bindgen]
 impl WasmOcrEngine {
+    /// Create a new OCR engine.
     #[wasm_bindgen(constructor)]
     pub fn new(
         _det_model_path: &str,
@@ -2001,8 +2018,15 @@ pub struct WasmArtifactStyle {
     inner: crate::writer::ArtifactStyle,
 }
 
+impl Default for WasmArtifactStyle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[wasm_bindgen(js_name = "ArtifactStyle")]
 impl WasmArtifactStyle {
+    /// Create a new artifact style.
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         Self {
@@ -2010,16 +2034,19 @@ impl WasmArtifactStyle {
         }
     }
 
+    /// Set font for the artifact.
     pub fn font(mut self, name: &str, size: f32) -> Self {
         self.inner = self.inner.font(name, size);
         self
     }
 
+    /// Set bold font for the artifact.
     pub fn bold(mut self) -> Self {
         self.inner = self.inner.bold();
         self
     }
 
+    /// Set color for the artifact.
     pub fn color(mut self, r: f32, g: f32, b: f32) -> Self {
         self.inner = self.inner.color(r, g, b);
         self
@@ -2033,8 +2060,15 @@ pub struct WasmArtifact {
     inner: crate::writer::Artifact,
 }
 
+impl Default for WasmArtifact {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[wasm_bindgen]
 impl WasmArtifact {
+    /// Create a new artifact.
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         Self {
@@ -2042,6 +2076,7 @@ impl WasmArtifact {
         }
     }
 
+    /// Create a left-aligned artifact.
     #[wasm_bindgen(js_name = "left", static_method_of = WasmArtifact)]
     pub fn left(text: &str) -> WasmArtifact {
         WasmArtifact {
@@ -2049,6 +2084,7 @@ impl WasmArtifact {
         }
     }
 
+    /// Create a center-aligned artifact.
     #[wasm_bindgen(js_name = "center", static_method_of = WasmArtifact)]
     pub fn center(text: &str) -> WasmArtifact {
         WasmArtifact {
@@ -2056,6 +2092,7 @@ impl WasmArtifact {
         }
     }
 
+    /// Create a right-aligned artifact.
     #[wasm_bindgen(js_name = "right", static_method_of = WasmArtifact)]
     pub fn right(text: &str) -> WasmArtifact {
         WasmArtifact {
@@ -2063,12 +2100,14 @@ impl WasmArtifact {
         }
     }
 
+    /// Set style for the artifact.
     #[wasm_bindgen(js_name = "withStyle")]
     pub fn with_style(mut self, style: &WasmArtifactStyle) -> Self {
         self.inner = self.inner.with_style(style.inner.clone());
         self
     }
 
+    /// Set vertical offset for the artifact.
     #[wasm_bindgen(js_name = "withOffset")]
     pub fn with_offset(mut self, offset: f32) -> Self {
         self.inner = self.inner.with_offset(offset);
@@ -2083,8 +2122,15 @@ pub struct WasmHeader {
     inner: WasmArtifact,
 }
 
+impl Default for WasmHeader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[wasm_bindgen]
 impl WasmHeader {
+    /// Create a new empty header.
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         Self {
@@ -2092,6 +2138,7 @@ impl WasmHeader {
         }
     }
 
+    /// Create a left-aligned header.
     #[wasm_bindgen(js_name = "left", static_method_of = WasmHeader)]
     pub fn left(text: &str) -> WasmHeader {
         WasmHeader {
@@ -2099,6 +2146,7 @@ impl WasmHeader {
         }
     }
 
+    /// Create a center-aligned header.
     #[wasm_bindgen(js_name = "center", static_method_of = WasmHeader)]
     pub fn center(text: &str) -> WasmHeader {
         WasmHeader {
@@ -2106,6 +2154,7 @@ impl WasmHeader {
         }
     }
 
+    /// Create a right-aligned header.
     #[wasm_bindgen(js_name = "right", static_method_of = WasmHeader)]
     pub fn right(text: &str) -> WasmHeader {
         WasmHeader {
@@ -2121,8 +2170,15 @@ pub struct WasmFooter {
     inner: WasmArtifact,
 }
 
+impl Default for WasmFooter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[wasm_bindgen]
 impl WasmFooter {
+    /// Create a new empty footer.
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         Self {
@@ -2130,6 +2186,7 @@ impl WasmFooter {
         }
     }
 
+    /// Create a left-aligned footer.
     #[wasm_bindgen(js_name = "left", static_method_of = WasmFooter)]
     pub fn left(text: &str) -> WasmFooter {
         WasmFooter {
@@ -2137,6 +2194,7 @@ impl WasmFooter {
         }
     }
 
+    /// Create a center-aligned footer.
     #[wasm_bindgen(js_name = "center", static_method_of = WasmFooter)]
     pub fn center(text: &str) -> WasmFooter {
         WasmFooter {
@@ -2144,6 +2202,7 @@ impl WasmFooter {
         }
     }
 
+    /// Create a right-aligned footer.
     #[wasm_bindgen(js_name = "right", static_method_of = WasmFooter)]
     pub fn right(text: &str) -> WasmFooter {
         WasmFooter {
@@ -2159,8 +2218,15 @@ pub struct WasmPageTemplate {
     inner: crate::writer::PageTemplate,
 }
 
+impl Default for WasmPageTemplate {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[wasm_bindgen]
 impl WasmPageTemplate {
+    /// Create a new page template.
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         Self {
@@ -2168,16 +2234,19 @@ impl WasmPageTemplate {
         }
     }
 
+    /// Set header artifact.
     pub fn header(mut self, header: &WasmArtifact) -> Self {
         self.inner = self.inner.header(header.inner.clone());
         self
     }
 
+    /// Set footer artifact.
     pub fn footer(mut self, footer: &WasmArtifact) -> Self {
         self.inner = self.inner.footer(footer.inner.clone());
         self
     }
 
+    /// Skip rendering template on the first page.
     #[wasm_bindgen(js_name = "skipFirstPage")]
     pub fn skip_first_page(mut self) -> Self {
         self.inner = self.inner.skip_first_page();
@@ -2633,7 +2702,7 @@ mod tests {
     #[test]
     fn test_version() {
         let doc = doc_from_text("Hello");
-        let ver = doc.version();
+        let ver = doc.version().unwrap();
         assert_eq!(ver.len(), 2);
         assert!(ver[0] >= 1, "major version should be at least 1");
     }
@@ -2648,7 +2717,7 @@ mod tests {
     #[test]
     fn test_has_structure_tree_false() {
         let mut doc = doc_from_text("Hello");
-        assert!(!doc.has_structure_tree());
+        assert!(!doc.has_structure_tree().unwrap_or(false));
     }
 
     #[test]
@@ -2665,7 +2734,7 @@ mod tests {
     #[test]
     fn test_extract_text() {
         let mut doc = doc_from_text("Hello world");
-        let text = doc.extract_text(0).unwrap();
+        let text = doc.extract_text(0, JsValue::UNDEFINED).unwrap();
         assert!(
             text.contains("Hello") || text.contains("world"),
             "extracted text should contain source content, got: {}",
@@ -2677,7 +2746,7 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     fn test_extract_text_invalid_page() {
         let mut doc = doc_from_text("Hello");
-        let result = doc.extract_text(999);
+        let result = doc.extract_text(999, JsValue::UNDEFINED);
         assert!(result.is_err());
     }
 
@@ -2691,7 +2760,7 @@ mod tests {
     #[test]
     fn test_extract_text_preserves_content() {
         let mut doc = doc_from_text("Test content 12345");
-        let text = doc.extract_text(0).unwrap();
+        let text = doc.extract_text(0, JsValue::UNDEFINED).unwrap();
         assert!(text.contains("12345"), "should preserve numeric content, got: {}", text);
     }
 
@@ -3149,7 +3218,7 @@ mod tests {
         let bytes = doc.save_to_bytes().unwrap();
 
         let mut doc2 = WasmPdfDocument::new(&bytes).unwrap();
-        let text = doc2.extract_text(0).unwrap();
+        let text = doc2.extract_text(0, JsValue::UNDEFINED).unwrap();
         assert!(text.contains("Roundtrip"), "roundtrip should preserve text, got: {}", text);
     }
 
@@ -3230,9 +3299,10 @@ mod tests {
         let mut doc = WasmPdfDocument::new(&bytes).unwrap();
         // get_form_field_value returns JsValue which aborts on non-wasm32,
         // so test the underlying Rust API directly here.
-        let editor = doc.ensure_editor().unwrap();
-        let value = editor.get_form_field_value("name").unwrap();
-        assert!(value.is_some(), "field 'name' should have a value");
+        let editor_mutex = doc.ensure_editor().unwrap();
+        let mut editor = editor_mutex.lock().unwrap();
+        let value = editor.get_form_field_value("name");
+        assert!(value.is_ok(), "field 'name' should have a value");
     }
 
     #[test]
@@ -3242,7 +3312,8 @@ mod tests {
         // set_form_field_value with a string JsValue
         // On native, JsValue operations are stubbed, so we test via the Rust API
         // instead — just verify the method exists and the type signatures match
-        let editor = doc.ensure_editor().unwrap();
+        let editor_mutex = doc.ensure_editor().unwrap();
+        let mut editor = editor_mutex.lock().unwrap();
         let result = editor.set_form_field_value(
             "name",
             crate::editor::form_fields::FormFieldValue::Text("Bob".to_string()),
@@ -3257,10 +3328,10 @@ mod tests {
     #[test]
     fn test_extract_image_bytes_empty_on_text_pdf() {
         // Text-only PDF has no images — should not error
-        let mut doc = doc_from_text("No images here");
+        let doc = doc_from_text("No images here");
         // extract_image_bytes returns JsValue, tested in wasm_bindgen_tests
         // For native, test that the underlying API works
-        let images = doc.inner.extract_images(0).unwrap();
+        let images = doc.inner.lock().unwrap().extract_images(0).unwrap();
         assert_eq!(images.len(), 0);
     }
 
@@ -3272,7 +3343,8 @@ mod tests {
     fn test_flatten_forms() {
         let bytes = make_form_pdf();
         let mut doc = WasmPdfDocument::new(&bytes).unwrap();
-        let editor = doc.ensure_editor().unwrap();
+        let editor_mutex = doc.ensure_editor().unwrap();
+        let mut editor = editor_mutex.lock().unwrap();
         let result = editor.flatten_forms();
         assert!(result.is_ok(), "flatten_forms should succeed");
     }
@@ -3281,7 +3353,8 @@ mod tests {
     fn test_flatten_forms_on_page() {
         let bytes = make_form_pdf();
         let mut doc = WasmPdfDocument::new(&bytes).unwrap();
-        let editor = doc.ensure_editor().unwrap();
+        let editor_mutex = doc.ensure_editor().unwrap();
+        let mut editor = editor_mutex.lock().unwrap();
         let result = editor.flatten_forms_on_page(0);
         assert!(result.is_ok(), "flatten_forms_on_page should succeed");
     }
@@ -3295,7 +3368,8 @@ mod tests {
         let bytes1 = make_text_pdf("Page 1");
         let bytes2 = make_text_pdf("Page 2");
         let mut doc = WasmPdfDocument::new(&bytes1).unwrap();
-        let editor = doc.ensure_editor().unwrap();
+        let editor_mutex = doc.ensure_editor().unwrap();
+        let mut editor = editor_mutex.lock().unwrap();
         let count = editor.merge_from_bytes(&bytes2).unwrap();
         assert_eq!(count, 1, "should merge 1 page");
     }
@@ -3308,7 +3382,8 @@ mod tests {
     fn test_embed_file() {
         let bytes = make_text_pdf("Hello");
         let mut doc = WasmPdfDocument::new(&bytes).unwrap();
-        let editor = doc.ensure_editor().unwrap();
+        let editor_mutex = doc.ensure_editor().unwrap();
+        let mut editor = editor_mutex.lock().unwrap();
         let result = editor.embed_file("readme.txt", b"Hello World".to_vec());
         assert!(result.is_ok(), "embed_file should succeed");
     }
@@ -3319,8 +3394,10 @@ mod tests {
 
     #[test]
     fn test_page_labels_empty() {
-        let mut doc = doc_from_text("Hello");
-        let labels = crate::extractors::page_labels::PageLabelExtractor::extract(&mut doc.inner);
+        let doc = doc_from_text("Hello");
+        let labels = crate::extractors::page_labels::PageLabelExtractor::extract(
+            &mut doc.inner.lock().unwrap(),
+        );
         // Simple generated PDFs typically have no page labels
         assert!(labels.is_ok());
     }
@@ -3331,8 +3408,9 @@ mod tests {
 
     #[test]
     fn test_xmp_metadata_none_for_simple_pdf() {
-        let mut doc = doc_from_text("Hello");
-        let metadata = crate::extractors::xmp::XmpExtractor::extract(&mut doc.inner);
+        let doc = doc_from_text("Hello");
+        let metadata =
+            crate::extractors::xmp::XmpExtractor::extract(&mut doc.inner.lock().unwrap());
         assert!(metadata.is_ok());
         // Simple generated PDFs may or may not have XMP
     }

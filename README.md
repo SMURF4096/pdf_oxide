@@ -16,7 +16,9 @@ The fastest PDF library for text extraction, image extraction, and markdown conv
 ```python
 from pdf_oxide import PdfDocument
 
+# path can be str or pathlib.Path; use with for scoped access
 doc = PdfDocument("paper.pdf")
+# or: with PdfDocument("paper.pdf") as doc: ...
 text = doc.extract_text(0)
 chars = doc.extract_chars(0)
 markdown = doc.to_markdown(0, detect_headings=True)
@@ -132,6 +134,7 @@ Benchmarked on 3,830 PDFs from three independent public test suites (veraPDF, Mo
 ```python
 from pdf_oxide import PdfDocument
 
+# Path can be str or pathlib.Path; use "with PdfDocument(...) as doc" for context manager
 doc = PdfDocument("report.pdf")
 print(f"Pages: {doc.page_count()}")
 print(f"Version: {doc.version()}")

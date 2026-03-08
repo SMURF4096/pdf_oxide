@@ -44,15 +44,15 @@ Dual-licensed under MIT OR Apache-2.0.
 
 from .pdf_oxide import (
     VERSION,
+    # Page Templates
+    Artifact,
+    ArtifactStyle,
     BlendMode,
     # Advanced Graphics
     Color,
     ExtGState,
-    # Page Templates
-    Artifact,
-    Header,
     Footer,
-    ArtifactStyle,
+    Header,
     LinearGradient,
     LineCap,
     LineJoin,

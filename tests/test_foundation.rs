@@ -48,7 +48,7 @@ fn test_load_catalog() {
 
 #[test]
 fn test_load_object_by_reference() {
-    let mut pdf = PdfDocument::open(SIMPLE_PDF_PATH).expect("Failed to open simple.pdf");
+    let pdf = PdfDocument::open(SIMPLE_PDF_PATH).expect("Failed to open simple.pdf");
 
     // Load object 1 (catalog)
     let obj1 = pdf
@@ -95,7 +95,7 @@ fn test_load_object_by_reference() {
 
 #[test]
 fn test_object_caching() {
-    let mut pdf = PdfDocument::open(SIMPLE_PDF_PATH).expect("Failed to open simple.pdf");
+    let pdf = PdfDocument::open(SIMPLE_PDF_PATH).expect("Failed to open simple.pdf");
 
     // Load same object twice - should use cache on second load
     let obj1_first = pdf
@@ -111,7 +111,7 @@ fn test_object_caching() {
 
 #[test]
 fn test_load_nonexistent_object() {
-    let mut pdf = PdfDocument::open(SIMPLE_PDF_PATH).expect("Failed to open simple.pdf");
+    let pdf = PdfDocument::open(SIMPLE_PDF_PATH).expect("Failed to open simple.pdf");
 
     // Per PDF spec §7.3.10, missing object references "shall be treated as null"
     let result = pdf.load_object(ObjectRef::new(999, 0));
@@ -151,7 +151,7 @@ fn test_catalog_to_pages_to_count_flow() {
 
 #[test]
 fn test_media_box_array() {
-    let mut pdf = PdfDocument::open(SIMPLE_PDF_PATH).expect("Failed to open simple.pdf");
+    let pdf = PdfDocument::open(SIMPLE_PDF_PATH).expect("Failed to open simple.pdf");
 
     // Load page object
     let page = pdf

@@ -237,7 +237,7 @@ fn test_editor_save_with_encryption_options() {
 #[test]
 fn test_authenticate_unencrypted() {
     let pdf = build_minimal_pdf();
-    let mut doc = PdfDocument::from_bytes(pdf).unwrap();
+    let doc = PdfDocument::from_bytes(pdf).unwrap();
     let result = doc.authenticate(b"anypassword");
     // Unencrypted PDF: authentication should succeed or be a no-op
     let _ = result;
@@ -246,7 +246,7 @@ fn test_authenticate_unencrypted() {
 #[test]
 fn test_authenticate_empty_password() {
     let pdf = build_minimal_pdf();
-    let mut doc = PdfDocument::from_bytes(pdf).unwrap();
+    let doc = PdfDocument::from_bytes(pdf).unwrap();
     let result = doc.authenticate(b"");
     let _ = result;
 }

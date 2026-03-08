@@ -3,11 +3,14 @@ Python bindings tests for pdf_oxide.
 
 These tests verify the Python API works correctly, including:
 - Opening PDF files
+- pathlib.Path and context manager support
 - Extracting text
 - Converting to Markdown
 - Converting to HTML
 - Error handling
 """
+
+from pathlib import Path
 
 import pytest
 
@@ -201,6 +204,65 @@ def test_to_html_all_multipage():
             assert 'class="page"' in html or "data-page" in html
     except OSError:
         pytest.skip("Test fixture 'multipage.pdf' not available")
+
+
+# === pathlib.Path and context manager ===
+
+
+def test_open_pdf_pathlib():
+    """PdfDocument accepts pathlib.Path; behavior matches string path."""
+    try:
+        path = Path("tests/fixtures/1.pdf")
+        doc = PdfDocument(path)
+        assert doc is not None
+        assert doc.page_count() == 7, "1.pdf has 7 pages"
+        version = doc.version()
+        assert isinstance(version, tuple) and len(version) == 2 and version[0] >= 1
+        # Same as opening with string path
+        doc_str = PdfDocument("tests/fixtures/1.pdf")
+        assert doc.version() == doc_str.version()
+        assert doc.page_count() == doc_str.page_count()
+        assert doc.extract_text(0) == doc_str.extract_text(0)
+        assert len(doc.extract_text(0).strip()) > 0, "1.pdf has text on page 0"
+    except (OSError, RuntimeError):
+        pytest.skip("Test fixture '1.pdf' not available or invalid")
+
+
+def test_context_manager():
+    """PdfDocument works as context manager: enter returns self, exit runs normally."""
+    try:
+        with PdfDocument("tests/fixtures/1.pdf") as doc:
+            assert doc is not None
+            assert doc.page_count() == 7, "1.pdf has 7 pages"
+            version = doc.version()
+            assert isinstance(version, tuple) and len(version) == 2 and version[0] >= 1
+            text = doc.extract_text(0)
+            assert isinstance(text, str) and len(text.strip()) > 0, "1.pdf has text"
+        # After block, no error; doc was closed on exit
+    except (OSError, RuntimeError):
+        pytest.skip("Test fixture '1.pdf' not available or invalid")
+
+
+def test_context_manager_with_pathlib():
+    """Context manager works when path is pathlib.Path."""
+    try:
+        with PdfDocument(Path("tests/fixtures/1.pdf")) as doc:
+            assert doc.page_count() == 7, "1.pdf has 7 pages"
+            version = doc.version()
+            assert isinstance(version, tuple) and len(version) == 2 and version[0] >= 1
+            _ = doc.to_markdown(0)  # 1.pdf has text
+    except (OSError, RuntimeError):
+        pytest.skip("Test fixture '1.pdf' not available or invalid")
+
+
+def test_context_manager_exception_propagates():
+    """Exceptions inside the with block are not swallowed (__exit__ returns False)."""
+    try:
+        with pytest.raises(ValueError), PdfDocument("tests/fixtures/1.pdf") as doc:
+            _ = doc.page_count()
+            raise ValueError("intentional")
+    except (OSError, RuntimeError):
+        pytest.skip("Test fixture '1.pdf' not available or invalid")
 
 
 # === From Bytes Tests ===

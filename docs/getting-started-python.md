@@ -91,8 +91,15 @@ album.save("album.pdf")
 ```python
 from pdf_oxide import PdfDocument
 
-# Open existing PDF
+# Open existing PDF (path can be str or pathlib.Path)
 doc = PdfDocument("document.pdf")
+
+# Or use as a context manager
+with PdfDocument("document.pdf") as doc:
+    text = doc.extract_text(0)
+    print(f"Text: {text}")
+    markdown = doc.to_markdown(0)
+    print(f"Pages: {doc.page_count()}")
 
 # Extract text from page 0
 text = doc.extract_text(0)
@@ -484,8 +491,9 @@ from pdf_oxide import PdfDocument
 from pathlib import Path
 
 for pdf_path in Path("documents").glob("*.pdf"):
-    doc = PdfDocument(str(pdf_path))
-    text = doc.extract_text_all()
+    # PdfDocument accepts pathlib.Path directly
+    with PdfDocument(pdf_path) as doc:
+        text = doc.extract_text_all()
 
     output_path = pdf_path.with_suffix(".txt")
     output_path.write_text(text)

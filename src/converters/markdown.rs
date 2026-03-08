@@ -1206,38 +1206,34 @@ fn render_markdown_table(table: &ExtractedTable) -> String {
         return md;
     }
 
-    // Render header row if present
-    if table.has_header && !table.rows.is_empty() {
-        md.push_str(&render_table_row(&table.rows[0]));
+    // Find all contiguous header rows at the start
+    let mut header_row_count = 0;
+    while header_row_count < table.rows.len() && table.rows[header_row_count].is_header {
+        header_row_count += 1;
+    }
+
+    // If no explicit headers found, at least treat the first row as header for Markdown
+    if header_row_count == 0 {
+        header_row_count = 1;
+    }
+
+    // 1. Render Header Rows
+    for i in 0..header_row_count {
+        md.push_str(&render_table_row(&table.rows[i]));
         md.push('\n');
+    }
 
-        // Separator row: |---|---|...
-        md.push('|');
-        for _ in 0..table.col_count {
-            md.push_str("---|");
-        }
+    // 2. Render Separator Row
+    md.push('|');
+    for _ in 0..table.col_count {
+        md.push_str("---|");
+    }
+    md.push('\n');
+
+    // 3. Render Data Rows
+    for i in header_row_count..table.rows.len() {
+        md.push_str(&render_table_row(&table.rows[i]));
         md.push('\n');
-
-        // Data rows (starting from index 1 if we have a header)
-        for row in &table.rows[1..] {
-            md.push_str(&render_table_row(row));
-            md.push('\n');
-        }
-    } else {
-        // No header: render all rows
-        for (idx, row) in table.rows.iter().enumerate() {
-            md.push_str(&render_table_row(row));
-            md.push('\n');
-
-            // Add separator after first row if no header
-            if idx == 0 {
-                md.push('|');
-                for _ in 0..table.col_count {
-                    md.push_str("---|");
-                }
-                md.push('\n');
-            }
-        }
     }
 
     md
@@ -1260,7 +1256,13 @@ fn render_table_row(row: &TableRow) -> String {
     for cell in &row.cells {
         // Escape pipe characters in cell text
         let escaped = cell.text.replace('|', "\\|");
-        line.push_str(&format!(" {} |", escaped.trim()));
+        let content = escaped.trim();
+
+        // Repeat content for colspan to keep data accessible in Markdown
+        // (Markdown tables don't support native colspan)
+        for _ in 0..cell.colspan {
+            line.push_str(&format!(" {} |", content));
+        }
     }
     line
 }

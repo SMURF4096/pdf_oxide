@@ -288,7 +288,7 @@ def main():
         if not entries:
             continue
         print(f"\n  {label} ({len(entries)}):")
-        for corpus, filename, oc, mc, err, pp in entries[:5]:
+        for corpus, filename, oc, mc, err, _pp in entries[:5]:
             err_tag = f"  [{err[:40]}]" if err else ""
             print(f"    {corpus}/{filename}  oxide={oc} mupdf={mc}{err_tag}")
         if len(entries) > 5:

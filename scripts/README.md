@@ -36,6 +36,22 @@ Most scripts are Python-based:
 python scripts/analyze_something.py input.pdf
 ```
 
+## Python type stubs
+
+### `run_stub_gen.py`
+
+Generates Python type stub files (`.pyi`) from the Rust PyO3 bindings using [pyo3-stub-gen](https://crates.io/crates/pyo3-stub-gen). Use this after changing the Python API in `src/python.rs`.
+
+```bash
+# Recommended: use the pdm script (sets PATH and CARGO_MANIFEST_DIR for the stub_gen binary)
+pdm run stub_gen
+
+# Or run the wrapper directly from project root
+python scripts/run_stub_gen.py
+```
+
+The script builds `stub_gen` with `cargo build --bin stub_gen --features python,office`, then runs it. On Windows it also ensures the Python DLL is on `PATH` so the binary can load. Output is written under `python/` according to `[tool.maturin]` in `pyproject.toml`.
+
 ## Benchmark Scripts
 
 Performance benchmarking and comparison utilities.

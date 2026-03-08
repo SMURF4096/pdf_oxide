@@ -16,8 +16,13 @@ The fastest Python PDF library for text extraction, image extraction, and docume
 ```python
 from pdf_oxide import PdfDocument
 
-# Open a PDF
+# Open a PDF (path can be str or pathlib.Path)
 doc = PdfDocument("document.pdf")
+
+# Or use as a context manager
+with PdfDocument("document.pdf") as doc:
+    text = doc.to_plain_text(0)
+    print(text)
 
 # Extract as plain text (with automatic reading order)
 text = doc.to_plain_text(0)
@@ -74,6 +79,15 @@ pdm fmt
 pdm lint
 ```
 
+## Type stubs (.pyi)
+
+Type stubs are generated from the Rust PyO3 bindings with [pyo3-stub-gen](https://crates.io/crates/pyo3-stub-gen). After changing the Python API in `src/python.rs`, regenerate stubs so IDEs and type checkers see the correct signatures:
+
+```bash
+pdm run stub_gen
+```
+
+Output is written under `python/pdf_oxide/` (e.g. `pdf_oxide/pdf_oxide/__init__.pyi`) and is bundled into the wheel by maturin. The release workflow regenerates stubs automatically before building wheels.
 
 ## API Documentation
 

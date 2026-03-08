@@ -147,7 +147,7 @@ fn test_authenticate_empty_password() {
 
     assert!(fixture_path.exists(), "Test fixture missing: {}", fixture_path.display());
 
-    let mut doc = PdfDocument::open(&fixture_path).unwrap();
+    let doc = PdfDocument::open(&fixture_path).unwrap();
     // Non-encrypted PDF: authenticate always returns true
     let result = doc.authenticate(b"").unwrap();
     assert!(result, "Non-encrypted PDF should always authenticate");

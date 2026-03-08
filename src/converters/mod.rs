@@ -299,7 +299,7 @@ impl Default for ConversionOptions {
         Self {
             preserve_layout: false,
             detect_headings: true,
-            extract_tables: false,
+            extract_tables: true,
             include_images: true,
             image_output_dir: None,
             embed_images: true,
@@ -402,7 +402,7 @@ mod tests {
         let opts = ConversionOptions::default();
         assert!(!opts.preserve_layout);
         assert!(opts.detect_headings);
-        assert!(!opts.extract_tables);
+        assert!(opts.extract_tables);
         assert!(opts.include_images);
         assert_eq!(opts.image_output_dir, None);
         assert!(opts.embed_images);
@@ -514,7 +514,9 @@ mod tests {
     #[test]
     fn test_conversion_options_default_table_config() {
         let opts = ConversionOptions::default();
-        assert!(!opts.extract_tables);
+        // In v0.3.16, table extraction is enabled by default
+        assert!(opts.extract_tables);
+        // But detection config remains None (uses internal defaults) unless customized
         assert!(opts.table_detection_config.is_none());
     }
 }

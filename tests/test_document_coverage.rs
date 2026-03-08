@@ -749,7 +749,7 @@ fn test_extract_paths_with_rect() {
 #[test]
 fn test_authenticate_unencrypted_pdf() {
     let pdf = build_minimal_pdf(None);
-    let mut doc = PdfDocument::from_bytes(pdf).unwrap();
+    let doc = PdfDocument::from_bytes(pdf).unwrap();
     // Authenticating an unencrypted PDF should return Ok
     let result = doc.authenticate(b"");
     // Either succeeds or is a no-op for unencrypted PDFs

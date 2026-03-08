@@ -1778,7 +1778,7 @@ pub struct TextExtractor {
     /// Resources dictionary (for accessing XObjects and fonts)
     resources: Option<Object>,
     /// Reference to the document (for loading XObjects)
-    document: Option<*mut crate::document::PdfDocument>,
+    document: Option<*const crate::document::PdfDocument>,
     /// Set of processed XObject references to avoid duplicates
     processed_xobjects: HashSet<ObjectRef>,
     /// Cached XObject name → ObjectRef mapping for current resources context.
@@ -1943,7 +1943,7 @@ impl TextExtractor {
     ///
     /// The caller must ensure the document pointer remains valid for the lifetime
     /// of this extractor. This is safe when used within PdfDocument methods.
-    pub fn set_document(&mut self, document: *mut crate::document::PdfDocument) {
+    pub fn set_document(&mut self, document: *const crate::document::PdfDocument) {
         self.document = Some(document);
     }
 
@@ -1951,9 +1951,9 @@ impl TextExtractor {
     // Debug/profiling helpers — exposed for examples/debug_katalog.rs
     // ========================================================================
 
-    /// Convenience wrapper: set document from a mutable reference (avoids raw pointer in caller).
-    pub fn set_document_ptr(&mut self, doc: &mut crate::document::PdfDocument) {
-        self.document = Some(doc as *mut crate::document::PdfDocument);
+    /// Convenience wrapper: set document from a reference (avoids raw pointer in caller).
+    pub fn set_document_ptr(&mut self, doc: &crate::document::PdfDocument) {
+        self.document = Some(doc as *const crate::document::PdfDocument);
     }
 
     /// Prepare for span extraction mode (same setup as extract_text_spans preamble).
@@ -2234,7 +2234,7 @@ impl TextExtractor {
         let prop_name = properties.as_name()?;
         let resources = self.resources.as_ref()?;
         let res_dict = if let Some(res_ref) = resources.as_reference() {
-            let doc = unsafe { &mut *self.document? };
+            let doc = unsafe { &*self.document? };
             doc.load_object(res_ref).ok()?
         } else {
             resources.clone()
@@ -2242,7 +2242,7 @@ impl TextExtractor {
         let res_dict = res_dict.as_dict()?;
         let properties_dict_obj = res_dict.get("Properties")?;
         let properties_dict = if let Some(r) = properties_dict_obj.as_reference() {
-            let doc = unsafe { &mut *self.document? };
+            let doc = unsafe { &*self.document? };
             doc.load_object(r).ok()?
         } else {
             properties_dict_obj.clone()
@@ -2250,7 +2250,7 @@ impl TextExtractor {
         let properties_dict = properties_dict.as_dict()?;
         let prop_obj = properties_dict.get(prop_name)?;
         let resolved = if let Some(r) = prop_obj.as_reference() {
-            let doc = unsafe { &mut *self.document? };
+            let doc = unsafe { &*self.document? };
             doc.load_object(r).ok()?
         } else {
             prop_obj.clone()
@@ -4330,7 +4330,7 @@ impl TextExtractor {
             Some(ptr) => ptr,
             None => return Ok(None),
         };
-        let doc = unsafe { &mut *doc_ptr };
+        let doc = unsafe { &*doc_ptr };
 
         // Resolve resources → XObject dict
         let resources_obj = if let Some(res_ref) = resources.as_reference() {
@@ -4399,7 +4399,7 @@ impl TextExtractor {
 
         // Get document reference for loading objects
         let doc = match self.document {
-            Some(ptr) => unsafe { &mut *ptr },
+            Some(ptr) => unsafe { &*ptr },
             None => return Ok(()),
         };
 
@@ -4412,14 +4412,15 @@ impl TextExtractor {
 
         // Document-level cache: skip Form XObjects already known to contain no text.
         // Avoids repeated decompression of shared graphics-only XObjects across pages.
-        if doc.xobject_text_free_cache.contains(&xobject_ref) {
+        if doc.xobject_text_free_cache.borrow().contains(&xobject_ref) {
             return Ok(());
         }
 
         // Span result cache: reuse extracted spans from self-contained Form XObjects.
         // Only works for XObjects with own /Resources (font context is self-contained).
         if self.extract_spans {
-            if let Some(cached_spans) = doc.xobject_spans_cache.get(&xobject_ref) {
+            let cached_spans = doc.xobject_spans_cache.borrow().get(&xobject_ref).cloned();
+            if let Some(cached_spans) = cached_spans {
                 if let Some(spans) = cached_spans {
                     self.spans.extend(spans.iter().cloned());
                 }
@@ -4466,7 +4467,7 @@ impl TextExtractor {
                                     "Skipping Form XObject '{}': no Font/XObject in Resources",
                                     name
                                 );
-                                doc.xobject_text_free_cache.insert(xobject_ref);
+                                doc.xobject_text_free_cache.borrow_mut().insert(xobject_ref);
                                 return Ok(());
                             }
                         }
@@ -4481,17 +4482,21 @@ impl TextExtractor {
 
                 // Decode the stream — check cache first to avoid repeated FlateDecode.
                 self.xobject_decode_count += 1;
-                let stream_data = if let Some(cached) = doc.xobject_stream_cache.get(&xobject_ref) {
+                let cached_stream = doc.xobject_stream_cache.borrow().get(&xobject_ref).cloned();
+                let stream_data = if let Some(cached) = cached_stream {
                     cached.as_ref().clone()
                 } else {
                     match doc.decode_stream_with_encryption(&xobject, xobject_ref) {
                         Ok(data) => {
                             // Cache if under 50MB total
                             const MAX_STREAM_CACHE_BYTES: usize = 50 * 1024 * 1024;
-                            if doc.xobject_stream_cache_bytes + data.len() <= MAX_STREAM_CACHE_BYTES
+                            if doc.xobject_stream_cache_bytes.get() + data.len()
+                                <= MAX_STREAM_CACHE_BYTES
                             {
-                                doc.xobject_stream_cache_bytes += data.len();
+                                doc.xobject_stream_cache_bytes
+                                    .set(doc.xobject_stream_cache_bytes.get() + data.len());
                                 doc.xobject_stream_cache
+                                    .borrow_mut()
                                     .insert(xobject_ref, std::sync::Arc::new(data.clone()));
                             }
                             data
@@ -4516,7 +4521,7 @@ impl TextExtractor {
                         name,
                         stream_data.len()
                     );
-                    doc.xobject_text_free_cache.insert(xobject_ref);
+                    doc.xobject_text_free_cache.borrow_mut().insert(xobject_ref);
                     return Ok(());
                 }
 
@@ -4586,7 +4591,9 @@ impl TextExtractor {
                     } else {
                         None
                     };
-                    doc.xobject_spans_cache.insert(xobject_ref, new_spans);
+                    doc.xobject_spans_cache
+                        .borrow_mut()
+                        .insert(xobject_ref, new_spans);
                 }
 
                 // Restore fonts, resources, and XObject cache only if saved

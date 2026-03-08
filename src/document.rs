@@ -12,7 +12,7 @@ use crate::pipeline::{
 };
 use crate::structure::traverse_structure_tree;
 use crate::xref::{find_xref_offset, parse_xref, CrossRefTable};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::collections::HashSet;
 #[cfg(not(target_arch = "wasm32"))]
@@ -107,7 +107,8 @@ pub struct PageInfo {
 /// ```
 pub struct PdfDocument {
     /// PDF reader — file-backed on native, memory-backed on WASM.
-    reader: PdfReader,
+    /// Wrapped in RefCell for interior mutability (seek/read require &mut).
+    reader: RefCell<PdfReader>,
     /// Raw bytes of the document (kept for duplication/editing)
     pub source_bytes: Vec<u8>,
     /// PDF version (major, minor)
@@ -116,14 +117,17 @@ pub struct PdfDocument {
     xref: CrossRefTable,
     /// Trailer dictionary
     trailer: Object,
-    /// Cache for loaded objects to avoid re-parsing
-    object_cache: HashMap<ObjectRef, Object>,
+    /// Cache for loaded objects to avoid re-parsing.
+    /// Wrapped in RefCell so load_object can take &self (required for safe
+    /// access through TextExtractor's *const PdfDocument pointer).
+    object_cache: RefCell<HashMap<ObjectRef, Object>>,
     /// Track objects being resolved (for cycle detection)
     resolving_stack: RefCell<HashSet<ObjectRef>>,
     /// Current recursion depth
     recursion_depth: RefCell<u32>,
-    /// Encryption handler (if PDF is encrypted)
-    encryption_handler: Option<EncryptionHandler>,
+    /// Encryption handler (if PDF is encrypted).
+    /// Wrapped in RefCell for interior mutability (lazy initialization from &self).
+    encryption_handler: RefCell<Option<EncryptionHandler>>,
     /// Parser configuration options for error handling and recovery
     #[allow(dead_code)]
     options: ParserOptions,
@@ -132,25 +136,25 @@ pub struct PdfDocument {
     header_offset: u64,
     /// Font cache keyed by indirect ObjectRef to avoid re-parsing fonts across pages.
     /// Arc-wrapped to eliminate deep cloning when populating per-page TextExtractor.
-    font_cache: HashMap<ObjectRef, Arc<crate::fonts::FontInfo>>,
+    font_cache: RefCell<HashMap<ObjectRef, Arc<crate::fonts::FontInfo>>>,
     /// Cached font sets keyed by /Font dictionary ObjectRef.
     /// Pages sharing the same /Font dict skip the entire load_fonts() loop.
-    font_set_cache: HashMap<ObjectRef, Vec<(String, Arc<crate::fonts::FontInfo>)>>,
+    font_set_cache: RefCell<HashMap<ObjectRef, Vec<(String, Arc<crate::fonts::FontInfo>)>>>,
     /// Fingerprint-based font set cache for direct /Font dictionaries.
     /// Keyed by sorted font ObjectRefs hash, catches pages with different
     /// /Resources but same font references.
-    font_fingerprint_cache: HashMap<u64, Vec<(String, Arc<crate::fonts::FontInfo>)>>,
+    font_fingerprint_cache: RefCell<HashMap<u64, Vec<(String, Arc<crate::fonts::FontInfo>)>>>,
     /// Name-based font set cache keyed by hash of sorted font names.
     /// Catches pages with different font ObjectRefs but the same font name→base font
     /// mapping (common in PDFs that create new font objects per page).
     /// Stores the resolved font set (Arc-wrapped to avoid cloning) plus a spot-check
     /// (font_name, content_hash) pair for verification before reuse.
     font_name_set_cache:
-        HashMap<u64, (Arc<Vec<(String, Arc<crate::fonts::FontInfo>)>>, String, u64)>,
+        RefCell<HashMap<u64, (Arc<Vec<(String, Arc<crate::fonts::FontInfo>)>>, String, u64)>>,
     /// Per-font identity cache keyed by font_identity_hash (BaseFont + Subtype + Encoding +
     /// ToUnicode + FontDescriptor + DescendantFonts references). Skips expensive
     /// `FontInfo::from_dict()` when a structurally identical font was already parsed.
-    font_identity_cache: HashMap<u64, Arc<crate::fonts::FontInfo>>,
+    font_identity_cache: RefCell<HashMap<u64, Arc<crate::fonts::FontInfo>>>,
     /// Cached structure tree (None = not yet checked, Some(None) = untagged, Some(Some) = tagged).
     /// Uses Arc to avoid expensive deep clones on every page extraction.
     structure_tree_cache: Option<Option<Arc<crate::structure::StructTreeRoot>>>,
@@ -165,22 +169,23 @@ pub struct PdfDocument {
     page_cache_populated: bool,
     /// Cached object offsets from full file scan (built on first xref miss).
     /// Maps object number to byte offset in file.
-    scanned_object_offsets: Option<HashMap<u32, u64>>,
+    scanned_object_offsets: RefCell<Option<HashMap<u32, u64>>>,
     /// Cache of XObject refs known to NOT be Form XObjects (i.e., Image or unknown).
     /// Used by text extraction to skip expensive full-object loads for images.
-    image_xobject_cache: HashSet<ObjectRef>,
+    image_xobject_cache: RefCell<HashSet<ObjectRef>>,
     /// Document-level cache of Form XObject refs whose streams contain NO text
     /// operators (BT) and no nested Do invocations. Persists across pages so that
     /// shared graphics-only XObjects (watermarks, logos, chart elements) are
     /// decompressed and scanned at most once across the entire document.
-    pub(crate) xobject_text_free_cache: HashSet<ObjectRef>,
+    pub(crate) xobject_text_free_cache: RefCell<HashSet<ObjectRef>>,
     /// Cache of decompressed Form XObject streams. Bounded at 50MB total.
     /// Avoids repeated FlateDecode decompression of shared Form XObjects.
-    pub(crate) xobject_stream_cache: HashMap<ObjectRef, std::sync::Arc<Vec<u8>>>,
-    pub(crate) xobject_stream_cache_bytes: usize,
+    pub(crate) xobject_stream_cache: RefCell<HashMap<ObjectRef, std::sync::Arc<Vec<u8>>>>,
+    pub(crate) xobject_stream_cache_bytes: Cell<usize>,
     /// Cache of extracted TextSpan results from self-contained Form XObjects
     /// (those with own /Resources/Font). None = processed but no spans.
-    pub(crate) xobject_spans_cache: HashMap<ObjectRef, Option<Vec<crate::layout::TextSpan>>>,
+    pub(crate) xobject_spans_cache:
+        RefCell<HashMap<ObjectRef, Option<Vec<crate::layout::TextSpan>>>>,
     /// Cache of extracted images from Form XObjects (keyed by ObjectRef).
     /// Images are stored without CTM applied — caller applies its own CTM.
     pub(crate) form_xobject_images_cache: HashMap<ObjectRef, Vec<crate::extractors::PdfImage>>,
@@ -193,7 +198,7 @@ impl std::fmt::Debug for PdfDocument {
         f.debug_struct("PdfDocument")
             .field("version", &self.version)
             .field("xref_entries", &self.xref.len())
-            .field("cached_objects", &self.object_cache.len())
+            .field("cached_objects", &self.object_cache.borrow().len())
             .field("recursion_depth", &self.recursion_depth.borrow())
             .finish_non_exhaustive()
     }
@@ -404,33 +409,33 @@ impl PdfDocument {
         // Note: Encryption initialization was originally lazy, but decode_stream_with_encryption
         // only has &self access which prevents initialization.
         // We now initialize eagerly to ensure the handler is ready when needed.
-        let mut document = Self {
-            reader,
+        let document = Self {
+            reader: RefCell::new(reader),
             source_bytes: Vec::new(),
             version,
             xref,
             trailer,
-            object_cache: HashMap::new(),
+            object_cache: RefCell::new(HashMap::new()),
             resolving_stack: RefCell::new(HashSet::new()),
             recursion_depth: RefCell::new(0),
-            encryption_handler: None,
+            encryption_handler: RefCell::new(None),
             options: ParserOptions::default(),
             header_offset,
-            font_cache: HashMap::new(),
-            font_set_cache: HashMap::new(),
-            font_fingerprint_cache: HashMap::new(),
-            font_name_set_cache: HashMap::new(),
-            font_identity_cache: HashMap::new(),
+            font_cache: RefCell::new(HashMap::new()),
+            font_set_cache: RefCell::new(HashMap::new()),
+            font_fingerprint_cache: RefCell::new(HashMap::new()),
+            font_name_set_cache: RefCell::new(HashMap::new()),
+            font_identity_cache: RefCell::new(HashMap::new()),
             structure_tree_cache: None,
             structure_content_cache: None,
             page_cache: HashMap::new(),
             page_cache_populated: false,
-            scanned_object_offsets: None,
-            image_xobject_cache: HashSet::new(),
-            xobject_text_free_cache: HashSet::new(),
-            xobject_stream_cache: HashMap::new(),
-            xobject_stream_cache_bytes: 0,
-            xobject_spans_cache: HashMap::new(),
+            scanned_object_offsets: RefCell::new(None),
+            image_xobject_cache: RefCell::new(HashSet::new()),
+            xobject_text_free_cache: RefCell::new(HashSet::new()),
+            xobject_stream_cache: RefCell::new(HashMap::new()),
+            xobject_stream_cache_bytes: Cell::new(0),
+            xobject_spans_cache: RefCell::new(HashMap::new()),
             form_xobject_images_cache: HashMap::new(),
             erase_regions: HashMap::new(),
         };
@@ -481,9 +486,9 @@ impl PdfDocument {
     ///
     /// This is called lazily the first time we need to decrypt something, after
     /// the document is fully constructed and can load objects.
-    fn ensure_encryption_initialized(&mut self) -> Result<()> {
+    fn ensure_encryption_initialized(&self) -> Result<()> {
         // Already initialized?
-        if self.encryption_handler.is_some() {
+        if self.encryption_handler.borrow().is_some() {
             return Ok(());
         }
 
@@ -584,7 +589,7 @@ impl PdfDocument {
             },
         }
 
-        self.encryption_handler = Some(handler);
+        *self.encryption_handler.borrow_mut() = Some(handler);
         Ok(())
     }
 
@@ -613,7 +618,8 @@ impl PdfDocument {
         if matches!(stream_obj, Object::Null) {
             return Ok(Vec::new());
         }
-        if let Some(handler) = &self.encryption_handler {
+        let handler_ref = self.encryption_handler.borrow();
+        if let Some(handler) = handler_ref.as_ref() {
             // Create decryption closure for this specific object
             let decrypt_fn = |data: &[u8]| -> Result<Vec<u8>> {
                 handler.decrypt_stream(data, obj_ref.id, obj_ref.gen as u32)
@@ -624,6 +630,7 @@ impl PdfDocument {
                 obj_ref.gen as u32,
             )
         } else {
+            drop(handler_ref);
             // No encryption, use regular decoding
             stream_obj.decode_stream_data()
         }
@@ -651,9 +658,9 @@ impl PdfDocument {
     ///
     /// `Ok(true)` if authentication succeeded, `Ok(false)` if the password was wrong,
     /// or `Ok(true)` if the PDF is not encrypted (no authentication needed).
-    pub fn authenticate(&mut self, password: &[u8]) -> Result<bool> {
+    pub fn authenticate(&self, password: &[u8]) -> Result<bool> {
         self.ensure_encryption_initialized()?;
-        match &mut self.encryption_handler {
+        match self.encryption_handler.borrow_mut().as_mut() {
             Some(handler) => handler.authenticate(password),
             None => Ok(true), // Not encrypted, always "authenticated"
         }
@@ -709,13 +716,16 @@ impl PdfDocument {
     /// but is referenced by critical structures (like Pages from Catalog).
     /// Some PDFs have incomplete xref tables that are missing entries for
     /// objects that actually exist in the file.
-    fn scan_for_object(&mut self, obj_ref: ObjectRef) -> Result<u64> {
+    fn scan_for_object(&self, obj_ref: ObjectRef) -> Result<u64> {
         // Check cached scan results first
-        if let Some(offsets) = &self.scanned_object_offsets {
-            if let Some(&offset) = offsets.get(&obj_ref.id) {
-                return Ok(offset);
+        {
+            let scan_cache = self.scanned_object_offsets.borrow();
+            if let Some(offsets) = scan_cache.as_ref() {
+                if let Some(&offset) = offsets.get(&obj_ref.id) {
+                    return Ok(offset);
+                }
+                return Err(Error::ObjectNotFound(obj_ref.id, obj_ref.gen));
             }
-            return Err(Error::ObjectNotFound(obj_ref.id, obj_ref.gen));
         }
 
         // First xref miss: scan the entire file once and build a complete offset map
@@ -725,9 +735,9 @@ impl PdfDocument {
             obj_ref.gen
         );
 
-        self.reader.seek(SeekFrom::Start(0))?;
+        self.reader.borrow_mut().seek(SeekFrom::Start(0))?;
         let mut content = Vec::new();
-        self.reader.read_to_end(&mut content)?;
+        self.reader.borrow_mut().read_to_end(&mut content)?;
 
         let mut offsets = HashMap::new();
 
@@ -791,7 +801,7 @@ impl PdfDocument {
         log::info!("File scan found {} objects", offsets.len());
 
         let result = offsets.get(&obj_ref.id).copied();
-        self.scanned_object_offsets = Some(offsets);
+        *self.scanned_object_offsets.borrow_mut() = Some(offsets);
 
         match result {
             Some(offset) => Ok(offset),
@@ -828,7 +838,7 @@ impl PdfDocument {
     /// let obj = doc.load_object(obj_ref)?;
     /// # Ok::<(), pdf_oxide::error::Error>(())
     /// ```
-    pub fn load_object(&mut self, obj_ref: ObjectRef) -> Result<Object> {
+    pub fn load_object(&self, obj_ref: ObjectRef) -> Result<Object> {
         log::debug!("Loading object {} gen {}", obj_ref.id, obj_ref.gen);
 
         // Check recursion depth
@@ -857,8 +867,8 @@ impl PdfDocument {
         }
 
         // Check cache first
-        if let Some(cached) = self.object_cache.get(&obj_ref) {
-            return Ok(cached.clone());
+        if let Some(cached) = self.object_cache.borrow().get(&obj_ref).cloned() {
+            return Ok(cached);
         }
 
         // Look up in xref table
@@ -905,7 +915,7 @@ impl PdfDocument {
                     Err(_) => {
                         // PDF Spec §7.3.10: missing object reference "shall be treated as null"
                         log::warn!("Object {} gen {} not found (xref + file scan failed), treating as Null per §7.3.10", obj_ref.id, obj_ref.gen);
-                        self.object_cache.insert(obj_ref, Object::Null);
+                        self.object_cache.borrow_mut().insert(obj_ref, Object::Null);
                         return Ok(Object::Null);
                     },
                 }
@@ -948,7 +958,7 @@ impl PdfDocument {
                         "Free object {} (id <= 10, bad offset), treating as Null",
                         obj_ref.id
                     );
-                    self.object_cache.insert(obj_ref, Object::Null);
+                    self.object_cache.borrow_mut().insert(obj_ref, Object::Null);
                     return Ok(Object::Null);
                 }
             } else {
@@ -958,7 +968,7 @@ impl PdfDocument {
                     obj_ref.id,
                     obj_ref.gen
                 );
-                self.object_cache.insert(obj_ref, Object::Null);
+                self.object_cache.borrow_mut().insert(obj_ref, Object::Null);
                 return Ok(Object::Null);
             }
         }
@@ -998,7 +1008,7 @@ impl PdfDocument {
                     "Object {} has type Free despite in_use=true, treating as Null",
                     obj_ref.id
                 );
-                self.object_cache.insert(obj_ref, Object::Null);
+                self.object_cache.borrow_mut().insert(obj_ref, Object::Null);
                 Ok(Object::Null)
             },
         };
@@ -1086,21 +1096,21 @@ impl PdfDocument {
     /// Peek at an XObject's /Subtype without loading the full object.
     /// Returns true if the XObject is a Form XObject, false if Image or unknown.
     /// For compressed objects or on any error, returns true (conservative — will load fully).
-    pub fn is_form_xobject(&mut self, obj_ref: ObjectRef) -> bool {
+    pub fn is_form_xobject(&self, obj_ref: ObjectRef) -> bool {
         // Check negative cache first (known non-Form XObjects)
-        if self.image_xobject_cache.contains(&obj_ref) {
+        if self.image_xobject_cache.borrow().contains(&obj_ref) {
             return false;
         }
 
         // If already in object cache, check directly
-        if let Some(cached) = self.object_cache.get(&obj_ref) {
+        if let Some(cached) = self.object_cache.borrow().get(&obj_ref).cloned() {
             let is_form = cached
                 .as_dict()
                 .and_then(|d| d.get("Subtype"))
                 .and_then(|s| s.as_name())
                 == Some("Form");
             if !is_form {
-                self.image_xobject_cache.insert(obj_ref);
+                self.image_xobject_cache.borrow_mut().insert(obj_ref);
             }
             return is_form;
         }
@@ -1119,13 +1129,18 @@ impl PdfDocument {
 
         // Seek to object offset and read a small buffer
         let offset = entry.offset;
-        if self.reader.seek(SeekFrom::Start(offset)).is_err() {
+        if self
+            .reader
+            .borrow_mut()
+            .seek(SeekFrom::Start(offset))
+            .is_err()
+        {
             return true;
         }
 
         // Read enough bytes for the object header + dictionary (typically <1KB)
         let mut buf = [0u8; 1024];
-        let n = match self.reader.read(&mut buf) {
+        let n = match self.reader.borrow_mut().read(&mut buf) {
             Ok(n) => n,
             Err(_) => return true,
         };
@@ -1145,7 +1160,7 @@ impl PdfDocument {
                     return true;
                 }
                 // Image, PS, or anything else — not a Form
-                self.image_xobject_cache.insert(obj_ref);
+                self.image_xobject_cache.borrow_mut().insert(obj_ref);
                 return false;
             }
         }
@@ -1155,24 +1170,27 @@ impl PdfDocument {
     }
 
     /// Load an uncompressed object (Type 1 xref entry).
-    fn load_uncompressed_object(&mut self, obj_ref: ObjectRef, offset: u64) -> Result<Object> {
+    fn load_uncompressed_object(&self, obj_ref: ObjectRef, offset: u64) -> Result<Object> {
         self.load_uncompressed_object_impl(obj_ref, offset, false)
     }
 
     /// Implementation with recursion guard to prevent infinite loops.
     fn load_uncompressed_object_impl(
-        &mut self,
+        &self,
         obj_ref: ObjectRef,
         offset: u64,
         already_corrected: bool,
     ) -> Result<Object> {
         // Seek to object offset
-        self.reader.seek(SeekFrom::Start(offset))?;
+        self.reader.borrow_mut().seek(SeekFrom::Start(offset))?;
 
         // Read bytes for object header (e.g., "1 0 obj")
         // Use bytes instead of String to handle binary data gracefully
         let mut header_bytes = Vec::new();
-        let bytes_read = self.reader.read_until(b'\n', &mut header_bytes)?;
+        let bytes_read = self
+            .reader
+            .borrow_mut()
+            .read_until(b'\n', &mut header_bytes)?;
 
         if bytes_read == 0 {
             log::warn!("Unexpected EOF while reading object {} header", obj_ref.id);
@@ -1191,7 +1209,10 @@ impl PdfDocument {
 
         while !has_standalone_obj_keyword(&full_header) && lines_read < max_header_lines {
             let mut next_bytes = Vec::new();
-            let next_read = self.reader.read_until(b'\n', &mut next_bytes)?;
+            let next_read = self
+                .reader
+                .borrow_mut()
+                .read_until(b'\n', &mut next_bytes)?;
 
             if next_read == 0 {
                 break; // EOF reached
@@ -1309,7 +1330,7 @@ impl PdfDocument {
 
         loop {
             let mut chunk = Vec::new();
-            let bytes_read = self.reader.read_until(b'\n', &mut chunk)?;
+            let bytes_read = self.reader.borrow_mut().read_until(b'\n', &mut chunk)?;
 
             if data.len() > MAX_BYTES {
                 log::warn!(
@@ -1381,7 +1402,7 @@ impl PdfDocument {
         };
 
         // Cache the object
-        self.object_cache.insert(obj_ref, obj.clone());
+        self.object_cache.borrow_mut().insert(obj_ref, obj.clone());
 
         Ok(obj)
     }
@@ -1394,7 +1415,7 @@ impl PdfDocument {
     /// * `stream_obj_num` - The object number of the object stream
     /// * `index_in_stream` - The index within the stream (unused but provided for completeness)
     fn load_compressed_object(
-        &mut self,
+        &self,
         obj_ref: ObjectRef,
         stream_obj_num: u32,
         _index_in_stream: u16,
@@ -1423,7 +1444,7 @@ impl PdfDocument {
                         stream_obj_num,
                         obj_ref.id
                     );
-                    self.object_cache.insert(obj_ref, Object::Null);
+                    self.object_cache.borrow_mut().insert(obj_ref, Object::Null);
                     return Ok(Object::Null);
                 },
             };
@@ -1439,7 +1460,8 @@ impl PdfDocument {
         })?;
 
         // Parse all objects from the stream (with decryption if PDF is encrypted)
-        let objects_map = if let Some(handler) = &self.encryption_handler {
+        let handler_ref = self.encryption_handler.borrow();
+        let objects_map = if let Some(handler) = handler_ref.as_ref() {
             // Create decryption closure
             let decrypt_fn = |data: &[u8]| -> Result<Vec<u8>> {
                 handler.decrypt_stream(data, stream_obj_num, 0)
@@ -1448,6 +1470,7 @@ impl PdfDocument {
         } else {
             parse_object_stream_with_decryption(&stream_obj, None, 0, 0)?
         };
+        drop(handler_ref);
 
         // Extract the requested object
         let obj = match objects_map.get(&obj_ref.id) {
@@ -1478,7 +1501,7 @@ impl PdfDocument {
                 true
             };
             if should_cache {
-                self.object_cache.insert(cache_ref, object);
+                self.object_cache.borrow_mut().insert(cache_ref, object);
             } else {
                 log::debug!(
                     "[cache_debug] NOT caching obj {} from stream {} (xref points elsewhere)",
@@ -1499,11 +1522,7 @@ impl PdfDocument {
     ///
     /// We search up to 100 bytes backwards, looking for a line that matches
     /// the expected object header format.
-    fn find_object_header_backwards(
-        &mut self,
-        obj_ref: ObjectRef,
-        wrong_offset: u64,
-    ) -> Result<u64> {
+    fn find_object_header_backwards(&self, obj_ref: ObjectRef, wrong_offset: u64) -> Result<u64> {
         // Don't search before the start of the file
         if wrong_offset == 0 {
             return Err(Error::ParseError {
@@ -1517,9 +1536,11 @@ impl PdfDocument {
         let search_start = wrong_offset - search_distance;
 
         // Read the search region
-        self.reader.seek(SeekFrom::Start(search_start))?;
+        self.reader
+            .borrow_mut()
+            .seek(SeekFrom::Start(search_start))?;
         let mut buffer = vec![0u8; search_distance as usize + 100]; // Extra bytes to read full line
-        let bytes_read = self.reader.read(&mut buffer)?;
+        let bytes_read = self.reader.borrow_mut().read(&mut buffer)?;
 
         if bytes_read == 0 {
             return Err(Error::ParseError {
@@ -2160,7 +2181,7 @@ impl PdfDocument {
             if let Some(xobj_dict) = xobj_obj.as_dict() {
                 for val in xobj_dict.values() {
                     if let Some(obj_ref) = val.as_reference() {
-                        if !self.image_xobject_cache.contains(&obj_ref) {
+                        if !self.image_xobject_cache.borrow().contains(&obj_ref) {
                             xobj_refs.push(obj_ref);
                         }
                     }
@@ -2772,15 +2793,49 @@ impl PdfDocument {
     /// println!("Page 1 text: {}", text);
     /// # Ok::<(), pdf_oxide::error::Error>(())
     /// ```
+    /// Extract text from a page.
     pub fn extract_text(&mut self, page_index: usize) -> Result<String> {
-        // PDF Spec ISO 32000-1:2008 Section 14.8.2.3:
-        // For Tagged PDFs, use structure tree for reading order (spec-compliant)
-        // For Untagged PDFs, use page content order (spec-compliant)
+        // Preserve historical behavior: do not extract tables by default in the main extract_text API.
+        // Users can use extract_text_with_options or Markdown/HTML converters for table support.
+        let options = crate::converters::ConversionOptions {
+            extract_tables: false,
+            ..Default::default()
+        };
+        self.extract_text_with_options(page_index, &options)
+    }
+
+    /// Extract text from a page with specific options (v0.3.16).
+    pub fn extract_text_with_options(
+        &mut self,
+        page_index: usize,
+        options: &crate::converters::ConversionOptions,
+    ) -> Result<String> {
+        // 1. Check if this is a Tagged PDF with structure tree (cached after first check).
+        // Uses Arc to avoid expensive deep clones of the tree on every page.
+        let cached_tree = match &self.structure_tree_cache {
+            Some(cached) => cached.clone(), // Arc clone = cheap ref count bump
+            None => {
+                let tree = self.structure_tree().ok().flatten().map(Arc::new);
+                self.structure_tree_cache = Some(tree.clone());
+                tree
+            },
+        };
+
+        // 2. Extract Spans Early (needed for table detection and both paths)
+        let mut all_spans = self.extract_spans(page_index)?;
+        let widget_spans = self.extract_widget_spans(page_index);
+        all_spans.extend(widget_spans);
+
+        // 3. Table Detection (if enabled)
+        let tables = if options.extract_tables {
+            self.extract_page_tables(page_index, &all_spans, options)
+        } else {
+            Vec::new()
+        };
 
         // Fast pre-check: skip pages that cannot produce text BEFORE the expensive
-        // structure tree parse. This avoids paying 200ms+ structure tree cost for
-        // cover pages and image-only pages that produce zero text.
-        {
+        // structure tree parse.
+        if all_spans.is_empty() {
             let page = self.get_page(page_index)?;
             let page_dict = page.as_dict().ok_or_else(|| Error::ParseError {
                 offset: 0,
@@ -2796,213 +2851,151 @@ impl PdfDocument {
                 }
             };
             if no_content_text {
-                // No text in content stream. Still collect widget annotation text
-                // (form field values) and non-widget annotation text (sticky notes).
-                let widget_spans = self.extract_widget_spans(page_index);
                 let mut text = String::new();
-                for span in &widget_spans {
-                    if !span.text.is_empty() {
-                        if !text.is_empty() {
-                            text.push('\n');
-                        }
-                        text.push_str(&span.text);
-                    }
-                }
                 self.append_non_widget_annotation_text(page_index, &mut text);
                 return Ok(text);
             }
         }
 
-        // Check if this is a Tagged PDF with structure tree (cached after first check).
-        // Uses Arc to avoid expensive deep clones of the tree on every page.
-        let cached_tree = match &self.structure_tree_cache {
-            Some(cached) => cached.clone(), // Arc clone = cheap ref count bump
-            None => {
-                let tree = self.structure_tree().ok().flatten().map(Arc::new);
-                self.structure_tree_cache = Some(tree.clone());
-                tree
-            },
-        };
-
-        if let Some(struct_tree) = cached_tree {
+        let text = if let Some(struct_tree) = cached_tree {
             // Build per-page traversal cache once, then O(1) lookup per page.
-            // This avoids re-traversing the entire structure tree for each page.
             if self.structure_content_cache.is_none() {
                 let all_content = crate::structure::traverse_structure_tree_all_pages(&struct_tree);
                 self.structure_content_cache = Some(all_content);
             }
-            return self.extract_text_structure_order_cached(page_index);
-        }
+            self.extract_text_structure_order_cached_with_spans(page_index, all_spans)?
+        } else {
+            // Untagged PDF: Use page content order
+            let mut spans = all_spans;
 
-        // Untagged PDF: Use page content order (current implementation)
-        log::debug!(
-            "Using page content order for Untagged PDF text extraction (page {})",
-            page_index
-        );
-
-        // Use PDF spec-compliant TextSpan extraction (RECOMMENDED approach)
-        // This preserves the PDF's text positioning intent and avoids overlapping character issues
-        let mut spans = self.extract_spans(page_index)?;
-
-        // Merge widget annotation spans (form field values) with content spans
-        // Widget spans are positioned at their /Rect locations and will be sorted
-        // into the correct reading order alongside content stream spans.
-        let widget_spans = self.extract_widget_spans(page_index);
-        spans.extend(widget_spans);
-
-        // Sort combined spans by position: Y descending (top→bottom), then X ascending (left→right)
-        spans.sort_by(|a, b| {
-            let y_cmp = crate::utils::safe_float_cmp(b.bbox.y, a.bbox.y);
-            if y_cmp != std::cmp::Ordering::Equal {
-                return y_cmp;
+            // Exclude spans that are inside detected tables
+            if !tables.is_empty() {
+                spans.retain(|s| {
+                    !tables
+                        .iter()
+                        .any(|t| t.bbox.is_some_and(|b| b.contains_rect(&s.bbox)))
+                });
             }
-            let x_cmp = crate::utils::safe_float_cmp(a.bbox.x, b.bbox.x);
-            if x_cmp != std::cmp::Ordering::Equal {
-                return x_cmp;
-            }
-            a.sequence.cmp(&b.sequence)
-        });
 
-        // OCR fallback for scanned PDFs (when OCR feature is enabled)
-        // If no text spans found, check if page needs OCR
-        #[cfg(feature = "ocr")]
-        if spans.is_empty() || spans.iter().map(|s| s.text.len()).sum::<usize>() < 50 {
-            // Check if this looks like a scanned page
-            if let Ok(true) = crate::ocr::needs_ocr(self, page_index) {
-                log::debug!(
-                    "Page {} appears to be scanned, OCR available but not auto-enabled",
-                    page_index
-                );
-                // Note: We don't automatically run OCR here because:
-                // 1. It requires model files that may not be available
-                // 2. Users should opt-in via extract_text_with_ocr or similar
-                // 3. This keeps extract_text fast and predictable
-            }
-        }
+            // Sort combined spans by position: Y descending (top→bottom), then X ascending (left→right)
+            spans.sort_by(|a, b| {
+                let y_cmp = crate::utils::safe_float_cmp(b.bbox.y, a.bbox.y);
+                if y_cmp != std::cmp::Ordering::Equal {
+                    return y_cmp;
+                }
+                let x_cmp = crate::utils::safe_float_cmp(a.bbox.x, b.bbox.x);
+                if x_cmp != std::cmp::Ordering::Equal {
+                    return x_cmp;
+                }
+                a.sequence.cmp(&b.sequence)
+            });
 
-        if spans.is_empty() {
-            // Even with no text content, check for non-widget annotation text
-            let mut text = String::new();
-            self.append_non_widget_annotation_text(page_index, &mut text);
-            if !text.is_empty() {
-                return Ok(crate::converters::whitespace::cleanup_plain_text(&text));
-            }
-            return Ok(String::new());
-        }
-
-        // RTL correction: reverse visual-order single-character Arabic/Hebrew span runs.
-        // Some PDFs position RTL characters individually left-to-right (visual order),
-        // but logical reading order is right-to-left. Detect runs of single-char RTL
-        // spans on the same line and reverse the text within each run.
-        Self::reverse_rtl_visual_order_runs(&mut spans);
-
-        // Filter out spans with NaN/Inf coordinates, dimensions, or font size
-        spans.retain(|s| {
-            s.bbox.x.is_finite()
-                && s.bbox.y.is_finite()
-                && s.bbox.width.is_finite()
-                && s.bbox.height.is_finite()
-                && s.font_size.is_finite()
-        });
-
-        // Assemble text from spans, preserving reading order
-        let mut text = String::with_capacity(spans.len() * 20); // estimate
-        let mut prev_span: Option<&TextSpan> = None;
-
-        for span in &spans {
-            // Skip spans that are fully contained within the previous span's bbox.
-            // This happens when font-change merging creates a combined span but
-            // individual sub-spans survive as separate entries (e.g., "the" inside
-            // a merged "install the docling" span in LaTeX PDFs).
-            if let Some(prev) = prev_span {
-                let prev_end_x = prev.bbox.x + prev.bbox.width;
-                let span_end_x = span.bbox.x + span.bbox.width;
-                let y_same = (prev.bbox.y - span.bbox.y).abs() < 2.0;
-                if y_same && span.bbox.x >= prev.bbox.x - 0.5 && span_end_x <= prev_end_x + 0.5 {
-                    // Span is contained within previous — skip to avoid duplicates
-                    continue;
+            // OCR fallback for scanned PDFs
+            #[cfg(feature = "ocr")]
+            if spans.is_empty() || spans.iter().map(|s| s.text.len()).sum::<usize>() < 50 {
+                if let Ok(true) = crate::ocr::needs_ocr(self, page_index) {
+                    log::debug!(
+                        "Page {} appears to be scanned, OCR available but not auto-enabled",
+                        page_index
+                    );
                 }
             }
 
-            // Check if we need to insert space or line break
-            if let Some(prev) = prev_span {
-                let y_diff = (prev.bbox.y - span.bbox.y).abs();
-                let prev_end_x = prev.bbox.x + prev.bbox.width;
-                let gap = span.bbox.x - prev_end_x;
+            // RTL correction
+            Self::reverse_rtl_visual_order_runs(&mut spans);
 
-                // New line if Y position changed significantly (more than 2pt)
-                if y_diff > 2.0 {
-                    // Calculate number of line breaks based on Y gap
-                    let font_size = span.font_size.max(10.0);
-                    let line_height = font_size * 1.2; // typical line height
-                    let num_breaks = (y_diff / line_height).round() as usize;
+            // Filter out invalid spans
+            spans.retain(|s| {
+                s.bbox.x.is_finite()
+                    && s.bbox.y.is_finite()
+                    && s.bbox.width.is_finite()
+                    && s.bbox.height.is_finite()
+                    && s.font_size.is_finite()
+            });
 
-                    // Add line breaks (at least 1, max 3 for large gaps)
-                    for _ in 0..num_breaks.clamp(1, 3) {
-                        text.push('\n');
-                    }
-                } else if gap < -1.0 {
-                    // Significant overlap: span starts inside previous span's bbox.
+            let mut text = String::with_capacity(spans.len() * 20);
+            let mut prev_span: Option<&TextSpan> = None;
+
+            for span in &spans {
+                if let Some(prev) = prev_span {
+                    let prev_end_x = prev.bbox.x + prev.bbox.width;
                     let span_end_x = span.bbox.x + span.bbox.width;
-                    let font_changed = prev.font_name != span.font_name;
-                    let fs = span.font_size.max(prev.font_size).max(6.0);
+                    let y_same = (prev.bbox.y - span.bbox.y).abs() < 2.0;
+                    if y_same && span.bbox.x >= prev.bbox.x - 0.5 && span_end_x <= prev_end_x + 0.5
+                    {
+                        continue;
+                    }
 
-                    if gap < -(fs * 20.0) {
-                        // Very large negative gap (200pt+): separate text region on same y-line
-                        // Common in slides where footer/label and body text share y-line
-                        if !text.ends_with('\n') {
+                    let y_diff = (prev.bbox.y - span.bbox.y).abs();
+                    let gap = span.bbox.x - prev_end_x;
+
+                    if y_diff > 2.0 {
+                        let font_size = span.font_size.max(10.0);
+                        let line_height = font_size * 1.2;
+                        let num_breaks = (y_diff / line_height).round() as usize;
+                        for _ in 0..num_breaks.clamp(1, 3) {
                             text.push('\n');
                         }
-                    } else if font_changed && span_end_x > prev_end_x + 0.5 {
-                        // Font change with new content — insert space as word boundary
-                        if !text.ends_with(' ') && !text.ends_with('\n') {
+                    } else if gap < -1.0 {
+                        let fs = span.font_size.max(prev.font_size).max(6.0);
+                        if gap < -(fs * 20.0) {
+                            if !text.ends_with('\n') {
+                                text.push('\n');
+                            }
+                        } else if prev.font_name != span.font_name
+                            && span_end_x > prev_end_x + 0.5
+                            && !text.ends_with(' ')
+                            && !text.ends_with('\n')
+                        {
                             text.push(' ');
                         }
-                    }
-                    // Same font small overlap: Td positioning within a word → no space
-                } else if Self::should_insert_space(prev, span) {
-                    text.push(' ');
-                } else {
-                    // Check for column boundary: same line with very large gap
-                    let fs = span.font_size.max(prev.font_size).max(6.0);
-                    if gap > fs * 3.0 {
-                        text.push('\n');
+                    } else if Self::should_insert_space(prev, span) {
+                        text.push(' ');
+                    } else {
+                        let fs = span.font_size.max(prev.font_size).max(6.0);
+                        if gap > fs * 3.0 {
+                            text.push('\n');
+                        }
                     }
                 }
-            }
 
-            // Expand ligature characters (ﬀ→ff, ﬁ→fi, ﬂ→fl, ﬃ→ffi, ﬄ→ffl)
-            for ch in span.text.chars() {
-                if let Some(components) =
-                    crate::text::ligature_processor::get_ligature_components(ch)
-                {
-                    text.push_str(components);
-                } else {
-                    text.push(ch);
+                for ch in span.text.chars() {
+                    if let Some(components) =
+                        crate::text::ligature_processor::get_ligature_components(ch)
+                    {
+                        text.push_str(components);
+                    } else {
+                        text.push(ch);
+                    }
                 }
+                prev_span = Some(span);
             }
-            prev_span = Some(span);
+            text
+        };
+
+        // Append text from non-widget annotations
+        let mut final_text = text;
+        self.append_non_widget_annotation_text(page_index, &mut final_text);
+
+        // Filter leaked PDF metadata
+        let final_text = Self::filter_leaked_metadata(&final_text);
+
+        // Normalize Kangxi Radicals
+        let final_text = Self::normalize_kangxi_radicals(&final_text);
+
+        // Normalize Arabic Presentation Forms
+        let final_text = Self::normalize_arabic_presentation_forms(&final_text);
+
+        // Apply whitespace cleanup
+        let mut cleaned_text = crate::converters::whitespace::cleanup_plain_text(&final_text);
+
+        // Append ASCII tables at the end (for both tagged and untagged)
+        if !tables.is_empty() {
+            for table in tables {
+                cleaned_text.push_str("\n\n");
+                cleaned_text.push_str(&table.render_text());
+            }
         }
-
-        // Append text from non-widget annotations on this page
-        // (FreeText /Contents, Stamp appearance streams, etc.)
-        self.append_non_widget_annotation_text(page_index, &mut text);
-
-        // Filter leaked PDF metadata (e.g., CalRGB ColorSpace dictionaries)
-        // Some PDFs embed inline color space definitions that get parsed as text
-        let text = Self::filter_leaked_metadata(&text);
-
-        // Normalize Kangxi Radicals (U+2F00-U+2FD5) and CJK Radicals Supplement
-        // (U+2E80-U+2EFF) to CJK Unified Ideographs for proper search/matching
-        let text = Self::normalize_kangxi_radicals(&text);
-
-        // Normalize Arabic Presentation Forms (U+FB50-U+FDFF, U+FE70-U+FEFF) to
-        // base Unicode characters for proper text search and matching
-        let text = Self::normalize_arabic_presentation_forms(&text);
-
-        // Apply whitespace cleanup for better readability
-        // This normalizes excessive double spaces and blank lines
-        let cleaned_text = crate::converters::whitespace::cleanup_plain_text(&text);
 
         Ok(cleaned_text)
     }
@@ -3220,11 +3213,23 @@ impl PdfDocument {
         self.erase_page_area_content(page_index, PageArea::Header)
     }
 
+    /// Deprecated: Use `erase_header` instead.
+    #[deprecated(note = "use erase_header instead")]
+    pub fn edit_header(&mut self, page_index: usize) -> Result<()> {
+        self.erase_header(page_index)
+    }
+
     /// Erase existing footer content.
     ///
     /// Identifies existing text in the footer area (bottom 15%) and marks it for erasure.
     pub fn erase_footer(&mut self, page_index: usize) -> Result<()> {
         self.erase_page_area_content(page_index, PageArea::Footer)
+    }
+
+    /// Deprecated: Use `erase_footer` instead.
+    #[deprecated(note = "use erase_footer instead")]
+    pub fn edit_footer(&mut self, page_index: usize) -> Result<()> {
+        self.erase_footer(page_index)
     }
 
     /// Erase both header and footer content.
@@ -4283,7 +4288,7 @@ impl PdfDocument {
                 resources.clone()
             };
             extractor.set_resources(res_obj.clone());
-            extractor.set_document(self as *mut PdfDocument);
+            extractor.set_document(self as *const PdfDocument);
             let _ = self.load_fonts(&res_obj, &mut extractor);
         } else {
             // No resources on the AP stream — try the annotation's /DR or parent page resources
@@ -4784,16 +4789,12 @@ impl PdfDocument {
     /// This is the optimized version of `extract_text_structure_order` that uses
     /// the pre-built `structure_content_cache` for O(1) page content lookup instead
     /// of re-traversing the entire structure tree for each page.
-    fn extract_text_structure_order_cached(&mut self, page_index: usize) -> Result<String> {
+    fn extract_text_structure_order_cached_with_spans(
+        &mut self,
+        page_index: usize,
+        all_spans: Vec<TextSpan>,
+    ) -> Result<String> {
         log::debug!("Extracting text using cached structure order for page {}", page_index);
-
-        // Step 1: Extract all spans with MCIDs
-        let mut all_spans = self.extract_spans(page_index)?;
-
-        // Merge widget annotation spans (form field values) into the span list.
-        // Widget spans have no MCID and will be sorted spatially with other non-MCID spans.
-        let widget_spans = self.extract_widget_spans(page_index);
-        all_spans.extend(widget_spans);
 
         if all_spans.is_empty() {
             let mut text = String::new();
@@ -5034,7 +5035,7 @@ impl PdfDocument {
         let mut extractor = TextExtractor::new();
         if let Some(resources) = page_dict.get("Resources") {
             extractor.set_resources(resources.clone());
-            extractor.set_document(self as *mut PdfDocument);
+            extractor.set_document(self as *const PdfDocument);
             if let Err(e) = self.load_fonts(resources, &mut extractor) {
                 log::warn!(
                     "Failed to load fonts for page {}: {}, continuing with defaults",
@@ -5136,7 +5137,7 @@ impl PdfDocument {
         // Load fonts from page resources and set resources for XObject access
         if let Some(resources) = page_dict.get("Resources") {
             extractor.set_resources(resources.clone());
-            extractor.set_document(self as *mut PdfDocument);
+            extractor.set_document(self as *const PdfDocument);
 
             // Load fonts
             if let Err(e) = self.load_fonts(resources, &mut extractor) {
@@ -5225,7 +5226,7 @@ impl PdfDocument {
         // Load fonts from page resources and set resources for XObject access
         if let Some(resources) = page_dict.get("Resources") {
             extractor.set_resources(resources.clone());
-            extractor.set_document(self as *mut PdfDocument);
+            extractor.set_document(self as *const PdfDocument);
 
             // Load fonts
             if let Err(e) = self.load_fonts(resources, &mut extractor) {
@@ -6673,7 +6674,7 @@ impl PdfDocument {
 
     /// Load fonts from a Resources dictionary into the extractor.
     pub(crate) fn load_fonts(
-        &mut self,
+        &self,
         resources: &Object,
         extractor: &mut crate::extractors::TextExtractor,
     ) -> Result<()> {
@@ -6710,8 +6711,9 @@ impl PdfDocument {
             // Layer 2: Check font set cache for the /Font dictionary.
             // Pages sharing the same /Font dict skip the entire per-font loop.
             if let Some(font_dict_ref) = font_dict_ref {
-                if let Some(cached_set) = self.font_set_cache.get(&font_dict_ref) {
-                    for (name, font_arc) in cached_set {
+                if let Some(cached_set) = self.font_set_cache.borrow().get(&font_dict_ref).cloned()
+                {
+                    for (name, font_arc) in &cached_set {
                         extractor.add_font_shared(name.clone(), Arc::clone(font_arc));
                     }
                     // share_truetype_cmaps already applied before caching — skip it
@@ -6743,8 +6745,13 @@ impl PdfDocument {
                     hasher.finish()
                 };
 
-                if let Some(cached_set) = self.font_fingerprint_cache.get(&fingerprint) {
-                    for (name, font_arc) in cached_set {
+                if let Some(cached_set) = self
+                    .font_fingerprint_cache
+                    .borrow()
+                    .get(&fingerprint)
+                    .cloned()
+                {
+                    for (name, font_arc) in &cached_set {
                         extractor.add_font_shared(name.clone(), Arc::clone(font_arc));
                     }
                     return Ok(());
@@ -6766,7 +6773,7 @@ impl PdfDocument {
                 };
 
                 if let Some((cached_set, _check_name, _check_hash)) =
-                    self.font_name_set_cache.get(&name_hash)
+                    self.font_name_set_cache.borrow().get(&name_hash).cloned()
                 {
                     // Layer 4: Same font names within a document virtually always map
                     // to the same underlying fonts. Trust the name-based cache to avoid
@@ -6791,8 +6798,8 @@ impl PdfDocument {
                 for (name, font_obj) in sorted_font_entries {
                     // If font is a reference, check per-font cache first
                     if let Some(font_ref) = font_obj.as_reference() {
-                        if let Some(cached) = self.font_cache.get(&font_ref) {
-                            extractor.add_font_shared(name.clone(), Arc::clone(cached));
+                        if let Some(cached) = self.font_cache.borrow().get(&font_ref).cloned() {
+                            extractor.add_font_shared(name.clone(), cached);
                             continue;
                         }
                         all_from_cache = false;
@@ -6808,10 +6815,13 @@ impl PdfDocument {
 
                         // Layer 5: Per-font identity cache — skip from_dict when a
                         // structurally identical font was already parsed elsewhere.
-                        if let Some(cached) = self.font_identity_cache.get(&id_hash) {
-                            let arc = Arc::clone(cached);
-                            self.font_cache.insert(font_ref, Arc::clone(&arc));
-                            extractor.add_font_shared(name.clone(), arc);
+                        if let Some(cached) =
+                            self.font_identity_cache.borrow().get(&id_hash).cloned()
+                        {
+                            self.font_cache
+                                .borrow_mut()
+                                .insert(font_ref, Arc::clone(&cached));
+                            extractor.add_font_shared(name.clone(), cached);
                             continue;
                         }
 
@@ -6821,8 +6831,11 @@ impl PdfDocument {
                             crate::fonts::global_cache::global_font_cache_get(id_hash)
                         {
                             self.font_identity_cache
+                                .borrow_mut()
                                 .insert(id_hash, Arc::clone(&cached));
-                            self.font_cache.insert(font_ref, Arc::clone(&cached));
+                            self.font_cache
+                                .borrow_mut()
+                                .insert(font_ref, Arc::clone(&cached));
                             extractor.add_font_shared(name.clone(), cached);
                             continue;
                         }
@@ -6835,8 +6848,12 @@ impl PdfDocument {
                                     id_hash,
                                     Arc::clone(&arc),
                                 );
-                                self.font_identity_cache.insert(id_hash, Arc::clone(&arc));
-                                self.font_cache.insert(font_ref, Arc::clone(&arc));
+                                self.font_identity_cache
+                                    .borrow_mut()
+                                    .insert(id_hash, Arc::clone(&arc));
+                                self.font_cache
+                                    .borrow_mut()
+                                    .insert(font_ref, Arc::clone(&arc));
                                 extractor.add_font_shared(name.clone(), arc);
                             },
                             Err(e) => {
@@ -6877,14 +6894,18 @@ impl PdfDocument {
                 // Cache font set by both ObjectRef and fingerprint
                 let font_set = extractor.get_font_set();
                 if let Some(fdr) = font_dict_ref {
-                    self.font_set_cache.insert(fdr, font_set.clone());
+                    self.font_set_cache
+                        .borrow_mut()
+                        .insert(fdr, font_set.clone());
                 }
                 self.font_fingerprint_cache
+                    .borrow_mut()
                     .insert(fingerprint, font_set.clone());
 
                 // Cache by font names with spot-check data for Layer 4
                 if let Some((check_name, check_hash)) = spot_check {
                     self.font_name_set_cache
+                        .borrow_mut()
                         .insert(name_hash, (Arc::new(font_set), check_name, check_hash));
                 }
 
@@ -6971,7 +6992,9 @@ impl PdfDocument {
 
         // Strategy 2: Hybrid spatial detection (v0.3.14)
         let config = options.table_detection_config.clone().unwrap_or_default();
-        let lines = self.extract_lines(page_index).unwrap_or_default();
+
+        // Extract vector paths (lines/rects) for visual detection
+        let paths = self.extract_paths(page_index).unwrap_or_default();
 
         // Use words instead of raw spans for better granularity in untagged PDFs.
         // This ensures that strings with spaces are split into separate columns.
@@ -7011,7 +7034,7 @@ impl PdfDocument {
 
         let tables = crate::structure::spatial_table_detector::detect_tables_with_lines(
             input_spans,
-            &lines,
+            &paths,
             &config,
         );
 
@@ -8197,15 +8220,23 @@ impl PdfDocument {
         };
 
         // Decode form stream — check cache first to avoid repeated decompression
-        let stream_data = if let Some(cached) = self.xobject_stream_cache.get(&xobject_ref) {
+        let stream_data = if let Some(cached) = self
+            .xobject_stream_cache
+            .borrow()
+            .get(&xobject_ref)
+            .cloned()
+        {
             cached.as_ref().clone()
         } else {
             match self.decode_stream_with_encryption(xobject, xobject_ref) {
                 Ok(data) => {
                     const MAX_STREAM_CACHE_BYTES: usize = 50 * 1024 * 1024;
-                    if self.xobject_stream_cache_bytes + data.len() <= MAX_STREAM_CACHE_BYTES {
-                        self.xobject_stream_cache_bytes += data.len();
+                    let current_bytes = self.xobject_stream_cache_bytes.get();
+                    if current_bytes + data.len() <= MAX_STREAM_CACHE_BYTES {
+                        self.xobject_stream_cache_bytes
+                            .set(current_bytes + data.len());
                         self.xobject_stream_cache
+                            .borrow_mut()
                             .insert(xobject_ref, std::sync::Arc::new(data.clone()));
                     }
                     data
@@ -9358,7 +9389,7 @@ mod tests {
     #[test]
     fn test_load_object_from_cache() {
         let pdf = build_minimal_pdf(b"");
-        let mut doc = PdfDocument::from_bytes(pdf).unwrap();
+        let doc = PdfDocument::from_bytes(pdf).unwrap();
 
         // Load catalog (object 1 0 R)
         let obj_ref = ObjectRef::new(1, 0);
@@ -9373,7 +9404,7 @@ mod tests {
     #[test]
     fn test_load_object_missing_returns_null() {
         let pdf = build_minimal_pdf(b"");
-        let mut doc = PdfDocument::from_bytes(pdf).unwrap();
+        let doc = PdfDocument::from_bytes(pdf).unwrap();
 
         // Try to load a non-existent object
         let obj_ref = ObjectRef::new(999, 0);
@@ -9474,7 +9505,7 @@ mod tests {
     #[test]
     fn test_authenticate_unencrypted_pdf() {
         let pdf = build_minimal_pdf(b"");
-        let mut doc = PdfDocument::from_bytes(pdf).unwrap();
+        let doc = PdfDocument::from_bytes(pdf).unwrap();
         // Unencrypted PDF should always authenticate successfully
         let result = doc.authenticate(b"anypassword").unwrap();
         assert!(result);
@@ -10344,7 +10375,7 @@ mod tests {
     #[test]
     fn test_is_form_xobject_nonexistent_ref() {
         let pdf = build_minimal_pdf(b"");
-        let mut doc = PdfDocument::from_bytes(pdf).unwrap();
+        let doc = PdfDocument::from_bytes(pdf).unwrap();
         // Non-existent object should return true (conservative)
         let result = doc.is_form_xobject(ObjectRef::new(999, 0));
         assert!(result);
@@ -10353,7 +10384,7 @@ mod tests {
     #[test]
     fn test_is_form_xobject_catalog_not_form() {
         let pdf = build_minimal_pdf(b"");
-        let mut doc = PdfDocument::from_bytes(pdf).unwrap();
+        let doc = PdfDocument::from_bytes(pdf).unwrap();
         // Load catalog into cache first
         let _ = doc.load_object(ObjectRef::new(1, 0));
         // Catalog is not a Form XObject
@@ -12025,7 +12056,7 @@ mod tests {
             format!("trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off)
                 .as_bytes(),
         );
-        let mut doc = PdfDocument::from_bytes(pdf).unwrap();
+        let doc = PdfDocument::from_bytes(pdf).unwrap();
         let obj = doc.load_object(ObjectRef::new(5, 0)).unwrap();
         assert!(obj.as_dict().is_some());
     }
@@ -12033,14 +12064,14 @@ mod tests {
     #[test]
     fn test_load_object_missing_returns_null_simple() {
         let pdf = build_minimal_pdf(b"");
-        let mut doc = PdfDocument::from_bytes(pdf).unwrap();
+        let doc = PdfDocument::from_bytes(pdf).unwrap();
         assert!(matches!(doc.load_object(ObjectRef::new(999, 0)).unwrap(), Object::Null));
     }
 
     #[test]
     fn test_decode_stream_with_encryption_non_null() {
         let pdf = build_minimal_pdf(b"BT (Hello) Tj ET");
-        let mut doc = PdfDocument::from_bytes(pdf).unwrap();
+        let doc = PdfDocument::from_bytes(pdf).unwrap();
         let stream_obj = doc.load_object(ObjectRef::new(4, 0)).unwrap();
         assert!(doc
             .decode_stream_with_encryption(&stream_obj, ObjectRef::new(4, 0))
@@ -12070,7 +12101,7 @@ mod tests {
     #[test]
     fn test_is_form_xobject_from_cache() {
         let pdf = build_minimal_pdf(b"");
-        let mut doc = PdfDocument::from_bytes(pdf).unwrap();
+        let doc = PdfDocument::from_bytes(pdf).unwrap();
         let _ = doc.load_object(ObjectRef::new(1, 0)).unwrap();
         assert!(!doc.is_form_xobject(ObjectRef::new(1, 0)));
     }

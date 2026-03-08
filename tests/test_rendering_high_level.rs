@@ -10,7 +10,7 @@ mod tests {
 
         // Render page 0
         let options = RenderOptions::default();
-        let image = pdf.render_page(0, &options).unwrap();
+        let image = pdf.render_page(0, Some(&options)).unwrap();
 
         // Verify image properties
         assert!(image.width > 0);
@@ -26,7 +26,7 @@ mod tests {
 
         // Render as JPEG
         let options = RenderOptions::with_dpi(72).as_jpeg(80);
-        let image = pdf.render_page(0, &options).unwrap();
+        let image = pdf.render_page(0, Some(&options)).unwrap();
 
         assert_eq!(image.format, ImageFormat::Jpeg);
         assert!(!image.data.is_empty());

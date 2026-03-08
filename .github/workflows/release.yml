@@ -281,6 +281,13 @@ jobs:
       - name: Install maturin
         run: uv pip install --system maturin
 
+      # Generate .pyi stubs automatically using mypy stubgen
+      - name: Generate type stubs
+        run: |
+          uv pip install mypy maturin
+          uv run maturin develop --features python
+          uv run stubgen -p pdf_oxide -o python
+
       - name: Build wheels
         run: maturin build --release --features python --target ${{ matrix.target }} --out dist
 
