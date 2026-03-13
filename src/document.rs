@@ -5556,6 +5556,36 @@ impl PdfDocument {
     /// }
     /// ```
     pub fn extract_words(&mut self, page_index: usize) -> Result<Vec<crate::layout::Word>> {
+        self.extract_words_with_thresholds(page_index, None)
+    }
+
+    /// Extract words from a page with optional threshold overrides.
+    ///
+    /// When `word_gap_threshold` is `None`, the adaptive threshold is computed
+    /// automatically from page statistics (median character width × 0.3).
+    /// Providing a value (in PDF points) overrides the adaptive computation,
+    /// which is useful for tuning word segmentation on specific document types.
+    ///
+    /// # Arguments
+    ///
+    /// * `page_index` - Zero-based page index
+    /// * `word_gap_threshold` - Optional override for the horizontal gap (in PDF points)
+    ///   used to split characters into words. Smaller values produce more words.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Use adaptive threshold (default behavior)
+    /// let words = doc.extract_words_with_thresholds(0, None)?;
+    ///
+    /// // Use a tighter threshold for dense forms
+    /// let words = doc.extract_words_with_thresholds(0, Some(1.5))?;
+    /// ```
+    pub fn extract_words_with_thresholds(
+        &mut self,
+        page_index: usize,
+        word_gap_threshold: Option<f32>,
+    ) -> Result<Vec<crate::layout::Word>> {
         use crate::layout::{clustering, AdaptiveLayoutParams, DocumentProperties, Word};
         use crate::pipeline::reading_order::xycut::XYCutStrategy;
 
@@ -5581,7 +5611,12 @@ impl PdfDocument {
         }
         let props =
             DocumentProperties::analyze(&all_chars, page_bbox).map_err(Error::LayoutAnalysis)?;
-        let params = AdaptiveLayoutParams::from_properties(&props);
+        let mut params = AdaptiveLayoutParams::from_properties(&props);
+
+        // Apply user-provided threshold override
+        if let Some(wgt) = word_gap_threshold {
+            params.word_gap_threshold = wgt;
+        }
 
         // Step 3: Extract words from each block independently
         let mut words = Vec::new();
@@ -5640,6 +5675,38 @@ impl PdfDocument {
         &mut self,
         page_index: usize,
     ) -> Result<Vec<crate::layout::TextLine>> {
+        self.extract_text_lines_with_thresholds(page_index, None, None)
+    }
+
+    /// Extract text lines from a page with optional threshold overrides.
+    ///
+    /// When thresholds are `None`, adaptive values are computed automatically
+    /// from page statistics. Providing values (in PDF points) overrides the
+    /// adaptive computation for fine-grained control over segmentation.
+    ///
+    /// # Arguments
+    ///
+    /// * `page_index` - Zero-based page index
+    /// * `word_gap_threshold` - Optional override for the horizontal gap (in PDF points)
+    ///   used to split characters into words. Smaller values produce more words.
+    /// * `line_gap_threshold` - Optional override for the vertical gap (in PDF points)
+    ///   used to group words into lines. Smaller values produce more lines.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Use adaptive thresholds (default behavior)
+    /// let lines = doc.extract_text_lines_with_thresholds(0, None, None)?;
+    ///
+    /// // Tune both thresholds for dense forms
+    /// let lines = doc.extract_text_lines_with_thresholds(0, Some(1.5), Some(4.0))?;
+    /// ```
+    pub fn extract_text_lines_with_thresholds(
+        &mut self,
+        page_index: usize,
+        word_gap_threshold: Option<f32>,
+        line_gap_threshold: Option<f32>,
+    ) -> Result<Vec<crate::layout::TextLine>> {
         use crate::layout::{clustering, AdaptiveLayoutParams, DocumentProperties, TextLine, Word};
         use crate::pipeline::reading_order::xycut::XYCutStrategy;
 
@@ -5662,7 +5729,15 @@ impl PdfDocument {
         let all_chars: Vec<_> = spans.iter().flat_map(|s| s.to_chars()).collect();
         let props =
             DocumentProperties::analyze(&all_chars, page_bbox).map_err(Error::LayoutAnalysis)?;
-        let params = AdaptiveLayoutParams::from_properties(&props);
+        let mut params = AdaptiveLayoutParams::from_properties(&props);
+
+        // Apply user-provided threshold overrides
+        if let Some(wgt) = word_gap_threshold {
+            params.word_gap_threshold = wgt;
+        }
+        if let Some(lgt) = line_gap_threshold {
+            params.line_gap_threshold = lgt;
+        }
 
         // Step 3: Process each block independently
         let mut all_lines = Vec::new();

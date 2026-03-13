@@ -323,47 +323,57 @@ impl PyPdfDocument {
     }
 
     /// Extract words.
-    #[pyo3(signature = (page, region=None))]
+    #[pyo3(signature = (page, region=None, word_gap_threshold=None))]
     fn extract_words(
         &mut self,
         page: usize,
         region: Option<(f32, f32, f32, f32)>,
+        word_gap_threshold: Option<f32>,
     ) -> PyResult<Vec<PyWord>> {
-        let words_result = if let Some((x, y, w, h)) = region {
-            self.inner.extract_words_in_rect(
-                page,
-                crate::geometry::Rect::new(x, y, w, h),
-                crate::layout::RectFilterMode::Intersects,
-            )
+        use crate::layout::{RectFilterMode, SpatialCollectionFiltering};
+
+        let words = self
+            .inner
+            .extract_words_with_thresholds(page, word_gap_threshold)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to extract words: {}", e)))?;
+
+        let filtered = if let Some((x, y, w, h)) = region {
+            let rect = crate::geometry::Rect::new(x, y, w, h);
+            words.filter_by_rect(&rect, RectFilterMode::Intersects)
         } else {
-            self.inner.extract_words(page)
+            words
         };
 
-        words_result
-            .map(|words| words.into_iter().map(|w| PyWord { inner: w }).collect())
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to extract words: {}", e)))
+        Ok(filtered.into_iter().map(|w| PyWord { inner: w }).collect())
     }
 
     /// Extract text lines.
-    #[pyo3(signature = (page, region=None))]
+    #[pyo3(signature = (page, region=None, word_gap_threshold=None, line_gap_threshold=None))]
     fn extract_text_lines(
         &mut self,
         page: usize,
         region: Option<(f32, f32, f32, f32)>,
+        word_gap_threshold: Option<f32>,
+        line_gap_threshold: Option<f32>,
     ) -> PyResult<Vec<PyTextLine>> {
-        let lines_result = if let Some((x, y, w, h)) = region {
-            self.inner.extract_text_lines_in_rect(
-                page,
-                crate::geometry::Rect::new(x, y, w, h),
-                crate::layout::RectFilterMode::Intersects,
-            )
+        use crate::layout::{RectFilterMode, SpatialCollectionFiltering};
+
+        let lines = self
+            .inner
+            .extract_text_lines_with_thresholds(page, word_gap_threshold, line_gap_threshold)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to extract lines: {}", e)))?;
+
+        let filtered = if let Some((x, y, w, h)) = region {
+            let rect = crate::geometry::Rect::new(x, y, w, h);
+            lines.filter_by_rect(&rect, RectFilterMode::Intersects)
         } else {
-            self.inner.extract_text_lines(page)
+            lines
         };
 
-        lines_result
-            .map(|lines| lines.into_iter().map(|l| PyTextLine { inner: l }).collect())
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to extract lines: {}", e)))
+        Ok(filtered
+            .into_iter()
+            .map(|l| PyTextLine { inner: l })
+            .collect())
     }
 
     /// Check if Tagged PDF.
