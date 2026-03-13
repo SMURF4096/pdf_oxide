@@ -1,0 +1,91 @@
+name: Build Python Wheels
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-wheels:
+    name: Build wheels (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: wheels-linux-x86_64
+
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: wheels-macos-aarch64
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install maturin
+        run: pip install maturin
+
+      - name: Build wheels
+        run: |
+          maturin build --release --features python --target ${{ matrix.target }} --interpreter python3.11 python3.12 --out dist
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/*.whl
+          retention-days: 30
+
+  create-release:
+    name: Create GitHub Release
+    needs: [build-wheels]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download all wheel artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          SHA=$(git rev-parse --short HEAD)
+          echo "tag=v${VERSION}-fork.${SHA}" >> $GITHUB_OUTPUT
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "Fork build ${{ steps.version.outputs.tag }}"
+          body: |
+            Pre-built wheels from `feature/expose-word-line-thresholds` branch.
+
+            Install with:
+            ```
+            pip install pdf_oxide --find-links https://github.com/tboser/pdf_oxide/releases/expanded_assets/${{ steps.version.outputs.tag }}
+            ```
+          files: dist/*.whl
+          draft: false
+          prerelease: true
