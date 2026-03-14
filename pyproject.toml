@@ -105,7 +105,7 @@ features = ["python"]
 python-source = "python"
 module-name = "pdf_oxide.pdf_oxide"
 # Ensure generated .pyi stubs are packaged (they are gitignored, so include explicitly)
-include = ["pdf_oxide/**/*.pyi"]
+include = ["python/pdf_oxide/*.pyi"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
