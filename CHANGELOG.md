@@ -2,6 +2,12 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [Unreleased]
+
+### Bug Fixes
+
+- **FlateDecode flate-bomb protection** — All zlib/deflate decompression paths are now capped, preventing a crafted PDF stream from exhausting virtual memory and triggering an allocator abort (SIGABRT / exit 134). Streams that exceed the limit are rejected with a clear error. The cap defaults to 256 MB and can be adjusted per-decoder via `FlateDecoder::with_limit(n)`.
+
 ## [0.3.17] - 2026-03-08
 > Stable Recursion and Refined Table Heuristics
 
