@@ -89,6 +89,7 @@
 //! ```ignore
 //! use pdf_oxide::PdfDocument;
 //! use pdf_oxide::pipeline::{TextPipeline, TextPipelineConfig};
+//! use pdf_oxide::pipeline::converters::OutputConverter;
 //! use pdf_oxide::pipeline::converters::MarkdownOutputConverter;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
