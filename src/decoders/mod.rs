@@ -140,7 +140,7 @@ fn normalize_filter_name(name: &str) -> Result<&'static str> {
 fn create_decoder(filter_name: &str) -> Result<Box<dyn StreamDecoder>> {
     let canonical = normalize_filter_name(filter_name)?;
     Ok(match canonical {
-        "FlateDecode" => Box::new(FlateDecoder),
+        "FlateDecode" => Box::new(FlateDecoder::default()),
         "ASCIIHexDecode" => Box::new(AsciiHexDecoder),
         "ASCII85Decode" => Box::new(Ascii85Decoder),
         "LZWDecode" => Box::new(LzwDecoder),

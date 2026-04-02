@@ -1580,15 +1580,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "inflate"
-version = "0.4.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1cdb29978cc5797bd8dcc8e5bf7de604891df2a8dc576973d71a281e916db2ff"
-dependencies = [
- "adler32",
-]
-
-[[package]]
 name = "inout"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2563,7 +2554,6 @@ dependencies = [
  "image 0.24.9",
  "imageproc",
  "indexmap",
- "inflate",
  "js-sys",
  "lazy_static",
  "libflate",

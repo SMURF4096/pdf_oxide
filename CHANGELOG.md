@@ -7,6 +7,7 @@ All notable changes to PDFOxide are documented here.
 ### Bug Fixes
 
 - **Fixed process abort on degenerate CTM coordinates** — A malformed CTM could place text spans at extreme coordinates, causing allocation abort. Projection functions now safely skip the split instead of crashing.
+- **FlateDecode flate-bomb protection** — All zlib/deflate decompression paths are now capped, preventing a crafted PDF stream from exhausting virtual memory. The cap defaults to 256 MB and can be adjusted per-decoder.
 
 ### Changed
 
