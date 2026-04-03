@@ -9079,4 +9079,48 @@ mod tests {
         assert!(text2.contains("Second"), "Page 2 text: {:?}", text2);
         assert!(text3.contains("Third"), "Page 3 text: {:?}", text3);
     }
+
+    /// Regression test: merged PDFs must have extractable text on every page.
+    ///
+    /// Creates two single-page PDFs with known text content, merges them,
+    /// then verifies that extract_text() returns the correct content for
+    /// each page of the merged document.
+    #[test]
+    fn test_merge_text_extractable() {
+        let pdf_a = crate::api::Pdf::from_text("Hello from A").unwrap().into_bytes();
+        let pdf_b = crate::api::Pdf::from_text("Hello from B").unwrap().into_bytes();
+
+        let mut editor = DocumentEditor::from_bytes(pdf_a).unwrap();
+        let pages_merged = editor.merge_from_bytes(&pdf_b).unwrap();
+        assert_eq!(pages_merged, 1, "should merge exactly 1 page from B");
+
+        let result = editor.save_to_bytes().unwrap();
+
+        let mut doc = crate::document::PdfDocument::from_bytes(result).unwrap();
+        assert_eq!(doc.page_count().unwrap(), 2, "merged PDF must have 2 pages");
+
+        let text_page0 = doc.extract_text(0).unwrap();
+        let text_page1 = doc.extract_text(1).unwrap();
+
+        assert!(
+            text_page0.contains("Hello from A"),
+            "Page 0 should contain 'Hello from A', got: {:?}",
+            text_page0
+        );
+        assert!(
+            text_page1.contains("Hello from B"),
+            "Page 1 should contain 'Hello from B', got: {:?}",
+            text_page1
+        );
+
+        // Verify no cross-contamination
+        assert!(
+            !text_page0.contains("Hello from B"),
+            "Page 0 should NOT contain text from B"
+        );
+        assert!(
+            !text_page1.contains("Hello from A"),
+            "Page 1 should NOT contain text from A"
+        );
+    }
 }

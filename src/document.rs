@@ -12683,6 +12683,81 @@ mod tests {
         assert!(result.is_err());
     }
 
+    /// Regression test for Issue #254: Tm-scale containment filter must not
+    /// drop distinct text lines whose bounding boxes overlap spatially.
+    ///
+    /// Before the fix, the containment filter in extract_text() would skip any
+    /// span geometrically contained within the previous span, even if the text
+    /// was different.  This caused the second line to silently disappear.
+    ///
+    /// The fix adds a `span.text == prev.text` guard so that only true
+    /// duplicates are filtered.
+    #[test]
+    fn test_containment_filter_preserves_distinct_overlapping_lines() {
+        // Build a minimal PDF with two Td-placed text strings at very close Y
+        // positions (Y=700 and Y=699 — within the 2.0pt "same line" threshold)
+        // but with different content.  The first string is wider so the second
+        // is geometrically contained within it.
+        let content = b"BT /F1 12 Tf 50 700 Td (First line has longer text here) Tj 0 -1 Td (Second) Tj ET";
+
+        // We need a font in Resources for the extractor to work.
+        let mut pdf = b"%PDF-1.4\n".to_vec();
+
+        let off1 = pdf.len();
+        pdf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+
+        let off2 = pdf.len();
+        pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+
+        let off3 = pdf.len();
+        pdf.extend_from_slice(
+            b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n",
+        );
+
+        let off4 = pdf.len();
+        let content_len = content.len();
+        pdf.extend_from_slice(
+            format!("4 0 obj\n<< /Length {} >>\nstream\n", content_len).as_bytes(),
+        );
+        pdf.extend_from_slice(content);
+        pdf.extend_from_slice(b"\nendstream\nendobj\n");
+
+        let off5 = pdf.len();
+        pdf.extend_from_slice(
+            b"5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
+        );
+
+        let xref_off = pdf.len();
+        pdf.extend_from_slice(b"xref\n0 6\n");
+        pdf.extend_from_slice(b"0000000000 65535 f \n");
+        pdf.extend_from_slice(format!("{:010} 00000 n \n", off1).as_bytes());
+        pdf.extend_from_slice(format!("{:010} 00000 n \n", off2).as_bytes());
+        pdf.extend_from_slice(format!("{:010} 00000 n \n", off3).as_bytes());
+        pdf.extend_from_slice(format!("{:010} 00000 n \n", off4).as_bytes());
+        pdf.extend_from_slice(format!("{:010} 00000 n \n", off5).as_bytes());
+        pdf.extend_from_slice(
+            format!(
+                "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
+                xref_off
+            )
+            .as_bytes(),
+        );
+
+        let mut doc = PdfDocument::from_bytes(pdf).unwrap();
+        let text = doc.extract_text(0).unwrap();
+
+        assert!(
+            text.contains("First line has longer text here"),
+            "First line should be present in extracted text, got: {:?}",
+            text
+        );
+        assert!(
+            text.contains("Second"),
+            "Second line must NOT be dropped by containment filter, got: {:?}",
+            text
+        );
+    }
+
     #[test]
     fn test_page_text_serializable() {
         // Verify PageText derives serde::Serialize

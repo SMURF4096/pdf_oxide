@@ -6308,6 +6308,66 @@ mod tests {
         assert_eq!(chars[0].color.b, 0.0);
     }
 
+    /// Regression test: is_monospace flag must propagate from FontInfo flags
+    /// through TjBuffer into the final TextSpan.
+    ///
+    /// When font descriptor flags have bit 0 (FixedPitch) set, spans produced
+    /// by extract_text_spans() must report is_monospace == true.
+    /// Conversely, a proportional font (e.g. Helvetica) must yield false.
+    #[test]
+    fn test_is_monospace_from_font_flags() {
+        // --- Monospace font: flags bit 0 (FixedPitch) set ---
+        let mut mono_font = create_test_font();
+        mono_font.base_font = "Courier".to_string();
+        mono_font.flags = Some(1); // bit 0 = FixedPitch
+
+        let mut extractor = TextExtractor::new();
+        extractor.add_font("F1".to_string(), mono_font);
+
+        let stream = b"BT /F1 12 Tf 100 700 Td (Code) Tj ET";
+        let spans = extractor.extract_text_spans(stream).unwrap();
+
+        assert!(!spans.is_empty(), "should produce at least one span");
+        assert!(
+            spans[0].is_monospace,
+            "Courier with FixedPitch flag should be monospace, got is_monospace=false"
+        );
+
+        // --- Proportional font: no FixedPitch flag ---
+        let mut prop_font = create_test_font();
+        prop_font.base_font = "Helvetica".to_string();
+        prop_font.flags = Some(0); // no FixedPitch
+
+        let mut extractor2 = TextExtractor::new();
+        extractor2.add_font("F2".to_string(), prop_font);
+
+        let stream2 = b"BT /F2 12 Tf 100 700 Td (Text) Tj ET";
+        let spans2 = extractor2.extract_text_spans(stream2).unwrap();
+
+        assert!(!spans2.is_empty(), "should produce at least one span");
+        assert!(
+            !spans2[0].is_monospace,
+            "Helvetica without FixedPitch flag should not be monospace"
+        );
+
+        // --- Name-based heuristic: font name containing MONO ---
+        let mut mono_name_font = create_test_font();
+        mono_name_font.base_font = "DejaVuSansMono".to_string();
+        mono_name_font.flags = None; // no flags at all
+
+        let mut extractor3 = TextExtractor::new();
+        extractor3.add_font("F3".to_string(), mono_name_font);
+
+        let stream3 = b"BT /F3 12 Tf 100 700 Td (Mono) Tj ET";
+        let spans3 = extractor3.extract_text_spans(stream3).unwrap();
+
+        assert!(!spans3.is_empty(), "should produce at least one span");
+        assert!(
+            spans3[0].is_monospace,
+            "Font named DejaVuSansMono should be detected as monospace via name heuristic"
+        );
+    }
+
     #[test]
     #[ignore] // TODO: Fix Tf inside q/Q not working correctly
     fn test_extract_save_restore() {
