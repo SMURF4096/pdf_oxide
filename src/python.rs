@@ -1749,7 +1749,7 @@ fn python_to_form_field_value(
 }
 
 /// Python wrapper for PDF creation.
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "Pdf")]
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "Pdf", skip_from_py_object)]
 pub struct PyPdf {
     bytes: Vec<u8>,
 }
@@ -1895,11 +1895,19 @@ impl PyPdf {
 use crate::converters::office::OfficeConverter as RustOfficeConverter;
 
 #[cfg(feature = "office")]
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "OfficeConverter")]
+#[pyclass(
+    module = "pdf_oxide.pdf_oxide",
+    name = "OfficeConverter",
+    skip_from_py_object
+)]
 pub struct PyOfficeConverter;
 
 #[cfg(not(feature = "office"))]
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "OfficeConverter")]
+#[pyclass(
+    module = "pdf_oxide.pdf_oxide",
+    name = "OfficeConverter",
+    skip_from_py_object
+)]
 pub struct PyOfficeConverter;
 
 #[cfg(not(feature = "office"))]
@@ -2003,7 +2011,11 @@ impl PyOfficeConverter {
 
 use crate::editor::{ElementId, PdfElement, PdfPage as RustPdfPage, PdfText as RustPdfText};
 
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "PdfPageRegion")]
+#[pyclass(
+    module = "pdf_oxide.pdf_oxide",
+    name = "PdfPageRegion",
+    skip_from_py_object
+)]
 pub struct PyPdfPageRegion {
     pub doc: Py<PyPdfDocument>,
     pub page_index: usize,
@@ -2175,7 +2187,11 @@ impl PyPdfPage {
     }
 }
 
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "PdfTextId")]
+#[pyclass(
+    module = "pdf_oxide.pdf_oxide",
+    name = "PdfTextId",
+    skip_from_py_object
+)]
 #[derive(Clone)]
 pub struct PyPdfTextId {
     inner: ElementId,
@@ -2187,7 +2203,7 @@ impl PyPdfTextId {
     }
 }
 
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "PdfText")]
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "PdfText", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyPdfText {
     inner: RustPdfText,
@@ -2243,7 +2259,7 @@ impl PyPdfText {
     }
 }
 
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "PdfImage")]
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "PdfImage", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyPdfImage {
     inner: crate::editor::PdfImage,
@@ -2273,7 +2289,11 @@ impl PyPdfImage {
     }
 }
 
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "PdfAnnotation")]
+#[pyclass(
+    module = "pdf_oxide.pdf_oxide",
+    name = "PdfAnnotation",
+    skip_from_py_object
+)]
 #[derive(Clone)]
 pub struct PyAnnotationWrapper {
     inner: crate::editor::AnnotationWrapper,
@@ -2310,7 +2330,11 @@ impl PyAnnotationWrapper {
     }
 }
 
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "PdfElement")]
+#[pyclass(
+    module = "pdf_oxide.pdf_oxide",
+    name = "PdfElement",
+    skip_from_py_object
+)]
 #[derive(Clone)]
 pub struct PyPdfElement {
     inner: PdfElement,
@@ -2356,7 +2380,7 @@ impl PyPdfElement {
     }
 }
 
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "TextChar")]
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "TextChar", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyTextChar {
     inner: RustTextChar,
@@ -2418,7 +2442,7 @@ impl PyTextChar {
     }
 }
 
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "TextSpan")]
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "TextSpan", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyTextSpan {
     inner: crate::layout::TextSpan,
@@ -2460,7 +2484,7 @@ impl PyTextSpan {
     }
 }
 
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "TextWord")]
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "TextWord", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyWord {
     inner: crate::layout::Word,
@@ -2506,7 +2530,7 @@ impl PyWord {
     }
 }
 
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "TextLine")]
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "TextLine", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyTextLine {
     inner: crate::layout::TextLine,
@@ -2648,13 +2672,21 @@ impl PyOcrEngine {
 }
 
 #[cfg(feature = "ocr")]
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "OcrConfig")]
+#[pyclass(
+    module = "pdf_oxide.pdf_oxide",
+    name = "OcrConfig",
+    skip_from_py_object
+)]
 #[derive(Clone)]
 pub struct PyOcrConfig {
     inner: crate::ocr::OcrConfig,
 }
 #[cfg(not(feature = "ocr"))]
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "OcrConfig")]
+#[pyclass(
+    module = "pdf_oxide.pdf_oxide",
+    name = "OcrConfig",
+    skip_from_py_object
+)]
 #[derive(Clone)]
 pub struct PyOcrConfig {}
 #[cfg(not(feature = "ocr"))]
@@ -2690,7 +2722,7 @@ impl PyOcrConfig {
     }
 }
 
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "Color")]
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "Color", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyColor {
     inner: RustColor,
@@ -2767,7 +2799,11 @@ impl PyColor {
 }
 
 #[allow(dead_code)]
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "BlendMode")]
+#[pyclass(
+    module = "pdf_oxide.pdf_oxide",
+    name = "BlendMode",
+    skip_from_py_object
+)]
 #[derive(Clone)]
 pub struct PyBlendMode {
     inner: RustBlendMode,
@@ -2861,7 +2897,11 @@ impl PyBlendMode {
 }
 
 #[allow(dead_code)]
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "ExtGState")]
+#[pyclass(
+    module = "pdf_oxide.pdf_oxide",
+    name = "ExtGState",
+    skip_from_py_object
+)]
 #[derive(Clone)]
 pub struct PyExtGState {
     fill_alpha: Option<f32>,
@@ -2917,7 +2957,11 @@ impl PyExtGState {
     }
 }
 
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "LinearGradient")]
+#[pyclass(
+    module = "pdf_oxide.pdf_oxide",
+    name = "LinearGradient",
+    skip_from_py_object
+)]
 #[derive(Clone)]
 pub struct PyLinearGradient {
     x1: f32,
@@ -2977,7 +3021,11 @@ impl PyLinearGradient {
     }
 }
 
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "RadialGradient")]
+#[pyclass(
+    module = "pdf_oxide.pdf_oxide",
+    name = "RadialGradient",
+    skip_from_py_object
+)]
 #[derive(Clone)]
 pub struct PyRadialGradient {
     x1: f32,
@@ -3035,7 +3083,7 @@ impl PyRadialGradient {
     }
 }
 
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "LineCap")]
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "LineCap", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyLineCap {
     pub inner: RustLineCap,
@@ -3077,7 +3125,7 @@ impl PyLineCap {
     }
 }
 
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "LineJoin")]
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "LineJoin", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyLineJoin {
     pub inner: RustLineJoin,
@@ -3119,7 +3167,11 @@ impl PyLineJoin {
     }
 }
 
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "PatternPresets")]
+#[pyclass(
+    module = "pdf_oxide.pdf_oxide",
+    name = "PatternPresets",
+    skip_from_py_object
+)]
 #[derive(Clone)]
 pub struct PyPatternPresets;
 #[pymethods]
@@ -3150,7 +3202,11 @@ impl PyPatternPresets {
     }
 }
 
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "ArtifactStyle")]
+#[pyclass(
+    module = "pdf_oxide.pdf_oxide",
+    name = "ArtifactStyle",
+    skip_from_py_object
+)]
 #[derive(Clone)]
 pub struct PyArtifactStyle {
     pub inner: crate::writer::ArtifactStyle,
@@ -3177,7 +3233,7 @@ impl PyArtifactStyle {
     }
 }
 
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "Artifact")]
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "Artifact", from_py_object)]
 #[derive(Clone)]
 pub struct PyArtifact {
     pub inner: crate::writer::Artifact,
@@ -3202,7 +3258,7 @@ impl PyArtifact {
     }
 }
 
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "Header")]
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "Header", from_py_object)]
 #[derive(Clone)]
 pub struct PyHeader {
     pub inner: PyArtifact,
@@ -3227,7 +3283,7 @@ impl PyHeader {
     }
 }
 
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "Footer")]
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "Footer", from_py_object)]
 #[derive(Clone)]
 pub struct PyFooter {
     pub inner: PyArtifact,
@@ -3252,7 +3308,11 @@ impl PyFooter {
     }
 }
 
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "PageTemplate")]
+#[pyclass(
+    module = "pdf_oxide.pdf_oxide",
+    name = "PageTemplate",
+    skip_from_py_object
+)]
 #[derive(Clone)]
 pub struct PyPageTemplate {
     pub inner: crate::writer::PageTemplate,
