@@ -156,9 +156,9 @@ fn test_config_adapter_defaults() {
     let config = TextPipelineConfig::from_conversion_options(&options);
 
     // Verify sensible defaults are applied
-    // ConversionOptions defaults: detect_headings=true, include_images=true
+    // ConversionOptions defaults: detect_headings=true, include_images=false
     assert!(config.output.detect_headings);
-    assert!(config.output.include_images);
+    assert!(!config.output.include_images);
     assert!(!config.output.preserve_layout);
     // In v0.3.16, table extraction is enabled by default
     assert!(config.output.extract_tables);

@@ -164,7 +164,7 @@ impl Default for TableFormatConfig {
 ///     preserve_layout: true,
 ///     detect_headings: false,
 ///     extract_tables: false,
-///     include_images: true,
+///     include_images: false,
 ///     image_output_dir: Some("images/".to_string()),
 ///     reading_order_mode: ReadingOrderMode::ColumnAware,
 ///     bold_marker_behavior: BoldMarkerBehavior::Conservative,
@@ -194,7 +194,11 @@ pub struct ConversionOptions {
     /// Include images in the output.
     ///
     /// When true, images are included as Markdown image syntax or HTML img tags.
-    /// When false, images are omitted from the output.
+    /// When false (default), images are omitted from the output.
+    ///
+    /// Defaults to `false` to keep output compact. Base64-embedded images can
+    /// add hundreds of KB per page (e.g., 360 KB for a single-page invoice).
+    /// Set to `true` when image content is needed.
     pub include_images: bool,
 
     /// Directory path for saving extracted images.
@@ -283,10 +287,10 @@ impl Default for ConversionOptions {
     /// Defaults:
     /// - preserve_layout: false (semantic mode)
     /// - detect_headings: true (enabled for proper markdown output)
-    /// - extract_tables: false
-    /// - include_images: true
+    /// - extract_tables: true
+    /// - include_images: false (opt-in to avoid output bloat from base64 images)
     /// - image_output_dir: None
-    /// - embed_images: true (base64 for HTML)
+    /// - embed_images: true (base64 for HTML, when include_images is enabled)
     /// - reading_order_mode: StructureTreeFirst (PDF-spec-compliant for Tagged PDFs, falls back to XY-Cut for untagged)
     /// - bold_marker_behavior: Conservative (no bold markers for whitespace-only content)
     /// - table_detection_config: None (uses defaults when table detection is enabled)
@@ -300,7 +304,7 @@ impl Default for ConversionOptions {
             preserve_layout: false,
             detect_headings: true,
             extract_tables: true,
-            include_images: true,
+            include_images: false,
             image_output_dir: None,
             embed_images: true,
             reading_order_mode: ReadingOrderMode::StructureTreeFirst { mcid_order: vec![] },
@@ -403,7 +407,7 @@ mod tests {
         assert!(!opts.preserve_layout);
         assert!(opts.detect_headings);
         assert!(opts.extract_tables);
-        assert!(opts.include_images);
+        assert!(!opts.include_images);
         assert_eq!(opts.image_output_dir, None);
         assert!(opts.embed_images);
         assert_eq!(
@@ -518,5 +522,28 @@ mod tests {
         assert!(opts.extract_tables);
         // But detection config remains None (uses internal defaults) unless customized
         assert!(opts.table_detection_config.is_none());
+    }
+
+    #[test]
+    fn test_include_images_default_false() {
+        // Default should NOT include images to avoid output bloat from base64 embedding.
+        // Users must explicitly opt in with include_images: true.
+        let opts = ConversionOptions::default();
+        assert!(
+            !opts.include_images,
+            "include_images should default to false to prevent bloated output"
+        );
+    }
+
+    #[test]
+    fn test_include_images_opt_in() {
+        // When explicitly enabled, include_images should be true.
+        let opts = ConversionOptions {
+            include_images: true,
+            ..Default::default()
+        };
+        assert!(opts.include_images);
+        // embed_images should still default to true (base64 when images are included)
+        assert!(opts.embed_images);
     }
 }

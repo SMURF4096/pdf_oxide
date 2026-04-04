@@ -74,19 +74,6 @@ impl MarkdownOutputConverter {
         span.span.is_italic && span.span.text.chars().any(|c| !c.is_whitespace())
     }
 
-    /// Format text with bold and/or italic markers.
-    fn apply_formatting(&self, text: &str, is_bold: bool, is_italic: bool) -> String {
-        if is_bold && is_italic {
-            format!("***{}***", text)
-        } else if is_bold {
-            format!("**{}**", text)
-        } else if is_italic {
-            format!("*{}*", text)
-        } else {
-            text.to_string()
-        }
-    }
-
     /// Apply linkification to text (URLs and emails).
     fn linkify(&self, text: &str) -> String {
         // Quick pre-check: skip regex for spans that can't contain URLs or emails.
@@ -227,28 +214,12 @@ impl MarkdownOutputConverter {
         }
     }
 
-    /// Check if a span's bbox overlaps with any table region.
-    fn span_in_table(&self, span: &OrderedTextSpan, tables: &[ExtractedTable]) -> Option<usize> {
-        let sx = span.span.bbox.x;
-        let sy = span.span.bbox.y;
-
-        for (i, table) in tables.iter().enumerate() {
-            if let Some(ref bbox) = table.bbox {
-                // Use generous tolerance for bbox overlap
-                let tolerance = 2.0;
-                if sx >= bbox.x - tolerance
-                    && sx <= bbox.x + bbox.width + tolerance
-                    && sy >= bbox.y - tolerance
-                    && sy <= bbox.y + bbox.height + tolerance
-                {
-                    return Some(i);
-                }
-            }
-        }
-        None
-    }
-
     /// Render an ExtractedTable as a markdown table string.
+    ///
+    /// Normalizes column counts so every row has the same number of pipe-delimited
+    /// cells. Without this, markdown parsers silently drop trailing cells from
+    /// short rows, which causes data loss (e.g. "CERTIFICATE NO.: 403852" missing
+    /// from converted output).
     fn render_table_markdown(table: &ExtractedTable) -> String {
         if table.rows.is_empty() {
             return String::new();
@@ -264,8 +235,23 @@ impl MarkdownOutputConverter {
             1
         };
 
+        // Find the maximum effective column count across all rows.
+        // Each cell contributes `colspan` columns (default 1).
+        let max_cols = table
+            .rows
+            .iter()
+            .map(|row| {
+                row.cells
+                    .iter()
+                    .map(|c| c.colspan.max(1) as usize)
+                    .sum::<usize>()
+            })
+            .max()
+            .unwrap_or(0);
+
         for (row_idx, row) in table.rows.iter().enumerate() {
             output.push('|');
+            let mut cols_written: usize = 0;
             for cell in &row.cells {
                 output.push(' ');
                 // Escape pipe characters in cell text
@@ -274,43 +260,32 @@ impl MarkdownOutputConverter {
                 output.push_str(text.trim());
                 output.push(' ');
                 // Handle colspan by adding extra | separators
-                for _ in 1..cell.colspan {
+                let span = cell.colspan.max(1) as usize;
+                for _ in 1..span {
                     output.push_str("| ");
                 }
                 output.push('|');
+                cols_written += span;
+            }
+            // Pad short rows with empty cells so every row has `max_cols` columns.
+            for _ in cols_written..max_cols {
+                output.push_str(" |");
             }
             output.push('\n');
 
             // Add header separator after header rows
             if row_idx + 1 == header_end {
                 output.push('|');
-                for cell in &row.cells {
-                    for _ in 0..cell.colspan {
-                        output.push_str("---|");
-                    }
+                // Separator must also match max_cols
+                let header_cols: usize = row.cells.iter().map(|c| c.colspan.max(1) as usize).sum();
+                for _ in 0..max_cols.max(header_cols) {
+                    output.push_str("---|");
                 }
                 output.push('\n');
             }
         }
 
         output
-    }
-
-    /// Detect whether two same-line spans have a horizontal gap that warrants
-    /// an inserted space character.
-    ///
-    /// Uses the same heuristic as `PdfDocument::should_insert_space()`:
-    /// - gap > 15% of font size  → space (typical space width ≈ 25% of em)
-    /// - gap > 500% of font size → no space (likely a column boundary)
-    fn has_horizontal_gap(
-        prev: &crate::layout::TextSpan,
-        current: &crate::layout::TextSpan,
-    ) -> bool {
-        let font_size = prev.font_size.max(current.font_size).max(1.0);
-        let prev_end_x = prev.bbox.x + prev.bbox.width;
-        let gap = current.bbox.x - prev_end_x;
-        let threshold = font_size * 0.15;
-        gap > threshold && gap < font_size * 5.0
     }
 
     /// Core rendering logic shared between convert() and convert_with_tables().
@@ -353,17 +328,53 @@ impl MarkdownOutputConverter {
 
         // Track which tables have been rendered
         let mut tables_rendered = vec![false; tables.len()];
+        // Pre-render table markdown so we can check for orphaned spans.
+        let table_mds: Vec<String> = tables.iter().map(Self::render_table_markdown).collect();
+        // Collect spans skipped because they fall inside a table region.
+        let mut table_skipped_spans: Vec<Vec<&OrderedTextSpan>> = vec![Vec::new(); tables.len()];
 
         let mut result = String::new();
         let mut prev_span: Option<&OrderedTextSpan> = None;
         let mut current_line = String::new();
+        // Track open inline formatting to consolidate adjacent bold/italic spans.
+        // When consecutive same-line spans share the same bold or italic style,
+        // we keep the markers open and only close them when the style changes or
+        // the line is flushed, producing e.g. **ACME GLOBAL LTD.** instead
+        // of **ACME** **GLOBAL** **LTD.**.
+        let mut active_bold = false;
+        let mut active_italic = false;
+
+        /// Close any open bold/italic markers on `line`.
+        ///
+        /// CommonMark forbids whitespace adjacent to closing emphasis markers
+        /// (e.g. `**bold **` is rendered as literal asterisks). Strip trailing
+        /// whitespace before closing, then restore it after the markers.
+        fn close_formatting(line: &mut String, bold: &mut bool, italic: &mut bool) {
+            if !*bold && !*italic {
+                return;
+            }
+            let content_end = line.trim_end().len();
+            let trailing_ws = line[content_end..].to_string();
+            line.truncate(content_end);
+            // Close in reverse order of opening: italic first, then bold.
+            if *italic {
+                line.push('*');
+                *italic = false;
+            }
+            if *bold {
+                line.push_str("**");
+                *bold = false;
+            }
+            line.push_str(&trailing_ws);
+        }
 
         for span in sorted.iter() {
             // Check if this span belongs to a table region
             if !tables.is_empty() {
-                if let Some(table_idx) = self.span_in_table(span, tables) {
+                if let Some(table_idx) = super::span_in_table(span, tables) {
                     if !tables_rendered[table_idx] {
                         // Flush current line
+                        close_formatting(&mut current_line, &mut active_bold, &mut active_italic);
                         if !current_line.is_empty() {
                             result.push_str(current_line.trim());
                             result.push_str("\n\n");
@@ -371,12 +382,13 @@ impl MarkdownOutputConverter {
                         }
 
                         // Render the table
-                        let table_md = Self::render_table_markdown(&tables[table_idx]);
-                        result.push_str(&table_md);
+                        result.push_str(&table_mds[table_idx]);
                         result.push('\n');
                         tables_rendered[table_idx] = true;
                         prev_span = None;
                     }
+                    // Track span for orphan recovery
+                    table_skipped_spans[table_idx].push(span);
                     // Skip this span (it's part of a table)
                     continue;
                 }
@@ -388,7 +400,15 @@ impl MarkdownOutputConverter {
                 .unwrap_or(true);
 
             if let Some(prev) = prev_span {
-                if self.is_paragraph_break(span, prev) {
+                // Group boundary: when group_id changes, insert a paragraph break
+                // to keep spatially partitioned regions (e.g. columns) contiguous.
+                let group_changed = match (span.group_id, prev.group_id) {
+                    (Some(a), Some(b)) => a != b,
+                    _ => false,
+                };
+
+                if group_changed || self.is_paragraph_break(span, prev) {
+                    close_formatting(&mut current_line, &mut active_bold, &mut active_italic);
                     if !current_line.is_empty() {
                         result.push_str(current_line.trim());
                         result.push_str("\n\n");
@@ -401,18 +421,25 @@ impl MarkdownOutputConverter {
                         || Self::starts_with_bullet(&span.span.text);
                     if is_bullet {
                         // Bullet on new line → flush current line and start list item
+                        close_formatting(&mut current_line, &mut active_bold, &mut active_italic);
                         if !current_line.is_empty() {
                             result.push_str(current_line.trim());
                             result.push('\n');
                             current_line.clear();
                         }
-                    } else if config.output.preserve_layout {
-                        let spacing = (span.span.bbox.x - prev.span.bbox.x).max(0.0) as usize;
-                        for _ in 0..spacing.min(20) {
+                    } else {
+                        // Different visual line within the same paragraph — close
+                        // open formatting before the line-join space so that
+                        // formatting is re-evaluated for the new line's spans.
+                        close_formatting(&mut current_line, &mut active_bold, &mut active_italic);
+                        if config.output.preserve_layout {
+                            let spacing = (span.span.bbox.x - prev.span.bbox.x).max(0.0) as usize;
+                            for _ in 0..spacing.min(20) {
+                                current_line.push(' ');
+                            }
+                        } else {
                             current_line.push(' ');
                         }
-                    } else {
-                        current_line.push(' ');
                     }
                 }
             }
@@ -448,8 +475,18 @@ impl MarkdownOutputConverter {
                 let linkified = self.linkify(text);
                 let is_bold = self.is_bold(span, config);
                 let is_italic = self.is_italic(span);
-                let formatted = self.apply_formatting(&linkified, is_bold, is_italic);
-                current_line.push_str(&formatted);
+                if is_bold != active_bold || is_italic != active_italic {
+                    close_formatting(&mut current_line, &mut active_bold, &mut active_italic);
+                    if is_bold {
+                        current_line.push_str("**");
+                        active_bold = true;
+                    }
+                    if is_italic {
+                        current_line.push('*');
+                        active_italic = true;
+                    }
+                }
+                current_line.push_str(&linkified);
                 prev_span = Some(span);
                 continue;
             }
@@ -465,6 +502,7 @@ impl MarkdownOutputConverter {
                 };
 
                 if let Some(level) = level {
+                    close_formatting(&mut current_line, &mut active_bold, &mut active_italic);
                     if !current_line.is_empty() {
                         result.push_str(current_line.trim());
                         result.push_str("\n\n");
@@ -511,7 +549,6 @@ impl MarkdownOutputConverter {
 
             let is_bold = self.is_bold(span, config);
             let is_italic = self.is_italic(span);
-            let formatted = self.apply_formatting(&linkified, is_bold, is_italic);
 
             // Issue #260: Detect horizontal gaps between same-line spans and
             // insert a space.  PDFs generated by PDFKit.NET (and similar) place
@@ -524,17 +561,66 @@ impl MarkdownOutputConverter {
             if same_line && !current_line.is_empty() {
                 if let Some(prev) = prev_span {
                     let needs_gap_space = !current_line.ends_with(' ')
-                        && !formatted.starts_with(' ')
-                        && Self::has_horizontal_gap(&prev.span, &span.span);
+                        && !linkified.starts_with(' ')
+                        && super::has_horizontal_gap(&prev.span, &span.span);
                     if needs_gap_space {
                         current_line.push(' ');
                     }
                 }
             }
 
-            current_line.push_str(&formatted);
+            // Consolidate adjacent spans with the same formatting style into
+            // a single bold/italic block instead of wrapping each span
+            // individually (e.g. **ACME GLOBAL LTD.** not
+            // **ACME** **GLOBAL** **LTD.**).
+            //
+            // When the formatting changes we close the old markers and open
+            // new ones.  When it stays the same we just append the text.
+            if is_bold != active_bold || is_italic != active_italic {
+                // Close previous formatting markers (if any)
+                close_formatting(&mut current_line, &mut active_bold, &mut active_italic);
+                // Open new markers
+                if is_bold {
+                    current_line.push_str("**");
+                    active_bold = true;
+                }
+                if is_italic {
+                    current_line.push('*');
+                    active_italic = true;
+                }
+            }
+
+            current_line.push_str(&linkified);
 
             prev_span = Some(span);
+        }
+
+        // Close any open formatting before final flushes
+        close_formatting(&mut current_line, &mut active_bold, &mut active_italic);
+
+        // Recover orphaned spans: spans inside a table region whose text does
+        // not appear in the rendered table output.
+        for (table_idx, skipped) in table_skipped_spans.iter().enumerate() {
+            if !tables_rendered[table_idx] || skipped.is_empty() {
+                continue;
+            }
+            let rendered = &table_mds[table_idx];
+            let mut orphans: Vec<&&OrderedTextSpan> = skipped
+                .iter()
+                .filter(|s| {
+                    let trimmed = s.span.text.trim();
+                    !trimmed.is_empty() && !rendered.contains(trimmed)
+                })
+                .collect();
+            if !orphans.is_empty() {
+                orphans.sort_by_key(|s| s.reading_order);
+                for orphan in orphans {
+                    if !result.ends_with(' ') && !result.ends_with('\n') {
+                        result.push(' ');
+                    }
+                    result.push_str(&orphan.span.text);
+                }
+            }
         }
 
         // Render any tables that weren't matched to spans (e.g., all spans were in tables)
@@ -545,8 +631,7 @@ impl MarkdownOutputConverter {
                     result.push_str("\n\n");
                     current_line.clear();
                 }
-                let table_md = Self::render_table_markdown(table);
-                result.push_str(&table_md);
+                result.push_str(&table_mds[i]);
                 result.push('\n');
             }
         }
@@ -574,6 +659,10 @@ impl MarkdownOutputConverter {
                 cleaned
             }
         };
+
+        // Merge key-value pairs that were split across lines due to column-based
+        // reading order (e.g. "Grand Total\n$750.00" → "Grand Total $750.00").
+        final_result = super::merge_key_value_pairs(&final_result);
 
         // Apply hyphenation reconstruction if enabled
         if config.enable_hyphenation_reconstruction {
@@ -619,7 +708,41 @@ mod tests {
     use super::*;
     use crate::geometry::Rect;
     use crate::layout::{Color, TextSpan};
+    use crate::pipeline::converters::span_in_table;
     use crate::structure::table_extractor::{TableCell, TableRow};
+
+    fn make_span_w(
+        text: &str,
+        x: f32,
+        y: f32,
+        width: f32,
+        font_size: f32,
+        weight: FontWeight,
+    ) -> OrderedTextSpan {
+        OrderedTextSpan::new(
+            TextSpan {
+                artifact_type: None,
+                text: text.to_string(),
+                bbox: Rect::new(x, y, width, font_size),
+                font_name: "Test".to_string(),
+                font_size,
+                font_weight: weight,
+                is_italic: false,
+                is_monospace: false,
+                color: Color::black(),
+                mcid: None,
+                sequence: 0,
+                offset_semantic: false,
+                split_boundary_before: false,
+                char_spacing: 0.0,
+                word_spacing: 0.0,
+                horizontal_scaling: 100.0,
+                primary_detected: false,
+                char_widths: vec![],
+            },
+            0,
+        )
+    }
 
     fn make_span(
         text: &str,
@@ -836,54 +959,45 @@ mod tests {
 
     #[test]
     fn test_span_in_table_match() {
-        let converter = MarkdownOutputConverter::new();
         let span = make_span("text", 50.0, 70.0, 12.0, FontWeight::Normal);
 
         let mut table = ExtractedTable::new();
         table.bbox = Some(Rect::new(10.0, 50.0, 200.0, 100.0));
 
-        assert_eq!(converter.span_in_table(&span, &[table]), Some(0));
+        assert_eq!(span_in_table(&span, &[table]), Some(0));
     }
 
     #[test]
     fn test_span_in_table_no_match() {
-        let converter = MarkdownOutputConverter::new();
         let span = make_span("text", 500.0, 500.0, 12.0, FontWeight::Normal);
 
         let mut table = ExtractedTable::new();
         table.bbox = Some(Rect::new(10.0, 50.0, 200.0, 100.0));
 
-        assert_eq!(converter.span_in_table(&span, &[table]), None);
+        assert_eq!(span_in_table(&span, &[table]), None);
     }
 
     #[test]
     fn test_span_in_table_none_bbox() {
-        let converter = MarkdownOutputConverter::new();
         let span = make_span("text", 50.0, 70.0, 12.0, FontWeight::Normal);
 
         let table = ExtractedTable::new(); // No bbox
-        assert_eq!(converter.span_in_table(&span, &[table]), None);
+        assert_eq!(span_in_table(&span, &[table]), None);
     }
 
     #[test]
     fn test_span_in_table_tolerance() {
-        let converter = MarkdownOutputConverter::new();
         // Span at bbox edge minus tolerance (2.0)
         let span = make_span("text", 8.5, 48.5, 12.0, FontWeight::Normal);
 
         let mut table = ExtractedTable::new();
         table.bbox = Some(Rect::new(10.0, 50.0, 200.0, 100.0));
 
-        assert_eq!(
-            converter.span_in_table(&span, &[table]),
-            Some(0),
-            "Should match within tolerance"
-        );
+        assert_eq!(span_in_table(&span, &[table]), Some(0), "Should match within tolerance");
     }
 
     #[test]
     fn test_span_in_table_multiple_tables() {
-        let converter = MarkdownOutputConverter::new();
         let span = make_span("text", 350.0, 70.0, 12.0, FontWeight::Normal);
 
         let mut t1 = ExtractedTable::new();
@@ -892,7 +1006,7 @@ mod tests {
         let mut t2 = ExtractedTable::new();
         t2.bbox = Some(Rect::new(300.0, 50.0, 200.0, 100.0));
 
-        assert_eq!(converter.span_in_table(&span, &[t1, t2]), Some(1));
+        assert_eq!(span_in_table(&span, &[t1, t2]), Some(1));
     }
 
     // ============================================================================
@@ -912,8 +1026,9 @@ mod tests {
         let mut span_after = make_span("After table", 10.0, 20.0, 12.0, FontWeight::Normal);
         span_after.reading_order = 2;
 
-        // Text inside table region (should be excluded)
-        let mut span_in_table = make_span("In table", 50.0, 70.0, 12.0, FontWeight::Normal);
+        // Text inside table region whose text matches table cell content
+        // (not an orphan — absorbed by the table rendering).
+        let mut span_in_table = make_span("Val", 50.0, 70.0, 12.0, FontWeight::Normal);
         span_in_table.reading_order = 1;
 
         let mut table = ExtractedTable::new();
@@ -933,7 +1048,6 @@ mod tests {
         assert!(result.contains("Before table"), "Should contain text before table");
         assert!(result.contains("| Col |"), "Should contain table");
         assert!(result.contains("After table"), "Should contain text after table");
-        assert!(!result.contains("In table"), "Should exclude span inside table region");
     }
 
     #[test]
@@ -1239,5 +1353,185 @@ mod tests {
         let result = converter.convert(&spans, &config).unwrap();
 
         assert!(result.contains("# BIG HEADING"), "24pt text should be H1: {}", result);
+    }
+
+    // ============================================================================
+    // Bold consolidation tests
+    // ============================================================================
+
+    #[test]
+    fn test_bold_consolidation_adjacent_bold_spans() {
+        let converter = MarkdownOutputConverter::new();
+        let config = TextPipelineConfig::default();
+
+        // Three adjacent bold spans on the same line — each word is a separate span.
+        // Use realistic bbox widths so that horizontal gap detection inserts spaces.
+        let mut s1 = make_span_w("ACME", 72.0, 700.0, 55.0, 12.0, FontWeight::Bold);
+        s1.reading_order = 0;
+
+        let mut s2 = make_span_w("GLOBAL", 130.0, 700.0, 42.0, 12.0, FontWeight::Bold);
+        s2.reading_order = 1;
+
+        let mut s3 = make_span_w("LTD.", 175.0, 700.0, 24.0, 12.0, FontWeight::Bold);
+        s3.reading_order = 2;
+
+        let spans = vec![s1, s2, s3];
+        let result = converter.convert(&spans, &config).unwrap();
+
+        // Should consolidate into a single bold block
+        assert!(
+            result.contains("**ACME GLOBAL LTD.**"),
+            "Adjacent bold spans should be consolidated into one bold block, got: {}",
+            result
+        );
+        // Should NOT have per-word bold markers
+        assert!(
+            !result.contains("**ACME** **GLOBAL**"),
+            "Should not wrap each word individually in bold markers, got: {}",
+            result
+        );
+    }
+
+    // ============================================================================
+    // Issue: table cell dropping during markdown conversion
+    // ============================================================================
+
+    #[test]
+    fn test_render_table_markdown_all_cells_present() {
+        // Simulates a financial statement table:
+        //   Row 1 (header): "Account No." | "Reference" | "Tax ID" | "Confirmation"
+        //   Row 2 (data):   "20003035"    | "403852"    | "123 456 789" | "4351966"
+        let mut table = ExtractedTable::new();
+        table.has_header = true;
+        table.col_count = 4;
+
+        let mut header = TableRow::new(true);
+        header.add_cell(TableCell::new("Account No.".to_string(), true));
+        header.add_cell(TableCell::new("Reference".to_string(), true));
+        header.add_cell(TableCell::new("Tax ID".to_string(), true));
+        header.add_cell(TableCell::new("Confirmation".to_string(), true));
+        table.add_row(header);
+
+        let mut data = TableRow::new(false);
+        data.add_cell(TableCell::new("20003035".to_string(), false));
+        data.add_cell(TableCell::new("403852".to_string(), false));
+        data.add_cell(TableCell::new("123 456 789".to_string(), false));
+        data.add_cell(TableCell::new("4351966".to_string(), false));
+        table.add_row(data);
+
+        let result = MarkdownOutputConverter::render_table_markdown(&table);
+
+        // All cells must be present
+        assert!(
+            result.contains("403852"),
+            "Reference value '403852' must be present in markdown table: {}",
+            result
+        );
+        assert!(result.contains("20003035"), "Account No. value must be present: {}", result);
+        assert!(result.contains("123 456 789"), "Tax ID value must be present: {}", result);
+        assert!(result.contains("4351966"), "Confirmation value must be present: {}", result);
+        assert!(result.contains("Reference"), "Header must be present: {}", result);
+
+        // Must have pipe separators (markdown table format)
+        assert!(result.contains("|"), "Must be markdown table format with pipe separators");
+    }
+
+    #[test]
+    fn test_render_table_markdown_short_row_padded() {
+        // When a data row has fewer cells than the header, the markdown table
+        // must pad with empty cells so every row has the same column count.
+        // Otherwise markdown parsers silently drop trailing columns.
+        let mut table = ExtractedTable::new();
+        table.has_header = true;
+        table.col_count = 4;
+
+        let mut header = TableRow::new(true);
+        header.add_cell(TableCell::new("A".to_string(), true));
+        header.add_cell(TableCell::new("B".to_string(), true));
+        header.add_cell(TableCell::new("C".to_string(), true));
+        header.add_cell(TableCell::new("D".to_string(), true));
+        table.add_row(header);
+
+        // Data row with only 2 cells (e.g., merge detection removed 2 cells)
+        let mut data = TableRow::new(false);
+        data.add_cell(TableCell::new("1".to_string(), false));
+        data.add_cell(TableCell::new("2".to_string(), false));
+        table.add_row(data);
+
+        let result = MarkdownOutputConverter::render_table_markdown(&table);
+
+        // Count pipes in header vs data row — they must match
+        let lines: Vec<&str> = result.lines().collect();
+        assert!(lines.len() >= 3, "Must have header, separator, and data row: {}", result);
+
+        let header_pipes = lines[0].matches('|').count();
+        let data_pipes = lines[2].matches('|').count();
+        assert_eq!(
+            header_pipes, data_pipes,
+            "Header and data rows must have same number of pipe separators.\nHeader ({}): {}\nData   ({}): {}",
+            header_pipes, lines[0], data_pipes, lines[2]
+        );
+    }
+
+    #[test]
+    fn test_render_table_markdown_short_header_padded() {
+        // When the header has fewer cells than the widest data row, the header
+        // must also be padded.
+        let mut table = ExtractedTable::new();
+        table.has_header = true;
+        table.col_count = 3;
+
+        let mut header = TableRow::new(true);
+        header.add_cell(TableCell::new("X".to_string(), true));
+        header.add_cell(TableCell::new("Y".to_string(), true));
+        table.add_row(header);
+
+        let mut data = TableRow::new(false);
+        data.add_cell(TableCell::new("1".to_string(), false));
+        data.add_cell(TableCell::new("2".to_string(), false));
+        data.add_cell(TableCell::new("3".to_string(), false));
+        table.add_row(data);
+
+        let result = MarkdownOutputConverter::render_table_markdown(&table);
+
+        let lines: Vec<&str> = result.lines().collect();
+        assert!(lines.len() >= 3, "Must have header, separator, and data row: {}", result);
+
+        let header_pipes = lines[0].matches('|').count();
+        let data_pipes = lines[2].matches('|').count();
+        assert_eq!(
+            header_pipes, data_pipes,
+            "Header and data rows must have same number of pipe separators.\nHeader ({}): {}\nData   ({}): {}",
+            header_pipes, lines[0], data_pipes, lines[2]
+        );
+
+        // All data values must be present
+        assert!(result.contains("| 3 |"), "Third cell in data row must be present: {}", result);
+    }
+
+    #[test]
+    fn test_key_value_pair_merging_in_markdown() {
+        let converter = MarkdownOutputConverter::new();
+        let config = TextPipelineConfig::default();
+
+        // Simulate a single label on one line followed by its value on the next.
+        // This happens when spans from different groups produce separate lines.
+        let mut s0 = make_span("Grand Total", 50.0, 200.0, 12.0, FontWeight::Normal);
+        s0.reading_order = 0;
+        s0.group_id = Some(0);
+
+        // Value on a different line (different Y), next in reading order, different group
+        let mut s1 = make_span("$750.00", 300.0, 185.0, 12.0, FontWeight::Normal);
+        s1.reading_order = 1;
+        s1.group_id = Some(1);
+
+        let spans = vec![s0, s1];
+        let result = converter.convert(&spans, &config).unwrap();
+
+        assert!(
+            result.contains("Grand Total $750.00"),
+            "Should merge label with value on same line: {:?}",
+            result,
+        );
     }
 }

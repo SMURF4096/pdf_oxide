@@ -171,22 +171,67 @@ impl ReadingOrderStrategy for GeometricStrategy {
             column_indices[column_idx].push(idx);
         }
 
-        // Process each column from left to right, top to bottom within each column
+        // Split each column group by large Y-gaps into sub-groups.
+        // When a column has spans far apart vertically (e.g., header at y=651
+        // and content at y=119), they should be separate groups.
+        let mut sub_groups: Vec<Vec<usize>> = Vec::new();
+        for column in &column_indices {
+            if column.is_empty() {
+                continue;
+            }
+            // Sort by Y descending (top of page first)
+            let mut sorted = column.clone();
+            sorted.sort_by(|&a, &b| crate::utils::safe_float_cmp(spans[b].bbox.y, spans[a].bbox.y));
+
+            if sorted.len() == 1 {
+                sub_groups.push(sorted);
+                continue;
+            }
+
+            // Compute average line spacing within this column
+            let mut gaps: Vec<f32> = Vec::new();
+            for i in 1..sorted.len() {
+                let gap = spans[sorted[i - 1]].bbox.y - spans[sorted[i]].bbox.y;
+                if gap > 0.0 {
+                    gaps.push(gap);
+                }
+            }
+
+            // Threshold: 3x average line spacing (or fallback to font_size * 4.5)
+            let threshold = if gaps.is_empty() {
+                spans[sorted[0]].font_size * 4.5
+            } else {
+                let avg = gaps.iter().sum::<f32>() / gaps.len() as f32;
+                avg * 3.0
+            };
+
+            let mut current_sub = vec![sorted[0]];
+            for i in 1..sorted.len() {
+                let gap = spans[sorted[i - 1]].bbox.y - spans[sorted[i]].bbox.y;
+                if gap > threshold {
+                    sub_groups.push(current_sub);
+                    current_sub = vec![sorted[i]];
+                } else {
+                    current_sub.push(sorted[i]);
+                }
+            }
+            sub_groups.push(current_sub);
+        }
+
+        // Process each sub-group, assigning sequential group_ids
         let mut ordered = Vec::new();
         let mut order = 0;
 
-        for column in column_indices {
-            // Sort spans within column by Y (top to bottom, descending Y = top first)
-            let mut column_sorted = column;
-            column_sorted
-                .sort_by(|&a, &b| crate::utils::safe_float_cmp(spans[b].bbox.y, spans[a].bbox.y));
-
-            for idx in column_sorted {
-                ordered.push(OrderedTextSpan::with_info(
-                    spans[idx].clone(),
-                    order,
-                    ReadingOrderInfo::geometric(),
-                ));
+        for (group_id, group) in sub_groups.into_iter().enumerate() {
+            for idx in group {
+                ordered.push(
+                    OrderedTextSpan::with_info(
+                        spans[idx].clone(),
+                        order,
+                        ReadingOrderInfo::geometric(),
+                    )
+                    .with_group(group_id),
+                );
                 order += 1;
             }
         }
@@ -268,6 +313,60 @@ mod tests {
         assert_eq!(ordered[1].span.text, "Left 2");
         assert_eq!(ordered[2].span.text, "Right 1");
         assert_eq!(ordered[3].span.text, "Right 2");
+    }
+
+    #[test]
+    fn test_geometric_splits_column_by_y_gap() {
+        // Spans in same X column but two Y-clusters:
+        // Cluster A: y=700, y=690, y=680 (header area)
+        // Gap: 400pt
+        // Cluster B: y=280, y=270, y=260 (content area)
+        // Should produce 2 groups, not 1
+        let spans = vec![
+            make_span("Header1", 50.0, 700.0),
+            make_span("Header2", 50.0, 690.0),
+            make_span("Header3", 50.0, 680.0),
+            make_span("Content1", 50.0, 280.0),
+            make_span("Content2", 50.0, 270.0),
+            make_span("Content3", 50.0, 260.0),
+        ];
+
+        let strategy = GeometricStrategy::new();
+        let context = ReadingOrderContext::new();
+        let ordered = strategy.apply(spans, &context).unwrap();
+
+        // All 6 spans should be present
+        assert_eq!(ordered.len(), 6);
+
+        // Header spans should share one group, content spans another
+        let header_groups: Vec<_> = ordered
+            .iter()
+            .filter(|s| s.span.text.starts_with("Header"))
+            .map(|s| s.group_id)
+            .collect();
+        let content_groups: Vec<_> = ordered
+            .iter()
+            .filter(|s| s.span.text.starts_with("Content"))
+            .map(|s| s.group_id)
+            .collect();
+
+        // All headers should have the same group
+        assert!(
+            header_groups.windows(2).all(|w| w[0] == w[1]),
+            "All header spans should be in the same group: {:?}",
+            header_groups
+        );
+        // All content should have the same group
+        assert!(
+            content_groups.windows(2).all(|w| w[0] == w[1]),
+            "All content spans should be in the same group: {:?}",
+            content_groups
+        );
+        // Header and content groups should differ
+        assert_ne!(
+            header_groups[0], content_groups[0],
+            "Header and content should be in different groups"
+        );
     }
 
     #[test]

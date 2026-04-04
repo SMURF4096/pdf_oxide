@@ -321,7 +321,15 @@ fn parse_stream_data<'a>(
             // /Length was wrong — fall back to scanning for 'endstream'
             log::warn!("Stream /Length {} is incorrect, falling back to endstream scan", length);
             if let Some(pos) = find_endstream(input) {
-                let stream_data = input[..pos].to_vec();
+                // Strip trailing CR/LF per PDF spec Section 7.3.8.1
+                let mut end = pos;
+                if end > 0 && input[end - 1] == b'\n' {
+                    end -= 1;
+                }
+                if end > 0 && input[end - 1] == b'\r' {
+                    end -= 1;
+                }
+                let stream_data = input[..end].to_vec();
                 let remaining = &input[pos..];
                 let (remaining, _) = token(remaining)?;
                 return Ok((remaining, stream_data));
@@ -342,7 +350,15 @@ fn parse_stream_data<'a>(
     // If no Length or invalid Length, scan for 'endstream' keyword
     // This is less reliable but acts as fallback
     if let Some(pos) = find_endstream(input) {
-        let stream_data = input[..pos].to_vec();
+        // Strip trailing CR/LF per PDF spec Section 7.3.8.1
+        let mut end = pos;
+        if end > 0 && input[end - 1] == b'\n' {
+            end -= 1;
+        }
+        if end > 0 && input[end - 1] == b'\r' {
+            end -= 1;
+        }
+        let stream_data = input[..end].to_vec();
         let remaining = &input[pos..];
 
         // Skip 'endstream' keyword

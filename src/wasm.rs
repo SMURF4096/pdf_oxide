@@ -40,6 +40,63 @@ use crate::editor::{
 use crate::search::{SearchOptions, TextSearcher};
 
 // ============================================================================
+// Logging
+// ============================================================================
+
+/// Set the maximum log level for pdf_oxide messages.
+///
+/// Accepts one of: `"off"`, `"error"`, `"warn"` / `"warning"`, `"info"`,
+/// `"debug"`, `"trace"`. Case-insensitive. Default is `"off"` — the library
+/// is silent unless explicitly enabled.
+///
+/// Logs are forwarded to the browser console (`console.log`, `console.warn`,
+/// `console.error`, etc.). Fixes issue #280.
+///
+/// @example
+/// ```javascript
+/// import init, { setLogLevel } from "pdf-oxide-wasm";
+/// await init();
+/// setLogLevel("warn");
+/// ```
+#[wasm_bindgen(js_name = "setLogLevel")]
+pub fn set_log_level(level: &str) -> Result<(), JsValue> {
+    use log::{Level, LevelFilter};
+
+    let (filter, console_level) = match level.to_ascii_lowercase().as_str() {
+        "off" | "none" | "disabled" => (LevelFilter::Off, None),
+        "error" => (LevelFilter::Error, Some(Level::Error)),
+        "warn" | "warning" => (LevelFilter::Warn, Some(Level::Warn)),
+        "info" => (LevelFilter::Info, Some(Level::Info)),
+        "debug" => (LevelFilter::Debug, Some(Level::Debug)),
+        "trace" => (LevelFilter::Trace, Some(Level::Trace)),
+        other => {
+            return Err(JsValue::from_str(&format!(
+                "invalid log level '{}': expected off, error, warn, info, debug, or trace",
+                other
+            )));
+        },
+    };
+
+    // console_log::init_with_level is idempotent on our side: we guard with
+    // a static flag so repeated calls just update the max level.
+    static INIT: std::sync::Once = std::sync::Once::new();
+    if let Some(lvl) = console_level {
+        INIT.call_once(|| {
+            let _ = console_log::init_with_level(lvl);
+        });
+    }
+    log::set_max_level(filter);
+    Ok(())
+}
+
+/// Disable all pdf_oxide log output — convenience wrapper for
+/// `setLogLevel("off")`.
+#[wasm_bindgen(js_name = "disableLogging")]
+pub fn disable_logging() {
+    log::set_max_level(log::LevelFilter::Off);
+}
+
+// ============================================================================
 // WasmPdfDocument — read, convert, search, extract, and edit PDFs
 // ============================================================================
 
@@ -354,7 +411,7 @@ impl WasmPdfDocument {
     ///
     /// @param page_index - Zero-based page number
     /// @param detect_headings - Whether to detect headings (default: true)
-    /// @param include_images - Whether to include images (default: true)
+    /// @param include_images - Whether to include images (default: false)
     #[wasm_bindgen(js_name = "toMarkdown")]
     pub fn to_markdown(
         &mut self,

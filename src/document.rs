@@ -617,8 +617,27 @@ impl PdfDocument {
         if matches!(stream_obj, Object::Null) {
             return Ok(Vec::new());
         }
+
+        // Per ISO 32000-2:2020 Section 7.6.3, object streams (/Type /ObjStm)
+        // and cross-reference streams (/Type /XRef) shall NOT be encrypted.
+        // Skip decryption for these stream types to avoid AES block-size errors
+        // on data that was never encrypted in the first place.
+        let is_unencrypted_stream_type = if let Object::Stream { dict, .. } = stream_obj {
+            dict.get("Type")
+                .and_then(|t| t.as_name())
+                .map(|name| name == "ObjStm" || name == "XRef")
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
         let handler_ref = self.encryption_handler.borrow();
         if let Some(handler) = handler_ref.as_ref() {
+            if is_unencrypted_stream_type {
+                // These stream types are never encrypted per spec
+                drop(handler_ref);
+                return stream_obj.decode_stream_data();
+            }
             // Create decryption closure for this specific object
             let decrypt_fn = |data: &[u8]| -> Result<Vec<u8>> {
                 handler.decrypt_stream(data, obj_ref.id, obj_ref.gen as u32)
@@ -663,6 +682,60 @@ impl PdfDocument {
             Some(handler) => handler.authenticate(password),
             None => Ok(true), // Not encrypted, always "authenticated"
         }
+    }
+
+    /// Check if the PDF is encrypted.
+    ///
+    /// Returns `true` if the PDF has an `/Encrypt` entry in its trailer,
+    /// regardless of whether it has been authenticated.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use pdf_oxide::document::PdfDocument;
+    /// # let mut doc = PdfDocument::open("sample.pdf")?;
+    /// if doc.is_encrypted() {
+    ///     println!("PDF is encrypted");
+    /// }
+    /// # Ok::<(), pdf_oxide::error::Error>(())
+    /// ```
+    pub fn is_encrypted(&self) -> bool {
+        // Check if encryption handler is already initialized
+        if self.encryption_handler.borrow().is_some() {
+            return true;
+        }
+        // Check trailer for /Encrypt entry without initializing
+        self.trailer
+            .as_dict()
+            .and_then(|d| d.get("Encrypt"))
+            .is_some()
+    }
+
+    /// Check if the PDF is encrypted but has NOT been successfully authenticated.
+    ///
+    /// This returns `true` when the document requires a password that has not
+    /// yet been provided. Extraction methods use this to return a clear error
+    /// instead of silently producing empty output.
+    fn is_encrypted_and_unauthenticated(&self) -> bool {
+        if let Some(handler) = self.encryption_handler.borrow().as_ref() {
+            !handler.is_authenticated()
+        } else {
+            // Handler not yet initialized — check if /Encrypt exists
+            // If it does, we don't know auth state yet, so return false
+            // (ensure_encryption_initialized will handle it)
+            false
+        }
+    }
+
+    /// Guard that returns `Err(Error::EncryptedPdf)` if the PDF is encrypted
+    /// and not authenticated. Call this at the top of extraction methods.
+    fn require_authenticated(&self) -> Result<()> {
+        // Make sure encryption is initialized first
+        self.ensure_encryption_initialized()?;
+        if self.is_encrypted_and_unauthenticated() {
+            return Err(Error::EncryptedPdf);
+        }
+        Ok(())
     }
 
     /// Get the PDF version.
@@ -1462,14 +1535,38 @@ impl PdfDocument {
             stream_entry.offset
         })?;
 
-        // Parse all objects from the stream (with decryption if PDF is encrypted)
+        // Parse all objects from the stream.
+        //
+        // Per ISO 32000-2:2020 Section 7.6.3, object streams (/Type /ObjStm) and
+        // cross-reference streams (/Type /XRef) shall NOT be individually encrypted.
+        // The stream data is only compressed, not encrypted.  Many PDF producers
+        // (including many real-world producers) follow this rule even under
+        // PDF 1.x, so attempting AES decryption on the raw stream bytes fails
+        // because the data length is not a multiple of the AES block size (16).
+        //
+        // We therefore always parse object streams WITHOUT decryption.  If a
+        // future PDF is encountered where the producer DID encrypt the ObjStm
+        // (non-standard), the unencrypted parse will fail and we fall back to
+        // trying with decryption.
         let handler_ref = self.encryption_handler.borrow();
-        let objects_map = if let Some(handler) = handler_ref.as_ref() {
-            // Create decryption closure
-            let decrypt_fn = |data: &[u8]| -> Result<Vec<u8>> {
-                handler.decrypt_stream(data, stream_obj_num, 0)
-            };
-            parse_object_stream_with_decryption(&stream_obj, Some(&decrypt_fn), stream_obj_num, 0)?
+        let objects_map = if handler_ref.is_some() {
+            // First try without decryption (spec-compliant path)
+            match parse_object_stream_with_decryption(&stream_obj, None, 0, 0) {
+                Ok(map) => map,
+                Err(_no_decrypt_err) => {
+                    // Fallback: try with decryption for non-standard producers
+                    let handler = handler_ref.as_ref().unwrap();
+                    let decrypt_fn = |data: &[u8]| -> Result<Vec<u8>> {
+                        handler.decrypt_stream(data, stream_obj_num, 0)
+                    };
+                    parse_object_stream_with_decryption(
+                        &stream_obj,
+                        Some(&decrypt_fn),
+                        stream_obj_num,
+                        0,
+                    )?
+                },
+            }
         } else {
             parse_object_stream_with_decryption(&stream_obj, None, 0, 0)?
         };
@@ -2828,10 +2925,10 @@ impl PdfDocument {
     /// ```
     /// Extract text from a page.
     pub fn extract_text(&mut self, page_index: usize) -> Result<String> {
-        // Preserve historical behavior: do not extract tables by default in the main extract_text API.
-        // Users can use extract_text_with_options or Markdown/HTML converters for table support.
+        // Enable table extraction so that tabular content is preserved as
+        // space-padded, column-aligned rows (see ExtractedTable::render_text).
         let options = crate::converters::ConversionOptions {
-            extract_tables: false,
+            extract_tables: true,
             ..Default::default()
         };
         self.extract_text_with_options(page_index, &options)
@@ -2843,6 +2940,7 @@ impl PdfDocument {
         page_index: usize,
         options: &crate::converters::ConversionOptions,
     ) -> Result<String> {
+        self.require_authenticated()?;
         // 1. Check if this is a Tagged PDF with structure tree (cached after first check).
         // Uses Arc to avoid expensive deep clones of the tree on every page.
         let cached_tree = match &self.structure_tree_cache {
@@ -5068,6 +5166,7 @@ impl PdfDocument {
     /// `extract_spans_with_reading_order`. Spans are returned without any
     /// sorting or erase-region filtering applied.
     fn extract_spans_raw(&mut self, page_index: usize) -> Result<Vec<crate::layout::TextSpan>> {
+        self.require_authenticated()?;
         use crate::extractors::TextExtractor;
 
         // Get page object
@@ -6145,7 +6244,7 @@ impl PdfDocument {
     ) -> Result<Vec<crate::structure::table_extractor::ExtractedTable>> {
         self.extract_tables_with_config(
             page_index,
-            crate::structure::spatial_table_detector::TableDetectionConfig::relaxed(),
+            crate::structure::spatial_table_detector::TableDetectionConfig::default(),
         )
     }
 
@@ -6161,7 +6260,12 @@ impl PdfDocument {
         // This ensures that strings with spaces are split into separate columns
         // for the spatial detector.
         let words = self.extract_words(page_index)?;
-        let lines = self.extract_lines(page_index)?;
+        // Use all table primitives (lines, rectangles, borders) not just straight lines
+        let lines: Vec<_> = self
+            .extract_paths(page_index)?
+            .into_iter()
+            .filter(|p| p.is_table_primitive())
+            .collect();
 
         // Convert Words to TextSpans for the spatial detector
         let spans: Vec<_> = words
@@ -7287,6 +7391,7 @@ impl PdfDocument {
         page_index: usize,
         options: &crate::converters::ConversionOptions,
     ) -> Result<String> {
+        self.require_authenticated()?;
         // Step 1: Extract raw spans (unchanged - this is the foundation)
         let mut spans = self.extract_spans(page_index)?;
 
@@ -7596,6 +7701,7 @@ impl PdfDocument {
         page_index: usize,
         options: &crate::converters::ConversionOptions,
     ) -> Result<String> {
+        self.require_authenticated()?;
         // Step 1: Extract raw spans (unchanged - this is the foundation)
         let mut spans = self.extract_spans(page_index)?;
 
@@ -7754,21 +7860,28 @@ impl PdfDocument {
             spans.extend(self.extract_widget_spans(page_index));
         }
 
-        // Step 2: Create pipeline config from options (using adapter from Phase 2)
+        // Step 2: Extract tables if enabled
+        let tables = if options.extract_tables {
+            self.extract_page_tables(page_index, &spans, options)
+        } else {
+            Vec::new()
+        };
+
+        // Step 3: Create pipeline config from options (using adapter from Phase 2)
         let pipeline_config = TextPipelineConfig::from_conversion_options(options);
 
-        // Step 3: Create pipeline with config
+        // Step 4: Create pipeline with config
         let pipeline = TextPipeline::with_config(pipeline_config.clone());
 
-        // Step 4: Build reading order context
+        // Step 5: Build reading order context
         let context = ReadingOrderContext::new().with_page(page_index as u32);
 
-        // Step 5: Process through pipeline (applies reading order strategy)
+        // Step 6: Process through pipeline (applies reading order strategy)
         let ordered_spans = pipeline.process(spans, context)?;
 
-        // Step 6: Use pipeline converter
+        // Step 7: Use pipeline converter with tables
         let converter = PlainTextConverter::new();
-        converter.convert(&ordered_spans, &pipeline_config)
+        converter.convert_with_tables(&ordered_spans, &tables, &pipeline_config)
     }
 
     /// Convert all pages to Markdown format.
@@ -8059,6 +8172,7 @@ impl PdfDocument {
         &mut self,
         page_index: usize,
     ) -> Result<Vec<crate::extractors::PdfImage>> {
+        self.require_authenticated()?;
         self.extract_images_filtered(page_index, &ImageExtractFilter::default())
     }
 
@@ -12769,5 +12883,110 @@ mod tests {
         // Without the `wasm` feature, field names are snake_case
         assert!(json.contains("page_width"));
         assert!(json.contains("page_height"));
+    }
+
+    /// Encrypted PDFs that require a password must return `Error::EncryptedPdf`
+    /// instead of silently returning empty text / zero pages.
+    #[test]
+    fn test_encrypted_pdf_returns_error_without_password() {
+        let pdf_path = "tests/fixtures/encrypted_needs_password.pdf";
+        if !std::path::Path::new(pdf_path).exists() {
+            eprintln!("Skipping: fixture not found at {}", pdf_path);
+            return;
+        }
+
+        let mut doc =
+            PdfDocument::open(pdf_path).expect("open should succeed even without password");
+
+        // is_encrypted() must report true
+        assert!(doc.is_encrypted(), "PDF should be detected as encrypted");
+
+        // extract_text must return EncryptedPdf error, not empty string
+        let err = doc.extract_text(0).unwrap_err();
+        assert!(
+            matches!(err, Error::EncryptedPdf),
+            "Expected EncryptedPdf error, got: {:?}",
+            err,
+        );
+        // Error message should mention password
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("password"),
+            "Error message should mention 'password', got: {}",
+            msg,
+        );
+    }
+
+    /// After authenticating with the correct password, extraction should succeed.
+    #[test]
+    fn test_encrypted_pdf_works_after_authentication() {
+        let pdf_path = "tests/fixtures/encrypted_needs_password.pdf";
+        if !std::path::Path::new(pdf_path).exists() {
+            eprintln!("Skipping: fixture not found at {}", pdf_path);
+            return;
+        }
+
+        let mut doc = PdfDocument::open(pdf_path).expect("open should succeed");
+        assert!(doc.is_encrypted());
+
+        // Authenticate with the correct password
+        let result = doc
+            .authenticate(b"secret")
+            .expect("authenticate should not error");
+        assert!(result, "Authentication with correct password should succeed");
+
+        // Now extraction should work (not return EncryptedPdf error)
+        let page_count = doc.page_count().expect("page_count should work after auth");
+        assert!(page_count > 0, "Should have at least 1 page after auth");
+
+        // extract_text should not error (content may be minimal since it's a test PDF)
+        let _text = doc
+            .extract_text(0)
+            .expect("extract_text should work after auth");
+    }
+
+    /// PDFs that are encrypted but authenticated with empty password (the common
+    /// case for permission-only encryption) must continue to work without error.
+    #[test]
+    fn test_encrypted_pdf_with_empty_password_still_works() {
+        let pdf_path = "tests/fixtures/encrypted_cid_truetype.pdf";
+        if !std::path::Path::new(pdf_path).exists() {
+            eprintln!("Skipping: fixture not found at {}", pdf_path);
+            return;
+        }
+
+        let mut doc = PdfDocument::open(pdf_path).expect("open should succeed");
+        // This PDF auto-authenticates with empty password during open()
+        assert!(doc.is_encrypted(), "Should be detected as encrypted");
+
+        // Should NOT return EncryptedPdf error
+        let page_count = doc.page_count().expect("page_count should work");
+        assert!(page_count > 0);
+
+        let text = doc.extract_text(0).expect("extract_text should work");
+        assert!(!text.trim().is_empty(), "Should extract non-empty text");
+    }
+
+    #[test]
+    fn test_encrypted_pdf_with_compressed_object_streams() {
+        // Encrypted PDFs with /Type /ObjStm streams must NOT have those streams
+        // decrypted, per ISO 32000-1 Section 7.6.2. Object streams and XRef
+        // streams are never individually encrypted; only the overall stream
+        // data is compressed. Attempting to decrypt them causes AES errors
+        // because the data length is not a multiple of the block size.
+        let pdf_path = "tests/fixtures/encrypted_objstm.pdf";
+        if !std::path::Path::new(pdf_path).exists() {
+            eprintln!("Skipping: fixture not found at {}", pdf_path);
+            return;
+        }
+
+        let mut doc =
+            PdfDocument::open(pdf_path).expect("open should succeed for encrypted+objstm PDF");
+        assert!(doc.is_encrypted(), "Should be detected as encrypted");
+
+        let page_count = doc
+            .page_count()
+            .expect("page_count should work with encrypted objstm");
+        assert!(page_count > 0, "Should have at least one page");
     }
 }

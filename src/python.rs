@@ -372,7 +372,7 @@ impl PyPdfDocument {
     }
 
     /// Convert page to plain text.
-    #[pyo3(signature = (page, preserve_layout=false, detect_headings=true, include_images=true, image_output_dir=None))]
+    #[pyo3(signature = (page, preserve_layout=false, detect_headings=true, include_images=false, image_output_dir=None))]
     fn to_plain_text(
         &mut self,
         page: usize,
@@ -384,7 +384,7 @@ impl PyPdfDocument {
         let options = RustConversionOptions {
             preserve_layout,
             detect_headings,
-            extract_tables: false,
+            extract_tables: true,
             include_images,
             image_output_dir,
             ..Default::default()
@@ -396,7 +396,7 @@ impl PyPdfDocument {
     }
 
     /// Convert all pages to plain text.
-    #[pyo3(signature = (preserve_layout=false, detect_headings=true, include_images=true, image_output_dir=None))]
+    #[pyo3(signature = (preserve_layout=false, detect_headings=true, include_images=false, image_output_dir=None))]
     fn to_plain_text_all(
         &mut self,
         preserve_layout: bool,
@@ -407,7 +407,7 @@ impl PyPdfDocument {
         let options = RustConversionOptions {
             preserve_layout,
             detect_headings,
-            extract_tables: false,
+            extract_tables: true,
             include_images,
             image_output_dir,
             ..Default::default()
@@ -419,7 +419,7 @@ impl PyPdfDocument {
     }
 
     /// Convert page to Markdown.
-    #[pyo3(signature = (page, preserve_layout=false, detect_headings=true, include_images=true, image_output_dir=None, embed_images=true, include_form_fields=true))]
+    #[pyo3(signature = (page, preserve_layout=false, detect_headings=true, include_images=false, image_output_dir=None, embed_images=true, include_form_fields=true))]
     fn to_markdown(
         &mut self,
         page: usize,
@@ -447,7 +447,7 @@ impl PyPdfDocument {
     }
 
     /// Convert page to HTML.
-    #[pyo3(signature = (page, preserve_layout=false, detect_headings=true, include_images=true, image_output_dir=None, embed_images=true, include_form_fields=true))]
+    #[pyo3(signature = (page, preserve_layout=false, detect_headings=true, include_images=false, image_output_dir=None, embed_images=true, include_form_fields=true))]
     fn to_html(
         &mut self,
         page: usize,
@@ -475,7 +475,7 @@ impl PyPdfDocument {
     }
 
     /// Convert all pages to Markdown.
-    #[pyo3(signature = (preserve_layout=false, detect_headings=true, include_images=true, image_output_dir=None, embed_images=true, include_form_fields=true))]
+    #[pyo3(signature = (preserve_layout=false, detect_headings=true, include_images=false, image_output_dir=None, embed_images=true, include_form_fields=true))]
     fn to_markdown_all(
         &mut self,
         preserve_layout: bool,
@@ -502,7 +502,7 @@ impl PyPdfDocument {
     }
 
     /// Convert all pages to HTML.
-    #[pyo3(signature = (preserve_layout=false, detect_headings=true, include_images=true, image_output_dir=None, embed_images=true, include_form_fields=true))]
+    #[pyo3(signature = (preserve_layout=false, detect_headings=true, include_images=false, image_output_dir=None, embed_images=true, include_form_fields=true))]
     fn to_html_all(
         &mut self,
         preserve_layout: bool,
@@ -2736,7 +2736,7 @@ fn table_settings_to_config(
     settings: Option<Bound<'_, pyo3::types::PyDict>>,
 ) -> PyResult<crate::structure::spatial_table_detector::TableDetectionConfig> {
     use crate::structure::spatial_table_detector::{TableDetectionConfig, TableStrategy};
-    let mut c = TableDetectionConfig::relaxed();
+    let mut c = TableDetectionConfig::default();
     if let Some(d) = settings {
         if let Some(v) = d.get_item("horizontal_strategy")? {
             let s: String = v.extract()?;
@@ -3497,14 +3497,70 @@ impl PyPageTemplate {
     }
 }
 
+/// Bridge Rust `log` macros into Python's `logging` module.
+///
+/// After this is called, all log messages emitted by pdf_oxide flow through
+/// Python's standard `logging` module, which is silent by default. Users
+/// control verbosity with the normal Python API, e.g.:
+///
+/// ```python
+/// import logging
+/// logging.basicConfig(level=logging.WARNING)
+/// ```
+///
+/// Called automatically when the `pdf_oxide` module is imported — users do
+/// not need to call it directly. Kept as a public function for backward
+/// compatibility.
 #[pyfunction]
 fn setup_logging() {
-    let _ = env_logger::builder().try_init();
+    // pyo3_log::try_init is idempotent and safe to call multiple times.
+    let _ = pyo3_log::try_init();
+}
+
+/// Set the maximum log level for pdf_oxide messages that cross into Python.
+///
+/// Accepts one of: `"off"`, `"error"`, `"warn"` / `"warning"`, `"info"`,
+/// `"debug"`, `"trace"`. Case-insensitive.
+///
+/// This is a thin wrapper over Rust's `log::set_max_level` — it controls the
+/// Rust-side filter gate. For full control, use Python's `logging` module
+/// directly (e.g. `logging.getLogger("pdf_oxide").setLevel(logging.INFO)`).
+#[pyfunction]
+fn set_log_level(level: &str) -> PyResult<()> {
+    use log::LevelFilter;
+    let filter = match level.to_ascii_lowercase().as_str() {
+        "off" | "none" | "disabled" => LevelFilter::Off,
+        "error" => LevelFilter::Error,
+        "warn" | "warning" => LevelFilter::Warn,
+        "info" => LevelFilter::Info,
+        "debug" => LevelFilter::Debug,
+        "trace" => LevelFilter::Trace,
+        other => {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "invalid log level '{}': expected off, error, warn, info, debug, or trace",
+                other
+            )));
+        },
+    };
+    log::set_max_level(filter);
+    Ok(())
+}
+
+/// Disable all pdf_oxide log output — convenience wrapper for
+/// `set_log_level("off")`.
+#[pyfunction]
+fn disable_logging() {
+    log::set_max_level(log::LevelFilter::Off);
 }
 
 #[pymodule]
 fn pdf_oxide(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Bridge Rust `log` to Python `logging` (silent by default, user
+    // configures with `logging.basicConfig(level=...)`). Fixes issue #280.
+    let _ = pyo3_log::try_init();
     m.add_function(wrap_pyfunction!(setup_logging, m)?)?;
+    m.add_function(wrap_pyfunction!(set_log_level, m)?)?;
+    m.add_function(wrap_pyfunction!(disable_logging, m)?)?;
     m.add_class::<PyPdfDocument>()?;
     m.add_class::<PyPdf>()?;
     m.add_class::<PyPdfPage>()?;

@@ -403,14 +403,13 @@ impl ReadingOrderStrategy for XYCutStrategy {
         let mut span_slots: Vec<Option<TextSpan>> = spans.into_iter().map(Some).collect();
         let mut order_index = 0usize;
 
-        for group in index_groups {
-            for i in group {
+        for (group_idx, group) in index_groups.iter().enumerate() {
+            for &i in group {
                 if let Some(span) = span_slots[i].take() {
-                    ordered.push(OrderedTextSpan::with_info(
-                        span,
-                        order_index,
-                        ReadingOrderInfo::xycut(),
-                    ));
+                    ordered.push(
+                        OrderedTextSpan::with_info(span, order_index, ReadingOrderInfo::xycut())
+                            .with_group(group_idx),
+                    );
                     order_index += 1;
                 }
             }
@@ -633,6 +632,153 @@ mod tests {
             result.is_none(),
             "expected None for projection spanning ~100 trillion points, got Some"
         );
+    }
+
+    /// XYCut must assign distinct group_id values to spans in different
+    /// spatial partitions so that converters can keep each column's content
+    /// contiguous instead of interleaving by Y-coordinate.
+    #[test]
+    fn test_xycut_group_id_two_column_layout() {
+        use crate::pipeline::reading_order::{ReadingOrderContext, ReadingOrderStrategy};
+
+        let mut strategy = XYCutStrategy::new();
+        strategy.min_spans_for_split = 2; // lower threshold for small test
+
+        // Left column (x=50-200)        Right column (x=400-550)
+        //   "Description"   y=100          "Amount"          y=100
+        //   "Widget A"      y=120          "$150.00"         y=120
+        //   "Widget B"      y=140          "Discount"        y=140
+        //                                   "$25.00"          y=160
+        let make = |text: &str, x: f32, y: f32, w: f32| {
+            let mut s = make_span(x, y, w, 12.0);
+            s.text = text.to_string();
+            s
+        };
+        let spans = vec![
+            make("Description", 50.0, 100.0, 150.0),
+            make("Amount", 400.0, 100.0, 150.0),
+            make("Widget A", 50.0, 120.0, 150.0),
+            make("$150.00", 400.0, 120.0, 150.0),
+            make("Widget B", 50.0, 140.0, 150.0),
+            make("Discount", 400.0, 140.0, 150.0),
+            make("$25.00", 400.0, 160.0, 150.0),
+        ];
+
+        let context = ReadingOrderContext::new();
+        let ordered = strategy.apply(spans, &context).unwrap();
+
+        // Every span must have a group_id assigned.
+        assert!(
+            ordered.iter().all(|s| s.group_id.is_some()),
+            "all spans should have group_id set by XYCut"
+        );
+
+        // Left-column spans must share one group_id, right-column another.
+        let left_groups: Vec<usize> = ordered
+            .iter()
+            .filter(|s| s.span.bbox.left() < 300.0)
+            .map(|s| s.group_id.unwrap())
+            .collect();
+        let right_groups: Vec<usize> = ordered
+            .iter()
+            .filter(|s| s.span.bbox.left() >= 300.0)
+            .map(|s| s.group_id.unwrap())
+            .collect();
+
+        // Within each column, group_id must be the same.
+        assert!(
+            left_groups.windows(2).all(|w| w[0] == w[1]),
+            "left column spans should share the same group_id: {:?}",
+            left_groups
+        );
+        assert!(
+            right_groups.windows(2).all(|w| w[0] == w[1]),
+            "right column spans should share the same group_id: {:?}",
+            right_groups
+        );
+
+        // The two columns must have different group_ids.
+        assert_ne!(
+            left_groups[0], right_groups[0],
+            "left and right columns should have different group_ids"
+        );
+
+        // Verify reading order keeps each column contiguous: all left-column
+        // spans should appear before (or after) all right-column spans.
+        let left_orders: Vec<usize> = ordered
+            .iter()
+            .filter(|s| s.span.bbox.left() < 300.0)
+            .map(|s| s.reading_order)
+            .collect();
+        let right_orders: Vec<usize> = ordered
+            .iter()
+            .filter(|s| s.span.bbox.left() >= 300.0)
+            .map(|s| s.reading_order)
+            .collect();
+        let left_max = *left_orders.iter().max().unwrap();
+        let right_min = *right_orders.iter().min().unwrap();
+        let left_min = *left_orders.iter().min().unwrap();
+        let right_max = *right_orders.iter().max().unwrap();
+        // Either all left before all right, or all right before all left.
+        assert!(
+            left_max < right_min || right_max < left_min,
+            "columns must be contiguous in reading order: left={:?} right={:?}",
+            left_orders,
+            right_orders
+        );
+    }
+
+    /// Plain-text rendering must keep group_id-separated columns as
+    /// contiguous blocks, not interleave them by Y-coordinate.
+    #[test]
+    fn test_group_id_plain_text_no_interleave() {
+        use crate::pipeline::converters::OutputConverter;
+        use crate::pipeline::converters::PlainTextConverter;
+        use crate::pipeline::reading_order::{ReadingOrderContext, ReadingOrderStrategy};
+        use crate::pipeline::TextPipelineConfig;
+
+        let mut strategy = XYCutStrategy::new();
+        strategy.min_spans_for_split = 2;
+
+        let make = |text: &str, x: f32, y: f32, w: f32| {
+            let mut s = make_span(x, y, w, 12.0);
+            s.text = text.to_string();
+            s
+        };
+        let spans = vec![
+            make("Description", 50.0, 100.0, 150.0),
+            make("Amount", 400.0, 100.0, 150.0),
+            make("Widget A", 50.0, 120.0, 150.0),
+            make("$150.00", 400.0, 120.0, 150.0),
+            make("Widget B", 50.0, 140.0, 150.0),
+            make("Discount", 400.0, 140.0, 150.0),
+            make("$25.00", 400.0, 160.0, 150.0),
+        ];
+
+        let context = ReadingOrderContext::new();
+        let ordered = strategy.apply(spans, &context).unwrap();
+
+        let converter = PlainTextConverter::new();
+        let config = TextPipelineConfig::default();
+        let text = converter.convert(&ordered, &config).unwrap();
+
+        // With Y-position-based merging, same-Y spans from left and right columns
+        // are placed on the same line. This produces better label-value pairing:
+        // "Description Amount" on one line, "Widget A $150.00" on the next.
+        assert!(text.contains("Description"), "missing Description:\n{text}");
+        assert!(text.contains("Amount"), "missing Amount:\n{text}");
+        assert!(text.contains("Widget A"), "missing Widget A:\n{text}");
+        assert!(text.contains("$150.00"), "missing $150.00:\n{text}");
+
+        // Same-Y spans should be on the same line
+        for line in text.lines() {
+            if line.contains("Description") {
+                assert!(
+                    line.contains("Amount"),
+                    "Description and Amount should be on same line:\n{text}"
+                );
+            }
+        }
     }
 
     /// End-to-end: partition_region must return all spans (unsplit) rather than aborting

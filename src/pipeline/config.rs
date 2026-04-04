@@ -90,7 +90,7 @@ impl DocumentType {
             },
             output: OutputConfig {
                 detect_headings: false,
-                include_images: true,
+                include_images: false,
                 bold_marker_behavior: BoldMarkerBehavior::Conservative,
                 preserve_layout: true, // Preserve formatting
                 extract_tables: true,  // Detect tables
@@ -117,7 +117,7 @@ impl DocumentType {
             },
             output: OutputConfig {
                 detect_headings: false,
-                include_images: true,
+                include_images: false,
                 bold_marker_behavior: BoldMarkerBehavior::Conservative,
                 preserve_layout: true, // Headers/footers matter
                 extract_tables: true,  // Essential for reports
@@ -144,7 +144,7 @@ impl DocumentType {
             },
             output: OutputConfig {
                 detect_headings: false,
-                include_images: true,
+                include_images: false,
                 bold_marker_behavior: BoldMarkerBehavior::Conservative,
                 preserve_layout: false, // Minimal formatting
                 extract_tables: false,
@@ -171,7 +171,7 @@ impl DocumentType {
             },
             output: OutputConfig {
                 detect_headings: false,
-                include_images: true,
+                include_images: false,
                 bold_marker_behavior: BoldMarkerBehavior::Conservative,
                 preserve_layout: true,
                 extract_tables: true,
@@ -198,7 +198,7 @@ impl DocumentType {
             },
             output: OutputConfig {
                 detect_headings: false,
-                include_images: true,
+                include_images: false,
                 bold_marker_behavior: BoldMarkerBehavior::Conservative,
                 preserve_layout: true,
                 extract_tables: true,
@@ -1099,7 +1099,7 @@ impl Default for OutputConfig {
     fn default() -> Self {
         Self {
             detect_headings: false, // Disabled for spec compliance
-            include_images: true,
+            include_images: false,  // Off by default to avoid base64 bloat
             bold_marker_behavior: BoldMarkerBehavior::Conservative,
             preserve_layout: false,
             extract_tables: false,

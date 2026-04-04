@@ -50,18 +50,126 @@ impl HtmlOutputConverter {
         gap > line_height * self.paragraph_gap_ratio
     }
 
-    /// Detect if span should be a heading based on font size.
+    /// Detect if span should be a heading based on font size and content heuristics.
+    ///
+    /// A span is only promoted to a heading if it meets ALL of these criteria:
+    /// - Font size is significantly larger than the base (median) font size
+    /// - Text is short enough to be a heading (2-120 characters, ≤12 words)
+    /// - Text does not look like non-heading content (addresses, currency, pure numbers, etc.)
     fn heading_level(&self, span: &OrderedTextSpan, base_font_size: f32) -> Option<u8> {
+        let text = span.span.text.trim();
+        let text_len = text.len();
+
+        // Headings must be short but non-trivial (max ~12 words / 120 chars)
+        if !(2..=120).contains(&text_len) {
+            return None;
+        }
+        let word_count = text.split_whitespace().count();
+        if word_count > 12 {
+            return None;
+        }
+
+        // Reject content that looks like non-heading data
+        if Self::looks_like_non_heading(text) {
+            return None;
+        }
+
         let size_ratio = span.span.font_size / base_font_size;
+        let is_bold = matches!(
+            span.span.font_weight,
+            FontWeight::Bold | FontWeight::Black | FontWeight::ExtraBold | FontWeight::SemiBold
+        );
+
         if size_ratio >= 2.0 {
             Some(1)
         } else if size_ratio >= 1.5 {
             Some(2)
-        } else if size_ratio >= 1.25 {
+        } else if size_ratio >= 1.3 || (is_bold && size_ratio >= 1.15) {
             Some(3)
         } else {
             None
         }
+    }
+
+    /// Check if text looks like non-heading content that should not be promoted
+    /// to a heading tag regardless of font size.
+    fn looks_like_non_heading(text: &str) -> bool {
+        let trimmed = text.trim();
+
+        // Currency amounts: $1,234.56 or 1,234.56$ or similar
+        if trimmed.contains('$')
+            || trimmed.contains('\u{20AC}') // euro
+            || trimmed.contains('\u{00A3}')
+        // pound
+        {
+            // If the text is mostly a currency value, reject it
+            let non_currency: String = trimmed
+                .chars()
+                .filter(|c| {
+                    !c.is_ascii_digit()
+                        && *c != '.'
+                        && *c != ','
+                        && *c != '$'
+                        && *c != ' '
+                        && *c != '\u{20AC}'
+                        && *c != '\u{00A3}'
+                })
+                .collect();
+            if non_currency.len() <= 2 {
+                return true;
+            }
+        }
+
+        // Pure numbers or numbers with punctuation (e.g., "14", "3.5", "1,234")
+        {
+            let stripped: String = trimmed
+                .chars()
+                .filter(|c| !c.is_ascii_digit() && *c != '.' && *c != ',' && *c != ' ' && *c != '-')
+                .collect();
+            if stripped.is_empty() && !trimmed.is_empty() {
+                return true;
+            }
+        }
+
+        // Short "label + number" pattern common in forms (e.g. "Box 14",
+        // "Ligne 23", "Feld 3", "Casilla 5"). Language-agnostic: two tokens
+        // where the first is a short alphabetic word and the second is purely
+        // numeric.
+        {
+            let parts: Vec<&str> = trimmed.split_whitespace().collect();
+            if parts.len() == 2
+                && parts[0].chars().count() <= 10
+                && parts[0].chars().all(|c| c.is_alphabetic())
+                && parts[1]
+                    .chars()
+                    .all(|c| c.is_ascii_digit() || c == '.' || c == '-')
+            {
+                return true;
+            }
+        }
+
+        // Street-address pattern: starts with a number followed by multiple
+        // alphabetic words (e.g. "123 Main Street", "10 Rue de Rivoli",
+        // "45 Calle Mayor"). Language-agnostic — matches Western-style
+        // addresses where the street number precedes the street name.
+        if let Some(first_char) = trimmed.chars().next() {
+            if first_char.is_ascii_digit() {
+                let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                if (3..=8).contains(&parts.len()) && trimmed.chars().count() < 80 {
+                    let first_is_number = parts[0].chars().all(|c| c.is_ascii_digit() || c == '-');
+                    let alpha_word_count = parts
+                        .iter()
+                        .skip(1)
+                        .filter(|w| w.chars().any(|c| c.is_alphabetic()))
+                        .count();
+                    if first_is_number && alpha_word_count >= 2 {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
     }
 
     /// Escape HTML special characters to prevent XSS.
@@ -237,7 +345,7 @@ impl HtmlOutputConverter {
         for span in &sorted {
             // Check if span is in a table region
             if !tables.is_empty() {
-                if let Some(table_idx) = self.span_in_table(span, tables) {
+                if let Some(table_idx) = super::span_in_table(span, tables) {
                     if !tables_rendered[table_idx] {
                         // Close any open paragraph
                         if in_paragraph && !current_content.is_empty() {
@@ -287,6 +395,21 @@ impl HtmlOutputConverter {
                 in_paragraph = true;
             }
 
+            // Insert a space when same-line spans have a meaningful horizontal
+            // gap, preventing label+value concatenation (e.g. "Subtotal$500.00").
+            if let Some(prev) = prev_span {
+                let same_line =
+                    (span.span.bbox.y - prev.span.bbox.y).abs() < span.span.font_size * 0.5;
+                if same_line
+                    && !current_content.is_empty()
+                    && !current_content.ends_with(' ')
+                    && !span.span.text.starts_with(' ')
+                    && super::has_horizontal_gap(&prev.span, &span.span)
+                {
+                    current_content.push(' ');
+                }
+            }
+
             let formatted = self.format_span_with_styles(span, &span.span.text);
             current_content.push_str(&formatted);
 
@@ -317,26 +440,6 @@ impl HtmlOutputConverter {
         }
 
         Ok(result)
-    }
-
-    /// Check if a span's bbox overlaps with any table region.
-    fn span_in_table(&self, span: &OrderedTextSpan, tables: &[ExtractedTable]) -> Option<usize> {
-        let sx = span.span.bbox.x;
-        let sy = span.span.bbox.y;
-
-        for (i, table) in tables.iter().enumerate() {
-            if let Some(ref bbox) = table.bbox {
-                let tolerance = 2.0;
-                if sx >= bbox.x - tolerance
-                    && sx <= bbox.x + bbox.width + tolerance
-                    && sy >= bbox.y - tolerance
-                    && sy <= bbox.y + bbox.height + tolerance
-                {
-                    return Some(i);
-                }
-            }
-        }
-        None
     }
 
     /// Render an ExtractedTable as an HTML table string.
@@ -412,6 +515,7 @@ mod tests {
     use super::*;
     use crate::geometry::Rect;
     use crate::layout::{Color, TextSpan};
+    use crate::pipeline::converters::span_in_table;
 
     fn make_span(
         text: &str,
@@ -675,16 +779,121 @@ mod tests {
     }
 
     #[test]
-    fn test_span_in_table_html() {
+    fn test_heading_not_assigned_to_non_heading_content() {
+        // Addresses, box numbers, currency amounts, and long text should NOT be headings
+        // even when their font size is large relative to the base size.
         let converter = HtmlOutputConverter::new();
+        let mut config = TextPipelineConfig::default();
+        config.output.detect_headings = true;
 
+        // Many body text spans at 10pt to establish a clear 10pt median
+        let mut body1 = make_span("Gross revenue", 10.0, 200.0, 10.0, FontWeight::Normal);
+        body1.reading_order = 4;
+        let mut body2 = make_span("Operating expenses", 10.0, 220.0, 10.0, FontWeight::Normal);
+        body2.reading_order = 5;
+        let mut body3 = make_span("Net income", 10.0, 240.0, 10.0, FontWeight::Normal);
+        body3.reading_order = 6;
+        let mut body4 = make_span("Interest paid", 10.0, 260.0, 10.0, FontWeight::Normal);
+        body4.reading_order = 7;
+        let mut body5 = make_span("Depreciation", 10.0, 280.0, 10.0, FontWeight::Normal);
+        body5.reading_order = 8;
+
+        // Address at 24pt — large font but NOT a heading (it's an address)
+        let mut address = make_span("123 Main Street", 10.0, 20.0, 24.0, FontWeight::Normal);
+        address.reading_order = 0;
+
+        // Box/form label at 20pt — NOT a heading (it's a form box number)
+        let mut box_label = make_span("Box 14", 10.0, 60.0, 20.0, FontWeight::Normal);
+        box_label.reading_order = 1;
+
+        // Currency amount at 24pt — NOT a heading
+        let mut amount = make_span("$65,700.00", 10.0, 100.0, 24.0, FontWeight::Normal);
+        amount.reading_order = 2;
+
+        // Long text at 24pt — NOT a heading (too long to be a heading)
+        let mut long_text = make_span(
+            "This is a very long paragraph of text that goes on and on and contains many words and should never be classified as a heading because headings are short descriptive labels",
+            10.0, 140.0, 24.0, FontWeight::Normal,
+        );
+        long_text.reading_order = 3;
+
+        let spans = vec![
+            address, box_label, amount, long_text, body1, body2, body3, body4, body5,
+        ];
+        let result = converter
+            .convert_semantic_mode(&spans, &[], &config)
+            .unwrap();
+
+        // None of these should be in heading tags
+        assert!(!result.contains("<h1>123 Main Street"), "Address should not be h1: {}", result);
+        assert!(
+            !result.contains("<h2>Box 14") && !result.contains("<h1>Box 14"),
+            "Box label should not be a heading: {}",
+            result
+        );
+        assert!(
+            !result.contains("<h1>$65,700.00") && !result.contains("<h2>$65,700.00"),
+            "Currency amount should not be a heading: {}",
+            result
+        );
+        assert!(
+            !result.contains("<h1>This is a very long"),
+            "Long text should not be a heading: {}",
+            result
+        );
+
+        // All content should be in paragraph tags
+        assert!(result.contains("<p>"), "Content should be in <p> tags: {}", result);
+    }
+
+    #[test]
+    fn test_heading_assigned_to_real_headings() {
+        // Genuine headings: short, descriptive, larger font, with enough body text
+        // to establish a clear base font size.
+        let converter = HtmlOutputConverter::new();
+        let mut config = TextPipelineConfig::default();
+        config.output.detect_headings = true;
+
+        let mut heading = make_span("Introduction", 10.0, 20.0, 24.0, FontWeight::Bold);
+        heading.reading_order = 0;
+
+        let mut body1 = make_span(
+            "This is the body text of the document.",
+            10.0,
+            60.0,
+            10.0,
+            FontWeight::Normal,
+        );
+        body1.reading_order = 1;
+        let mut body2 =
+            make_span("More body text follows here.", 10.0, 80.0, 10.0, FontWeight::Normal);
+        body2.reading_order = 2;
+        let mut body3 = make_span("And even more content.", 10.0, 100.0, 10.0, FontWeight::Normal);
+        body3.reading_order = 3;
+
+        let spans = vec![heading, body1, body2, body3];
+        let result = converter
+            .convert_semantic_mode(&spans, &[], &config)
+            .unwrap();
+
+        // "Introduction" should be a heading
+        assert!(
+            result.contains("<h1>") || result.contains("<h2>") || result.contains("<h3>"),
+            "Real heading should be detected: {}",
+            result
+        );
+        assert!(result.contains("Introduction"), "Heading text should appear: {}", result);
+    }
+
+    #[test]
+    fn test_span_in_table_html() {
         let mut table = ExtractedTable::new();
         table.bbox = Some(Rect::new(10.0, 50.0, 200.0, 100.0));
 
         let inside = make_span("inside", 50.0, 70.0, 12.0, FontWeight::Normal);
         let outside = make_span("outside", 500.0, 500.0, 12.0, FontWeight::Normal);
 
-        assert_eq!(converter.span_in_table(&inside, &[table.clone()]), Some(0));
-        assert_eq!(converter.span_in_table(&outside, &[table]), None);
+        assert_eq!(span_in_table(&inside, &[table.clone()]), Some(0));
+        assert_eq!(span_in_table(&outside, &[table]), None);
     }
 }

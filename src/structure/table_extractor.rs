@@ -82,163 +82,155 @@ impl ExtractedTable {
         }
     }
 
-    /// Render the table as ASCII text (v0.3.16).
+    /// Render the table as clean, space-padded plain text.
     pub fn render_text(&self) -> String {
-        if self.rows.is_empty() {
+        let col_count = self.col_count;
+        if col_count == 0 || self.rows.is_empty() {
             return String::new();
         }
 
-        // 1. Calculate optimal column widths
-        // We aim for a max total width of ~100 characters for readability
-        let mut col_widths = vec![0; self.col_count];
-
+        // Calculate column widths from cell content
+        let mut col_widths = vec![0usize; col_count];
         for row in &self.rows {
             let mut col_idx = 0;
             for cell in &row.cells {
-                let cell_text = cell.text.trim();
-                if cell.colspan == 1 {
-                    col_widths[col_idx] = col_widths[col_idx].max(cell_text.chars().count());
+                if cell.colspan == 1 && col_idx < col_count {
+                    let w = cell.text.trim().chars().count();
+                    col_widths[col_idx] = col_widths[col_idx].max(w);
                 }
                 col_idx += cell.colspan as usize;
             }
         }
 
-        // Cap individual columns and ensure minimums
+        // Ensure minimum width of 2 per column
         for w in &mut col_widths {
-            // If column is very wide, cap it but allow more for single-column "tables"
-            let cap = if self.col_count == 1 { 80 } else { 40 };
-            *w = (*w).min(cap).max(3);
+            if *w < 2 {
+                *w = 2;
+            }
         }
+
+        // Trim trailing empty columns (no non-empty cell contributes content
+        // to that column, including cells with colspan > 1 that cover it).
+        let effective_cols = {
+            let mut eff = col_widths.len();
+            while eff > 0 {
+                let col = eff - 1;
+                let all_empty = self.rows.iter().all(|row| {
+                    let mut ci = 0;
+                    for cell in &row.cells {
+                        let span = cell.colspan as usize;
+                        let covers_col = ci <= col && col < ci + span;
+                        if covers_col {
+                            return cell.text.trim().is_empty();
+                        }
+                        ci += span;
+                    }
+                    true
+                });
+                if all_empty {
+                    eff -= 1;
+                } else {
+                    break;
+                }
+            }
+            eff
+        };
+        if effective_cols == 0 {
+            return String::new();
+        }
+        let col_widths = &col_widths[..effective_cols];
+
+        // Detect right-aligned columns (all non-empty cells look like numbers/currency)
+        let is_right_aligned: Vec<bool> = (0..effective_cols)
+            .map(|c| {
+                let mut has_content = false;
+                for row in &self.rows {
+                    let mut ci = 0;
+                    for cell in &row.cells {
+                        if ci == c && cell.colspan == 1 {
+                            let t = cell.text.trim();
+                            if !t.is_empty() {
+                                has_content = true;
+                                // Check if it looks like a number or currency value
+                                let stripped: String = t
+                                    .chars()
+                                    .filter(|ch| {
+                                        !matches!(
+                                            ch,
+                                            '$' | '€'
+                                                | '£'
+                                                | ','
+                                                | ' '
+                                                | '%'
+                                                | '+'
+                                                | '-'
+                                                | '('
+                                                | ')'
+                                        )
+                                    })
+                                    .collect();
+                                if stripped.is_empty() || stripped.parse::<f64>().is_err() {
+                                    return false;
+                                }
+                            }
+                        }
+                        ci += cell.colspan as usize;
+                    }
+                }
+                has_content
+            })
+            .collect();
+
+        // Build separator line
+        let separator: String = col_widths
+            .iter()
+            .map(|&w| "\u{2500}".repeat(w))
+            .collect::<Vec<_>>()
+            .join("  ");
 
         let mut output = String::new();
 
-        // Helper for horizontal line
-        let hr = |out: &mut String, widths: &[usize]| {
-            out.push('+');
-            for &w in widths {
-                for _ in 0..(w + 2) {
-                    out.push('-');
-                }
-                out.push('+');
-            }
-            out.push('\n');
-        };
-
-        // 2. Render rows with wrapping
-        hr(&mut output, &col_widths);
         for (r_idx, row) in self.rows.iter().enumerate() {
-            // Prepare wrapped lines for this row
-            let mut row_cell_lines: Vec<Vec<String>> = Vec::new();
-            let mut max_lines = 1;
-
             let mut col_idx = 0;
+            let mut cells_text = Vec::new();
             for cell in &row.cells {
-                let mut cell_total_width = 0;
-                for i in 0..cell.colspan as usize {
-                    if col_idx + i < col_widths.len() {
-                        cell_total_width += col_widths[col_idx + i] + 2;
-                    }
+                let text = cell.text.trim();
+                if col_idx < effective_cols {
+                    // For colspan > 1, calculate merged width
+                    let width = if cell.colspan > 1 {
+                        let end = (col_idx + cell.colspan as usize).min(effective_cols);
+                        let base: usize = col_widths[col_idx..end].iter().sum();
+                        // Add 2 spaces per gap between merged columns
+                        base + (end - col_idx).saturating_sub(1) * 2
+                    } else {
+                        col_widths[col_idx]
+                    };
+                    let formatted = if cell.colspan == 1 && is_right_aligned[col_idx] {
+                        format!("{:>width$}", text, width = width)
+                    } else {
+                        format!("{:<width$}", text, width = width)
+                    };
+                    cells_text.push(formatted);
+                } else {
+                    cells_text.push(text.to_string());
                 }
-                if cell.colspan > 1 {
-                    cell_total_width += cell.colspan as usize - 1;
-                }
-                let available_width = cell_total_width - 2;
-
-                let wrapped = self.wrap_text(cell.text.trim(), available_width);
-                max_lines = max_lines.max(wrapped.len());
-                row_cell_lines.push(wrapped);
                 col_idx += cell.colspan as usize;
             }
+            output.push_str(cells_text.join("  ").trim_end());
+            output.push('\n');
 
-            // Print each line of the wrapped row
-            for line_idx in 0..max_lines {
-                output.push('|');
-                let mut cell_idx = 0;
-                let mut col_offset = 0;
-                for cell in &row.cells {
-                    let mut cell_total_width = 0;
-                    for i in 0..cell.colspan as usize {
-                        if col_offset + i < col_widths.len() {
-                            cell_total_width += col_widths[col_offset + i] + 2;
-                        }
-                    }
-                    if cell.colspan > 1 {
-                        cell_total_width += cell.colspan as usize - 1;
-                    }
-
-                    let available_width = cell_total_width.saturating_sub(2);
-                    let line_content = row_cell_lines[cell_idx]
-                        .get(line_idx)
-                        .cloned()
-                        .unwrap_or_default();
-
-                    output.push(' ');
-                    output.push_str(&line_content);
-                    let content_len = line_content.chars().count();
-                    for _ in 0..available_width.saturating_sub(content_len) {
-                        output.push(' ');
-                    }
-                    output.push(' ');
-                    output.push('|');
-
-                    col_offset += cell.colspan as usize;
-                    cell_idx += 1;
-                }
+            // Insert separator after header row(s) transition to body
+            if self.has_header
+                && row.is_header
+                && r_idx + 1 < self.rows.len()
+                && !self.rows[r_idx + 1].is_header
+            {
+                output.push_str(&separator);
                 output.push('\n');
             }
-
-            // Separator after header or first row if no header
-            if (row.is_header && (r_idx + 1 < self.rows.len() && !self.rows[r_idx + 1].is_header))
-                || (r_idx == 0 && !self.has_header)
-            {
-                hr(&mut output, &col_widths);
-            }
         }
-        hr(&mut output, &col_widths);
 
         output
-    }
-
-    fn wrap_text(&self, text: &str, width: usize) -> Vec<String> {
-        if text.is_empty() {
-            return vec![];
-        }
-        if width == 0 {
-            return vec![text.to_string()];
-        }
-
-        let mut lines = Vec::new();
-        let words: Vec<&str> = text.split_whitespace().collect();
-        let mut current_line = String::new();
-
-        for word in words {
-            if current_line.is_empty() {
-                current_line.push_str(word);
-            } else {
-                let current_len = current_line.chars().count();
-                let word_len = word.chars().count();
-                // +1 for the space between words
-                if current_len + 1 + word_len <= width {
-                    current_line.push(' ');
-                    current_line.push_str(word);
-                } else {
-                    lines.push(current_line);
-                    current_line = word.to_string();
-                }
-            }
-
-            // If a single word/line is too long, force split it on character boundaries
-            while current_line.chars().count() > width {
-                let head: String = current_line.chars().take(width).collect();
-                let tail: String = current_line.chars().skip(width).collect();
-                lines.push(head);
-                current_line = tail;
-            }
-        }
-        if !current_line.is_empty() {
-            lines.push(current_line);
-        }
-        lines
     }
 
     /// Add a row to the table

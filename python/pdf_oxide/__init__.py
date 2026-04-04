@@ -69,6 +69,8 @@ from .pdf_oxide import (
     RadialGradient,
     # Extraction
     TextSpan,
+    disable_logging,
+    set_log_level,
     setup_logging,
 )
 
@@ -100,6 +102,9 @@ __all__ = [
     "OcrConfig",
     # Office
     "OfficeConverter",
+    # Logging
     "setup_logging",
+    "set_log_level",
+    "disable_logging",
 ]
 __version__ = VERSION

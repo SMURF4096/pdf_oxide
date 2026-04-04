@@ -2,6 +2,85 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [0.3.20] - 2026-04-04
+> Table Extraction Engine — Intersection Pipeline, Text-Edge Detection, Converter Improvements
+
+### Table Extraction Engine
+
+Major rewrite of the table detection system, implementing the universal `Edges → Snap/Merge → Intersections → Cells → Groups` pipeline — the gold-standard approach used by Tabula, pdfplumber, and PyMuPDF, now in pure Rust.
+
+#### New Detection Capabilities
+- **Intersection-based table detection** — Finds H×V line crossings, builds cells from 4-corner rectangles, groups into tables via union-find. The gold-standard approach used by Tabula/pdfplumber/PyMuPDF, now in pure Rust.
+- **Extended grid for non-crossing lines** — When H and V lines are in different page regions, creates virtual grid from Cartesian product of all coordinates.
+- **Column-aware text detection** — Segments 2-column layouts via X-projection histogram, runs text-only table detection per column.
+- **H-rule-bounded text tables** — Detects tables bounded by horizontal rules but no vertical lines (common in academic papers).
+- **Hybrid row detection** — Infers row boundaries from text Y-positions when only vertical borders exist (e.g. invoice line items).
+- **Dotted/dashed line reconstitution** — Merges short line segments into continuous edges for row separator detection.
+- **Section divider splitting** — Splits multi-section forms at full-width horizontal dividers.
+- **Edge coverage filtering** — Removes orphan edges that don't participate in any potential grid.
+- **Configurable V-line split gap** — `v_split_gap` field in `TableDetectionConfig` (default 20pt, was hardcoded 4pt).
+
+#### Table Rendering
+- **Space-padded column alignment** — Clean, readable output replacing ASCII box drawing (`+--+|`). Right-aligns currency/number columns.
+- **Form numbering artifact stripping** — Removes single-digit prefixes from PDF form templates ("1 Apr 11" → "Apr 11").
+- **Dash/underscore cell stripping** — Removes decorative `------` separators from table cells.
+
+### Text Extraction Quality
+
+- **Adjacent value spacing** — Inserts space between consecutive currency values in table cells.
+- **Split decimal merging** — Rejoins integer and decimal parts rendered in separate fixed-width boxes.
+- **Bold span consolidation** — Merges adjacent single-character bold spans into a single `**WORD**` in markdown.
+- **HTML heading hierarchy** — Content-aware detection; addresses and box numbers no longer tagged as `<h1>`/`<h2>`.
+- **Image bloat fix** — `include_images` defaults to `false`, dramatically reducing output size.
+- **Label-value pairing** — Same-Y spans from different reading-order groups rendered on the same output line.
+- **Content ordering** — XYCut group_id propagation keeps spatial regions as contiguous blocks.
+- **Columnar group merging** — Detects column-by-column layouts and re-interleaves into rows.
+- **Orphaned span recovery** — Text spans inside rejected table regions are preserved at correct Y-position.
+- **Key-value pair merging** — `Label\n$Value` patterns merged to `Label $Value` in post-processing.
+
+### Bug Fixes
+
+- **Encrypted PDF clear error** — Returns `Error::EncryptedPdf` with helpful message instead of silent zero output.
+- **ObjStm/XRef stream decryption** — Object streams are no longer incorrectly decrypted per ISO 32000-2 Section 7.6.3.
+- **Stream parser trailing newline** — Strips CR/LF before `endstream` keyword, fixing AES block-size errors on encrypted PDFs.
+- **Table detection enabled by default** — `extract_text()` now uses `extract_tables: true`.
+- **`to_plain_text()` includes tables** — Was silently dropping all detected tables.
+- **Python `extract_tables()` config** — Now uses `default()` (Both strategy) instead of `relaxed()` (Text-only).
+- **MD table cell dropping** — Row padding and centroid drift fix in spatial detector.
+- **Box label spacing** — Inserts space between box number and adjacent currency value.
+- **Dash cell artifact** — `------` cells cleared from table output.
+- **Orphaned dollar values** — Dollar values no longer silently dropped when table detector misses them.
+- **Digit→currency spacing** — Any positive gap between digit/text and `$`/`€`/`£` inserts a space.
+
+### Refactoring (SOLID/DRY/KISS)
+
+- **UnionFind struct** — Extracted from two duplicated inline implementations (DRY).
+- **`snap_and_merge()` decomposed** — Split into `snap_edges()`, `join_collinear_edges()`, `reconstitute_dotted_lines()` (SRP).
+- **Shared converter helpers** — `span_in_table()` and `has_horizontal_gap()` extracted from 3 duplicated copies to `converters/mod.rs` (DRY).
+- **`detect_tables_from_intersections()` decomposed** — 229-line 6-responsibility function split into `build_grid_from_lines()`, `assign_spans_to_intersection_grid()`, `finalize_intersection_tables()` + 20-line orchestrator (SRP).
+- **Collinear segment joining** — Relaxed coord tolerance from `f32::EPSILON` to `SNAP_TOL` for proper chain joining.
+
+### API Consistency
+
+- Python, Rust, and WASM `extract_tables()` all use the same `TableDetectionConfig::default()` (Both strategy) for consistent results across languages.
+
+### Logging (#280)
+
+Library logging now follows standard best practices — **silent by default** across all bindings.
+
+- **Python** — Rust `log` macros now flow through Python's `logging` module via `pyo3-log`. Configure with the normal API:
+  ```python
+  import logging
+  logging.basicConfig(level=logging.WARNING)
+  ```
+  New helpers: `pdf_oxide.set_log_level("warn")` and `pdf_oxide.disable_logging()`. The `setup_logging()` function is kept for backward compatibility (the bridge is initialized automatically on module import).
+- **WASM** — New `setLogLevel(level)` / `disableLogging()` functions. Logs are forwarded to the browser console via `console_log`. Accepts `"off"`, `"error"`, `"warn"`, `"info"`, `"debug"`, `"trace"`.
+- **Rust** — No change; the library continues to use the `log` crate facade without initializing a backend (standard Rust library practice). Applications choose their own logger (`env_logger`, `tracing`, etc.).
+
+### 🏆 Community Contributors
+
+🥇 **@marph91** — Thank you for reporting the logging flood issue (#280) and the thoughtful proposal. This pushed us to audit the bindings against the logging best practices used by `pyo3-log`-based projects (cryptography, polars) and ship a clean fix across Python, WASM, and Rust! 🚀
+
 ## [0.3.19] - 2026-04-02
 > Text Extraction Accuracy, Column-Aware Reading Order, and Community Contributions
 

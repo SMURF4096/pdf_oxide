@@ -122,6 +122,14 @@ pub enum Error {
     /// Barcode/QR code generation error
     #[error("Barcode error: {0}")]
     Barcode(String),
+
+    /// PDF is encrypted and has not been authenticated with the correct password.
+    ///
+    /// This error is returned when attempting to extract content from a PDF that
+    /// requires a password. Call `authenticate(password)` or open with
+    /// `PdfDocument::open_with_password()` before extracting content.
+    #[error("PDF is encrypted and requires a password. Call authenticate(password) before extracting content.")]
+    EncryptedPdf,
 }
 
 #[cfg(test)]
@@ -177,5 +185,13 @@ mod tests {
     fn test_error_is_send_and_sync() {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<Error>();
+    }
+
+    #[test]
+    fn test_encrypted_pdf_error() {
+        let err = Error::EncryptedPdf;
+        let msg = format!("{}", err);
+        assert!(msg.contains("encrypted"));
+        assert!(msg.contains("password"));
     }
 }

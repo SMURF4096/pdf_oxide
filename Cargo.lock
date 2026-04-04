@@ -218,6 +218,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
 
 [[package]]
+name = "arc-swap"
+version = "1.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a3a1fd6f75306b68087b831f025c712524bcb19aad54e557b1129cfa0a2b207"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "arg_enum_proc_macro"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -706,6 +715,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be8aed40e4edbf4d3b4431ab260b63fdc40f5780a4766824329ea0f1eefe3c0f"
 dependencies = [
  "log",
+ "wasm-bindgen",
  "web-sys",
 ]
 
@@ -2543,7 +2553,7 @@ checksum = "35fb2e5f958ec131621fdd531e9fc186ed768cbe395337403ae56c17a74c68ec"
 
 [[package]]
 name = "pdf_oxide"
-version = "0.3.19"
+version = "0.3.20"
 dependencies = [
  "aes",
  "barcoders",
@@ -2557,6 +2567,7 @@ dependencies = [
  "chrono",
  "cms",
  "console_error_panic_hook",
+ "console_log",
  "crc32fast",
  "criterion",
  "der 0.8.0",
@@ -2588,6 +2599,7 @@ dependencies = [
  "pkcs8",
  "proptest",
  "pyo3",
+ "pyo3-log",
  "qrcode",
  "quick-xml 0.39.2",
  "rayon",
@@ -2621,7 +2633,7 @@ dependencies = [
 
 [[package]]
 name = "pdf_oxide_cli"
-version = "0.3.19"
+version = "0.3.20"
 dependencies = [
  "clap",
  "is-terminal",
@@ -2632,7 +2644,7 @@ dependencies = [
 
 [[package]]
 name = "pdf_oxide_mcp"
-version = "0.3.19"
+version = "0.3.20"
 dependencies = [
  "pdf_oxide",
  "serde",
@@ -3022,6 +3034,17 @@ checksum = "7f29e10af80b1f7ccaf7f69eace800a03ecd13e883acfacc1e5d0988605f651e"
 dependencies = [
  "libc",
  "pyo3-build-config",
+]
+
+[[package]]
+name = "pyo3-log"
+version = "0.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26c2ec80932c5c3b2d4fbc578c9b56b2d4502098587edb8bef5b6bfcad43682e"
+dependencies = [
+ "arc-swap",
+ "log",
+ "pyo3",
 ]
 
 [[package]]

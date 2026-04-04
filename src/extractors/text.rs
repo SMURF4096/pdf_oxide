@@ -1066,6 +1066,62 @@ fn should_insert_space(
         return SpaceDecision::insert(SpaceSource::GeometricGap, 0.95);
     }
 
+    // Separate token detection: when two spans have a positive gap and look like
+    // distinct values (not fragments of the same word), insert a space.
+    //
+    // This catches adjacent table cell values like "$0.00" "$0.00" that have small
+    // gaps (1-2pt) which fall below the standard geometric threshold but are clearly
+    // separate tokens. Word fragments within the same word have zero or near-zero
+    // gaps; any meaningful positive gap between non-fragment tokens indicates a
+    // word boundary.
+    //
+    // Heuristic: gap > 0 AND spans look like separate tokens based on boundary characters.
+    // Use near-zero threshold for currency boundaries (any positive gap = separate)
+    let min_token_gap = 0.01; // Essentially any positive gap triggers token check
+    if gap_pt > min_token_gap {
+        let prev_last = preceding_text.chars().last();
+        let next_first = following_text.chars().next();
+
+        if let (Some(pc), Some(nc)) = (prev_last, next_first) {
+            // Separate value tokens: digit/currency/punctuation boundaries that
+            // indicate two distinct values rather than fragments of one word.
+            // Examples: "$0.00" + "$0.00", "100" + "200", "Subtotal" + "$500.00"
+            let prev_is_value_end = pc.is_ascii_digit() || pc == '%' || pc == ')' || pc == ']';
+
+            // Pure digit→digit boundaries require a larger gap than the
+            // global `min_token_gap`: a long number emitted as multiple
+            // spans (e.g. due to glyph-level kerning or TJ positioning
+            // rounding) can have a tiny positive gap between adjacent
+            // digit spans, which must NOT become "123 456". Anything less
+            // than half the font-aware geometric threshold is treated as
+            // intra-number kerning, not a token boundary.
+            let digit_digit = nc.is_ascii_digit() && pc.is_ascii_digit();
+            let digit_digit_gap_ok = !digit_digit || gap_pt > geometric_threshold * 0.5;
+
+            let next_is_value_start = nc == '$'
+                || nc == '('
+                || nc == '['
+                || (nc == '-' && following_text.len() > 1)
+                || (nc.is_ascii_digit() && prev_is_value_end && digit_digit_gap_ok);
+
+            // Also detect: any text followed by currency symbol
+            // e.g., "Subtotal" + "$500.00" or "49" + "$0.00"
+            let text_then_currency = (pc.is_ascii_alphabetic() || pc.is_ascii_digit())
+                && (nc == '$' || nc == '€' || nc == '£');
+
+            if (prev_is_value_end && next_is_value_start) || text_then_currency {
+                log::debug!(
+                    "Space decision: SEPARATE VALUES - gap={:.2}pt > {:.2}pt min, prev='{}', next='{}' - inserting space",
+                    gap_pt,
+                    min_token_gap,
+                    crate::utils::safe_suffix(preceding_text, 5),
+                    crate::utils::safe_prefix(following_text, 5),
+                );
+                return SpaceDecision::insert(SpaceSource::GeometricGap, 0.85);
+            }
+        }
+    }
+
     // Default: No space
     // Per ISO 32000-1:2008 Section 9.10, when PDF doesn't encode a clear word boundary,
     // we cannot reliably recover it. Requiring consensus prevents false positives in justified text.
@@ -2974,7 +3030,35 @@ impl TextExtractor {
                 && !large_gap_indicates_column
                 || (same_line && has_split_boundary);
 
-            if font_change_merge {
+            // DECIMAL VALUE MERGE: Some forms place integer and decimal parts
+            // of dollar amounts in separate fixed-width boxes.
+            // e.g., "123456" (integer box) + "72" (cents box) with ~10pt gap.
+            // Detect this pattern: both spans are pure digits, the second is
+            // exactly 1-2 digits (cents), same line, and gap < 2x font size.
+            let decimal_merge = same_line
+                && !should_merge
+                && !font_change_merge
+                && gap > 0.0
+                && gap < current.font_size * 2.0
+                && !current.text.is_empty()
+                && !span.text.is_empty()
+                && current.text.chars().all(|c| c.is_ascii_digit())
+                && span.text.chars().all(|c| c.is_ascii_digit())
+                && (1..=2).contains(&span.text.len());
+
+            if decimal_merge {
+                // Join integer and decimal parts with "."
+                log::debug!(
+                    "Decimal value merge: '{}' + '{}' -> '{}.{}' (gap={:.1}pt)",
+                    current.text,
+                    span.text,
+                    current.text,
+                    span.text,
+                    gap
+                );
+                current.text.push('.');
+                current.text.push_str(&span.text);
+            } else if font_change_merge {
                 // Font change: merge with space between font runs
                 log::debug!(
                     "Font change word boundary: '{}' ({}) + '{}' ({}) gap={:.2}pt",
@@ -3076,7 +3160,7 @@ impl TextExtractor {
                 }
             }
 
-            if font_change_merge || should_merge {
+            if decimal_merge || font_change_merge || should_merge {
                 // Extend bounding box to include both spans
                 let new_width = (span.bbox.x + span.bbox.width) - current.bbox.x;
                 let new_height = current.bbox.height.max(span.bbox.height);
@@ -6547,6 +6631,40 @@ mod tests {
         );
         assert!(!decision.insert_space);
         assert_eq!(decision.source, SpaceSource::NoSpace);
+    }
+
+    /// Regression test for issue flagged in PR #281 review:
+    /// a long number emitted as multiple digit-only spans with a kerning-sized
+    /// positive gap must NOT have a space inserted between the digits (would
+    /// turn "123456" into "123 456"). Adjacent table cell digit values with a
+    /// larger gap must still be separated.
+    #[test]
+    fn test_space_decision_digit_digit_gap_threshold() {
+        let config = SpanMergingConfig::default();
+        let fonts = std::collections::HashMap::new();
+
+        // Kerning-sized gap (0.3pt) between digit spans — must NOT insert.
+        // For 12pt font with no font-info fallback, geometric_threshold is
+        // typically around 1.5pt, so half of that is 0.75pt.
+        let kerning = should_insert_space(
+            "123", "456", 0.3, 12.0, "TestFont", &fonts, false, &config, None, None, 12.0, 12.0,
+        );
+        assert!(
+            !kerning.insert_space,
+            "Kerning-sized gap (0.3pt) between digits must not split the number, got: {:?}",
+            kerning
+        );
+
+        // Larger gap (2pt) between digit spans — adjacent table cell values,
+        // must still insert a space.
+        let table_cells = should_insert_space(
+            "123", "456", 2.0, 12.0, "TestFont", &fonts, false, &config, None, None, 12.0, 12.0,
+        );
+        assert!(
+            table_cells.insert_space,
+            "2pt gap between digits should still split adjacent table values, got: {:?}",
+            table_cells
+        );
     }
 
     /// Test unified space decision: No double spaces
@@ -12158,6 +12276,422 @@ mod profile_based_space_tests {
         assert_eq!(
             default_config.space_insertion_threshold, conservative_profile.tj_offset_threshold,
             "Default config should use conservative threshold for backward compatibility"
+        );
+    }
+
+    /// Test that adjacent table cell values get spaces inserted between them.
+    ///
+    /// Simulates a form where two "$0.00" values are in adjacent cells with
+    /// a small positive gap (1pt). The merge logic should insert a space because
+    /// the spans are clearly separate tokens (ending/starting with digits/currency).
+    #[test]
+    fn test_adjacent_table_cell_values_not_concatenated() {
+        let mut extractor = TextExtractor::new();
+        extractor.merging_config = SpanMergingConfig::legacy();
+
+        // "$0.00" at 10pt font is about 30pt wide (5 chars * ~6pt average width)
+        // Second value starts at x=131, creating a 1pt gap (100 + 30 = 130, gap = 1pt)
+        extractor.spans = vec![
+            TextSpan {
+                artifact_type: None,
+                text: "$0.00".to_string(),
+                bbox: Rect::new(100.0, 700.0, 30.0, 10.0),
+                font_name: "F1".to_string(),
+                font_size: 10.0,
+                font_weight: FontWeight::Normal,
+                color: Color::black(),
+                mcid: None,
+                sequence: 0,
+                split_boundary_before: false,
+                offset_semantic: false,
+                is_italic: false,
+                is_monospace: false,
+                char_spacing: 0.0,
+                word_spacing: 0.0,
+                horizontal_scaling: 100.0,
+                primary_detected: false,
+                char_widths: vec![],
+            },
+            TextSpan {
+                artifact_type: None,
+                text: "$0.00".to_string(),
+                bbox: Rect::new(131.0, 700.0, 30.0, 10.0), // 1pt gap
+                font_name: "F1".to_string(),
+                font_size: 10.0,
+                font_weight: FontWeight::Normal,
+                color: Color::black(),
+                mcid: None,
+                sequence: 1,
+                split_boundary_before: false,
+                offset_semantic: false,
+                is_italic: false,
+                is_monospace: false,
+                char_spacing: 0.0,
+                word_spacing: 0.0,
+                horizontal_scaling: 100.0,
+                primary_detected: false,
+                char_widths: vec![],
+            },
+        ];
+
+        extractor.merge_adjacent_spans();
+        assert_eq!(extractor.spans.len(), 1, "Adjacent spans should merge");
+        assert_eq!(
+            extractor.spans[0].text, "$0.00 $0.00",
+            "Adjacent table cell values should have space between them, got: '{}'",
+            extractor.spans[0].text
+        );
+    }
+
+    /// Test that adjacent numeric values with small gaps get spaces.
+    /// Covers cases like "100200" that should be "100 200" in table contexts.
+    #[test]
+    fn test_adjacent_numeric_values_not_concatenated() {
+        let mut extractor = TextExtractor::new();
+        extractor.merging_config = SpanMergingConfig::legacy();
+
+        extractor.spans = vec![
+            TextSpan {
+                artifact_type: None,
+                text: "100".to_string(),
+                bbox: Rect::new(200.0, 500.0, 18.0, 10.0),
+                font_name: "F1".to_string(),
+                font_size: 10.0,
+                font_weight: FontWeight::Normal,
+                color: Color::black(),
+                mcid: None,
+                sequence: 0,
+                split_boundary_before: false,
+                offset_semantic: false,
+                is_italic: false,
+                is_monospace: false,
+                char_spacing: 0.0,
+                word_spacing: 0.0,
+                horizontal_scaling: 100.0,
+                primary_detected: false,
+                char_widths: vec![],
+            },
+            TextSpan {
+                artifact_type: None,
+                text: "200".to_string(),
+                bbox: Rect::new(219.5, 500.0, 18.0, 10.0), // 1.5pt gap
+                font_name: "F1".to_string(),
+                font_size: 10.0,
+                font_weight: FontWeight::Normal,
+                color: Color::black(),
+                mcid: None,
+                sequence: 1,
+                split_boundary_before: false,
+                offset_semantic: false,
+                is_italic: false,
+                is_monospace: false,
+                char_spacing: 0.0,
+                word_spacing: 0.0,
+                horizontal_scaling: 100.0,
+                primary_detected: false,
+                char_widths: vec![],
+            },
+        ];
+
+        extractor.merge_adjacent_spans();
+        assert_eq!(extractor.spans.len(), 1, "Adjacent spans should merge");
+        assert_eq!(
+            extractor.spans[0].text, "100 200",
+            "Adjacent numeric values should have space between them, got: '{}'",
+            extractor.spans[0].text
+        );
+    }
+
+    /// Ensure that true word fragments (zero gap) still merge without space.
+    /// E.g., "Hel" + "lo" with gap=0 should become "Hello" not "Hel lo".
+    #[test]
+    fn test_word_fragments_zero_gap_no_space() {
+        let mut extractor = TextExtractor::new();
+        extractor.merging_config = SpanMergingConfig::legacy();
+
+        extractor.spans = vec![
+            TextSpan {
+                artifact_type: None,
+                text: "Hel".to_string(),
+                bbox: Rect::new(100.0, 700.0, 18.0, 12.0),
+                font_name: "F1".to_string(),
+                font_size: 12.0,
+                font_weight: FontWeight::Normal,
+                color: Color::black(),
+                mcid: None,
+                sequence: 0,
+                split_boundary_before: false,
+                offset_semantic: false,
+                is_italic: false,
+                is_monospace: false,
+                char_spacing: 0.0,
+                word_spacing: 0.0,
+                horizontal_scaling: 100.0,
+                primary_detected: false,
+                char_widths: vec![],
+            },
+            TextSpan {
+                artifact_type: None,
+                text: "lo".to_string(),
+                bbox: Rect::new(118.0, 700.0, 12.0, 12.0), // 0pt gap
+                font_name: "F1".to_string(),
+                font_size: 12.0,
+                font_weight: FontWeight::Normal,
+                color: Color::black(),
+                mcid: None,
+                sequence: 1,
+                split_boundary_before: false,
+                offset_semantic: false,
+                is_italic: false,
+                is_monospace: false,
+                char_spacing: 0.0,
+                word_spacing: 0.0,
+                horizontal_scaling: 100.0,
+                primary_detected: false,
+                char_widths: vec![],
+            },
+        ];
+
+        extractor.merge_adjacent_spans();
+        assert_eq!(extractor.spans.len(), 1, "Adjacent spans should merge");
+        assert_eq!(
+            extractor.spans[0].text, "Hello",
+            "Zero-gap word fragments should merge without space, got: '{}'",
+            extractor.spans[0].text
+        );
+    }
+
+    // ========================================================================
+    // Decimal dollar value merging (split integer/decimal boxes)
+    // ========================================================================
+
+    #[test]
+    fn test_merge_decimal_dollar_value_split_boxes() {
+        // Some forms have integer and decimal parts in separate fixed-width boxes.
+        // e.g., "123456" at x=382.3 width=39.6, "72" at x=432.7 width=13.2
+        // gap = 432.7 - (382.3 + 39.6) = 10.8pt
+        // These should be merged as "123456.72"
+        let mut extractor = TextExtractor::new();
+        extractor.merging_config = SpanMergingConfig::legacy();
+
+        extractor.spans = vec![
+            TextSpan {
+                artifact_type: None,
+                text: "123456".to_string(),
+                bbox: Rect::new(382.3, 700.0, 39.6, 12.0),
+                font_name: "F1".to_string(),
+                font_size: 12.0,
+                font_weight: FontWeight::Normal,
+                color: Color::black(),
+                mcid: None,
+                sequence: 0,
+                split_boundary_before: false,
+                offset_semantic: false,
+                is_italic: false,
+                is_monospace: false,
+                char_spacing: 0.0,
+                word_spacing: 0.0,
+                horizontal_scaling: 100.0,
+                primary_detected: false,
+                char_widths: vec![],
+            },
+            TextSpan {
+                artifact_type: None,
+                text: "72".to_string(),
+                bbox: Rect::new(432.7, 700.0, 13.2, 12.0), // 10.8pt gap
+                font_name: "F1".to_string(),
+                font_size: 12.0,
+                font_weight: FontWeight::Normal,
+                color: Color::black(),
+                mcid: None,
+                sequence: 1,
+                split_boundary_before: false,
+                offset_semantic: false,
+                is_italic: false,
+                is_monospace: false,
+                char_spacing: 0.0,
+                word_spacing: 0.0,
+                horizontal_scaling: 100.0,
+                primary_detected: false,
+                char_widths: vec![],
+            },
+        ];
+
+        extractor.merge_adjacent_spans();
+        assert_eq!(extractor.spans.len(), 1, "Decimal dollar value spans should merge into one");
+        assert_eq!(
+            extractor.spans[0].text, "123456.72",
+            "Integer and decimal parts should be joined with '.'"
+        );
+    }
+
+    #[test]
+    fn test_merge_decimal_value_small_integer_part() {
+        // Smaller dollar amount: "50" + "00" -> "50.00"
+        let mut extractor = TextExtractor::new();
+        extractor.merging_config = SpanMergingConfig::legacy();
+
+        extractor.spans = vec![
+            TextSpan {
+                artifact_type: None,
+                text: "50".to_string(),
+                bbox: Rect::new(382.3, 700.0, 15.0, 12.0),
+                font_name: "F1".to_string(),
+                font_size: 12.0,
+                font_weight: FontWeight::Normal,
+                color: Color::black(),
+                mcid: None,
+                sequence: 0,
+                split_boundary_before: false,
+                offset_semantic: false,
+                is_italic: false,
+                is_monospace: false,
+                char_spacing: 0.0,
+                word_spacing: 0.0,
+                horizontal_scaling: 100.0,
+                primary_detected: false,
+                char_widths: vec![],
+            },
+            TextSpan {
+                artifact_type: None,
+                text: "00".to_string(),
+                bbox: Rect::new(407.0, 700.0, 13.2, 12.0), // 9.7pt gap
+                font_name: "F1".to_string(),
+                font_size: 12.0,
+                font_weight: FontWeight::Normal,
+                color: Color::black(),
+                mcid: None,
+                sequence: 1,
+                split_boundary_before: false,
+                offset_semantic: false,
+                is_italic: false,
+                is_monospace: false,
+                char_spacing: 0.0,
+                word_spacing: 0.0,
+                horizontal_scaling: 100.0,
+                primary_detected: false,
+                char_widths: vec![],
+            },
+        ];
+
+        extractor.merge_adjacent_spans();
+        assert_eq!(extractor.spans.len(), 1);
+        assert_eq!(extractor.spans[0].text, "50.00");
+    }
+
+    #[test]
+    fn test_no_decimal_merge_for_non_digit_spans() {
+        // Should NOT merge "Hello" + "72" as decimal
+        let mut extractor = TextExtractor::new();
+        extractor.merging_config = SpanMergingConfig::legacy();
+
+        extractor.spans = vec![
+            TextSpan {
+                artifact_type: None,
+                text: "Hello".to_string(),
+                bbox: Rect::new(382.3, 700.0, 39.6, 12.0),
+                font_name: "F1".to_string(),
+                font_size: 12.0,
+                font_weight: FontWeight::Normal,
+                color: Color::black(),
+                mcid: None,
+                sequence: 0,
+                split_boundary_before: false,
+                offset_semantic: false,
+                is_italic: false,
+                is_monospace: false,
+                char_spacing: 0.0,
+                word_spacing: 0.0,
+                horizontal_scaling: 100.0,
+                primary_detected: false,
+                char_widths: vec![],
+            },
+            TextSpan {
+                artifact_type: None,
+                text: "72".to_string(),
+                bbox: Rect::new(432.7, 700.0, 13.2, 12.0), // 10.8pt gap
+                font_name: "F1".to_string(),
+                font_size: 12.0,
+                font_weight: FontWeight::Normal,
+                color: Color::black(),
+                mcid: None,
+                sequence: 1,
+                split_boundary_before: false,
+                offset_semantic: false,
+                is_italic: false,
+                is_monospace: false,
+                char_spacing: 0.0,
+                word_spacing: 0.0,
+                horizontal_scaling: 100.0,
+                primary_detected: false,
+                char_widths: vec![],
+            },
+        ];
+
+        extractor.merge_adjacent_spans();
+        // Should NOT merge because first span is not all digits
+        assert_eq!(
+            extractor.spans.len(),
+            2,
+            "Non-digit spans should not be merged as decimal values"
+        );
+    }
+
+    #[test]
+    fn test_no_decimal_merge_for_long_decimal_part() {
+        // Should NOT merge "123456" + "723" (3-digit decimal part is not a cents pattern)
+        let mut extractor = TextExtractor::new();
+        extractor.merging_config = SpanMergingConfig::legacy();
+
+        extractor.spans = vec![
+            TextSpan {
+                artifact_type: None,
+                text: "123456".to_string(),
+                bbox: Rect::new(382.3, 700.0, 39.6, 12.0),
+                font_name: "F1".to_string(),
+                font_size: 12.0,
+                font_weight: FontWeight::Normal,
+                color: Color::black(),
+                mcid: None,
+                sequence: 0,
+                split_boundary_before: false,
+                offset_semantic: false,
+                is_italic: false,
+                is_monospace: false,
+                char_spacing: 0.0,
+                word_spacing: 0.0,
+                horizontal_scaling: 100.0,
+                primary_detected: false,
+                char_widths: vec![],
+            },
+            TextSpan {
+                artifact_type: None,
+                text: "723".to_string(),
+                bbox: Rect::new(432.7, 700.0, 18.0, 12.0), // 10.8pt gap
+                font_name: "F1".to_string(),
+                font_size: 12.0,
+                font_weight: FontWeight::Normal,
+                color: Color::black(),
+                mcid: None,
+                sequence: 1,
+                split_boundary_before: false,
+                offset_semantic: false,
+                is_italic: false,
+                is_monospace: false,
+                char_spacing: 0.0,
+                word_spacing: 0.0,
+                horizontal_scaling: 100.0,
+                primary_detected: false,
+                char_widths: vec![],
+            },
+        ];
+
+        extractor.merge_adjacent_spans();
+        // Should NOT merge because decimal part has 3 digits (not a cents pattern)
+        assert_eq!(
+            extractor.spans.len(),
+            2,
+            "3-digit decimal part should not trigger decimal merge"
         );
     }
 }
