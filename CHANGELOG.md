@@ -2,6 +2,17 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [0.3.21] - 2026-04-04
+> Log Level Honored in Python, Multi-Arch Wheels
+
+### Bug Fixes
+
+- **Log level now fully respected in Python (#283)** — `extract_log_debug!` / `extract_log_trace!` / etc. were printing to stderr directly via `eprintln!`, bypassing the `log` crate and therefore ignoring `pdf_oxide.set_log_level(...)` and Python's `logging.basicConfig(level=...)`. Messages like `[DEBUG] Parsing content stream for text extraction` and `[TRACE] Detected document script: Latin` leaked through at ERROR level. The macros now forward to `log::debug!` / `log::trace!` / etc. and are properly gated by the `log` crate's max level filter. Reported by @marph91 as a follow-up to #280.
+
+### Packaging
+
+- **Multi-arch Python wheels (#284)** — Added wheels for Linux aarch64 (`manylinux_2_28_aarch64`), Linux musl x86_64 and aarch64 (`musllinux_1_2_*`), and Windows ARM64 (`win_arm64`). Lowered the manylinux glibc floor from `2_34` to `2_28` to cover RHEL 8, Debian 11, Ubuntu 20.04, and Amazon Linux 2023. A source distribution (sdist) is now published for any platform with a Rust toolchain. Reported by @jhhayashi.
+
 ## [0.3.20] - 2026-04-04
 > Table Extraction Engine — Intersection Pipeline, Text-Edge Detection, Converter Improvements
 

@@ -117,59 +117,105 @@ jobs:
       - name: Run ty check
         run: uv run ty check .
 
-  # Build wheels for distribution
-  build-wheels:
-    name: Build wheels on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+  # Build Linux wheels (manylinux + musllinux, x86_64 + aarch64)
+  # Uses PyO3/maturin-action, which handles cross-compilation via Docker + zig.
+  # Lowered glibc floor to 2_28 (RHEL 8 / Ubuntu 20.04 / Debian 11 / Amazon Linux 2023)
+  # from the previous 2_34 (Ubuntu 22.04+) for broader CI/base-image coverage. See #284.
+  build-wheels-linux:
+    name: Build wheels (linux ${{ matrix.target }} ${{ matrix.manylinux }})
+    runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-
+        include:
+          - target: x86_64
+            manylinux: manylinux_2_28
+          - target: aarch64
+            manylinux: manylinux_2_28
+          - target: x86_64
+            manylinux: musllinux_1_2
+          - target: aarch64
+            manylinux: musllinux_1_2
     steps:
       - uses: actions/checkout@v6
-
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: '3.11'
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install maturin
-        run: pip install maturin
-
       - name: Build wheels
-        run: maturin build --release --features python --out dist
-
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --release --features python --out dist
       - name: Upload wheels as artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: wheels-${{ matrix.os }}
+          name: wheels-linux-${{ matrix.target }}-${{ matrix.manylinux }}
           path: dist/*.whl
 
-  # Build source distribution
-  build-sdist:
-    name: Build source distribution
-    runs-on: ubuntu-latest
-
+  # Build macOS wheels (x86_64 + arm64)
+  build-wheels-macos:
+    name: Build wheels (macos ${{ matrix.target }})
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64, aarch64]
     steps:
       - uses: actions/checkout@v6
-
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: '3.11'
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --features python --out dist
+      - name: Upload wheels as artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: wheels-macos-${{ matrix.target }}
+          path: dist/*.whl
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+  # Build Windows wheels (x64 + arm64)
+  build-wheels-windows:
+    name: Build wheels (windows ${{ matrix.target }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x64, aarch64]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          architecture: x64
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --features python --out dist
+      - name: Upload wheels as artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: wheels-windows-${{ matrix.target }}
+          path: dist/*.whl
 
-      - name: Install maturin
-        run: pip install maturin
-
-      - name: Build source distribution
-        run: maturin sdist --out dist
-
+  # Build source distribution (universal fallback for any Rust-capable platform)
+  build-sdist:
+    name: Build source distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
       - name: Upload sdist as artifact
         uses: actions/upload-artifact@v7
         with:
@@ -179,7 +225,7 @@ jobs:
   # Publish to PyPI on release
   publish:
     name: Publish to PyPI
-    needs: [test, lint, build-wheels, build-sdist]
+    needs: [test, lint, build-wheels-linux, build-wheels-macos, build-wheels-windows, build-sdist]
     runs-on: ubuntu-latest
     if: github.event_name == 'release' && github.event.action == 'published'
 
