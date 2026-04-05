@@ -10,6 +10,7 @@ These tests verify the Python API works correctly, including:
 - Error handling
 """
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -1343,6 +1344,95 @@ def test_xmp_metadata():
         assert metadata is None or isinstance(metadata, dict)
     except (OSError, RuntimeError):
         pytest.skip("Test fixture 'simple.pdf' not available or invalid")
+
+
+class _PdfOxideLogCapture(logging.Handler):
+    """Captures log records emitted under the ``pdf_oxide`` logger tree.
+
+    We attach this directly to the ``pdf_oxide`` logger (rather than using
+    pytest's ``caplog``) because ``pyo3_log`` emits on child loggers such as
+    ``pdf_oxide.xref`` / ``pdf_oxide.document``, and caplog's per-logger
+    level plumbing doesn't always surface those child records reliably.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.DEBUG)
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+
+def _capture_pdf_oxide_logs():
+    """Install a handler on the pdf_oxide logger and set it to DEBUG."""
+    logger = logging.getLogger("pdf_oxide")
+    handler = _PdfOxideLogCapture()
+    logger.addHandler(handler)
+    prev_level = logger.level
+    prev_propagate = logger.propagate
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+    return logger, handler, prev_level, prev_propagate
+
+
+def test_log_level_issue_283_regression():
+    """Regression test for #283 — Python log level honored by extraction pipeline.
+
+    Runs the reproduction from the issue (extract_text with a real PDF) twice
+    in a single test so the two assertions share one process and one pyo3_log
+    cache state:
+
+    1. With ``set_log_level('debug')`` the pipeline emits DEBUG records on
+       the ``pdf_oxide`` logger tree (sanity check — if this fails, either
+       the ``pyo3_log`` bridge is broken or the Rust macros aren't emitting
+       at all, which would make assertion 2 pass vacuously).
+    2. With ``set_log_level('error')`` no DEBUG / TRACE / INFO / WARN records
+       leak through (the actual regression — before the fix, the
+       ``extract_log_*!`` macros bypassed the ``log`` crate via ``eprintln!``
+       and so ignored both ``pdf_oxide.set_log_level`` and
+       ``logging.basicConfig``).
+
+    The debug phase must run first, because once ``log::set_max_level`` is
+    lowered to Error the Rust ``log::debug!`` calls are short-circuited at
+    compile-time checks and never reach pyo3_log — a subsequent re-raise to
+    Debug in the same process doesn't always re-enable them due to pyo3_log's
+    per-logger level cache.
+    """
+    import pdf_oxide
+
+    try:
+        doc = PdfDocument("tests/fixtures/1.pdf")
+    except (OSError, RuntimeError):
+        pytest.skip("Test fixture '1.pdf' not available or invalid")
+
+    logger, handler, prev_level, prev_propagate = _capture_pdf_oxide_logs()
+    try:
+        # Phase 1: DEBUG level should produce at least some DEBUG records.
+        pdf_oxide.set_log_level("debug")
+        for page in range(doc.page_count()):
+            doc.extract_text(page)
+        debug_records = [r for r in handler.records if r.levelno == logging.DEBUG]
+        assert debug_records, (
+            "expected at least one DEBUG record from pdf_oxide at DEBUG level — "
+            "if this fails, the pyo3_log bridge is broken and the suppression "
+            "assertion below would pass vacuously"
+        )
+
+        # Phase 2: ERROR level must suppress everything below ERROR.
+        handler.records.clear()
+        pdf_oxide.set_log_level("error")
+        for page in range(doc.page_count()):
+            doc.extract_text(page)
+        leaked = [r for r in handler.records if r.levelno < logging.ERROR]
+        assert not leaked, (
+            f"DEBUG/TRACE/INFO/WARN records leaked at ERROR level (regression "
+            f"of #283): {[(r.name, r.levelname, r.getMessage()) for r in leaked[:5]]}"
+        )
+    finally:
+        pdf_oxide.set_log_level("info")
+        logger.removeHandler(handler)
+        logger.setLevel(prev_level)
+        logger.propagate = prev_propagate
 
 
 # Note: To run these tests successfully, you'll need to:

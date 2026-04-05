@@ -3,49 +3,73 @@
 //! These macros forward to the `log` crate so the configured log level
 //! (via `log::set_max_level`, `env_logger`, `pyo3_log`, etc.) is honored.
 //! When the `logging` feature is disabled, all logging is compiled out.
+//!
+//! Each macro accepts two forms for backward compatibility:
+//! 1. A single expression: `extract_log_info!(my_string_var)` — logged as `{}`.
+//! 2. A format string with optional args: `extract_log_info!("page {}", n)`.
 
 /// Log an INFO level message. Forwards to `log::info!`.
 #[macro_export]
 macro_rules! extract_log_info {
-    ($($arg:tt)*) => {
+    ($fmt:literal $(, $($arg:tt)*)?) => {
         #[cfg(feature = "logging")]
-        ::log::info!($($arg)*);
+        ::log::info!($fmt $(, $($arg)*)?);
+    };
+    ($msg:expr) => {
+        #[cfg(feature = "logging")]
+        ::log::info!("{}", $msg);
     };
 }
 
 /// Log a WARN level message. Forwards to `log::warn!`.
 #[macro_export]
 macro_rules! extract_log_warn {
-    ($($arg:tt)*) => {
+    ($fmt:literal $(, $($arg:tt)*)?) => {
         #[cfg(feature = "logging")]
-        ::log::warn!($($arg)*);
+        ::log::warn!($fmt $(, $($arg)*)?);
+    };
+    ($msg:expr) => {
+        #[cfg(feature = "logging")]
+        ::log::warn!("{}", $msg);
     };
 }
 
 /// Log a DEBUG level message. Forwards to `log::debug!`.
 #[macro_export]
 macro_rules! extract_log_debug {
-    ($($arg:tt)*) => {
+    ($fmt:literal $(, $($arg:tt)*)?) => {
         #[cfg(feature = "logging")]
-        ::log::debug!($($arg)*);
+        ::log::debug!($fmt $(, $($arg)*)?);
+    };
+    ($msg:expr) => {
+        #[cfg(feature = "logging")]
+        ::log::debug!("{}", $msg);
     };
 }
 
 /// Log a TRACE level message. Forwards to `log::trace!`.
 #[macro_export]
 macro_rules! extract_log_trace {
-    ($($arg:tt)*) => {
+    ($fmt:literal $(, $($arg:tt)*)?) => {
         #[cfg(feature = "logging")]
-        ::log::trace!($($arg)*);
+        ::log::trace!($fmt $(, $($arg)*)?);
+    };
+    ($msg:expr) => {
+        #[cfg(feature = "logging")]
+        ::log::trace!("{}", $msg);
     };
 }
 
 /// Log an ERROR level message. Forwards to `log::error!`.
 #[macro_export]
 macro_rules! extract_log_error {
-    ($($arg:tt)*) => {
+    ($fmt:literal $(, $($arg:tt)*)?) => {
         #[cfg(feature = "logging")]
-        ::log::error!($($arg)*);
+        ::log::error!($fmt $(, $($arg)*)?);
+    };
+    ($msg:expr) => {
+        #[cfg(feature = "logging")]
+        ::log::error!("{}", $msg);
     };
 }
 
