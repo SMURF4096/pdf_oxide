@@ -238,10 +238,36 @@ jobs:
           path: wasm-out/
           retention-days: 7
 
+  # Generate Python type stubs (runs once on a supported platform)
+  generate-python-stubs:
+    name: Generate Python type stubs
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Generate type stubs
+        run: uvx rylai -o python/pdf_oxide/
+
+      - name: Upload type stubs
+        uses: actions/upload-artifact@v7
+        with:
+          name: python-type-stubs
+          path: python/pdf_oxide/*.pyi
+          retention-days: 7
+
   # Build Python wheels
   build-python-wheels:
     name: Build Python wheels (${{ matrix.target }})
-    needs: validate
+    needs: [validate, generate-python-stubs]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -314,9 +340,11 @@ jobs:
             ${{ contains(matrix.target, 'musl') && 'musl-tools' || '' }} \
             ${{ contains(matrix.target, 'aarch64') && 'gcc-aarch64-linux-gnu' || '' }}
 
-      # Generate .pyi stubs automatically using mypy stubgen
-      - name: Generate type stubs
-        run: uvx rylai -o python/pdf_oxide/
+      - name: Download type stubs
+        uses: actions/download-artifact@v8
+        with:
+          name: python-type-stubs
+          path: python/pdf_oxide/
 
       - name: Build wheels
         shell: bash
