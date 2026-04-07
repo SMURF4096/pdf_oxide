@@ -2689,20 +2689,29 @@ pub fn detect_tables_with_lines(
     // Filter out invalid line-based tables BEFORE overlap checking so that
     // spurious line-based tables don't shadow valid text-based ones.
     final_tables.retain(is_valid_table);
-    let text_candidates = detect_tables_from_spans_column_aware(spans, config);
-    for text_table in text_candidates {
-        if let Some(text_bbox) = text_table.bbox {
-            let overlaps = final_tables.iter().any(|t| {
-                if let Some(line_bbox) = t.bbox {
-                    line_bbox.intersects(&text_bbox)
-                        || line_bbox.contains_rect(&text_bbox)
-                        || text_bbox.contains_rect(&line_bbox)
-                } else {
-                    false
+
+    // Only allow text-based fallback if BOTH strategies permit it.
+    // If horizontal_strategy is Lines, we require actual horizontal lines for row detection.
+    // If vertical_strategy is Lines, we require actual vertical lines for column detection.
+    let allow_text_fallback = config.horizontal_strategy != TableStrategy::Lines
+        && config.vertical_strategy != TableStrategy::Lines;
+
+    if allow_text_fallback {
+        let text_candidates = detect_tables_from_spans_column_aware(spans, config);
+        for text_table in text_candidates {
+            if let Some(text_bbox) = text_table.bbox {
+                let overlaps = final_tables.iter().any(|t| {
+                    if let Some(line_bbox) = t.bbox {
+                        line_bbox.intersects(&text_bbox)
+                            || line_bbox.contains_rect(&text_bbox)
+                            || text_bbox.contains_rect(&line_bbox)
+                    } else {
+                        false
+                    }
+                });
+                if !overlaps {
+                    final_tables.push(text_table);
                 }
-            });
-            if !overlaps {
-                final_tables.push(text_table);
             }
         }
     }
@@ -3022,6 +3031,26 @@ mod tests {
             vertical_strategy: TableStrategy::Lines,
             ..TableDetectionConfig::default()
         };
+        assert!(detect_tables_with_lines(&spans, &[], &config).is_empty());
+    }
+
+    #[test]
+    fn test_horizontal_lines_only_strategy_no_false_positives() {
+        // Regression test: horizontal_strategy: "lines" should NOT fall back to
+        // text-based detection when there are no lines on the page.
+        let spans = vec![
+            create_test_span("A", 10.0, 100.0, 10.0, 10.0),
+            create_test_span("B", 50.0, 100.0, 10.0, 10.0),
+            create_test_span("C", 10.0, 80.0, 10.0, 10.0),
+            create_test_span("D", 50.0, 80.0, 10.0, 10.0),
+        ];
+        // Test with horizontal_strategy: Lines but vertical_strategy: Both (the default)
+        let config = TableDetectionConfig {
+            horizontal_strategy: TableStrategy::Lines,
+            vertical_strategy: TableStrategy::Both,
+            ..TableDetectionConfig::default()
+        };
+        // Should return empty because there are no horizontal lines to define rows
         assert!(detect_tables_with_lines(&spans, &[], &config).is_empty());
     }
 
