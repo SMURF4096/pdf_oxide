@@ -131,7 +131,7 @@ barcoders = { version = "2.0", optional = true, features = ["image"] }
 
 # Office document conversion (optional)
 calamine = { version = "0.33", optional = true }
-zip = { version = "8.2", optional = true, default-features = false, features = ["deflate"] }
+zip = { version = "8.5", optional = true, default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 criterion = "0.8"
