@@ -115,7 +115,7 @@ getrandom_02 = { package = "getrandom", version = "0.2", optional = true, featur
 serde-wasm-bindgen = { version = "0.6", optional = true }
 
 # Table detection - page rendering (optional)
-pdfium-render = { version = "0.8", optional = true }
+pdfium-render = { version = "0.9", optional = true }
 
 # Rendering (optional - for page to image conversion)
 tiny-skia = { version = "0.12", optional = true }
