@@ -42,6 +42,11 @@ pdf.save("output.pdf")
 Dual-licensed under MIT OR Apache-2.0.
 """
 
+from ._async import (
+    AsyncOfficeConverter,
+    AsyncPdf,
+    AsyncPdfDocument,
+)
 from .pdf_oxide import (
     VERSION,
     # Page Templates
@@ -78,6 +83,9 @@ from .pdf_oxide import (
 
 __all__ = [
     "PdfDocument",
+    "AsyncPdfDocument",
+    "AsyncPdf",
+    "AsyncOfficeConverter",
     "VERSION",
     # PDF Creation
     "Pdf",

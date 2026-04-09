@@ -22,6 +22,16 @@ All notable changes to PDFOxide are documented here.
 - **O(log n) page tree traversal** — uses /Count to skip subtrees instead of linear counting.
 - **Lazy page tree population** — defers bulk page tree walk until needed.
 
+### Features
+
+- **Free-threaded Python support (#296)** — `#[pymodule(gil_used = false)]` declares GIL-free compatibility for cp314t.
+- **`AsyncPdfDocument` (#217)** — async wrapper that runs operations in a background thread pool. Works with `asyncio` without requiring `Send`.
+
+### Bug Fixes
+
+- **CLI split/merge blank pages (#297)** — merge now writes merged page refs; split now filters removed pages from Kids.
+- **Rendering: skip unrenderable images (#299, #300)** — images with missing `/ColorSpace` or invalid dimensions are skipped instead of crashing the page render.
+
 ## [0.3.21] - 2026-04-04
 > Log Level Honored in Python, Multi-Arch Wheels
 
