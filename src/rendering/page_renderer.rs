@@ -1691,7 +1691,8 @@ impl PageRenderer {
                                         ) {
                                             log::warn!(
                                                 "Skipping unrenderable image XObject '{}': {}",
-                                                name, e
+                                                name,
+                                                e
                                             );
                                         }
                                     },
@@ -1724,7 +1725,8 @@ impl PageRenderer {
                                         ) {
                                             log::warn!(
                                                 "Skipping malformed Form XObject '{}': {}",
-                                                name, e
+                                                name,
+                                                e
                                             );
                                         }
 

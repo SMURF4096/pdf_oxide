@@ -1770,10 +1770,7 @@ impl DocumentEditor {
                     }
 
                     new_pages_dict.insert("Kids".to_string(), Object::Array(kids.clone()));
-                    new_pages_dict.insert(
-                        "Count".to_string(),
-                        Object::Integer(kids.len() as i64),
-                    );
+                    new_pages_dict.insert("Count".to_string(), Object::Integer(kids.len() as i64));
 
                     Object::Dictionary(new_pages_dict)
                 } else {

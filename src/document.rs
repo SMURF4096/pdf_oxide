@@ -12,8 +12,6 @@ use crate::pipeline::{
 };
 use crate::structure::traverse_structure_tree;
 use crate::xref::{find_xref_offset, parse_xref, CrossRefTable};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
 use std::collections::HashMap;
 use std::collections::HashSet;
 #[cfg(not(target_arch = "wasm32"))]
@@ -21,7 +19,9 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Cursor, Read, Seek, SeekFrom};
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::Mutex;
 
 /// Reading order mode for span extraction.
 ///
@@ -211,8 +211,7 @@ pub struct PdfDocument {
     pub(crate) xobject_stream_cache_bytes: AtomicUsize,
     /// Cache of extracted TextSpan results from self-contained Form XObjects
     /// (those with own /Resources/Font). None = processed but no spans.
-    pub(crate) xobject_spans_cache:
-        Mutex<HashMap<ObjectRef, Option<Vec<crate::layout::TextSpan>>>>,
+    pub(crate) xobject_spans_cache: Mutex<HashMap<ObjectRef, Option<Vec<crate::layout::TextSpan>>>>,
     /// Cache of extracted images from Form XObjects (keyed by ObjectRef).
     /// Images are stored without CTM applied — caller applies its own CTM.
     pub(crate) form_xobject_images_cache:
@@ -1004,7 +1003,10 @@ impl PdfDocument {
                     Err(_) => {
                         // PDF Spec §7.3.10: missing object reference "shall be treated as null"
                         log::warn!("Object {} gen {} not found (xref + file scan failed), treating as Null per §7.3.10", obj_ref.id, obj_ref.gen);
-                        self.object_cache.lock().unwrap().insert(obj_ref, Object::Null);
+                        self.object_cache
+                            .lock()
+                            .unwrap()
+                            .insert(obj_ref, Object::Null);
                         return Ok(Object::Null);
                     },
                 }
@@ -1047,7 +1049,10 @@ impl PdfDocument {
                         "Free object {} (id <= 10, bad offset), treating as Null",
                         obj_ref.id
                     );
-                    self.object_cache.lock().unwrap().insert(obj_ref, Object::Null);
+                    self.object_cache
+                        .lock()
+                        .unwrap()
+                        .insert(obj_ref, Object::Null);
                     return Ok(Object::Null);
                 }
             } else {
@@ -1057,7 +1062,10 @@ impl PdfDocument {
                     obj_ref.id,
                     obj_ref.gen
                 );
-                self.object_cache.lock().unwrap().insert(obj_ref, Object::Null);
+                self.object_cache
+                    .lock()
+                    .unwrap()
+                    .insert(obj_ref, Object::Null);
                 return Ok(Object::Null);
             }
         }
@@ -1097,7 +1105,10 @@ impl PdfDocument {
                     "Object {} has type Free despite in_use=true, treating as Null",
                     obj_ref.id
                 );
-                self.object_cache.lock().unwrap().insert(obj_ref, Object::Null);
+                self.object_cache
+                    .lock()
+                    .unwrap()
+                    .insert(obj_ref, Object::Null);
                 Ok(Object::Null)
             },
         };
@@ -1223,7 +1234,8 @@ impl PdfDocument {
         let offset = entry.offset;
         if self
             .reader
-            .lock().unwrap()
+            .lock()
+            .unwrap()
             .seek(SeekFrom::Start(offset))
             .is_err()
         {
@@ -1281,7 +1293,8 @@ impl PdfDocument {
         let mut header_bytes = Vec::new();
         let bytes_read = self
             .reader
-            .lock().unwrap()
+            .lock()
+            .unwrap()
             .read_until(b'\n', &mut header_bytes)?;
 
         if bytes_read == 0 {
@@ -1303,7 +1316,8 @@ impl PdfDocument {
             let mut next_bytes = Vec::new();
             let next_read = self
                 .reader
-                .lock().unwrap()
+                .lock()
+                .unwrap()
                 .read_until(b'\n', &mut next_bytes)?;
 
             if next_read == 0 {
@@ -1494,7 +1508,10 @@ impl PdfDocument {
         };
 
         // Cache the object
-        self.object_cache.lock().unwrap().insert(obj_ref, obj.clone());
+        self.object_cache
+            .lock()
+            .unwrap()
+            .insert(obj_ref, obj.clone());
 
         Ok(obj)
     }
@@ -1536,7 +1553,10 @@ impl PdfDocument {
                         stream_obj_num,
                         obj_ref.id
                     );
-                    self.object_cache.lock().unwrap().insert(obj_ref, Object::Null);
+                    self.object_cache
+                        .lock()
+                        .unwrap()
+                        .insert(obj_ref, Object::Null);
                     return Ok(Object::Null);
                 },
             };
@@ -1653,7 +1673,8 @@ impl PdfDocument {
 
         // Read the search region
         self.reader
-            .lock().unwrap()
+            .lock()
+            .unwrap()
             .seek(SeekFrom::Start(search_start))?;
         let mut buffer = vec![0u8; search_distance as usize + 100]; // Extra bytes to read full line
         let bytes_read = self.reader.lock().unwrap().read(&mut buffer)?;
@@ -5997,9 +6018,12 @@ impl PdfDocument {
     /// This returns the decoded content stream bytes for the specified page.
     /// The content stream contains PDF operators that define the page's appearance.
     pub fn get_page_content_data(&mut self, page_index: usize) -> Result<Vec<u8>> {
-        if let Some((cached_page, ref data)) = *self.page_content_cache.lock().unwrap() {
-            if cached_page == page_index {
-                return Ok(data.as_ref().clone());
+        {
+            let cache = self.page_content_cache.lock().unwrap();
+            if let Some((cached_page, data)) = cache.as_ref() {
+                if *cached_page == page_index {
+                    return Ok(data.as_ref().clone());
+                }
             }
         }
 
@@ -6485,10 +6509,11 @@ impl PdfDocument {
         use crate::extractors::paths::FillRule;
         use crate::layout::Color;
 
-        let xobject_ref = match extractor.resolve_xobject_ref(name, |ref_obj| self.load_object(ref_obj)) {
-            Some(r) => r,
-            None => return Ok(()),
-        };
+        let xobject_ref =
+            match extractor.resolve_xobject_ref(name, |ref_obj| self.load_object(ref_obj)) {
+                Some(r) => r,
+                None => return Ok(()),
+            };
 
         // Cycle detection
         if !extractor.can_process_xobject(xobject_ref) {
@@ -6535,8 +6560,13 @@ impl PdfDocument {
         }
 
         // Decode stream — reuse document-level cache shared with text extraction.
-        let cached_stream =
-            { self.xobject_stream_cache.lock().unwrap().get(&xobject_ref).cloned() };
+        let cached_stream = {
+            self.xobject_stream_cache
+                .lock()
+                .unwrap()
+                .get(&xobject_ref)
+                .cloned()
+        };
         let stream_data = if let Some(cached) = cached_stream {
             cached.as_ref().clone()
         } else {
@@ -6548,7 +6578,8 @@ impl PdfDocument {
                         self.xobject_stream_cache_bytes
                             .store(current + data.len(), Ordering::Relaxed);
                         self.xobject_stream_cache
-                            .lock().unwrap()
+                            .lock()
+                            .unwrap()
                             .insert(xobject_ref, std::sync::Arc::new(data.clone()));
                     }
                     data
@@ -7140,7 +7171,12 @@ impl PdfDocument {
             // Layer 2: Check font set cache for the /Font dictionary.
             // Pages sharing the same /Font dict skip the entire per-font loop.
             if let Some(font_dict_ref) = font_dict_ref {
-                let cached_set_opt = self.font_set_cache.lock().unwrap().get(&font_dict_ref).cloned();
+                let cached_set_opt = self
+                    .font_set_cache
+                    .lock()
+                    .unwrap()
+                    .get(&font_dict_ref)
+                    .cloned();
                 if let Some(cached_set) = cached_set_opt {
                     for (name, font_arc) in &cached_set {
                         extractor.add_font_shared(name.clone(), Arc::clone(font_arc));
@@ -7175,7 +7211,8 @@ impl PdfDocument {
 
                 let cached_fingerprint_opt = self
                     .font_fingerprint_cache
-                    .lock().unwrap()
+                    .lock()
+                    .unwrap()
                     .get(&fingerprint)
                     .cloned();
                 if let Some(cached_set) = cached_fingerprint_opt {
@@ -7200,7 +7237,12 @@ impl PdfDocument {
                     hasher.finish()
                 };
 
-                let cached_name_set = self.font_name_set_cache.lock().unwrap().get(&name_hash).cloned();
+                let cached_name_set = self
+                    .font_name_set_cache
+                    .lock()
+                    .unwrap()
+                    .get(&name_hash)
+                    .cloned();
                 if let Some((cached_set, _check_name, _check_hash)) = cached_name_set {
                     // Layer 4: Same font names within a document virtually always map
                     // to the same underlying fonts. Trust the name-based cache to avoid
@@ -7225,7 +7267,8 @@ impl PdfDocument {
                 for (name, font_obj) in sorted_font_entries {
                     // If font is a reference, check per-font cache first
                     if let Some(font_ref) = font_obj.as_reference() {
-                        let cached_font_opt = self.font_cache.lock().unwrap().get(&font_ref).cloned();
+                        let cached_font_opt =
+                            self.font_cache.lock().unwrap().get(&font_ref).cloned();
                         if let Some(cached) = cached_font_opt {
                             extractor.add_font_shared(name.clone(), cached);
                             continue;
@@ -7243,11 +7286,16 @@ impl PdfDocument {
 
                         // Layer 5: Per-font identity cache — skip from_dict when a
                         // structurally identical font was already parsed elsewhere.
-                        let cached_identity_opt =
-                            self.font_identity_cache.lock().unwrap().get(&id_hash).cloned();
+                        let cached_identity_opt = self
+                            .font_identity_cache
+                            .lock()
+                            .unwrap()
+                            .get(&id_hash)
+                            .cloned();
                         if let Some(cached) = cached_identity_opt {
                             self.font_cache
-                                .lock().unwrap()
+                                .lock()
+                                .unwrap()
                                 .insert(font_ref, Arc::clone(&cached));
                             extractor.add_font_shared(name.clone(), cached);
                             continue;
@@ -7259,10 +7307,12 @@ impl PdfDocument {
                             crate::fonts::global_cache::global_font_cache_get(id_hash)
                         {
                             self.font_identity_cache
-                                .lock().unwrap()
+                                .lock()
+                                .unwrap()
                                 .insert(id_hash, Arc::clone(&cached));
                             self.font_cache
-                                .lock().unwrap()
+                                .lock()
+                                .unwrap()
                                 .insert(font_ref, Arc::clone(&cached));
                             extractor.add_font_shared(name.clone(), cached);
                             continue;
@@ -7277,10 +7327,12 @@ impl PdfDocument {
                                     Arc::clone(&arc),
                                 );
                                 self.font_identity_cache
-                                    .lock().unwrap()
+                                    .lock()
+                                    .unwrap()
                                     .insert(id_hash, Arc::clone(&arc));
                                 self.font_cache
-                                    .lock().unwrap()
+                                    .lock()
+                                    .unwrap()
                                     .insert(font_ref, Arc::clone(&arc));
                                 extractor.add_font_shared(name.clone(), arc);
                             },
@@ -7323,17 +7375,20 @@ impl PdfDocument {
                 let font_set = extractor.get_font_set();
                 if let Some(fdr) = font_dict_ref {
                     self.font_set_cache
-                        .lock().unwrap()
+                        .lock()
+                        .unwrap()
                         .insert(fdr, font_set.clone());
                 }
                 self.font_fingerprint_cache
-                    .lock().unwrap()
+                    .lock()
+                    .unwrap()
                     .insert(fingerprint, font_set.clone());
 
                 // Cache by font names with spot-check data for Layer 4
                 if let Some((check_name, check_hash)) = spot_check {
                     self.font_name_set_cache
-                        .lock().unwrap()
+                        .lock()
+                        .unwrap()
                         .insert(name_hash, (Arc::new(font_set), check_name, check_hash));
                 }
 
@@ -7375,8 +7430,7 @@ impl PdfDocument {
             },
         };
         if let Some(ref struct_tree) = struct_tree_opt {
-            let table_elems =
-                crate::structure::find_table_elements(&struct_tree, page_index as u32);
+            let table_elems = crate::structure::find_table_elements(struct_tree, page_index as u32);
             if !table_elems.is_empty() {
                 let mut tables = Vec::new();
                 for table_elem in table_elems {
@@ -7445,7 +7499,9 @@ impl PdfDocument {
         const LINE_TOL: f32 = 2.0;
         let table_paths: Vec<_> = paths
             .into_iter()
-            .filter(|p| p.is_horizontal_line(LINE_TOL) || p.is_vertical_line(LINE_TOL) || p.is_rectangle())
+            .filter(|p| {
+                p.is_horizontal_line(LINE_TOL) || p.is_vertical_line(LINE_TOL) || p.is_rectangle()
+            })
             .collect();
 
         if table_paths.is_empty() {
@@ -8632,7 +8688,12 @@ impl PdfDocument {
         // Check image result cache — images stored with Form's own Matrix only.
         // Scope the borrow to ensure it's dropped before potential recursion.
         {
-            if let Some(cached_images) = self.form_xobject_images_cache.lock().unwrap().get(&xobject_ref) {
+            if let Some(cached_images) = self
+                .form_xobject_images_cache
+                .lock()
+                .unwrap()
+                .get(&xobject_ref)
+            {
                 let images = cached_images
                     .iter()
                     .map(|img| {
@@ -8692,7 +8753,8 @@ impl PdfDocument {
         // Decode form stream — check cache first to avoid repeated decompression
         let cached_stream = self
             .xobject_stream_cache
-            .lock().unwrap()
+            .lock()
+            .unwrap()
             .get(&xobject_ref)
             .cloned();
         let stream_data = if let Some(cached) = cached_stream {
@@ -8706,7 +8768,8 @@ impl PdfDocument {
                         self.xobject_stream_cache_bytes
                             .store(current_bytes + data.len(), Ordering::Relaxed);
                         self.xobject_stream_cache
-                            .lock().unwrap()
+                            .lock()
+                            .unwrap()
                             .insert(xobject_ref, std::sync::Arc::new(data.clone()));
                     }
                     data
@@ -8792,7 +8855,8 @@ impl PdfDocument {
 
         // Cache the raw images (with Form's own Matrix applied, but no parent CTM)
         self.form_xobject_images_cache
-            .lock().unwrap()
+            .lock()
+            .unwrap()
             .insert(xobject_ref, raw_images.clone());
 
         // Apply parent_ctm to produce final images for this call

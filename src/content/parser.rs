@@ -151,19 +151,46 @@ pub fn parse_content_stream_paths_only(data: &[u8]) -> Result<Vec<Operator>> {
                         b'q' => Some(Operator::SaveState),
                         b'Q' => Some(Operator::RestoreState),
                         // Path construction (numeric operands)
-                        b'm' => parse_floats::<2>(operands).map(|f| Operator::MoveTo { x: f[0], y: f[1] }),
-                        b'l' => parse_floats::<2>(operands).map(|f| Operator::LineTo { x: f[0], y: f[1] }),
-                        b'c' => parse_floats::<6>(operands).map(|f| Operator::CurveTo { x1: f[0], y1: f[1], x2: f[2], y2: f[3], x3: f[4], y3: f[5] }),
-                        b'v' => parse_floats::<4>(operands).map(|f| Operator::CurveToV { x2: f[0], y2: f[1], x3: f[2], y3: f[3] }),
-                        b'y' => parse_floats::<4>(operands).map(|f| Operator::CurveToY { x1: f[0], y1: f[1], x3: f[2], y3: f[3] }),
+                        b'm' => parse_floats::<2>(operands)
+                            .map(|f| Operator::MoveTo { x: f[0], y: f[1] }),
+                        b'l' => parse_floats::<2>(operands)
+                            .map(|f| Operator::LineTo { x: f[0], y: f[1] }),
+                        b'c' => parse_floats::<6>(operands).map(|f| Operator::CurveTo {
+                            x1: f[0],
+                            y1: f[1],
+                            x2: f[2],
+                            y2: f[3],
+                            x3: f[4],
+                            y3: f[5],
+                        }),
+                        b'v' => parse_floats::<4>(operands).map(|f| Operator::CurveToV {
+                            x2: f[0],
+                            y2: f[1],
+                            x3: f[2],
+                            y3: f[3],
+                        }),
+                        b'y' => parse_floats::<4>(operands).map(|f| Operator::CurveToY {
+                            x1: f[0],
+                            y1: f[1],
+                            x3: f[2],
+                            y3: f[3],
+                        }),
                         // Line style (single numeric operand)
-                        b'w' => parse_floats::<1>(operands).map(|f| Operator::SetLineWidth { width: f[0] }),
-                        b'J' => parse_floats::<1>(operands).map(|f| Operator::SetLineCap { cap_style: f[0] as u8 }),
-                        b'j' => parse_floats::<1>(operands).map(|f| Operator::SetLineJoin { join_style: f[0] as u8 }),
-                        b'M' => parse_floats::<1>(operands).map(|f| Operator::SetMiterLimit { limit: f[0] }),
+                        b'w' => parse_floats::<1>(operands)
+                            .map(|f| Operator::SetLineWidth { width: f[0] }),
+                        b'J' => parse_floats::<1>(operands).map(|f| Operator::SetLineCap {
+                            cap_style: f[0] as u8,
+                        }),
+                        b'j' => parse_floats::<1>(operands).map(|f| Operator::SetLineJoin {
+                            join_style: f[0] as u8,
+                        }),
+                        b'M' => parse_floats::<1>(operands)
+                            .map(|f| Operator::SetMiterLimit { limit: f[0] }),
                         // Color (single float)
-                        b'g' => parse_floats::<1>(operands).map(|f| Operator::SetFillGray { gray: f[0] }),
-                        b'G' => parse_floats::<1>(operands).map(|f| Operator::SetStrokeGray { gray: f[0] }),
+                        b'g' => parse_floats::<1>(operands)
+                            .map(|f| Operator::SetFillGray { gray: f[0] }),
+                        b'G' => parse_floats::<1>(operands)
+                            .map(|f| Operator::SetStrokeGray { gray: f[0] }),
                         // Fill (zero operands) — f and F
                         b'f' | b'F' => Some(Operator::Fill),
                         // Fill+stroke (zero operands)
@@ -177,7 +204,12 @@ pub fn parse_content_stream_paths_only(data: &[u8]) -> Result<Vec<Operator>> {
                         // Clip (zero operands)
                         b'W' => Some(Operator::ClipNonZero),
                         // Flatness
-                        b'i' => { operand_start = i + 1; i += 1; consecutive_errors = 0; continue; },
+                        b'i' => {
+                            operand_start = i + 1;
+                            i += 1;
+                            consecutive_errors = 0;
+                            continue;
+                        },
                         _ => None,
                     };
                     if let Some(op) = op {
@@ -223,27 +255,51 @@ pub fn parse_content_stream_paths_only(data: &[u8]) -> Result<Vec<Operator>> {
                 }
 
                 // Fast-path multi-char operators with numeric operands
-                let fast_op = match op {
-                    b"cm" => parse_six_floats(operands).map(|(a, b, c, d, e, f)| Operator::Cm { a, b, c, d, e, f }),
-                    b"re" => parse_floats::<4>(operands).map(|f| Operator::Rectangle { x: f[0], y: f[1], width: f[2], height: f[3] }),
-                    b"rg" => parse_floats::<3>(operands).map(|f| Operator::SetFillRgb { r: f[0], g: f[1], b: f[2] }),
-                    b"RG" => parse_floats::<3>(operands).map(|f| Operator::SetStrokeRgb { r: f[0], g: f[1], b: f[2] }),
-                    b"k" => parse_floats::<4>(operands).map(|f| Operator::SetFillCmyk { c: f[0], m: f[1], y: f[2], k: f[3] }),
-                    b"K" => parse_floats::<4>(operands).map(|f| Operator::SetStrokeCmyk { c: f[0], m: f[1], y: f[2], k: f[3] }),
-                    b"f*" => Some(Operator::FillEvenOdd),
-                    b"B*" => Some(Operator::FillStrokeEvenOdd),
-                    b"b*" => Some(Operator::CloseFillStrokeEvenOdd),
-                    b"W*" => Some(Operator::ClipEvenOdd),
-                    // Skip text/color-space/shading operators that don't affect paths
-                    b"ET" | b"Tc" | b"Tw" | b"Tz" | b"TL" | b"Tf" | b"Tr" | b"Ts"
-                    | b"Td" | b"TD" | b"Tm" | b"Tj" | b"TJ" | b"T*"
-                    | b"cs" | b"CS" | b"sc" | b"SC" | b"scn" | b"SCN"
-                    | b"ri" | b"sh" | b"EI" => {
-                        operand_start = i;
-                        continue;
-                    },
-                    _ => None,
-                };
+                let fast_op =
+                    match op {
+                        b"cm" => parse_six_floats(operands)
+                            .map(|(a, b, c, d, e, f)| Operator::Cm { a, b, c, d, e, f }),
+                        b"re" => parse_floats::<4>(operands).map(|f| Operator::Rectangle {
+                            x: f[0],
+                            y: f[1],
+                            width: f[2],
+                            height: f[3],
+                        }),
+                        b"rg" => parse_floats::<3>(operands).map(|f| Operator::SetFillRgb {
+                            r: f[0],
+                            g: f[1],
+                            b: f[2],
+                        }),
+                        b"RG" => parse_floats::<3>(operands).map(|f| Operator::SetStrokeRgb {
+                            r: f[0],
+                            g: f[1],
+                            b: f[2],
+                        }),
+                        b"k" => parse_floats::<4>(operands).map(|f| Operator::SetFillCmyk {
+                            c: f[0],
+                            m: f[1],
+                            y: f[2],
+                            k: f[3],
+                        }),
+                        b"K" => parse_floats::<4>(operands).map(|f| Operator::SetStrokeCmyk {
+                            c: f[0],
+                            m: f[1],
+                            y: f[2],
+                            k: f[3],
+                        }),
+                        b"f*" => Some(Operator::FillEvenOdd),
+                        b"B*" => Some(Operator::FillStrokeEvenOdd),
+                        b"b*" => Some(Operator::CloseFillStrokeEvenOdd),
+                        b"W*" => Some(Operator::ClipEvenOdd),
+                        // Skip text/color-space/shading operators that don't affect paths
+                        b"ET" | b"Tc" | b"Tw" | b"Tz" | b"TL" | b"Tf" | b"Tr" | b"Ts" | b"Td"
+                        | b"TD" | b"Tm" | b"Tj" | b"TJ" | b"T*" | b"cs" | b"CS" | b"sc" | b"SC"
+                        | b"scn" | b"SCN" | b"ri" | b"sh" | b"EI" => {
+                            operand_start = i;
+                            continue;
+                        },
+                        _ => None,
+                    };
 
                 if let Some(op) = fast_op {
                     operators.push(op);
@@ -834,7 +890,10 @@ fn prescan_text_regions(data: &[u8]) -> Option<PrescanResult> {
 
     // Drop Do positions when Do dominates BT (chart/figure graphics that
     // would merge prescan regions across the entire stream).
-    let bt_count = text_positions.iter().filter(|&&p| p + 1 < len && data[p] == b'B').count();
+    let bt_count = text_positions
+        .iter()
+        .filter(|&&p| p + 1 < len && data[p] == b'B')
+        .count();
     let do_count = text_positions.len() - bt_count;
     if do_count > 50 && do_count > bt_count * 10 {
         text_positions.retain(|&p| p + 1 < len && data[p] == b'B');

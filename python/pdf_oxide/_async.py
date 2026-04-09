@@ -99,12 +99,18 @@ _ASYNC_DOC_SKIP = frozenset({
 class AsyncPdfDocument:
     """Async wrapper around :class:`PdfDocument`.
 
-    Each instance owns a single-worker thread pool.  The underlying
-    ``PdfDocument`` is created *inside* that thread and never leaves it,
-    so the ``unsendable`` constraint is satisfied automatically.
+    Each instance owns a single-worker thread pool that offloads PDF
+    operations so the event loop is never blocked.  The underlying
+    ``PdfDocument`` is ``Send + Sync``, so it is safe to use from any
+    thread.
 
     All public methods from the sync ``PdfDocument`` are available as
     ``async`` methods with identical names and signatures.
+
+    Supports async context manager for deterministic cleanup::
+
+        async with await AsyncPdfDocument.open("doc.pdf") as doc:
+            text = await doc.extract_text(0)
     """
 
     __slots__ = ("_executor", "_doc")
@@ -155,6 +161,16 @@ class AsyncPdfDocument:
     def doc(self) -> PdfDocument:
         """Access the underlying sync ``PdfDocument``."""
         return self._doc
+
+    async def close(self) -> None:
+        """Shut down the background thread pool."""
+        self._executor.shutdown(wait=False)
+
+    async def __aenter__(self) -> "AsyncPdfDocument":
+        return self
+
+    async def __aexit__(self, *exc) -> None:
+        await self.close()
 
     def __del__(self):
         self._executor.shutdown(wait=False)
