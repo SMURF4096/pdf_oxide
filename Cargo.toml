@@ -3,7 +3,7 @@ members = [".", "pdf_oxide_mcp", "pdf_oxide_cli"]
 
 [package]
 name = "pdf_oxide"
-version = "0.3.21"
+version = "0.3.22"
 edition = "2021"
 authors = ["Yury Fedoseev <yfedoseev@gmail.com>"]
 license = "MIT OR Apache-2.0"

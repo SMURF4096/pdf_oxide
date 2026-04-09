@@ -12,7 +12,6 @@ use crate::pipeline::{
 };
 use crate::structure::traverse_structure_tree;
 use crate::xref::{find_xref_offset, parse_xref, CrossRefTable};
-use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::collections::HashSet;
 #[cfg(not(target_arch = "wasm32"))]
@@ -20,7 +19,9 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Cursor, Read, Seek, SeekFrom};
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::Mutex;
 
 /// Reading order mode for span extraction.
 ///
@@ -129,8 +130,12 @@ pub struct PageInfo {
 /// ```
 pub struct PdfDocument {
     /// PDF reader — file-backed on native, memory-backed on WASM.
+    ///
+    /// # Thread Safety
+    /// All interior-mutable fields use `Mutex` / `AtomicUsize`, making
+    /// `PdfDocument` both `Send` and `Sync`.
     /// Wrapped in RefCell for interior mutability (seek/read require &mut).
-    reader: RefCell<PdfReader>,
+    reader: Mutex<PdfReader>,
     /// Raw bytes of the document (kept for duplication/editing)
     pub source_bytes: Vec<u8>,
     /// PDF version (major, minor)
@@ -142,14 +147,14 @@ pub struct PdfDocument {
     /// Cache for loaded objects to avoid re-parsing.
     /// Wrapped in RefCell so load_object can take &self (required for safe
     /// access through TextExtractor's *const PdfDocument pointer).
-    object_cache: RefCell<HashMap<ObjectRef, Object>>,
+    object_cache: Mutex<HashMap<ObjectRef, Object>>,
     /// Track objects being resolved (for cycle detection)
-    resolving_stack: RefCell<HashSet<ObjectRef>>,
+    resolving_stack: Mutex<HashSet<ObjectRef>>,
     /// Current recursion depth
-    recursion_depth: RefCell<u32>,
+    recursion_depth: Mutex<u32>,
     /// Encryption handler (if PDF is encrypted).
     /// Wrapped in RefCell for interior mutability (lazy initialization from &self).
-    encryption_handler: RefCell<Option<EncryptionHandler>>,
+    encryption_handler: Mutex<Option<EncryptionHandler>>,
     /// Parser configuration options for error handling and recovery
     #[allow(dead_code)]
     options: ParserOptions,
@@ -158,25 +163,25 @@ pub struct PdfDocument {
     header_offset: u64,
     /// Font cache keyed by indirect ObjectRef to avoid re-parsing fonts across pages.
     /// Arc-wrapped to eliminate deep cloning when populating per-page TextExtractor.
-    font_cache: RefCell<HashMap<ObjectRef, Arc<crate::fonts::FontInfo>>>,
+    font_cache: Mutex<HashMap<ObjectRef, Arc<crate::fonts::FontInfo>>>,
     /// Cached font sets keyed by /Font dictionary ObjectRef.
     /// Pages sharing the same /Font dict skip the entire load_fonts() loop.
-    font_set_cache: RefCell<HashMap<ObjectRef, Vec<(String, Arc<crate::fonts::FontInfo>)>>>,
+    font_set_cache: Mutex<HashMap<ObjectRef, Vec<(String, Arc<crate::fonts::FontInfo>)>>>,
     /// Fingerprint-based font set cache for direct /Font dictionaries.
     /// Keyed by sorted font ObjectRefs hash, catches pages with different
     /// /Resources but same font references.
-    font_fingerprint_cache: RefCell<HashMap<u64, Vec<(String, Arc<crate::fonts::FontInfo>)>>>,
+    font_fingerprint_cache: Mutex<HashMap<u64, Vec<(String, Arc<crate::fonts::FontInfo>)>>>,
     /// Name-based font set cache keyed by hash of sorted font names.
     /// Catches pages with different font ObjectRefs but the same font name→base font
     /// mapping (common in PDFs that create new font objects per page).
     /// Stores the resolved font set (Arc-wrapped to avoid cloning) plus a spot-check
     /// (font_name, content_hash) pair for verification before reuse.
     font_name_set_cache:
-        RefCell<HashMap<u64, (Arc<Vec<(String, Arc<crate::fonts::FontInfo>)>>, String, u64)>>,
+        Mutex<HashMap<u64, (Arc<Vec<(String, Arc<crate::fonts::FontInfo>)>>, String, u64)>>,
     /// Per-font identity cache keyed by font_identity_hash (BaseFont + Subtype + Encoding +
     /// ToUnicode + FontDescriptor + DescendantFonts references). Skips expensive
     /// `FontInfo::from_dict()` when a structurally identical font was already parsed.
-    font_identity_cache: RefCell<HashMap<u64, Arc<crate::fonts::FontInfo>>>,
+    font_identity_cache: Mutex<HashMap<u64, Arc<crate::fonts::FontInfo>>>,
     /// Cached structure tree (None = not yet checked, Some(None) = untagged, Some(Some) = tagged).
     /// Uses Arc to avoid expensive deep clones on every page extraction.
     structure_tree_cache: Option<Option<Arc<crate::structure::StructTreeRoot>>>,
@@ -191,38 +196,47 @@ pub struct PdfDocument {
     page_cache_populated: bool,
     /// Cached object offsets from full file scan (built on first xref miss).
     /// Maps object number to byte offset in file.
-    scanned_object_offsets: RefCell<Option<HashMap<u32, u64>>>,
+    scanned_object_offsets: Mutex<Option<HashMap<u32, u64>>>,
     /// Cache of XObject refs known to NOT be Form XObjects (i.e., Image or unknown).
     /// Used by text extraction to skip expensive full-object loads for images.
-    image_xobject_cache: RefCell<HashSet<ObjectRef>>,
+    image_xobject_cache: Mutex<HashSet<ObjectRef>>,
     /// Document-level cache of Form XObject refs whose streams contain NO text
     /// operators (BT) and no nested Do invocations. Persists across pages so that
     /// shared graphics-only XObjects (watermarks, logos, chart elements) are
     /// decompressed and scanned at most once across the entire document.
-    pub(crate) xobject_text_free_cache: RefCell<HashSet<ObjectRef>>,
+    pub(crate) xobject_text_free_cache: Mutex<HashSet<ObjectRef>>,
     /// Cache of decompressed Form XObject streams. Bounded at 50MB total.
     /// Avoids repeated FlateDecode decompression of shared Form XObjects.
-    pub(crate) xobject_stream_cache: RefCell<HashMap<ObjectRef, std::sync::Arc<Vec<u8>>>>,
-    pub(crate) xobject_stream_cache_bytes: Cell<usize>,
+    pub(crate) xobject_stream_cache: Mutex<HashMap<ObjectRef, std::sync::Arc<Vec<u8>>>>,
+    pub(crate) xobject_stream_cache_bytes: AtomicUsize,
     /// Cache of extracted TextSpan results from self-contained Form XObjects
     /// (those with own /Resources/Font). None = processed but no spans.
-    pub(crate) xobject_spans_cache:
-        RefCell<HashMap<ObjectRef, Option<Vec<crate::layout::TextSpan>>>>,
+    pub(crate) xobject_spans_cache: Mutex<HashMap<ObjectRef, Option<Vec<crate::layout::TextSpan>>>>,
     /// Cache of extracted images from Form XObjects (keyed by ObjectRef).
     /// Images are stored without CTM applied — caller applies its own CTM.
     pub(crate) form_xobject_images_cache:
-        RefCell<HashMap<ObjectRef, Vec<crate::extractors::PdfImage>>>,
+        Mutex<HashMap<ObjectRef, Vec<crate::extractors::PdfImage>>>,
     /// Regions marked for erasure per page
     pub(crate) erase_regions: HashMap<usize, Vec<crate::geometry::Rect>>,
+    /// Cached decompressed content stream for last accessed page.
+    page_content_cache: Mutex<Option<(usize, std::sync::Arc<Vec<u8>>)>>,
 }
+
+// Compile-time verification that PdfDocument is Send + Sync.
+const _: () = {
+    fn _assert_send_sync<T: Send + Sync>() {}
+    fn _check() {
+        _assert_send_sync::<PdfDocument>();
+    }
+};
 
 impl std::fmt::Debug for PdfDocument {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PdfDocument")
             .field("version", &self.version)
             .field("xref_entries", &self.xref.len())
-            .field("cached_objects", &self.object_cache.borrow().len())
-            .field("recursion_depth", &self.recursion_depth.borrow())
+            .field("cached_objects", &self.object_cache.lock().unwrap().len())
+            .field("recursion_depth", &self.recursion_depth.lock().unwrap())
             .finish_non_exhaustive()
     }
 }
@@ -409,34 +423,35 @@ impl PdfDocument {
         // only has &self access which prevents initialization.
         // We now initialize eagerly to ensure the handler is ready when needed.
         let document = Self {
-            reader: RefCell::new(reader),
+            reader: Mutex::new(reader),
             source_bytes: Vec::new(),
             version,
             xref,
             trailer,
-            object_cache: RefCell::new(HashMap::new()),
-            resolving_stack: RefCell::new(HashSet::new()),
-            recursion_depth: RefCell::new(0),
-            encryption_handler: RefCell::new(None),
+            object_cache: Mutex::new(HashMap::new()),
+            resolving_stack: Mutex::new(HashSet::new()),
+            recursion_depth: Mutex::new(0),
+            encryption_handler: Mutex::new(None),
             options: ParserOptions::default(),
             header_offset,
-            font_cache: RefCell::new(HashMap::new()),
-            font_set_cache: RefCell::new(HashMap::new()),
-            font_fingerprint_cache: RefCell::new(HashMap::new()),
-            font_name_set_cache: RefCell::new(HashMap::new()),
-            font_identity_cache: RefCell::new(HashMap::new()),
+            font_cache: Mutex::new(HashMap::new()),
+            font_set_cache: Mutex::new(HashMap::new()),
+            font_fingerprint_cache: Mutex::new(HashMap::new()),
+            font_name_set_cache: Mutex::new(HashMap::new()),
+            font_identity_cache: Mutex::new(HashMap::new()),
             structure_tree_cache: None,
             structure_content_cache: None,
             page_cache: HashMap::new(),
             page_cache_populated: false,
-            scanned_object_offsets: RefCell::new(None),
-            image_xobject_cache: RefCell::new(HashSet::new()),
-            xobject_text_free_cache: RefCell::new(HashSet::new()),
-            xobject_stream_cache: RefCell::new(HashMap::new()),
-            xobject_stream_cache_bytes: Cell::new(0),
-            xobject_spans_cache: RefCell::new(HashMap::new()),
-            form_xobject_images_cache: RefCell::new(HashMap::new()),
+            scanned_object_offsets: Mutex::new(None),
+            image_xobject_cache: Mutex::new(HashSet::new()),
+            xobject_text_free_cache: Mutex::new(HashSet::new()),
+            xobject_stream_cache: Mutex::new(HashMap::new()),
+            xobject_stream_cache_bytes: AtomicUsize::new(0),
+            xobject_spans_cache: Mutex::new(HashMap::new()),
+            form_xobject_images_cache: Mutex::new(HashMap::new()),
             erase_regions: HashMap::new(),
+            page_content_cache: Mutex::new(None),
         };
 
         // Initialize encryption immediately
@@ -487,7 +502,7 @@ impl PdfDocument {
     /// the document is fully constructed and can load objects.
     fn ensure_encryption_initialized(&self) -> Result<()> {
         // Already initialized?
-        if self.encryption_handler.borrow().is_some() {
+        if self.encryption_handler.lock().unwrap().is_some() {
             return Ok(());
         }
 
@@ -588,7 +603,7 @@ impl PdfDocument {
             },
         }
 
-        *self.encryption_handler.borrow_mut() = Some(handler);
+        *self.encryption_handler.lock().unwrap() = Some(handler);
         Ok(())
     }
 
@@ -631,7 +646,7 @@ impl PdfDocument {
             false
         };
 
-        let handler_ref = self.encryption_handler.borrow();
+        let handler_ref = self.encryption_handler.lock().unwrap();
         if let Some(handler) = handler_ref.as_ref() {
             if is_unencrypted_stream_type {
                 // These stream types are never encrypted per spec
@@ -678,7 +693,7 @@ impl PdfDocument {
     /// or `Ok(true)` if the PDF is not encrypted (no authentication needed).
     pub fn authenticate(&self, password: &[u8]) -> Result<bool> {
         self.ensure_encryption_initialized()?;
-        match self.encryption_handler.borrow_mut().as_mut() {
+        match self.encryption_handler.lock().unwrap().as_mut() {
             Some(handler) => handler.authenticate(password),
             None => Ok(true), // Not encrypted, always "authenticated"
         }
@@ -701,7 +716,7 @@ impl PdfDocument {
     /// ```
     pub fn is_encrypted(&self) -> bool {
         // Check if encryption handler is already initialized
-        if self.encryption_handler.borrow().is_some() {
+        if self.encryption_handler.lock().unwrap().is_some() {
             return true;
         }
         // Check trailer for /Encrypt entry without initializing
@@ -717,7 +732,7 @@ impl PdfDocument {
     /// yet been provided. Extraction methods use this to return a clear error
     /// instead of silently producing empty output.
     fn is_encrypted_and_unauthenticated(&self) -> bool {
-        if let Some(handler) = self.encryption_handler.borrow().as_ref() {
+        if let Some(handler) = self.encryption_handler.lock().unwrap().as_ref() {
             !handler.is_authenticated()
         } else {
             // Handler not yet initialized — check if /Encrypt exists
@@ -791,7 +806,7 @@ impl PdfDocument {
     fn scan_for_object(&self, obj_ref: ObjectRef) -> Result<u64> {
         // Check cached scan results first
         {
-            let scan_cache = self.scanned_object_offsets.borrow();
+            let scan_cache = self.scanned_object_offsets.lock().unwrap();
             if let Some(offsets) = scan_cache.as_ref() {
                 if let Some(&offset) = offsets.get(&obj_ref.id) {
                     return Ok(offset);
@@ -807,9 +822,9 @@ impl PdfDocument {
             obj_ref.gen
         );
 
-        self.reader.borrow_mut().seek(SeekFrom::Start(0))?;
+        self.reader.lock().unwrap().seek(SeekFrom::Start(0))?;
         let mut content = Vec::new();
-        self.reader.borrow_mut().read_to_end(&mut content)?;
+        self.reader.lock().unwrap().read_to_end(&mut content)?;
 
         let mut offsets = HashMap::new();
 
@@ -873,7 +888,7 @@ impl PdfDocument {
         log::info!("File scan found {} objects", offsets.len());
 
         let result = offsets.get(&obj_ref.id).copied();
-        *self.scanned_object_offsets.borrow_mut() = Some(offsets);
+        *self.scanned_object_offsets.lock().unwrap() = Some(offsets);
 
         match result {
             Some(offset) => Ok(offset),
@@ -915,7 +930,7 @@ impl PdfDocument {
 
         // Check recursion depth
         {
-            let depth = *self.recursion_depth.borrow();
+            let depth = *self.recursion_depth.lock().unwrap();
             if depth >= MAX_RECURSION_DEPTH {
                 log::error!(
                     "Recursion depth limit exceeded ({}) while loading object {} gen {}",
@@ -928,18 +943,18 @@ impl PdfDocument {
         }
 
         // Check for circular references
-        if self.resolving_stack.borrow().contains(&obj_ref) {
+        if self.resolving_stack.lock().unwrap().contains(&obj_ref) {
             log::error!(
                 "Circular reference detected for object {} gen {} (depth: {})",
                 obj_ref.id,
                 obj_ref.gen,
-                self.recursion_depth.borrow()
+                self.recursion_depth.lock().unwrap()
             );
             return Err(Error::CircularReference(obj_ref));
         }
 
         // Check cache first
-        let cached_opt = self.object_cache.borrow().get(&obj_ref).cloned();
+        let cached_opt = self.object_cache.lock().unwrap().get(&obj_ref).cloned();
         if let Some(cached) = cached_opt {
             return Ok(cached);
         }
@@ -969,26 +984,29 @@ impl PdfDocument {
                         );
 
                         // Mark as being resolved (cycle detection)
-                        self.resolving_stack.borrow_mut().insert(obj_ref);
+                        self.resolving_stack.lock().unwrap().insert(obj_ref);
 
                         // Increment recursion depth
-                        *self.recursion_depth.borrow_mut() += 1;
+                        *self.recursion_depth.lock().unwrap() += 1;
 
                         // Load the object
                         let result = self.load_uncompressed_object(obj_ref, offset);
 
                         // Decrement recursion depth
-                        *self.recursion_depth.borrow_mut() -= 1;
+                        *self.recursion_depth.lock().unwrap() -= 1;
 
                         // Unmark when done
-                        self.resolving_stack.borrow_mut().remove(&obj_ref);
+                        self.resolving_stack.lock().unwrap().remove(&obj_ref);
 
                         return result;
                     },
                     Err(_) => {
                         // PDF Spec §7.3.10: missing object reference "shall be treated as null"
                         log::warn!("Object {} gen {} not found (xref + file scan failed), treating as Null per §7.3.10", obj_ref.id, obj_ref.gen);
-                        self.object_cache.borrow_mut().insert(obj_ref, Object::Null);
+                        self.object_cache
+                            .lock()
+                            .unwrap()
+                            .insert(obj_ref, Object::Null);
                         return Ok(Object::Null);
                     },
                 }
@@ -1031,7 +1049,10 @@ impl PdfDocument {
                         "Free object {} (id <= 10, bad offset), treating as Null",
                         obj_ref.id
                     );
-                    self.object_cache.borrow_mut().insert(obj_ref, Object::Null);
+                    self.object_cache
+                        .lock()
+                        .unwrap()
+                        .insert(obj_ref, Object::Null);
                     return Ok(Object::Null);
                 }
             } else {
@@ -1041,16 +1062,19 @@ impl PdfDocument {
                     obj_ref.id,
                     obj_ref.gen
                 );
-                self.object_cache.borrow_mut().insert(obj_ref, Object::Null);
+                self.object_cache
+                    .lock()
+                    .unwrap()
+                    .insert(obj_ref, Object::Null);
                 return Ok(Object::Null);
             }
         }
 
         // Mark as being resolved (cycle detection)
-        self.resolving_stack.borrow_mut().insert(obj_ref);
+        self.resolving_stack.lock().unwrap().insert(obj_ref);
 
         // Increment recursion depth
-        *self.recursion_depth.borrow_mut() += 1;
+        *self.recursion_depth.lock().unwrap() += 1;
 
         // Handle different entry types
         use crate::xref::XRefEntryType;
@@ -1081,16 +1105,19 @@ impl PdfDocument {
                     "Object {} has type Free despite in_use=true, treating as Null",
                     obj_ref.id
                 );
-                self.object_cache.borrow_mut().insert(obj_ref, Object::Null);
+                self.object_cache
+                    .lock()
+                    .unwrap()
+                    .insert(obj_ref, Object::Null);
                 Ok(Object::Null)
             },
         };
 
         // Decrement recursion depth
-        *self.recursion_depth.borrow_mut() -= 1;
+        *self.recursion_depth.lock().unwrap() -= 1;
 
         // Unmark when done
-        self.resolving_stack.borrow_mut().remove(&obj_ref);
+        self.resolving_stack.lock().unwrap().remove(&obj_ref);
 
         result
     }
@@ -1172,13 +1199,13 @@ impl PdfDocument {
     pub fn is_form_xobject(&self, obj_ref: ObjectRef) -> bool {
         // Check negative cache first (known non-Form XObjects)
         {
-            if self.image_xobject_cache.borrow().contains(&obj_ref) {
+            if self.image_xobject_cache.lock().unwrap().contains(&obj_ref) {
                 return false;
             }
         }
 
         // If already in object cache, check directly
-        let cached_opt = self.object_cache.borrow().get(&obj_ref).cloned();
+        let cached_opt = self.object_cache.lock().unwrap().get(&obj_ref).cloned();
         if let Some(cached) = cached_opt {
             let is_form = cached
                 .as_dict()
@@ -1186,7 +1213,7 @@ impl PdfDocument {
                 .and_then(|s| s.as_name())
                 == Some("Form");
             if !is_form {
-                self.image_xobject_cache.borrow_mut().insert(obj_ref);
+                self.image_xobject_cache.lock().unwrap().insert(obj_ref);
             }
             return is_form;
         }
@@ -1207,7 +1234,8 @@ impl PdfDocument {
         let offset = entry.offset;
         if self
             .reader
-            .borrow_mut()
+            .lock()
+            .unwrap()
             .seek(SeekFrom::Start(offset))
             .is_err()
         {
@@ -1216,7 +1244,7 @@ impl PdfDocument {
 
         // Read enough bytes for the object header + dictionary (typically <1KB)
         let mut buf = [0u8; 1024];
-        let n = match self.reader.borrow_mut().read(&mut buf) {
+        let n = match self.reader.lock().unwrap().read(&mut buf) {
             Ok(n) => n,
             Err(_) => return true,
         };
@@ -1236,7 +1264,7 @@ impl PdfDocument {
                     return true;
                 }
                 // Image, PS, or anything else — not a Form
-                self.image_xobject_cache.borrow_mut().insert(obj_ref);
+                self.image_xobject_cache.lock().unwrap().insert(obj_ref);
                 return false;
             }
         }
@@ -1258,14 +1286,15 @@ impl PdfDocument {
         already_corrected: bool,
     ) -> Result<Object> {
         // Seek to object offset
-        self.reader.borrow_mut().seek(SeekFrom::Start(offset))?;
+        self.reader.lock().unwrap().seek(SeekFrom::Start(offset))?;
 
         // Read bytes for object header (e.g., "1 0 obj")
         // Use bytes instead of String to handle binary data gracefully
         let mut header_bytes = Vec::new();
         let bytes_read = self
             .reader
-            .borrow_mut()
+            .lock()
+            .unwrap()
             .read_until(b'\n', &mut header_bytes)?;
 
         if bytes_read == 0 {
@@ -1287,7 +1316,8 @@ impl PdfDocument {
             let mut next_bytes = Vec::new();
             let next_read = self
                 .reader
-                .borrow_mut()
+                .lock()
+                .unwrap()
                 .read_until(b'\n', &mut next_bytes)?;
 
             if next_read == 0 {
@@ -1406,7 +1436,7 @@ impl PdfDocument {
 
         loop {
             let mut chunk = Vec::new();
-            let bytes_read = self.reader.borrow_mut().read_until(b'\n', &mut chunk)?;
+            let bytes_read = self.reader.lock().unwrap().read_until(b'\n', &mut chunk)?;
 
             if data.len() > MAX_BYTES {
                 log::warn!(
@@ -1478,7 +1508,10 @@ impl PdfDocument {
         };
 
         // Cache the object
-        self.object_cache.borrow_mut().insert(obj_ref, obj.clone());
+        self.object_cache
+            .lock()
+            .unwrap()
+            .insert(obj_ref, obj.clone());
 
         Ok(obj)
     }
@@ -1520,7 +1553,10 @@ impl PdfDocument {
                         stream_obj_num,
                         obj_ref.id
                     );
-                    self.object_cache.borrow_mut().insert(obj_ref, Object::Null);
+                    self.object_cache
+                        .lock()
+                        .unwrap()
+                        .insert(obj_ref, Object::Null);
                     return Ok(Object::Null);
                 },
             };
@@ -1548,7 +1584,7 @@ impl PdfDocument {
         // future PDF is encountered where the producer DID encrypt the ObjStm
         // (non-standard), the unencrypted parse will fail and we fall back to
         // trying with decryption.
-        let handler_ref = self.encryption_handler.borrow();
+        let handler_ref = self.encryption_handler.lock().unwrap();
         let objects_map = if handler_ref.is_some() {
             // First try without decryption (spec-compliant path)
             match parse_object_stream_with_decryption(&stream_obj, None, 0, 0) {
@@ -1601,7 +1637,7 @@ impl PdfDocument {
                 true
             };
             if should_cache {
-                self.object_cache.borrow_mut().insert(cache_ref, object);
+                self.object_cache.lock().unwrap().insert(cache_ref, object);
             } else {
                 log::debug!(
                     "[cache_debug] NOT caching obj {} from stream {} (xref points elsewhere)",
@@ -1637,10 +1673,11 @@ impl PdfDocument {
 
         // Read the search region
         self.reader
-            .borrow_mut()
+            .lock()
+            .unwrap()
             .seek(SeekFrom::Start(search_start))?;
         let mut buffer = vec![0u8; search_distance as usize + 100]; // Extra bytes to read full line
-        let bytes_read = self.reader.borrow_mut().read(&mut buffer)?;
+        let bytes_read = self.reader.lock().unwrap().read(&mut buffer)?;
 
         if bytes_read == 0 {
             return Err(Error::ParseError {
@@ -2153,12 +2190,11 @@ impl PdfDocument {
             return Ok(cached.clone());
         }
 
-        // On first cache miss, walk the page tree once and populate ALL pages.
-        // This turns O(n) per-page lookups into a single O(n) walk, avoiding
-        // O(n²) total cost when iterating sequentially through many pages.
-        // The flag ensures we only attempt this once, even if it fails or
-        // produces an incomplete cache (e.g., malformed page trees).
-        if !self.page_cache_populated {
+        // Defer bulk page tree walk until enough pages are accessed.
+        const LAZY_THRESHOLD: usize = 64;
+        let cache_misses = self.page_cache.len();
+
+        if !self.page_cache_populated && cache_misses >= LAZY_THRESHOLD {
             self.page_cache_populated = true;
             if let Err(e) = self.populate_page_cache() {
                 log::warn!(
@@ -2166,16 +2202,13 @@ impl PdfDocument {
                     e
                 );
             }
-            // DISABLED: extremely slow on large/malformed documents
-            // self.prefetch_xobject_subtypes();
+            // Check cache after bulk population
+            if let Some(cached) = self.page_cache.get(&page_index) {
+                return Ok(cached.clone());
+            }
         }
 
-        // Check cache again after bulk population
-        if let Some(cached) = self.page_cache.get(&page_index) {
-            return Ok(cached.clone());
-        }
-
-        // Fallback: per-page tree traversal (for malformed page trees where bulk walk fails)
+        // Per-page tree traversal: walks only the branches needed to find target page
         let catalog = self.catalog()?;
         let catalog_dict = catalog.as_dict().ok_or_else(|| Error::InvalidObjectType {
             expected: "Dictionary".to_string(),
@@ -2292,7 +2325,7 @@ impl PdfDocument {
             if let Some(xobj_dict) = xobj_obj.as_dict() {
                 for val in xobj_dict.values() {
                     if let Some(obj_ref) = val.as_reference() {
-                        if !self.image_xobject_cache.borrow().contains(&obj_ref) {
+                        if !self.image_xobject_cache.lock().unwrap().contains(&obj_ref) {
                             xobj_refs.push(obj_ref);
                         }
                     }
@@ -2580,8 +2613,28 @@ impl PdfDocument {
             .ok_or_else(|| Error::InvalidPdf("Page tree node missing /Type".to_string()))?;
 
         match node_type {
+            "Pages" if *current_index < target_index => {
+                // Skip entire subtree if /Count shows target is past this node.
+                if let Some(count) = node_dict
+                    .get("Count")
+                    .and_then(|c| c.as_integer())
+                    .filter(|&c| c > 0)
+                {
+                    let count = count as usize;
+                    if *current_index + count <= target_index {
+                        *current_index += count;
+                        return Err(Error::InvalidPdf(format!(
+                            "Page index {} not found in tree",
+                            target_index
+                        )));
+                    }
+                }
+            },
+            _ => {},
+        }
+
+        match node_type {
             "Page" => {
-                // This is a leaf page
                 if *current_index == target_index {
                     // Apply inherited attributes to this page
                     // PDF Spec: "If not present in the page dictionary, the value is inherited
@@ -2648,7 +2701,6 @@ impl PdfDocument {
                         Error::InvalidPdf("Kid in /Kids array is not a reference".to_string())
                     })?;
 
-                    // Pass inherited attributes to children
                     match self.get_page_from_tree_inner(
                         kid_ref,
                         target_index,
@@ -2941,31 +2993,36 @@ impl PdfDocument {
         options: &crate::converters::ConversionOptions,
     ) -> Result<String> {
         self.require_authenticated()?;
-        // 1. Check if this is a Tagged PDF with structure tree (cached after first check).
-        // Uses Arc to avoid expensive deep clones of the tree on every page.
+
+        let base_spans = self.extract_spans(page_index)?;
+
+        // Structure tree: check MarkInfo first (cheap) to skip non-tagged PDFs.
         let cached_tree = match &self.structure_tree_cache {
-            Some(cached) => cached.clone(), // Arc clone = cheap ref count bump
+            Some(cached) => cached.clone(),
             None => {
-                let tree = self.structure_tree().ok().flatten().map(Arc::new);
-                self.structure_tree_cache = Some(tree.clone());
-                tree
+                let is_marked = self.mark_info().map(|m| m.marked).unwrap_or(false);
+                if is_marked {
+                    let tree = self.structure_tree().ok().flatten().map(Arc::new);
+                    self.structure_tree_cache = Some(tree.clone());
+                    tree
+                } else {
+                    self.structure_tree_cache = Some(None);
+                    None
+                }
             },
         };
-
-        // 2. Extract Spans Early (needed for table detection and both paths)
-        let mut all_spans = self.extract_spans(page_index)?;
         let widget_spans = self.extract_widget_spans(page_index);
-        all_spans.extend(widget_spans);
 
-        // 3. Table Detection (if enabled)
+        // Table detection uses base spans only (no widget spans).
         let tables = if options.extract_tables {
-            self.extract_page_tables(page_index, &all_spans, options)
+            self.extract_page_tables(page_index, &base_spans, options)
         } else {
             Vec::new()
         };
 
-        // Fast pre-check: skip pages that cannot produce text BEFORE the expensive
-        // structure tree parse.
+        let mut all_spans = base_spans;
+        all_spans.extend(widget_spans);
+
         if all_spans.is_empty() {
             let page = self.get_page(page_index)?;
             let page_dict = page.as_dict().ok_or_else(|| Error::ParseError {
@@ -5585,29 +5642,6 @@ impl PdfDocument {
     /// When `profile` is provided, it controls how the underlying text spans are
     /// extracted from the PDF content stream (TJ offset thresholds, word margin
     /// ratios). This affects the raw character data before word clustering.
-    ///
-    /// # Arguments
-    ///
-    /// * `page_index` - Zero-based page index
-    /// * `word_gap_threshold` - Optional override for the horizontal gap (in PDF points)
-    ///   used to split characters into words. Smaller values produce more words.
-    /// * `profile` - Optional extraction profile for span-level tuning.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// // Use adaptive threshold (default behavior)
-    /// let words = doc.extract_words_with_thresholds(0, None, None)?;
-    ///
-    /// // Use a tighter threshold for dense forms
-    /// let words = doc.extract_words_with_thresholds(0, Some(1.5), None)?;
-    ///
-    /// // Use the Form profile for span extraction
-    /// use pdf_oxide::config::ExtractionProfile;
-    /// let words = doc.extract_words_with_thresholds(
-    ///     0, None, Some(ExtractionProfile::FORM),
-    /// )?;
-    /// ```
     pub fn extract_words_with_thresholds(
         &mut self,
         page_index: usize,
@@ -5988,6 +6022,15 @@ impl PdfDocument {
     /// This returns the decoded content stream bytes for the specified page.
     /// The content stream contains PDF operators that define the page's appearance.
     pub fn get_page_content_data(&mut self, page_index: usize) -> Result<Vec<u8>> {
+        {
+            let cache = self.page_content_cache.lock().unwrap();
+            if let Some((cached_page, data)) = cache.as_ref() {
+                if *cached_page == page_index {
+                    return Ok(data.as_ref().clone());
+                }
+            }
+        }
+
         // Ensure encryption is initialized if needed
         self.ensure_encryption_initialized()?;
 
@@ -6092,6 +6135,10 @@ impl PdfDocument {
             page_index,
             String::from_utf8_lossy(&content_data)
         );
+
+        *self.page_content_cache.lock().unwrap() =
+            Some((page_index, std::sync::Arc::new(content_data.clone())));
+
         Ok(content_data)
     }
 
@@ -6135,9 +6182,9 @@ impl PdfDocument {
         &mut self,
         page_index: usize,
     ) -> Result<Vec<crate::elements::PathContent>> {
-        use crate::content::{parse_content_stream, GraphicsStateStack, Operator};
+        use crate::content::{parse_content_stream_paths_only, Operator};
         use crate::elements::{LineCap, LineJoin};
-        use crate::extractors::paths::{FillRule, PathExtractor};
+        use crate::extractors::paths::{FillRule, PathExtractor, PathGraphicsStateStack};
         use crate::layout::Color;
 
         // Get page object and content stream
@@ -6160,8 +6207,7 @@ impl PdfDocument {
             },
         };
 
-        // Parse content stream into operators
-        let operators = match parse_content_stream(&content_data) {
+        let operators = match parse_content_stream_paths_only(&content_data) {
             Ok(ops) => ops,
             Err(e) => {
                 log::warn!(
@@ -6173,9 +6219,8 @@ impl PdfDocument {
             },
         };
 
-        // Create path extractor and graphics state stack
         let mut extractor = PathExtractor::new();
-        let mut state_stack = GraphicsStateStack::new();
+        let mut state_stack = PathGraphicsStateStack::new();
 
         // Resolve and set page resources for XObject processing
         if let Some(resources) = page_dict.get("Resources") {
@@ -6196,7 +6241,7 @@ impl PdfDocument {
                 },
                 Operator::RestoreState => {
                     state_stack.restore();
-                    extractor.update_from_state(state_stack.current());
+                    extractor.update_from_path_state(state_stack.current());
                 },
                 Operator::Cm { a, b, c, d, e, f } => {
                     let state = state_stack.current_mut();
@@ -6461,65 +6506,20 @@ impl PdfDocument {
         &mut self,
         name: &str,
         extractor: &mut crate::extractors::paths::PathExtractor,
-        state_stack: &mut crate::content::GraphicsStateStack,
+        state_stack: &mut crate::extractors::paths::PathGraphicsStateStack,
     ) -> Result<()> {
-        use crate::content::{parse_content_stream, Matrix, Operator};
+        use crate::content::{parse_content_stream_paths_only, Matrix, Operator};
         use crate::elements::{LineCap, LineJoin};
         use crate::extractors::paths::FillRule;
         use crate::layout::Color;
 
-        // Get resources from extractor
-        let resources = match extractor.get_resources() {
-            Some(r) => r,
-            None => return Ok(()), // No resources, can't process XObjects
-        };
-
-        // Resolve indirect reference to resources if needed
-        let resolved_resources = if let Some(ref_obj) = resources.as_reference() {
-            match self.load_object(ref_obj) {
-                Ok(obj) => obj,
-                Err(_) => return Ok(()),
-            }
-        } else {
-            resources.clone()
-        };
-
-        // Get XObject dictionary from resources
-        let resources_dict = match resolved_resources.as_dict() {
-            Some(dict) => dict,
-            None => return Ok(()),
-        };
-
-        let xobject_obj = match resources_dict.get("XObject") {
-            Some(obj) => obj,
-            None => return Ok(()),
-        };
-
-        // Resolve indirect reference to XObject dictionary if needed
-        let resolved_xobject_obj = if let Some(ref_obj) = xobject_obj.as_reference() {
-            match self.load_object(ref_obj) {
-                Ok(obj) => obj,
-                Err(_) => return Ok(()),
-            }
-        } else {
-            xobject_obj.clone()
-        };
-
-        let xobject_dict = match resolved_xobject_obj.as_dict() {
-            Some(dict) => dict,
-            None => return Ok(()),
-        };
-
-        // Get XObject reference
-        let xobject_ref = match xobject_dict.get(name) {
-            Some(obj) => match obj.as_reference() {
+        let xobject_ref =
+            match extractor.resolve_xobject_ref(name, |ref_obj| self.load_object(ref_obj)) {
                 Some(r) => r,
                 None => return Ok(()),
-            },
-            None => return Ok(()),
-        };
+            };
 
-        // Cycle detection: skip if already processing this XObject
+        // Cycle detection
         if !extractor.can_process_xobject(xobject_ref) {
             return Ok(());
         }
@@ -6563,17 +6563,39 @@ impl PdfDocument {
             },
         }
 
-        // Get and decode the stream
-        let stream_data = match self.decode_stream_with_encryption(&xobject, xobject_ref) {
-            Ok(data) => data,
-            Err(e) => {
-                extractor.pop_xobject();
-                return Err(e);
-            },
+        // Decode stream — reuse document-level cache shared with text extraction.
+        let cached_stream = {
+            self.xobject_stream_cache
+                .lock()
+                .unwrap()
+                .get(&xobject_ref)
+                .cloned()
+        };
+        let stream_data = if let Some(cached) = cached_stream {
+            cached.as_ref().clone()
+        } else {
+            match self.decode_stream_with_encryption(&xobject, xobject_ref) {
+                Ok(data) => {
+                    const MAX_STREAM_CACHE_BYTES: usize = 50 * 1024 * 1024;
+                    let current = self.xobject_stream_cache_bytes.load(Ordering::Relaxed);
+                    if current + data.len() <= MAX_STREAM_CACHE_BYTES {
+                        self.xobject_stream_cache_bytes
+                            .store(current + data.len(), Ordering::Relaxed);
+                        self.xobject_stream_cache
+                            .lock()
+                            .unwrap()
+                            .insert(xobject_ref, std::sync::Arc::new(data.clone()));
+                    }
+                    data
+                },
+                Err(e) => {
+                    extractor.pop_xobject();
+                    return Err(e);
+                },
+            }
         };
 
-        // Parse operators from the stream
-        let operators = match parse_content_stream(&stream_data) {
+        let operators = match parse_content_stream_paths_only(&stream_data) {
             Ok(ops) => ops,
             Err(e) => {
                 extractor.pop_xobject();
@@ -6645,7 +6667,7 @@ impl PdfDocument {
                 },
                 Operator::RestoreState => {
                     state_stack.restore();
-                    extractor.update_from_state(state_stack.current());
+                    extractor.update_from_path_state(state_stack.current());
                 },
                 Operator::Cm { a, b, c, d, e, f } => {
                     let state = state_stack.current_mut();
@@ -6655,35 +6677,44 @@ impl PdfDocument {
                     extractor.set_ctm(state.ctm);
                 },
 
-                // Color and line style operators (same as in extract_paths)
+                // Color and line style operators — must update both state_stack
+                // and extractor so q/Q save/restore works correctly.
                 Operator::SetStrokeRgb { r, g, b } => {
+                    state_stack.current_mut().stroke_color_rgb = (r, g, b);
                     extractor.set_stroke_color(Color::new(r, g, b));
                 },
                 Operator::SetStrokeGray { gray } => {
+                    state_stack.current_mut().stroke_color_rgb = (gray, gray, gray);
                     extractor.set_stroke_color(Color::new(gray, gray, gray));
                 },
                 Operator::SetStrokeCmyk { c, m, y, k } => {
                     let r = (1.0 - c) * (1.0 - k);
                     let g = (1.0 - m) * (1.0 - k);
                     let b = (1.0 - y) * (1.0 - k);
+                    state_stack.current_mut().stroke_color_rgb = (r, g, b);
                     extractor.set_stroke_color(Color::new(r, g, b));
                 },
                 Operator::SetFillRgb { r, g, b } => {
+                    state_stack.current_mut().fill_color_rgb = (r, g, b);
                     extractor.set_fill_color(Color::new(r, g, b));
                 },
                 Operator::SetFillGray { gray } => {
+                    state_stack.current_mut().fill_color_rgb = (gray, gray, gray);
                     extractor.set_fill_color(Color::new(gray, gray, gray));
                 },
                 Operator::SetFillCmyk { c, m, y, k } => {
                     let r = (1.0 - c) * (1.0 - k);
                     let g = (1.0 - m) * (1.0 - k);
                     let b = (1.0 - y) * (1.0 - k);
+                    state_stack.current_mut().fill_color_rgb = (r, g, b);
                     extractor.set_fill_color(Color::new(r, g, b));
                 },
                 Operator::SetLineWidth { width } => {
+                    state_stack.current_mut().line_width = width;
                     extractor.set_line_width(width);
                 },
                 Operator::SetLineCap { cap_style } => {
+                    state_stack.current_mut().line_cap = cap_style;
                     let cap = match cap_style {
                         1 => LineCap::Round,
                         2 => LineCap::Square,
@@ -6692,6 +6723,7 @@ impl PdfDocument {
                     extractor.set_line_cap(cap);
                 },
                 Operator::SetLineJoin { join_style } => {
+                    state_stack.current_mut().line_join = join_style;
                     let join = match join_style {
                         1 => LineJoin::Round,
                         2 => LineJoin::Bevel,
@@ -6761,7 +6793,7 @@ impl PdfDocument {
 
         // Restore graphics state
         state_stack.restore();
-        extractor.update_from_state(state_stack.current());
+        extractor.update_from_path_state(state_stack.current());
 
         // Pop from XObject processing stack
         extractor.pop_xobject();
@@ -7153,12 +7185,16 @@ impl PdfDocument {
             // Layer 2: Check font set cache for the /Font dictionary.
             // Pages sharing the same /Font dict skip the entire per-font loop.
             if let Some(font_dict_ref) = font_dict_ref {
-                let cached_set_opt = self.font_set_cache.borrow().get(&font_dict_ref).cloned();
+                let cached_set_opt = self
+                    .font_set_cache
+                    .lock()
+                    .unwrap()
+                    .get(&font_dict_ref)
+                    .cloned();
                 if let Some(cached_set) = cached_set_opt {
                     for (name, font_arc) in &cached_set {
                         extractor.add_font_shared(name.clone(), Arc::clone(font_arc));
                     }
-                    // share_truetype_cmaps already applied before caching — skip it
                     return Ok(());
                 }
             }
@@ -7189,7 +7225,8 @@ impl PdfDocument {
 
                 let cached_fingerprint_opt = self
                     .font_fingerprint_cache
-                    .borrow()
+                    .lock()
+                    .unwrap()
                     .get(&fingerprint)
                     .cloned();
                 if let Some(cached_set) = cached_fingerprint_opt {
@@ -7214,7 +7251,12 @@ impl PdfDocument {
                     hasher.finish()
                 };
 
-                let cached_name_set = self.font_name_set_cache.borrow().get(&name_hash).cloned();
+                let cached_name_set = self
+                    .font_name_set_cache
+                    .lock()
+                    .unwrap()
+                    .get(&name_hash)
+                    .cloned();
                 if let Some((cached_set, _check_name, _check_hash)) = cached_name_set {
                     // Layer 4: Same font names within a document virtually always map
                     // to the same underlying fonts. Trust the name-based cache to avoid
@@ -7239,7 +7281,8 @@ impl PdfDocument {
                 for (name, font_obj) in sorted_font_entries {
                     // If font is a reference, check per-font cache first
                     if let Some(font_ref) = font_obj.as_reference() {
-                        let cached_font_opt = self.font_cache.borrow().get(&font_ref).cloned();
+                        let cached_font_opt =
+                            self.font_cache.lock().unwrap().get(&font_ref).cloned();
                         if let Some(cached) = cached_font_opt {
                             extractor.add_font_shared(name.clone(), cached);
                             continue;
@@ -7257,11 +7300,16 @@ impl PdfDocument {
 
                         // Layer 5: Per-font identity cache — skip from_dict when a
                         // structurally identical font was already parsed elsewhere.
-                        let cached_identity_opt =
-                            self.font_identity_cache.borrow().get(&id_hash).cloned();
+                        let cached_identity_opt = self
+                            .font_identity_cache
+                            .lock()
+                            .unwrap()
+                            .get(&id_hash)
+                            .cloned();
                         if let Some(cached) = cached_identity_opt {
                             self.font_cache
-                                .borrow_mut()
+                                .lock()
+                                .unwrap()
                                 .insert(font_ref, Arc::clone(&cached));
                             extractor.add_font_shared(name.clone(), cached);
                             continue;
@@ -7273,10 +7321,12 @@ impl PdfDocument {
                             crate::fonts::global_cache::global_font_cache_get(id_hash)
                         {
                             self.font_identity_cache
-                                .borrow_mut()
+                                .lock()
+                                .unwrap()
                                 .insert(id_hash, Arc::clone(&cached));
                             self.font_cache
-                                .borrow_mut()
+                                .lock()
+                                .unwrap()
                                 .insert(font_ref, Arc::clone(&cached));
                             extractor.add_font_shared(name.clone(), cached);
                             continue;
@@ -7291,10 +7341,12 @@ impl PdfDocument {
                                     Arc::clone(&arc),
                                 );
                                 self.font_identity_cache
-                                    .borrow_mut()
+                                    .lock()
+                                    .unwrap()
                                     .insert(id_hash, Arc::clone(&arc));
                                 self.font_cache
-                                    .borrow_mut()
+                                    .lock()
+                                    .unwrap()
                                     .insert(font_ref, Arc::clone(&arc));
                                 extractor.add_font_shared(name.clone(), arc);
                             },
@@ -7337,17 +7389,20 @@ impl PdfDocument {
                 let font_set = extractor.get_font_set();
                 if let Some(fdr) = font_dict_ref {
                     self.font_set_cache
-                        .borrow_mut()
+                        .lock()
+                        .unwrap()
                         .insert(fdr, font_set.clone());
                 }
                 self.font_fingerprint_cache
-                    .borrow_mut()
+                    .lock()
+                    .unwrap()
                     .insert(fingerprint, font_set.clone());
 
                 // Cache by font names with spot-check data for Layer 4
                 if let Some((check_name, check_hash)) = spot_check {
                     self.font_name_set_cache
-                        .borrow_mut()
+                        .lock()
+                        .unwrap()
                         .insert(name_hash, (Arc::new(font_set), check_name, check_hash));
                 }
 
@@ -7374,9 +7429,22 @@ impl PdfDocument {
         options: &crate::converters::ConversionOptions,
     ) -> Vec<crate::structure::ExtractedTable> {
         // Strategy 1: Structure tree (tagged PDFs)
-        if let Ok(Some(struct_tree)) = self.structure_tree() {
-            let table_elems =
-                crate::structure::find_table_elements(&struct_tree, page_index as u32);
+        let struct_tree_opt = match &self.structure_tree_cache {
+            Some(cached) => cached.clone(),
+            None => {
+                let is_marked = self.mark_info().map(|m| m.marked).unwrap_or(false);
+                if is_marked {
+                    let tree = self.structure_tree().ok().flatten().map(Arc::new);
+                    self.structure_tree_cache = Some(tree.clone());
+                    tree
+                } else {
+                    self.structure_tree_cache = Some(None);
+                    None
+                }
+            },
+        };
+        if let Some(ref struct_tree) = struct_tree_opt {
+            let table_elems = crate::structure::find_table_elements(struct_tree, page_index as u32);
             if !table_elems.is_empty() {
                 let mut tables = Vec::new();
                 for table_elem in table_elems {
@@ -7384,7 +7452,7 @@ impl PdfDocument {
                         Ok(mut table) if !table.is_empty() => {
                             // Compute bbox from spans matching the table's MCIDs
                             if table.bbox.is_none() {
-                                let all_mcids: Vec<u32> = table
+                                let all_mcids: HashSet<u32> = table
                                     .rows
                                     .iter()
                                     .flat_map(|r| {
@@ -7438,8 +7506,30 @@ impl PdfDocument {
         // Extract vector paths (lines/rects) for visual detection
         let paths = self.extract_paths(page_index).unwrap_or_default();
 
-        // Use words instead of raw spans for better granularity in untagged PDFs.
-        // This ensures that strings with spaces are split into separate columns.
+        // Filter to table-relevant paths (lines and rectangles only).
+        // Chart/plot pages often have hundreds of curves and fills that
+        // extract_edges ignores anyway — passing them through the full
+        // detection pipeline wastes O(n²) time.
+        const LINE_TOL: f32 = 2.0;
+        let table_paths: Vec<_> = paths
+            .into_iter()
+            .filter(|p| {
+                p.is_horizontal_line(LINE_TOL) || p.is_vertical_line(LINE_TOL) || p.is_rectangle()
+            })
+            .collect();
+
+        if table_paths.is_empty() {
+            use crate::structure::spatial_table_detector::TableStrategy;
+            let is_text_only = matches!(
+                (config.horizontal_strategy, config.vertical_strategy),
+                (TableStrategy::Text, TableStrategy::Text)
+            );
+            if !is_text_only {
+                return Vec::new();
+            }
+        }
+        let paths = table_paths;
+
         let words = self.extract_words(page_index).unwrap_or_default();
         let word_spans: Vec<crate::layout::TextSpan> = words
             .into_iter()
@@ -7535,29 +7625,22 @@ impl PdfDocument {
         options: &crate::converters::ConversionOptions,
     ) -> Result<String> {
         self.require_authenticated()?;
-        // Step 1: Extract raw spans (unchanged - this is the foundation)
-        let mut spans = self.extract_spans(page_index)?;
+        let base_spans = self.extract_spans(page_index)?;
 
-        // Step 1b: Merge widget annotation spans (form field values) if enabled
-        if options.include_form_fields {
-            spans.extend(self.extract_widget_spans(page_index));
-        }
-
-        // Step 2: Extract tables if enabled
         let tables = if options.extract_tables {
-            self.extract_page_tables(page_index, &spans, options)
+            self.extract_page_tables(page_index, &base_spans, options)
         } else {
             Vec::new()
         };
 
-        // Step 3: Create pipeline config from options (using adapter from Phase 2)
+        let mut spans = base_spans;
+        if options.include_form_fields {
+            spans.extend(self.extract_widget_spans(page_index));
+        }
+
         let pipeline_config = TextPipelineConfig::from_conversion_options(options);
 
-        // Step 4: Handle structure tree context for reading order
-        // Use cached structure tree (same cache as extract_text) to avoid
-        // re-traversing the entire tree for each page — O(1) lookup instead of O(tree_size).
         let mcid_order = {
-            // Ensure structure tree is cached (Arc clone = cheap ref count bump)
             let cached_tree = match &self.structure_tree_cache {
                 Some(cached) => cached.clone(),
                 None => {
@@ -7845,22 +7928,19 @@ impl PdfDocument {
         options: &crate::converters::ConversionOptions,
     ) -> Result<String> {
         self.require_authenticated()?;
-        // Step 1: Extract raw spans (unchanged - this is the foundation)
-        let mut spans = self.extract_spans(page_index)?;
+        let base_spans = self.extract_spans(page_index)?;
 
-        // Step 1b: Merge widget annotation spans (form field values) if enabled
-        if options.include_form_fields {
-            spans.extend(self.extract_widget_spans(page_index));
-        }
-
-        // Step 2: Extract tables if enabled
         let tables = if options.extract_tables {
-            self.extract_page_tables(page_index, &spans, options)
+            self.extract_page_tables(page_index, &base_spans, options)
         } else {
             Vec::new()
         };
 
-        // Step 3: Create pipeline config from options (using adapter from Phase 2)
+        let mut spans = base_spans;
+        if options.include_form_fields {
+            spans.extend(self.extract_widget_spans(page_index));
+        }
+
         let pipeline_config = TextPipelineConfig::from_conversion_options(options);
 
         // Step 4: Create pipeline with config
@@ -8622,7 +8702,12 @@ impl PdfDocument {
         // Check image result cache — images stored with Form's own Matrix only.
         // Scope the borrow to ensure it's dropped before potential recursion.
         {
-            if let Some(cached_images) = self.form_xobject_images_cache.borrow().get(&xobject_ref) {
+            if let Some(cached_images) = self
+                .form_xobject_images_cache
+                .lock()
+                .unwrap()
+                .get(&xobject_ref)
+            {
                 let images = cached_images
                     .iter()
                     .map(|img| {
@@ -8682,7 +8767,8 @@ impl PdfDocument {
         // Decode form stream — check cache first to avoid repeated decompression
         let cached_stream = self
             .xobject_stream_cache
-            .borrow()
+            .lock()
+            .unwrap()
             .get(&xobject_ref)
             .cloned();
         let stream_data = if let Some(cached) = cached_stream {
@@ -8691,12 +8777,13 @@ impl PdfDocument {
             match self.decode_stream_with_encryption(xobject, xobject_ref) {
                 Ok(data) => {
                     const MAX_STREAM_CACHE_BYTES: usize = 50 * 1024 * 1024;
-                    let current_bytes = self.xobject_stream_cache_bytes.get();
+                    let current_bytes = self.xobject_stream_cache_bytes.load(Ordering::Relaxed);
                     if current_bytes + data.len() <= MAX_STREAM_CACHE_BYTES {
                         self.xobject_stream_cache_bytes
-                            .set(current_bytes + data.len());
+                            .store(current_bytes + data.len(), Ordering::Relaxed);
                         self.xobject_stream_cache
-                            .borrow_mut()
+                            .lock()
+                            .unwrap()
                             .insert(xobject_ref, std::sync::Arc::new(data.clone()));
                     }
                     data
@@ -8782,7 +8869,8 @@ impl PdfDocument {
 
         // Cache the raw images (with Form's own Matrix applied, but no parent CTM)
         self.form_xobject_images_cache
-            .borrow_mut()
+            .lock()
+            .unwrap()
             .insert(xobject_ref, raw_images.clone());
 
         // Apply parent_ctm to produce final images for this call

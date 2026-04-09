@@ -4422,13 +4422,9 @@ impl TextExtractor {
     /// graphics (charts, plots) with no text content.
     const MAX_XOBJECT_DEPTH: u32 = 10;
 
-    /// Maximum number of XObject streams decoded per page. Pages with thousands
-    /// of Form XObjects (e.g., matplotlib plots) cause O(n) decompression overhead.
-    /// Real text content rarely requires more than ~100 XObject decodes.
     const MAX_XOBJECT_DECODES: u32 = 500;
 
     /// Resolve XObject name to ObjectRef using cached mapping.
-    /// Builds the cache on first call for the current resources context.
     fn resolve_xobject_ref(&mut self, name: &str) -> Result<Option<ObjectRef>> {
         // Check cache first (O(1) lookup)
         if let Some(cached) = self.cached_xobject_refs.get(name) {
@@ -4485,11 +4481,7 @@ impl TextExtractor {
         Ok(self.cached_xobject_refs.get(name).copied().flatten())
     }
 
-    /// Process a Form XObject invoked by the Do operator.
-    ///
-    /// This extracts text from Form XObjects while avoiding duplicate processing.
     fn process_xobject(&mut self, name: &str) -> Result<()> {
-        // Budget checks: avoid pathological cases with thousands of XObjects
         if self.xobject_depth >= Self::MAX_XOBJECT_DEPTH {
             return Ok(());
         }
@@ -4518,6 +4510,15 @@ impl TextExtractor {
             None => return Ok(()),
         };
 
+        if doc
+            .xobject_text_free_cache
+            .lock()
+            .unwrap()
+            .contains(&xobject_ref)
+        {
+            return Ok(());
+        }
+
         // Quick Subtype check: skip Image XObjects without loading the full object.
         // Image XObjects can be megabytes of compressed pixel data — loading them
         // just to discover Subtype=Image is a major bottleneck (10-15ms per image).
@@ -4525,16 +4526,16 @@ impl TextExtractor {
             return Ok(());
         }
 
-        // Document-level cache: skip Form XObjects already known to contain no text.
-        // Avoids repeated decompression of shared graphics-only XObjects across pages.
-        if doc.xobject_text_free_cache.borrow().contains(&xobject_ref) {
-            return Ok(());
-        }
-
         // Span result cache: reuse extracted spans from self-contained Form XObjects.
         // Only works for XObjects with own /Resources (font context is self-contained).
         if self.extract_spans {
-            let cached_spans = { doc.xobject_spans_cache.borrow().get(&xobject_ref).cloned() };
+            let cached_spans = {
+                doc.xobject_spans_cache
+                    .lock()
+                    .unwrap()
+                    .get(&xobject_ref)
+                    .cloned()
+            };
             if let Some(cached_spans) = cached_spans {
                 if let Some(spans) = cached_spans {
                     self.spans.extend(spans.iter().cloned());
@@ -4582,7 +4583,10 @@ impl TextExtractor {
                                     "Skipping Form XObject '{}': no Font/XObject in Resources",
                                     name
                                 );
-                                doc.xobject_text_free_cache.borrow_mut().insert(xobject_ref);
+                                doc.xobject_text_free_cache
+                                    .lock()
+                                    .unwrap()
+                                    .insert(xobject_ref);
                                 return Ok(());
                             }
                         }
@@ -4597,8 +4601,13 @@ impl TextExtractor {
 
                 // Decode the stream — check cache first to avoid repeated FlateDecode.
                 self.xobject_decode_count += 1;
-                let cached_stream =
-                    { doc.xobject_stream_cache.borrow().get(&xobject_ref).cloned() };
+                let cached_stream = {
+                    doc.xobject_stream_cache
+                        .lock()
+                        .unwrap()
+                        .get(&xobject_ref)
+                        .cloned()
+                };
                 let stream_data = if let Some(cached) = cached_stream {
                     cached.as_ref().clone()
                 } else {
@@ -4606,13 +4615,17 @@ impl TextExtractor {
                         Ok(data) => {
                             // Cache if under 50MB total
                             const MAX_STREAM_CACHE_BYTES: usize = 50 * 1024 * 1024;
-                            if doc.xobject_stream_cache_bytes.get() + data.len()
-                                <= MAX_STREAM_CACHE_BYTES
-                            {
-                                doc.xobject_stream_cache_bytes
-                                    .set(doc.xobject_stream_cache_bytes.get() + data.len());
+                            let current = doc
+                                .xobject_stream_cache_bytes
+                                .load(std::sync::atomic::Ordering::Relaxed);
+                            if current + data.len() <= MAX_STREAM_CACHE_BYTES {
+                                doc.xobject_stream_cache_bytes.store(
+                                    current + data.len(),
+                                    std::sync::atomic::Ordering::Relaxed,
+                                );
                                 doc.xobject_stream_cache
-                                    .borrow_mut()
+                                    .lock()
+                                    .unwrap()
                                     .insert(xobject_ref, std::sync::Arc::new(data.clone()));
                             }
                             data
@@ -4628,16 +4641,16 @@ impl TextExtractor {
                     }
                 };
 
-                // Quick scan: skip XObjects that contain no text operators (BT) and
-                // no nested XObject invocations (Do). This avoids expensive font loading
-                // and content stream parsing for pure vector-graphics Form XObjects.
                 if !crate::document::PdfDocument::may_contain_text(&stream_data) {
                     log::debug!(
                         "Skipping text-free Form XObject '{}' ({} bytes)",
                         name,
                         stream_data.len()
                     );
-                    doc.xobject_text_free_cache.borrow_mut().insert(xobject_ref);
+                    doc.xobject_text_free_cache
+                        .lock()
+                        .unwrap()
+                        .insert(xobject_ref);
                     return Ok(());
                 }
 
@@ -4742,7 +4755,8 @@ impl TextExtractor {
                         None
                     };
                     doc.xobject_spans_cache
-                        .borrow_mut()
+                        .lock()
+                        .unwrap()
                         .insert(xobject_ref, new_spans);
                 }
 

@@ -1685,10 +1685,16 @@ impl PageRenderer {
                                     "Image" => {
                                         let smask = dict.get("SMask").cloned();
                                         let mask = dict.get("Mask").cloned();
-                                        self.render_image(
+                                        if let Err(e) = self.render_image(
                                             pixmap, &xobj, xobj_ref, transform, doc, clip_mask,
                                             smask, mask, gs,
-                                        )?;
+                                        ) {
+                                            log::warn!(
+                                                "Skipping unrenderable image XObject '{}': {}",
+                                                name,
+                                                e
+                                            );
+                                        }
                                     },
                                     "Form" => {
                                         log::debug!("XObject '{}' is a Form", name);
@@ -1708,7 +1714,7 @@ impl PageRenderer {
                                         let old_cs = self.color_spaces.clone();
                                         self.load_resources(doc, form_resources)?;
 
-                                        self.render_form_xobject(
+                                        if let Err(e) = self.render_form_xobject(
                                             pixmap,
                                             &dict,
                                             &stream_data,
@@ -1716,7 +1722,13 @@ impl PageRenderer {
                                             doc,
                                             page_num,
                                             form_resources,
-                                        )?;
+                                        ) {
+                                            log::warn!(
+                                                "Skipping malformed Form XObject '{}': {}",
+                                                name,
+                                                e
+                                            );
+                                        }
 
                                         // Restore caches
                                         self.fonts = old_fonts;

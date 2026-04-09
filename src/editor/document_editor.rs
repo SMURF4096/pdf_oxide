@@ -1743,35 +1743,40 @@ impl DocumentEditor {
             if let Some(pages_ref) = catalog_dict.get("Pages").and_then(|p| p.as_reference()) {
                 let pages_obj = self.source.load_object(pages_ref)?;
 
-                // If we have merged pages, update the Pages tree to include them
-                let final_pages_obj = if !merged_page_ids.is_empty() {
-                    if let Some(pages_dict) = pages_obj.as_dict() {
-                        let mut new_pages_dict = pages_dict.clone();
+                // Rebuild Pages tree: filter by page_order, reorder, append merged pages
+                let final_pages_obj = if let Some(pages_dict) = pages_obj.as_dict() {
+                    let mut new_pages_dict = pages_dict.clone();
 
-                        // Add merged page refs to Kids array
-                        let mut kids = match new_pages_dict.get("Kids") {
-                            Some(Object::Array(arr)) => arr.clone(),
-                            _ => Vec::new(),
-                        };
-                        for &page_id in &merged_page_ids {
-                            kids.push(Object::Reference(ObjectRef::new(page_id, 0)));
+                    // Collect flattened leaf page refs from the (possibly multi-level) page tree.
+                    // page_order indices refer to leaf pages, not Kids array entries.
+                    let mut original_page_refs: Vec<ObjectRef> = Vec::new();
+                    for i in 0..self.original_page_count {
+                        if let Ok(page_ref) = self.source.get_page_ref(i) {
+                            original_page_refs.push(page_ref);
                         }
-                        new_pages_dict.insert("Kids".to_string(), Object::Array(kids));
-
-                        // Update Count
-                        let existing_count = new_pages_dict
-                            .get("Count")
-                            .and_then(|c| c.as_integer())
-                            .unwrap_or(0) as usize;
-                        new_pages_dict.insert(
-                            "Count".to_string(),
-                            Object::Integer((existing_count + merged_page_ids.len()) as i64),
-                        );
-
-                        Object::Dictionary(new_pages_dict)
-                    } else {
-                        pages_obj.clone()
                     }
+
+                    // Build visible kids in page_order sequence
+                    // page_order contains original leaf-page indices; -1 means removed
+                    let mut kids: Vec<Object> = Vec::new();
+                    for &order in &self.page_order {
+                        if order >= 0 {
+                            let idx = order as usize;
+                            if idx < original_page_refs.len() {
+                                kids.push(Object::Reference(original_page_refs[idx]));
+                            }
+                        }
+                    }
+
+                    // Append merged page refs
+                    for &page_id in &merged_page_ids {
+                        kids.push(Object::Reference(ObjectRef::new(page_id, 0)));
+                    }
+
+                    new_pages_dict.insert("Kids".to_string(), Object::Array(kids.clone()));
+                    new_pages_dict.insert("Count".to_string(), Object::Integer(kids.len() as i64));
+
+                    Object::Dictionary(new_pages_dict)
                 } else {
                     pages_obj.clone()
                 };
@@ -1787,8 +1792,8 @@ impl DocumentEditor {
                 writer.write_all(&bytes)?;
                 xref_entries.push((pages_ref.id, offset, 0, true));
 
-                // Write individual pages
-                if let Some(pages_dict) = pages_obj.as_dict() {
+                // Write individual pages (use final_pages_obj which includes merged pages)
+                if let Some(pages_dict) = final_pages_obj.as_dict() {
                     if let Some(kids) = pages_dict.get("Kids").and_then(|k| k.as_array()) {
                         let mut page_index = 0;
                         for kid in kids {

@@ -2,15 +2,60 @@
 
 All notable changes to PDFOxide are documented here.
 
-## [Unreleased]
+## [0.3.22] - 2026-04-08
+> Thread-Safe PdfDocument, Async API, Performance, Community Fixes
+
+### Breaking Changes
+
+None. All changes are backward-compatible.
+
+### Features
+
+- **Thread-safe `PdfDocument` — Send + Sync (#302)** — replaced all 16 `RefCell<T>` with `Mutex<T>` and `Cell<usize>` with `AtomicUsize`. `PdfDocument` can now safely cross thread boundaries. Removes `unsendable` from `PdfDocument`, `FormField`, and `PdfPage` Python classes. Enables `asyncio.to_thread()`, free-threaded Python (cp314t), and thread pool usage without `RuntimeError`. Reported by @FireMasterK (#298).
+- **`AsyncPdfDocument`, `AsyncPdf`, `AsyncOfficeConverter` (#217)** — complete async API with auto-generated method wrappers. All sync methods are available as async. Requested by @j-mendez.
+- **Free-threaded Python support (#296)** — `#[pymodule(gil_used = false)]` declares GIL-free compatibility for cp314t. Requested by @pcen.
+- **Word/line segmentation thresholds (#249)** — `extract_words()` and `extract_text_lines()` accept optional `word_gap_threshold`, `line_gap_threshold`, and `profile` kwargs. New `page_layout_params()` method and `ExtractionProfile` class expose adaptive parameters. Contributed by @tboser.
 
 ### Bug Fixes
 
-- **`horizontal_strategy: 'lines'` now correctly gates row detection on drawn geometry** — Previously, setting `horizontal_strategy` to `lines` (without also setting `vertical_strategy` to `lines`) still allowed text-based detection to run on pages with no drawn lines, because the fallback guard only fired when *both* strategies were `Lines`. Each axis is now checked independently: `horizontal_strategy: 'lines'` suppresses text-based row detection; `vertical_strategy: 'lines'` suppresses text-based column detection.
+- **CLI split/merge blank pages (#297)** — merge now writes merged page refs; split now filters removed pages from Kids. Reported by @Suleman-Elahi.
+- **Rendering: skip malformed images (#299, #300)** — images with missing `/ColorSpace` or invalid dimensions are skipped with a warning instead of crashing the page render. Also handles malformed images inside Form XObjects. Reported by @FireMasterK.
+- **Structure tree cycle SIGSEGV (#301)** — cyclic `/K` indirect references in malformed tagged PDFs caused stack overflow. A visited-object set now breaks cycles. Contributed by @hoesler.
+- **`horizontal_strategy: 'lines'` text fallback gate (#290)** — setting `horizontal_strategy` to `lines` now correctly suppresses text-based row detection. Each axis is checked independently. Contributed by @hoesler.
+- **`vertical_strategy` Python parsing (#290)** — `vertical_strategy` was never read from the Python `table_settings` dict, always defaulting to `Both`. Contributed by @hoesler.
 
-- **`vertical_strategy` now parsed from Python `table_settings`** — `vertical_strategy` was never read from the Python settings dict, so it always defaulted to `Both` regardless of what the caller passed. This made `vertical_strategy="lines"` a no-op from Python.
+### Performance
 
-- **Structure tree cycle SIGSEGV** — Cyclic `/K` indirect references in malformed tagged PDFs caused runaway mutual recursion and stack overflow. A visited-object set now breaks cycles before they overflow the stack.
+- **Cache structure tree** — parsed once and cached; non-tagged PDFs skip parsing via MarkInfo check.
+- **Cache decompressed page content stream** — avoids re-decompression when multiple extractors access the same page.
+- **Shared XObject stream cache for path extraction** — reuses decompressed Form XObject streams already cached by text extraction.
+- **Cached XObject dictionary for path extraction** — avoids re-resolving Resources -> XObject dict chain on every Do operator.
+- **Byte-level path extraction parser** — skips BT/ET text blocks and parses path/state/color operators without Object allocation.
+- **Allocation-free graphics state for paths** — Copy-only state struct eliminates heap allocations on q/Q save/restore.
+- **Index-based font tracking in prescan** — replaces String cloning on every q operator with index into font table.
+- **Prescan: drop Do positions when Do-dominated** — prevents region merging that defeats the prescan optimization.
+- **Reuse spans in table detection** — reuses pre-extracted spans instead of re-parsing the content stream.
+- **Pre-filter non-table paths** — filters to lines/rectangles before the detection pipeline.
+- **O(1) MCID lookup** — HashSet instead of linear search for marked-content identifier matching.
+- **O(log n) page tree traversal** — uses /Count to skip subtrees instead of linear counting.
+- **Lazy page tree population** — defers bulk page tree walk until needed.
+
+### Dependencies
+
+- Bump `zip` 8.5.0 -> 8.5.1
+- Bump `pdfium-render` 0.8.37 -> 0.9.0
+- Bump `tokenizers` 0.15.2 -> 0.22.2
+
+### Community Contributors
+
+Thank you to everyone who reported issues and contributed PRs for this release!
+
+- **@hoesler** — Structure tree cycle SIGSEGV fix (#301) and table strategy gating fix (#290). Two high-quality PRs with tests and clean code.
+- **@tboser** — Word/line segmentation thresholds feature (#249). Well-designed API with 14 tests and responsive to review feedback.
+- **@FireMasterK** — Reported thread-safety crash (#298), rendering crashes with missing ColorSpace (#299) and invalid image dimensions (#300). Three critical bug reports that drove the Send+Sync refactor.
+- **@Suleman-Elahi** — Reported CLI split/merge blank pages bug (#297) with clear reproduction steps.
+- **@pcen** — Requested free-threaded Python compatibility (#296).
+- **@j-mendez** — Requested async Python API (#217).
 
 ## [0.3.21] - 2026-04-04
 > Log Level Honored in Python, Multi-Arch Wheels
