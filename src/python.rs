@@ -2814,6 +2814,15 @@ fn table_settings_to_config(
                 _ => return Err(PyRuntimeError::new_err("Invalid strategy")),
             };
         }
+        if let Some(v) = d.get_item("vertical_strategy")? {
+            let s: String = v.extract()?;
+            c.vertical_strategy = match s.as_str() {
+                "lines" => TableStrategy::Lines,
+                "text" => TableStrategy::Text,
+                "both" => TableStrategy::Both,
+                _ => return Err(PyRuntimeError::new_err("Invalid strategy")),
+            };
+        }
         if let Some(v) = d.get_item("column_tolerance")? {
             c.column_tolerance = v.extract()?;
         }

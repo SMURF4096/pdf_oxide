@@ -6,6 +6,10 @@ All notable changes to PDFOxide are documented here.
 
 ### Bug Fixes
 
+- **`horizontal_strategy: 'lines'` now correctly gates row detection on drawn geometry** — Previously, setting `horizontal_strategy` to `lines` (without also setting `vertical_strategy` to `lines`) still allowed text-based detection to run on pages with no drawn lines, because the fallback guard only fired when *both* strategies were `Lines`. Each axis is now checked independently: `horizontal_strategy: 'lines'` suppresses text-based row detection; `vertical_strategy: 'lines'` suppresses text-based column detection.
+
+- **`vertical_strategy` now parsed from Python `table_settings`** — `vertical_strategy` was never read from the Python settings dict, so it always defaulted to `Both` regardless of what the caller passed. This made `vertical_strategy="lines"` a no-op from Python.
+
 - **Structure tree cycle SIGSEGV** — Cyclic `/K` indirect references in malformed tagged PDFs caused runaway mutual recursion and stack overflow. A visited-object set now breaks cycles before they overflow the stack.
 
 ## [0.3.21] - 2026-04-04
