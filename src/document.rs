@@ -2615,7 +2615,11 @@ impl PdfDocument {
         match node_type {
             "Pages" if *current_index < target_index => {
                 // Skip entire subtree if /Count shows target is past this node.
-                if let Some(count) = node_dict.get("Count").and_then(|c| c.as_integer()) {
+                if let Some(count) = node_dict
+                    .get("Count")
+                    .and_then(|c| c.as_integer())
+                    .filter(|&c| c > 0)
+                {
                     let count = count as usize;
                     if *current_index + count <= target_index {
                         *current_index += count;
@@ -6673,35 +6677,44 @@ impl PdfDocument {
                     extractor.set_ctm(state.ctm);
                 },
 
-                // Color and line style operators (same as in extract_paths)
+                // Color and line style operators — must update both state_stack
+                // and extractor so q/Q save/restore works correctly.
                 Operator::SetStrokeRgb { r, g, b } => {
+                    state_stack.current_mut().stroke_color_rgb = (r, g, b);
                     extractor.set_stroke_color(Color::new(r, g, b));
                 },
                 Operator::SetStrokeGray { gray } => {
+                    state_stack.current_mut().stroke_color_rgb = (gray, gray, gray);
                     extractor.set_stroke_color(Color::new(gray, gray, gray));
                 },
                 Operator::SetStrokeCmyk { c, m, y, k } => {
                     let r = (1.0 - c) * (1.0 - k);
                     let g = (1.0 - m) * (1.0 - k);
                     let b = (1.0 - y) * (1.0 - k);
+                    state_stack.current_mut().stroke_color_rgb = (r, g, b);
                     extractor.set_stroke_color(Color::new(r, g, b));
                 },
                 Operator::SetFillRgb { r, g, b } => {
+                    state_stack.current_mut().fill_color_rgb = (r, g, b);
                     extractor.set_fill_color(Color::new(r, g, b));
                 },
                 Operator::SetFillGray { gray } => {
+                    state_stack.current_mut().fill_color_rgb = (gray, gray, gray);
                     extractor.set_fill_color(Color::new(gray, gray, gray));
                 },
                 Operator::SetFillCmyk { c, m, y, k } => {
                     let r = (1.0 - c) * (1.0 - k);
                     let g = (1.0 - m) * (1.0 - k);
                     let b = (1.0 - y) * (1.0 - k);
+                    state_stack.current_mut().fill_color_rgb = (r, g, b);
                     extractor.set_fill_color(Color::new(r, g, b));
                 },
                 Operator::SetLineWidth { width } => {
+                    state_stack.current_mut().line_width = width;
                     extractor.set_line_width(width);
                 },
                 Operator::SetLineCap { cap_style } => {
+                    state_stack.current_mut().line_cap = cap_style;
                     let cap = match cap_style {
                         1 => LineCap::Round,
                         2 => LineCap::Square,
@@ -6710,6 +6723,7 @@ impl PdfDocument {
                     extractor.set_line_cap(cap);
                 },
                 Operator::SetLineJoin { join_style } => {
+                    state_stack.current_mut().line_join = join_style;
                     let join = match join_style {
                         1 => LineJoin::Round,
                         2 => LineJoin::Bevel,

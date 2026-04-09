@@ -1747,19 +1747,23 @@ impl DocumentEditor {
                 let final_pages_obj = if let Some(pages_dict) = pages_obj.as_dict() {
                     let mut new_pages_dict = pages_dict.clone();
 
-                    let original_kids = match new_pages_dict.get("Kids") {
-                        Some(Object::Array(arr)) => arr.clone(),
-                        _ => Vec::new(),
-                    };
+                    // Collect flattened leaf page refs from the (possibly multi-level) page tree.
+                    // page_order indices refer to leaf pages, not Kids array entries.
+                    let mut original_page_refs: Vec<ObjectRef> = Vec::new();
+                    for i in 0..self.original_page_count {
+                        if let Ok(page_ref) = self.source.get_page_ref(i) {
+                            original_page_refs.push(page_ref);
+                        }
+                    }
 
                     // Build visible kids in page_order sequence
-                    // page_order contains original indices; -1 means removed
+                    // page_order contains original leaf-page indices; -1 means removed
                     let mut kids: Vec<Object> = Vec::new();
                     for &order in &self.page_order {
                         if order >= 0 {
                             let idx = order as usize;
-                            if idx < original_kids.len() {
-                                kids.push(original_kids[idx].clone());
+                            if idx < original_page_refs.len() {
+                                kids.push(Object::Reference(original_page_refs[idx]));
                             }
                         }
                     }
