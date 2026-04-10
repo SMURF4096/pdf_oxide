@@ -585,7 +585,7 @@ impl FontInfo {
         // For simple fonts (Type1, TrueType), widths are specified as an array
         // of integers in 1000ths of em, indexed from FirstChar to LastChar.
         //
-        // Note: Type0 (CID) fonts use a different /W array format (not yet implemented)
+        // Note: Type0 (CID) fonts use a different /W array format, parsed via parse_descendant_fonts below
         let (widths, first_char, last_char) = if subtype != "Type0" {
             // Try to parse /Widths array
             let widths_opt = font_dict.get("Widths").and_then(|widths_obj| {

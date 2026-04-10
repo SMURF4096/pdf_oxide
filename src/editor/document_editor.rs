@@ -2246,6 +2246,9 @@ impl DocumentEditor {
                                 writer.write_all(&bytes)?;
                                 xref_entries.push((page_ref.id, offset, 0, true));
 
+                                // Collect new XObject refs from content generation (for Resources update)
+                                let mut new_xobject_refs: Vec<(String, ObjectRef)> = Vec::new();
+
                                 // Write page contents if present
                                 if let Some(page_dict) = page_obj.as_dict() {
                                     // Check if this page has modified content (structure rebuild)
@@ -2305,9 +2308,8 @@ impl DocumentEditor {
                                                 xref_entries.push((content_id, offset, 0, true));
                                             }
 
-                                            // TODO: xobject_refs contains image resource IDs that need
-                                            // to be added to the page's Resources/XObject dictionary.
-                                            let _ = xobject_refs; // Suppress unused warning
+                                            // Collect xobject refs for Resources/XObject update
+                                            new_xobject_refs.extend(xobject_refs);
                                         }
                                     } else {
                                         // Check if we have image modifications for this page
@@ -2473,8 +2475,39 @@ impl DocumentEditor {
                                     if let Some(resources_ref) =
                                         page_dict.get("Resources").and_then(|r| r.as_reference())
                                     {
-                                        let resources_obj =
+                                        let mut resources_obj =
                                             self.source.load_object(resources_ref)?;
+
+                                        // Inject new XObject refs into Resources dict
+                                        if !new_xobject_refs.is_empty() {
+                                            if let Some(res_dict) = resources_obj.as_dict() {
+                                                let mut new_res = res_dict.clone();
+                                                // Resolve existing XObject dict (may be inline or indirect ref)
+                                                let mut xobj_entries = match new_res.get("XObject")
+                                                {
+                                                    Some(Object::Dictionary(d)) => d.clone(),
+                                                    Some(Object::Reference(r)) => self
+                                                        .source
+                                                        .load_object(*r)
+                                                        .ok()
+                                                        .and_then(|o| o.as_dict().cloned())
+                                                        .unwrap_or_default(),
+                                                    _ => HashMap::new(),
+                                                };
+                                                for (name, obj_ref) in &new_xobject_refs {
+                                                    xobj_entries.insert(
+                                                        name.clone(),
+                                                        Object::Reference(*obj_ref),
+                                                    );
+                                                }
+                                                new_res.insert(
+                                                    "XObject".to_string(),
+                                                    Object::Dictionary(xobj_entries),
+                                                );
+                                                resources_obj = Object::Dictionary(new_res);
+                                            }
+                                        }
+
                                         let offset = writer.stream_position()?;
                                         let bytes = serialize_obj(
                                             &serializer,
@@ -2485,6 +2518,15 @@ impl DocumentEditor {
                                         );
                                         writer.write_all(&bytes)?;
                                         xref_entries.push((resources_ref.id, offset, 0, true));
+                                    } else if !new_xobject_refs.is_empty() {
+                                        // Resources is inline (not a reference) — new XObject refs
+                                        // cannot be injected because the page dict was already written.
+                                        log::warn!(
+                                            "Page {} has inline Resources dict; {} new image XObject(s) \
+                                             could not be added to Resources/XObject",
+                                            page_index,
+                                            new_xobject_refs.len(),
+                                        );
                                     }
 
                                     // Write font objects referenced in Resources (handles inline Resources dict)
@@ -2534,6 +2576,121 @@ impl DocumentEditor {
                                                                         ref_obj.id,
                                                                         0,
                                                                         &font_obj,
+                                                                        &encryption_handler,
+                                                                    );
+                                                                    writer.write_all(&bytes)?;
+                                                                    xref_entries.push((
+                                                                        ref_obj.id, offset, 0, true,
+                                                                    ));
+                                                                    written_ids.insert(ref_obj.id);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // Copy XObject dictionary entries (images, forms, etc.)
+                                            if let Some(xobjects) = res_dict.get("XObject") {
+                                                let xobject_dict = match xobjects {
+                                                    Object::Dictionary(d) => Some(d.clone()),
+                                                    Object::Reference(r) => {
+                                                        let loaded =
+                                                            self.source.load_object(*r).ok();
+                                                        if !written_ids.contains(&r.id) {
+                                                            if let Some(ref obj) = loaded {
+                                                                let offset =
+                                                                    writer.stream_position()?;
+                                                                let bytes = serialize_obj(
+                                                                    &serializer,
+                                                                    r.id,
+                                                                    0,
+                                                                    obj,
+                                                                    &encryption_handler,
+                                                                );
+                                                                writer.write_all(&bytes)?;
+                                                                xref_entries
+                                                                    .push((r.id, offset, 0, true));
+                                                                written_ids.insert(r.id);
+                                                            }
+                                                        }
+                                                        loaded.and_then(|o| o.as_dict().cloned())
+                                                    },
+                                                    _ => None,
+                                                };
+                                                if let Some(xobj_dict) = xobject_dict {
+                                                    for (_name, xobj_ref) in xobj_dict.iter() {
+                                                        if let Some(ref_obj) =
+                                                            xobj_ref.as_reference()
+                                                        {
+                                                            if !written_ids.contains(&ref_obj.id) {
+                                                                if let Ok(xobj_obj) =
+                                                                    self.source.load_object(ref_obj)
+                                                                {
+                                                                    let offset =
+                                                                        writer.stream_position()?;
+                                                                    let bytes = serialize_obj(
+                                                                        &serializer,
+                                                                        ref_obj.id,
+                                                                        0,
+                                                                        &xobj_obj,
+                                                                        &encryption_handler,
+                                                                    );
+                                                                    writer.write_all(&bytes)?;
+                                                                    xref_entries.push((
+                                                                        ref_obj.id, offset, 0, true,
+                                                                    ));
+                                                                    written_ids.insert(ref_obj.id);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // Copy ExtGState dictionary entries
+                                            if let Some(gs_obj) = res_dict.get("ExtGState") {
+                                                let gs_dict = match gs_obj {
+                                                    Object::Dictionary(d) => Some(d.clone()),
+                                                    Object::Reference(r) => {
+                                                        let loaded =
+                                                            self.source.load_object(*r).ok();
+                                                        if !written_ids.contains(&r.id) {
+                                                            if let Some(ref obj) = loaded {
+                                                                let offset =
+                                                                    writer.stream_position()?;
+                                                                let bytes = serialize_obj(
+                                                                    &serializer,
+                                                                    r.id,
+                                                                    0,
+                                                                    obj,
+                                                                    &encryption_handler,
+                                                                );
+                                                                writer.write_all(&bytes)?;
+                                                                xref_entries
+                                                                    .push((r.id, offset, 0, true));
+                                                                written_ids.insert(r.id);
+                                                            }
+                                                        }
+                                                        loaded.and_then(|o| o.as_dict().cloned())
+                                                    },
+                                                    _ => None,
+                                                };
+                                                if let Some(gsd) = gs_dict {
+                                                    for (_name, gs_ref) in gsd.iter() {
+                                                        if let Some(ref_obj) = gs_ref.as_reference()
+                                                        {
+                                                            if !written_ids.contains(&ref_obj.id) {
+                                                                if let Ok(obj) =
+                                                                    self.source.load_object(ref_obj)
+                                                                {
+                                                                    let offset =
+                                                                        writer.stream_position()?;
+                                                                    let bytes = serialize_obj(
+                                                                        &serializer,
+                                                                        ref_obj.id,
+                                                                        0,
+                                                                        &obj,
                                                                         &encryption_handler,
                                                                     );
                                                                     writer.write_all(&bytes)?;
@@ -3800,6 +3957,15 @@ impl DocumentEditor {
         // Extract fields from source document
         let source_fields = FormExtractor::extract_fields(&mut self.source)?;
 
+        // Build page ref -> index map for resolving field page indices
+        let page_count = self.source.page_count()?;
+        let mut page_ref_map: HashMap<u32, usize> = HashMap::new();
+        for i in 0..page_count {
+            if let Ok(page_ref) = self.source.get_page_ref(i) {
+                page_ref_map.insert(page_ref.id, i);
+            }
+        }
+
         let mut result = Vec::new();
 
         // Add original fields (wrapped), excluding deleted ones
@@ -3815,10 +3981,39 @@ impl DocumentEditor {
             if let Some(wrapper) = self.modified_form_fields.get(&full_name) {
                 result.push(wrapper.clone());
             } else {
-                // Use original field wrapped
-                // Note: page_index is 0 for now since FormField doesn't track page
-                // TODO: Track page index from widget annotations
-                result.push(FormFieldWrapper::from_read(field, 0, None));
+                // Determine page index from widget annotation's /P entry
+                let page_index = field
+                    .object_ref
+                    .and_then(|obj_ref| self.source.load_object(obj_ref).ok())
+                    .and_then(|obj| obj.as_dict().cloned())
+                    .and_then(|dict| {
+                        // Check /P on the field dict first (merged field+widget)
+                        if let Some(page_ref) = dict.get("P").and_then(|p| p.as_reference()) {
+                            return Some(page_ref);
+                        }
+                        // If no /P, follow /Kids to the first widget annotation
+                        dict.get("Kids")
+                            .and_then(|k| match k {
+                                Object::Array(arr) => Some(arr.clone()),
+                                Object::Reference(r) => self
+                                    .source
+                                    .load_object(*r)
+                                    .ok()
+                                    .and_then(|o| o.as_array().cloned()),
+                                _ => None,
+                            })
+                            .and_then(|kids| kids.first().cloned())
+                            .and_then(|kid_ref| {
+                                kid_ref
+                                    .as_reference()
+                                    .and_then(|r| self.source.load_object(r).ok())
+                            })
+                            .and_then(|kid_obj| kid_obj.as_dict().cloned())
+                            .and_then(|kid_dict| kid_dict.get("P").and_then(|p| p.as_reference()))
+                    })
+                    .and_then(|page_ref| page_ref_map.get(&page_ref.id).copied())
+                    .unwrap_or(0);
+                result.push(FormFieldWrapper::from_read(field, page_index, None));
             }
         }
 

@@ -183,10 +183,34 @@ fn detect_page_columns(spans: &[TextSpan]) -> Vec<(f32, f32)> {
         return Vec::new();
     }
 
-    // 1. Find page X extent.
+    // 1. Find page X extent, excluding degenerate outliers.
+    //
+    // Per PDF 32000-1:2008 §8.3.2.3, user space is an infinite plane and
+    // the CTM can produce arbitrarily large coordinates. The visible region
+    // is defined by MediaBox/CropBox. Degenerate CTM transforms (e.g.,
+    // rotated dvips pages) can produce span coordinates ~1e16 pt wide,
+    // which would cause a multi-petabyte histogram allocation.
+    //
+    // Strategy: compute the median X center, then exclude any span whose
+    // center is more than MAX_EXTENT from the median. This fixed safety
+    // bound covers all standard page sizes while rejecting pathological
+    // outliers; pages wider than 10,000pt fall back to single column.
+    const MAX_EXTENT_FROM_MEDIAN: f32 = 5_000.0;
+
+    let mut x_centers: Vec<f32> = spans
+        .iter()
+        .map(|s| s.bbox.x + s.bbox.width * 0.5)
+        .collect();
+    x_centers.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let median_x = x_centers[x_centers.len() / 2];
+
     let mut page_x_min = f32::MAX;
     let mut page_x_max = f32::MIN;
     for s in spans {
+        let center = s.bbox.x + s.bbox.width * 0.5;
+        if (center - median_x).abs() > MAX_EXTENT_FROM_MEDIAN {
+            continue; // skip degenerate outlier
+        }
         let left = s.bbox.x;
         let right = s.bbox.x + s.bbox.width;
         if left < page_x_min {
@@ -196,8 +220,28 @@ fn detect_page_columns(spans: &[TextSpan]) -> Vec<(f32, f32)> {
             page_x_max = right;
         }
     }
+
+    if page_x_min >= page_x_max {
+        // All spans were outliers or no valid extent
+        return vec![(
+            spans.iter().map(|s| s.bbox.x).fold(f32::MAX, f32::min),
+            spans
+                .iter()
+                .map(|s| s.bbox.x + s.bbox.width)
+                .fold(f32::MIN, f32::max),
+        )];
+    }
+
     let page_width = page_x_max - page_x_min;
-    if page_width <= 0.0 {
+
+    // Final safety: if width is still unreasonable after outlier filtering,
+    // skip column detection entirely. Typical pages are ≤2400pt (A0).
+    if page_width > 10_000.0 {
+        log::warn!(
+            "detect_page_columns: page_width {:.0} still exceeds safe limit after \
+             outlier filtering, falling back to single column",
+            page_width,
+        );
         return vec![(page_x_min, page_x_max)];
     }
 
@@ -207,6 +251,10 @@ fn detect_page_columns(spans: &[TextSpan]) -> Vec<(f32, f32)> {
     let mut histogram = vec![0u32; n_buckets];
 
     for s in spans {
+        let center = s.bbox.x + s.bbox.width * 0.5;
+        if (center - median_x).abs() > MAX_EXTENT_FROM_MEDIAN {
+            continue;
+        }
         let left = s.bbox.x;
         let right = s.bbox.x + s.bbox.width;
         let b_start = ((left - page_x_min) / bucket_size).floor() as usize;

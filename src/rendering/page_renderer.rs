@@ -254,10 +254,18 @@ impl PageRenderer {
                 if let Some(font_dict) = font_dict_obj.as_dict() {
                     for (name, f_obj) in font_dict {
                         let resolved_f = doc.resolve_object(f_obj)?;
-                        if let Ok(info) = FontInfo::from_dict(&resolved_f, doc) {
-                            log::debug!("Resolved font '{}': subtype={}, encoding={:?}, has_to_unicode={}, has_embedded={}", 
-                                info.base_font, info.subtype, info.encoding, info.to_unicode.is_some(), info.embedded_font_data.is_some());
-                            self.fonts.insert(name.clone(), Arc::new(info));
+                        match FontInfo::from_dict(&resolved_f, doc) {
+                            Ok(info) => {
+                                log::debug!("Resolved font '{}': subtype={}, encoding={:?}, has_to_unicode={}, has_embedded={}",
+                                    info.base_font, info.subtype, info.encoding, info.to_unicode.is_some(), info.embedded_font_data.is_some());
+                                self.fonts.insert(name.clone(), Arc::new(info));
+                            },
+                            Err(e) => {
+                                log::warn!(
+                                    "Failed to parse font '{}': {}. Text using this font may render incorrectly.",
+                                    name, e
+                                );
+                            },
                         }
                     }
                 }

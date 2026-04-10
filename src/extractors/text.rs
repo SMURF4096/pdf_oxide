@@ -6467,18 +6467,18 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // TODO: Fix Tf inside q/Q not working correctly
     fn test_extract_save_restore() {
         let mut extractor = TextExtractor::new();
         let font = create_test_font();
         extractor.add_font("F1".to_string(), font);
 
-        let stream = b"BT /F1 12 Tf q 14 Tf (A) Tj Q (B) Tj ET";
+        // Valid PDF: q saves state, Tf changes font size inside, Q restores
+        let stream = b"BT /F1 12 Tf q /F1 14 Tf (A) Tj Q (B) Tj ET";
         let chars = extractor.extract(stream).unwrap();
 
         assert_eq!(chars.len(), 2);
         assert_eq!(chars[0].font_size, 14.0); // Inside q/Q
-        assert_eq!(chars[1].font_size, 12.0); // After Q
+        assert_eq!(chars[1].font_size, 12.0); // After Q, restored to 12
     }
 
     #[test]

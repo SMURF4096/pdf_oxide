@@ -206,7 +206,11 @@ impl TextRasterizer {
                 .as_ref()
                 .map(|i| i.base_font.as_str())
                 .unwrap_or("unknown");
-            log::warn!("No font found for {}, using fallback", font_name);
+            log::warn!(
+                "No font found for '{}', text may render incorrectly. \
+                 Install common fonts (e.g., liberation-fonts, dejavu-fonts, or noto-fonts).",
+                font_name
+            );
             // Fallback to simple rendering if font not found
             Ok(self.render_text_fallback(
                 pixmap,
@@ -444,6 +448,9 @@ impl TextRasterizer {
         variants.push("Arial".to_string());
         variants.push("Helvetica".to_string());
         variants.push("Liberation Sans".to_string());
+        variants.push("DejaVu Sans".to_string());
+        variants.push("Noto Sans".to_string());
+        variants.push("FreeSans".to_string());
 
         let weight = if pdf_font_name.contains("Bold") || pdf_font_name.contains("Black") {
             fontdb::Weight::BOLD
@@ -487,6 +494,10 @@ impl TextRasterizer {
                 }
             }
         }
+        log::debug!(
+            "No system font matched for '{}' after trying all fallback variants",
+            pdf_font_name
+        );
         None
     }
 

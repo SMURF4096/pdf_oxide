@@ -2,6 +2,28 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [0.3.23] - 2026-04-09
+
+### Bug Fixes
+
+- **Text extraction: SIGABRT on pages with degenerate CTM coordinates (#308)** — extracting text from certain rotated dvips-generated pages (e.g., arXiv papers with `Page rot: 90`) caused a 38 petabyte allocation and SIGABRT. Degenerate CTM transforms produced text spans with bounding boxes ~19 quadrillion points wide, which blew up the column detection histogram in `detect_page_columns()`. Per PDF 32000-1:2008 §8.3.2.3, the visible page region is defined by MediaBox/CropBox, not by raw user-space coordinates. Now `detect_page_columns()` uses median-based outlier rejection to exclude degenerate spans from the histogram, with a 10,000pt hard cap as defense-in-depth. Preserves all 1516 characters on the affected page (matching v0.3.19 output). Reported by @ddxtanx.
+- **Editor: images and XObjects stripped on save (#306)** — opening a PDF containing images, making any edit (or none), and saving produced an output with all images removed. The cause was that `write_full_to_writer` only serialized Font resources from the page Resources dictionary, silently dropping XObject (images, form XObjects) and ExtGState entries. Now writes XObject and ExtGState dictionary entries alongside fonts. Also wires up pending image XObject references from `generate_content_stream` into the page Resources dictionary. The `create_pdf_with_images` example was also affected — output contained no images. Reported by @RubberDuckShobe.
+- **Rendering: garbled text on systems without common fonts (#307)** — rendering any PDF with text produced random symbols or black rectangles on Linux systems without Arial/Times New Roman installed (e.g., minimal EndeavourOS). The PDF's non-embedded fonts (ArialMT, Arial-BoldMT, TimesNewRomanPSMT) relied on system font availability, but font parsing failures were silent and the fallback font list was too narrow. Now logs a warning with the font name when parsing fails, added DejaVu Sans, Noto Sans, and FreeSans to the system font fallback chain, and logs an actionable message suggesting which font packages to install (`liberation-fonts`, `dejavu-fonts`, or `noto-fonts`). Reported by @FireMasterK.
+- **Editor: form field page index always reported as 0** — `get_form_fields()` hardcoded `page_index` to 0 for all fields read from the source document, so fields on page 2+ were incorrectly placed. Now builds a page-ref-to-index map and resolves the actual page from each widget annotation's `/P` entry.
+- **Text extraction: fix Tf inside q/Q test** — the `test_extract_save_restore` unit test was ignored due to malformed PDF syntax (`q 14 Tf` missing font name operand). Fixed to valid syntax and unignored. The save/restore mechanism itself was already correct.
+
+### Docs
+
+- **Remove stale CID font widths TODO** — the comment claimed Type0 CID font widths were "not yet implemented", but `parse_cid_widths` and `get_glyph_width` already handled them correctly.
+
+### Community Contributors
+
+Thank you to everyone who reported issues for this release!
+
+- **@ddxtanx** — Reported SIGABRT crash on rotated dvips PDFs (#308) with a clear reproduction case and backtrace. Identified it as a regression from #272.
+- **@RubberDuckShobe** — Reported images being stripped on save (#306). Confirmed the issue also affected the `create_pdf_with_images` example.
+- **@FireMasterK** — Reported garbled text rendering on EndeavourOS (#307) and provided the test PDF with non-embedded Arial fonts.
+
 ## [0.3.22] - 2026-04-08
 > Thread-Safe PdfDocument, Async API, Performance, Community Fixes
 
