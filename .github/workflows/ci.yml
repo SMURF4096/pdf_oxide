@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main, develop]
 
+# Cancel any in-progress run on the same branch when a new one starts.
+# Saves minutes on force-pushes; main merges are unaffected (each push gets a unique ref).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -41,8 +47,8 @@ jobs:
       - name: Cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Run Clippy
-        run: cargo clippy --all-targets -- -D warnings
+      - name: Run Clippy on full workspace
+        run: cargo clippy --all-targets --workspace -- -D warnings
 
   # Build and test
   test:
@@ -200,12 +206,193 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+          components: clippy
 
       - name: Cache
         uses: Swatinem/rust-cache@v2
 
       - name: Build WASM
         run: cargo build --lib --target wasm32-unknown-unknown --features wasm
+
+      - name: Clippy WASM
+        run: cargo clippy --target wasm32-unknown-unknown --no-default-features --features wasm --lib -- -D warnings
+
+  # C FFI layer build check - the shared library that Go, JS, and C# bindings link against
+  ffi-build:
+    name: FFI Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ffi-${{ matrix.os }}
+
+      - name: Build library (produces cdylib + rlib)
+        run: cargo build --release --lib
+
+  # Go bindings build and test
+  go:
+    name: Go Bindings (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.22'
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: go-${{ matrix.os }}
+
+      - name: Build library (produces cdylib + rlib)
+        run: cargo build --release --lib
+
+      - name: Stage native lib for Go
+        shell: bash
+        run: |
+          case "${{ matrix.os }}" in
+            ubuntu-latest)
+              mkdir -p go/lib/linux_amd64
+              cp target/release/libpdf_oxide.so go/lib/linux_amd64/
+              ;;
+            macos-latest)
+              mkdir -p go/lib/darwin_arm64
+              cp target/release/libpdf_oxide.dylib go/lib/darwin_arm64/
+              ;;
+            windows-latest)
+              mkdir -p go/lib/windows_amd64
+              cp target/release/pdf_oxide.dll go/lib/windows_amd64/
+              ;;
+          esac
+
+      - name: Go build
+        working-directory: go
+        run: go build ./...
+
+      - name: Go vet
+        working-directory: go
+        run: go vet ./...
+
+      - name: Go format check
+        working-directory: go
+        shell: bash
+        run: |
+          diff=$(gofmt -l .)
+          if [ -n "$diff" ]; then
+            echo "The following Go files need formatting:"
+            echo "$diff"
+            echo
+            echo "Run 'gofmt -w .' to fix."
+            exit 1
+          fi
+
+  # JavaScript/TypeScript bindings build and test
+  nodejs:
+    name: Node.js Bindings (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: nodejs-${{ matrix.os }}
+
+      - name: Build library (produces cdylib + rlib)
+        run: cargo build --release --lib
+
+      - name: Install dependencies
+        working-directory: js
+        run: npm install --ignore-scripts
+
+      - name: TypeScript type check
+        working-directory: js
+        run: npx tsc --noEmit
+
+  # C#/.NET bindings build
+  csharp:
+    name: C# Bindings (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: csharp-${{ matrix.os }}
+
+      - name: Build library (produces cdylib + rlib)
+        run: cargo build --release --lib
+
+      - name: Build C# library
+        working-directory: csharp/PdfOxide
+        run: dotnet build -c Release -p:TreatWarningsAsErrors=true
+
+      - name: Build C# tests
+        working-directory: csharp/PdfOxide.Tests
+        run: dotnet build -c Release -p:TreatWarningsAsErrors=true
+
+      - name: Stage native lib for C# tests
+        shell: bash
+        run: |
+          case "${{ matrix.os }}" in
+            ubuntu-latest)
+              cp target/release/libpdf_oxide.so csharp/PdfOxide.Tests/bin/Release/net8.0/
+              ;;
+            macos-latest)
+              cp target/release/libpdf_oxide.dylib csharp/PdfOxide.Tests/bin/Release/net8.0/
+              ;;
+            windows-latest)
+              cp target/release/pdf_oxide.dll csharp/PdfOxide.Tests/bin/Release/net8.0/
+              ;;
+          esac
+
+      - name: Run C# tests
+        working-directory: csharp/PdfOxide.Tests
+        run: dotnet test -c Release --no-build --verbosity normal
 
   # Code coverage with enforcement
   coverage:
@@ -229,12 +416,12 @@ jobs:
       - name: Generate coverage
         run: |
           cargo llvm-cov --lib --tests --lcov --output-path lcov.info \
-            --ignore-filename-regex '(cid_mappings/|adobe_glyph_list\.rs|python\.rs|wasm\.rs|ocr/|rendering/|bin/)'
+            --ignore-filename-regex '(cid_mappings/|adobe_glyph_list\.rs|python\.rs|wasm\.rs|ffi\.rs|ocr/|rendering/|bin/)'
 
       - name: Enforce 85% coverage threshold
         run: |
           cargo llvm-cov report \
-            --ignore-filename-regex '(cid_mappings/|adobe_glyph_list\.rs|python\.rs|wasm\.rs|ocr/|rendering/|bin/)' \
+            --ignore-filename-regex '(cid_mappings/|adobe_glyph_list\.rs|python\.rs|wasm\.rs|ffi\.rs|ocr/|rendering/|bin/)' \
             --fail-under-lines 85
 
       - name: Upload coverage to Codecov

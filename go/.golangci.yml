@@ -1,0 +1,191 @@
+# golangci-lint configuration for PDF Oxide Go bindings
+# Run: golangci-lint run ./...
+# Install: https://golangci-lint.run/usage/install/
+
+run:
+  timeout: 5m
+  skip-dirs:
+    - vendor
+    - testdata
+  skip-files:
+    - ".*_test.go$"
+  allow-parallel-runners: true
+
+output:
+  format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+
+linters:
+  enable:
+    # Enabled by default
+    - errcheck           # Checks unchecked errors
+    - gosimple          # Suggests code simplifications
+    - govet             # Reports suspicious constructs
+    - ineffassign       # Detects unused assignments
+    - staticcheck       # Advanced static analysis
+    - typecheck         # Type checking
+
+    # Performance & style
+    - gofmt             # Format code
+    - goimports         # Manage imports
+    - revive            # General linting (replaces golint)
+    - prealloc          # Suggests pre-allocation of slices
+    - unconvert         # Removes unnecessary type conversions
+
+    # Security & safety
+    - gosec             # Security problem detector
+    - nolintlint        # Detects incorrect nolint directives
+
+    # Code quality
+    - misspell          # Finds misspellings
+    - unparam           # Reports unused function parameters
+    - dogsled           # Detects assignments to blank identifier
+    - errorlint         # Checks error handling
+
+    # Documentation
+    - godot             # Checks if comments end with period
+
+  disable:
+    - bodyclose         # Checks whether HTTP response bodies are closed
+    - contextcheck      # Missing context in function calls
+    - exhaustive        # Checks exhaustiveness of enum switch
+    - wrapcheck         # Enforces wrapping errors
+
+linters-settings:
+  # Revive settings (general linting)
+  revive:
+    ignore-generated-header: true
+    ignore-generated-by: "protoc"
+    enable-all-rules: false
+    rules:
+      - name: blank-imports
+        disabled: false
+      - name: context-as-argument
+        disabled: false
+        arguments: [allowTypesBefore: ""]
+      - name: context-keys-type
+        disabled: false
+      - name: dot-imports
+        disabled: false
+      - name: error-naming
+        disabled: false
+      - name: error-strings
+        disabled: false
+      - name: errorf
+        disabled: false
+      - name: exported
+        disabled: false
+        arguments:
+          - "checkPrivateReceivers"
+          - "checkTypeBeforeExportedConst"
+      - name: if-return
+        disabled: false
+      - name: increment-decrement
+        disabled: false
+      - name: indent-error-flow
+        disabled: false
+      - name: package-comments
+        disabled: false
+      - name: range
+        disabled: false
+      - name: receiver-naming
+        disabled: false
+      - name: superfluous-else
+        disabled: false
+      - name: time-naming
+        disabled: false
+      - name: unexported-naming
+        disabled: false
+      - name: unexported-return
+        disabled: false
+      - name: unhandled-error
+        disabled: false
+        arguments:
+          - "fmt.Fprint"
+          - "fmt.Fprintf"
+          - "fmt.Fprintln"
+          - "fmt.Sprintf"
+          - "io.WriteString"
+          - "json.Marshal"
+          - "json.MarshalIndent"
+      - name: unnecessary-stmt
+        disabled: false
+      - name: var-declaration
+        disabled: false
+      - name: var-naming
+        disabled: false
+      - name: waitgroup-by-value
+        disabled: false
+
+  # Security (gosec)
+  gosec:
+    confidence: high
+    severity: high
+    # Exclude specific security rules if needed
+    excludes:
+      - G204  # Subprocess launched with variable from environment
+
+  # Style (gofmt)
+  gofmt:
+    simplify: true
+    reformat-only: false
+
+  # Import sorting (goimports)
+  goimports:
+    local-prefixes: github.com/yfedoseev/pdfoxide
+
+  # Error handling
+  errorlint:
+    # Check that errors are wrapped with package name in non-test files
+    check-error-type-assertions: true
+    check-untyped-errors: true
+
+  # Misspelling
+  misspell:
+    locale: US
+
+  # Preallocation
+  prealloc:
+    simple: true
+    range-loops: true
+    for-loops: false
+
+issues:
+  exclude-rules:
+    # Allow blank identifiers in tests
+    - path: ".*_test\\.go$"
+      linters:
+        - errcheck
+        - unparam
+        - dogsled
+        - unparam
+        - funlen
+        - godot
+        - gocyclo
+        - revive
+
+    # Allow longer lines in test files
+    - path: ".*_test\\.go$"
+      linters:
+        - lll
+
+    # Generated code
+    - path: internal/ffi/.*\\.h$
+      linters:
+        - all
+
+    # Allow error checking in main example files
+    - path: "examples/.*/main\\.go$"
+      linters:
+        - errcheck
+
+  # Exclude low priority issues
+  exclude-severity: ""
+
+  # Skip duplicated lines
+  exclude-dirs-use-default: true
+
+  # Maximum count of issues
+  max-issues-per-linter: 0
+  max-same-issues: 0

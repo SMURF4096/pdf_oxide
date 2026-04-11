@@ -1,9 +1,10 @@
 [workspace]
 members = [".", "pdf_oxide_mcp", "pdf_oxide_cli"]
+exclude = ["js"]
 
 [package]
 name = "pdf_oxide"
-version = "0.3.23"
+version = "0.3.24"
 edition = "2021"
 authors = ["Yury Fedoseev <yfedoseev@gmail.com>"]
 license = "MIT OR Apache-2.0"
@@ -228,6 +229,11 @@ harness = false
 [[bench]]
 name = "full_pipeline_benchmarks"
 harness = false
+
+# Cross-language benchmark runner (Rust baseline for comparing against Go/C#/JS bindings)
+[[bin]]
+name = "rust_bench"
+path = "bench/rust_bench.rs"
 
 [package.metadata.docs.rs]
 # Document with safe features only (tesseract-rs fails on docs.rs sandbox)

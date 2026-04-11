@@ -54,7 +54,7 @@ pdf-oxide split report.pdf -o ./pages/         # Split into pages
 ## Features
 
 - **22 commands** for complete PDF processing from the terminal
-- **Fast** — powered by pdf_oxide, 5x faster than PyMuPDF
+- **Fast** — powered by pdf_oxide, 5× faster than the industry leaders
 - **PDF to Markdown** — headings, bullet lists, column-aware reading order
 - **Regex search** — full regex pattern matching across pages
 - **Image extraction** — extracts images from content streams, form XObjects, and inline images
@@ -110,7 +110,7 @@ pdf-oxide images paper.pdf -o ./figures/ --pages 1-10
 
 ## Performance
 
-pdf_oxide processes PDFs at 0.8ms mean per document — 5x faster than PyMuPDF, 15x faster than pypdf. Text extraction, markdown conversion, and all operations share the same high-performance Rust core.
+pdf_oxide processes PDFs at 0.8ms mean per document — 5× faster than PyMuPDF, 15× faster than pypdf. Text extraction, markdown conversion, and all operations share the same high-performance Rust core.
 
 ## Documentation
 

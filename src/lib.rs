@@ -238,6 +238,10 @@ pub mod hybrid;
 #[cfg_attr(docsrs, doc(cfg(feature = "ocr")))]
 pub mod ocr;
 
+// C FFI for Go, Node.js, C# bindings (not available on wasm32)
+#[cfg(not(target_arch = "wasm32"))]
+pub mod ffi;
+
 // Python bindings (optional)
 #[cfg(feature = "python")]
 mod python;

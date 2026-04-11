@@ -20,6 +20,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!go/lib/
 lib64/
 parts/
 sdist/
@@ -331,3 +332,11 @@ docs/planning/
 workdir_pdfs/
 verifications/
 debug_tools/
+
+# Cross-language benchmark fixtures (large PDFs staged locally from
+# pdf_oxide_tests; developers copy their own set into this dir)
+bench_fixtures/
+
+# .NET build artifacts
+csharp/**/bin/
+csharp/**/obj/

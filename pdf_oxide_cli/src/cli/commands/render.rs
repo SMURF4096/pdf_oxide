@@ -37,10 +37,9 @@ pub fn run(
     for &page_idx in &page_indices {
         let img = pdf_oxide::rendering::render_page(&mut doc, page_idx, &options)?;
 
-        let out_path = if page_indices.len() == 1 && output.is_some() && !output.unwrap().is_dir() {
-            output.unwrap().to_path_buf()
-        } else {
-            out_dir.join(format!("{}_{}.{}", stem, page_idx + 1, ext))
+        let out_path = match output {
+            Some(out) if page_indices.len() == 1 && !out.is_dir() => out.to_path_buf(),
+            _ => out_dir.join(format!("{}_{}.{}", stem, page_idx + 1, ext)),
         };
 
         img.save(&out_path)?;

@@ -27,7 +27,7 @@ use std::path::Path;
 
 /// Open a PDF, optionally authenticating with a password.
 pub fn open_doc(path: &Path, password: Option<&str>) -> pdf_oxide::Result<PdfDocument> {
-    let mut doc = PdfDocument::open(path)?;
+    let doc = PdfDocument::open(path)?;
     if let Some(pw) = password {
         doc.authenticate(pw.as_bytes())?;
     }

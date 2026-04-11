@@ -1,14 +1,34 @@
-# pdf-oxide-wasm
+# PDF Oxide for WASM — The Fastest PDF Toolkit for Browsers, Deno, Bun & Edge
 
-Fast, zero-dependency PDF toolkit for Node.js, browsers, and serverless edge runtimes.
-Extract text, convert to markdown/HTML, search, fill forms, create and edit PDFs — all from WebAssembly.
-
-Built on the [pdf-oxide](https://github.com/yfedoseev/pdf_oxide) Rust core. No native binaries, no system dependencies.
+The fastest WebAssembly PDF library for text extraction, image extraction, and markdown conversion. Powered by a pure-Rust core compiled to WebAssembly. Runs in Node.js, browsers, Deno, Bun, and serverless edge runtimes — no native binaries, no `node-gyp`, no `postinstall`. 0.8ms mean per document, 5× faster than PyMuPDF, 15× faster than pypdf. 100% pass rate on 3,830 real-world PDFs. MIT / Apache-2.0 licensed.
 
 [![npm](https://img.shields.io/npm/v/pdf-oxide-wasm)](https://www.npmjs.com/package/pdf-oxide-wasm)
-[![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](https://github.com/yfedoseev/pdf_oxide/blob/main/LICENSE-MIT)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](https://opensource.org/licenses)
 
-## Why pdf-oxide-wasm
+> **Part of the [PDF Oxide](https://github.com/yfedoseev/pdf_oxide) toolkit.** Same Rust core, same speed, same 100% pass rate as the [Rust](https://docs.rs/pdf_oxide), [Python](https://github.com/yfedoseev/pdf_oxide/blob/main/python/README.md), [Go](https://github.com/yfedoseev/pdf_oxide/blob/main/go/README.md), [JavaScript / TypeScript (Node.js native)](https://github.com/yfedoseev/pdf_oxide/blob/main/js/README.md), and [C# / .NET](https://github.com/yfedoseev/pdf_oxide/blob/main/csharp/README.md) bindings.
+>
+> Need a faster Node.js binding with native code? Use [pdf-oxide](https://www.npmjs.com/package/pdf-oxide) instead — same API, native N-API addon.
+
+## Quick Start
+
+```bash
+npm install pdf-oxide-wasm
+```
+
+```javascript
+const { WasmPdfDocument } = require("pdf-oxide-wasm");
+const fs = require("fs");
+
+const bytes = new Uint8Array(fs.readFileSync("paper.pdf"));
+const doc = new WasmPdfDocument(bytes);
+
+console.log(doc.extractText(0));
+console.log(doc.toMarkdown(0));
+
+doc.free();
+```
+
+## Why pdf-oxide-wasm?
 
 | Feature | pdf-oxide-wasm | pdf-parse | pdf-lib | pdfjs-dist |
 |---|---|---|---|---|
@@ -25,15 +45,47 @@ Built on the [pdf-oxide](https://github.com/yfedoseev/pdf_oxide) Rust core. No n
 | TypeScript types included | Yes | No | Yes | Yes |
 | License | MIT / Apache-2.0 | MIT | MIT | Apache-2.0 |
 
-## Install
+- **Fast** — 0.8ms mean per document, 5× faster than PyMuPDF, 15× faster than pypdf
+- **Reliable** — 100% pass rate on 3,830 test PDFs, zero panics, zero timeouts
+- **Universal** — Runs in Node.js, browsers, Deno, Bun, and Cloudflare Workers without modification
+- **Zero install friction** — No native binaries, no `node-gyp`, no `postinstall` scripts
+- **Pure Rust core** — Memory-safe, panic-free, compiled straight to WebAssembly
+- **Full TypeScript support** — Type definitions ship in the package
+
+## Performance
+
+Benchmarked on 3,830 PDFs from three independent public test suites (veraPDF, Mozilla pdf.js, DARPA SafeDocs). Text extraction libraries only. Single-thread, 60s timeout, no warm-up.
+
+| Library | Mean | p99 | Pass Rate | License |
+|---------|------|-----|-----------|---------|
+| **PDF Oxide** | **0.8ms** | **9ms** | **100%** | **MIT / Apache-2.0** |
+| PyMuPDF | 4.6ms | 28ms | 99.3% | AGPL-3.0 |
+| pypdfium2 | 4.1ms | 42ms | 99.2% | Apache-2.0 |
+| pdftext | 7.3ms | 82ms | 99.0% | GPL-3.0 |
+| pdfminer | 16.8ms | 124ms | 98.8% | MIT |
+| pypdf | 12.1ms | 97ms | 98.4% | BSD-3 |
+
+99.5% text parity vs PyMuPDF and pypdfium2 across the full corpus. The WASM compilation preserves near-native performance — no garbage collection overhead, no child process spawning, no temp files.
+
+## Installation
 
 ```bash
 npm install pdf-oxide-wasm
 ```
 
-## Quick Start
+Works without modification in:
 
-### Extract text (Node.js — CommonJS)
+- **Node.js** 18+ (CommonJS and ESM)
+- **Browsers** — Chrome, Firefox, Safari, Edge
+- **Cloudflare Workers** — runs in V8 isolates with WASM support
+- **Deno** — native WASM support
+- **Bun** — native WASM support
+
+No native binaries, no system dependencies, no build step.
+
+## API Tour
+
+### Open and extract text
 
 ```javascript
 const { WasmPdfDocument } = require("pdf-oxide-wasm");
@@ -43,14 +95,14 @@ const bytes = new Uint8Array(fs.readFileSync("document.pdf"));
 const doc = new WasmPdfDocument(bytes);
 
 console.log(`Pages: ${doc.pageCount()}`);
-console.log(doc.extractText(0));       // plain text from page 0
-console.log(doc.toMarkdown(0));        // markdown from page 0
-console.log(doc.toHtml(0));            // HTML from page 0
+console.log(doc.extractText(0));        // plain text
+console.log(doc.toMarkdown(0));         // markdown
+console.log(doc.toHtml(0));             // HTML
 
 doc.free();
 ```
 
-### Extract text (ESM / TypeScript)
+ESM / TypeScript:
 
 ```typescript
 import { WasmPdfDocument } from "pdf-oxide-wasm";
@@ -65,23 +117,14 @@ const markdown = doc.toMarkdownAll();
 doc.free();
 ```
 
-### Create a PDF from Markdown
-
-```javascript
-import { WasmPdf } from "pdf-oxide-wasm";
-
-const pdf = WasmPdf.fromMarkdown("# Invoice\n\nTotal: $42.00", "Invoice", "Acme Corp");
-const bytes = pdf.toBytes(); // Uint8Array — write to file or send as response
-```
-
-### Search inside a PDF
+### Search
 
 ```javascript
 const results = doc.search("quarterly revenue", true); // case-insensitive
 // Returns: [{ page, text, bbox, start_index, end_index, span_boxes }]
 ```
 
-### Read and fill form fields
+### Form fields
 
 ```javascript
 const fields = doc.getFormFields();
@@ -90,7 +133,16 @@ const fields = doc.getFormFields();
 doc.setFormFieldValue("name", "Jane Doe");
 doc.setFormFieldValue("agree_terms", true);
 
-const filledPdf = doc.saveToBytes(); // Uint8Array
+const filledPdf = doc.saveToBytes();
+```
+
+### Create a PDF from Markdown
+
+```javascript
+import { WasmPdf } from "pdf-oxide-wasm";
+
+const pdf = WasmPdf.fromMarkdown("# Invoice\n\nTotal: $42.00", "Invoice", "Acme Corp");
+const bytes = pdf.toBytes();
 ```
 
 ### Encrypt a PDF (AES-256)
@@ -104,133 +156,77 @@ const encrypted = doc.saveEncryptedToBytes(
 );
 ```
 
-## Features
+### Render and extract images
 
-**Text Extraction** — plain text, Markdown, and HTML output formats. Character-level and span-level extraction with bounding boxes, font names, sizes, weights, colors, and italic flags.
+```javascript
+const images = doc.extractImages(0);
+const pngBytes = doc.extractImageBytes(0);
+```
 
-**Format Conversion** — convert any page or all pages to Markdown (with heading detection, images, form fields), HTML (with optional CSS layout preservation), or structured plain text.
+### Edit metadata, pages, and content
 
-**Full-Text Search** — regex and literal search across all pages or a single page. Case-insensitive, whole-word, and max-results options. Returns match positions with bounding boxes.
+```javascript
+doc.setTitle("Quarterly Report");
+doc.setAuthor("Finance Team");
+doc.setPageRotation(0, 90);
+doc.cropMargins(36, 36, 36, 36);
+doc.eraseRegion(0, 50, 50, 200, 100);
+doc.flattenAllAnnotations();
 
-**Image Extraction** — extract image metadata (dimensions, color space, bits per component, bounding boxes) and raw image bytes as PNG.
+const editedBytes = doc.saveToBytes();
+```
 
-**Form Fields** — read all AcroForm fields (text, button, choice, signature). Get/set individual field values. Export form data as FDF or XFDF. Flatten forms into static content. XFA detection.
+## Other languages
 
-**PDF Creation** — generate PDFs from Markdown, HTML, plain text, or images (PNG/JPEG). Multi-image support (one page per image). Set title, author metadata.
+PDF Oxide ships the same Rust core through six bindings:
 
-**PDF Editing** — set document metadata (title, author, subject, keywords). Rotate pages, set MediaBox/CropBox, crop margins. Erase (whiteout) regions. Reposition, resize, and set bounds on images. Flatten or apply redactions. Merge PDFs. Embed files.
+- **Rust** — `cargo add pdf_oxide` — see [docs.rs/pdf_oxide](https://docs.rs/pdf_oxide)
+- **Python** — `pip install pdf_oxide` — see [python/README.md](https://github.com/yfedoseev/pdf_oxide/blob/main/python/README.md)
+- **Go** — `go get github.com/yfedoseev/pdfoxide` — see [go/README.md](https://github.com/yfedoseev/pdf_oxide/blob/main/go/README.md)
+- **JavaScript / TypeScript (Node.js native)** — `npm install pdf-oxide` — see [js/README.md](https://github.com/yfedoseev/pdf_oxide/blob/main/js/README.md)
+- **C# / .NET** — `dotnet add package PdfOxide` — see [csharp/README.md](https://github.com/yfedoseev/pdf_oxide/blob/main/csharp/README.md)
 
-**Encryption** — AES-256 encryption with granular permissions (print, copy, modify, annotate).
+A bug fix in the Rust core lands in every binding on the next release.
 
-**Document Structure** — bookmarks/outline (table of contents), annotations (links, comments, form widgets), page labels, XMP metadata, vector paths.
+## Documentation
 
-## API Reference
+- **[Full Documentation](https://pdf.oxide.fyi)** — Complete documentation site
+- **[WASM Getting Started](https://github.com/yfedoseev/pdf_oxide/blob/main/docs/getting-started-wasm.md)** — Step-by-step WASM guide
+- **[Main Repository](https://github.com/yfedoseev/pdf_oxide)** — Rust core, CLI, MCP server, all bindings
+- **[Performance Benchmarks](https://pdf.oxide.fyi/docs/performance)** — Full benchmark methodology and results
+- **[GitHub Issues](https://github.com/yfedoseev/pdf_oxide/issues)** — Bug reports and feature requests
 
-### `WasmPdfDocument` — read, extract, search, and edit existing PDFs
+## Use Cases
 
-| Method | Description |
-|---|---|
-| `new(data)` | Load PDF from `Uint8Array` |
-| `pageCount()` | Number of pages |
-| `version()` | PDF version as `[major, minor]` |
-| `authenticate(password)` | Decrypt an encrypted PDF |
-| `hasStructureTree()` | Check for Tagged PDF structure |
-| **Text Extraction** | |
-| `extractText(page)` | Plain text from one page |
-| `extractAllText()` | Plain text from all pages |
-| `extractChars(page)` | Character-level data with positions |
-| `extractSpans(page)` | Span-level data with positions |
-| **Format Conversion** | |
-| `toMarkdown(page, headings?, images?, forms?)` | Markdown from one page |
-| `toMarkdownAll(headings?, images?, forms?)` | Markdown from all pages |
-| `toHtml(page, layout?, headings?, forms?)` | HTML from one page |
-| `toHtmlAll(layout?, headings?, forms?)` | HTML from all pages |
-| `toPlainText(page)` | Plain text with layout |
-| `toPlainTextAll()` | Plain text all pages |
-| **Search** | |
-| `search(pattern, caseInsensitive?, literal?, wholeWord?, max?)` | Search all pages |
-| `searchPage(page, pattern, ...)` | Search one page |
-| **Images** | |
-| `extractImages(page)` | Image metadata (dimensions, color space, bbox) |
-| `extractImageBytes(page)` | Image data as PNG `Uint8Array` |
-| `pageImages(page)` | Image placement info (bounds, matrix) |
-| **Forms** | |
-| `getFormFields()` | All form fields with types and values |
-| `getFormFieldValue(name)` | Get a single field value |
-| `setFormFieldValue(name, value)` | Set a field value |
-| `exportFormData(format?)` | Export as FDF or XFDF |
-| `hasXfa()` | Check for XFA form data |
-| `flattenForms()` | Flatten all form fields |
-| `flattenFormsOnPage(page)` | Flatten fields on one page |
-| **Document Structure** | |
-| `getOutline()` | Bookmarks / table of contents |
-| `getAnnotations(page)` | Page annotations |
-| `extractPaths(page)` | Vector paths (lines, curves) |
-| `pageLabels()` | Page label ranges |
-| `xmpMetadata()` | XMP metadata |
-| **Editing** | |
-| `setTitle(title)` | Set document title |
-| `setAuthor(author)` | Set document author |
-| `setSubject(subject)` | Set document subject |
-| `setKeywords(keywords)` | Set document keywords |
-| `setPageRotation(page, degrees)` | Set page rotation |
-| `rotatePage(page, degrees)` | Rotate page by degrees |
-| `rotateAllPages(degrees)` | Rotate all pages |
-| `pageMediaBox(page)` | Get MediaBox |
-| `setPageMediaBox(page, llx, lly, urx, ury)` | Set MediaBox |
-| `pageCropBox(page)` | Get CropBox |
-| `setPageCropBox(page, llx, lly, urx, ury)` | Set CropBox |
-| `cropMargins(left, right, top, bottom)` | Crop all page margins |
-| `eraseRegion(page, llx, lly, urx, ury)` | Whiteout a region |
-| `eraseRegions(page, rects)` | Whiteout multiple regions |
-| `repositionImage(page, name, x, y)` | Move an image |
-| `resizeImage(page, name, w, h)` | Resize an image |
-| `setImageBounds(page, name, x, y, w, h)` | Set image bounds |
-| `flattenPageAnnotations(page)` | Flatten page annotations |
-| `flattenAllAnnotations()` | Flatten all annotations |
-| `applyPageRedactions(page)` | Apply redactions on page |
-| `applyAllRedactions()` | Apply all redactions |
-| `mergeFrom(data)` | Merge another PDF |
-| `embedFile(name, data)` | Embed a file |
-| **Save** | |
-| `saveToBytes()` | Save edits → `Uint8Array` |
-| `saveEncryptedToBytes(userPwd, ownerPwd?, ...)` | Save with AES-256 encryption |
-| `free()` | Release WASM memory |
+- **Browser PDF tooling** — Extract, search, and convert PDFs entirely client-side, no server upload
+- **Edge / serverless workers** — Process PDFs in Cloudflare Workers, Vercel Edge, Deno Deploy
+- **RAG / LLM pipelines** — Convert PDFs to clean Markdown for retrieval-augmented generation
+- **PDF generation** — Create invoices, reports, certificates programmatically without a backend
+- **Universal Node.js packages** — Same code runs in Node.js, the browser, and edge runtimes
 
-### `WasmPdf` — create new PDFs
+## Why I built this
 
-| Method | Description |
-|---|---|
-| `fromMarkdown(content, title?, author?)` | Create PDF from Markdown |
-| `fromHtml(content, title?, author?)` | Create PDF from HTML |
-| `fromText(content, title?, author?)` | Create PDF from plain text |
-| `fromImageBytes(data)` | Create PDF from image (PNG/JPEG) |
-| `fromMultipleImageBytes(images)` | Create multi-page PDF from images |
-| `toBytes()` | Get PDF as `Uint8Array` |
-| `size` | PDF size in bytes |
+I needed PyMuPDF's speed without its AGPL license, and I needed it in more than one language. Nothing existed that ticked all three boxes — fast, MIT, multi-language — so I wrote it. The Rust core is what does the real work; the bindings for Python, Go, JS/TS, C#, and WASM are thin shells around the same code, so a bug fix in one lands in all of them. It now passes 100% of the veraPDF + Mozilla pdf.js + DARPA SafeDocs test corpora (3,830 PDFs) on every platform I've tested.
 
-## Platform Compatibility
+If it's useful to you, a star on GitHub genuinely helps. If something's broken or missing, [open an issue](https://github.com/yfedoseev/pdf_oxide/issues) — I read all of them.
 
-Works without modification in:
-
-- **Node.js** 18+ (CommonJS and ESM)
-- **Browsers** — Chrome, Firefox, Safari, Edge
-- **Cloudflare Workers** — runs in V8 isolates with WASM support
-- **Deno** — native WASM support
-- **Bun** — native WASM support
-
-No native binaries, no `node-gyp`, no `postinstall` scripts. Install and use immediately.
-
-## Performance
-
-pdf-oxide-wasm is built on a Rust PDF parser compiled to WebAssembly. The Rust core ([pdf_oxide](https://crates.io/crates/pdf_oxide)) achieves 0.8ms mean extraction time across 3,830 test PDFs with a 100% success rate — the fastest PDF text extraction library available in Rust. The WASM compilation preserves near-native performance without garbage collection overhead or child process spawning.
-
-## Full Documentation
-
-Complete guide with examples: [Getting Started with WASM](https://github.com/yfedoseev/pdf_oxide/blob/main/docs/getting-started-wasm.md)
-
-Rust library documentation: [docs.rs/pdf_oxide](https://docs.rs/pdf_oxide)
+— Yury
 
 ## License
 
-MIT OR Apache-2.0
+Dual-licensed under [MIT](https://github.com/yfedoseev/pdf_oxide/blob/main/LICENSE-MIT) or [Apache-2.0](https://github.com/yfedoseev/pdf_oxide/blob/main/LICENSE-APACHE) at your option. Unlike AGPL-licensed alternatives, pdf_oxide can be used freely in any project — commercial or open-source — with no copyleft restrictions.
+
+## Citation
+
+```bibtex
+@software{pdf_oxide,
+  title = {PDF Oxide: Fast PDF Toolkit for Rust, Python, Go, JavaScript, and C#},
+  author = {Yury Fedoseev},
+  year = {2025},
+  url = {https://github.com/yfedoseev/pdf_oxide}
+}
+```
+
+---
+
+**WASM** + **Rust core** | MIT / Apache-2.0 | 100% pass rate on 3,830 PDFs | 0.8ms mean | 5× faster than the industry leaders

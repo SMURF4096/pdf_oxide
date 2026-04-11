@@ -8,6 +8,12 @@ on:
   release:
     types: [ published ]
 
+# Cancel any in-progress run on the same branch when a new one starts.
+# Don't cancel release runs — they must always complete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'release' }}
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -97,7 +103,7 @@ jobs:
         run: cargo fmt --check
 
       - name: Run Clippy with Python feature
-        run: cargo clippy --features python --all-targets -- -D warnings
+        run: cargo clippy --features python --all-targets --workspace -- -D warnings
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7

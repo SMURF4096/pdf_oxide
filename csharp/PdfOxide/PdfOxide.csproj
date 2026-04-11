@@ -1,0 +1,141 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Target Frameworks -->
+    <!-- Note: netstandard2.0 temporarily removed due to LPUTF8Str marshaling incompatibility -->
+    <TargetFrameworks>netstandard2.1;net5.0;net6.0;net8.0</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- NuGet Package Configuration -->
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <PackageId>PdfOxide</PackageId>
+    <Version>0.3.24</Version>
+    <Title>PdfOxide</Title>
+    <Authors>pdf_oxide Contributors</Authors>
+    <Company>pdf_oxide Project</Company>
+    <Product>pdf_oxide</Product>
+
+    <!-- Package Description and Metadata -->
+    <Description>Complete .NET bindings for pdf_oxide Rust PDF processing library. Provides idiomatic C# APIs for reading, creating, and editing PDFs with support for text extraction, format conversion (Markdown/HTML), element and annotation access, full text search, and async operations.</Description>
+    <Summary>Production-ready C# bindings for the pdf_oxide Rust PDF library</Summary>
+    <PackageIcon>icon.png</PackageIcon>
+    <ReadmeFile>README.md</ReadmeFile>
+
+    <!-- Release Notes -->
+    <PackageReleaseNotes>
+v0.3.24 — First public release of PdfOxide for .NET
+- Complete P/Invoke bindings to the pdf_oxide Rust PDF library
+- Idiomatic C# API with SafeHandle-backed NativeHandle, IDisposable, async/await (with CancellationToken), and fluent builders
+- Target frameworks: netstandard2.1, net5.0, net6.0, net8.0
+- Cross-platform native libraries bundled for win-x64/arm64, linux-x64/arm64, osx-x64/arm64
+- Core features: text/markdown/html extraction, search, form fields, annotations, rendering, digital signatures, OCR, compliance validation (PDF/A, PDF/X, PDF/UA), page editing, and PDF creation
+- Nullable reference types enabled across the public API
+- Thread-safe for concurrent use (ReaderWriterLockSlim)
+    </PackageReleaseNotes>
+
+    <!-- Licensing -->
+    <PackageLicenseExpression>MIT OR Apache-2.0</PackageLicenseExpression>
+    <LicenseUrl>https://github.com/yfedoseev/pdf_oxide/blob/main/LICENSE-MIT</LicenseUrl>
+
+    <!-- Repository Information -->
+    <RepositoryUrl>https://github.com/yfedoseev/pdf_oxide</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryBranch>main</RepositoryBranch>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+
+    <!-- Project URLs -->
+    <ProjectUrl>https://github.com/yfedoseev/pdf_oxide</ProjectUrl>
+    <DocumentationUrl>https://github.com/yfedoseev/pdf_oxide/wiki</DocumentationUrl>
+    <BugReportUrl>https://github.com/yfedoseev/pdf_oxide/issues</BugReportUrl>
+
+    <!-- Package Tags and Categories -->
+    <PackageTags>pdf;text-extraction;pdf-creation;pdf-editing;rust;pinvoke;ffi;interop;pdf-processing</PackageTags>
+    <Category>Data;Text Processing</Category>
+
+    <!-- Symbol Package Configuration -->
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <EmbedAllSources>true</EmbedAllSources>
+
+    <!-- Documentation and Code Analysis -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <DocumentationFile>bin\$(Configuration)\$(TargetFramework)\PdfOxide.xml</DocumentationFile>
+
+    <!--
+      Warning suppressions for v0.3.24 first release. These are code-hygiene
+      warnings (missing XML docs, nullable annotations, malformed XML fragments)
+      that don't affect runtime behavior. They will be tightened over subsequent
+      releases rather than blocking the initial ship.
+
+      CS1591 — missing XML comment for publicly visible type or member
+      CS1570 — XML comment has badly formed XML
+      CS1573 — parameter has no matching param tag in XML comment
+      CS1574 — XML comment has cref attribute that could not be resolved
+      CS8618 — non-nullable field/property uninitialized (we rely on builder-set defaults)
+      CS8603 — possible null reference return
+      CS8600 — converting null literal or possible null value to non-nullable type
+      CS8604 — possible null reference argument
+      CS8625 — cannot convert null literal to non-nullable reference type
+      CS8629 — nullable value type may be null
+      CS8765 — nullability of parameter does not match overridden member
+    -->
+    <NoWarn>$(NoWarn);CS1591;CS1570;CS1573;CS1574;CS8618;CS8603;CS8600;CS8604;CS8625;CS8629;CS8765</NoWarn>
+
+    <!-- Code Generation and Safety -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+
+    <!-- Package Metadata -->
+    <PackageProjectUrl>https://github.com/yfedoseev/pdf_oxide</PackageProjectUrl>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <DebugType>embedded</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+  </PropertyGroup>
+
+  <!-- Include native libraries in NuGet package -->
+  <ItemGroup>
+    <!-- x64 -->
+    <None Include="../../target/release/pdf_oxide.dll" Pack="true" PackagePath="runtimes/win-x64/native" Condition="Exists('../../target/release/pdf_oxide.dll')" />
+    <None Include="../../target/release/libpdf_oxide.so" Pack="true" PackagePath="runtimes/linux-x64/native" Condition="Exists('../../target/release/libpdf_oxide.so')" />
+    <None Include="../../target/release/libpdf_oxide.dylib" Pack="true" PackagePath="runtimes/osx-x64/native" Condition="Exists('../../target/release/libpdf_oxide.dylib')" />
+    <!-- ARM64 (Apple Silicon, Graviton, Windows ARM) -->
+    <None Include="../../target/aarch64-unknown-linux-gnu/release/libpdf_oxide.so" Pack="true" PackagePath="runtimes/linux-arm64/native" Condition="Exists('../../target/aarch64-unknown-linux-gnu/release/libpdf_oxide.so')" />
+    <None Include="../../target/aarch64-apple-darwin/release/libpdf_oxide.dylib" Pack="true" PackagePath="runtimes/osx-arm64/native" Condition="Exists('../../target/aarch64-apple-darwin/release/libpdf_oxide.dylib')" />
+    <None Include="../../target/aarch64-pc-windows-msvc/release/pdf_oxide.dll" Pack="true" PackagePath="runtimes/win-arm64/native" Condition="Exists('../../target/aarch64-pc-windows-msvc/release/pdf_oxide.dll')" />
+  </ItemGroup>
+
+  <!-- Runtime configuration for P/Invoke -->
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.Globalization.Invariant" Value="true" />
+  </ItemGroup>
+
+  <!-- Package references for older frameworks -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0' Or '$(TargetFramework)' == 'netstandard2.1'">
+    <PackageReference Include="System.Collections.Immutable" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="8.0.0" />
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+  </ItemGroup>
+
+  <!-- Exclude test files from main build -->
+  <ItemGroup>
+    <Compile Remove="Managers/Tests/**/*.cs" />
+  </ItemGroup>
+
+  <!-- Exclude files that don't exist on disk -->
+  <ItemGroup>
+    <Compile Remove="Managers/AnnotationManagerAdvanced.cs" />
+    <Compile Remove="Managers/BarcodeManagerAdvanced.cs" />
+    <Compile Remove="Managers/OcrManagerAdvanced.cs" />
+    <Compile Remove="Managers/RenderingManagerAdvanced.cs" />
+    <Compile Remove="Managers/SignatureManagerAdvanced.cs" />
+  </ItemGroup>
+
+  <!-- BarcodesSignaturesRenderingManager.cs and OCRComplianceCacheManager.cs now compile
+       after adding their required P/Invoke declarations to NativeMethods.cs -->
+
+</Project>

@@ -1,0 +1,6123 @@
+using System;
+using System.Runtime.InteropServices;
+
+namespace PdfOxide.Internal
+{
+    /// <summary>
+    /// P/Invoke declarations for the native pdf_oxide library.
+    /// </summary>
+    /// <remarks>
+    /// This class declares all the FFI functions exported from the Rust library.
+    /// All functions are blittable and use standard calling conventions for maximum compatibility.
+    /// </remarks>
+    internal static class NativeMethods
+    {
+        private const string LibName = "pdf_oxide";
+        private const CallingConvention DefaultCallingConvention = CallingConvention.Cdecl;
+
+        #region PdfDocument API
+
+        /// <summary>
+        /// Opens a PDF document from a file path.
+        /// </summary>
+        /// <param name="path">UTF-8 null-terminated file path.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Opaque handle to the PDF document, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, CharSet = CharSet.Ansi)]
+        public static extern NativeHandle PdfDocumentOpen(
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string path,
+            out int errorCode);
+
+        /// <summary>
+        /// Opens a PDF document from a memory buffer.
+        /// </summary>
+        /// <param name="data">Pointer to PDF bytes.</param>
+        /// <param name="length">Length of the data buffer.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Opaque handle to the PDF document, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_document_open_from_bytes")]
+        public static extern NativeHandle PdfDocumentOpenFromBytes(
+            [In] byte[] data,
+            int length,
+            out int errorCode);
+
+        /// <summary>
+        /// Frees a PdfDocument handle.
+        /// </summary>
+        /// <param name="handle">The handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void PdfDocumentFree(IntPtr handle);
+
+        /// <summary>
+        /// Gets the PDF version.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="major">Output parameter for major version number.</param>
+        /// <param name="minor">Output parameter for minor version number.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_document_get_version")]
+        public static extern void PdfDocumentGetVersion(
+            NativeHandle handle,
+            out byte major,
+            out byte minor);
+
+        /// <summary>
+        /// Gets the number of pages in the document.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The page count, or -1 on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int PdfDocumentGetPageCount(
+            NativeHandle handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Checks if the document has a structure tree (Tagged PDF).
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <returns>True if the document has a structure tree, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_document_has_structure_tree")]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool PdfDocumentHasStructureTree(NativeHandle handle);
+
+        /// <summary>
+        /// Extracts text from a page.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="pageIndex">The page index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer (must be freed with FreeString).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr PdfDocumentExtractText(
+            NativeHandle handle,
+            int pageIndex,
+            out int errorCode);
+
+        /// <summary>
+        /// Converts a page to Markdown format.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="pageIndex">The page index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer (must be freed with FreeString).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr PdfDocumentToMarkdown(
+            NativeHandle handle,
+            int pageIndex,
+            out int errorCode);
+
+        /// <summary>
+        /// Converts all pages to Markdown format.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer (must be freed with FreeString).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_document_to_markdown_all")]
+        public static extern IntPtr PdfDocumentToMarkdownAll(
+            NativeHandle handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Converts a page to HTML format.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="pageIndex">The page index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer (must be freed with FreeString).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr PdfDocumentToHtml(
+            NativeHandle handle,
+            int pageIndex,
+            out int errorCode);
+
+        /// <summary>
+        /// Converts a page to plain text format.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="pageIndex">The page index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer (must be freed with FreeString).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr PdfDocumentToPlainText(
+            NativeHandle handle,
+            int pageIndex,
+            out int errorCode);
+
+        #endregion
+
+        #region Memory Management
+
+        /// <summary>
+        /// Frees a UTF-8 string allocated by Rust.
+        /// </summary>
+        /// <param name="ptr">Pointer to the string to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void FreeString(IntPtr ptr);
+
+        /// <summary>
+        /// Frees a byte buffer allocated by Rust.
+        /// </summary>
+        /// <param name="ptr">Pointer to the buffer to free.</param>
+        /// <param name="len">Length of the buffer (for validation).</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void FreeBytes(IntPtr ptr, int len);
+
+        #endregion
+
+        #region JSON Bulk Extractors (cross-language DRY — one FFI crossing per list)
+
+        /// <summary>Serializes a font list handle to a UTF-8 JSON C string (must be freed with <see cref="FreeString"/>).</summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_fonts_to_json")]
+        public static extern IntPtr PdfOxideFontsToJson(IntPtr fonts, out int errorCode);
+
+        /// <summary>Serializes an annotation list handle to a UTF-8 JSON C string (must be freed with <see cref="FreeString"/>).</summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_annotations_to_json")]
+        public static extern IntPtr PdfOxideAnnotationsToJson(IntPtr annotations, out int errorCode);
+
+        /// <summary>Serializes an element list handle to a UTF-8 JSON C string (must be freed with <see cref="FreeString"/>).</summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_elements_to_json")]
+        public static extern IntPtr PdfOxideElementsToJson(IntPtr elements, out int errorCode);
+
+        /// <summary>Serializes a search results handle to a UTF-8 JSON C string (must be freed with <see cref="FreeString"/>).</summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_search_results_to_json")]
+        public static extern IntPtr PdfOxideSearchResultsToJson(IntPtr results, out int errorCode);
+
+        #endregion
+
+        #region Logging API
+
+        /// <summary>
+        /// Sets the global log level for the native library.
+        /// </summary>
+        /// <param name="level">Log level: 0=Off, 1=Error, 2=Warn, 3=Info, 4=Debug, 5=Trace.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_set_log_level")]
+        public static extern void PdfOxideSetLogLevel(int level);
+
+        /// <summary>
+        /// Gets the current log level.
+        /// </summary>
+        /// <returns>Current log level (0-5).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_get_log_level")]
+        public static extern int PdfOxideGetLogLevel();
+
+        #endregion
+
+        #region Pdf Creation API
+
+        /// <summary>
+        /// Creates a PDF from Markdown content.
+        /// </summary>
+        /// <param name="markdown">UTF-8 null-terminated Markdown content.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Opaque handle to Pdf, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, CharSet = CharSet.Ansi)]
+        public static extern NativeHandle PdfFromMarkdown(
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string markdown,
+            out int errorCode);
+
+        /// <summary>
+        /// Creates a PDF from HTML content.
+        /// </summary>
+        /// <param name="html">UTF-8 null-terminated HTML content.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Opaque handle to Pdf, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, CharSet = CharSet.Ansi)]
+        public static extern NativeHandle PdfFromHtml(
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string html,
+            out int errorCode);
+
+        /// <summary>
+        /// Creates a PDF from plain text content.
+        /// </summary>
+        /// <param name="text">UTF-8 null-terminated text content.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Opaque handle to Pdf, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, CharSet = CharSet.Ansi)]
+        public static extern NativeHandle PdfFromText(
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string text,
+            out int errorCode);
+
+        /// <summary>
+        /// Saves a PDF to file.
+        /// </summary>
+        /// <param name="handle">The PDF handle.</param>
+        /// <param name="path">UTF-8 null-terminated output file path.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>0 on success, non-zero on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, CharSet = CharSet.Ansi)]
+        public static extern int PdfSave(
+            NativeHandle handle,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string path,
+            out int errorCode);
+
+        /// <summary>
+        /// Saves a PDF to memory buffer.
+        /// </summary>
+        /// <param name="handle">The PDF handle.</param>
+        /// <param name="dataLen">Output parameter for buffer length.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Pointer to the PDF byte buffer — must be freed with <see cref="FreeBytes"/>, or <see cref="IntPtr.Zero"/> on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_save_to_bytes")]
+        public static extern IntPtr PdfSaveToBytes(
+            NativeHandle handle,
+            out int dataLen,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the page count from a Pdf handle.
+        /// </summary>
+        /// <param name="handle">The PDF handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The page count, or -1 on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_get_page_count")]
+        public static extern int PdfGetPageCount(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Frees a Pdf handle.
+        /// </summary>
+        /// <param name="handle">The handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void PdfFree(IntPtr handle);
+
+        #endregion
+
+        #region DocumentEditor API
+
+        /// <summary>
+        /// Opens a PDF document for editing.
+        /// </summary>
+        /// <param name="path">UTF-8 null-terminated file path.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Opaque handle to DocumentEditor, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, CharSet = CharSet.Ansi)]
+        public static extern NativeHandle DocumentEditorOpen(
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string path,
+            out int errorCode);
+
+        /// <summary>
+        /// Frees a DocumentEditor handle.
+        /// </summary>
+        /// <param name="handle">The handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void DocumentEditorFree(IntPtr handle);
+
+        /// <summary>
+        /// Checks if the document has been modified.
+        /// </summary>
+        /// <param name="handle">The editor handle.</param>
+        /// <returns>True if modified, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "document_editor_is_modified")]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool DocumentEditorIsModified(IntPtr handle);
+
+        /// <summary>
+        /// Gets the source file path.
+        /// </summary>
+        /// <param name="handle">The editor handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer (must be freed with FreeString).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "document_editor_get_source_path")]
+        public static extern IntPtr DocumentEditorGetSourcePath(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the PDF version.
+        /// </summary>
+        /// <param name="handle">The editor handle.</param>
+        /// <param name="major">Output parameter for major version number.</param>
+        /// <param name="minor">Output parameter for minor version number.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "document_editor_get_version")]
+        public static extern void DocumentEditorGetVersion(
+            IntPtr handle,
+            out byte major,
+            out byte minor);
+
+        /// <summary>
+        /// Gets the number of pages in the document.
+        /// </summary>
+        /// <param name="handle">The editor handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The page count, or -1 on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "document_editor_get_page_count")]
+        public static extern int DocumentEditorGetPageCount(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the document title.
+        /// </summary>
+        /// <param name="handle">The editor handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer (must be freed with FreeString), or null if not set.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "document_editor_get_title")]
+        public static extern IntPtr DocumentEditorGetTitle(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Sets the document title.
+        /// </summary>
+        /// <param name="handle">The editor handle.</param>
+        /// <param name="title">UTF-8 null-terminated title string.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, CharSet = CharSet.Ansi)]
+        public static extern void DocumentEditorSetTitle(
+            IntPtr handle,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string title,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the document author.
+        /// </summary>
+        /// <param name="handle">The editor handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer (must be freed with FreeString), or null if not set.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "document_editor_get_author")]
+        public static extern IntPtr DocumentEditorGetAuthor(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Sets the document author.
+        /// </summary>
+        /// <param name="handle">The editor handle.</param>
+        /// <param name="author">UTF-8 null-terminated author string.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, CharSet = CharSet.Ansi)]
+        public static extern void DocumentEditorSetAuthor(
+            IntPtr handle,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string author,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the document subject.
+        /// </summary>
+        /// <param name="handle">The editor handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer (must be freed with FreeString), or null if not set.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "document_editor_get_subject")]
+        public static extern IntPtr DocumentEditorGetSubject(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Sets the document subject.
+        /// </summary>
+        /// <param name="handle">The editor handle.</param>
+        /// <param name="subject">UTF-8 null-terminated subject string.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, CharSet = CharSet.Ansi, EntryPoint = "document_editor_set_subject")]
+        public static extern void DocumentEditorSetSubject(
+            IntPtr handle,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string subject,
+            out int errorCode);
+
+        /// <summary>
+        /// Saves the document to a file.
+        /// </summary>
+        /// <param name="handle">The editor handle.</param>
+        /// <param name="path">UTF-8 null-terminated output file path.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>0 on success, non-zero on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, CharSet = CharSet.Ansi)]
+        public static extern int DocumentEditorSave(
+            IntPtr handle,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string path,
+            out int errorCode);
+
+        #endregion
+
+        #region DOM API
+
+        /// <summary>
+        /// Gets the width of a page.
+        /// </summary>
+        /// <param name="handle">The page handle.</param>
+        /// <returns>The page width in points, or 0 if invalid.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern float PdfPageGetWidth(IntPtr handle);
+
+        /// <summary>
+        /// Gets the height of a page.
+        /// </summary>
+        /// <param name="handle">The page handle.</param>
+        /// <returns>The page height in points, or 0 if invalid.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern float PdfPageGetHeight(IntPtr handle);
+
+        /// <summary>
+        /// Gets the page index.
+        /// </summary>
+        /// <param name="handle">The page handle.</param>
+        /// <returns>The page index (0-based), or -1 if invalid.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int PdfPageGetIndex(IntPtr handle);
+
+        /// <summary>
+        /// Gets the page dimensions.
+        /// </summary>
+        /// <param name="handle">The page handle.</param>
+        /// <param name="widthOut">Output parameter for page width.</param>
+        /// <param name="heightOut">Output parameter for page height.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void PdfPageGetDimensions(
+            IntPtr handle,
+            out float widthOut,
+            out float heightOut);
+
+        /// <summary>
+        /// Frees a PdfPage handle.
+        /// </summary>
+        /// <param name="handle">The handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void PdfPageFree(IntPtr handle);
+
+        /// <summary>
+        /// Gets the page dimensions from document by page index.
+        /// </summary>
+        /// <param name="documentHandle">The document handle.</param>
+        /// <param name="pageIndex">The page index (0-based).</param>
+        /// <param name="width">Output parameter for page width.</param>
+        /// <param name="height">Output parameter for page height.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True if successful, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern bool pdf_get_page_dimensions(
+            IntPtr documentHandle,
+            int pageIndex,
+            out float width,
+            out float height,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the page rotation in degrees.
+        /// </summary>
+        /// <param name="documentHandle">The document handle.</param>
+        /// <param name="pageIndex">The page index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Rotation angle (0, 90, 180, or 270 degrees).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_get_page_rotation(
+            IntPtr documentHandle,
+            int pageIndex,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the page media box (full page size).
+        /// </summary>
+        /// <param name="documentHandle">The document handle.</param>
+        /// <param name="pageIndex">The page index (0-based).</param>
+        /// <param name="llx">Output lower-left X coordinate.</param>
+        /// <param name="lly">Output lower-left Y coordinate.</param>
+        /// <param name="urx">Output upper-right X coordinate.</param>
+        /// <param name="ury">Output upper-right Y coordinate.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True if successful, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern bool pdf_get_page_media_box(
+            IntPtr documentHandle,
+            int pageIndex,
+            out float llx,
+            out float lly,
+            out float urx,
+            out float ury,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the page crop box (visible area).
+        /// </summary>
+        /// <param name="documentHandle">The document handle.</param>
+        /// <param name="pageIndex">The page index (0-based).</param>
+        /// <param name="llx">Output lower-left X coordinate.</param>
+        /// <param name="lly">Output lower-left Y coordinate.</param>
+        /// <param name="urx">Output upper-right X coordinate.</param>
+        /// <param name="ury">Output upper-right Y coordinate.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True if successful, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern bool pdf_get_page_crop_box(
+            IntPtr documentHandle,
+            int pageIndex,
+            out float llx,
+            out float lly,
+            out float urx,
+            out float ury,
+            out int errorCode);
+
+        #endregion
+
+        #region Element API
+
+        /// <summary>
+        /// Gets the number of elements of a specific type on a page.
+        /// </summary>
+        /// <param name="handle">The page handle.</param>
+        /// <param name="elementType">The type of element to count (ELEMENT_TYPE_*).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The number of elements found, or -1 on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int PdfPageFindElementsCount(
+            IntPtr handle,
+            int elementType,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the text content of a text element.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr PdfTextElementGetContent(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the font size of a text element.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The font size in points.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern float PdfTextElementGetFontSize(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the font name of a text element.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated font name string. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr PdfTextElementGetFontName(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the text color of a text element.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="r">Output parameter for red component (0-255).</param>
+        /// <param name="g">Output parameter for green component (0-255).</param>
+        /// <param name="b">Output parameter for blue component (0-255).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void PdfTextElementGetColor(
+            IntPtr handle,
+            out byte r,
+            out byte g,
+            out byte b,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets whether a text element is bold.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True if bold, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool PdfTextElementGetIsBold(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets whether a text element is italic.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True if italic, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool PdfTextElementGetIsItalic(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the bounding box of an element.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="x">Output parameter for x coordinate.</param>
+        /// <param name="y">Output parameter for y coordinate.</param>
+        /// <param name="width">Output parameter for width.</param>
+        /// <param name="height">Output parameter for height.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void PdfElementGetBbox(
+            IntPtr handle,
+            out float x,
+            out float y,
+            out float width,
+            out float height);
+
+        /// <summary>
+        /// Gets the element type as an integer constant.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <returns>The element type constant (ELEMENT_TYPE_*), or -1 if invalid.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int PdfElementGetType(IntPtr handle);
+
+        /// <summary>
+        /// Frees an element handle.
+        /// </summary>
+        /// <param name="handle">The element handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void PdfElementFree(IntPtr handle);
+
+        /// <summary>
+        /// Gets the format of an image element.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The image format constant (0=JPEG, 1=PNG, 2=TIFF, 3=Unknown).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int PdfImageElementGetFormat(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the dimensions of an image element.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="width">Output parameter for width in pixels.</param>
+        /// <param name="height">Output parameter for height in pixels.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void PdfImageElementGetDimensions(
+            IntPtr handle,
+            out uint width,
+            out uint height,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the size of the raw image data.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The size in bytes of the image data, or -1 on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int PdfImageElementGetDataSize(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the raw image data from an image element.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="data">Output buffer for image data.</param>
+        /// <param name="maxLen">Maximum length of data buffer.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The number of bytes written to data buffer, or -1 on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int PdfImageElementGetData(
+            IntPtr handle,
+            byte[] data,
+            int maxLen,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the alternative text of an image element.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated alt text string. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr PdfImageElementGetAltText(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the horizontal DPI of an image element.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The horizontal DPI, or -1 if not available.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern float PdfImageElementGetHorizontalDpi(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the vertical DPI of an image element.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The vertical DPI, or -1 if not available.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern float PdfImageElementGetVerticalDpi(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets whether an image element is grayscale.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True if the image is grayscale, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool PdfImageElementGetIsGrayscale(
+            IntPtr handle,
+            out int errorCode);
+
+        #region Path Element API
+
+        /// <summary>
+        /// Gets the stroke color of a path element.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="r">Output parameter for red component (0-255).</param>
+        /// <param name="g">Output parameter for green component (0-255).</param>
+        /// <param name="b">Output parameter for blue component (0-255).</param>
+        /// <param name="hasColor">Output parameter for whether the path has a stroke color.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void PdfPathElementGetStrokeColor(
+            IntPtr handle,
+            out byte r,
+            out byte g,
+            out byte b,
+            [MarshalAs(UnmanagedType.I1)] out bool hasColor,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the fill color of a path element.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="r">Output parameter for red component (0-255).</param>
+        /// <param name="g">Output parameter for green component (0-255).</param>
+        /// <param name="b">Output parameter for blue component (0-255).</param>
+        /// <param name="hasColor">Output parameter for whether the path has a fill color.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void PdfPathElementGetFillColor(
+            IntPtr handle,
+            out byte r,
+            out byte g,
+            out byte b,
+            [MarshalAs(UnmanagedType.I1)] out bool hasColor,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the line width of a path element.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The line width in points, or 0 if not stroked.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern float PdfPathElementGetLineWidth(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the fill mode of a path element.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The fill mode (PathFillMode enum value).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int PdfPathElementGetFillMode(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the stroke style of a path element.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The stroke style (PathStrokeStyle enum value).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int PdfPathElementGetStrokeStyle(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the number of rows in a table element.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The number of rows, or -1 on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int PdfTableElementGetRowCount(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the number of columns in a table element.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The number of columns, or -1 on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int PdfTableElementGetColumnCount(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the structure type of a structure element.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr PdfStructureElementGetStructureType(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the alt text of a structure element.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer, or null if not set. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr PdfStructureElementGetAltText(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the actual text of a structure element.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer, or null if not set. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr PdfStructureElementGetActualText(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets whether a structure element is marked as removed.
+        /// </summary>
+        /// <param name="handle">The element handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True if marked as removed, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern bool PdfStructureElementGetIsRemoved(
+            IntPtr handle,
+            out int errorCode);
+
+        #endregion
+
+        #endregion
+
+        #region Annotation API
+
+        // === Document-level annotation list (pdf_oxide_annotation_* / pdf_document_get_page_annotations) ===
+
+        /// <summary>
+        /// Gets the annotation list handle for a given page of a document.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="pageIndex">The page index.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Opaque handle to the annotation list. Must be freed with <see cref="PdfOxideAnnotationListFree"/>.</returns>
+        [DllImport(LibName, EntryPoint = "pdf_document_get_page_annotations", CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr PdfDocumentGetPageAnnotations(
+            IntPtr handle,
+            int pageIndex,
+            out int errorCode);
+
+        /// <summary>
+        /// Returns the number of annotations in an annotation list.
+        /// </summary>
+        [DllImport(LibName, EntryPoint = "pdf_oxide_annotation_count", CallingConvention = DefaultCallingConvention)]
+        public static extern int PdfOxideAnnotationCount(IntPtr annotations);
+
+        /// <summary>
+        /// Returns the type string of the annotation at <paramref name="index"/> as a UTF-8 pointer (must be freed with <see cref="FreeString"/>).
+        /// </summary>
+        [DllImport(LibName, EntryPoint = "pdf_oxide_annotation_get_type", CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr PdfOxideAnnotationGetType(
+            IntPtr annotations,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Returns the content string of the annotation at <paramref name="index"/> as a UTF-8 pointer (must be freed with <see cref="FreeString"/>).
+        /// </summary>
+        [DllImport(LibName, EntryPoint = "pdf_oxide_annotation_get_content", CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr PdfOxideAnnotationGetContent(
+            IntPtr annotations,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the bounding rectangle of the annotation at <paramref name="index"/>.
+        /// </summary>
+        [DllImport(LibName, EntryPoint = "pdf_oxide_annotation_get_rect", CallingConvention = DefaultCallingConvention)]
+        public static extern void PdfOxideAnnotationGetRect(
+            IntPtr annotations,
+            int index,
+            out float x,
+            out float y,
+            out float width,
+            out float height,
+            out int errorCode);
+
+        /// <summary>
+        /// Frees an annotation list handle obtained from <see cref="PdfDocumentGetPageAnnotations"/>.
+        /// </summary>
+        [DllImport(LibName, EntryPoint = "pdf_oxide_annotation_list_free", CallingConvention = DefaultCallingConvention)]
+        public static extern void PdfOxideAnnotationListFree(IntPtr handle);
+
+        // === Per-annotation API (pdf_annotation_*) ===
+
+        /// <summary>
+        /// Gets the number of annotations on a page.
+        /// </summary>
+        /// <param name="handle">The page handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The number of annotations found, or -1 on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int PdfPageGetAnnotationsCount(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the count of annotations of a specific type on a page.
+        /// </summary>
+        /// <param name="handle">The page handle.</param>
+        /// <param name="annotationType">The type of annotation to count (ANNOTATION_TYPE_*).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The number of annotations of that type, or -1 on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int PdfPageGetAnnotationsByTypeCount(
+            IntPtr handle,
+            int annotationType,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the type of an annotation.
+        /// </summary>
+        /// <param name="handle">The annotation handle.</param>
+        /// <returns>The annotation type constant (ANNOTATION_TYPE_*), or -1 if invalid.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int PdfAnnotationGetType(IntPtr handle);
+
+        /// <summary>
+        /// Gets the contents/text of an annotation.
+        /// </summary>
+        /// <param name="handle">The annotation handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr PdfAnnotationGetContents(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the subject of an annotation.
+        /// </summary>
+        /// <param name="handle">The annotation handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr PdfAnnotationGetSubject(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the author of an annotation.
+        /// </summary>
+        /// <param name="handle">The annotation handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr PdfAnnotationGetAuthor(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the bounding box of an annotation.
+        /// </summary>
+        /// <param name="handle">The annotation handle.</param>
+        /// <param name="x">Output parameter for x coordinate.</param>
+        /// <param name="y">Output parameter for y coordinate.</param>
+        /// <param name="width">Output parameter for width.</param>
+        /// <param name="height">Output parameter for height.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void PdfAnnotationGetBbox(
+            IntPtr handle,
+            out float x,
+            out float y,
+            out float width,
+            out float height);
+
+        /// <summary>
+        /// Gets the color of an annotation as RGB values (0.0-1.0).
+        /// </summary>
+        /// <param name="handle">The annotation handle.</param>
+        /// <param name="r">Output parameter for red component.</param>
+        /// <param name="g">Output parameter for green component.</param>
+        /// <param name="b">Output parameter for blue component.</param>
+        /// <param name="hasColor">Output parameter for whether color was found (1=yes, 0=no).</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void PdfAnnotationGetColor(
+            IntPtr handle,
+            out float r,
+            out float g,
+            out float b,
+            out int hasColor);
+
+        /// <summary>
+        /// Gets the opacity of an annotation (0.0-1.0).
+        /// </summary>
+        /// <param name="handle">The annotation handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The opacity value (1.0 if not set).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern float PdfAnnotationGetOpacity(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets flags for an annotation (visibility, printability, etc.).
+        /// </summary>
+        /// <param name="handle">The annotation handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The flags as a bitmask.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int PdfAnnotationGetFlags(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Text annotation specific: Gets the icon type.
+        /// </summary>
+        /// <param name="handle">The annotation handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The icon type code (0=Comment, 1=Key, 2=Note, 3=Help, etc., -1=Unknown).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int PdfTextAnnotationGetIcon(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Text annotation specific: Gets whether the annotation is open.
+        /// </summary>
+        /// <param name="handle">The annotation handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>1 if open, 0 if closed.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int PdfTextAnnotationGetOpen(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Link annotation specific: Gets the URI of a link.
+        /// </summary>
+        /// <param name="handle">The annotation handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr PdfLinkAnnotationGetUri(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Link annotation specific: Gets the destination page index.
+        /// </summary>
+        /// <param name="handle">The annotation handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The page index, or -1 if not a page link or error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int PdfLinkAnnotationGetPage(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Text markup annotation specific: Gets the markup type.
+        /// </summary>
+        /// <param name="handle">The annotation handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The markup type (0=Highlight, 1=Underline, 2=StrikeOut, 3=Squiggly, -1=Unknown).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int PdfTextMarkupAnnotationGetType(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// FreeText annotation specific: Gets the font name.
+        /// </summary>
+        /// <param name="handle">The annotation handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr PdfFreeTextAnnotationGetFontName(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// FreeText annotation specific: Gets the font size.
+        /// </summary>
+        /// <param name="handle">The annotation handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The font size in points.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern float PdfFreeTextAnnotationGetFontSize(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Frees an annotation handle.
+        /// </summary>
+        /// <param name="handle">The annotation handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void PdfAnnotationFree(IntPtr handle);
+
+        #endregion
+
+        #region Search API
+
+        /// <summary>
+        /// Searches for text on a page.
+        /// </summary>
+        /// <param name="pageHandle">The page handle.</param>
+        /// <param name="searchTerm">The UTF-8 search term to find.</param>
+        /// <param name="caseSensitive">Whether to match case (1=yes, 0=no).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The number of occurrences found, or -1 on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, CharSet = CharSet.Ansi)]
+        public static extern int PdfPageSearchText(
+            IntPtr pageHandle,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string searchTerm,
+            int caseSensitive,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the text content of a search result.
+        /// </summary>
+        /// <param name="handle">The search result handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr PdfSearchResultGetText(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the bounding box of a search result.
+        /// </summary>
+        /// <param name="handle">The search result handle.</param>
+        /// <param name="x">Output parameter for x coordinate.</param>
+        /// <param name="y">Output parameter for y coordinate.</param>
+        /// <param name="width">Output parameter for width.</param>
+        /// <param name="height">Output parameter for height.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void PdfSearchResultGetBbox(
+            IntPtr handle,
+            out float x,
+            out float y,
+            out float width,
+            out float height);
+
+        /// <summary>
+        /// Gets the page index of a search result.
+        /// </summary>
+        /// <param name="handle">The search result handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>The page index, or -1 on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int PdfSearchResultGetPage(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Frees a search result handle.
+        /// </summary>
+        /// <param name="handle">The search result handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void PdfSearchResultFree(IntPtr handle);
+
+        #endregion
+
+        #region Utility Functions
+
+        /// <summary>
+        /// Allocates a string in Rust memory.
+        /// </summary>
+        /// <param name="s">UTF-8 null-terminated string pointer.</param>
+        /// <returns>Allocated string pointer (must be freed with FreeString).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, CharSet = CharSet.Ansi)]
+        public static extern IntPtr AllocString(
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string s);
+
+        #endregion
+
+        #region Rendering API
+
+        /// <summary>
+        /// Creates a PDF renderer with specified options.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="dpi">Resolution in DPI (e.g., 150, 300).</param>
+        /// <param name="colorSpace">Color space (0=RGB, 1=RGBA, 2=Grayscale, 3=CMYK).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Renderer handle, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern NativeHandle pdf_create_renderer(
+            NativeHandle handle,
+            float dpi,
+            int colorSpace,
+            out int errorCode);
+
+        /// <summary>
+        /// Renders a page to an image buffer.
+        /// </summary>
+        /// <param name="rendererHandle">The renderer handle.</param>
+        /// <param name="pageIndex">The page index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Image handle, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern NativeHandle pdf_render_page(
+            NativeHandle rendererHandle,
+            int pageIndex,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the width of a rendered image.
+        /// </summary>
+        /// <param name="imageHandle">The image handle.</param>
+        /// <returns>Width in pixels.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_render_image_width(NativeHandle imageHandle);
+
+        /// <summary>
+        /// Gets the height of a rendered image.
+        /// </summary>
+        /// <param name="imageHandle">The image handle.</param>
+        /// <returns>Height in pixels.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_render_image_height(NativeHandle imageHandle);
+
+        /// <summary>
+        /// Gets the image data as bytes.
+        /// </summary>
+        /// <param name="imageHandle">The image handle.</param>
+        /// <param name="format">Output format (0=PNG, 1=JPEG, 2=BMP, 3=TIFF).</param>
+        /// <param name="outputPtr">Output parameter for byte buffer pointer.</param>
+        /// <param name="outputLen">Output parameter for buffer size.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_render_image_data(
+            NativeHandle imageHandle,
+            int format,
+            out IntPtr outputPtr,
+            out int outputLen,
+            out int errorCode);
+
+        /// <summary>
+        /// Saves a rendered image to file.
+        /// </summary>
+        /// <param name="imageHandle">The image handle.</param>
+        /// <param name="path">Output file path.</param>
+        /// <param name="format">Output format (0=PNG, 1=JPEG, 2=BMP, 3=TIFF).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True on success, false on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, CharSet = CharSet.Ansi)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_render_image_save(
+            NativeHandle imageHandle,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string path,
+            int format,
+            out int errorCode);
+
+        /// <summary>
+        /// Frees a renderer handle.
+        /// </summary>
+        /// <param name="handle">The renderer handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_renderer_free(IntPtr handle);
+
+        /// <summary>
+        /// Frees a rendered image handle.
+        /// </summary>
+        /// <param name="handle">The image handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_render_image_free(IntPtr handle);
+
+        #endregion
+
+        #region OCR API
+
+        /// <summary>
+        /// Creates an OCR engine with specified language.
+        /// </summary>
+        /// <param name="language">Language code (e.g., "eng", "fra", "deu").</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>OCR engine handle, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, CharSet = CharSet.Ansi)]
+        public static extern NativeHandle pdf_ocr_engine_create(
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string language,
+            out int errorCode);
+
+        /// <summary>
+        /// Performs OCR on a page.
+        /// </summary>
+        /// <param name="engineHandle">The OCR engine handle.</param>
+        /// <param name="documentHandle">The document handle.</param>
+        /// <param name="pageIndex">The page index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>OCR result handle, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern NativeHandle pdf_ocr_page(
+            NativeHandle engineHandle,
+            NativeHandle documentHandle,
+            int pageIndex,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the recognized text from OCR result.
+        /// </summary>
+        /// <param name="resultHandle">The OCR result handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_ocr_result_get_text(
+            NativeHandle resultHandle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the confidence score from OCR result.
+        /// </summary>
+        /// <param name="resultHandle">The OCR result handle.</param>
+        /// <returns>Confidence score (0.0-1.0).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern float pdf_ocr_result_get_confidence(NativeHandle resultHandle);
+
+        /// <summary>
+        /// Gets the number of words in OCR result.
+        /// </summary>
+        /// <param name="resultHandle">The OCR result handle.</param>
+        /// <returns>Number of words detected.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_ocr_result_word_count(NativeHandle resultHandle);
+
+        /// <summary>
+        /// Gets word at specified index from OCR result.
+        /// </summary>
+        /// <param name="resultHandle">The OCR result handle.</param>
+        /// <param name="index">Word index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Word handle, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern NativeHandle pdf_ocr_result_get_word(
+            NativeHandle resultHandle,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the text of an OCR word.
+        /// </summary>
+        /// <param name="wordHandle">The word handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_ocr_word_get_text(
+            NativeHandle wordHandle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the bounding box of an OCR word.
+        /// </summary>
+        /// <param name="wordHandle">The word handle.</param>
+        /// <param name="x">Output parameter for x coordinate.</param>
+        /// <param name="y">Output parameter for y coordinate.</param>
+        /// <param name="width">Output parameter for width.</param>
+        /// <param name="height">Output parameter for height.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_ocr_word_get_bounds(
+            NativeHandle wordHandle,
+            out float x,
+            out float y,
+            out float width,
+            out float height);
+
+        /// <summary>
+        /// Gets the confidence of an OCR word.
+        /// </summary>
+        /// <param name="wordHandle">The word handle.</param>
+        /// <returns>Confidence score (0.0-1.0).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern float pdf_ocr_word_get_confidence(NativeHandle wordHandle);
+
+        /// <summary>
+        /// Frees an OCR engine handle.
+        /// </summary>
+        /// <param name="handle">The engine handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_ocr_engine_free(IntPtr handle);
+
+        /// <summary>
+        /// Frees an OCR result handle.
+        /// </summary>
+        /// <param name="handle">The result handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_ocr_result_free(IntPtr handle);
+
+        /// <summary>
+        /// Frees an OCR word handle.
+        /// </summary>
+        /// <param name="handle">The word handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_ocr_word_free(IntPtr handle);
+
+        #endregion
+
+        #region Compliance API
+
+        /// <summary>
+        /// Validates document against PDF/A standard.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="level">PDF/A level (0=1b, 1=1a, 2=2b, 3=2a, 4=2u, 5=3b, 6=3a, 7=3u).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Validation result handle, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern NativeHandle pdf_validate_pdf_a(
+            NativeHandle handle,
+            int level,
+            out int errorCode);
+
+        /// <summary>
+        /// Validates document against PDF/X standard.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="level">PDF/X level (0=1a, 1=3, 2=4).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Validation result handle, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern NativeHandle pdf_validate_pdf_x(
+            NativeHandle handle,
+            int level,
+            out int errorCode);
+
+        /// <summary>
+        /// Validates document against PDF/UA standard.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="level">PDF/UA level (0=1, 1=2).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Validation result handle, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern NativeHandle pdf_validate_pdf_ua(
+            NativeHandle handle,
+            int level,
+            out int errorCode);
+
+        /// <summary>
+        /// Checks if validation result is valid (compliant).
+        /// </summary>
+        /// <param name="resultHandle">The validation result handle.</param>
+        /// <returns>True if compliant, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_validation_result_is_valid(NativeHandle resultHandle);
+
+        /// <summary>
+        /// Gets the number of issues from validation result.
+        /// </summary>
+        /// <param name="resultHandle">The validation result handle.</param>
+        /// <returns>Number of issues found.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_validation_result_issue_count(NativeHandle resultHandle);
+
+        /// <summary>
+        /// Gets issue at specified index from validation result.
+        /// </summary>
+        /// <param name="resultHandle">The validation result handle.</param>
+        /// <param name="index">Issue index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Issue handle, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern NativeHandle pdf_validation_result_get_issue(
+            NativeHandle resultHandle,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the severity of a compliance issue.
+        /// </summary>
+        /// <param name="issueHandle">The issue handle.</param>
+        /// <returns>Severity level (0=Error, 1=Warning, 2=Info).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_compliance_issue_get_severity(NativeHandle issueHandle);
+
+        /// <summary>
+        /// Gets the message of a compliance issue.
+        /// </summary>
+        /// <param name="issueHandle">The issue handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_compliance_issue_get_message(
+            NativeHandle issueHandle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the rule identifier of a compliance issue.
+        /// </summary>
+        /// <param name="issueHandle">The issue handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_compliance_issue_get_rule(
+            NativeHandle issueHandle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the page number of a compliance issue.
+        /// </summary>
+        /// <param name="issueHandle">The issue handle.</param>
+        /// <returns>Page index (0-based), or -1 for document-level issues.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_compliance_issue_get_page(NativeHandle issueHandle);
+
+        /// <summary>
+        /// Converts document to PDF/A compliance.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="level">Target PDF/A level.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True on success, false on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_convert_to_pdf_a(
+            NativeHandle handle,
+            int level,
+            out int errorCode);
+
+        /// <summary>
+        /// Auto-detects document's compliance level.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Compliance level, or -1 if none detected.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_get_compliance_level(
+            NativeHandle handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Frees a validation result handle.
+        /// </summary>
+        /// <param name="handle">The result handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_validation_result_free(IntPtr handle);
+
+        /// <summary>
+        /// Frees a compliance issue handle.
+        /// </summary>
+        /// <param name="handle">The issue handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_compliance_issue_free(IntPtr handle);
+
+        #endregion
+
+        #region Digital Signature API
+
+        /// <summary>
+        /// Gets the number of signatures in document.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Number of signatures.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_get_signature_count(
+            NativeHandle handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets signature at specified index.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="index">Signature index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Signature handle, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern NativeHandle pdf_get_signature(
+            NativeHandle handle,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Verifies a single signature.
+        /// </summary>
+        /// <param name="signatureHandle">The signature handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Verification status (0=Valid, 1=Invalid, 2=Unknown, 3=NotVerified).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_verify_signature(
+            NativeHandle signatureHandle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets signer name from signature.
+        /// </summary>
+        /// <param name="signatureHandle">The signature handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_signature_get_signer_name(
+            NativeHandle signatureHandle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets signing time as Unix timestamp.
+        /// </summary>
+        /// <param name="signatureHandle">The signature handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Unix timestamp of signing time.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern long pdf_signature_get_signing_time(
+            NativeHandle signatureHandle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets reason for signing.
+        /// </summary>
+        /// <param name="signatureHandle">The signature handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_signature_get_reason(
+            NativeHandle signatureHandle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets signing location.
+        /// </summary>
+        /// <param name="signatureHandle">The signature handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_signature_get_location(
+            NativeHandle signatureHandle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets certificate from signature.
+        /// </summary>
+        /// <param name="signatureHandle">The signature handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Certificate handle, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern NativeHandle pdf_signature_get_certificate(
+            NativeHandle signatureHandle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets certificate subject.
+        /// </summary>
+        /// <param name="certHandle">The certificate handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_certificate_get_subject(
+            NativeHandle certHandle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets certificate issuer.
+        /// </summary>
+        /// <param name="certHandle">The certificate handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_certificate_get_issuer(
+            NativeHandle certHandle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets certificate serial number.
+        /// </summary>
+        /// <param name="certHandle">The certificate handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_certificate_get_serial(
+            NativeHandle certHandle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets certificate validity dates.
+        /// </summary>
+        /// <param name="certHandle">The certificate handle.</param>
+        /// <param name="notBefore">Output parameter for not_before timestamp.</param>
+        /// <param name="notAfter">Output parameter for not_after timestamp.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True on success, false on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_certificate_get_validity(
+            NativeHandle certHandle,
+            out long notBefore,
+            out long notAfter,
+            out int errorCode);
+
+        /// <summary>
+        /// Checks if certificate is currently valid.
+        /// </summary>
+        /// <param name="certHandle">The certificate handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True if valid, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_certificate_is_valid(
+            NativeHandle certHandle,
+            out int errorCode);
+
+        /// <summary>
+        /// Signs a document.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="pfxPath">Path to PFX/P12 certificate file.</param>
+        /// <param name="password">Certificate password.</param>
+        /// <param name="reason">Optional signing reason (can be null).</param>
+        /// <param name="location">Optional signing location (can be null).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True on success, false on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, CharSet = CharSet.Ansi)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_sign_document(
+            NativeHandle handle,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string pfxPath,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string password,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string reason,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string location,
+            out int errorCode);
+
+        /// <summary>
+        /// Verifies all signatures in document.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True if all signatures are valid, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_verify_all_signatures(
+            NativeHandle handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Frees a signature handle.
+        /// </summary>
+        /// <param name="handle">The signature handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_signature_free(IntPtr handle);
+
+        /// <summary>
+        /// Frees a certificate handle.
+        /// </summary>
+        /// <param name="handle">The certificate handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_certificate_free(IntPtr handle);
+
+        #endregion
+
+        #region Barcode API
+
+        /// <summary>
+        /// Detects barcodes on a page.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="pageIndex">The page index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Detection results handle, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern NativeHandle pdf_detect_barcodes_on_page(
+            NativeHandle handle,
+            int pageIndex,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets number of detected barcodes.
+        /// </summary>
+        /// <param name="resultsHandle">The detection results handle.</param>
+        /// <returns>Number of barcodes found.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_barcode_results_count(NativeHandle resultsHandle);
+
+        /// <summary>
+        /// Gets barcode at specified index.
+        /// </summary>
+        /// <param name="resultsHandle">The detection results handle.</param>
+        /// <param name="index">Barcode index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Barcode handle, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern NativeHandle pdf_barcode_results_get(
+            NativeHandle resultsHandle,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets barcode format type.
+        /// </summary>
+        /// <param name="barcodeHandle">The barcode handle.</param>
+        /// <returns>Format type (0=QR, 1=DataMatrix, 2=PDF417, etc.).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_barcode_get_format(NativeHandle barcodeHandle);
+
+        /// <summary>
+        /// Gets decoded barcode data.
+        /// </summary>
+        /// <param name="barcodeHandle">The barcode handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_barcode_get_data(
+            NativeHandle barcodeHandle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets barcode bounding box.
+        /// </summary>
+        /// <param name="barcodeHandle">The barcode handle.</param>
+        /// <param name="x">Output parameter for x coordinate.</param>
+        /// <param name="y">Output parameter for y coordinate.</param>
+        /// <param name="width">Output parameter for width.</param>
+        /// <param name="height">Output parameter for height.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True on success, false on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_barcode_get_bounds(
+            NativeHandle barcodeHandle,
+            out float x,
+            out float y,
+            out float width,
+            out float height,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets detection confidence score.
+        /// </summary>
+        /// <param name="barcodeHandle">The barcode handle.</param>
+        /// <returns>Confidence score (0.0-1.0).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern float pdf_barcode_get_confidence(NativeHandle barcodeHandle);
+
+        /// <summary>
+        /// Generates a QR code.
+        /// </summary>
+        /// <param name="data">Data to encode.</param>
+        /// <param name="errorCorrection">Error correction level (0=Low, 1=Medium, 2=Quartile, 3=High).</param>
+        /// <param name="size">Image size in pixels.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Barcode image handle, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, CharSet = CharSet.Ansi)]
+        public static extern NativeHandle pdf_generate_qr_code(
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string data,
+            int errorCorrection,
+            int size,
+            out int errorCode);
+
+        /// <summary>
+        /// Generates a barcode.
+        /// </summary>
+        /// <param name="data">Data to encode.</param>
+        /// <param name="format">Barcode format (0=QR, 1=DataMatrix, etc.).</param>
+        /// <param name="width">Image width in pixels.</param>
+        /// <param name="height">Image height in pixels.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Barcode image handle, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, CharSet = CharSet.Ansi)]
+        public static extern NativeHandle pdf_generate_barcode(
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string data,
+            int format,
+            int width,
+            int height,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets barcode image data as bytes.
+        /// </summary>
+        /// <param name="imageHandle">The barcode image handle.</param>
+        /// <param name="outputLen">Output parameter for buffer size.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Pointer to image data (PNG format).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_barcode_image_data(
+            NativeHandle imageHandle,
+            out int outputLen,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets barcode image dimensions.
+        /// </summary>
+        /// <param name="imageHandle">The barcode image handle.</param>
+        /// <param name="width">Output parameter for width.</param>
+        /// <param name="height">Output parameter for height.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True on success, false on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_barcode_image_dimensions(
+            NativeHandle imageHandle,
+            out int width,
+            out int height,
+            out int errorCode);
+
+        /// <summary>
+        /// Saves barcode image to file.
+        /// </summary>
+        /// <param name="imageHandle">The barcode image handle.</param>
+        /// <param name="path">Output file path.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True on success, false on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, CharSet = CharSet.Ansi)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_barcode_image_save(
+            NativeHandle imageHandle,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string path,
+            out int errorCode);
+
+        /// <summary>
+        /// Frees barcode detection results.
+        /// </summary>
+        /// <param name="handle">The results handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_barcode_results_free(IntPtr handle);
+
+        /// <summary>
+        /// Frees a barcode handle.
+        /// </summary>
+        /// <param name="handle">The barcode handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_barcode_free(IntPtr handle);
+
+        /// <summary>
+        /// Frees a barcode image handle.
+        /// </summary>
+        /// <param name="handle">The image handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_barcode_image_free(IntPtr handle);
+
+        #endregion
+
+        #region XFA API
+
+        /// <summary>
+        /// Checks if document contains XFA forms.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True if XFA forms present, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_has_xfa(
+            NativeHandle handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the XFA data packet.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="packetName">Name of the XFA packet (e.g., "template", "data", "config").</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated XML string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, CharSet = CharSet.Ansi)]
+        public static extern IntPtr pdf_xfa_get_packet(
+            NativeHandle handle,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string packetName,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the XFA form type.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>XFA type (0=None, 1=Static, 2=Dynamic, 3=Hybrid).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_xfa_get_type(
+            NativeHandle handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the number of XFA fields.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Number of XFA fields.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_xfa_get_field_count(
+            NativeHandle handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets an XFA field by index.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="index">Field index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Field handle, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern NativeHandle pdf_xfa_get_field(
+            NativeHandle handle,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the name of an XFA field.
+        /// </summary>
+        /// <param name="fieldHandle">The field handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_xfa_field_get_name(
+            NativeHandle fieldHandle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the value of an XFA field.
+        /// </summary>
+        /// <param name="fieldHandle">The field handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_xfa_field_get_value(
+            NativeHandle fieldHandle,
+            out int errorCode);
+
+        /// <summary>
+        /// Sets the value of an XFA field.
+        /// </summary>
+        /// <param name="fieldHandle">The field handle.</param>
+        /// <param name="value">The new value.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True on success, false on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, CharSet = CharSet.Ansi)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_xfa_field_set_value(
+            NativeHandle fieldHandle,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string value,
+            out int errorCode);
+
+        /// <summary>
+        /// Frees an XFA field handle.
+        /// </summary>
+        /// <param name="handle">The field handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_xfa_field_free(IntPtr handle);
+
+        #endregion
+
+        #region Hybrid ML API
+
+        /// <summary>
+        /// Creates a hybrid ML analyzer.
+        /// </summary>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Analyzer handle, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern NativeHandle pdf_hybrid_ml_analyzer_create(out int errorCode);
+
+        /// <summary>
+        /// Analyzes a page using hybrid ML.
+        /// </summary>
+        /// <param name="analyzerHandle">The analyzer handle.</param>
+        /// <param name="documentHandle">The document handle.</param>
+        /// <param name="pageIndex">The page index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Analysis result handle, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern NativeHandle pdf_hybrid_ml_analyze_page(
+            NativeHandle analyzerHandle,
+            NativeHandle documentHandle,
+            int pageIndex,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the number of detected regions from analysis result.
+        /// </summary>
+        /// <param name="resultHandle">The analysis result handle.</param>
+        /// <returns>Number of regions detected.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_hybrid_ml_result_region_count(NativeHandle resultHandle);
+
+        /// <summary>
+        /// Gets a region from analysis result.
+        /// </summary>
+        /// <param name="resultHandle">The analysis result handle.</param>
+        /// <param name="index">Region index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Region handle, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern NativeHandle pdf_hybrid_ml_result_get_region(
+            NativeHandle resultHandle,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the type of a detected region.
+        /// </summary>
+        /// <param name="regionHandle">The region handle.</param>
+        /// <returns>Region type (0=Text, 1=Image, 2=Table, 3=Figure, etc.).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_hybrid_ml_region_get_type(NativeHandle regionHandle);
+
+        /// <summary>
+        /// Gets the bounding box of a detected region.
+        /// </summary>
+        /// <param name="regionHandle">The region handle.</param>
+        /// <param name="x">Output parameter for x coordinate.</param>
+        /// <param name="y">Output parameter for y coordinate.</param>
+        /// <param name="width">Output parameter for width.</param>
+        /// <param name="height">Output parameter for height.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_hybrid_ml_region_get_bounds(
+            NativeHandle regionHandle,
+            out float x,
+            out float y,
+            out float width,
+            out float height);
+
+        /// <summary>
+        /// Gets the confidence of a detected region.
+        /// </summary>
+        /// <param name="regionHandle">The region handle.</param>
+        /// <returns>Confidence score (0.0-1.0).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern float pdf_hybrid_ml_region_get_confidence(NativeHandle regionHandle);
+
+        /// <summary>
+        /// Gets the extracted text from a region.
+        /// </summary>
+        /// <param name="regionHandle">The region handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_hybrid_ml_region_get_text(
+            NativeHandle regionHandle,
+            out int errorCode);
+
+        /// <summary>
+        /// Frees a hybrid ML analyzer handle.
+        /// </summary>
+        /// <param name="handle">The analyzer handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_hybrid_ml_analyzer_free(IntPtr handle);
+
+        /// <summary>
+        /// Frees a hybrid ML result handle.
+        /// </summary>
+        /// <param name="handle">The result handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_hybrid_ml_result_free(IntPtr handle);
+
+        /// <summary>
+        /// Frees a hybrid ML region handle.
+        /// </summary>
+        /// <param name="handle">The region handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_hybrid_ml_region_free(IntPtr handle);
+
+        #endregion
+
+        #region Layer API
+
+        /// <summary>
+        /// Gets the number of layers (OCGs) in document.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Number of layers.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_get_layer_count(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets layer name at specified index.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="index">Layer index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_layer_name(
+            IntPtr handle,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Checks if layer is visible.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="index">Layer index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True if visible, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_is_layer_visible(
+            IntPtr handle,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Sets layer visibility.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="index">Layer index (0-based).</param>
+        /// <param name="visible">Whether the layer should be visible.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True on success, false on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_set_layer_visibility(
+            IntPtr handle,
+            int index,
+            [MarshalAs(UnmanagedType.I1)] bool visible,
+            out int errorCode);
+
+        /// <summary>
+        /// Checks if document has layers.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <returns>True if document has layers, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_has_layers(IntPtr handle);
+
+        #endregion
+
+        #region Metadata API
+
+        /// <summary>
+        /// Gets document title.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer, or null if not set. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_title(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets document author.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer, or null if not set. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_author(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets document subject.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer, or null if not set. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_subject(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets document keywords.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer, or null if not set. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_keywords(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets document creator application.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer, or null if not set. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_creator(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets document producer application.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer, or null if not set. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_producer(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets document creation date as Unix timestamp.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Unix timestamp, or 0 if not set.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern long pdf_get_creation_date(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets document modification date as Unix timestamp.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Unix timestamp, or 0 if not set.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern long pdf_get_modification_date(
+            IntPtr handle,
+            out int errorCode);
+
+        #endregion
+
+        #region Outline API
+
+        /// <summary>
+        /// Gets the number of outlines (bookmarks) in document.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Number of outlines.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_get_outline_count(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets outline at specified index.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="index">Outline index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Outline handle, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_outline(
+            IntPtr handle,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets outline title.
+        /// </summary>
+        /// <param name="outlineHandle">The outline handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_outline_get_title(
+            IntPtr outlineHandle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets outline target page.
+        /// </summary>
+        /// <param name="outlineHandle">The outline handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Page index (0-based), or -1 if not a page link.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_outline_get_page(
+            IntPtr outlineHandle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the number of children for an outline.
+        /// </summary>
+        /// <param name="outlineHandle">The outline handle.</param>
+        /// <returns>Number of child outlines.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_outline_get_child_count(IntPtr outlineHandle);
+
+        /// <summary>
+        /// Gets child outline at specified index.
+        /// </summary>
+        /// <param name="outlineHandle">The parent outline handle.</param>
+        /// <param name="index">Child index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Outline handle, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_outline_get_child(
+            IntPtr outlineHandle,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Checks if document has outlines.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <returns>True if document has outlines, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_has_outlines(IntPtr handle);
+
+        /// <summary>
+        /// Frees an outline handle.
+        /// </summary>
+        /// <param name="handle">The outline handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_outline_free(IntPtr handle);
+
+        #endregion
+
+        #region Security API
+
+        /// <summary>
+        /// Checks if document is encrypted.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <returns>True if encrypted, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_is_encrypted(IntPtr handle);
+
+        /// <summary>
+        /// Gets the encryption level.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer (e.g., "RC4 40-bit", "AES 256-bit"). Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_encryption_level(
+            IntPtr handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Checks if document requires password.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <returns>True if password required, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_requires_password(IntPtr handle);
+
+        /// <summary>
+        /// Checks if document allows printing.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <returns>True if printing allowed, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_can_print(IntPtr handle);
+
+        /// <summary>
+        /// Checks if document allows copying.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <returns>True if copying allowed, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_can_copy(IntPtr handle);
+
+        /// <summary>
+        /// Checks if document allows modification.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <returns>True if modification allowed, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_can_modify(IntPtr handle);
+
+        /// <summary>
+        /// Checks if document allows form filling.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <returns>True if form filling allowed, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_can_fill_forms(IntPtr handle);
+
+        /// <summary>
+        /// Checks if document allows annotation.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <returns>True if annotation allowed, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_can_annotate(IntPtr handle);
+
+        /// <summary>
+        /// Unlocks a password-protected document.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="password">The password.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True if unlocked successfully, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, CharSet = CharSet.Ansi)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_unlock(
+            NativeHandle handle,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string password,
+            out int errorCode);
+
+        #endregion
+
+        #region Form Field API
+
+        /// <summary>
+        /// Gets the number of form fields in document.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Number of form fields.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_get_form_field_count(
+            NativeHandle handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets form field at specified index.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="index">Field index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Field handle, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern NativeHandle pdf_get_form_field(
+            NativeHandle handle,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets form field by name.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="name">The field name.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Field handle, or null if not found.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, CharSet = CharSet.Ansi)]
+        public static extern NativeHandle pdf_get_form_field_by_name(
+            NativeHandle handle,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string name,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets form field name.
+        /// </summary>
+        /// <param name="fieldHandle">The field handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_form_field_get_name(
+            NativeHandle fieldHandle,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets form field type.
+        /// </summary>
+        /// <param name="fieldHandle">The field handle.</param>
+        /// <returns>Field type (0=Text, 1=Checkbox, 2=Radio, 3=Combo, 4=List, 5=Button, 6=Signature).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_form_field_get_type(NativeHandle fieldHandle);
+
+        /// <summary>
+        /// Gets form field value.
+        /// </summary>
+        /// <param name="fieldHandle">The field handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_form_field_get_value(
+            NativeHandle fieldHandle,
+            out int errorCode);
+
+        /// <summary>
+        /// Sets form field value.
+        /// </summary>
+        /// <param name="fieldHandle">The field handle.</param>
+        /// <param name="value">The new value.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True on success, false on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, CharSet = CharSet.Ansi)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_form_field_set_value(
+            NativeHandle fieldHandle,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string value,
+            out int errorCode);
+
+        /// <summary>
+        /// Checks if form field is read-only.
+        /// </summary>
+        /// <param name="fieldHandle">The field handle.</param>
+        /// <returns>True if read-only, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_form_field_is_readonly(NativeHandle fieldHandle);
+
+        /// <summary>
+        /// Checks if form field is required.
+        /// </summary>
+        /// <param name="fieldHandle">The field handle.</param>
+        /// <returns>True if required, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_form_field_is_required(NativeHandle fieldHandle);
+
+        /// <summary>
+        /// Checks if document has form fields.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <returns>True if document has form fields, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_has_form_fields(NativeHandle handle);
+
+        /// <summary>
+        /// Frees a form field handle.
+        /// </summary>
+        /// <param name="handle">The field handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_form_field_free(IntPtr handle);
+
+        #endregion
+
+        #region Thumbnail API
+
+        /// <summary>
+        /// Generates a thumbnail for a page.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="pageIndex">The page index (0-based).</param>
+        /// <param name="width">Maximum thumbnail width.</param>
+        /// <param name="height">Maximum thumbnail height.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Thumbnail image handle, or null on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern NativeHandle pdf_generate_thumbnail(
+            NativeHandle handle,
+            int pageIndex,
+            int width,
+            int height,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets thumbnail image data as bytes.
+        /// </summary>
+        /// <param name="thumbnailHandle">The thumbnail handle.</param>
+        /// <param name="format">Output format (0=PNG, 1=JPEG).</param>
+        /// <param name="outputPtr">Output parameter for byte buffer pointer.</param>
+        /// <param name="outputLen">Output parameter for buffer size.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_thumbnail_get_data(
+            NativeHandle thumbnailHandle,
+            int format,
+            out IntPtr outputPtr,
+            out int outputLen,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets thumbnail dimensions.
+        /// </summary>
+        /// <param name="thumbnailHandle">The thumbnail handle.</param>
+        /// <param name="width">Output parameter for width.</param>
+        /// <param name="height">Output parameter for height.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_thumbnail_get_dimensions(
+            NativeHandle thumbnailHandle,
+            out int width,
+            out int height);
+
+        /// <summary>
+        /// Saves thumbnail to file.
+        /// </summary>
+        /// <param name="thumbnailHandle">The thumbnail handle.</param>
+        /// <param name="path">Output file path.</param>
+        /// <param name="format">Output format (0=PNG, 1=JPEG).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True on success, false on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, CharSet = CharSet.Ansi)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_thumbnail_save(
+            NativeHandle thumbnailHandle,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string path,
+            int format,
+            out int errorCode);
+
+        /// <summary>
+        /// Frees a thumbnail handle.
+        /// </summary>
+        /// <param name="handle">The thumbnail handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_thumbnail_free(IntPtr handle);
+
+        #endregion
+
+        #region Content Analysis API
+
+        /// <summary>
+        /// Checks if a page has any content.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="pageIndex">The page index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True if page has content, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_page_has_content(
+            NativeHandle handle,
+            int pageIndex,
+            out int errorCode);
+
+        /// <summary>
+        /// Checks if a page is blank.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="pageIndex">The page index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True if page is blank, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_page_is_blank(
+            NativeHandle handle,
+            int pageIndex,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets page content size in bytes.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="pageIndex">The page index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Content size in bytes.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern long pdf_page_get_content_size(
+            NativeHandle handle,
+            int pageIndex,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets page complexity score.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="pageIndex">The page index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Complexity score (higher = more complex).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_page_get_complexity_score(
+            NativeHandle handle,
+            int pageIndex,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the width of a page in PDF points.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_page_get_width")]
+        public static extern float pdf_page_get_width(
+            NativeHandle handle,
+            int pageIndex,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the height of a page in PDF points.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_page_get_height")]
+        public static extern float pdf_page_get_height(
+            NativeHandle handle,
+            int pageIndex,
+            out int errorCode);
+
+        /// <summary>
+        /// Checks if page likely has forms.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="pageIndex">The page index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True if page likely has forms, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_page_likely_has_forms(
+            NativeHandle handle,
+            int pageIndex,
+            out int errorCode);
+
+        /// <summary>
+        /// Checks if page likely has tables.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="pageIndex">The page index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True if page likely has tables, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_page_likely_has_tables(
+            NativeHandle handle,
+            int pageIndex,
+            out int errorCode);
+
+        /// <summary>
+        /// Checks if page likely has images.
+        /// </summary>
+        /// <param name="handle">The document handle.</param>
+        /// <param name="pageIndex">The page index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True if page likely has images, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_page_likely_has_images(
+            NativeHandle handle,
+            int pageIndex,
+            out int errorCode);
+
+        #endregion
+
+        // Phase 2 declarations moved to existing regions above (Barcode API, Digital Signature API, Rendering API)
+
+        #region Document Security & Permissions (15 functions)
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_document_can_copy(NativeHandle handle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_document_can_print(NativeHandle handle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_document_can_modify(NativeHandle handle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_document_can_annotate(NativeHandle handle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_document_can_fill_forms(NativeHandle handle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_document_can_extract_text(NativeHandle handle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_document_can_assemble(NativeHandle handle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_document_can_print_high_quality(NativeHandle handle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_document_is_encrypted(NativeHandle handle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_document_get_security_revision(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_document_get_all_permissions(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_document_get_owner_password_status(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_document_get_user_password_status(NativeHandle handle, out int errorCode);
+
+        #endregion
+
+        #region Document Metadata (18 functions)
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern long pdf_document_get_creation_date(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern long pdf_document_get_modification_date(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_document_get_producer(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_document_get_creator(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_document_get_all_metadata(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_document_has_metadata_stream(NativeHandle handle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_document_get_metadata_xml(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_document_is_linearized(NativeHandle handle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern long pdf_document_get_file_size(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_document_get_embedded_font_names(NativeHandle handle, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_document_get_embedded_file_count(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_document_get_author(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_document_get_title(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_document_get_subject(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_document_get_keywords(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_pdf_version(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_encryption_algorithm(NativeHandle handle, out int errorCode);
+
+        #endregion
+
+        #region Element Finding & Discovery (17 functions)
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_get_element_count(NativeHandle handle, int pageIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_element_content(NativeHandle handle, int pageIndex, int elementIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_element_type(NativeHandle handle, int pageIndex, int elementIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_has_structured_content(NativeHandle handle, int pageIndex);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_get_text_element_count(NativeHandle handle, int pageIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_find_elements_by_type(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string elementType, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_page_elements_json(NativeHandle handle, int pageIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_find_elements_in_rect(NativeHandle handle, int pageIndex, float x, float y, float width, float height, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_element_bounds(NativeHandle handle, int pageIndex, int elementIndex, out int errorCode);
+
+        #endregion
+
+        #region Page Operations (9 functions)
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_delete_page(NativeHandle handle, int pageIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_move_page(NativeHandle handle, int fromIndex, int toIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_copy_page(NativeHandle handle, int pageIndex, int insertAfter, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_rotate_page(NativeHandle handle, int pageIndex, int degrees, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_is_page_blank(NativeHandle handle, int pageIndex);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_get_page_rotation(NativeHandle handle, int pageIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_page_mediabox(NativeHandle handle, int pageIndex, float x, float y, float width, float height, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_page_cropbox(NativeHandle handle, int pageIndex, float x, float y, float width, float height, out int errorCode);
+
+        #endregion
+
+        #region Form Field Operations (29 functions)
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_create_text_field(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, float x, float y, float width, float height, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_create_checkbox(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, float x, float y, float width, float height, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_create_radio_button(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, IntPtr options, int optionCount, float x, float y, float width, float height, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_create_listbox(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, IntPtr items, int itemCount, float x, float y, float width, float height, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_create_combobox(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, IntPtr items, int itemCount, float x, float y, float width, float height, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_create_signature_field(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, float x, float y, float width, float height, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_field_readonly(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, [MarshalAs(UnmanagedType.I1)] bool readOnly, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_field_required(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, [MarshalAs(UnmanagedType.I1)] bool required, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_field_value(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, [MarshalAs(UnmanagedType.LPUTF8Str)] string value, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_field_default_value(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, [MarshalAs(UnmanagedType.LPUTF8Str)] string value, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_field_max_length(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, int maxLength, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_field_visibility(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, int visibility, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_field_type(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_field_value(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_is_field_required(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_is_field_readonly(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_get_field_max_length(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_field_options(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_field_bounds(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_validate_fields(NativeHandle handle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_field_errors(NativeHandle handle, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_reset_field(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_reset_all_fields(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_export_field_data(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_import_field_data(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string data, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_flatten_form(NativeHandle handle, out int errorCode);
+
+        // pdf_has_form_fields is defined in Form Field API region above - removed duplicate
+
+        #endregion
+
+        #region Form Export/Import (11 functions)
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_export_form_xml(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_export_form_json(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_export_form_csv(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_export_form_xfdf(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_import_form_json(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string jsonData, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_import_form_xml(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string xmlData, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_import_form_csv(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string csvData, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_import_form_xfdf(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string xfdfData, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_export_form_bytes(NativeHandle handle, out int dataLen, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_import_form_bytes(NativeHandle handle, [In] byte[] data, int dataLen, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_form_version(NativeHandle handle, out int errorCode);
+
+        #endregion
+
+        #region Search Operations (13 functions)
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_document_search_all(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string query, [MarshalAs(UnmanagedType.I1)] bool caseSensitive, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_document_search_page(NativeHandle handle, int pageIndex, [MarshalAs(UnmanagedType.LPUTF8Str)] string query, [MarshalAs(UnmanagedType.I1)] bool caseSensitive, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_count_occurrences(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string text, [MarshalAs(UnmanagedType.I1)] bool caseSensitive, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_first_occurrence(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string text, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_last_occurrence(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string text, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_search_regex(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string pattern, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_count_regex_matches(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string pattern, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_search_regex_page(NativeHandle handle, int pageIndex, [MarshalAs(UnmanagedType.LPUTF8Str)] string pattern, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_search_whole_word(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string word, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_search_with_context(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string text, int contextChars, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_search_term_frequency(NativeHandle handle, IntPtr terms, int termCount, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_search_near_point(NativeHandle handle, int pageIndex, double x, double y, double radius, out int errorCode);
+
+        #endregion
+
+        #region Annotation Operations (31 functions)
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_add_text_annotation(NativeHandle handle, int pageIndex, float x, float y, float width, float height, [MarshalAs(UnmanagedType.LPUTF8Str)] string content, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_add_highlight(NativeHandle handle, int pageIndex, float x, float y, float width, float height, [MarshalAs(UnmanagedType.LPUTF8Str)] string color, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_add_underline(NativeHandle handle, int pageIndex, float x, float y, float width, float height, [MarshalAs(UnmanagedType.LPUTF8Str)] string color, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_add_strikeout(NativeHandle handle, int pageIndex, float x, float y, float width, float height, [MarshalAs(UnmanagedType.LPUTF8Str)] string color, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_add_square_annotation(NativeHandle handle, int pageIndex, float x, float y, float width, float height, [MarshalAs(UnmanagedType.LPUTF8Str)] string borderColor, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_add_circle_annotation(NativeHandle handle, int pageIndex, float x, float y, float width, float height, [MarshalAs(UnmanagedType.LPUTF8Str)] string borderColor, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_add_line_annotation(NativeHandle handle, int pageIndex, double x1, double y1, double x2, double y2, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_add_freetext_annotation(NativeHandle handle, int pageIndex, float x, float y, float width, float height, [MarshalAs(UnmanagedType.LPUTF8Str)] string text, [MarshalAs(UnmanagedType.LPUTF8Str)] string fontName, double fontSize, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_add_link_annotation(NativeHandle handle, int pageIndex, float x, float y, float width, float height, [MarshalAs(UnmanagedType.LPUTF8Str)] string url, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_add_file_annotation(NativeHandle handle, int pageIndex, float x, float y, float width, float height, [MarshalAs(UnmanagedType.LPUTF8Str)] string filePath, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_get_annotation_count_on_page(NativeHandle handle, int pageIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_annotation(NativeHandle handle, int pageIndex, int annotationIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_page_annotations(NativeHandle handle, int pageIndex, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_annotations_by_type(NativeHandle handle, int pageIndex, [MarshalAs(UnmanagedType.LPUTF8Str)] string type, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_annotation_content(NativeHandle handle, int pageIndex, int annotationIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_modify_annotation_content(NativeHandle handle, int pageIndex, int annotationIndex, [MarshalAs(UnmanagedType.LPUTF8Str)] string newContent, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_modify_annotation_color(NativeHandle handle, int pageIndex, int annotationIndex, [MarshalAs(UnmanagedType.LPUTF8Str)] string color, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_modify_annotation_opacity(NativeHandle handle, int pageIndex, int annotationIndex, double opacity, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_annotation_author(NativeHandle handle, int pageIndex, int annotationIndex, [MarshalAs(UnmanagedType.LPUTF8Str)] string author, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_annotation_date(NativeHandle handle, int pageIndex, int annotationIndex, long dateTime, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_annotation_flags(NativeHandle handle, int pageIndex, int annotationIndex, int flags, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_delete_annotation(NativeHandle handle, int pageIndex, int annotationIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_delete_all_page_annotations(NativeHandle handle, int pageIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_delete_annotations_by_type(NativeHandle handle, int pageIndex, [MarshalAs(UnmanagedType.LPUTF8Str)] string type, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_flatten_annotations(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_get_total_annotation_count(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_export_annotations(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string format, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_import_annotations(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string format, [MarshalAs(UnmanagedType.LPUTF8Str)] string data, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_export_annotations_bytes(NativeHandle handle, out int dataLen, out int errorCode);
+
+        #endregion
+
+        #region OCR Operations (21 functions)
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_ocr_analyze_page(NativeHandle handle, int pageIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_ocr_extract_text(NativeHandle handle, int pageIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_ocr_get_spans(NativeHandle handle, int pageIndex, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern double pdf_ocr_average_confidence(NativeHandle handle, int pageIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_ocr_extract_page_range(NativeHandle handle, int startPage, int endPage, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_ocr_analyze_range(NativeHandle handle, int startPage, int endPage, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_ocr_detect_language(NativeHandle handle, int pageIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_ocr_detect_languages(NativeHandle handle, int pageIndex, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_ocr_set_language(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string language, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_ocr_get_languages(out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_ocr_set_resolution(NativeHandle handle, int dpi, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_ocr_set_preprocessing(NativeHandle handle, [MarshalAs(UnmanagedType.I1)] bool enabled, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_ocr_set_confidence_threshold(NativeHandle handle, double threshold, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_ocr_get_config(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_ocr_total_words(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern double pdf_ocr_total_confidence(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_ocr_get_skipped_pages(NativeHandle handle, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_ocr_get_debug_info(NativeHandle handle, out int errorCode);
+
+        #endregion
+
+        #region Barcode Operations (14 functions)
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_generate_barcode(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string data, int format, int width, int height, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_add_barcode_to_page(NativeHandle handle, int pageIndex, [MarshalAs(UnmanagedType.LPUTF8Str)] string data, int format, double x, double y, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_generate_qrcode(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string data, int size, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_generate_code128(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string data, int width, int height, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_generate_code39(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string data, int width, int height, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_generate_ean13(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string data, int width, int height, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_detect_barcodes(NativeHandle handle, int pageIndex, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_read_barcode(NativeHandle handle, int pageIndex, int barcodeIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_count_barcodes(NativeHandle handle, int pageIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_detect_all_barcodes(NativeHandle handle, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_get_barcode_format(NativeHandle handle, int pageIndex, int barcodeIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_barcode_location(NativeHandle handle, int pageIndex, int barcodeIndex, out int errorCode);
+
+        #endregion
+
+        #region Rendering Operations (15 functions)
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_render_to_png(NativeHandle handle, int pageIndex, int dpi, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_render_to_jpeg(NativeHandle handle, int pageIndex, int dpi, int quality, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_render_to_pdf(NativeHandle handle, int pageIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_render_colorspace(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string colorspace, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_render_scale(NativeHandle handle, double scale, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_render_transparency(NativeHandle handle, [MarshalAs(UnmanagedType.I1)] bool enabled, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_render_page_range(NativeHandle handle, int startIndex, int endIndex, int format, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_render_to_files(NativeHandle handle, int startIndex, int endIndex, [MarshalAs(UnmanagedType.LPUTF8Str)] string outputDir, [MarshalAs(UnmanagedType.LPUTF8Str)] string format, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_page_dimensions(NativeHandle handle, int pageIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_mediabox(NativeHandle handle, int pageIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_cropbox(NativeHandle handle, int pageIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_bleedbox(NativeHandle handle, int pageIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_trimbox(NativeHandle handle, int pageIndex, out int errorCode);
+
+        #endregion
+
+        #region XFA Operations (10 functions)
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_has_xfa(NativeHandle handle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_get_xfa_form_type(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_get_xfa_field_count(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_parse_xfa_form(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_xfa_fields(NativeHandle handle, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_xfa_field_value(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_xfa_field_value(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, [MarshalAs(UnmanagedType.LPUTF8Str)] string value, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_xfa_dataset(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_export_xfa_dataset_xml(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_import_xfa_dataset_xml(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string xmlData, out int errorCode);
+
+        #endregion
+
+        #region Digital Signature Operations (13 functions)
+
+        // pdf_sign_document is defined in Digital Signature API region above - removed duplicate
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_add_signature_field(NativeHandle handle, int pageIndex, float x, float y, float width, float height, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_sign_field(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, [MarshalAs(UnmanagedType.LPUTF8Str)] string certificatePath, [MarshalAs(UnmanagedType.LPUTF8Str)] string password, int algorithm, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_verify_signature(NativeHandle handle, int signatureIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_verify_all_signatures(NativeHandle handle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_signature_info(NativeHandle handle, int signatureIndex, out int errorCode);
+
+        // pdf_get_signature_count is defined in Digital Signature API region above - removed duplicate
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_all_signatures(NativeHandle handle, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern long pdf_get_signature_date(NativeHandle handle, int signatureIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_signer_name(NativeHandle handle, int signatureIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_is_cert_expired(NativeHandle handle, int signatureIndex);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_remove_signature(NativeHandle handle, int signatureIndex, out int errorCode);
+
+        #endregion
+
+        #region Additional Manager Support Functions
+
+        // Cache Operations
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern long pdf_cache_get_size(out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_cache_get_entry_count(out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_cache_get_statistics(out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern long pdf_cache_get_hit_count(out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern long pdf_cache_get_miss_count(out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern double pdf_cache_get_hit_rate(out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern long pdf_cache_get_eviction_count(out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_cache_clear(out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_cache_clear_rendering(out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_cache_clear_fonts(out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_cache_clear_images(out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_cache_clear_text(out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_cache_clear_ocr(out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_cache_clear_all(out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_cache_set_max_size(long maxBytes, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern long pdf_cache_get_max_size(out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_cache_set_enabled([MarshalAs(UnmanagedType.I1)] bool enabled, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_cache_is_enabled(out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern long pdf_cache_get_rendering_size(out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern long pdf_cache_get_font_size(out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern long pdf_cache_get_image_size(out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern long pdf_cache_get_text_size(out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_cache_trim(out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_cache_trim_to_size(long targetBytes, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_cache_evict_older_than(int seconds, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern long pdf_cache_get_document_size(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_cache_clear_document(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_cache_preload_pages(NativeHandle handle, int startPage, int endPage, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern double pdf_cache_get_warmth(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_cache_optimize(out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_cache_compact(out int errorCode);
+
+        // Element Analysis Operations
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_find_elements(NativeHandle handle, int pageIndex, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_find_elements_by_type(NativeHandle handle, int pageIndex, [MarshalAs(UnmanagedType.LPUTF8Str)] string type, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_find_elements_in_region(NativeHandle handle, int pageIndex, float x, float y, float width, float height, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_element_at_position(NativeHandle handle, int pageIndex, float x, float y, out int errorCode);
+
+        // pdf_get_element_count is defined earlier - removed duplicate
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_get_element_count_by_type(NativeHandle handle, int pageIndex, [MarshalAs(UnmanagedType.LPUTF8Str)] string type, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_find_tables(NativeHandle handle, int pageIndex, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_find_images(NativeHandle handle, int pageIndex, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_find_text_blocks(NativeHandle handle, int pageIndex, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_get_element_bounds(NativeHandle handle, int pageIndex, int elementIndex, ref float x, ref float y, ref float width, ref float height, out int errorCode);
+
+        // pdf_get_element_type and pdf_get_element_content are defined earlier - removed duplicates
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_element_properties(NativeHandle handle, int pageIndex, int elementIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_table_cell_content(NativeHandle handle, int pageIndex, int tableIndex, int row, int column, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_get_table_dimensions(NativeHandle handle, int pageIndex, int tableIndex, ref int rows, ref int columns, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_extract_image_data(NativeHandle handle, int pageIndex, int imageIndex, out int dataLen, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_image_format(NativeHandle handle, int pageIndex, int imageIndex, out int errorCode);
+
+        // Format Conversion Operations
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_convert_to(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string outputPath, [MarshalAs(UnmanagedType.LPUTF8Str)] string format, int quality, int dpi, [MarshalAs(UnmanagedType.I1)] bool embedFonts, [MarshalAs(UnmanagedType.I1)] bool compressImages, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_convert_to_bytes(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string format, int quality, int dpi, out int dataLen, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_convert_to_pdfa(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string outputPath, [MarshalAs(UnmanagedType.LPUTF8Str)] string conformanceLevel, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_convert_to_pdfx(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string outputPath, [MarshalAs(UnmanagedType.LPUTF8Str)] string conformanceLevel, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_render_page_to_image(NativeHandle handle, int pageIndex, [MarshalAs(UnmanagedType.LPUTF8Str)] string format, int dpi, int quality, out int dataLen, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_convert_page_to_html(NativeHandle handle, int pageIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_convert_to_html(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_convert_page_to_markdown(NativeHandle handle, int pageIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_convert_to_markdown(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_convert_page_to_text(NativeHandle handle, int pageIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_convert_to_text(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_convert_to_xml(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_convert_to_json(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_supported_formats(out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_is_format_supported([MarshalAs(UnmanagedType.LPUTF8Str)] string format);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern long pdf_estimate_output_size(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string format, int quality, int dpi, out int errorCode);
+
+        // Advanced Metadata Operations
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_metadata_field(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_metadata_field(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, [MarshalAs(UnmanagedType.LPUTF8Str)] string value, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_custom_property(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string key, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_custom_property(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string key, [MarshalAs(UnmanagedType.LPUTF8Str)] string value, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_remove_custom_property(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string key, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_custom_property_keys(NativeHandle handle, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_xmp_metadata(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_xmp_metadata(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string xmpXml, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_xmp_property(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string namespace_, [MarshalAs(UnmanagedType.LPUTF8Str)] string property, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_xmp_property(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string namespace_, [MarshalAs(UnmanagedType.LPUTF8Str)] string property, [MarshalAs(UnmanagedType.LPUTF8Str)] string value, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_has_xmp_metadata(NativeHandle handle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_sync_metadata(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_clear_all_metadata(NativeHandle handle, out int errorCode);
+
+        // Advanced Rendering Operations
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_render_page(NativeHandle handle, int pageIndex, [MarshalAs(UnmanagedType.LPUTF8Str)] string format, int dpi, int quality, [MarshalAs(UnmanagedType.I1)] bool antiAliasing, [MarshalAs(UnmanagedType.I1)] bool renderAnnotations, [MarshalAs(UnmanagedType.I1)] bool renderFormFields, out int dataLen, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_get_render_dimensions(NativeHandle handle, int pageIndex, int dpi, float scale, ref int width, ref int height, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_render_region(NativeHandle handle, int pageIndex, float x, float y, float width, float height, [MarshalAs(UnmanagedType.LPUTF8Str)] string format, int dpi, out int dataLen, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_render_grayscale(NativeHandle handle, int pageIndex, int dpi, out int dataLen, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_render_with_transparency(NativeHandle handle, int pageIndex, int dpi, out int dataLen, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_render_with_background(NativeHandle handle, int pageIndex, [MarshalAs(UnmanagedType.LPUTF8Str)] string backgroundColor, int dpi, out int dataLen, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_render_rotated(NativeHandle handle, int pageIndex, int rotation, int dpi, out int dataLen, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_render_scaled(NativeHandle handle, int pageIndex, float scale, [MarshalAs(UnmanagedType.LPUTF8Str)] string format, out int dataLen, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_page_pixels(NativeHandle handle, int pageIndex, int dpi, out int width, out int height, out int stride, out int errorCode);
+
+        // Compliance Operations
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_check_compliance(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string standard, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_is_pdfa_compliant(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string level);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_is_pdfx_compliant(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string level);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_is_pdfua_compliant(NativeHandle handle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_pdfa_level(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_pdfx_level(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_validate_fonts(NativeHandle handle, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_validate_colors(NativeHandle handle, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_validate_images(NativeHandle handle, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_validate_metadata(NativeHandle handle, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_validate_accessibility(NativeHandle handle, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_is_tagged(NativeHandle handle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_are_fonts_embedded(NativeHandle handle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_output_intent(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_generate_compliance_report(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string standard, [MarshalAs(UnmanagedType.LPUTF8Str)] string format, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_compliance_summary(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_fix_suggestions(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string standard, out int count, out int errorCode);
+
+        // Barcode Advanced Operations
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_scan_barcodes(NativeHandle handle, int pageIndex, [MarshalAs(UnmanagedType.I1)] bool tryHarder, [MarshalAs(UnmanagedType.I1)] bool multiplePerPage, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_scan_barcodes_in_region(NativeHandle handle, int pageIndex, float x, float y, float width, float height, [MarshalAs(UnmanagedType.I1)] bool tryHarder, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_decode_barcode(NativeHandle handle, int pageIndex, [MarshalAs(UnmanagedType.LPUTF8Str)] string type, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_generate_barcode([MarshalAs(UnmanagedType.LPUTF8Str)] string data, [MarshalAs(UnmanagedType.LPUTF8Str)] string type, int width, int height, [MarshalAs(UnmanagedType.LPUTF8Str)] string errorCorrection, out int dataLen, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_get_barcode_count(NativeHandle handle, int pageIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_validate_barcode_data([MarshalAs(UnmanagedType.LPUTF8Str)] string data, [MarshalAs(UnmanagedType.LPUTF8Str)] string type);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_barcode_get_data(IntPtr barcodesPtr, int index, out int errorCode);
+
+        // Digital Signature Advanced Operations
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_signatures(NativeHandle handle, out int count, out int errorCode);
+
+        // pdf_get_signature is defined in Digital Signature API region above - removed duplicate
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_verify_signature_with_message(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string signatureName, out IntPtr messagePtr, out int errorCode);
+
+        // pdf_sign_document extended version is considered a separate overload and renamed
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_sign_document_advanced(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string certificatePath, [MarshalAs(UnmanagedType.LPUTF8Str)] string password, [MarshalAs(UnmanagedType.LPUTF8Str)] string reason, [MarshalAs(UnmanagedType.LPUTF8Str)] string location, [MarshalAs(UnmanagedType.LPUTF8Str)] string contactInfo, int signatureType, int pageIndex, float x, float y, float width, float height, [MarshalAs(UnmanagedType.I1)] bool addTimestamp, [MarshalAs(UnmanagedType.LPUTF8Str)] string timestampUrl, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_sign_with_certificate_bytes(NativeHandle handle, IntPtr certPtr, int certLen, [MarshalAs(UnmanagedType.LPUTF8Str)] string password, [MarshalAs(UnmanagedType.LPUTF8Str)] string reason, [MarshalAs(UnmanagedType.LPUTF8Str)] string location, int signatureType, int pageIndex, float x, float y, float width, float height, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_add_timestamp(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string signatureName, [MarshalAs(UnmanagedType.LPUTF8Str)] string timestampUrl, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_remove_signature(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string signatureName, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_remove_all_signatures(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_signature_certificate(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string signatureName, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_document_modified_since_signing(NativeHandle handle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_is_signed(NativeHandle handle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_all_signatures_valid(NativeHandle handle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_get_signature_field_names(NativeHandle handle, out int count, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_create_signature_field(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fieldName, int pageIndex, float x, float y, float width, float height, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_signature_get_name(IntPtr sigPtr, int index, out int errorCode);
+
+        // Phase 1 Enterprise Signing: Credential Management
+
+        /// <summary>
+        /// Loads signing credentials from a PKCS#12 (.p12/.pfx) file.
+        /// </summary>
+        /// <param name="filePath">Path to the PKCS#12 file.</param>
+        /// <param name="password">Password for the PKCS#12 file.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Opaque handle to signing credentials, or IntPtr.Zero on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_credentials_from_pkcs12(
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string filePath,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string password,
+            out int errorCode);
+
+        /// <summary>
+        /// Loads signing credentials from PEM certificate and key files.
+        /// </summary>
+        /// <param name="certFile">Path to the certificate PEM file.</param>
+        /// <param name="keyFile">Path to the private key PEM file (can be null).</param>
+        /// <param name="keyPassword">Password for an encrypted key (can be null).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Opaque handle to signing credentials, or IntPtr.Zero on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_credentials_from_pem(
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string certFile,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string? keyFile,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string? keyPassword,
+            out int errorCode);
+
+        /// <summary>
+        /// Loads signing credentials from raw DER-encoded certificate and key bytes.
+        /// </summary>
+        /// <param name="certData">Pointer to DER-encoded certificate bytes.</param>
+        /// <param name="certSize">Size of certificate data in bytes.</param>
+        /// <param name="keyData">Pointer to DER-encoded private key bytes (can be IntPtr.Zero).</param>
+        /// <param name="keySize">Size of key data in bytes.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Opaque handle to signing credentials, or IntPtr.Zero on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_credentials_from_der(
+            IntPtr certData,
+            UIntPtr certSize,
+            IntPtr keyData,
+            UIntPtr keySize,
+            out int errorCode);
+
+        /// <summary>
+        /// Adds a certificate chain entry to signing credentials.
+        /// </summary>
+        /// <param name="credentials">Handle to the signing credentials.</param>
+        /// <param name="certData">Pointer to DER-encoded certificate bytes.</param>
+        /// <param name="certSize">Size of certificate data in bytes.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True on success, false on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_credentials_add_chain_cert(
+            IntPtr credentials,
+            IntPtr certData,
+            UIntPtr certSize,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the certificate from signing credentials.
+        /// </summary>
+        /// <param name="credentials">Handle to the signing credentials.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Certificate handle, or IntPtr.Zero on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_credentials_get_certificate(
+            IntPtr credentials,
+            out int errorCode);
+
+        /// <summary>
+        /// Frees signing credentials.
+        /// </summary>
+        /// <param name="credentials">Handle to the signing credentials to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_credentials_free(IntPtr credentials);
+
+        // Phase 1 Enterprise Signing: Certificate Inspection
+
+        /// <summary>
+        /// Loads a certificate from raw DER-encoded bytes for inspection.
+        /// </summary>
+        /// <param name="certData">Pointer to DER-encoded certificate bytes.</param>
+        /// <param name="certSize">Size of certificate data in bytes.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Certificate handle, or IntPtr.Zero on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_certificate_load_from_bytes(
+            IntPtr certData,
+            UIntPtr certSize,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the common name (CN) from a certificate handle.
+        /// </summary>
+        /// <param name="cert">Certificate handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_certificate_get_cn(
+            IntPtr cert,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the issuer name from a certificate handle (standalone certificate inspection).
+        /// </summary>
+        /// <param name="cert">Certificate handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>UTF-8 null-terminated string pointer. Must be freed with FreeString().</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_certificate_get_issuer")]
+        public static extern IntPtr pdf_certificate_handle_get_issuer(
+            IntPtr cert,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the size in bytes of a certificate's DER-encoded data.
+        /// </summary>
+        /// <param name="cert">Certificate handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Certificate size in bytes.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern UIntPtr pdf_certificate_get_size(
+            IntPtr cert,
+            out int errorCode);
+
+        /// <summary>
+        /// Adds a timestamp to a signed PDF document using a TSA (Time Stamp Authority).
+        /// Operates on raw PDF byte data and returns timestamped PDF bytes.
+        /// </summary>
+        /// <param name="pdfData">Pointer to signed PDF data bytes.</param>
+        /// <param name="pdfLen">Length of PDF data.</param>
+        /// <param name="signatureIndex">Index of the signature to timestamp.</param>
+        /// <param name="tsaUrl">URL of the Time Stamp Authority.</param>
+        /// <param name="outData">Output pointer to timestamped PDF bytes.</param>
+        /// <param name="outLen">Output length of timestamped PDF bytes.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True on success, false on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_add_timestamp")]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_add_timestamp_bytes(
+            IntPtr pdfData,
+            UIntPtr pdfLen,
+            int signatureIndex,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string tsaUrl,
+            out IntPtr outData,
+            out UIntPtr outLen,
+            out int errorCode);
+
+        // Phase 1 Enterprise Signing: Document Signing
+
+        /// <summary>
+        /// Signs a PDF document in memory and returns the signed bytes.
+        /// </summary>
+        /// <param name="pdfData">Pointer to PDF data bytes.</param>
+        /// <param name="pdfLen">Length of PDF data.</param>
+        /// <param name="credentials">Handle to signing credentials.</param>
+        /// <param name="reason">Signing reason (can be null).</param>
+        /// <param name="location">Signing location (can be null).</param>
+        /// <param name="contact">Contact info (can be null).</param>
+        /// <param name="algorithm">Digest algorithm (0=SHA1, 1=SHA256, 2=SHA384, 3=SHA512).</param>
+        /// <param name="subfilter">Signature subfilter (0=PKCS7_DETACHED, 1=PKCS7_SHA1, 2=CADES_DETACHED).</param>
+        /// <param name="outData">Output pointer to signed PDF bytes.</param>
+        /// <param name="outLen">Output length of signed PDF bytes.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True on success, false on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_document_sign(
+            IntPtr pdfData,
+            UIntPtr pdfLen,
+            IntPtr credentials,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string? reason,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string? location,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string? contact,
+            int algorithm,
+            int subfilter,
+            out IntPtr outData,
+            out UIntPtr outLen,
+            out int errorCode);
+
+        /// <summary>
+        /// Signs a PDF file and writes the signed output to another file.
+        /// </summary>
+        /// <param name="inputPath">Path to the input PDF file.</param>
+        /// <param name="outputPath">Path for the signed output file.</param>
+        /// <param name="credentials">Handle to signing credentials.</param>
+        /// <param name="reason">Signing reason (can be null).</param>
+        /// <param name="location">Signing location (can be null).</param>
+        /// <param name="contact">Contact info (can be null).</param>
+        /// <param name="algorithm">Digest algorithm.</param>
+        /// <param name="subfilter">Signature subfilter.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True on success, false on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_document_sign_file(
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string inputPath,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string outputPath,
+            IntPtr credentials,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string? reason,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string? location,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string? contact,
+            int algorithm,
+            int subfilter,
+            out int errorCode);
+
+        /// <summary>
+        /// Signs a PDF document with a visible signature appearance.
+        /// </summary>
+        /// <param name="pdfData">Pointer to PDF data bytes.</param>
+        /// <param name="pdfLen">Length of PDF data.</param>
+        /// <param name="credentials">Handle to signing credentials.</param>
+        /// <param name="pageNum">Page number for the visible signature.</param>
+        /// <param name="x">X coordinate of the signature rectangle.</param>
+        /// <param name="y">Y coordinate of the signature rectangle.</param>
+        /// <param name="width">Width of the signature rectangle.</param>
+        /// <param name="height">Height of the signature rectangle.</param>
+        /// <param name="reason">Signing reason (can be null).</param>
+        /// <param name="location">Signing location (can be null).</param>
+        /// <param name="contact">Contact info (can be null).</param>
+        /// <param name="algorithm">Digest algorithm.</param>
+        /// <param name="outData">Output pointer to signed PDF bytes.</param>
+        /// <param name="outLen">Output length of signed PDF bytes.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True on success, false on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_document_sign_with_appearance(
+            IntPtr pdfData,
+            UIntPtr pdfLen,
+            IntPtr credentials,
+            int pageNum,
+            float x,
+            float y,
+            float width,
+            float height,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string? reason,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string? location,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string? contact,
+            int algorithm,
+            out IntPtr outData,
+            out UIntPtr outLen,
+            out int errorCode);
+
+        /// <summary>
+        /// Embeds LTV (Long-Term Validation) data into a signed PDF.
+        /// </summary>
+        /// <param name="pdfData">Pointer to signed PDF data bytes.</param>
+        /// <param name="pdfLen">Length of PDF data.</param>
+        /// <param name="ocspData">Pointer to OCSP response bytes (can be IntPtr.Zero).</param>
+        /// <param name="ocspLen">Length of OCSP data.</param>
+        /// <param name="crlData">Pointer to CRL bytes (can be IntPtr.Zero).</param>
+        /// <param name="crlLen">Length of CRL data.</param>
+        /// <param name="outData">Output pointer to result PDF bytes.</param>
+        /// <param name="outLen">Output length of result PDF bytes.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True on success, false on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_embed_ltv_data(
+            IntPtr pdfData,
+            UIntPtr pdfLen,
+            IntPtr ocspData,
+            UIntPtr ocspLen,
+            IntPtr crlData,
+            UIntPtr crlLen,
+            out IntPtr outData,
+            out UIntPtr outLen,
+            out int errorCode);
+
+        /// <summary>
+        /// Saves signed PDF bytes to a file.
+        /// </summary>
+        /// <param name="pdfData">Pointer to signed PDF data bytes.</param>
+        /// <param name="pdfLen">Length of PDF data.</param>
+        /// <param name="outputPath">Path for the output file.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>True on success, false on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_document_save_signed(
+            IntPtr pdfData,
+            UIntPtr pdfLen,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string outputPath,
+            out int errorCode);
+
+        /// <summary>
+        /// Frees a byte buffer returned by signing/LTV FFI functions.
+        /// </summary>
+        /// <param name="data">Pointer to the byte buffer.</param>
+        /// <param name="len">Length of the byte buffer.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_signed_bytes_free(IntPtr data, UIntPtr len);
+
+        // Security Write Operations
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_user_password(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string password, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_owner_password(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string password, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_passwords(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string userPassword, [MarshalAs(UnmanagedType.LPUTF8Str)] string ownerPassword, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_remove_user_password(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_remove_owner_password(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_remove_security(NativeHandle handle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_encryption_level(NativeHandle handle, int level, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_permissions(NativeHandle handle, int permissions, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_print_permission(NativeHandle handle, [MarshalAs(UnmanagedType.I1)] bool allowed, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_copy_permission(NativeHandle handle, [MarshalAs(UnmanagedType.I1)] bool allowed, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_modify_permission(NativeHandle handle, [MarshalAs(UnmanagedType.I1)] bool allowed, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_annotate_permission(NativeHandle handle, [MarshalAs(UnmanagedType.I1)] bool allowed, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_fill_forms_permission(NativeHandle handle, [MarshalAs(UnmanagedType.I1)] bool allowed, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_extract_permission(NativeHandle handle, [MarshalAs(UnmanagedType.I1)] bool allowed, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_assemble_permission(NativeHandle handle, [MarshalAs(UnmanagedType.I1)] bool allowed, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_print_hq_permission(NativeHandle handle, [MarshalAs(UnmanagedType.I1)] bool allowed, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_set_encrypt_metadata(NativeHandle handle, [MarshalAs(UnmanagedType.I1)] bool encrypt, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_validate_password(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string password);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_is_owner_password(NativeHandle handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string password);
+
+        // PDF Creator Operations
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_creator_new(out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_creator_free(IntPtr creatorHandle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_creator_add_page(IntPtr creatorHandle, float width, float height, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_creator_set_current_page(IntPtr creatorHandle, int pageIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_creator_draw_text(IntPtr creatorHandle, [MarshalAs(UnmanagedType.LPUTF8Str)] string text, float x, float y, [MarshalAs(UnmanagedType.LPUTF8Str)] string fontName, float fontSize, [MarshalAs(UnmanagedType.LPUTF8Str)] string color, [MarshalAs(UnmanagedType.I1)] bool bold, [MarshalAs(UnmanagedType.I1)] bool italic, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_creator_draw_text_block(IntPtr creatorHandle, [MarshalAs(UnmanagedType.LPUTF8Str)] string text, float x, float y, float width, float height, [MarshalAs(UnmanagedType.LPUTF8Str)] string fontName, float fontSize, [MarshalAs(UnmanagedType.LPUTF8Str)] string color, int alignment, float lineHeight, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_creator_draw_image(IntPtr creatorHandle, [MarshalAs(UnmanagedType.LPUTF8Str)] string imagePath, float x, float y, float width, float height, [MarshalAs(UnmanagedType.I1)] bool preserveAspect, float opacity, float rotation, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_creator_draw_image_bytes(IntPtr creatorHandle, IntPtr dataPtr, int dataLen, [MarshalAs(UnmanagedType.LPUTF8Str)] string format, float x, float y, float width, float height, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_creator_draw_rectangle(IntPtr creatorHandle, float x, float y, float width, float height, [MarshalAs(UnmanagedType.LPUTF8Str)] string fillColor, [MarshalAs(UnmanagedType.LPUTF8Str)] string strokeColor, float strokeWidth, float opacity, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_creator_draw_circle(IntPtr creatorHandle, float centerX, float centerY, float radius, [MarshalAs(UnmanagedType.LPUTF8Str)] string fillColor, [MarshalAs(UnmanagedType.LPUTF8Str)] string strokeColor, float strokeWidth, float opacity, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_creator_draw_line(IntPtr creatorHandle, float x1, float y1, float x2, float y2, [MarshalAs(UnmanagedType.LPUTF8Str)] string color, float width, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_creator_draw_polygon(IntPtr creatorHandle, float[] xCoords, float[] yCoords, int pointCount, [MarshalAs(UnmanagedType.LPUTF8Str)] string fillColor, [MarshalAs(UnmanagedType.LPUTF8Str)] string strokeColor, float strokeWidth, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_creator_add_link(IntPtr creatorHandle, float x, float y, float width, float height, [MarshalAs(UnmanagedType.LPUTF8Str)] string url, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_creator_add_page_link(IntPtr creatorHandle, float x, float y, float width, float height, int targetPage, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_creator_set_title(IntPtr creatorHandle, [MarshalAs(UnmanagedType.LPUTF8Str)] string title, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_creator_set_author(IntPtr creatorHandle, [MarshalAs(UnmanagedType.LPUTF8Str)] string author, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_creator_set_subject(IntPtr creatorHandle, [MarshalAs(UnmanagedType.LPUTF8Str)] string subject, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_creator_set_keywords(IntPtr creatorHandle, [MarshalAs(UnmanagedType.LPUTF8Str)] string keywords, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_creator_add_bookmark(IntPtr creatorHandle, [MarshalAs(UnmanagedType.LPUTF8Str)] string title, int pageIndex, int parentIndex, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_creator_embed_font(IntPtr creatorHandle, [MarshalAs(UnmanagedType.LPUTF8Str)] string fontPath, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_creator_set_compression(IntPtr creatorHandle, int level, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_creator_save(IntPtr creatorHandle, [MarshalAs(UnmanagedType.LPUTF8Str)] string outputPath, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_creator_save_to_bytes(IntPtr creatorHandle, out int dataLen, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_creator_get_page_count(IntPtr creatorHandle, out int errorCode);
+
+        // FreeBytes is defined in Utility Functions region above - removed duplicate
+
+        #endregion
+
+        #region Accessibility Operations
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_accessibility_is_tagged(IntPtr documentHandle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_accessibility_get_structure_tree(IntPtr documentHandle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_accessibility_auto_tag(IntPtr documentHandle, [MarshalAs(UnmanagedType.LPUTF8Str)] string language, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_accessibility_set_alt_text(IntPtr documentHandle, int page, int mcid, [MarshalAs(UnmanagedType.LPUTF8Str)] string text, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_accessibility_set_language(IntPtr documentHandle, [MarshalAs(UnmanagedType.LPUTF8Str)] string language, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_accessibility_set_title(IntPtr documentHandle, [MarshalAs(UnmanagedType.LPUTF8Str)] string title, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_structure_tree_free(IntPtr treeHandle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_struct_elem_free(IntPtr elemHandle);
+
+        #endregion
+
+        #region Optimization Operations
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_document_open_mmap([MarshalAs(UnmanagedType.LPUTF8Str)] string path, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_optimize_subset_fonts(IntPtr documentHandle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_optimize_downsample_images(IntPtr documentHandle, int dpi, int quality, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_optimize_deduplicate(IntPtr documentHandle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_optimize_full(IntPtr documentHandle, int dpi, int quality, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern long pdf_optimization_result_bytes_saved(IntPtr resultHandle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_optimization_result_free(IntPtr resultHandle);
+
+        #endregion
+
+        #region Enterprise Operations (Bates, Comparison, Stamping)
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_bates_apply(IntPtr documentHandle, [MarshalAs(UnmanagedType.LPUTF8Str)] string prefix, int startNumber, int numDigits, int position, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_bates_apply_advanced(IntPtr documentHandle, [MarshalAs(UnmanagedType.LPUTF8Str)] string prefix, [MarshalAs(UnmanagedType.LPUTF8Str)] string suffix, int startNumber, int numDigits, int position, float fontSize, float margin, int startPage, int endPage, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_compare_pages(IntPtr docA, int pageA, IntPtr docB, int pageB, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern double pdf_comparison_get_similarity(IntPtr comparisonHandle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_comparison_get_diff_count(IntPtr comparisonHandle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_comparison_get_diff(IntPtr comparisonHandle, int index);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_comparison_get_diff_type(IntPtr diffHandle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_compare_documents(IntPtr docA, IntPtr docB, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_comparison_free(IntPtr comparisonHandle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_document_comparison_free(IntPtr comparisonHandle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_stamp_header(IntPtr documentHandle, [MarshalAs(UnmanagedType.LPUTF8Str)] string text, int alignment, float size, float margin, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_stamp_footer(IntPtr documentHandle, [MarshalAs(UnmanagedType.LPUTF8Str)] string text, int alignment, float size, float margin, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_stamp_header_footer(IntPtr documentHandle, [MarshalAs(UnmanagedType.LPUTF8Str)] string headerText, [MarshalAs(UnmanagedType.LPUTF8Str)] string footerText, int alignment, float size, float margin, out int errorCode);
+
+        #endregion
+
+        #region TSA (Time Stamp Authority)
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_tsa_client_create(
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string url,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string username,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string password,
+            int timeoutSeconds, int hashAlgorithm,
+            [MarshalAs(UnmanagedType.I1)] bool useNonce,
+            [MarshalAs(UnmanagedType.I1)] bool certReq,
+            out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_tsa_client_free(IntPtr clientHandle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_tsa_request_timestamp(IntPtr clientHandle, IntPtr data, UIntPtr dataLen, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_tsa_request_timestamp_hash(IntPtr clientHandle, IntPtr hash, UIntPtr hashLen, int hashAlgorithm, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_timestamp_get_token(IntPtr timestampHandle, out UIntPtr outLen, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern long pdf_timestamp_get_time(IntPtr timestampHandle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_timestamp_get_serial(IntPtr timestampHandle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_timestamp_get_tsa_name(IntPtr timestampHandle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_timestamp_get_policy_oid(IntPtr timestampHandle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_timestamp_get_hash_algorithm(IntPtr timestampHandle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_timestamp_get_message_imprint(IntPtr timestampHandle, out UIntPtr outLen, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_timestamp_verify(IntPtr timestampHandle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_timestamp_free(IntPtr timestampHandle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_signature_add_timestamp(IntPtr signatureHandle, IntPtr timestampHandle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_signature_has_timestamp(IntPtr signatureHandle, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_signature_get_timestamp(IntPtr signatureHandle, out int errorCode);
+
+        // PAdES Level Enforcement
+
+        /// <summary>
+        /// Validates the PAdES level of a signature in a PDF document.
+        /// </summary>
+        /// <param name="handle">Document handle.</param>
+        /// <param name="sigIndex">Zero-based signature index.</param>
+        /// <param name="level">PAdES level (0=B-B, 1=B-T, 2=B-LT, 3=B-LTA).</param>
+        /// <param name="errorCode">Output error code.</param>
+        /// <returns>1 if valid, 0 if not valid, -1 on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_pades_validate_level(IntPtr handle, int sigIndex, int level, out int errorCode);
+
+        /// <summary>
+        /// Signs a PDF with PAdES level enforcement.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_pades_sign(
+            IntPtr pdfData, UIntPtr pdfLen,
+            IntPtr credentials, int level,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string tsaUrl,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string reason,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string location,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string contact,
+            out IntPtr outData, out UIntPtr outLen,
+            out int errorCode);
+
+        /// <summary>
+        /// Detects the PAdES level of an existing signature.
+        /// </summary>
+        /// <param name="handle">Document handle.</param>
+        /// <param name="sigIndex">Zero-based signature index.</param>
+        /// <param name="errorCode">Output error code.</param>
+        /// <returns>PAdES level (0-3) or -1 on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_pades_get_level(IntPtr handle, int sigIndex, out int errorCode);
+
+        #endregion
+
+        #region PDF/UA Validation (extended)
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_pdf_ua_warning_count(IntPtr resultsHandle);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_pdf_ua_get_warning(IntPtr resultsHandle, int index, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_pdf_ua_get_stats(
+            IntPtr resultsHandle,
+            out int outStructElements, out int outImages, out int outTables,
+            out int outForms, out int outAnnotations, out int outPages,
+            out int errorCode);
+
+        #endregion
+
+        #region FDF/XFDF Import/Export
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_document_import_form_data(IntPtr documentHandle, [MarshalAs(UnmanagedType.LPUTF8Str)] string dataPath, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_editor_import_fdf_bytes(IntPtr documentHandle, IntPtr data, UIntPtr dataLen, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_editor_import_xfdf_bytes(IntPtr documentHandle, IntPtr data, UIntPtr dataLen, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_document_export_form_data_to_bytes(IntPtr documentHandle, int formatType, out UIntPtr outLen, out int errorCode);
+
+        #endregion
+
+        #region Table Detection
+
+        /// <summary>
+        /// Detects tables on a specific page.
+        /// </summary>
+        /// <param name="document">The document handle.</param>
+        /// <param name="pageIndex">The page index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Table list handle, or IntPtr.Zero on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_detect_tables_on_page(IntPtr document, int pageIndex, out int errorCode);
+
+        /// <summary>
+        /// Gets number of detected tables in the list.
+        /// </summary>
+        /// <param name="list">The table list handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Number of tables found.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_table_list_count(IntPtr list, out int errorCode);
+
+        /// <summary>
+        /// Gets the row count for a table at the given index.
+        /// </summary>
+        /// <param name="list">The table list handle.</param>
+        /// <param name="index">Table index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Number of rows, or -1 on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_table_get_row_count(IntPtr list, int index, out int errorCode);
+
+        /// <summary>
+        /// Gets the column count for a table at the given index.
+        /// </summary>
+        /// <param name="list">The table list handle.</param>
+        /// <param name="index">Table index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Number of columns, or -1 on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_table_get_col_count(IntPtr list, int index, out int errorCode);
+
+        /// <summary>
+        /// Gets the text content of a specific cell. Result must be freed with free_string().
+        /// </summary>
+        /// <param name="list">The table list handle.</param>
+        /// <param name="tableIndex">Table index (0-based).</param>
+        /// <param name="row">Row index (0-based).</param>
+        /// <param name="col">Column index (0-based).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Cell text as a string pointer, or IntPtr.Zero on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern IntPtr pdf_table_get_cell_text(IntPtr list, int tableIndex, int row, int col, out int errorCode);
+
+        /// <summary>
+        /// Gets the bounding box of a table.
+        /// </summary>
+        /// <param name="list">The table list handle.</param>
+        /// <param name="index">Table index (0-based).</param>
+        /// <param name="x">Output: x coordinate.</param>
+        /// <param name="y">Output: y coordinate.</param>
+        /// <param name="w">Output: width.</param>
+        /// <param name="h">Output: height.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>true on success, false on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_table_get_bounds(IntPtr list, int index, out float x, out float y, out float w, out float h, out int errorCode);
+
+        /// <summary>
+        /// Frees a table list handle.
+        /// </summary>
+        /// <param name="list">The table list handle to free.</param>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern void pdf_table_list_free(IntPtr list);
+
+        #endregion
+
+        #region Writer / Encryption
+
+        /// <summary>
+        /// Enable or disable compression for the writer (editing mode only).
+        /// </summary>
+        /// <param name="document">The document handle (must be in editing mode).</param>
+        /// <param name="enable">true to enable compression, false to disable.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>true on success, false on error.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_writer_enable_compression(IntPtr document, [MarshalAs(UnmanagedType.I1)] bool enable, out int errorCode);
+
+        /// <summary>
+        /// Authenticate with the owner password.
+        /// </summary>
+        /// <param name="document">The document handle.</param>
+        /// <param name="password">The owner password (UTF-8).</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>true if authentication succeeded, false otherwise.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_document_authenticate_owner(IntPtr document,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#endif
+            string password, out int errorCode);
+
+        /// <summary>
+        /// Get document permissions as a bitmask. Returns -1 if not encrypted.
+        /// </summary>
+        /// <param name="document">The document handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Permission bitmask, or -1 if not encrypted.</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_document_get_permissions(IntPtr document, out int errorCode);
+
+        /// <summary>
+        /// Get encryption algorithm info. 0=None, 1=RC4-40, 2=RC4-128, 3=AES-128, 4=AES-256.
+        /// </summary>
+        /// <param name="document">The document handle.</param>
+        /// <param name="errorCode">Output parameter for error code.</param>
+        /// <returns>Encryption algorithm code (0-4).</returns>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention)]
+        public static extern int pdf_document_get_encryption_info(IntPtr document, out int errorCode);
+
+        #endregion
+
+        #region v0.3.23 New FFI Functions
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_document_extract_all_text(IntPtr handle, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_document_to_html_all(IntPtr handle, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_document_to_plain_text_all(IntPtr handle, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_document_is_encrypted(IntPtr handle);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_document_authenticate(IntPtr handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string password, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_document_has_xfa(IntPtr handle);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_document_extract_words(IntPtr handle, int pageIndex, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_oxide_word_count(IntPtr words);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_oxide_word_get_text(IntPtr words, int index, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern void pdf_oxide_word_get_bbox(IntPtr words, int index, out float x, out float y, out float w, out float h, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern void pdf_oxide_word_list_free(IntPtr handle);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_document_extract_text_lines(IntPtr handle, int pageIndex, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_oxide_line_count(IntPtr lines);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_oxide_line_get_text(IntPtr lines, int index, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern void pdf_oxide_line_get_bbox(IntPtr lines, int index, out float x, out float y, out float w, out float h, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern void pdf_oxide_line_list_free(IntPtr handle);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_document_extract_tables(IntPtr handle, int pageIndex, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_oxide_table_count(IntPtr tables);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_oxide_table_get_row_count(IntPtr tables, int index, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_oxide_table_get_col_count(IntPtr tables, int index, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_oxide_table_get_cell_text(IntPtr tables, int tableIndex, int row, int col, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern void pdf_oxide_table_list_free(IntPtr handle);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_document_extract_text_in_rect(IntPtr handle, int pageIndex, float x, float y, float w, float h, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_document_get_form_fields(IntPtr handle, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_oxide_form_field_count(IntPtr fields);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_oxide_form_field_get_name(IntPtr fields, int index, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_oxide_form_field_get_type(IntPtr fields, int index, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_oxide_form_field_get_value(IntPtr fields, int index, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern void pdf_oxide_form_field_list_free(IntPtr handle);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_document_remove_headers(IntPtr handle, float threshold, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_document_remove_footers(IntPtr handle, float threshold, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_document_remove_artifacts(IntPtr handle, float threshold, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_validate_pdf_a_level(IntPtr document, int level, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_pdf_a_is_compliant(IntPtr results, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_pdf_a_error_count(IntPtr results);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_pdf_a_get_error(IntPtr results, int index, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern void pdf_pdf_a_results_free(IntPtr results);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_validate_pdf_x_level(IntPtr document, int level, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_pdf_x_is_compliant(IntPtr results, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_pdf_x_error_count(IntPtr results);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_pdf_x_get_error(IntPtr results, int index, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern void pdf_pdf_x_results_free(IntPtr results);
+
+        // Search
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_document_search_all(IntPtr handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string searchTerm, [MarshalAs(UnmanagedType.I1)] bool caseSensitive, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_document_search_page(IntPtr handle, int pageIndex, [MarshalAs(UnmanagedType.LPUTF8Str)] string searchTerm, [MarshalAs(UnmanagedType.I1)] bool caseSensitive, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_oxide_search_result_count(IntPtr results);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_oxide_search_result_get_text(IntPtr results, int index, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_oxide_search_result_get_page(IntPtr results, int index, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern void pdf_oxide_search_result_get_bbox(IntPtr results, int index, out float x, out float y, out float width, out float height, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern void pdf_oxide_search_result_free(IntPtr handle);
+
+        // Paths
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_document_extract_paths(IntPtr handle, int pageIndex, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_oxide_path_count(IntPtr paths);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern void pdf_oxide_path_get_bbox(IntPtr paths, int index, out float x, out float y, out float w, out float h, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern float pdf_oxide_path_get_stroke_width(IntPtr paths, int index, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern void pdf_oxide_path_list_free(IntPtr handle);
+
+        // Metadata
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_document_get_page_labels(IntPtr handle, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_document_get_xmp_metadata(IntPtr handle, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_document_get_outline(IntPtr handle, out int errorCode);
+
+        // Chars
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_document_extract_chars(IntPtr handle, int pageIndex, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_oxide_char_count(IntPtr chars);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern uint pdf_oxide_char_get_char(IntPtr chars, int index, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern void pdf_oxide_char_get_bbox(IntPtr chars, int index, out float x, out float y, out float w, out float h, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern void pdf_oxide_char_list_free(IntPtr handle);
+
+        // PDF Creator
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_from_image([MarshalAs(UnmanagedType.LPUTF8Str)] string path, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_from_image_bytes(IntPtr data, int dataLen, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_merge(IntPtr paths, int pathCount, out int dataLen, out int errorCode);
+
+        // FDF/XFDF export
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_document_export_form_data_to_bytes(IntPtr document, int formatType, out int outLen, out int errorCode);
+
+        // Fonts
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_document_get_embedded_fonts(IntPtr handle, int pageIndex, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_oxide_font_count(IntPtr fonts);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_oxide_font_get_name(IntPtr fonts, int index, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern void pdf_oxide_font_list_free(IntPtr handle);
+
+        // Region extraction
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_document_extract_words_in_rect(IntPtr handle, int pageIndex, float x, float y, float w, float h, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_document_extract_images_in_rect(IntPtr handle, int pageIndex, float x, float y, float w, float h, out int errorCode);
+
+        // Rendering
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_render_page(IntPtr doc, int pageIndex, int format, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_render_page_zoom(IntPtr doc, int pageIndex, float zoom, int format, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_render_page_thumbnail(IntPtr doc, int pageIndex, int size, int format, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_get_rendered_image_width(IntPtr img, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_get_rendered_image_height(IntPtr img, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_get_rendered_image_data(IntPtr img, out int dataLen, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_save_rendered_image(IntPtr img, [MarshalAs(UnmanagedType.LPUTF8Str)] string filePath, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern void pdf_rendered_image_free(IntPtr handle);
+
+        // Barcodes (already in existing NativeMethods for BarcodeManager)
+
+        #endregion
+
+        #region BarcodesSignaturesRenderingManager + OCRComplianceCacheManager Support
+
+        // --- Barcode functions used by BarcodesManager ---
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+        public static extern NativeHandle pdf_generate_barcode(
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string data,
+            int format,
+            int size,
+            out int errorCode);
+
+        // --- Certificate functions used by SignaturesManager ---
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern NativeHandle pdf_certificate_load_from_bytes(
+            byte[] certData,
+            int certSize,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string? password,
+            out int errorCode);
+
+        // --- Signature functions used by SignaturesManager ---
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_document_get_signature_count(NativeHandle handle, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern NativeHandle pdf_document_get_signature(NativeHandle handle, int index, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_document_verify_all_signatures(NativeHandle handle, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_signature_verify(NativeHandle signature, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_signature_get_signing_reason(NativeHandle signatureHandle, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_signature_get_signing_location(NativeHandle signatureHandle, out int errorCode);
+
+        // --- Rendering functions used by PageRenderingManager ---
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_estimate_render_time(NativeHandle handle, int pageIndex, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern NativeHandle pdf_create_renderer(int dpi, int format, int quality, [MarshalAs(UnmanagedType.I1)] bool antiAlias, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern NativeHandle pdf_render_page(NativeHandle handle, int pageIndex, int format, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern NativeHandle pdf_render_page_region(NativeHandle handle, int pageIndex, float x, float y, float w, float h, int format, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern NativeHandle pdf_render_page_fit(NativeHandle handle, int pageIndex, int w, int h, int format, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern NativeHandle pdf_render_page_zoom(NativeHandle handle, int pageIndex, float zoom, int format, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern NativeHandle pdf_render_page_thumbnail(NativeHandle handle, int pageIndex, int size, int format, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_get_rendered_image_width(NativeHandle img, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int pdf_get_rendered_image_height(NativeHandle img, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_get_rendered_image_data(NativeHandle img, out int dataLen, out int errorCode);
+
+        // --- OCR functions used by OCRManager ---
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr pdf_ocr_engine_create(float detectionThreshold, float recognitionThreshold, int maxSideLen, [MarshalAs(UnmanagedType.I1)] bool useGpu, int gpuDeviceId, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_ocr_page_needs_ocr(NativeHandle handle, int pageIndex, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.LPUTF8Str)]
+        public static extern string pdf_ocr_recognize_page(NativeHandle handle, int pageIndex, IntPtr engine, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        public static extern float pdf_ocr_get_confidence(NativeHandle handle, int pageIndex, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_ocr_set_language(IntPtr engine, [MarshalAs(UnmanagedType.LPUTF8Str)] string language, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_ocr_preprocess_page(NativeHandle handle, int pageIndex, [MarshalAs(UnmanagedType.LPUTF8Str)] string preprocessingType, out int errorCode);
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.LPUTF8Str)]
+        public static extern string pdf_ocr_get_engine_status(IntPtr engine, out int errorCode);
+
+        // --- Cache functions used by CacheManager ---
+
+        [DllImport("pdf_oxide", CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_set_caching_enabled(NativeHandle handle, [MarshalAs(UnmanagedType.I1)] bool enabled, out int errorCode);
+
+        #endregion
+
+        #region DocumentEditor Extended Operations (17 functions)
+
+        /// <summary>
+        /// Gets the producer metadata from a DocumentEditor.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "document_editor_get_producer")]
+        public static extern IntPtr document_editor_get_producer(
+            NativeHandle handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Sets the producer metadata on a DocumentEditor.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "document_editor_set_producer")]
+        public static extern int document_editor_set_producer(
+            NativeHandle handle,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string value,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the creation date from a DocumentEditor.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "document_editor_get_creation_date")]
+        public static extern IntPtr document_editor_get_creation_date(
+            NativeHandle handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Sets the creation date on a DocumentEditor.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "document_editor_set_creation_date")]
+        public static extern int document_editor_set_creation_date(
+            NativeHandle handle,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string dateStr,
+            out int errorCode);
+
+        /// <summary>
+        /// Deletes a page from the document.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "document_editor_delete_page")]
+        public static extern int document_editor_delete_page(
+            NativeHandle handle,
+            int pageIndex,
+            out int errorCode);
+
+        /// <summary>
+        /// Moves a page from one position to another.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "document_editor_move_page")]
+        public static extern int document_editor_move_page(
+            NativeHandle handle,
+            int from,
+            int to,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the rotation of a page in degrees.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "document_editor_get_page_rotation")]
+        public static extern int document_editor_get_page_rotation(
+            NativeHandle handle,
+            int page,
+            out int errorCode);
+
+        /// <summary>
+        /// Sets the rotation of a page in degrees.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "document_editor_set_page_rotation")]
+        public static extern int document_editor_set_page_rotation(
+            NativeHandle handle,
+            int page,
+            int degrees,
+            out int errorCode);
+
+        /// <summary>
+        /// Erases content in a rectangular region on a page.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "document_editor_erase_region")]
+        public static extern int document_editor_erase_region(
+            NativeHandle handle,
+            int page,
+            float x,
+            float y,
+            float w,
+            float h,
+            out int errorCode);
+
+        /// <summary>
+        /// Flattens annotations on a specific page.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "document_editor_flatten_annotations")]
+        public static extern int document_editor_flatten_annotations(
+            NativeHandle handle,
+            int page,
+            out int errorCode);
+
+        /// <summary>
+        /// Flattens all annotations in the entire document.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "document_editor_flatten_all_annotations")]
+        public static extern int document_editor_flatten_all_annotations(
+            NativeHandle handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Crops margins on all pages.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "document_editor_crop_margins")]
+        public static extern int document_editor_crop_margins(
+            NativeHandle handle,
+            float left,
+            float right,
+            float top,
+            float bottom,
+            out int errorCode);
+
+        /// <summary>
+        /// Merges pages from another PDF file into the current document.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "document_editor_merge_from")]
+        public static extern int document_editor_merge_from(
+            NativeHandle handle,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string sourcePath,
+            out int errorCode);
+
+        /// <summary>
+        /// Saves the document with encryption (user and owner passwords).
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "document_editor_save_encrypted")]
+        public static extern int document_editor_save_encrypted(
+            NativeHandle handle,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string path,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string userPassword,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string ownerPassword,
+            out int errorCode);
+
+        /// <summary>
+        /// Sets a form field value by name.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "document_editor_set_form_field_value")]
+        public static extern int document_editor_set_form_field_value(
+            NativeHandle handle,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string name,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string value,
+            out int errorCode);
+
+        /// <summary>
+        /// Flattens all form fields in the document (bakes values into page content).
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "document_editor_flatten_forms")]
+        public static extern int document_editor_flatten_forms(
+            NativeHandle handle,
+            out int errorCode);
+
+        /// <summary>
+        /// Flattens form fields on a specific page.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "document_editor_flatten_forms_on_page")]
+        public static extern int document_editor_flatten_forms_on_page(
+            NativeHandle handle,
+            int pageIndex,
+            out int errorCode);
+
+        #endregion
+
+        #region PdfDocument Extended Operations (8 functions)
+
+        /// <summary>
+        /// Opens a PDF document with a password.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_document_open_with_password")]
+        public static extern NativeHandle pdf_document_open_with_password(
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string path,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string password,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets embedded images from a page.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_document_get_embedded_images")]
+        public static extern NativeHandle pdf_document_get_embedded_images(
+            NativeHandle handle,
+            int pageIndex,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets annotations from a page.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_document_get_page_annotations")]
+        public static extern NativeHandle pdf_document_get_page_annotations(
+            NativeHandle handle,
+            int pageIndex,
+            out int errorCode);
+
+        /// <summary>
+        /// Erases the header on a specific page.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_document_erase_header")]
+        public static extern int pdf_document_erase_header(
+            NativeHandle handle,
+            int pageIndex,
+            out int errorCode);
+
+        /// <summary>
+        /// Erases the footer on a specific page.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_document_erase_footer")]
+        public static extern int pdf_document_erase_footer(
+            NativeHandle handle,
+            int pageIndex,
+            out int errorCode);
+
+        /// <summary>
+        /// Erases artifacts on a specific page.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_document_erase_artifacts")]
+        public static extern int pdf_document_erase_artifacts(
+            NativeHandle handle,
+            int pageIndex,
+            out int errorCode);
+
+        /// <summary>
+        /// Extracts text lines within a rectangular region on a page.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_document_extract_lines_in_rect")]
+        public static extern NativeHandle pdf_document_extract_lines_in_rect(
+            NativeHandle handle,
+            int pageIndex,
+            float x,
+            float y,
+            float w,
+            float h,
+            out int errorCode);
+
+        /// <summary>
+        /// Extracts tables within a rectangular region on a page.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_document_extract_tables_in_rect")]
+        public static extern NativeHandle pdf_document_extract_tables_in_rect(
+            NativeHandle handle,
+            int pageIndex,
+            float x,
+            float y,
+            float w,
+            float h,
+            out int errorCode);
+
+        #endregion
+
+        #region PdfPage Extended Operations (2 functions)
+
+        /// <summary>
+        /// Gets page elements (text spans) for a page.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_page_get_elements")]
+        public static extern NativeHandle pdf_page_get_elements(
+            NativeHandle handle,
+            int pageIndex,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the rotation of a page in degrees.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_page_get_rotation")]
+        public static extern int pdf_page_get_rotation(
+            NativeHandle handle,
+            int pageIndex,
+            out int errorCode);
+
+        #endregion
+
+        #region PdfForm Operations (1 function)
+
+        /// <summary>
+        /// Imports form data from a file (FDF/XFDF). Currently unsupported via PdfDocument handle.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_form_import_from_file")]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_form_import_from_file(
+            IntPtr document,
+#if NET5_0_OR_GREATER
+            [MarshalAs(UnmanagedType.LPUTF8Str)]
+#else
+            [MarshalAs(UnmanagedType.LPStr)]
+#endif
+            string filename,
+            out int errorCode);
+
+        #endregion
+
+        #region Barcode Extended Operations (2 functions)
+
+        /// <summary>
+        /// Gets the PNG image data from a barcode handle. The returned pointer is a buffer
+        /// of length <paramref name="outLen"/> bytes and must be freed with <see cref="FreeBytes"/>.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_barcode_get_image_png")]
+        public static extern IntPtr pdf_barcode_get_image_png(
+            NativeHandle barcodeHandle,
+            int sizePx,
+            out int outLen,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the SVG representation of a barcode.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_barcode_get_svg")]
+        public static extern IntPtr pdf_barcode_get_svg(
+            NativeHandle barcodeHandle,
+            int sizePx,
+            out int errorCode);
+
+        #endregion
+
+        #region Annotation Accessors (15 functions)
+
+        /// <summary>
+        /// Gets the number of annotations in an annotation list.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_annotation_count")]
+        public static extern int pdf_oxide_annotation_count(NativeHandle annotations);
+
+        /// <summary>
+        /// Gets the type string of an annotation.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_annotation_get_type")]
+        public static extern IntPtr pdf_oxide_annotation_get_type(
+            NativeHandle annotations,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the content/text of an annotation.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_annotation_get_content")]
+        public static extern IntPtr pdf_oxide_annotation_get_content(
+            NativeHandle annotations,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the bounding rectangle of an annotation.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_annotation_get_rect")]
+        public static extern void pdf_oxide_annotation_get_rect(
+            NativeHandle annotations,
+            int index,
+            out float x,
+            out float y,
+            out float width,
+            out float height,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the subtype of an annotation.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_annotation_get_subtype")]
+        public static extern IntPtr pdf_oxide_annotation_get_subtype(
+            NativeHandle annotations,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Checks if an annotation is marked as deleted.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_annotation_is_marked_deleted")]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_oxide_annotation_is_marked_deleted(
+            NativeHandle annotations,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the creation date of an annotation as a Unix timestamp.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_annotation_get_creation_date")]
+        public static extern long pdf_oxide_annotation_get_creation_date(
+            NativeHandle annotations,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the modification date of an annotation as a Unix timestamp.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_annotation_get_modification_date")]
+        public static extern long pdf_oxide_annotation_get_modification_date(
+            NativeHandle annotations,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the author of an annotation.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_annotation_get_author")]
+        public static extern IntPtr pdf_oxide_annotation_get_author(
+            NativeHandle annotations,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the border width of an annotation.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_annotation_get_border_width")]
+        public static extern float pdf_oxide_annotation_get_border_width(
+            NativeHandle annotations,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the color of an annotation as a packed RGB uint (0xRRGGBB).
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_annotation_get_color")]
+        public static extern uint pdf_oxide_annotation_get_color(
+            NativeHandle annotations,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Checks if an annotation is hidden.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_annotation_is_hidden")]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_oxide_annotation_is_hidden(
+            NativeHandle annotations,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Checks if an annotation is printable.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_annotation_is_printable")]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_oxide_annotation_is_printable(
+            NativeHandle annotations,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Checks if an annotation is read-only.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_annotation_is_read_only")]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_oxide_annotation_is_read_only(
+            NativeHandle annotations,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Frees an annotation list handle.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_annotation_list_free")]
+        public static extern void pdf_oxide_annotation_list_free(IntPtr handle);
+
+        #endregion
+
+        #region Image Accessors (8 functions)
+
+        /// <summary>
+        /// Gets the number of images in an image list.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_image_count")]
+        public static extern int pdf_oxide_image_count(NativeHandle images);
+
+        /// <summary>
+        /// Gets the width of an image.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_image_get_width")]
+        public static extern int pdf_oxide_image_get_width(
+            NativeHandle images,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the height of an image.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_image_get_height")]
+        public static extern int pdf_oxide_image_get_height(
+            NativeHandle images,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the format string of an image.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_image_get_format")]
+        public static extern IntPtr pdf_oxide_image_get_format(
+            NativeHandle images,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the color space string of an image.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_image_get_colorspace")]
+        public static extern IntPtr pdf_oxide_image_get_colorspace(
+            NativeHandle images,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the bits per component of an image.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_image_get_bits_per_component")]
+        public static extern int pdf_oxide_image_get_bits_per_component(
+            NativeHandle images,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the raw data of an image. Returns a pointer to the data buffer.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_image_get_data")]
+        public static extern IntPtr pdf_oxide_image_get_data(
+            NativeHandle images,
+            int index,
+            out int dataLen,
+            out int errorCode);
+
+        /// <summary>
+        /// Frees an image list handle.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_image_list_free")]
+        public static extern void pdf_oxide_image_list_free(IntPtr handle);
+
+        #endregion
+
+        #region Font Accessors (5 functions)
+
+        /// <summary>
+        /// Gets the type/subtype of a font.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_font_get_type")]
+        public static extern IntPtr pdf_oxide_font_get_type(
+            NativeHandle fonts,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the encoding of a font.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_font_get_encoding")]
+        public static extern IntPtr pdf_oxide_font_get_encoding(
+            NativeHandle fonts,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Checks if a font is embedded. Returns 1 if embedded, 0 if not.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_font_is_embedded")]
+        public static extern int pdf_oxide_font_is_embedded(
+            NativeHandle fonts,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Checks if a font is a subset. Returns 1 if subset, 0 if not.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_font_is_subset")]
+        public static extern int pdf_oxide_font_is_subset(
+            NativeHandle fonts,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the size of a font (returns 0.0 - size is context-dependent).
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_font_get_size")]
+        public static extern float pdf_oxide_font_get_size(
+            NativeHandle fonts,
+            int index,
+            out int errorCode);
+
+        #endregion
+
+        #region Word, Line, and Char Accessors (6 functions)
+
+        /// <summary>
+        /// Gets the font name of a word.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_word_get_font_name")]
+        public static extern IntPtr pdf_oxide_word_get_font_name(
+            NativeHandle words,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the font size of a word.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_word_get_font_size")]
+        public static extern float pdf_oxide_word_get_font_size(
+            NativeHandle words,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Checks if a word is bold.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_word_is_bold")]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_oxide_word_is_bold(
+            NativeHandle words,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the word count within a text line.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_line_get_word_count")]
+        public static extern int pdf_oxide_line_get_word_count(
+            NativeHandle lines,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the font name of a character.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_char_get_font_name")]
+        public static extern IntPtr pdf_oxide_char_get_font_name(
+            NativeHandle chars,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the font size of a character.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_char_get_font_size")]
+        public static extern float pdf_oxide_char_get_font_size(
+            NativeHandle chars,
+            int index,
+            out int errorCode);
+
+        #endregion
+
+        #region Element and Path Accessors (8 functions)
+
+        /// <summary>
+        /// Gets the number of elements in an element list.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_element_count")]
+        public static extern int pdf_oxide_element_count(NativeHandle elements);
+
+        /// <summary>
+        /// Gets the type string of an element (e.g. "text").
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_element_get_type")]
+        public static extern IntPtr pdf_oxide_element_get_type(
+            NativeHandle elements,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the text content of an element.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_element_get_text")]
+        public static extern IntPtr pdf_oxide_element_get_text(
+            NativeHandle elements,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the bounding rectangle of an element.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_element_get_rect")]
+        public static extern void pdf_oxide_element_get_rect(
+            NativeHandle elements,
+            int index,
+            out float x,
+            out float y,
+            out float width,
+            out float height,
+            out int errorCode);
+
+        /// <summary>
+        /// Frees an element list handle.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_elements_free")]
+        public static extern void pdf_oxide_elements_free(IntPtr handle);
+
+        /// <summary>
+        /// Gets the number of operations in a path.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_path_get_operation_count")]
+        public static extern int pdf_oxide_path_get_operation_count(
+            NativeHandle paths,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Checks if a path has a fill color.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_path_has_fill")]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_oxide_path_has_fill(
+            NativeHandle paths,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Checks if a path has a stroke color.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_path_has_stroke")]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_oxide_path_has_stroke(
+            NativeHandle paths,
+            int index,
+            out int errorCode);
+
+        #endregion
+
+        #region Other Accessors (7 functions)
+
+        /// <summary>
+        /// Checks if a form field is read-only.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_form_field_is_readonly")]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_oxide_form_field_is_readonly(
+            NativeHandle fields,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Checks if a form field is required.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_form_field_is_required")]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_oxide_form_field_is_required(
+            NativeHandle fields,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets a quad point from a highlight annotation.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_highlight_annotation_get_quad_point")]
+        public static extern void pdf_oxide_highlight_annotation_get_quad_point(
+            NativeHandle annotations,
+            int index,
+            int quadIndex,
+            out float x1,
+            out float y1,
+            out float x2,
+            out float y2,
+            out float x3,
+            out float y3,
+            out float x4,
+            out float y4,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the number of quad points in a highlight annotation.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_highlight_annotation_get_quad_points_count")]
+        public static extern int pdf_oxide_highlight_annotation_get_quad_points_count(
+            NativeHandle annotations,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the URI from a link annotation.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_link_annotation_get_uri")]
+        public static extern IntPtr pdf_oxide_link_annotation_get_uri(
+            NativeHandle annotations,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Checks if a table has a header row.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_table_has_header")]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_oxide_table_has_header(
+            NativeHandle tables,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Gets the icon name of a text annotation.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_text_annotation_get_icon_name")]
+        public static extern IntPtr pdf_oxide_text_annotation_get_icon_name(
+            NativeHandle annotations,
+            int index,
+            out int errorCode);
+
+        #endregion
+
+        #region Compliance Extended Operations (5 functions)
+
+        /// <summary>
+        /// Gets the number of warnings from PDF/A validation results.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_pdf_a_warning_count")]
+        public static extern int pdf_pdf_a_warning_count(NativeHandle results);
+
+        /// <summary>
+        /// Gets the number of errors from PDF/UA validation results.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_pdf_ua_error_count")]
+        public static extern int pdf_pdf_ua_error_count(NativeHandle results);
+
+        /// <summary>
+        /// Gets an error message from PDF/UA validation results by index.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_pdf_ua_get_error")]
+        public static extern IntPtr pdf_pdf_ua_get_error(
+            NativeHandle results,
+            int index,
+            out int errorCode);
+
+        /// <summary>
+        /// Checks if the document is accessible according to PDF/UA validation.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_pdf_ua_is_accessible")]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool pdf_pdf_ua_is_accessible(
+            NativeHandle results,
+            out int errorCode);
+
+        /// <summary>
+        /// Frees PDF/UA validation results.
+        /// </summary>
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_pdf_ua_results_free")]
+        public static extern void pdf_pdf_ua_results_free(IntPtr results);
+
+        #endregion
+
+        #region IntPtr-based image list accessors (used by PdfDocument.ExtractImages)
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_document_get_embedded_images")]
+        public static extern IntPtr pdf_document_get_embedded_images(
+            IntPtr handle,
+            int pageIndex,
+            out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_image_count")]
+        public static extern int pdf_oxide_image_count_ptr(IntPtr images);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_image_get_width")]
+        public static extern int pdf_oxide_image_get_width_ptr(IntPtr images, int index, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_image_get_height")]
+        public static extern int pdf_oxide_image_get_height_ptr(IntPtr images, int index, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_image_get_bits_per_component")]
+        public static extern int pdf_oxide_image_get_bits_per_component_ptr(IntPtr images, int index, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_image_get_format")]
+        public static extern IntPtr pdf_oxide_image_get_format_ptr(IntPtr images, int index, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_image_get_colorspace")]
+        public static extern IntPtr pdf_oxide_image_get_colorspace_ptr(IntPtr images, int index, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_image_get_data")]
+        public static extern IntPtr pdf_oxide_image_get_data_ptr(IntPtr images, int index, out int dataLen, out int errorCode);
+
+        [DllImport(LibName, CallingConvention = DefaultCallingConvention, EntryPoint = "pdf_oxide_image_list_free")]
+        public static extern void pdf_oxide_image_list_free_ptr(IntPtr handle);
+
+        #endregion
+    }
+}

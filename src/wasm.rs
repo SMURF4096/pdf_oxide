@@ -150,7 +150,7 @@ impl WasmPdfDocument {
         console_error_panic_hook::set_once();
 
         let bytes = data.to_vec();
-        let mut inner = PdfDocument::from_bytes(bytes.clone())
+        let inner = PdfDocument::from_bytes(bytes.clone())
             .map_err(|e| JsValue::from_str(&format!("Failed to open PDF: {}", e)))?;
 
         if let Some(pw) = password {
@@ -2163,7 +2163,7 @@ impl Default for WasmArtifactStyle {
     }
 }
 
-#[wasm_bindgen(js_name = "ArtifactStyle")]
+#[wasm_bindgen]
 impl WasmArtifactStyle {
     /// Create a new artifact style.
     #[wasm_bindgen(constructor)]
@@ -2216,7 +2216,7 @@ impl WasmArtifact {
     }
 
     /// Create a left-aligned artifact.
-    #[wasm_bindgen(js_name = "left", static_method_of = WasmArtifact)]
+    #[wasm_bindgen(js_name = "left")]
     pub fn left(text: &str) -> WasmArtifact {
         WasmArtifact {
             inner: crate::writer::Artifact::left(text),
@@ -2224,7 +2224,7 @@ impl WasmArtifact {
     }
 
     /// Create a center-aligned artifact.
-    #[wasm_bindgen(js_name = "center", static_method_of = WasmArtifact)]
+    #[wasm_bindgen(js_name = "center")]
     pub fn center(text: &str) -> WasmArtifact {
         WasmArtifact {
             inner: crate::writer::Artifact::center(text),
@@ -2232,7 +2232,7 @@ impl WasmArtifact {
     }
 
     /// Create a right-aligned artifact.
-    #[wasm_bindgen(js_name = "right", static_method_of = WasmArtifact)]
+    #[wasm_bindgen(js_name = "right")]
     pub fn right(text: &str) -> WasmArtifact {
         WasmArtifact {
             inner: crate::writer::Artifact::right(text),
@@ -2258,6 +2258,7 @@ impl WasmArtifact {
 #[wasm_bindgen]
 #[derive(Clone)]
 pub struct WasmHeader {
+    #[allow(dead_code)] // retained for Clone semantics and future use
     inner: WasmArtifact,
 }
 
@@ -2278,7 +2279,7 @@ impl WasmHeader {
     }
 
     /// Create a left-aligned header.
-    #[wasm_bindgen(js_name = "left", static_method_of = WasmHeader)]
+    #[wasm_bindgen(js_name = "left")]
     pub fn left(text: &str) -> WasmHeader {
         WasmHeader {
             inner: WasmArtifact::left(text),
@@ -2286,7 +2287,7 @@ impl WasmHeader {
     }
 
     /// Create a center-aligned header.
-    #[wasm_bindgen(js_name = "center", static_method_of = WasmHeader)]
+    #[wasm_bindgen(js_name = "center")]
     pub fn center(text: &str) -> WasmHeader {
         WasmHeader {
             inner: WasmArtifact::center(text),
@@ -2294,7 +2295,7 @@ impl WasmHeader {
     }
 
     /// Create a right-aligned header.
-    #[wasm_bindgen(js_name = "right", static_method_of = WasmHeader)]
+    #[wasm_bindgen(js_name = "right")]
     pub fn right(text: &str) -> WasmHeader {
         WasmHeader {
             inner: WasmArtifact::right(text),
@@ -2306,6 +2307,7 @@ impl WasmHeader {
 #[wasm_bindgen]
 #[derive(Clone)]
 pub struct WasmFooter {
+    #[allow(dead_code)] // retained for Clone semantics and future use
     inner: WasmArtifact,
 }
 
@@ -2326,7 +2328,7 @@ impl WasmFooter {
     }
 
     /// Create a left-aligned footer.
-    #[wasm_bindgen(js_name = "left", static_method_of = WasmFooter)]
+    #[wasm_bindgen(js_name = "left")]
     pub fn left(text: &str) -> WasmFooter {
         WasmFooter {
             inner: WasmArtifact::left(text),
@@ -2334,7 +2336,7 @@ impl WasmFooter {
     }
 
     /// Create a center-aligned footer.
-    #[wasm_bindgen(js_name = "center", static_method_of = WasmFooter)]
+    #[wasm_bindgen(js_name = "center")]
     pub fn center(text: &str) -> WasmFooter {
         WasmFooter {
             inner: WasmArtifact::center(text),
@@ -2342,7 +2344,7 @@ impl WasmFooter {
     }
 
     /// Create a right-aligned footer.
-    #[wasm_bindgen(js_name = "right", static_method_of = WasmFooter)]
+    #[wasm_bindgen(js_name = "right")]
     pub fn right(text: &str) -> WasmFooter {
         WasmFooter {
             inner: WasmArtifact::right(text),
@@ -2569,6 +2571,60 @@ impl WasmPdfDocument {
             "level": level,
             "errors": errors,
             "warnings": warnings,
+        }))
+        .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    /// Validate PDF/UA accessibility compliance.
+    #[wasm_bindgen(js_name = "validatePdfUa")]
+    pub fn validate_pdf_ua(&mut self, level: Option<String>) -> Result<JsValue, JsValue> {
+        use crate::compliance::pdf_ua::{validate_pdf_ua, PdfUaLevel};
+        let ua_level = match level.as_deref() {
+            Some("2") => PdfUaLevel::Ua2,
+            _ => PdfUaLevel::Ua1,
+        };
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| JsValue::from_str("Lock failed"))?;
+        let result =
+            validate_pdf_ua(&mut inner, ua_level).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let errors: Vec<String> = result.errors.iter().map(|e| e.message.clone()).collect();
+        let warnings: Vec<String> = result.warnings.iter().map(|w| w.message.clone()).collect();
+        serde_wasm_bindgen::to_value(&serde_json::json!({
+            "valid": result.is_compliant,
+            "errors": errors,
+            "warnings": warnings,
+            "stats": {
+                "structureElements": result.stats.structure_elements_checked,
+                "images": result.stats.images_checked,
+                "tables": result.stats.tables_checked,
+                "pages": result.stats.pages_checked,
+            }
+        }))
+        .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    /// Validate PDF/X print production compliance.
+    #[wasm_bindgen(js_name = "validatePdfX")]
+    pub fn validate_pdf_x(&mut self, level: Option<String>) -> Result<JsValue, JsValue> {
+        use crate::compliance::pdf_x::{validate_pdf_x, PdfXLevel};
+        let x_level = match level.as_deref() {
+            Some("1a") => PdfXLevel::X1a2001,
+            Some("3") => PdfXLevel::X32002,
+            Some("4") => PdfXLevel::X4,
+            _ => PdfXLevel::X4,
+        };
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| JsValue::from_str("Lock failed"))?;
+        let result =
+            validate_pdf_x(&mut inner, x_level).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let errors: Vec<String> = result.errors.iter().map(|e| e.message.clone()).collect();
+        serde_wasm_bindgen::to_value(&serde_json::json!({
+            "valid": result.is_compliant,
+            "errors": errors,
         }))
         .map_err(|e| JsValue::from_str(&e.to_string()))
     }

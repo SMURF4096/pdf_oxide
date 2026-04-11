@@ -55,6 +55,24 @@ jobs:
           fi
           echo "✓ Cargo.toml and pyproject.toml versions match: $CARGO_VERSION"
 
+      - name: Validate all language binding versions
+        run: |
+          VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          JS_VERSION=$(node -p "require('./js/package.json').version")
+          WASM_VERSION=$(node -p "require('./wasm-pkg/package.json').version")
+          CSHARP_VERSION=$(grep '<Version>' csharp/PdfOxide/PdfOxide.csproj | sed 's/.*<Version>\(.*\)<\/Version>.*/\1/')
+          ERRORS=0
+          for LANG_VER in "js/package.json:$JS_VERSION" "wasm-pkg/package.json:$WASM_VERSION" "csharp/PdfOxide.csproj:$CSHARP_VERSION"; do
+            FILE=$(echo $LANG_VER | cut -d: -f1)
+            VER=$(echo $LANG_VER | cut -d: -f2)
+            if [ "$VER" != "$VERSION" ]; then
+              echo "Error: $FILE ($VER) does not match Cargo.toml ($VERSION)"
+              ERRORS=$((ERRORS + 1))
+            fi
+          done
+          if [ $ERRORS -gt 0 ]; then exit 1; fi
+          echo "✓ All language binding versions match: $VERSION"
+
       - name: Verify release is from main branch
         run: |
           # Fetch main branch
@@ -237,6 +255,255 @@ jobs:
           path: wasm-out/
           retention-days: 7
 
+  # Build native shared libraries for language bindings (cdylib)
+  # These are used by Go (CGo), JS (N-API), and C# (P/Invoke)
+  build-native-libs:
+    name: Build native lib (${{ matrix.target }})
+    needs: validate
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: native-linux-x86_64
+            lib_name: libpdf_oxide.so
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            artifact_name: native-linux-aarch64
+            lib_name: libpdf_oxide.so
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: native-macos-x86_64
+            lib_name: libpdf_oxide.dylib
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: native-macos-aarch64
+            lib_name: libpdf_oxide.dylib
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: native-windows-x86_64
+            lib_name: pdf_oxide.dll
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            artifact_name: native-windows-aarch64
+            lib_name: pdf_oxide.dll
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-${{ matrix.target }}-native-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cross-compilation tools (Linux ARM64)
+        if: contains(matrix.target, 'aarch64-unknown-linux')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build cdylib
+        shell: bash
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ contains(matrix.target, 'aarch64-unknown-linux') && 'aarch64-linux-gnu-gcc' || '' }}
+        run: |
+          cargo build --release --lib --target ${{ matrix.target }}
+          mkdir -p native-out
+          cp target/${{ matrix.target }}/release/${{ matrix.lib_name }} native-out/
+          # Also copy the C header
+          cp include/pdf_oxide_c/pdf_oxide.h native-out/
+
+      - name: Upload native lib
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: native-out/
+          retention-days: 7
+
+  # Update Go module with prebuilt native libraries
+  # This ensures `go get` works without requiring users to build Rust
+  update-go-native-libs:
+    name: Update Go native libs
+    needs: [validate, build-native-libs]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download all native libraries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: native-*
+          path: native-libs
+
+      - name: Stage native libs in Go module
+        run: |
+          # Map artifact names to Go platform dirs
+          cp native-libs/native-linux-x86_64/libpdf_oxide.so go/lib/linux_amd64/
+          cp native-libs/native-linux-aarch64/libpdf_oxide.so go/lib/linux_arm64/
+          cp native-libs/native-macos-x86_64/libpdf_oxide.dylib go/lib/darwin_amd64/
+          cp native-libs/native-macos-aarch64/libpdf_oxide.dylib go/lib/darwin_arm64/
+          cp native-libs/native-windows-x86_64/pdf_oxide.dll go/lib/windows_amd64/
+          cp native-libs/native-windows-aarch64/pdf_oxide.dll go/lib/windows_arm64/ 2>/dev/null || true
+
+          echo "=== Go native libs staged ==="
+          find go/lib -type f -not -name ".gitkeep" -not -name "README.md" | sort
+
+      - name: Commit and push native libs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add go/lib/
+          if git diff --cached --quiet; then
+            echo "No changes to native libs"
+          else
+            git commit -m "ci: update Go native libs for v${{ needs.validate.outputs.version }}"
+            git push origin HEAD:main
+          fi
+
+      - name: Create Go module tag
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          # Go submodule tags use directory prefix
+          # Since go.mod is in go/, the tag is go/v{VERSION}
+          git tag "go/v${VERSION}"
+          git push origin "go/v${VERSION}"
+
+  # Build Node.js native addon (pdf-oxide npm package)
+  build-nodejs:
+    name: Build Node.js (${{ matrix.artifact_name }})
+    needs: [validate, build-native-libs]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: nodejs-linux-x64
+            native_artifact: native-linux-x86_64
+            node_platform: linux
+            node_arch: x64
+          - os: ubuntu-latest
+            artifact_name: nodejs-linux-arm64
+            native_artifact: native-linux-aarch64
+            node_platform: linux
+            node_arch: arm64
+          - os: macos-latest
+            artifact_name: nodejs-macos-x64
+            native_artifact: native-macos-x86_64
+            node_platform: darwin
+            node_arch: x64
+          - os: macos-latest
+            artifact_name: nodejs-macos-arm64
+            native_artifact: native-macos-aarch64
+            node_platform: darwin
+            node_arch: arm64
+          - os: windows-latest
+            artifact_name: nodejs-windows-x64
+            native_artifact: native-windows-x86_64
+            node_platform: win32
+            node_arch: x64
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Download native library
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.native_artifact }}
+          path: js/build/Release/
+
+      - name: Prepare npm package
+        working-directory: js
+        shell: bash
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          # Bundle the native lib, JS wrapper, and type definitions
+          mkdir -p dist
+          cp build/Release/* dist/ 2>/dev/null || true
+          cp pdf_oxide.js dist/
+          cp pdf_oxide.d.ts dist/
+          cp index.js dist/ 2>/dev/null || true
+          cp index.d.ts dist/ 2>/dev/null || true
+          cp package.json dist/
+          cp binding.cc dist/ 2>/dev/null || true
+          # Create platform-specific tarball
+          cd dist
+          tar czf ../${{ matrix.artifact_name }}-${VERSION}.tar.gz .
+
+      - name: Upload Node.js package
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: js/${{ matrix.artifact_name }}-*.tar.gz
+          retention-days: 7
+
+  # Build C# NuGet package
+  build-csharp:
+    name: Build C# NuGet
+    needs: [validate, build-native-libs]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Download all native libraries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: native-*
+          path: native-libs
+
+      - name: Stage native libraries for NuGet
+        run: |
+          # Copy each platform's native lib to the expected target/ paths
+          mkdir -p target/release
+          mkdir -p target/aarch64-unknown-linux-gnu/release
+          mkdir -p target/aarch64-apple-darwin/release
+          mkdir -p target/aarch64-pc-windows-msvc/release
+
+          # x64 libraries go to target/release/
+          cp native-libs/native-linux-x86_64/libpdf_oxide.so target/release/ 2>/dev/null || true
+          cp native-libs/native-macos-x86_64/libpdf_oxide.dylib target/release/ 2>/dev/null || true
+          cp native-libs/native-windows-x86_64/pdf_oxide.dll target/release/ 2>/dev/null || true
+
+          # ARM64 libraries go to cross-compilation target paths
+          cp native-libs/native-linux-aarch64/libpdf_oxide.so target/aarch64-unknown-linux-gnu/release/ 2>/dev/null || true
+          cp native-libs/native-macos-aarch64/libpdf_oxide.dylib target/aarch64-apple-darwin/release/ 2>/dev/null || true
+          cp native-libs/native-windows-aarch64/pdf_oxide.dll target/aarch64-pc-windows-msvc/release/ 2>/dev/null || true
+
+          echo "=== Staged native libraries ==="
+          find target -name "*.so" -o -name "*.dylib" -o -name "*.dll" | sort
+
+      - name: Build NuGet package
+        working-directory: csharp/PdfOxide
+        run: |
+          dotnet pack -c Release -o ../../nuget-out /p:Version=${{ needs.validate.outputs.version }}
+
+      - name: Upload NuGet package
+        uses: actions/upload-artifact@v7
+        with:
+          name: nuget-package
+          path: nuget-out/*.nupkg
+          retention-days: 7
+
   # Generate Python type stubs (runs once on a supported platform)
   generate-python-stubs:
     name: Generate Python type stubs
@@ -385,7 +652,7 @@ jobs:
   # Create GitHub Release
   create-release:
     name: Create GitHub Release
-    needs: [validate, build-binaries, build-python-wheels, build-python-wheels-musl, build-wasm]
+    needs: [validate, build-binaries, build-python-wheels, build-python-wheels-musl, build-wasm, build-nodejs, build-csharp]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -398,7 +665,7 @@ jobs:
       - name: Organize release files
         run: |
           mkdir -p release-files
-          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.whl" -o -name "*.deb" \) -exec cp {} release-files/ \;
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.whl" -o -name "*.deb" -o -name "*.nupkg" \) -exec cp {} release-files/ \;
           echo "=== Release files ==="
           ls -lh release-files/
 
@@ -595,3 +862,49 @@ jobs:
           git add pdf-oxide.json
           git commit -m "Update pdf-oxide to ${{ needs.validate.outputs.version }}"
           git push
+
+  # Publish Node.js native package to npm (pdf-oxide)
+  publish-npm-native:
+    name: Publish to npm (pdf-oxide)
+    needs: [validate, build-nodejs, create-release]
+    runs-on: ubuntu-latest
+    if: ${{ !contains(needs.validate.outputs.version, '-') }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Publish to npm
+        working-directory: js
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # Publish C# NuGet package
+  publish-nuget:
+    name: Publish to NuGet
+    needs: [validate, build-csharp, create-release]
+    runs-on: ubuntu-latest
+    if: ${{ !contains(needs.validate.outputs.version, '-') }}
+    steps:
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Download NuGet package
+        uses: actions/download-artifact@v8
+        with:
+          name: nuget-package
+          path: nuget-out
+
+      - name: Publish to NuGet
+        run: |
+          dotnet nuget push nuget-out/*.nupkg \
+            --api-key ${{ secrets.NUGET_API_KEY }} \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate

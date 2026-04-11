@@ -56,8 +56,11 @@ from .pdf_oxide import (
     # Advanced Graphics
     Color,
     ExtGState,
+    # Extraction
+    ExtractionProfile,
     Footer,
     Header,
+    LayoutParams,
     LinearGradient,
     LineCap,
     LineJoin,
@@ -72,9 +75,6 @@ from .pdf_oxide import (
     Pdf,
     PdfDocument,
     RadialGradient,
-    # Extraction
-    ExtractionProfile,
-    LayoutParams,
     TextSpan,
     disable_logging,
     get_log_level,

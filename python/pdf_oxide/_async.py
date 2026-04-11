@@ -35,7 +35,7 @@ from __future__ import annotations
 import asyncio
 import functools
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Optional
+from typing import Optional
 
 from .pdf_oxide import OfficeConverter, Pdf, PdfDocument
 

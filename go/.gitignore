@@ -1,0 +1,4 @@
+# Build artifacts (but NOT lib/ — native libs are shipped with the module)
+*.o
+*.a
+*.test

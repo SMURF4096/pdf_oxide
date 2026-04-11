@@ -3,6 +3,7 @@ use pdf_oxide::editor::{DocumentEditor, EditableDocument, SaveOptions};
 use pdf_oxide::geometry::Rect;
 use std::path::Path;
 
+#[allow(clippy::too_many_arguments)] // CLI command signature mirrors clap arg parser
 pub fn run(
     file: &Path,
     fill: Option<&str>,

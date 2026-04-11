@@ -1,6 +1,8 @@
-# PDF Oxide - The Fastest PDF Toolkit for Python, Rust, WASM, CLI & AI
+# PDF Oxide - The Fastest PDF Toolkit for Python, Rust, Go, JS/TS, C#, WASM, CLI & AI
 
-The fastest PDF library for text extraction, image extraction, and markdown conversion. Rust core with Python bindings, WASM support, CLI tool, and MCP server for AI assistants. 0.8ms mean per document, 5× faster than PyMuPDF, 15× faster than pypdf. 100% pass rate on 3,830 real-world PDFs. MIT licensed.
+> **More language bindings coming in May 2026.** Java, Ruby, PHP, Swift, and Kotlin are on the roadmap. Want another language? [Open an issue](https://github.com/yfedoseev/pdf_oxide/issues/new) and tell us.
+
+The fastest PDF library for text extraction, image extraction, and markdown conversion. Rust core with bindings for Python, Go, JavaScript / TypeScript, C# / .NET, and WASM, plus a CLI tool and MCP server for AI assistants. 0.8ms mean per document, 5× faster than PyMuPDF, 15× faster than pypdf. 100% pass rate on 3,830 real-world PDFs. MIT licensed.
 
 [![Crates.io](https://img.shields.io/crates/v/pdf_oxide.svg)](https://crates.io/crates/pdf_oxide)
 [![PyPI](https://img.shields.io/pypi/v/pdf_oxide.svg)](https://pypi.org/project/pdf_oxide/)
@@ -9,6 +11,10 @@ The fastest PDF library for text extraction, image extraction, and markdown conv
 [![Documentation](https://docs.rs/pdf_oxide/badge.svg)](https://docs.rs/pdf_oxide)
 [![Build Status](https://github.com/yfedoseev/pdf_oxide/workflows/CI/badge.svg)](https://github.com/yfedoseev/pdf_oxide/actions)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](https://opensource.org/licenses)
+
+> **New in v0.3.24 — now available in Go, JavaScript / TypeScript, and C# / .NET**, alongside the existing Python, Rust, and WASM bindings.
+> Same Rust core, same 0.8 ms extraction speed, same 100% pass rate.
+> See the language guides: [Python](python/README.md) · [Go](go/README.md) · [JavaScript / TypeScript](js/README.md) · [C# / .NET](csharp/README.md) · [WASM](wasm-pkg/README.md)
 
 ## Quick Start
 
@@ -73,7 +79,7 @@ brew install yfedoseev/tap/pdf-oxide   # includes pdf-oxide-mcp
 - **Fast** — 0.8ms mean per document, 5× faster than PyMuPDF, 15× faster than pypdf, 29× faster than pdfplumber
 - **Reliable** — 100% pass rate on 3,830 test PDFs, zero panics, zero timeouts
 - **Complete** — Text extraction, image extraction, PDF creation, and editing in one library
-- **Multi-platform** — Rust, Python, JavaScript/WASM, CLI, and MCP server for AI assistants
+- **Multi-platform** — Rust, Python, Go, JavaScript/TypeScript, C#/.NET, WASM, CLI, and MCP server for AI assistants
 - **Permissive license** — MIT / Apache-2.0 — use freely in commercial and open-source projects
 
 ## Performance
@@ -271,6 +277,14 @@ brew install yfedoseev/tap/pdf-oxide    # Included with CLI in Homebrew
 cargo install pdf_oxide_mcp             # Cargo
 ```
 
+### Other languages
+
+- **Go** — `go get github.com/yfedoseev/pdfoxide` — see [go/README.md](go/README.md)
+- **JavaScript / TypeScript (Node.js)** — `npm install pdf-oxide` — see [js/README.md](js/README.md)
+- **C# / .NET** — `dotnet add package PdfOxide` — see [csharp/README.md](csharp/README.md)
+
+All three share the same Rust core as the Python and WASM bindings, so everything you read in this README applies to them as well — just with each language's native naming conventions.
+
 ## CLI
 
 22 commands for PDF processing directly from your terminal:
@@ -319,18 +333,23 @@ cargo test
 
 # Build Python bindings
 maturin develop
+
+# Build the shared library for Go, JS/TS, and C# bindings
+cargo build --release --lib
+# Output: target/release/libpdf_oxide.{so,dylib} or pdf_oxide.dll
 ```
 
 ## Documentation
 
-- **[Full Documentation](https://pdf.oxide.fyi)** - Complete documentation site
-- **[Getting Started (Rust)](https://pdf.oxide.fyi/docs/getting-started/rust)** - Rust guide
-- **[Getting Started (Python)](https://pdf.oxide.fyi/docs/getting-started/python)** - Python guide
-- **[Getting Started (WASM)](https://pdf.oxide.fyi/docs/getting-started/javascript)** - Browser and Node.js guide
-- **[Getting Started (CLI)](https://pdf.oxide.fyi/docs/getting-started/cli)** - CLI guide
-- **[Getting Started (MCP)](https://pdf.oxide.fyi/docs/getting-started/mcp)** - MCP server for AI assistants
-- **[API Docs](https://docs.rs/pdf_oxide)** - Full Rust API reference
-- **[Performance Benchmarks](https://pdf.oxide.fyi/docs/performance)** - Full benchmark methodology and results
+- **[Full Documentation](https://pdf.oxide.fyi)** — Complete documentation site
+- **[Getting Started (Rust)](docs/getting-started-rust.md)** — Rust guide
+- **[Getting Started (Python)](docs/getting-started-python.md)** — Python guide
+- **[Getting Started (Go)](go/README.md)** — Go guide
+- **[Getting Started (JavaScript / TypeScript)](js/README.md)** — Node.js guide
+- **[Getting Started (C# / .NET)](csharp/README.md)** — .NET guide
+- **[Getting Started (WASM)](docs/getting-started-wasm.md)** — Browser and Node.js WASM guide
+- **[API Docs](https://docs.rs/pdf_oxide)** — Full Rust API reference
+- **[Performance Benchmarks](https://pdf.oxide.fyi/docs/performance)** — Full benchmark methodology and results
 
 ## Use Cases
 
@@ -341,6 +360,14 @@ maturin develop
 - **Academic research** — Parse papers, extract citations, and process large corpora
 - **PDF generation** — Create invoices, reports, certificates, and templated documents programmatically
 - **PyMuPDF alternative** — MIT licensed, 5× faster, no AGPL restrictions
+
+## Why I built this
+
+I needed PyMuPDF's speed without its AGPL license, and I needed it in more than one language. Nothing existed that ticked all three boxes — fast, MIT, multi-language — so I wrote it. The Rust core is what does the real work; the bindings for Python, Go, JS/TS, C#, and WASM are thin shells around the same code, so a bug fix in one lands in all of them. It now passes 100% of the veraPDF + Mozilla pdf.js + DARPA SafeDocs test corpora (3,830 PDFs) on every platform I've tested.
+
+If it's useful to you, a star on GitHub genuinely helps. If something's broken or missing, [open an issue](https://github.com/yfedoseev/pdf_oxide/issues) — I read all of them.
+
+— Yury
 
 ## License
 
@@ -358,7 +385,7 @@ cargo build && cargo test && cargo fmt && cargo clippy -- -D warnings
 
 ```bibtex
 @software{pdf_oxide,
-  title = {PDF Oxide: Fast PDF Toolkit for Rust and Python},
+  title = {PDF Oxide: Fast PDF Toolkit for Rust, Python, Go, JavaScript, and C#},
   author = {Yury Fedoseev},
   year = {2025},
   url = {https://github.com/yfedoseev/pdf_oxide}
@@ -367,4 +394,4 @@ cargo build && cargo test && cargo fmt && cargo clippy -- -D warnings
 
 ---
 
-**Rust** + **Python** + **WASM** + **CLI** + **MCP** | MIT/Apache-2.0 | 100% pass rate on 3,830 PDFs | 0.8ms mean | 5× faster than the industry leaders
+**Rust** + **Python** + **Go** + **JS/TS** + **C#** + **WASM** + **CLI** + **MCP** | MIT/Apache-2.0 | 100% pass rate on 3,830 PDFs | 0.8ms mean | 5× faster than the industry leaders
