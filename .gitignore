@@ -12,6 +12,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+!go/lib/**/*.so
 .Python
 build/
 develop-eggs/
@@ -201,6 +202,13 @@ node_modules/
 *.lib
 *.dll
 *.dylib
+# …but the Go binding ships prebuilt native libs committed via CI.
+# See .githooks/pre-commit for the safety net that prevents humans
+# from accidentally committing a local dev build here.
+!go/lib/**/*.so
+!go/lib/**/*.dylib
+!go/lib/**/*.dll
+!go/lib/**/*.a
 
 # Profiling
 flamegraph.svg

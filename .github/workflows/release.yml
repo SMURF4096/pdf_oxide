@@ -363,6 +363,9 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Marker file is checked by .githooks/pre-commit to distinguish
+          # CI-authored native-lib commits from accidental local dev commits.
+          echo "$GITHUB_SHA" > go/lib/.ci-build
           git add go/lib/
           if git diff --cached --quiet; then
             echo "No changes to native libs"

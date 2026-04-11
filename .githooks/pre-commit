@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Pre-commit hook: prevents accidental local commits of Go native libraries.
+#
+# The go/lib/<os_arch>/ directories ship prebuilt libpdf_oxide.{so,dylib,dll}
+# that are supposed to be committed by the CI workflow (release.yml ->
+# "Update Go native libs" job) only. Humans should never stage these files
+# from a local Rust build.
+#
+# To opt in to local go/lib/ commits (as CI does), create the marker file
+# go/lib/.ci-build containing the current commit SHA and keep it staged
+# alongside the native libs.
+#
+# Install: git config --local core.hooksPath .githooks
+# Uninstall: git config --local --unset core.hooksPath
+
+set -euo pipefail
+
+# Collect staged files matching go/lib/<something>/libpdf_oxide.(so|dylib|dll|a)
+# plus the raw extensions under go/lib/ (in case of unusual naming).
+staged=$(git diff --cached --name-only --diff-filter=ACMR \
+    | grep -E '^go/lib/.*\.(so|dylib|dll|a)$' || true)
+
+if [ -z "$staged" ]; then
+    exit 0
+fi
+
+# Allow the commit if a .ci-build marker is ALSO staged in the same commit.
+# CI writes the marker just before `git add go/lib/` so it lands in the
+# same index as the native libs.
+marker_staged=$(git diff --cached --name-only --diff-filter=ACMR \
+    | grep -E '^go/lib/\.ci-build$' || true)
+
+if [ -n "$marker_staged" ]; then
+    exit 0
+fi
+
+echo >&2 "-----------------------------------------------------------------------"
+echo >&2 "pdf_oxide pre-commit hook: blocking commit of Go native libraries."
+echo >&2 ""
+echo >&2 "The following files are staged and look like local dev builds:"
+echo >&2 ""
+echo >&2 "$staged" | sed 's/^/  /' >&2
+echo >&2 ""
+echo >&2 "These files are meant to be built and committed only by the"
+echo >&2 "'Update Go native libs' job in .github/workflows/release.yml."
+echo >&2 ""
+echo >&2 "If this really is a CI commit, stage go/lib/.ci-build at the"
+echo >&2 "same time. Otherwise, unstage the binaries:"
+echo >&2 ""
+echo >&2 "  git restore --staged go/lib/"
+echo >&2 ""
+echo >&2 "-----------------------------------------------------------------------"
+exit 1
