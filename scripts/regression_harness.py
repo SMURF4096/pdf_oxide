@@ -24,13 +24,13 @@ extract_{text,markdown,html}_simple binaries.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as _dt
 import hashlib
 import json
 import os
 import random
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -87,8 +87,8 @@ class ExtractorSpec:
     found at X" or "module not installed").
     """
 
-    name: str          # logical extractor name, e.g. "head", "v0323"
-    format: str        # "text" | "markdown" | "html"
+    name: str  # logical extractor name, e.g. "head", "v0323"
+    format: str  # "text" | "markdown" | "html"
     runner: Callable[[Path, int], Tuple[bool, Optional[int], str, Optional[str]]]
     available: Callable[[], bool]
     unavail_reason: Callable[[], str]
@@ -120,14 +120,13 @@ def _run_rust_bin(binary: Path, pdf: Path) -> Tuple[bool, Optional[int], str, Op
         return False, proc.returncode, "", f"decode error: {e}"
     err = None
     if not ok:
-        err = (
-            proc.stderr.decode("utf-8", errors="replace")[-4000:]
-            or f"exit {proc.returncode}"
-        )
+        err = proc.stderr.decode("utf-8", errors="replace")[-4000:] or f"exit {proc.returncode}"
     return ok, proc.returncode, text, err
 
 
-def _make_rust_runner(binary: Path) -> Callable[[Path, int], Tuple[bool, Optional[int], str, Optional[str]]]:
+def _make_rust_runner(
+    binary: Path,
+) -> Callable[[Path, int], Tuple[bool, Optional[int], str, Optional[str]]]:
     def runner(pdf: Path, pages: int) -> Tuple[bool, Optional[int], str, Optional[str]]:
         return _run_rust_bin(binary, pdf)
 
@@ -173,10 +172,7 @@ def _run_pdftotext_text(pdf: Path, pages: int) -> Tuple[bool, Optional[int], str
     text = proc.stdout.decode("utf-8", errors="replace")
     err = None
     if not ok:
-        err = (
-            proc.stderr.decode("utf-8", errors="replace")[-4000:]
-            or f"exit {proc.returncode}"
-        )
+        err = proc.stderr.decode("utf-8", errors="replace")[-4000:] or f"exit {proc.returncode}"
     return ok, proc.returncode, text, err
 
 
@@ -207,10 +203,7 @@ def _run_pdftotext_html(pdf: Path, pages: int) -> Tuple[bool, Optional[int], str
                 return False, None, "", f"exception: {e}"
         ok = proc.returncode == 0 and out_file.exists()
         if not ok:
-            err = (
-                proc.stderr.decode("utf-8", errors="replace")[-4000:]
-                or f"exit {proc.returncode}"
-            )
+            err = proc.stderr.decode("utf-8", errors="replace")[-4000:] or f"exit {proc.returncode}"
             return False, proc.returncode, "", err
         try:
             text = out_file.read_text(encoding="utf-8", errors="replace")
@@ -249,18 +242,12 @@ def _run_pypdfium2(pdf: Path, pages: int) -> Tuple[bool, Optional[int], str, Opt
             try:
                 chunks.append(tp.get_text_range())
             finally:
-                try:
+                with contextlib.suppress(Exception):
                     tp.close()
-                except Exception:
-                    pass
-                try:
+                with contextlib.suppress(Exception):
                     page.close()
-                except Exception:
-                    pass
-        try:
+        with contextlib.suppress(Exception):
             doc.close()
-        except Exception:
-            pass
         return True, 0, "\n".join(chunks), None
     except Exception as e:
         return False, None, "", f"exception: {e}"
@@ -492,9 +479,7 @@ def collect_corpus(output: Path) -> Dict[str, List[Path]]:
     multi = add_bucket("multi_column", 10)
     academic = _walk_pdfs(TESTS_ROOT / "pdfs" / "academic")
     technical = _walk_pdfs(TESTS_ROOT / "pdfs" / "technical")
-    arxiv_elsewhere = [
-        p for p in _walk_pdfs(TESTS_ROOT / "pdfs") if "arxiv" in p.name.lower()
-    ]
+    arxiv_elsewhere = [p for p in _walk_pdfs(TESTS_ROOT / "pdfs") if "arxiv" in p.name.lower()]
     multi.candidates = academic + technical + arxiv_elsewhere
     multi.picked = _first_n(multi.candidates, multi.target, seen)
 
@@ -514,10 +499,7 @@ def collect_corpus(output: Path) -> Dict[str, List[Path]]:
     diverse_cjk = [
         p
         for p in diverse
-        if any(
-            tok in p.name.lower()
-            for tok in ("cjk", "zh", "chinese", "japan", "kor", "cn_")
-        )
+        if any(tok in p.name.lower() for tok in ("cjk", "zh", "chinese", "japan", "kor", "cn_"))
     ]
     cjk.candidates = cn_repro + diverse_cjk + multilingual
     cjk.picked = _first_n(cjk.candidates, cjk.target, seen)
@@ -695,9 +677,7 @@ def run_all(
 
             for spec in fmt_specs:
                 ext_meta = manifest["formats"][fmt]["extractors"][spec.name]
-                out_path = (
-                    out_dir / f"{spec.name}.{spec.format}" / (rel_key + spec.file_ext)
-                )
+                out_path = out_dir / f"{spec.name}.{spec.format}" / (rel_key + spec.file_ext)
                 out_path.parent.mkdir(parents=True, exist_ok=True)
 
                 if ext_meta["status"] == "unavailable":
@@ -740,10 +720,7 @@ def run_all(
                 try:
                     out_path.write_text(text or "", encoding="utf-8")
                 except Exception as e:
-                    if err is None:
-                        err = f"write error: {e}"
-                    else:
-                        err = f"{err}; write error: {e}"
+                    err = f"write error: {e}" if err is None else f"{err}; write error: {e}"
                 status = "ok" if ok and err is None else "error"
                 if err == "timeout":
                     status = "timeout"
@@ -1021,10 +998,18 @@ def cmd_show(args: argparse.Namespace) -> int:
             hit = entry
             break
     if hit is None:
-        print(f"No entry matching {target!r} in {run_dir}/manifest.json (format {fmt})", file=sys.stderr)
+        print(
+            f"No entry matching {target!r} in {run_dir}/manifest.json (format {fmt})",
+            file=sys.stderr,
+        )
         return 1
 
-    extractors = list(section.get("extractors", {}).keys()) or ["v0323", "head", "pdftotext", "pypdfium2"]
+    extractors = list(section.get("extractors", {}).keys()) or [
+        "v0323",
+        "head",
+        "pdftotext",
+        "pypdfium2",
+    ]
     print(f"PDF:    {hit['pdf']}")
     print(f"Bucket: {hit.get('bucket', '?')}")
     print(f"Size:   {hit.get('size', 0)} bytes")
@@ -1036,7 +1021,7 @@ def cmd_show(args: argparse.Namespace) -> int:
             continue
         text = _read_result_text(res)
         header = (
-            f"===== {ext}.{fmt} | status={res.get('status','?')} "
+            f"===== {ext}.{fmt} | status={res.get('status', '?')} "
             f"ok={res.get('ok')} bytes={res.get('bytes')} lines={res.get('lines')} "
             f"elapsed={res.get('elapsed')}s ====="
         )
@@ -1096,7 +1081,9 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_collect = sub.add_parser("collect", help="Build the regression corpus file")
@@ -1112,7 +1099,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=3,
         help="Pages per PDF for pdftotext/pypdfium2/pymupdf4llm (rust extractors always dump the whole doc). -1 for all.",
     )
-    p_run.add_argument("--force", action="store_true", help="Re-run extractors even if output files exist")
+    p_run.add_argument(
+        "--force", action="store_true", help="Re-run extractors even if output files exist"
+    )
     p_run.add_argument(
         "--formats",
         default=",".join(FORMATS),
@@ -1127,7 +1116,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_diff.add_argument("--format", default="text", choices=list(FORMATS))
     p_diff.set_defaults(func=cmd_diff)
 
-    p_gt = sub.add_parser("groundtruth", help="Compare an extractor against a reference (default pdftotext)")
+    p_gt = sub.add_parser(
+        "groundtruth", help="Compare an extractor against a reference (default pdftotext)"
+    )
     p_gt.add_argument("--run", required=True)
     p_gt.add_argument("--ref", default="pdftotext")
     p_gt.add_argument("--actual", default="head")
