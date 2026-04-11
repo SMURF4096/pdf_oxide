@@ -1,6 +1,5 @@
 using System;
 using System.Runtime.InteropServices;
-using System.Text;
 
 namespace PdfOxide.Internal
 {
@@ -19,32 +18,7 @@ namespace PdfOxide.Internal
             if (ptr == IntPtr.Zero)
                 return string.Empty;
 
-            return PtrToStringUtf8(ptr) ?? string.Empty;
-        }
-
-        /// <summary>
-        /// Polyfill for Marshal.PtrToStringUTF8 for older frameworks.
-        /// </summary>
-        internal static string? PtrToStringUtf8(IntPtr ptr)
-        {
-            if (ptr == IntPtr.Zero)
-                return null;
-
-#if NET5_0_OR_GREATER
-            return Marshal.PtrToStringUTF8(ptr);
-#else
-            // Find the null terminator
-            int length = 0;
-            while (Marshal.ReadByte(ptr, length) != 0)
-                length++;
-
-            if (length == 0)
-                return string.Empty;
-
-            byte[] buffer = new byte[length];
-            Marshal.Copy(ptr, buffer, 0, length);
-            return Encoding.UTF8.GetString(buffer);
-#endif
+            return Marshal.PtrToStringUTF8(ptr) ?? string.Empty;
         }
 
         /// <summary>

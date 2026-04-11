@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using PdfOxide.Exceptions;
@@ -858,7 +859,7 @@ namespace PdfOxide.Core
                 return string.Empty;
             try
             {
-                return StringMarshaler.PtrToStringUtf8(ptr) ?? string.Empty;
+                return Marshal.PtrToStringUTF8(ptr) ?? string.Empty;
             }
             finally
             {

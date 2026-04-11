@@ -587,7 +587,11 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          # #333 targets net8.0 + net10.0, so both SDKs must be present for
+          # `dotnet pack` to emit both TFM outputs.
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Download all native libraries
         uses: actions/download-artifact@v8
@@ -620,6 +624,51 @@ jobs:
         working-directory: csharp/PdfOxide
         run: |
           dotnet pack -c Release -o ../../nuget-out /p:Version=${{ needs.validate.outputs.version }}
+
+      - name: Verify NativeAOT publish (#333)
+        working-directory: csharp/PdfOxide
+        shell: bash
+        run: |
+          set -euxo pipefail
+          # Prove the binding is AOT-safe: publish a tiny consumer with
+          # PublishAot=true on net10.0 and make sure the trim/AOT analyzer
+          # surfaces no warnings. If LibraryImport regressed, this step fails
+          # with clear IL2026/IL3050 diagnostics instead of a silent runtime
+          # crash in an end-user's published binary.
+          AOT_DIR="$(mktemp -d)"
+          mkdir -p "$AOT_DIR/AotSmoke"
+          cat > "$AOT_DIR/AotSmoke/AotSmoke.csproj" <<'EOT'
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net10.0</TargetFramework>
+              <Nullable>enable</Nullable>
+              <PublishAot>true</PublishAot>
+              <InvariantGlobalization>true</InvariantGlobalization>
+              <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+            </PropertyGroup>
+            <ItemGroup>
+              <ProjectReference Include="../../PdfOxide.csproj" />
+            </ItemGroup>
+          </Project>
+          EOT
+          cat > "$AOT_DIR/AotSmoke/Program.cs" <<'EOT'
+          using PdfOxide.Core;
+
+          using var pdf = Pdf.FromMarkdown("# verify-csharp-aot\n\nbody text.");
+          var outPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "verify.pdf");
+          pdf.Save(outPath);
+          using var doc = PdfDocument.Open(outPath);
+          System.Console.WriteLine($"ok pages={doc.PageCount}");
+          EOT
+          # Link the temp project into the solution via a file symlink so
+          # ProjectReference's relative path resolves to the real library.
+          ln -s "$PWD" "$AOT_DIR/AotSmoke/PdfOxide.link"
+          # Rewrite the ProjectReference to absolute path (simpler than ln).
+          sed -i "s|../../PdfOxide.csproj|$PWD/PdfOxide.csproj|" "$AOT_DIR/AotSmoke/AotSmoke.csproj"
+          dotnet publish "$AOT_DIR/AotSmoke/AotSmoke.csproj" -c Release -r linux-x64 -o "$AOT_DIR/out"
+          # Run the AOT-compiled binary — no .NET runtime required.
+          "$AOT_DIR/out/AotSmoke" || { echo "AOT smoke test failed"; exit 1; }
 
       - name: Upload NuGet package
         uses: actions/upload-artifact@v7
