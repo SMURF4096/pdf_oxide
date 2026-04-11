@@ -1341,6 +1341,133 @@ impl PdfDocument {
     /// Nothing is mutated if there are no sparse columns or not enough
     /// data rows to confidently infer row-grouping (min 6 rows in the
     /// dense reference column).
+    /// Identify span indices that look like multi-row-spanning labels —
+    /// sparse-X-column spans whose Y values sit inside the data Y range
+    /// of the dense columns on the page. These are the same spans that
+    /// `reorder_rowspan_labels` would promote to the top of their row
+    /// block, except this function returns them **before** the spatial
+    /// table detector's retain filter has a chance to drop them from
+    /// the flow span list.
+    ///
+    /// The retain filter in `extract_text_with_options` removes every
+    /// span whose bbox is contained in a detected table's bbox. On CJK
+    /// reference-data PDFs (issue #329) the test-name label column is
+    /// narrow and vertically centred within each multi-row data block,
+    /// so its spans are inside the table bbox and would be dropped
+    /// without replacement — the spatial table extractor does not emit
+    /// these labels as `TableCell`s either. Preserving the identified
+    /// labels through the retain filter lets `reorder_rowspan_labels`
+    /// promote them to their proper reading-order position alongside
+    /// the surviving flow spans.
+    ///
+    /// Returns a `HashSet` of indices into the provided `spans` slice.
+    /// Callers must use the returned indices **before** any reordering
+    /// or retention mutates the slice.
+    pub(crate) fn identify_multi_row_labels(
+        spans: &[crate::layout::TextSpan],
+    ) -> std::collections::HashSet<usize> {
+        use std::collections::{BTreeSet, HashMap as StdHashMap, HashSet};
+
+        let mut out: HashSet<usize> = HashSet::new();
+        if spans.len() < 10 {
+            return out;
+        }
+
+        // Cluster by X proximity (15pt gap threshold) — same heuristic
+        // as `reorder_rowspan_labels`.
+        let mut by_x: Vec<usize> = (0..spans.len()).collect();
+        by_x.sort_by(|&a, &b| crate::utils::safe_float_cmp(spans[a].bbox.x, spans[b].bbox.x));
+        const X_GAP: f32 = 15.0;
+        let mut columns: Vec<Vec<usize>> = Vec::new();
+        let mut cur: Vec<usize> = Vec::new();
+        let mut last_x = f32::NEG_INFINITY;
+        for &idx in &by_x {
+            let x = spans[idx].bbox.x;
+            if !cur.is_empty() && x - last_x > X_GAP {
+                columns.push(std::mem::take(&mut cur));
+            }
+            cur.push(idx);
+            last_x = x;
+        }
+        if !cur.is_empty() {
+            columns.push(cur);
+        }
+        if columns.len() < 2 {
+            return out;
+        }
+
+        let max_count = columns.iter().map(|c| c.len()).max().unwrap_or(0);
+        if max_count < 6 {
+            return out;
+        }
+
+        // Sort columns by span count descending to pick the dense clusters.
+        let mut col_order: Vec<usize> = (0..columns.len()).collect();
+        col_order.sort_by(|&a, &b| columns[b].len().cmp(&columns[a].len()));
+        let dense_cols_count = columns.iter().filter(|c| c.len() * 2 > max_count).count();
+
+        let band_of = |y: f32| (y / crate::utils::ROW_BAND_TOLERANCE_PT).round() as i32;
+        let data_bands: BTreeSet<i32> = if dense_cols_count >= 3 {
+            let top: Vec<&Vec<usize>> = col_order.iter().take(3).map(|&i| &columns[i]).collect();
+            let mut support: StdHashMap<i32, usize> = StdHashMap::new();
+            for col in &top {
+                let bands: HashSet<i32> = col.iter().map(|&i| band_of(spans[i].bbox.y)).collect();
+                for b in bands {
+                    *support.entry(b).or_insert(0) += 1;
+                }
+            }
+            support
+                .into_iter()
+                .filter(|(_, c)| *c >= 3)
+                .map(|(b, _)| b)
+                .collect()
+        } else if dense_cols_count == 2 {
+            let a: HashSet<i32> = columns[col_order[0]]
+                .iter()
+                .map(|&i| band_of(spans[i].bbox.y))
+                .collect();
+            let b: HashSet<i32> = columns[col_order[1]]
+                .iter()
+                .map(|&i| band_of(spans[i].bbox.y))
+                .collect();
+            a.intersection(&b).copied().collect()
+        } else {
+            columns[col_order[0]]
+                .iter()
+                .map(|&i| band_of(spans[i].bbox.y))
+                .collect()
+        };
+
+        if data_bands.len() < 4 {
+            return out;
+        }
+
+        let band_pt = crate::utils::ROW_BAND_TOLERANCE_PT;
+        let data_top = (*data_bands.iter().next_back().unwrap() as f32) * band_pt + band_pt / 2.0;
+        let data_bot = (*data_bands.iter().next().unwrap() as f32) * band_pt - band_pt / 2.0;
+
+        // Collect sparse-column spans that sit inside the data Y range
+        // and belong to a column with >= 2 members in that range.
+        for col in &columns {
+            if col.len() < 2 || col.len() * 2 >= max_count {
+                continue;
+            }
+            let in_data: Vec<usize> = col
+                .iter()
+                .copied()
+                .filter(|&i| {
+                    let y = spans[i].bbox.y;
+                    y > data_bot && y < data_top
+                })
+                .collect();
+            if in_data.len() >= 2 {
+                out.extend(in_data);
+            }
+        }
+
+        out
+    }
+
     pub(crate) fn reorder_rowspan_labels(spans: &mut Vec<crate::layout::TextSpan>) {
         use std::collections::HashMap;
 
@@ -3397,13 +3524,87 @@ impl PdfDocument {
             // Untagged PDF: Use page content order
             let mut spans = all_spans;
 
-            // Exclude spans that are inside detected tables
+            // Exclude spans that are inside detected tables, BUT
+            // preserve multi-row-spanning label columns (issue #329).
+            // The spatial table extractor clusters data cells into
+            // table cells but does NOT emit the sparse label column
+            // that sits vertically centred within each multi-row data
+            // block (common on CJK lab-report reference tables like
+            // WS/T 779). Those labels would otherwise be dropped
+            // entirely from the output: the retain below would remove
+            // them because their bbox is inside the table, and
+            // `table.render_text()` would not re-emit them because the
+            // extractor never captured them as cells. Before running
+            // the retain filter we identify these rowspan labels (same
+            // heuristic `reorder_rowspan_labels` uses) and keep them in
+            // the span list so `reorder_rowspan_labels` below can
+            // promote them to the top of their row block.
             if !tables.is_empty() {
-                spans.retain(|s| {
-                    !tables
-                        .iter()
-                        .any(|t| t.bbox.is_some_and(|b| b.contains_rect(&s.bbox)))
-                });
+                // Build the set of cell text strings that every detected
+                // table will render via `table.render_text()`. Labels
+                // whose exact text already appears as a cell in some
+                // table are already covered by the inline-table flush
+                // below, so we must NOT also preserve them in the flow
+                // span list (it would produce duplicate output).
+                let mut table_cell_texts: std::collections::HashSet<String> =
+                    std::collections::HashSet::new();
+                for t in &tables {
+                    for row in &t.rows {
+                        for cell in &row.cells {
+                            let trimmed = cell.text.trim();
+                            if !trimmed.is_empty() {
+                                table_cell_texts.insert(trimmed.to_string());
+                            }
+                        }
+                    }
+                }
+
+                let preserved_label_indices: std::collections::HashSet<usize> =
+                    Self::identify_multi_row_labels(&spans)
+                        .into_iter()
+                        .filter(|&idx| {
+                            // Only preserve labels whose text is NOT
+                            // already emitted by any table's
+                            // `render_text()`. This is what makes the
+                            // #329 fix safe on pages where the spatial
+                            // extractor captured the sparse label
+                            // column as cells — we let the table
+                            // render them and drop them from flow.
+                            // On pages like WS/T 779 where the label
+                            // column is a genuine multi-row-spanning
+                            // column that the extractor did NOT
+                            // capture, the set is empty and every
+                            // identified label stays in flow where
+                            // `reorder_rowspan_labels` below can
+                            // promote it.
+                            let t = spans[idx].text.trim();
+                            !t.is_empty() && !table_cell_texts.contains(t)
+                        })
+                        .collect();
+
+                if preserved_label_indices.is_empty() {
+                    spans.retain(|s| {
+                        !tables
+                            .iter()
+                            .any(|t| t.bbox.is_some_and(|b| b.contains_rect(&s.bbox)))
+                    });
+                } else {
+                    let kept: Vec<crate::layout::TextSpan> = spans
+                        .drain(..)
+                        .enumerate()
+                        .filter_map(|(i, s)| {
+                            let in_table = tables
+                                .iter()
+                                .any(|t| t.bbox.is_some_and(|b| b.contains_rect(&s.bbox)));
+                            if !in_table || preserved_label_indices.contains(&i) {
+                                Some(s)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    spans = kept;
+                }
             }
 
             // Row-aware ordering: quantize Y into bands and sort band-
