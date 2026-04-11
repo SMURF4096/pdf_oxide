@@ -3516,7 +3516,7 @@ impl PdfDocument {
         let text = if let Some(ref struct_tree) = cached_tree {
             // Build per-page traversal cache once, then O(1) lookup per page.
             if self.structure_content_cache.is_none() {
-                let all_content = crate::structure::traverse_structure_tree_all_pages(&struct_tree);
+                let all_content = crate::structure::traverse_structure_tree_all_pages(struct_tree);
                 self.structure_content_cache = Some(all_content);
             }
             self.extract_text_structure_order_cached_with_spans(page_index, all_spans)?
@@ -4287,6 +4287,62 @@ impl PdfDocument {
     /// a single span to produce correct logical reading order.
     fn reverse_rtl_visual_order_runs(spans: &mut Vec<TextSpan>) {
         use crate::text::rtl_detector::is_rtl_text;
+
+        // Pass 0: reverse visual-order characters inside a single span
+        // when the producer clearly emitted pre-shaped Arabic.
+        //
+        // Some PDFs (e.g. `ArabicCIDTrueType.pdf` in the pdfjs regression
+        // corpus) emit Arabic with an entire line as a single Tj-produced
+        // span whose `text` is stored in *visual* order — rightmost
+        // rendered glyph first. That matches what the content stream
+        // literally drew on the page, but downstream consumers expect
+        // reading-order (logical) text.
+        //
+        // The gate for reversal is the presence of **Arabic Presentation
+        // Forms A or B** (U+FB50-U+FDFF, U+FE70-U+FEFF). Those code points
+        // only appear when the PDF producer has explicitly pre-shaped the
+        // glyphs, and producers that pre-shape almost universally also
+        // store them in visual order because that's the order the content
+        // stream draws them. Plain base-Arabic text (U+0600-U+06FF) is
+        // left alone because those files are usually already in logical
+        // order — the PDF viewer applies shaping and bidi reordering at
+        // render time, so reversing would produce a wrong result.
+        //
+        // We still require at least 4 characters and >50 % non-whitespace
+        // RTL ratio so that punctuation or stray markers adjacent to
+        // Arabic do not trigger a reversal.
+        //
+        // Pass 1 below handles the other common shape where each Arabic
+        // character is emitted as its own short span and the reversal is
+        // a span-granularity concern. The two passes are independent:
+        // a span either fires Pass 0 (pre-shaped, reverse in place) or
+        // Pass 1 (per-glyph spans, reverse span order), never both.
+        //
+        // This is separate from `normalize_arabic_presentation_forms`,
+        // which runs later on the assembled output string and unshapes
+        // contextual glyphs back to their base Unicode letters.
+        for span in spans.iter_mut() {
+            let mut total = 0usize;
+            let mut rtl_count = 0usize;
+            let mut has_presentation_form = false;
+            for c in span.text.chars() {
+                if c.is_whitespace() {
+                    continue;
+                }
+                total += 1;
+                let cp = c as u32;
+                if is_rtl_text(cp) {
+                    rtl_count += 1;
+                }
+                if (0xFB50..=0xFDFF).contains(&cp) || (0xFE70..=0xFEFF).contains(&cp) {
+                    has_presentation_form = true;
+                }
+            }
+            if has_presentation_form && total >= 4 && rtl_count * 2 > total {
+                let reversed: String = span.text.chars().rev().collect();
+                span.text = reversed;
+            }
+        }
 
         if spans.len() < 4 {
             return;
@@ -11027,6 +11083,128 @@ mod tests {
         let result = PdfDocument::normalize_arabic_presentation_forms(text);
         // Should become Lam (U+0644)
         assert!(result.contains('\u{0644}'));
+    }
+
+    // ========================================================================
+    // reverse_rtl_visual_order_runs tests (issue #330)
+    // ========================================================================
+    //
+    // These tests cover the two distinct RTL span shapes pdf_oxide sees
+    // in the wild and make sure future changes don't regress either:
+    //
+    // 1. **Pre-shaped visual-order single span** — one `TextSpan` per
+    //    line whose `text` already contains contextual Arabic glyphs
+    //    (U+FB50-U+FDFF / U+FE70-U+FEFF) in the order the content
+    //    stream drew them (rightmost glyph first). This is the
+    //    `ArabicCIDTrueType.pdf` pdfjs test fixture case. Expected:
+    //    character sequence gets reversed in place.
+    //
+    // 2. **Plain base-Arabic logical-order single span** — one
+    //    `TextSpan` per line whose `text` uses base Arabic (U+0621-
+    //    U+06FF) characters in logical / reading order, as most
+    //    well-behaved PDF producers emit. Expected: span is left
+    //    completely alone (no reversal, no shape changes).
+    //
+    // The gate that protects case 2 from case 1's reversal is the
+    // `has_presentation_form` check inside `reverse_rtl_visual_order_runs`.
+
+    fn make_rtl_test_span(text: &str, x: f32, y: f32) -> TextSpan {
+        TextSpan {
+            text: text.to_string(),
+            bbox: crate::geometry::Rect::new(x, y, 100.0, 12.0),
+            font_size: 12.0,
+            ..TextSpan::default()
+        }
+    }
+
+    #[test]
+    fn test_reverse_rtl_preshaped_single_span() {
+        // "ArabicCIDTrueType.pdf" shape: one span per line, glyphs in
+        // visual / right-to-left rendering order, mixing presentation
+        // form `ﳋ` (U+FCCB) with base Arabic characters. The helper
+        // must reverse this into reading order so downstream consumers
+        // see logical Arabic even though the content stream is visual.
+        let mut spans = vec![
+            make_rtl_test_span(
+                "\u{0629}\u{064A}\u{0628}\u{0631}\u{0639}\u{0644}\u{0627} \
+                                \u{0637}\u{0648}\u{0637}\u{FCCB}\u{0627} \
+                                \u{0639}\u{0627}\u{0648}\u{0646}\u{0627}",
+                100.0,
+                700.0,
+            ),
+            make_rtl_test_span("other content", 100.0, 680.0),
+            make_rtl_test_span("more content", 100.0, 660.0),
+            make_rtl_test_span("tail", 100.0, 640.0),
+        ];
+        PdfDocument::reverse_rtl_visual_order_runs(&mut spans);
+        // After reversal, the first span should read as
+        // "انواع اﳋطوط العربية" — the logical reading order. The
+        // exact string comparison is the reversal of the input.
+        assert_eq!(
+            spans[0].text,
+            "\u{0627}\u{0646}\u{0648}\u{0627}\u{0639} \
+             \u{0627}\u{FCCB}\u{0637}\u{0648}\u{0637} \
+             \u{0627}\u{0644}\u{0639}\u{0631}\u{0628}\u{064A}\u{0629}",
+            "Pre-shaped Arabic single span must be reversed into reading order"
+        );
+        // Other non-RTL spans must be untouched.
+        assert_eq!(spans[1].text, "other content");
+        assert_eq!(spans[2].text, "more content");
+        assert_eq!(spans[3].text, "tail");
+    }
+
+    #[test]
+    fn test_reverse_rtl_logical_order_base_arabic_untouched() {
+        // Most Arabic PDFs store text in logical (reading) order using
+        // base characters (U+0621-U+06FF) and rely on the renderer to
+        // apply shaping at display time. pdf_oxide must leave those
+        // spans alone — reversing them would garble correct output.
+        //
+        // The string below is "انواع الخطوط العربية" entirely composed
+        // of base Arabic code points (no presentation forms). Gate:
+        // `has_presentation_form` stays false, no reversal happens.
+        let logical = "\u{0627}\u{0646}\u{0648}\u{0627}\u{0639} \
+                       \u{0627}\u{0644}\u{062E}\u{0637}\u{0648}\u{0637} \
+                       \u{0627}\u{0644}\u{0639}\u{0631}\u{0628}\u{064A}\u{0629}";
+        let mut spans = vec![
+            make_rtl_test_span(logical, 100.0, 700.0),
+            make_rtl_test_span("other content", 100.0, 680.0),
+            make_rtl_test_span("more content", 100.0, 660.0),
+            make_rtl_test_span("tail", 100.0, 640.0),
+        ];
+        PdfDocument::reverse_rtl_visual_order_runs(&mut spans);
+        assert_eq!(spans[0].text, logical, "Logical-order base-Arabic span must NOT be reversed");
+    }
+
+    #[test]
+    fn test_reverse_rtl_short_rtl_span_not_touched_by_pass0() {
+        // Pass 0 requires at least 4 non-whitespace characters. A
+        // two-character Arabic snippet must not trigger reversal even
+        // though it contains presentation forms.
+        let mut spans = vec![
+            make_rtl_test_span("\u{FB7F}\u{FEB3}", 100.0, 700.0),
+            make_rtl_test_span("other content", 100.0, 680.0),
+            make_rtl_test_span("more content", 100.0, 660.0),
+            make_rtl_test_span("tail", 100.0, 640.0),
+        ];
+        PdfDocument::reverse_rtl_visual_order_runs(&mut spans);
+        assert_eq!(spans[0].text, "\u{FB7F}\u{FEB3}");
+    }
+
+    #[test]
+    fn test_reverse_rtl_pass0_leaves_ltr_alone() {
+        // Pure Latin spans never trip the RTL heuristic — `rtl_count`
+        // is zero so the majority gate fails.
+        let mut spans = vec![
+            make_rtl_test_span("The quick brown fox jumps over", 100.0, 700.0),
+            make_rtl_test_span("the lazy dog repeatedly.", 100.0, 680.0),
+            make_rtl_test_span("Latin content here.", 100.0, 660.0),
+            make_rtl_test_span("Final line.", 100.0, 640.0),
+        ];
+        let before: Vec<String> = spans.iter().map(|s| s.text.clone()).collect();
+        PdfDocument::reverse_rtl_visual_order_runs(&mut spans);
+        let after: Vec<String> = spans.iter().map(|s| s.text.clone()).collect();
+        assert_eq!(before, after, "Pure-Latin spans must not be reversed by the RTL pass");
     }
 
     // ========================================================================
