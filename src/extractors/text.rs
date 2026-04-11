@@ -1054,12 +1054,31 @@ fn should_insert_space(
         }
     }
 
-    // Strong geometric signal alone (gap > 2× threshold)
-    // This is high confidence even without TJ signal
-    let strong_geometric_threshold = geometric_threshold * 2.0;
-    if gap_pt > strong_geometric_threshold {
+    // Strong geometric signal alone.
+    //
+    // `geometric_threshold` is already `space_width_pt * 0.5`. A gap that
+    // clears this threshold is >= 50 % of the font's own space-glyph
+    // advance, which is what pdfium (Chrome/pypdfium2) uses as the
+    // word-break heuristic in its default text-extraction path — and
+    // the reason pdf_oxide was glueing adjacent words like
+    // "atBirmingham", "LIFESCIENCESRESEARCH", "STATIONFREEDOM",
+    // "proteincrystals" before this change. The previous 2× multiplier
+    // required gaps >= 100 % of a full space glyph, which is stricter
+    // than the gaps modern tightly-kerned typesetters emit between
+    // real words (often 60-80 % of a space glyph).
+    //
+    // Intra-word kerning and letter-spacing adjustments are well below
+    // 50 % of a space glyph (typically under 5 % of font-size), so
+    // lowering this threshold does not produce false word breaks
+    // inside words. Pure digit-digit sequences are separately protected
+    // in the value/token branch below via `digit_digit_gap_ok`.
+    //
+    // See issue #326 for the corpus-wide measurement that motivated
+    // this change (NASA Apollo 11 jaccard 0.449 → target >= 0.90 vs
+    // pypdfium2 on the 60-PDF regression corpus).
+    if gap_pt > geometric_threshold {
         log::debug!(
-            "Space decision: STRONG GEOMETRIC - gap={:.2}pt > 2×{:.2}pt threshold - inserting space",
+            "Space decision: STRONG GEOMETRIC - gap={:.2}pt > {:.2}pt threshold - inserting space",
             gap_pt,
             geometric_threshold
         );
@@ -1126,11 +1145,10 @@ fn should_insert_space(
     // Per ISO 32000-1:2008 Section 9.10, when PDF doesn't encode a clear word boundary,
     // we cannot reliably recover it. Requiring consensus prevents false positives in justified text.
     log::trace!(
-        "Space decision: Insufficient consensus (TJ={}, gap={:.2}pt <= {:.2}pt, strong_threshold={:.2}pt) - no space",
+        "Space decision: Insufficient consensus (TJ={}, gap={:.2}pt <= {:.2}pt) - no space",
         tj_offset_triggered,
         gap_pt,
-        geometric_threshold,
-        strong_geometric_threshold
+        geometric_threshold
     );
     SpaceDecision::no_space(SpaceSource::NoSpace, 1.0)
 }
