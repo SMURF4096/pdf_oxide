@@ -6,7 +6,7 @@ populated by the release CI pipeline and committed to the Go module so that
 `go get github.com/yfedoseev/pdf_oxide/go` works without requiring users to
 build Rust themselves.
 
-Starting with **v0.3.25**, each platform ships a static archive
+Starting with **v0.3.26**, each platform ships a static archive
 (`libpdf_oxide.a`) rather than a shared object. CGo links the archive
 directly via `#cgo ... LDFLAGS` (see `go/pdf_oxide.go`), so the resulting Go
 binary is self-contained — no `LD_LIBRARY_PATH` / `DYLD_LIBRARY_PATH` / `PATH`
@@ -26,7 +26,7 @@ lib/
 
 ### Windows ARM64 caveat
 
-Windows ARM64 temporarily remains on dynamic linking in v0.3.25 because
+Windows ARM64 temporarily remains on dynamic linking in v0.3.26 because
 Rust's `aarch64-pc-windows-gnullvm` target is Tier 3 and not yet production-
 ready for our CI. Go binaries built for Windows ARM64 must still ship
 `pdf_oxide.dll` alongside the executable. Tracked as a follow-up; Linux,

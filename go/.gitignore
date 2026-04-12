@@ -2,3 +2,14 @@
 *.o
 *.a
 *.test
+
+# Re-include every prebuilt native library under lib/. Without these the
+# root gitignore's `*.a` rule (and the local `*.a` rule above) silently
+# drop the staticlib archives that the `update-go-native-libs` release
+# job stages via `git add -A go/lib/`. v0.3.25 shipped with an empty
+# go/lib/ for exactly this reason — the fix must stay so the v0.3.26
+# release can actually ship libpdf_oxide.a to end users.
+!lib/**/*.a
+!lib/**/*.so
+!lib/**/*.dylib
+!lib/**/*.dll

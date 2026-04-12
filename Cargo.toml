@@ -4,7 +4,7 @@ exclude = ["js"]
 
 [package]
 name = "pdf_oxide"
-version = "0.3.25"
+version = "0.3.26"
 edition = "2021"
 authors = ["Yury Fedoseev <yfedoseev@gmail.com>"]
 license = "MIT OR Apache-2.0"

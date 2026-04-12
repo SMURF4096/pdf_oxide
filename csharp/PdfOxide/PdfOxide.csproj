@@ -19,7 +19,7 @@
     <!-- NuGet Package Configuration -->
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <PackageId>PdfOxide</PackageId>
-    <Version>0.3.25</Version>
+    <Version>0.3.26</Version>
     <Title>PdfOxide</Title>
     <Authors>pdf_oxide Contributors</Authors>
     <Company>pdf_oxide Project</Company>
@@ -32,7 +32,12 @@
 
     <!-- Release Notes -->
     <PackageReleaseNotes>
-v0.3.25 — NativeAOT + LibraryImport migration (#333)
+v0.3.26 — NativeAOT + LibraryImport migration (#333) + v0.3.25 shipping fixes
+- v0.3.25 was canceled mid-release after the release pipeline surfaced
+  binding.gyp framework wiring, binding.cc C++20 syntax, and a
+  go/.gitignore negation that silently blocked the Go staticlib commits.
+  v0.3.26 rolls the same feature set (#311-#335) forward with those three
+  bugs fixed; no v0.3.25 artifact was ever published to NuGet.
 - Migrated all 881 native declarations from DllImport to LibraryImport
   so the binding is NativeAOT-publish-ready and trim-safe.
 - Target frameworks trimmed to net8.0 + net10.0 (both current LTS).

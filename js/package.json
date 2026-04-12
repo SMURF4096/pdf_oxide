@@ -1,6 +1,6 @@
 {
   "name": "pdf-oxide",
-  "version": "0.3.25",
+  "version": "0.3.26",
   "type": "module",
   "description": "High-performance PDF parsing and text extraction library — prebuilt native bindings, no build toolchain required",
   "main": "lib/index.js",
@@ -58,11 +58,11 @@
     }
   },
   "optionalDependencies": {
-    "pdf_oxide-linux-x64-gnu": "0.3.25",
-    "pdf_oxide-linux-arm64-gnu": "0.3.25",
-    "pdf_oxide-darwin-x64": "0.3.25",
-    "pdf_oxide-darwin-arm64": "0.3.25",
-    "pdf_oxide-win32-x64-msvc": "0.3.25"
+    "pdf_oxide-linux-x64-gnu": "0.3.26",
+    "pdf_oxide-linux-arm64-gnu": "0.3.26",
+    "pdf_oxide-darwin-x64": "0.3.26",
+    "pdf_oxide-darwin-arm64": "0.3.26",
+    "pdf_oxide-win32-x64-msvc": "0.3.26"
   },
   "devDependencies": {
     "@types/node": "^18.0.0",

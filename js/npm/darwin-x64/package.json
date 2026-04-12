@@ -1,6 +1,6 @@
 {
   "name": "pdf_oxide-darwin-x64",
-  "version": "0.3.25",
+  "version": "0.3.26",
   "description": "Prebuilt native binding for pdf-oxide on darwin-x64",
   "main": "pdf_oxide.darwin-x64.node",
   "files": [

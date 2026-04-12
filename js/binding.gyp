@@ -10,14 +10,22 @@
         "<!(node -p \"require('node-addon-api').gyp\")"
       ],
       "cflags": ["-Wall", "-Wextra"],
-      "cflags_cc": ["-fexceptions"],
+      "cflags_cc": ["-fexceptions", "-std=c++20"],
       "xcode_settings": {
         "GCC_ENABLE_CPP_EXCEPTIONS": "YES",
-        "CLANG_CXX_LIBRARY": "libc++"
+        "CLANG_CXX_LIBRARY": "libc++",
+        "CLANG_CXX_LANGUAGE_STANDARD": "c++20",
+        "MACOSX_DEPLOYMENT_TARGET": "11.0",
+        "OTHER_LDFLAGS": [
+          "-framework", "CoreFoundation",
+          "-framework", "Security",
+          "-framework", "SystemConfiguration"
+        ]
       },
       "msvs_settings": {
         "VCCLCompilerTool": {
-          "ExceptionHandling": 1
+          "ExceptionHandling": 1,
+          "AdditionalOptions": ["/std:c++20"]
         }
       },
       "conditions": [
@@ -35,9 +43,6 @@
         ["OS==\"mac\"", {
           "libraries": [
             "<(module_root_dir)/../lib/libpdf_oxide.a",
-            "-framework", "CoreFoundation",
-            "-framework", "Security",
-            "-framework", "SystemConfiguration",
             "-liconv",
             "-lresolv"
           ]

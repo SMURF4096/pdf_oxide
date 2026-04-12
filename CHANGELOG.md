@@ -2,6 +2,19 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [0.3.26] - 2026-04-11
+
+### Release Infrastructure
+
+- **v0.3.25 canceled mid-release; v0.3.26 ships the same feature set with three release-infrastructure bugs fixed.** The v0.3.25 release pipeline was triggered twice (runs `24293655981` and `24294201676`) and both failed on the binding jobs. No artifact was published to npm, NuGet, crates.io, PyPI, Homebrew, or Scoop — but the **sum.golang.org checksum database permanently cached the broken `go/v0.3.25` tag content** (per #334's own warning about the Go module supply-chain invariant), so the Go module had to skip v0.3.25 entirely. To keep versions consistent across bindings, every package manifest bumps from 0.3.25 → 0.3.26 in lockstep: Rust crate (`Cargo.toml`), Python (`pyproject.toml`), CLI (`pdf_oxide_cli/Cargo.toml`), MCP server (`pdf_oxide_mcp/Cargo.toml`), WASM (`wasm-pkg/package.json`), C# NuGet (`csharp/PdfOxide/PdfOxide.csproj`), Node.js main + 6 platform subpackages (`js/package.json`, `js/npm/*/package.json`).
+- **Go binding: `go/.gitignore` now re-includes prebuilt native libs under `lib/` (v0.3.25 shipping bug).** The root `.gitignore` had the full `!go/lib/**/*.{a,so,dylib,dll}` negations added in #334, but a separate `go/.gitignore` with a bare `*.a` rule silently took precedence for files inside `go/`. The `update-go-native-libs` CI job's `git add -A go/lib/` staged the deletion of the old shared libs but skipped the new `.a` files, producing a commit that emptied `go/lib/` instead of populating it. `go/v0.3.25` ended up with only `windows_arm64/pdf_oxide.dll` and six `.gitkeep` placeholders, and the `Verify go get` CI job surfaced it with `ld: cannot find libpdf_oxide.a: No such file or directory`. v0.3.26 adds explicit `!lib/**/*.{a,so,dylib,dll}` negations to `go/.gitignore` and pins the fix with a local `git check-ignore` verification. Exact same class of bug the root-gitignore fix was meant to eliminate in #334 — I just missed the nested gitignore.
+- **Node.js binding: `binding.gyp` macOS frameworks moved to `xcode_settings.OTHER_LDFLAGS`.** gyp's `libraries` array processing on macOS splits `-framework CoreFoundation` into two individual strings, and clang ends up seeing `Security` / `SystemConfiguration` as bare filenames. The canonical gyp form for macOS frameworks is `xcode_settings.OTHER_LDFLAGS`, which passes arguments through to `ld` verbatim. v0.3.26 uses that form for all three frameworks so `Build Node.js (darwin-x64 / darwin-arm64)` can actually link.
+- **Node.js binding: `binding.gyp` adds `/std:c++20` and `-std=c++20` for MSVC / clang / gcc.** `binding.cc` uses C++20 designated initializers (`.member = value`), which MSVC rejects under the default `/std:c++14`. This is a **pre-existing bug in `binding.cc` that never surfaced before** because v0.3.24's broken CI skipped `node-gyp rebuild` entirely; my v0.3.25 `#335` fix is the first release where CI actually compiled `binding.cc` on Windows MSVC. v0.3.26 adds `"AdditionalOptions": ["/std:c++20"]` to `msvs_settings` and `"CLANG_CXX_LANGUAGE_STANDARD": "c++20"` + `-std=c++20` to the Unix compilers so every platform builds the same way.
+
+### (All v0.3.25 features roll forward unchanged)
+
+The full extraction audit + language binding rework below ships exactly as originally described in the v0.3.25 entry; only the three release-infrastructure bugs above needed a version bump.
+
 ## [0.3.25] - 2026-04-11
 
 ### Language Bindings

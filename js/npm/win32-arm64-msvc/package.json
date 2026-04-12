@@ -1,6 +1,6 @@
 {
   "name": "pdf_oxide-win32-arm64-msvc",
-  "version": "0.3.25",
+  "version": "0.3.26",
   "description": "Prebuilt native binding for pdf-oxide on win32-arm64 (MSVC)",
   "main": "pdf_oxide.win32-arm64-msvc.node",
   "files": [

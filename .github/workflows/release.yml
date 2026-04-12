@@ -382,7 +382,7 @@ jobs:
         run: |
           # #334: ship staticlib archives (.a) so Go binaries are self-contained.
           # Remove any stale shared-library artifacts from previous releases so
-          # git doesn't continue tracking them after the v0.3.25 switch-over.
+          # git doesn't continue tracking them after the v0.3.26 switch-over.
           find go/lib -type f \( -name '*.so' -o -name '*.dylib' -o -name '*.dll' \) -delete
 
           cp native-libs/native-linux-x86_64/libpdf_oxide.a   go/lib/linux_amd64/
@@ -558,7 +558,7 @@ jobs:
           # Rename the default pdf_oxide.node output to the triple-qualified
           # name that the subpackage's package.json "main" field references.
           cp build/Release/pdf_oxide.node "$SUBPKG/pdf_oxide.${TRIPLE}.node"
-          # Version is templated to 0.3.25 in the committed package.json; if
+          # Version is templated to 0.3.26 in the committed package.json; if
           # the release version differs, sync it with a minimal in-place edit.
           node -e "
             const fs = require('fs');
