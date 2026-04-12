@@ -326,6 +326,9 @@ jobs:
           fi
 
   # JavaScript/TypeScript bindings build and test
+  # Mirrors the release.yml build-nodejs job: builds the Rust staticlib, then
+  # runs node-gyp rebuild to produce a real .node addon, matching exactly what
+  # ships to npm.
   nodejs:
     name: Node.js Bindings (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -349,8 +352,24 @@ jobs:
         with:
           key: nodejs-${{ matrix.os }}
 
-      - name: Build library (produces cdylib + rlib)
+      - name: Build library (produces cdylib + rlib + staticlib)
         run: cargo build --release --lib
+
+      - name: Stage staticlib for node-gyp
+        shell: bash
+        run: |
+          mkdir -p lib
+          case "${{ matrix.os }}" in
+            ubuntu-latest)
+              cp target/release/libpdf_oxide.a lib/
+              ;;
+            macos-latest)
+              cp target/release/libpdf_oxide.a lib/
+              ;;
+            windows-latest)
+              cp target/release/pdf_oxide.lib lib/
+              ;;
+          esac
 
       - name: Install dependencies
         working-directory: js
@@ -359,6 +378,13 @@ jobs:
       - name: TypeScript type check
         working-directory: js
         run: npx tsc --noEmit
+
+      - name: Build native addon with node-gyp
+        working-directory: js
+        shell: bash
+        run: |
+          npx node-gyp rebuild
+          ls -la build/Release/pdf_oxide.node
 
   # C#/.NET bindings build
   csharp:

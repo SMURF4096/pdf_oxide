@@ -117,46 +117,48 @@ const {
 const { OcrLanguage: OCRLanguage } = require('../lib/managers/ocr-manager.js') as any;
 
 /**
- * Platform-specific native module packages
+ * Platform-specific prebuild paths (relative to compiled lib/index.js).
+ * At runtime lib/index.js lives at js/lib/index.js, so ../prebuilds/
+ * resolves to js/prebuilds/.
  */
 const PLATFORMS: Record<string, Record<string, string>> = {
   'darwin': {
-    'x64': 'pdf_oxide-darwin-x64',
-    'arm64': 'pdf_oxide-darwin-arm64',
+    'x64': '../prebuilds/darwin-x64/pdf_oxide.node',
+    'arm64': '../prebuilds/darwin-arm64/pdf_oxide.node',
   },
   'linux': {
-    'x64': 'pdf_oxide-linux-x64-gnu',
-    'arm64': 'pdf_oxide-linux-arm64-gnu',
+    'x64': '../prebuilds/linux-x64/pdf_oxide.node',
+    'arm64': '../prebuilds/linux-arm64/pdf_oxide.node',
   },
   'win32': {
-    'x64': 'pdf_oxide-win32-x64-msvc',
-    'arm64': 'pdf_oxide-win32-arm64-msvc',
+    'x64': '../prebuilds/win32-x64/pdf_oxide.node',
   },
 };
 
 /**
- * Gets the native package name for the current platform and architecture
- * @returns Native package name
+ * Gets the prebuild path for the current platform and architecture
+ * @returns Path to the prebuild .node file (relative to lib/index.js)
  * @throws Error if platform or architecture is not supported
  */
-function getNativePackageName(): string {
-  const osPackages = PLATFORMS[platform];
-  if (!osPackages) {
+function getPrebuildPath(): string {
+  const osPaths = PLATFORMS[platform];
+  if (!osPaths) {
     throw new Error(`Unsupported platform: ${platform}. Supported platforms: ${Object.keys(PLATFORMS).join(', ')}`);
   }
 
-  const pkg = osPackages[arch];
-  if (!pkg) {
-    throw new Error(`Unsupported architecture: ${arch} for ${platform}. Supported architectures: ${Object.keys(osPackages).join(', ')}`);
+  const prebuildPath = osPaths[arch];
+  if (!prebuildPath) {
+    throw new Error(`Unsupported architecture: ${arch} for ${platform}. Supported architectures: ${Object.keys(osPaths).join(', ')}`);
   }
 
-  return pkg;
+  return prebuildPath;
 }
 
 let nativeModule: any;
 
 /**
- * Loads the native module dynamically based on platform and architecture
+ * Loads the native module dynamically based on platform and architecture.
+ * Prebuilt .node files are bundled under prebuilds/<triple>/ in the package.
  * @returns Native module
  * @throws Error if native module cannot be loaded
  */
@@ -166,13 +168,12 @@ function loadNativeModule(): any {
   }
 
   try {
-    // Try loading from platform-specific package first (CommonJS)
-    const packageName = getNativePackageName();
+    const prebuildPath = getPrebuildPath();
     try {
-      // Use require to load the native module
-      nativeModule = require(packageName);
+      // Load the bundled prebuild .node file
+      nativeModule = require(prebuildPath);
     } catch (e) {
-      // Fallback to local binary if in development
+      // Fallback to local build output if in development
       if (process.env.NODE_ENV === 'development' || process.env.NAPI_DEV) {
         try {
           nativeModule = require('./pdf-oxide');

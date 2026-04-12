@@ -11,9 +11,9 @@ yarn.lock
 
 # npm publish staging
 dist/
-# Note: js/npm/<triple>/ directories ARE tracked (they hold per-platform
-# subpackage templates — see js/npm/README.md). The build-time `.node`
-# files dropped into them by CI are excluded by the *.node rule above.
+
+# Prebuilt native addons (populated by CI only)
+prebuilds/
 
 # IDE
 .vscode/
