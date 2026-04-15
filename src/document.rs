@@ -7804,6 +7804,23 @@ impl PdfDocument {
         state.ctm = matrix.multiply(&state.ctm);
         extractor.set_ctm(state.ctm);
 
+        // Switch resource scope to this Form XObject's own /Resources, if any.
+        // Form XObjects with their own Resources define a fresh XObject name
+        // scope (ISO 32000-1 §8.10.1). Looking up nested `Do` names against the
+        // parent scope can pick up unrelated sibling forms with colliding
+        // names, which turns sibling Form XObjects into a cross-recursive tree
+        // (O(N!) traversals and unbounded path accumulation).
+        let saved_scope = if let Some(xobj_resources) = xobject_dict.get("Resources") {
+            let resolved = if let Some(res_ref) = xobj_resources.as_reference() {
+                self.load_object(res_ref).unwrap_or_else(|_| xobj_resources.clone())
+            } else {
+                xobj_resources.clone()
+            };
+            Some(extractor.swap_resources(Some(resolved)))
+        } else {
+            None
+        };
+
         // Process operators from the XObject
         for op in operators {
             match op {
@@ -7935,6 +7952,11 @@ impl PdfDocument {
         // Finalize any pending path to prevent state leakage
         if extractor.has_current_path() {
             extractor.end_path();
+        }
+
+        // Restore the caller's resource scope before popping the cycle guard.
+        if let Some(saved) = saved_scope {
+            extractor.restore_resources(saved);
         }
 
         // Restore graphics state

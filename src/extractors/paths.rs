@@ -182,6 +182,42 @@ impl PathExtractor {
         self.resources = Some(resources);
     }
 
+    /// Swap in a new resource scope for `Do` name lookups and return the
+    /// previous (resources, cached_dict) pair so the caller can restore it
+    /// after descending into a nested Form XObject. Clears the name→ref
+    /// cache so the next `resolve_xobject_ref` call rebuilds it against the
+    /// new scope.
+    ///
+    /// Needed because Form XObjects that carry their own /Resources define a
+    /// fresh XObject name scope — without swapping, nested `/Name Do`
+    /// operators resolve against the parent scope and can trigger pathological
+    /// cross-recursion between sibling forms whose local resource names happen
+    /// to collide with parent form names.
+    pub(crate) fn swap_resources(
+        &mut self,
+        new_resources: Option<crate::object::Object>,
+    ) -> (
+        Option<crate::object::Object>,
+        Option<std::collections::HashMap<String, crate::object::ObjectRef>>,
+    ) {
+        let prev_resources = std::mem::replace(&mut self.resources, new_resources);
+        let prev_cache = self.cached_xobject_dict.take();
+        (prev_resources, prev_cache)
+    }
+
+    /// Restore a (resources, cached_dict) pair previously returned by
+    /// [`swap_resources`].
+    pub(crate) fn restore_resources(
+        &mut self,
+        saved: (
+            Option<crate::object::Object>,
+            Option<std::collections::HashMap<String, crate::object::ObjectRef>>,
+        ),
+    ) {
+        self.resources = saved.0;
+        self.cached_xobject_dict = saved.1;
+    }
+
     /// Resolve an XObject name to its ObjectRef, caching the XObject dict on first call.
     pub(crate) fn resolve_xobject_ref<F>(
         &mut self,
