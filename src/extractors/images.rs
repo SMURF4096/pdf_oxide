@@ -199,7 +199,20 @@ impl PdfImage {
     /// Save the image as PNG format.
     pub fn save_as_png(&self, path: impl AsRef<Path>) -> Result<()> {
         match &self.data {
-            ImageData::Jpeg(jpeg_data) => save_jpeg_as_png(jpeg_data, path),
+            ImageData::Jpeg(jpeg_data) => {
+                if self.color_space.components() == 4 {
+                    let rgb = decode_cmyk_jpeg_to_rgb(jpeg_data)?;
+                    let buf =
+                        image::ImageBuffer::<image::Rgb<u8>, _>::from_raw(self.width, self.height, rgb)
+                            .ok_or_else(|| {
+                                Error::Image("Invalid CMYK image dimensions".to_string())
+                            })?;
+                    buf.save_with_format(path, image::ImageFormat::Png)
+                        .map_err(|e| Error::Image(format!("Failed to save PNG: {}", e)))
+                } else {
+                    save_jpeg_as_png(jpeg_data, path)
+                }
+            },
             ImageData::Raw { pixels, format } => {
                 save_raw_as_png(pixels, self.width, self.height, *format, path)
             },
@@ -209,7 +222,28 @@ impl PdfImage {
     /// Save the image as JPEG format.
     pub fn save_as_jpeg(&self, path: impl AsRef<Path>) -> Result<()> {
         match &self.data {
-            ImageData::Jpeg(jpeg_data) => std::fs::write(path, jpeg_data).map_err(Error::from),
+            // Pass-through for RGB / grayscale JPEGs — viewers handle those
+            // uniformly. CMYK JPEGs (4-channel ColorSpace such as DeviceCMYK
+            // or ICCBased N=4) must be decoded and re-encoded as RGB because
+            // most viewers either fail to open CMYK JPEGs or display them
+            // with inverted or washed-out colors. The JPEG decoder already
+            // handles the Adobe APP14 YCCK marker during load, so the
+            // DynamicImage we get back is the correct RGB representation
+            // (naive CMYK→RGB; full ICC profile handling is a follow-up).
+            ImageData::Jpeg(jpeg_data) => {
+                if self.color_space.components() == 4 {
+                    let rgb = decode_cmyk_jpeg_to_rgb(jpeg_data)?;
+                    let buf =
+                        image::ImageBuffer::<image::Rgb<u8>, _>::from_raw(self.width, self.height, rgb)
+                            .ok_or_else(|| {
+                                Error::Image("Invalid CMYK image dimensions".to_string())
+                            })?;
+                    buf.save_with_format(path, image::ImageFormat::Jpeg)
+                        .map_err(|e| Error::Image(format!("Failed to save JPEG: {}", e)))
+                } else {
+                    std::fs::write(path, jpeg_data).map_err(Error::from)
+                }
+            },
             ImageData::Raw { pixels, format } => {
                 save_raw_as_jpeg(pixels, self.width, self.height, *format, path)
             },
@@ -583,6 +617,34 @@ pub fn extract_image_from_xobject(
         color_space_obj.clone()
     };
 
+    // For array-form color spaces (e.g. [/ICCBased <ref>], [/Indexed <base> <hi> <palette_ref>])
+    // the second element is commonly an indirect reference to the ICC profile
+    // stream / palette. `parse_color_space` only inspects the immediate
+    // `Object::Stream` dict, so an unresolved reference silently falls back to
+    // `N = 3` and a CMYK (N = 4) image is labelled as RGB. Resolve the stream
+    // reference here so the component count reflects the real profile.
+    let resolved_color_space = if let (Some(doc_mut), Object::Array(arr)) =
+        (doc.as_deref_mut(), &resolved_color_space)
+    {
+        if arr.len() > 1 {
+            if let Some(second_ref) = arr[1].as_reference() {
+                if let Ok(resolved_second) = doc_mut.load_object(second_ref) {
+                    let mut new_arr = arr.clone();
+                    new_arr[1] = resolved_second;
+                    Object::Array(new_arr)
+                } else {
+                    resolved_color_space
+                }
+            } else {
+                resolved_color_space
+            }
+        } else {
+            resolved_color_space
+        }
+    } else {
+        resolved_color_space
+    };
+
     let color_space = parse_color_space(&resolved_color_space)?;
 
     // For Indexed color spaces, resolve the base color space and palette now so we
@@ -952,6 +1014,109 @@ pub fn cmyk_to_rgb(cmyk: &[u8]) -> Vec<u8> {
     }
 
     rgb
+}
+
+/// Decode a CMYK-colourspace JPEG to straight RGB bytes, applying Adobe's
+/// inverted-CMYK convention when the APP14 marker requests it.
+///
+/// Adobe-authored CMYK / YCCK JPEGs (which most real-world producers emit
+/// for print-targeted PDFs) store channel values inverted: 0 means "full
+/// ink" and 255 means "no ink". Naive CMYK→RGB conversion on those raw
+/// bytes yields near-black output — exactly the symptom of the issue this
+/// handles. Detecting the APP14 color-transform and inverting per channel
+/// before applying the standard CMYK→RGB math produces bright, correct
+/// images for Adobe JPEGs while still producing correct output for
+/// non-Adobe CMYK JPEGs that store values directly.
+///
+/// This is still a naive (non-ICC) conversion — it ignores any embedded
+/// ICC profile and therefore cannot produce print-accurate colour. Proper
+/// ICC handling (qcms / lcms) is a follow-up; this path is purely about
+/// emitting sRGB that viewers can display without mis-interpreting the
+/// channel polarity.
+pub fn decode_cmyk_jpeg_to_rgb(jpeg_data: &[u8]) -> Result<Vec<u8>> {
+    let mut decoder = jpeg_decoder::Decoder::new(std::io::Cursor::new(jpeg_data));
+    let cmyk = decoder
+        .decode()
+        .map_err(|e| Error::Decode(format!("Failed to decode CMYK JPEG: {}", e)))?;
+    let info = decoder
+        .info()
+        .ok_or_else(|| Error::Decode("JPEG info unavailable".to_string()))?;
+
+    // Adobe APP14 marker contains a `color_transform` byte that tells
+    // decoders how the channels are laid out. Value 0 on a 4-channel image
+    // means "CMYK stored inverted" (the Photoshop convention); value 2
+    // means "YCCK", which decoders convert to CMYK but the resulting values
+    // are still inverted. Value 1 (YCbCr) only appears on 3-channel images.
+    // When no APP14 is present we assume non-inverted CMYK, matching what
+    // Poppler / pdfium do for bare CMYK JPEGs.
+    let adobe_inverted = scan_adobe_inverted(jpeg_data);
+
+    let pixel_count = (info.width as usize) * (info.height as usize);
+    let expected = pixel_count * 4;
+    if cmyk.len() < expected {
+        return Err(Error::Decode(format!(
+            "CMYK JPEG decoded {} bytes, expected {}",
+            cmyk.len(),
+            expected
+        )));
+    }
+
+    let mut rgb = Vec::with_capacity(pixel_count * 3);
+    for chunk in cmyk.chunks_exact(4).take(pixel_count) {
+        let (c, m, y, k) = if adobe_inverted {
+            (255 - chunk[0], 255 - chunk[1], 255 - chunk[2], 255 - chunk[3])
+        } else {
+            (chunk[0], chunk[1], chunk[2], chunk[3])
+        };
+        let [r, g, b] = cmyk_pixel_to_rgb(c, m, y, k);
+        rgb.push(r);
+        rgb.push(g);
+        rgb.push(b);
+    }
+    Ok(rgb)
+}
+
+/// Walk the JPEG marker stream looking for an APP14 "Adobe" segment, and
+/// return true if its `color_transform` byte indicates inverted CMYK
+/// (values 0 on 4-channel, or 2 = YCCK). Returns false if no APP14 marker
+/// is present or if it reports a non-inverted layout.
+fn scan_adobe_inverted(jpeg_data: &[u8]) -> bool {
+    let mut i = 0;
+    while i + 1 < jpeg_data.len() {
+        if jpeg_data[i] != 0xFF {
+            i += 1;
+            continue;
+        }
+        let marker = jpeg_data[i + 1];
+        i += 2;
+        // Standalone markers (SOI, EOI, RSTn, TEM, fill bytes) have no length.
+        if marker == 0x00 || marker == 0xFF {
+            continue;
+        }
+        if matches!(marker, 0xD0..=0xD9) || marker == 0x01 {
+            continue;
+        }
+        if i + 1 >= jpeg_data.len() {
+            break;
+        }
+        let seg_len = u16::from_be_bytes([jpeg_data[i], jpeg_data[i + 1]]) as usize;
+        if seg_len < 2 || i + seg_len > jpeg_data.len() {
+            break;
+        }
+        if marker == 0xEE && seg_len >= 14 {
+            let payload = &jpeg_data[i + 2..i + seg_len];
+            if payload.len() >= 12 && payload.starts_with(b"Adobe") {
+                let transform = payload[11];
+                return transform == 0 || transform == 2;
+            }
+        }
+        if marker == 0xDA {
+            // Start of Scan — image data follows; no more APP markers.
+            break;
+        }
+        i += seg_len;
+    }
+    false
 }
 
 fn save_jpeg_as_png(jpeg_data: &[u8], path: impl AsRef<Path>) -> Result<()> {

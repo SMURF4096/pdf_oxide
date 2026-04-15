@@ -69,6 +69,7 @@ encoding_rs = "0.8"  # Shift-JIS, EUC-JP, and other CJK encodings for predefined
 
 # Image processing
 image = { version = "0.24", default-features = false, features = ["png", "jpeg", "tiff"] }
+jpeg-decoder = "0.3"  # Direct decoder access for CMYK JPEGs (Adobe inversion handling)
 base64 = "0.22"  # For embedding images as data URIs
 tiff = "0.11"  # TIFF support including CCITT decompression
 fax = "0.2"   # CCITT Group 3/4 decompression for scanned PDFs (more lenient with malformed EOFB)
