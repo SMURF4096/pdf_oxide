@@ -177,7 +177,6 @@ fn is_valid_table(table: &ExtractedTable) -> bool {
         return false;
     }
 
-
     // Narrow false-positive signature: a 2-column "table" emitted from
     // label/value rows with faint cell backgrounds, where the right-hand
     // value wraps onto a continuation line. The continuation row has an
@@ -2214,7 +2213,8 @@ fn assign_spans_to_intersection_grid(
             if !grid_has_cell[ri][ci] {
                 // Still emit empty cell so column count stays consistent.
                 row.cells.push(TableCell {
-                    text: String::new(), spans: Vec::new(),
+                    text: String::new(),
+                    spans: Vec::new(),
                     colspan: 1,
                     rowspan: 1,
                     mcids: Vec::new(),
@@ -2620,7 +2620,8 @@ fn merge_vertically_adjacent_tables(tables: &mut Vec<ExtractedTable>) {
                 for row in &mut prev.rows {
                     for _ in 0..pad {
                         row.cells.push(TableCell {
-                            text: String::new(), spans: Vec::new(),
+                            text: String::new(),
+                            spans: Vec::new(),
                             colspan: 1,
                             rowspan: 1,
                             mcids: Vec::new(),
@@ -2638,7 +2639,8 @@ fn merge_vertically_adjacent_tables(tables: &mut Vec<ExtractedTable>) {
                 for row in &mut incoming_rows {
                     for _ in 0..pad {
                         row.cells.push(TableCell {
-                            text: String::new(), spans: Vec::new(),
+                            text: String::new(),
+                            spans: Vec::new(),
                             colspan: 1,
                             rowspan: 1,
                             mcids: Vec::new(),
@@ -4237,7 +4239,8 @@ mod tests {
             let mut row = TableRow::new(r == 0);
             for c in 0..col_count {
                 row.cells.push(TableCell {
-                    text: format!("R{r}C{c}"), spans: Vec::new(),
+                    text: format!("R{r}C{c}"),
+                    spans: Vec::new(),
                     colspan: 1,
                     rowspan: 1,
                     mcids: vec![],
@@ -4279,7 +4282,8 @@ mod tests {
         for (label, value) in &rows_data {
             let mut row = TableRow::new(false);
             row.cells.push(TableCell {
-                text: label.to_string(), spans: Vec::new(),
+                text: label.to_string(),
+                spans: Vec::new(),
                 colspan: 1,
                 rowspan: 1,
                 mcids: vec![],
@@ -4287,7 +4291,8 @@ mod tests {
                 is_header: false,
             });
             row.cells.push(TableCell {
-                text: value.to_string(), spans: Vec::new(),
+                text: value.to_string(),
+                spans: Vec::new(),
                 colspan: 1,
                 rowspan: 1,
                 mcids: vec![],
@@ -4320,7 +4325,8 @@ mod tests {
         for i in 0..6 {
             let mut row = TableRow::new(i == 0);
             row.cells.push(TableCell {
-                text: format!("Key {i}"), spans: Vec::new(),
+                text: format!("Key {i}"),
+                spans: Vec::new(),
                 colspan: 1,
                 rowspan: 1,
                 mcids: vec![],
@@ -4328,7 +4334,8 @@ mod tests {
                 is_header: i == 0,
             });
             row.cells.push(TableCell {
-                text: format!("Value {i}"), spans: Vec::new(),
+                text: format!("Value {i}"),
+                spans: Vec::new(),
                 colspan: 1,
                 rowspan: 1,
                 mcids: vec![],
@@ -4364,7 +4371,8 @@ mod tests {
         for (label, value) in &rows_data {
             let mut row = TableRow::new(false);
             row.cells.push(TableCell {
-                text: label.to_string(), spans: Vec::new(),
+                text: label.to_string(),
+                spans: Vec::new(),
                 colspan: 1,
                 rowspan: 1,
                 mcids: vec![],
@@ -4372,7 +4380,8 @@ mod tests {
                 is_header: false,
             });
             row.cells.push(TableCell {
-                text: value.to_string(), spans: Vec::new(),
+                text: value.to_string(),
+                spans: Vec::new(),
                 colspan: 1,
                 rowspan: 1,
                 mcids: vec![],
@@ -4473,7 +4482,8 @@ mod tests {
             rows: vec![TableRow {
                 cells: vec![
                     TableCell {
-                        text: "A".into(), spans: Vec::new(),
+                        text: "A".into(),
+                        spans: Vec::new(),
                         colspan: 1,
                         rowspan: 1,
                         mcids: vec![],
@@ -4481,7 +4491,8 @@ mod tests {
                         is_header: false,
                     },
                     TableCell {
-                        text: "B".into(), spans: Vec::new(),
+                        text: "B".into(),
+                        spans: Vec::new(),
                         colspan: 1,
                         rowspan: 1,
                         mcids: vec![],
@@ -4489,7 +4500,8 @@ mod tests {
                         is_header: false,
                     },
                     TableCell {
-                        text: "C".into(), spans: Vec::new(),
+                        text: "C".into(),
+                        spans: Vec::new(),
                         colspan: 1,
                         rowspan: 1,
                         mcids: vec![],
@@ -4507,7 +4519,8 @@ mod tests {
             rows: vec![TableRow {
                 cells: vec![
                     TableCell {
-                        text: "D".into(), spans: Vec::new(),
+                        text: "D".into(),
+                        spans: Vec::new(),
                         colspan: 1,
                         rowspan: 1,
                         mcids: vec![],
@@ -4515,7 +4528,8 @@ mod tests {
                         is_header: false,
                     },
                     TableCell {
-                        text: "E".into(), spans: Vec::new(),
+                        text: "E".into(),
+                        spans: Vec::new(),
                         colspan: 1,
                         rowspan: 1,
                         mcids: vec![],
@@ -4523,7 +4537,8 @@ mod tests {
                         is_header: false,
                     },
                     TableCell {
-                        text: "F".into(), spans: Vec::new(),
+                        text: "F".into(),
+                        spans: Vec::new(),
                         colspan: 1,
                         rowspan: 1,
                         mcids: vec![],
@@ -4551,7 +4566,8 @@ mod tests {
         let table1 = ExtractedTable {
             rows: vec![TableRow {
                 cells: vec![TableCell {
-                    text: "A".into(), spans: Vec::new(),
+                    text: "A".into(),
+                    spans: Vec::new(),
                     colspan: 1,
                     rowspan: 1,
                     mcids: vec![],
@@ -4567,7 +4583,8 @@ mod tests {
         let table2 = ExtractedTable {
             rows: vec![TableRow {
                 cells: vec![TableCell {
-                    text: "B".into(), spans: Vec::new(),
+                    text: "B".into(),
+                    spans: Vec::new(),
                     colspan: 1,
                     rowspan: 1,
                     mcids: vec![],

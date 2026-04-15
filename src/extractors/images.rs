@@ -202,11 +202,12 @@ impl PdfImage {
             ImageData::Jpeg(jpeg_data) => {
                 if self.color_space.components() == 4 {
                     let rgb = decode_cmyk_jpeg_to_rgb(jpeg_data)?;
-                    let buf =
-                        image::ImageBuffer::<image::Rgb<u8>, _>::from_raw(self.width, self.height, rgb)
-                            .ok_or_else(|| {
-                                Error::Image("Invalid CMYK image dimensions".to_string())
-                            })?;
+                    let buf = image::ImageBuffer::<image::Rgb<u8>, _>::from_raw(
+                        self.width,
+                        self.height,
+                        rgb,
+                    )
+                    .ok_or_else(|| Error::Image("Invalid CMYK image dimensions".to_string()))?;
                     buf.save_with_format(path, image::ImageFormat::Png)
                         .map_err(|e| Error::Image(format!("Failed to save PNG: {}", e)))
                 } else {
@@ -233,11 +234,12 @@ impl PdfImage {
             ImageData::Jpeg(jpeg_data) => {
                 if self.color_space.components() == 4 {
                     let rgb = decode_cmyk_jpeg_to_rgb(jpeg_data)?;
-                    let buf =
-                        image::ImageBuffer::<image::Rgb<u8>, _>::from_raw(self.width, self.height, rgb)
-                            .ok_or_else(|| {
-                                Error::Image("Invalid CMYK image dimensions".to_string())
-                            })?;
+                    let buf = image::ImageBuffer::<image::Rgb<u8>, _>::from_raw(
+                        self.width,
+                        self.height,
+                        rgb,
+                    )
+                    .ok_or_else(|| Error::Image("Invalid CMYK image dimensions".to_string()))?;
                     buf.save_with_format(path, image::ImageFormat::Jpeg)
                         .map_err(|e| Error::Image(format!("Failed to save JPEG: {}", e)))
                 } else {
@@ -623,15 +625,17 @@ pub fn extract_image_from_xobject(
     // `Object::Stream` dict, so an unresolved reference silently falls back to
     // `N = 3` and a CMYK (N = 4) image is labelled as RGB. Resolve the stream
     // reference here so the component count reflects the real profile.
-    let resolved_color_space = if let (Some(doc_mut), Object::Array(arr)) =
-        (doc.as_deref_mut(), &resolved_color_space)
-    {
-        if arr.len() > 1 {
-            if let Some(second_ref) = arr[1].as_reference() {
-                if let Ok(resolved_second) = doc_mut.load_object(second_ref) {
-                    let mut new_arr = arr.clone();
-                    new_arr[1] = resolved_second;
-                    Object::Array(new_arr)
+    let resolved_color_space =
+        if let (Some(doc_mut), Object::Array(arr)) = (doc.as_deref_mut(), &resolved_color_space) {
+            if arr.len() > 1 {
+                if let Some(second_ref) = arr[1].as_reference() {
+                    if let Ok(resolved_second) = doc_mut.load_object(second_ref) {
+                        let mut new_arr = arr.clone();
+                        new_arr[1] = resolved_second;
+                        Object::Array(new_arr)
+                    } else {
+                        resolved_color_space
+                    }
                 } else {
                     resolved_color_space
                 }
@@ -640,10 +644,7 @@ pub fn extract_image_from_xobject(
             }
         } else {
             resolved_color_space
-        }
-    } else {
-        resolved_color_space
-    };
+        };
 
     let color_space = parse_color_space(&resolved_color_space)?;
 

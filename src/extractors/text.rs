@@ -3092,12 +3092,8 @@ impl TextExtractor {
                     .text
                     .chars()
                     .last()
-                    .map_or(false, |c| c.is_alphabetic())
-                && span
-                    .text
-                    .chars()
-                    .next()
-                    .map_or(false, |c| c.is_alphabetic())
+                    .is_some_and(|c| c.is_alphabetic())
+                && span.text.chars().next().is_some_and(|c| c.is_alphabetic())
                 && (current.text.chars().count() == 1 || span.text.chars().count() == 1);
 
             // Merge threshold: Use configured values
@@ -12823,7 +12819,11 @@ mod profile_based_space_tests {
 
         extractor.merge_adjacent_spans();
 
-        assert_eq!(extractor.spans.len(), 1, "cross_font_word_glue should merge 'S' + 'ales' into 'Sales'");
+        assert_eq!(
+            extractor.spans.len(),
+            1,
+            "cross_font_word_glue should merge 'S' + 'ales' into 'Sales'"
+        );
         assert_eq!(extractor.spans[0].text, "Sales");
         // Dominant-font swap: the longer run (regular weight) should win.
         assert_eq!(extractor.spans[0].font_weight, FontWeight::Normal);

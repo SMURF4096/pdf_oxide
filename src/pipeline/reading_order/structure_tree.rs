@@ -24,6 +24,7 @@ pub struct StructureTreeStrategy {
 }
 
 impl StructureTreeStrategy {
+    /// Construct a new strategy with a default XY-cut fallback.
     pub fn new() -> Self {
         Self {
             fallback: XYCutStrategy::new(),
@@ -133,9 +134,7 @@ impl ReadingOrderStrategy for StructureTreeStrategy {
         // authoring tool assigned MCIDs in content-stream order without
         // respecting column visual order). Fall back to geometric.
         if mcid_order_zigzags_columns(&spans, mcid_order) {
-            log::debug!(
-                "MCID order zigzags across columns, falling back to geometric ordering"
-            );
+            log::debug!("MCID order zigzags across columns, falling back to geometric ordering");
             return self.fallback.apply(spans, context);
         }
 

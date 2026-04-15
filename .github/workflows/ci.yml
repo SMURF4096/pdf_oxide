@@ -275,42 +275,25 @@ jobs:
       - name: Build library (cdylib + rlib + staticlib)
         shell: bash
         run: |
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            cargo build --release --lib --target x86_64-pc-windows-gnu
-          else
-            cargo build --release --lib
-          fi
-
-      - name: Stage native lib for Go
-        shell: bash
-        run: |
-          # Ship both the cdylib and the staticlib. CGo links libpdf_oxide.a
-          # directly per go/pdf_oxide.go's LDFLAGS (#334); the cdylib is
-          # kept alongside so the test binary can still `ldd` cleanly and
-          # so downstream tooling that expected the shared object still
-          # resolves.
           case "${{ matrix.os }}" in
-            ubuntu-latest)
-              mkdir -p go/lib/linux_amd64
-              cp target/release/libpdf_oxide.so target/release/libpdf_oxide.a go/lib/linux_amd64/
+            windows-latest)
+              cargo build --release --lib --target x86_64-pc-windows-gnu
               ;;
             macos-latest)
-              mkdir -p go/lib/darwin_arm64
-              cp target/release/libpdf_oxide.dylib target/release/libpdf_oxide.a go/lib/darwin_arm64/
+              cargo build --release --lib --target aarch64-apple-darwin
               ;;
-            windows-latest)
-              mkdir -p go/lib/windows_amd64
-              cp target/x86_64-pc-windows-gnu/release/pdf_oxide.dll target/x86_64-pc-windows-gnu/release/libpdf_oxide.a go/lib/windows_amd64/
+            *)
+              cargo build --release --lib
               ;;
           esac
 
       - name: Go build
         working-directory: go
-        run: go build ./...
+        run: go build -tags pdf_oxide_dev ./...
 
       - name: Go vet
         working-directory: go
-        run: go vet ./...
+        run: go vet -tags pdf_oxide_dev ./...
 
       - name: Go format check
         working-directory: go

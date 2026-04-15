@@ -221,9 +221,7 @@ impl MarkdownOutputConverter {
         // always data values, not headings, even in a larger font. A real
         // heading leads with a word.
         let first = trimmed.chars().next().unwrap_or(' ');
-        if first.is_ascii_digit()
-            || matches!(first, '+' | '-' | '$' | '€' | '£' | '¥' | '%')
-        {
+        if first.is_ascii_digit() || matches!(first, '+' | '-' | '$' | '€' | '£' | '¥' | '%') {
             return false;
         }
 
@@ -313,14 +311,14 @@ impl MarkdownOutputConverter {
             let mut cols_written: usize = 0;
             for cell in &row.cells {
                 output.push(' ');
-                
+
                 // Render bold/italic from span metadata when available;
                 // fall back to plain text for cells without span info.
                 let cell_text = if !cell.spans.is_empty() {
                     let mut cell_md = String::new();
                     let mut active_bold = false;
                     let mut active_italic = false;
-                    
+
                     // Order per-span emit: close-old-markers → inter-span
                     // space → open-new-markers → text. This keeps whitespace
                     // OUTSIDE emphasis delimiters, which CommonMark requires
@@ -333,8 +331,12 @@ impl MarkdownOutputConverter {
                             is_bold != active_bold || is_italic != active_italic;
 
                         if formatting_changed {
-                            if active_italic { cell_md.push('*'); }
-                            if active_bold { cell_md.push_str("**"); }
+                            if active_italic {
+                                cell_md.push('*');
+                            }
+                            if active_bold {
+                                cell_md.push_str("**");
+                            }
                         }
 
                         if i > 0 {
@@ -348,17 +350,19 @@ impl MarkdownOutputConverter {
                         }
 
                         if formatting_changed {
-                            if is_bold { cell_md.push_str("**"); }
-                            if is_italic { cell_md.push('*'); }
+                            if is_bold {
+                                cell_md.push_str("**");
+                            }
+                            if is_italic {
+                                cell_md.push('*');
+                            }
                             active_bold = is_bold;
                             active_italic = is_italic;
                         }
 
                         let mut text = span.text.replace('|', "\\|").replace('\n', " ");
                         let just_opened = is_bold || is_italic;
-                        if just_opened
-                            && (cell_md.ends_with("**") || cell_md.ends_with('*'))
-                        {
+                        if just_opened && (cell_md.ends_with("**") || cell_md.ends_with('*')) {
                             while text.starts_with(' ') {
                                 text.remove(0);
                             }
@@ -373,8 +377,12 @@ impl MarkdownOutputConverter {
                         let content_end = cell_md.trim_end().len();
                         let trailing = cell_md[content_end..].to_string();
                         cell_md.truncate(content_end);
-                        if active_italic { cell_md.push('*'); }
-                        if active_bold { cell_md.push_str("**"); }
+                        if active_italic {
+                            cell_md.push('*');
+                        }
+                        if active_bold {
+                            cell_md.push_str("**");
+                        }
                         cell_md.push_str(&trailing);
                     }
 
@@ -382,7 +390,7 @@ impl MarkdownOutputConverter {
                 } else {
                     cell.text.replace('|', "\\|").replace('\n', " ")
                 };
-                
+
                 output.push_str(cell_text.trim());
                 output.push(' ');
                 // Handle colspan by adding extra | separators
@@ -474,7 +482,10 @@ impl MarkdownOutputConverter {
         // Track which tables have been rendered
         let mut tables_rendered = vec![false; tables.len()];
         // Pre-render table markdown so we can check for orphaned spans.
-        let table_mds: Vec<String> = tables.iter().map(|t| self.render_table_markdown(t, config)).collect();
+        let table_mds: Vec<String> = tables
+            .iter()
+            .map(|t| self.render_table_markdown(t, config))
+            .collect();
         // Collect spans skipped because they fall inside a table region.
         let mut table_skipped_spans: Vec<Vec<&OrderedTextSpan>> = vec![Vec::new(); tables.len()];
 
@@ -607,7 +618,7 @@ impl MarkdownOutputConverter {
                 };
 
                 let heading_changed = current_heading_level != span_heading_level;
-                
+
                 // A reading-order group change only forces a paragraph break
                 // when the visual line also changes — this keeps horizontally
                 // split elements (e.g. multi-span footer lines) together.
@@ -618,7 +629,11 @@ impl MarkdownOutputConverter {
                     if !current_line.is_empty() {
                         if let Some(level) = current_heading_level {
                             let prefix = "#".repeat(level as usize);
-                            result.push_str(&format!("{} {}\n\n", prefix, strip_emphasis(current_line.trim())));
+                            result.push_str(&format!(
+                                "{} {}\n\n",
+                                prefix,
+                                strip_emphasis(current_line.trim())
+                            ));
                         } else {
                             result.push_str(current_line.trim());
                             result.push_str("\n\n");
@@ -637,7 +652,11 @@ impl MarkdownOutputConverter {
                         if !current_line.is_empty() {
                             if let Some(level) = current_heading_level {
                                 let prefix = "#".repeat(level as usize);
-                                result.push_str(&format!("{} {}\n\n", prefix, strip_emphasis(current_line.trim())));
+                                result.push_str(&format!(
+                                    "{} {}\n\n",
+                                    prefix,
+                                    strip_emphasis(current_line.trim())
+                                ));
                             } else {
                                 result.push_str(current_line.trim());
                                 result.push('\n');
@@ -682,7 +701,7 @@ impl MarkdownOutputConverter {
             // Dingbats mappings, ❍ from ligature remaps) to U+2022 so the
             // bullet-span logic above can recognize them uniformly.
             if text_str.contains('\x7f') || text_str.contains('❍') {
-                text_str = text_str.replace('\x7f', "•").replace('❍', "•");
+                text_str = text_str.replace(['\x7f', '❍'], "•");
             }
 
             // Pipe characters are only markdown-syntactic inside table
@@ -814,7 +833,11 @@ impl MarkdownOutputConverter {
                 if !current_line.is_empty() {
                     if let Some(level) = current_heading_level {
                         let prefix = "#".repeat(level as usize);
-                        result.push_str(&format!("{} {}\n\n", prefix, strip_emphasis(current_line.trim())));
+                        result.push_str(&format!(
+                            "{} {}\n\n",
+                            prefix,
+                            strip_emphasis(current_line.trim())
+                        ));
                     } else {
                         result.push_str(current_line.trim());
                         result.push_str("\n\n");
@@ -1052,7 +1075,8 @@ mod tests {
     #[test]
     fn test_render_table_markdown_empty() {
         let table = ExtractedTable::new();
-        let result = MarkdownOutputConverter::new().render_table_markdown(&table, &crate::pipeline::TextPipelineConfig::default());
+        let result = MarkdownOutputConverter::new()
+            .render_table_markdown(&table, &crate::pipeline::TextPipelineConfig::default());
         assert_eq!(result, "");
     }
 
@@ -1064,7 +1088,8 @@ mod tests {
         row.add_cell(TableCell::new("B".to_string(), false));
         table.add_row(row);
 
-        let result = MarkdownOutputConverter::new().render_table_markdown(&table, &crate::pipeline::TextPipelineConfig::default());
+        let result = MarkdownOutputConverter::new()
+            .render_table_markdown(&table, &crate::pipeline::TextPipelineConfig::default());
         assert!(result.contains("| A |"));
         assert!(result.contains("| B |"));
         // First row treated as header by default in markdown
@@ -1084,7 +1109,8 @@ mod tests {
         data.add_cell(TableCell::new("Right".to_string(), false));
         table.add_row(data);
 
-        let result = MarkdownOutputConverter::new().render_table_markdown(&table, &crate::pipeline::TextPipelineConfig::default());
+        let result = MarkdownOutputConverter::new()
+            .render_table_markdown(&table, &crate::pipeline::TextPipelineConfig::default());
         // Colspan cell should produce extra | separators
         assert!(result.contains("| Wide |"));
         assert!(result.contains("---|---|"));
@@ -1097,7 +1123,8 @@ mod tests {
         row.add_cell(TableCell::new("A|B".to_string(), false));
         table.add_row(row);
 
-        let result = MarkdownOutputConverter::new().render_table_markdown(&table, &crate::pipeline::TextPipelineConfig::default());
+        let result = MarkdownOutputConverter::new()
+            .render_table_markdown(&table, &crate::pipeline::TextPipelineConfig::default());
         assert!(result.contains("A\\|B"), "Pipes should be backslash-escaped: {}", result);
     }
 
@@ -1108,7 +1135,8 @@ mod tests {
         row.add_cell(TableCell::new("Line1\nLine2".to_string(), false));
         table.add_row(row);
 
-        let result = MarkdownOutputConverter::new().render_table_markdown(&table, &crate::pipeline::TextPipelineConfig::default());
+        let result = MarkdownOutputConverter::new()
+            .render_table_markdown(&table, &crate::pipeline::TextPipelineConfig::default());
         assert!(!result.contains("Line1\nLine2"), "Newlines in cells should be replaced");
         assert!(result.contains("Line1 Line2"));
     }
@@ -1120,7 +1148,8 @@ mod tests {
         row.add_cell(TableCell::new("  padded  ".to_string(), false));
         table.add_row(row);
 
-        let result = MarkdownOutputConverter::new().render_table_markdown(&table, &crate::pipeline::TextPipelineConfig::default());
+        let result = MarkdownOutputConverter::new()
+            .render_table_markdown(&table, &crate::pipeline::TextPipelineConfig::default());
         assert!(result.contains("| padded |"));
     }
 
@@ -1141,7 +1170,8 @@ mod tests {
         d1.add_cell(TableCell::new("D1".to_string(), false));
         table.add_row(d1);
 
-        let result = MarkdownOutputConverter::new().render_table_markdown(&table, &crate::pipeline::TextPipelineConfig::default());
+        let result = MarkdownOutputConverter::new()
+            .render_table_markdown(&table, &crate::pipeline::TextPipelineConfig::default());
         // Separator should appear after last header row (row_idx == 1)
         let lines: Vec<&str> = result.lines().collect();
         assert_eq!(lines.len(), 4); // H1, H2, separator, D1
@@ -1614,7 +1644,8 @@ mod tests {
         data.add_cell(TableCell::new("4351966".to_string(), false));
         table.add_row(data);
 
-        let result = MarkdownOutputConverter::new().render_table_markdown(&table, &crate::pipeline::TextPipelineConfig::default());
+        let result = MarkdownOutputConverter::new()
+            .render_table_markdown(&table, &crate::pipeline::TextPipelineConfig::default());
 
         // All cells must be present
         assert!(
@@ -1653,7 +1684,8 @@ mod tests {
         data.add_cell(TableCell::new("2".to_string(), false));
         table.add_row(data);
 
-        let result = MarkdownOutputConverter::new().render_table_markdown(&table, &crate::pipeline::TextPipelineConfig::default());
+        let result = MarkdownOutputConverter::new()
+            .render_table_markdown(&table, &crate::pipeline::TextPipelineConfig::default());
 
         // Count pipes in header vs data row — they must match
         let lines: Vec<&str> = result.lines().collect();
@@ -1687,7 +1719,8 @@ mod tests {
         data.add_cell(TableCell::new("3".to_string(), false));
         table.add_row(data);
 
-        let result = MarkdownOutputConverter::new().render_table_markdown(&table, &crate::pipeline::TextPipelineConfig::default());
+        let result = MarkdownOutputConverter::new()
+            .render_table_markdown(&table, &crate::pipeline::TextPipelineConfig::default());
 
         let lines: Vec<&str> = result.lines().collect();
         assert!(lines.len() >= 3, "Must have header, separator, and data row: {}", result);

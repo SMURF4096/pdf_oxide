@@ -956,10 +956,7 @@ fn test_gap_threshold_config_aggressive() {
         config.conservative_threshold_pt, 0.1,
         "Aggressive should use 0.1pt conservative (same as default after Phase 4)"
     );
-    assert_eq!(
-            config.column_boundary_threshold_pt, 5.0,
-            "Column boundary unchanged at 10.0pt"
-        );
+    assert_eq!(config.column_boundary_threshold_pt, 5.0, "Column boundary unchanged at 10.0pt");
     assert_eq!(
         config.severe_overlap_threshold_pt, -0.5,
         "Overlap threshold unchanged at -0.5pt"
@@ -983,10 +980,7 @@ fn test_gap_threshold_config_conservative() {
         config.conservative_threshold_pt, 0.3,
         "Conservative should use 0.3pt conservative (Phase 4: reduced from 0.5pt to prevent word fusion)"
     );
-    assert_eq!(
-            config.column_boundary_threshold_pt, 5.0,
-            "Column boundary unchanged at 10.0pt"
-        );
+    assert_eq!(config.column_boundary_threshold_pt, 5.0, "Column boundary unchanged at 10.0pt");
     assert_eq!(
         config.severe_overlap_threshold_pt, -0.5,
         "Overlap threshold unchanged at -0.5pt"

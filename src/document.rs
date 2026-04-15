@@ -409,7 +409,12 @@ fn contains_objstm_marker(window: &[u8]) -> bool {
     while i + 5 <= window.len() {
         if &window[i..i + 5] == b"/Type" {
             let mut j = i + 5;
-            while j < window.len() && (window[j] == b' ' || window[j] == b'\t' || window[j] == b'\r' || window[j] == b'\n') {
+            while j < window.len()
+                && (window[j] == b' '
+                    || window[j] == b'\t'
+                    || window[j] == b'\r'
+                    || window[j] == b'\n')
+            {
                 j += 1;
             }
             if j + 7 <= window.len() && &window[j..j + 7] == b"/ObjStm" {
@@ -1335,10 +1340,7 @@ impl PdfDocument {
             self.recover_from_object_streams();
             if let Some(obj) = self.object_cache.lock().unwrap().get(&obj_ref).cloned() {
                 if !matches!(obj, Object::Null) {
-                    log::debug!(
-                        "Object {} recovered from object-stream sweep",
-                        obj_ref.id
-                    );
+                    log::debug!("Object {} recovered from object-stream sweep", obj_ref.id);
                     return Ok(obj);
                 }
             }
@@ -3234,8 +3236,7 @@ impl PdfDocument {
                 if let Some(dict) = obj.as_dict() {
                     let has_no_type = dict.get("Type").is_none();
                     // Also handle /Type that is an unresolvable reference (Null)
-                    let type_is_null =
-                        dict.get("Type").is_some_and(|t| matches!(t, Object::Null));
+                    let type_is_null = dict.get("Type").is_some_and(|t| matches!(t, Object::Null));
                     if (has_no_type || type_is_null)
                         && (dict.contains_key("MediaBox")
                             || dict.contains_key("Contents")
@@ -6255,9 +6256,7 @@ impl PdfDocument {
     /// clone for matching. The computation scans every page's raw spans,
     /// collects normalized text that appears in the top or bottom 12% of
     /// the page, and keeps entries that recur on >=50% of pages.
-    fn ensure_running_artifact_signatures(
-        &mut self,
-    ) -> Result<std::collections::HashSet<String>> {
+    fn ensure_running_artifact_signatures(&mut self) -> Result<std::collections::HashSet<String>> {
         {
             let guard = self.running_artifact_signatures.lock().unwrap();
             if let Some(ref set) = *guard {
@@ -7812,7 +7811,8 @@ impl PdfDocument {
         // (O(N!) traversals and unbounded path accumulation).
         let saved_scope = if let Some(xobj_resources) = xobject_dict.get("Resources") {
             let resolved = if let Some(res_ref) = xobj_resources.as_reference() {
-                self.load_object(res_ref).unwrap_or_else(|_| xobj_resources.clone())
+                self.load_object(res_ref)
+                    .unwrap_or_else(|_| xobj_resources.clone())
             } else {
                 xobj_resources.clone()
             };

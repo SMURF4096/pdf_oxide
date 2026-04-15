@@ -137,11 +137,21 @@ impl XYCutStrategy {
             return vec![self.sort_indices(all_spans, indices)];
         }
 
-        let split_h = |s: &Self, sp: &[TextSpan], idx: &[usize]| s.find_horizontal_split_indexed(sp, idx);
-        let split_v = |s: &Self, sp: &[TextSpan], idx: &[usize]| s.find_vertical_split_indexed(sp, idx);
+        let split_h =
+            |s: &Self, sp: &[TextSpan], idx: &[usize]| s.find_horizontal_split_indexed(sp, idx);
+        let split_v =
+            |s: &Self, sp: &[TextSpan], idx: &[usize]| s.find_vertical_split_indexed(sp, idx);
 
-        let first_split = if self.prefer_horizontal { split_h } else { split_v };
-        let second_split = if self.prefer_horizontal { split_v } else { split_h };
+        let first_split = if self.prefer_horizontal {
+            split_h
+        } else {
+            split_v
+        };
+        let second_split = if self.prefer_horizontal {
+            split_v
+        } else {
+            split_h
+        };
 
         if let Some((a, b)) = first_split(self, all_spans, indices) {
             let mut result = self.partition_indexed(all_spans, &a);
@@ -198,8 +208,7 @@ impl XYCutStrategy {
         for &i in indices {
             let s = &all_spans[i];
             let y_key = s.bbox.top().round() as i32;
-            let char_count =
-                s.text.chars().filter(|c| !c.is_whitespace()).count().max(1) as f32;
+            let char_count = s.text.chars().filter(|c| !c.is_whitespace()).count().max(1) as f32;
             let approx_char_width = (s.font_size * 0.45).max(2.5);
             let core_right = s.bbox.left() + char_count * approx_char_width;
             lines
@@ -430,7 +439,12 @@ impl XYCutStrategy {
         for &i in indices {
             let span = &all_spans[i];
             let height = span.bbox.bottom() - span.bbox.top();
-            let char_count = span.text.chars().filter(|c| !c.is_whitespace()).count().max(1);
+            let char_count = span
+                .text
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .count()
+                .max(1);
             // 0.45em per char is a reasonable average across common PDF
             // fonts (Helvetica/Times/Arial at body size) and narrower
             // than the 0.5em advance used for monospace.
