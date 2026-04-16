@@ -11,6 +11,7 @@
 #![allow(clippy::regex_creation_in_loops)]
 #![allow(clippy::manual_find)]
 #![allow(clippy::match_like_matches_macro)]
+#![allow(clippy::collapsible_match)]
 // Allow unused for tests
 #![cfg_attr(test, allow(dead_code))]
 #![cfg_attr(test, allow(unused_variables))]

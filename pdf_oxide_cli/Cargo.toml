@@ -15,6 +15,9 @@ categories = ["command-line-utilities", "text-processing"]
 name = "pdf-oxide"
 path = "src/main.rs"
 
+[lints]
+workspace = true
+
 [dependencies]
 pdf_oxide = { version = "0.3.32", path = "..", features = ["rendering", "logging"] }
 clap = { version = "4", features = ["derive"] }

@@ -453,7 +453,7 @@ fn print_summary(summary: &ValidationSummary, verbose: bool) {
     if verbose {
         println!("\nTop 10 PDFs by Element Count:");
         let mut sorted_results = summary.results.clone();
-        sorted_results.sort_by(|a, b| b.total_elements.cmp(&a.total_elements));
+        sorted_results.sort_by_key(|r| std::cmp::Reverse(r.total_elements));
         for (i, result) in sorted_results.iter().take(10).enumerate() {
             println!(
                 "  {}. {}/{} - {} elements ({} headers, {} paragraphs, {} lists)",
