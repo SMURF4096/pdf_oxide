@@ -891,4 +891,29 @@ mod tests {
         assert_eq!(paths[0].line_cap, LineCap::Round);
         assert_eq!(paths[0].line_join, LineJoin::Bevel);
     }
+
+    #[test]
+    fn test_pop_xobject_marks_as_processed() {
+        let mut ext = PathExtractor::new();
+        let r = crate::object::ObjectRef::new(42, 0);
+
+        assert!(ext.can_process_xobject(r));
+        ext.push_xobject(r);
+        ext.pop_xobject(); // success path
+        assert!(
+            !ext.can_process_xobject(r),
+            "Successfully processed XObject should be permanently skipped"
+        );
+    }
+
+    #[test]
+    fn test_pop_xobject_failed_allows_retry() {
+        let mut ext = PathExtractor::new();
+        let r = crate::object::ObjectRef::new(42, 0);
+
+        assert!(ext.can_process_xobject(r));
+        ext.push_xobject(r);
+        ext.pop_xobject_failed(); // failure path
+        assert!(ext.can_process_xobject(r), "Failed XObject should be retryable");
+    }
 }

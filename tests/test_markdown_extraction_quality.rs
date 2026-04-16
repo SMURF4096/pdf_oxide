@@ -193,19 +193,10 @@ fn test_text_spacing_extra_spaces_in_word() {
 // ============================================================================
 
 #[test]
-fn test_bold_text_boundaries_correct() {
-    //! Test: Inter-group spacing between style groups in the span-based path.
-    //!
-    //! The production path (convert_page_from_spans) receives pre-extracted
-    //! TextBlocks with bold/italic metadata. When adjacent blocks have different
-    //! styles, the converter must insert a space between the closing bold marker
-    //! and the next group's text.
-    //!
-    //! This test uses convert_page (char-based path) which merges all chars on
-    //! a line into one TextBlock. Since the char path creates per-line blocks
-    //! (not per-word), bold style groups cannot be split within a single line.
-    //! We verify basic text extraction works; the inter-group spacing fix
-    //! applies to the span-based production path.
+fn test_style_group_spacing_char_path_smoke() {
+    //! Smoke test: the char-based convert_page path merges all chars on a
+    //! line into one TextBlock, so style groups can't be split. This just
+    //! verifies text content survives the round-trip.
 
     let converter = MarkdownConverter::new();
     let options = ConversionOptions {
@@ -225,11 +216,69 @@ fn test_bold_text_boundaries_correct() {
 
     let result = converter.convert_page(&chars, &options).unwrap();
 
-    // The char-based path merges all chars on a line into one block,
-    // so text content should be present (spacing handled by clustering)
     assert!(result.contains("Access"), "Should contain 'Access'");
     assert!(result.contains("control"), "Should contain 'control'");
     assert!(result.contains("Enforce"), "Should contain 'Enforce'");
+}
+
+#[test]
+fn test_style_group_spacing_span_path() {
+    //! Regression test for inter-group spacing on the production span-based
+    //! path (convert_page_from_spans). When adjacent spans have different
+    //! bold status, the converter must insert a space between the closing
+    //! bold marker and the next group's text.
+    //!
+    //! Without the fix, "**Access control:** Enforce" would fuse into
+    //! "Accesscontrol:Enforce" (no space, no markers).
+
+    use pdf_oxide::geometry::Rect;
+    use pdf_oxide::layout::{FontWeight, TextSpan};
+
+    let converter = MarkdownConverter::new();
+    let options = ConversionOptions {
+        detect_headings: false,
+        extract_tables: false,
+        ..Default::default()
+    };
+
+    let char_width = 5.0_f32;
+
+    let spans = vec![
+        TextSpan {
+            text: "Access".to_string(),
+            bbox: Rect::new(0.0, 100.0, 6.0 * char_width, 12.0),
+            font_size: 12.0,
+            font_weight: FontWeight::Bold,
+            ..Default::default()
+        },
+        TextSpan {
+            text: "control:".to_string(),
+            bbox: Rect::new(6.0 * char_width + 10.0, 100.0, 8.0 * char_width, 12.0),
+            font_size: 12.0,
+            font_weight: FontWeight::Bold,
+            ..Default::default()
+        },
+        TextSpan {
+            text: "Enforce".to_string(),
+            bbox: Rect::new(15.0 * char_width + 20.0, 100.0, 7.0 * char_width, 12.0),
+            font_size: 12.0,
+            font_weight: FontWeight::Normal,
+            ..Default::default()
+        },
+    ];
+
+    let result = converter.convert_page_from_spans(&spans, &options).unwrap();
+
+    // All words should be present and separated
+    assert!(result.contains("Access"), "Should contain 'Access', got: {result}");
+    assert!(result.contains("control"), "Should contain 'control', got: {result}");
+    assert!(result.contains("Enforce"), "Should contain 'Enforce', got: {result}");
+
+    // Style transition must not fuse words
+    assert!(
+        !result.contains("control:Enforce"),
+        "Style transition should have a space, got: {result}"
+    );
 }
 
 // ============================================================================

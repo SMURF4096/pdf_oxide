@@ -598,10 +598,9 @@ impl PyPdfDocument {
     /// Get page object for DOM access.
     fn page(&mut self, index: usize) -> PyResult<PyPdfPage> {
         self.ensure_editor()?;
-        let editor = self
-            .editor
-            .as_mut()
-            .ok_or_else(|| PyRuntimeError::new_err("Editor not initialized"))?;
+        let editor = self.editor.as_mut().ok_or_else(|| {
+            PyRuntimeError::new_err("Internal error: editor missing after initialization")
+        })?;
         let page = editor
             .get_page(index)
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to get page: {}", e)))?;
@@ -611,10 +610,9 @@ impl PyPdfDocument {
     /// Save modification to page.
     fn save_page(&mut self, page: &PyPdfPage) -> PyResult<()> {
         self.ensure_editor()?;
-        let editor = self
-            .editor
-            .as_mut()
-            .ok_or_else(|| PyRuntimeError::new_err("Editor not initialized"))?;
+        let editor = self.editor.as_mut().ok_or_else(|| {
+            PyRuntimeError::new_err("Internal error: editor missing after initialization")
+        })?;
         editor
             .save_page(page.inner.clone())
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to save page: {}", e)))
@@ -1478,10 +1476,9 @@ impl PyPdfDocument {
     /// Get specific form field value.
     fn get_form_field_value(&mut self, name: &str, py: Python<'_>) -> PyResult<Py<PyAny>> {
         self.ensure_editor()?;
-        let editor = self
-            .editor
-            .as_mut()
-            .ok_or_else(|| PyRuntimeError::new_err("Editor not initialized"))?;
+        let editor = self.editor.as_mut().ok_or_else(|| {
+            PyRuntimeError::new_err("Internal error: editor missing after initialization")
+        })?;
         let value = editor
             .get_form_field_value(name)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
@@ -1494,10 +1491,9 @@ impl PyPdfDocument {
     /// Set form field value.
     fn set_form_field_value(&mut self, name: &str, value: &Bound<'_, PyAny>) -> PyResult<()> {
         self.ensure_editor()?;
-        let editor = self
-            .editor
-            .as_mut()
-            .ok_or_else(|| PyRuntimeError::new_err("Editor not initialized"))?;
+        let editor = self.editor.as_mut().ok_or_else(|| {
+            PyRuntimeError::new_err("Internal error: editor missing after initialization")
+        })?;
         let field_value = python_to_form_field_value(value)?;
         editor
             .set_form_field_value(name, field_value)
@@ -1514,10 +1510,9 @@ impl PyPdfDocument {
     #[pyo3(signature = (path, format="fdf"))]
     fn export_form_data(&mut self, path: &str, format: &str) -> PyResult<()> {
         self.ensure_editor()?;
-        let editor = self
-            .editor
-            .as_mut()
-            .ok_or_else(|| PyRuntimeError::new_err("Editor not initialized"))?;
+        let editor = self.editor.as_mut().ok_or_else(|| {
+            PyRuntimeError::new_err("Internal error: editor missing after initialization")
+        })?;
         match format {
             "fdf" => editor
                 .export_form_data_fdf(path)
@@ -1575,10 +1570,9 @@ impl PyPdfDocument {
     /// Merge from source.
     fn merge_from(&mut self, source: &Bound<'_, PyAny>) -> PyResult<usize> {
         self.ensure_editor()?;
-        let editor = self
-            .editor
-            .as_mut()
-            .ok_or_else(|| PyRuntimeError::new_err("Editor not initialized"))?;
+        let editor = self.editor.as_mut().ok_or_else(|| {
+            PyRuntimeError::new_err("Internal error: editor missing after initialization")
+        })?;
         if let Ok(path) = source.extract::<String>() {
             editor
                 .merge_from(&path)
@@ -1758,10 +1752,9 @@ impl PyPdfDocument {
     /// `pages` is a list of 0-based page indices.
     fn extract_pages(&mut self, pages: Vec<usize>, output: &str) -> PyResult<()> {
         self.ensure_editor()?;
-        let editor = self
-            .editor
-            .as_mut()
-            .ok_or_else(|| PyRuntimeError::new_err("Editor not initialized"))?;
+        let editor = self.editor.as_mut().ok_or_else(|| {
+            PyRuntimeError::new_err("Internal error: editor missing after initialization")
+        })?;
         editor
             .extract_pages(&pages, output)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
@@ -1771,10 +1764,9 @@ impl PyPdfDocument {
     fn delete_page(&mut self, index: usize) -> PyResult<()> {
         use crate::editor::EditableDocument;
         self.ensure_editor()?;
-        let editor = self
-            .editor
-            .as_mut()
-            .ok_or_else(|| PyRuntimeError::new_err("Editor not initialized"))?;
+        let editor = self.editor.as_mut().ok_or_else(|| {
+            PyRuntimeError::new_err("Internal error: editor missing after initialization")
+        })?;
         editor
             .remove_page(index)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
@@ -1784,10 +1776,9 @@ impl PyPdfDocument {
     fn move_page(&mut self, from_index: usize, to_index: usize) -> PyResult<()> {
         use crate::editor::EditableDocument;
         self.ensure_editor()?;
-        let editor = self
-            .editor
-            .as_mut()
-            .ok_or_else(|| PyRuntimeError::new_err("Editor not initialized"))?;
+        let editor = self.editor.as_mut().ok_or_else(|| {
+            PyRuntimeError::new_err("Internal error: editor missing after initialization")
+        })?;
         editor
             .move_page(from_index, to_index)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))

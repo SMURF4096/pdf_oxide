@@ -26,7 +26,7 @@ use std::sync::Mutex;
 /// Extension trait for Mutex to recover from poisoned locks.
 ///
 /// When a thread panics while holding a Mutex, the lock becomes "poisoned"
-/// and the standard `.lock_or_recover()` would cascade panics. This trait
+/// and the standard `.lock().unwrap()` would cascade panics. This trait
 /// provides `.lock_or_recover()` which discards the poison flag and returns
 /// the inner data, since the Mutexes in PdfDocument protect caches and
 /// bookkeeping (not safety-critical invariants).
@@ -232,6 +232,11 @@ impl BoundedObjectCache {
 
     fn insert(&mut self, key: ObjectRef, value: Object) {
         let entry_size = Self::estimate_size(&value);
+
+        // Don't cache objects that alone exceed the budget
+        if entry_size > self.max_bytes {
+            return;
+        }
 
         // If the key already exists, subtract old size first
         if let Some(old_val) = self.map.get(&key) {
@@ -15107,5 +15112,106 @@ mod tests {
             .page_count()
             .expect("page_count should work with encrypted objstm");
         assert!(page_count > 0, "Should have at least one page");
+    }
+
+    // ====================================================================
+    // MutexExt
+    // ====================================================================
+
+    #[test]
+    fn test_lock_or_recover_on_poisoned_mutex() {
+        use std::sync::Mutex;
+        let m = Mutex::new(42);
+        // Poison the mutex by panicking while holding the lock
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = m.lock().unwrap();
+            panic!("intentional");
+        }));
+        assert!(m.lock().is_err(), "Mutex should be poisoned");
+        // lock_or_recover should still return the inner value
+        let val = *m.lock_or_recover();
+        assert_eq!(val, 42);
+    }
+
+    // ====================================================================
+    // BoundedEntryCache
+    // ====================================================================
+
+    #[test]
+    fn test_bounded_entry_cache_lru_eviction_order() {
+        let mut c = BoundedEntryCache::new(3);
+        c.insert(1u32, "a");
+        c.insert(2, "b");
+        c.insert(3, "c");
+        // Touch key 1 so it becomes most-recently-used
+        assert_eq!(c.get(&1), Some(&"a"));
+        // Insert key 4 — should evict 2 (oldest untouched), not 1
+        c.insert(4, "d");
+        assert_eq!(c.get(&1), Some(&"a"), "LRU-promoted key should survive");
+        assert!(c.get(&2).is_none(), "Oldest untouched key should be evicted");
+        assert_eq!(c.get(&3), Some(&"c"));
+        assert_eq!(c.get(&4), Some(&"d"));
+    }
+
+    #[test]
+    fn test_bounded_entry_cache_reinsert_no_eviction() {
+        let mut c = BoundedEntryCache::new(1);
+        c.insert(1u32, "a");
+        // Re-insert same key — should NOT evict, just replace
+        c.insert(1, "b");
+        assert_eq!(c.len(), 1);
+        assert_eq!(c.get(&1), Some(&"b"));
+    }
+
+    #[test]
+    fn test_bounded_entry_cache_fifo_eviction_without_get() {
+        let mut c = BoundedEntryCache::new(2);
+        c.insert(1u32, "a");
+        c.insert(2, "b");
+        // No get() calls — pure insertion order
+        c.insert(3, "c");
+        assert!(c.get(&1).is_none(), "First inserted should be evicted");
+        assert_eq!(c.get(&2), Some(&"b"));
+        assert_eq!(c.get(&3), Some(&"c"));
+    }
+
+    // ====================================================================
+    // BoundedObjectCache
+    // ====================================================================
+
+    #[test]
+    fn test_bounded_object_cache_oversized_rejection() {
+        let mut c = BoundedObjectCache::new(100); // 100 bytes max
+        let big = Object::String(vec![0u8; 200]); // well over 100 bytes
+        c.insert(ObjectRef::new(1, 0), big);
+        assert_eq!(c.len(), 0, "Oversized object should be rejected");
+    }
+
+    #[test]
+    fn test_bounded_object_cache_byte_budget_eviction() {
+        // Use a budget that fits ~2 small objects but not 3
+        let small = Object::Integer(1); // estimate_size = 32
+        let budget = 80; // fits 2 × 32, not 3
+        let mut c = BoundedObjectCache::new(budget);
+        c.insert(ObjectRef::new(1, 0), small.clone());
+        c.insert(ObjectRef::new(2, 0), small.clone());
+        assert_eq!(c.len(), 2);
+        // Third insertion should evict the first
+        c.insert(ObjectRef::new(3, 0), small.clone());
+        assert!(c.get(&ObjectRef::new(1, 0)).is_none(), "Oldest should be evicted");
+        assert!(c.get(&ObjectRef::new(3, 0)).is_some());
+        assert!(c.current_bytes <= budget);
+    }
+
+    #[test]
+    fn test_estimate_size_depth_bottoms_out() {
+        // Deeply nested array — should not stack overflow
+        let mut obj = Object::Integer(1);
+        for _ in 0..100 {
+            obj = Object::Array(vec![obj]);
+        }
+        // Should return a finite value without panicking
+        let size = BoundedObjectCache::estimate_size(&obj);
+        assert!(size > 0);
     }
 }
