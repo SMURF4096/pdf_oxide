@@ -15,6 +15,9 @@ categories = ["command-line-utilities", "text-processing"]
 name = "pdf-oxide-mcp"
 path = "src/main.rs"
 
+[lints]
+workspace = true
+
 [dependencies]
 pdf_oxide = { version = "0.3.32", path = ".." }
 serde = { version = "1.0", features = ["derive"] }

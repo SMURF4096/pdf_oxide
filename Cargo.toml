@@ -2,6 +2,25 @@
 members = [".", "pdf_oxide_mcp", "pdf_oxide_cli"]
 exclude = ["js"]
 
+# Clippy lint configuration shared by every workspace member and every target
+# (lib, bin, test, example, bench). Keeps the allow-list in a single place so
+# new bin targets don't need their own #![allow] attributes. Mirrors the stance
+# previously declared only in src/lib.rs.
+[workspace.lints.clippy]
+type_complexity = "allow"
+too_many_arguments = "allow"
+needless_range_loop = "allow"
+enum_variant_names = "allow"
+wrong_self_convention = "allow"
+explicit_counter_loop = "allow"
+doc_overindented_list_items = "allow"
+should_implement_trait = "allow"
+redundant_guards = "allow"
+regex_creation_in_loops = "allow"
+manual_find = "allow"
+match_like_matches_macro = "allow"
+collapsible_match = "allow"
+
 [package]
 name = "pdf_oxide"
 version = "0.3.32"
@@ -36,6 +55,9 @@ name = "pdf_oxide"
 # staticlib: Go CGo (#334) and Node.js (#335) — produces libpdf_oxide.a for
 # self-contained binaries with no runtime LD_LIBRARY_PATH/PATH lookups
 crate-type = ["cdylib", "rlib", "staticlib"]
+
+[lints]
+workspace = true
 
 [dependencies]
 # Core dependencies
