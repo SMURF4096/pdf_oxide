@@ -74,6 +74,24 @@ lazy_static! {
 )]
 pub struct MarkdownConverter;
 
+/// Returns true if a geometric gap between two adjacent blocks indicates
+/// a word boundary, meaning a space should be inserted between them.
+fn needs_inter_block_space(
+    prev: &crate::layout::TextBlock,
+    next: &crate::layout::TextBlock,
+    spacing_config: &SpacingConfig,
+) -> bool {
+    let gap = next.bbox.left() - prev.bbox.right();
+    let char_size = prev.bbox.width.max(prev.bbox.height);
+    let threshold = spacing_config.word_margin * char_size;
+    if gap <= threshold {
+        return false;
+    }
+    let prev_ends_space = prev.text.chars().last().is_some_and(|c| c.is_whitespace());
+    let next_starts_space = next.text.chars().next().is_some_and(|c| c.is_whitespace());
+    !prev_ends_space && !next_starts_space
+}
+
 #[allow(deprecated)]
 impl MarkdownConverter {
     /// Create a new Markdown converter.
@@ -389,6 +407,7 @@ impl MarkdownConverter {
             //
             // Group consecutive blocks with same bold/italic status to avoid splitting
             // natural phrases like "Chinese stock market" into "**Chinese stock** market"
+            let spacing_config = SpacingConfig::default();
             let mut i = 0;
             while i < line_indices.len() {
                 let idx = line_indices[i];
@@ -421,34 +440,14 @@ impl MarkdownConverter {
 
                 // Collect text from this group first to check boundaries
                 // Use geometric spacing to detect gaps between blocks (Issue #5 fix)
-                let spacing_config = SpacingConfig::default();
                 let mut group_text = String::new();
                 for k in i..j {
                     let block_idx = line_indices[k];
                     let current_block = &blocks[block_idx];
 
-                    // Check if we need to insert space before this block
                     if !group_text.is_empty() && k > i {
                         let prev_block = &blocks[line_indices[k - 1]];
-
-                        // Geometric gap detection (per pdfplumber approach)
-                        let gap = current_block.bbox.left() - prev_block.bbox.right();
-                        let char_size = prev_block.bbox.width.max(prev_block.bbox.height);
-                        let threshold = spacing_config.word_margin * char_size;
-
-                        // Check boundary whitespace
-                        let prev_ends_space = prev_block
-                            .text
-                            .chars()
-                            .last()
-                            .is_some_and(|c| c.is_whitespace());
-                        let curr_starts_space = current_block
-                            .text
-                            .chars()
-                            .next()
-                            .is_some_and(|c| c.is_whitespace());
-
-                        if gap > threshold && !prev_ends_space && !curr_starts_space {
+                        if needs_inter_block_space(prev_block, current_block, &spacing_config) {
                             group_text.push(' ');
                         }
                     }
@@ -542,6 +541,16 @@ impl MarkdownConverter {
                         (true, false) => markdown.push_str("**"), // Bold only
                         (false, true) => markdown.push('*'),      // Italic only
                         (false, false) => {},                     // No formatting
+                    }
+                }
+
+                // Insert space between adjacent style groups so that style transitions
+                // like "**Access control:** Enforce" don't fuse into "Accesscontrol:Enforce".
+                if j < line_indices.len() {
+                    let last_block = &blocks[line_indices[j - 1]];
+                    let next_block = &blocks[line_indices[j]];
+                    if needs_inter_block_space(last_block, next_block, &spacing_config) {
+                        markdown.push(' ');
                     }
                 }
 

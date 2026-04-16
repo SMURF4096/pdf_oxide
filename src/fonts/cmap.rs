@@ -22,6 +22,7 @@
 //!   - Support for 100k+ entry CMaps
 //!   - 20-40% faster parsing performance
 
+use crate::document::MutexExt;
 use crate::error::Result;
 use regex::Regex;
 use std::collections::hash_map::DefaultHasher;
@@ -141,7 +142,7 @@ impl CMap {
 /// - Fast: O(n) to compute, O(1) to lookup
 /// - Reliable: Collisions extremely unlikely for real PDFs
 /// - Flexible: Doesn't require PDF object metadata
-#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+#[derive(Hash, Eq, PartialEq, Clone, Copy, Debug)]
 pub struct CMapKey(u64);
 
 /// Compute a hash of the raw CMap stream bytes.
@@ -160,7 +161,7 @@ fn compute_stream_hash(data: &[u8]) -> CMapKey {
 // - Maps from stream hash to Arc<CMap> (reference-counted parsed CMap)
 // - Arc allows efficient sharing without cloning
 // - Mutex ensures thread-safe access
-// - Unbounded (future: could add LRU eviction)
+// - Bounded at MAX_CMAP_CACHE_ENTRIES with FIFO eviction
 //
 // Usage:
 // When a LazyCMap is first accessed, it checks this cache before parsing.
@@ -172,8 +173,26 @@ fn compute_stream_hash(data: &[u8]) -> CMapKey {
 // - Check cache simultaneously (read-only Arc clones)
 // - Parse and insert new entries (Mutex serializes writes)
 // - Access shared CMaps concurrently (Arc is thread-safe)
+
+/// Maximum number of entries in the global CMap cache.
+const MAX_CMAP_CACHE_ENTRIES: usize = 1024;
+
 lazy_static::lazy_static! {
-    static ref CMAP_CACHE: Mutex<HashMap<CMapKey, Arc<CMap>>> = Mutex::new(HashMap::new());
+    static ref CMAP_CACHE: Mutex<crate::document::BoundedEntryCache<CMapKey, Arc<CMap>>> =
+        Mutex::new(crate::document::BoundedEntryCache::new(MAX_CMAP_CACHE_ENTRIES));
+}
+
+/// Clear the global CMap cache.
+///
+/// Call this to reclaim memory in long-lived processes (MCP servers,
+/// Python REPLs, Node.js services) that process many different PDFs.
+pub fn clear_cmap_cache() {
+    CMAP_CACHE.lock_or_recover().clear();
+}
+
+/// Returns the current number of entries in the global CMap cache.
+pub fn cmap_cache_size() -> usize {
+    CMAP_CACHE.lock_or_recover().len()
 }
 
 /// Lazy-loaded ToUnicode CMap wrapper.
@@ -261,7 +280,7 @@ impl LazyCMap {
     /// Returns the parsed CMap, loading and caching it on first access.
     pub fn get(&self) -> Option<Arc<CMap>> {
         // Step 1: Check local cache
-        let mut parsed_guard = self.parsed.lock().unwrap();
+        let mut parsed_guard = self.parsed.lock_or_recover();
 
         if let Some(cached) = parsed_guard.as_ref() {
             // Already parsed locally, return immediately
@@ -270,7 +289,7 @@ impl LazyCMap {
 
         // Step 2: Check global cache
         {
-            let global = CMAP_CACHE.lock().unwrap();
+            let mut global = CMAP_CACHE.lock_or_recover();
             if let Some(cached) = global.get(&self.cache_key) {
                 let arc = Arc::clone(cached);
                 // Update local cache for next access
@@ -290,8 +309,8 @@ impl LazyCMap {
 
                 // Update global cache
                 {
-                    let mut global = CMAP_CACHE.lock().unwrap();
-                    global.insert(self.cache_key.clone(), Arc::clone(&cmap_arc));
+                    let mut global = CMAP_CACHE.lock_or_recover();
+                    global.insert(self.cache_key, Arc::clone(&cmap_arc));
                 }
 
                 log::debug!("CMap parsed and cached (stream hash {:?})", self.cache_key);

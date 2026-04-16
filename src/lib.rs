@@ -271,6 +271,9 @@ pub use fonts::global_cache::{
     clear_global_font_cache, global_font_cache_stats, set_global_font_cache_capacity,
 };
 
+// Global CMap cache management
+pub use fonts::cmap::{clear_cmap_cache, cmap_cache_size};
+
 #[cfg(feature = "parallel")]
 pub use parallel::{extract_all_markdown_parallel, extract_all_text_parallel, ParallelExtractor};
 
