@@ -20,6 +20,7 @@ regex_creation_in_loops = "allow"
 manual_find = "allow"
 match_like_matches_macro = "allow"
 collapsible_match = "allow"
+manual_checked_ops = "allow"
 
 [package]
 name = "pdf_oxide"
