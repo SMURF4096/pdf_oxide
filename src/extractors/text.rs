@@ -1446,6 +1446,28 @@ impl TjBuffer {
         // Avoids String allocation in decode_text_to_unicode (2 allocations per call).
         if let Some(font) = font {
             if font.subtype != "Type0" {
+                // #317 UTF-8-in-simple-font detection — see long comment in
+                // `append_advance_buffer`. Some producers emit UTF-8 byte
+                // sequences inside PDF string literals for fonts that only
+                // declare a Latin encoding with no ToUnicode CMap. When the
+                // entire byte slice is valid UTF-8 whose decoded chars
+                // include at least one non-Latin-1 codepoint, treat it as
+                // UTF-8 so we recover Cyrillic / Greek / CJK instead of
+                // Latin-1 mojibake.
+                if font.to_unicode.is_none() && bytes.len() >= 2 {
+                    let has_high = bytes.iter().any(|&b| b >= 0x80);
+                    if has_high {
+                        if let Ok(decoded) = std::str::from_utf8(bytes) {
+                            if decoded.chars().any(|c| c as u32 > 0xFF) {
+                                for ch in decoded.chars() {
+                                    self.unicode.push(ch);
+                                }
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+
                 let table = font.get_byte_to_char_table();
                 for &byte in bytes {
                     let c = table[byte as usize];
@@ -5794,6 +5816,49 @@ impl TextExtractor {
 
         let total_width = if let Some(font) = font {
             if font.subtype != "Type0" {
+                // #317: UTF-8-in-simple-font detection (same heuristic as
+                // `append_advance_buffer`). Some producers emit raw UTF-8
+                // bytes inside PDF string literals when the font declares
+                // only a Latin encoding and no ToUnicode CMap. Byte-by-byte
+                // Latin decoding produces mojibake. When the slice is valid
+                // UTF-8 with at least one non-Latin-1 codepoint, decode as
+                // UTF-8 so non-Latin scripts (Cyrillic, Greek, CJK, …) come
+                // through as their intended codepoints.
+                if font.to_unicode.is_none() && text.len() >= 2 {
+                    let has_high = text.iter().any(|&b| b >= 0x80);
+                    if has_high {
+                        if let Ok(decoded) = std::str::from_utf8(text) {
+                            if decoded.chars().any(|c| c as u32 > 0xFF) {
+                                let width_table = font.get_byte_to_width_table();
+                                let mut w_sum = 0.0f32;
+                                for &byte in text {
+                                    let mut w = width_table[byte as usize] * fs_factor * hs_factor;
+                                    w += cs_hs;
+                                    if byte == 0x20 {
+                                        w += ws_hs;
+                                    }
+                                    w_sum += w;
+                                }
+                                let char_count = decoded.chars().count();
+                                if char_count > 0 {
+                                    let per_char = w_sum / char_count as f32;
+                                    for ch in decoded.chars() {
+                                        buffer.unicode.push(ch);
+                                        buffer.char_widths.push(per_char);
+                                    }
+                                }
+                                // Fall through to the matrix update at the
+                                // bottom of the function via `w_sum`.
+                                let state = self.state_stack.current_mut();
+                                let text_matrix = state.text_matrix;
+                                state.text_matrix.e += w_sum * text_matrix.a;
+                                state.text_matrix.f += w_sum * text_matrix.b;
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+
                 // Fast path: single pass over bytes for both Unicode and width
                 let char_table = font.get_byte_to_char_table();
                 let width_table = font.get_byte_to_width_table();
@@ -5910,6 +5975,74 @@ impl TextExtractor {
 
         let total_width = if let Some(font) = font {
             if font.subtype != "Type0" {
+                // #317: UTF-8-in-simple-font detection.
+                //
+                // Some producers (Russian CAD exporters, MS Office via
+                // non-English locales) emit UTF-8 byte sequences inside PDF
+                // string literals for a font that only declares a Latin
+                // encoding (WinAnsi, StandardEncoding, MacRoman) and no
+                // ToUnicode CMap. Byte-by-byte decoding through the Latin
+                // encoding produces mojibake like `ÐÐ¸ÑÑ` for "Лист".
+                //
+                // Heuristic: when the font has no ToUnicode and the entire
+                // text slice is a valid UTF-8 sequence whose decoded
+                // codepoints contain at least one non-Latin-1 character
+                // (U+0100 and above), treat the slice as UTF-8 directly.
+                // The non-Latin-1 gate prevents mis-interpreting genuine
+                // Latin-1 Supplement content (`Résumé`, etc.) — those
+                // decode entirely into U+0000..U+00FF and are left alone.
+                let utf8_width: Option<f32> = if font.to_unicode.is_none() && text.len() >= 2 {
+                    let has_high = text.iter().any(|&b| b >= 0x80);
+                    if has_high {
+                        if let Ok(decoded) = std::str::from_utf8(text) {
+                            let has_non_latin1 = decoded.chars().any(|c| c as u32 > 0xFF);
+                            if has_non_latin1 {
+                                let width_table = font.get_byte_to_width_table();
+                                let mut w_sum = 0.0f32;
+                                for &byte in text {
+                                    let mut w = width_table[byte as usize] * fs_factor * hs_factor;
+                                    w += cs_hs;
+                                    if byte == 0x20 {
+                                        w += ws_hs;
+                                    }
+                                    w_sum += w;
+                                }
+                                let char_count = decoded.chars().count();
+                                if char_count > 0 {
+                                    let per_char = w_sum / char_count as f32;
+                                    for ch in decoded.chars() {
+                                        buffer.unicode.push(ch);
+                                        buffer.char_widths.push(per_char);
+                                    }
+                                }
+                                log::debug!(
+                                    "#317 UTF-8 sniff: decoded {} bytes as {} chars (non-Latin-1 run detected) in font '{}'",
+                                    text.len(),
+                                    char_count,
+                                    font.base_font
+                                );
+                                Some(w_sum)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                if let Some(w) = utf8_width {
+                    buffer.accumulated_width += w;
+                    let state = self.state_stack.current_mut();
+                    let text_matrix = state.text_matrix;
+                    state.text_matrix.e += w * text_matrix.a;
+                    state.text_matrix.f += w * text_matrix.b;
+                    return Ok(());
+                }
+
                 let char_table = font.get_byte_to_char_table();
                 let width_table = font.get_byte_to_width_table();
                 let mut w_sum = 0.0f32;

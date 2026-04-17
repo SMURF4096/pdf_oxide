@@ -201,7 +201,6 @@ fn utf8_in_winansi_pdf() -> Vec<u8> {
 }
 
 #[test]
-#[ignore = "#317 — requires UTF-8 sniffing in the WinAnsi extraction path. Left as a precise reproducer; flip the ignore off to confirm the bug persists once a fix is attempted."]
 fn utf8_bytes_under_winansi_font_decode_as_cyrillic() {
     let pdf = utf8_in_winansi_pdf();
     let tmp = tempfile::NamedTempFile::new().expect("temp");
