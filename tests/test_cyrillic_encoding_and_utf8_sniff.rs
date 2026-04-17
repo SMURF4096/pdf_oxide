@@ -139,13 +139,11 @@ fn cyrillic_differences_encoding_yields_unicode_cyrillic() {
 /// under a plain WinAnsi font (no /Differences, no ToUnicode). This is a
 /// spec-violating but real-world pattern — some Russian CAD exporters
 /// and report generators do this. pdftotext recovers the Cyrillic text;
-/// our extractor currently emits Latin-1 mojibake (the #317 symptom).
+/// we now recover it too via post-extraction UTF-8 mojibake repair.
 ///
-/// This variant is `#[ignore]` because fixing it requires opinionated
-/// post-extraction UTF-8 sniffing that could false-positive on genuine
-/// Latin-1 content. Left in place as a precise reproducer so whoever
-/// gets access to `issue20232.pdf` (or picks this up for
-/// auto-detection) can flip the `#[ignore]` off and see it fail.
+/// The test below (`utf8_bytes_under_winansi_font_decode_as_cyrillic`) is
+/// enabled and asserts the Cyrillic codepoints are present, with no Ð
+/// (U+00D0) mojibake leaking through.
 fn utf8_in_winansi_pdf() -> Vec<u8> {
     // "Лист" in UTF-8: 0xD0 0x9B 0xD0 0xB8 0xD1 0x81 0xD1 0x82
     let content: &[u8] = b"BT /F0 12 Tf 100 800 Td (\xD0\x9B\xD0\xB8\xD1\x81\xD1\x82) Tj ET\n";

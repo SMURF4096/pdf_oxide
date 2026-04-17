@@ -172,14 +172,22 @@ impl BoundedObjectCache {
                 .saturating_sub(Self::estimate_size(old_val));
         }
 
-        // Evict oldest entries until under budget
+        // Evict oldest entries until under budget. If the front of the
+        // queue is the key we're about to (re)insert, skip past it so a
+        // larger replacement doesn't leave the cache over budget — keep
+        // evicting other entries instead.
+        let mut skipped_self = false;
         while self.current_bytes + entry_size > self.max_bytes {
             match self.insertion_order.pop_front() {
                 Some(old_key) => {
-                    // Don't evict the key we're about to insert
                     if old_key == key {
+                        if skipped_self {
+                            self.insertion_order.push_front(old_key);
+                            break;
+                        }
                         self.insertion_order.push_back(old_key);
-                        break;
+                        skipped_self = true;
+                        continue;
                     }
                     if let Some(old_val) = self.map.remove(&old_key) {
                         self.current_bytes = self
@@ -4330,6 +4338,12 @@ impl PdfDocument {
     /// "Résumé" — which also decodes as valid UTF-8 but stays entirely
     /// within U+0000..U+00FF — is left alone.
     fn repair_utf8_mojibake(input: &str) -> String {
+        // Fast-path: if the string contains no Latin-1 Supplement codepoints
+        // (U+0080..=U+00FF), there is nothing to repair. This avoids the
+        // O(n) `Vec<char>` allocation on every ASCII-only page.
+        if !input.chars().any(|c| matches!(c as u32, 0x80..=0xFF)) {
+            return input.to_string();
+        }
         let mut out = String::with_capacity(input.len());
         let chars: Vec<char> = input.chars().collect();
         let mut i = 0;

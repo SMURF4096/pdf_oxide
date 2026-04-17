@@ -27,11 +27,12 @@ impl<T> MutexExt<T> for Mutex<T> {
     }
 }
 
-/// Entry-count-bounded cache with FIFO eviction.
+/// Entry-count-bounded cache with LRU-style eviction.
 ///
 /// Used for caches where estimating per-entry byte size is impractical
-/// (e.g., `Vec<TextSpan>`, `Vec<PdfImage>`). Evicts the oldest entry
-/// when the entry count exceeds `max_entries`.
+/// (e.g., `Vec<TextSpan>`, `Vec<PdfImage>`). On insert, when at capacity,
+/// the least-recently-used entry is evicted. `get()` promotes the accessed
+/// key to the most-recently-used position so hot entries survive eviction.
 pub(crate) struct BoundedEntryCache<K: Eq + std::hash::Hash + Copy, V> {
     map: HashMap<K, V>,
     insertion_order: std::collections::VecDeque<K>,
@@ -49,7 +50,6 @@ impl<K: Eq + std::hash::Hash + Copy, V> BoundedEntryCache<K, V> {
 
     pub(crate) fn get(&mut self, key: &K) -> Option<&V> {
         if self.map.contains_key(key) {
-            // Move to back for LRU — frequently accessed entries survive eviction
             if let Some(pos) = self.insertion_order.iter().position(|k| k == key) {
                 self.insertion_order.remove(pos);
             }

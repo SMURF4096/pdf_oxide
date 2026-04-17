@@ -161,7 +161,7 @@ fn compute_stream_hash(data: &[u8]) -> CMapKey {
 // - Maps from stream hash to Arc<CMap> (reference-counted parsed CMap)
 // - Arc allows efficient sharing without cloning
 // - Mutex ensures thread-safe access
-// - Bounded at MAX_CMAP_CACHE_ENTRIES with FIFO eviction
+// - Bounded at MAX_CMAP_CACHE_ENTRIES with LRU-style eviction (`get` promotes hot entries)
 //
 // Usage:
 // When a LazyCMap is first accessed, it checks this cache before parsing.

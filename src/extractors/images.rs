@@ -1067,14 +1067,17 @@ fn extract_lab_whitepoint(cs_obj: &crate::object::Object) -> [f64; 3] {
         Some(crate::object::Object::Array(a)) if a.len() >= 3 => a,
         _ => return D65,
     };
-    let f = |obj: &crate::object::Object| -> f64 {
+    let f = |obj: &crate::object::Object| -> Option<f64> {
         match obj {
-            crate::object::Object::Real(v) => *v,
-            crate::object::Object::Integer(v) => *v as f64,
-            _ => 1.0,
+            crate::object::Object::Real(v) => Some(*v),
+            crate::object::Object::Integer(v) => Some(*v as f64),
+            _ => None,
         }
     };
-    [f(&wp[0]), f(&wp[1]), f(&wp[2])]
+    match (f(&wp[0]), f(&wp[1]), f(&wp[2])) {
+        (Some(x), Some(y), Some(z)) => [x, y, z],
+        _ => D65,
+    }
 }
 
 /// Convert a Lab-encoded palette to sRGB.
@@ -1101,6 +1104,14 @@ pub fn lab_palette_to_rgb(palette: &[u8], white: [f64; 3]) -> Vec<u8> {
     rgb
 }
 
+// NOTE: The XYZ→linear-sRGB matrix below assumes a D65 whitepoint. Lab CIEs
+// whose `/WhitePoint` is non-D65 (D50 is common in print workflows) would
+// strictly need chromatic adaptation (e.g., Bradford) from the source
+// whitepoint to D65 before the sRGB matrix. We intentionally omit that for
+// now — the vast majority of PDF `/Lab` spaces we encounter are D65 — but
+// the caller's `white` is still used to scale `xw, yw, zw` so D65 and
+// near-D65 whitepoints produce correct output. Non-D65 spaces will have a
+// minor chromatic-adaptation error until this is revisited.
 fn lab_pixel_to_rgb(l_byte: u8, a_byte: u8, b_byte: u8, white: [f64; 3]) -> [u8; 3] {
     let l_star = l_byte as f64 / 255.0 * 100.0;
     let a_star = a_byte as f64 - 128.0;
@@ -1141,6 +1152,11 @@ fn srgb_gamma(lin: f64) -> u8 {
     (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8
 }
 
+/// Convert a raw CMYK byte stream (4 bytes per pixel) to straight RGB bytes
+/// (3 bytes per pixel) using the naive per-pixel conversion.
+///
+/// This is a non-ICC conversion and does not handle Adobe-inverted JPEG CMYK;
+/// for JPEG-encoded CMYK streams use `decode_adobe_cmyk_jpeg` instead.
 pub fn cmyk_to_rgb(cmyk: &[u8]) -> Vec<u8> {
     let mut rgb = Vec::with_capacity((cmyk.len() / 4) * 3);
 

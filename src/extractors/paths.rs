@@ -264,15 +264,16 @@ impl PathExtractor {
     /// Compute a rounded fingerprint of the current CTM for dedup purposes.
     /// Translation components (e, f) are rounded to 0.1 while scale/rotation
     /// components (a-d) are rounded to 0.01, balancing dedup accuracy with
-    /// floating-point tolerance.
+    /// floating-point tolerance. Uses banker's-style `f32::round` so negative
+    /// values round symmetrically rather than truncating toward zero.
     fn ctm_fingerprint(ctm: &Matrix) -> [i32; 6] {
         [
-            (ctm.a * 100.0) as i32,
-            (ctm.b * 100.0) as i32,
-            (ctm.c * 100.0) as i32,
-            (ctm.d * 100.0) as i32,
-            (ctm.e * 10.0) as i32,
-            (ctm.f * 10.0) as i32,
+            (ctm.a * 100.0).round() as i32,
+            (ctm.b * 100.0).round() as i32,
+            (ctm.c * 100.0).round() as i32,
+            (ctm.d * 100.0).round() as i32,
+            (ctm.e * 10.0).round() as i32,
+            (ctm.f * 10.0).round() as i32,
         ]
     }
 
