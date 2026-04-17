@@ -839,6 +839,17 @@ fn resolve_indexed_palette(
         }
     }
 
+    // #337 Phase 1: convert device-independent colour-space palettes to
+    // RGB before returning. The expander downstream assumes palette bytes
+    // are already in the output colour space; without this conversion
+    // Lab triples are mis-interpreted as raw RGB, producing perceptually
+    // wrong colours.
+    if matches!(base_cs, ColorSpace::Lab) {
+        let white = extract_lab_whitepoint(&base_obj);
+        let rgb_palette = lab_palette_to_rgb(&palette_bytes, white);
+        return Ok(Some((PixelFormat::RGB, rgb_palette)));
+    }
+
     Ok(Some((base_fmt, palette_bytes)))
 }
 
@@ -1021,6 +1032,101 @@ pub(crate) fn cmyk_pixel_to_rgb(c: u8, m: u8, y: u8, k: u8) -> [u8; 3] {
 }
 
 /// Convert CMYK pixel bytes to RGB.
+/// Extract `/WhitePoint` from a Lab colour-space PDF object.
+///
+/// The object is `[/Lab << /WhitePoint [Xw Yw Zw] >>]`. Returns the
+/// whitepoint as `[Xw, Yw, Zw]`, falling back to D65 if absent.
+fn extract_lab_whitepoint(cs_obj: &crate::object::Object) -> [f64; 3] {
+    const D65: [f64; 3] = [0.9505, 1.0, 1.0890];
+    let arr = match cs_obj {
+        crate::object::Object::Array(a) => a,
+        _ => return D65,
+    };
+    if arr.len() < 2 {
+        return D65;
+    }
+    let dict = match &arr[1] {
+        crate::object::Object::Dictionary(d) => d,
+        _ => return D65,
+    };
+    let wp = match dict.get("WhitePoint") {
+        Some(crate::object::Object::Array(a)) if a.len() >= 3 => a,
+        _ => return D65,
+    };
+    let f = |obj: &crate::object::Object| -> f64 {
+        match obj {
+            crate::object::Object::Real(v) => *v,
+            crate::object::Object::Integer(v) => *v as f64,
+            _ => 1.0,
+        }
+    };
+    [f(&wp[0]), f(&wp[1]), f(&wp[2])]
+}
+
+/// Convert a Lab-encoded palette to sRGB.
+///
+/// Each entry is 3 bytes: L* (byte 0), a* (byte 1), b* (byte 2).
+/// Decoding per PDF 32000-1:2008 §8.6.5.4:
+///   L* = byte_0 / 255.0 × 100.0
+///   a* = byte_1 − 128.0   (default /Range [−128 127])
+///   b* = byte_2 − 128.0
+///
+/// Then Lab → XYZ (whitepoint-relative) → sRGB with standard gamma.
+pub fn lab_palette_to_rgb(palette: &[u8], white: [f64; 3]) -> Vec<u8> {
+    let mut rgb = Vec::with_capacity(palette.len());
+    for chunk in palette.chunks(3) {
+        if chunk.len() < 3 {
+            rgb.extend_from_slice(&[0, 0, 0]);
+            continue;
+        }
+        let [r, g, b] = lab_pixel_to_rgb(chunk[0], chunk[1], chunk[2], white);
+        rgb.push(r);
+        rgb.push(g);
+        rgb.push(b);
+    }
+    rgb
+}
+
+fn lab_pixel_to_rgb(l_byte: u8, a_byte: u8, b_byte: u8, white: [f64; 3]) -> [u8; 3] {
+    let l_star = l_byte as f64 / 255.0 * 100.0;
+    let a_star = a_byte as f64 - 128.0;
+    let b_star = b_byte as f64 - 128.0;
+
+    let fy = (l_star + 16.0) / 116.0;
+    let fx = a_star / 500.0 + fy;
+    let fz = fy - b_star / 200.0;
+
+    let [xw, yw, zw] = white;
+    let x = xw * f_inv(fx);
+    let y = yw * f_inv(fy);
+    let z = zw * f_inv(fz);
+
+    // XYZ → linear sRGB (D65 matrix, IEC 61966-2-1:1999)
+    let r_lin = 3.2406254773 * x - 1.5372079722 * y - 0.4986285987 * z;
+    let g_lin = -0.9689307147 * x + 1.8757560609 * y + 0.0415175580 * z;
+    let b_lin = 0.0557101204 * x - 0.2040210506 * y + 1.0569959423 * z;
+
+    [srgb_gamma(r_lin), srgb_gamma(g_lin), srgb_gamma(b_lin)]
+}
+
+fn f_inv(t: f64) -> f64 {
+    const DELTA: f64 = 6.0 / 29.0;
+    if t > DELTA {
+        t * t * t
+    } else {
+        3.0 * DELTA * DELTA * (t - 4.0 / 29.0)
+    }
+}
+
+fn srgb_gamma(lin: f64) -> u8 {
+    let v = if lin <= 0.0031308 {
+        12.92 * lin
+    } else {
+        1.055 * lin.powf(1.0 / 2.4) - 0.055
+    };
+    (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8
+}
+
 pub fn cmyk_to_rgb(cmyk: &[u8]) -> Vec<u8> {
     let mut rgb = Vec::with_capacity((cmyk.len() / 4) * 3);
 
@@ -1506,5 +1612,100 @@ mod indexed_tests {
             !msg.contains("Invalid RGB image dimensions"),
             "must not fall through to misleading RGB-dimension error, got: {msg}"
         );
+    }
+
+    // #337 Lab→XYZ→sRGB conversion tests
+
+    #[test]
+    fn lab_pixel_mid_gray() {
+        // Lab(50, 0, 0) = perceptual mid-gray → sRGB ~(119, 119, 119).
+        // Byte encoding: L=128, a=128, b=128.
+        let d65: [f64; 3] = [0.9505, 1.0, 1.0890];
+        let [r, g, b] = super::lab_pixel_to_rgb(128, 128, 128, d65);
+        for (label, v, expected) in [("R", r, 119), ("G", g, 119), ("B", b, 119)] {
+            let diff = (v as i32 - expected).abs();
+            assert!(diff <= 3, "Lab(50,0,0) {label}: expected ~{expected}, got {v} (Δ={diff})");
+        }
+    }
+
+    #[test]
+    fn lab_pixel_white() {
+        // Lab(100, 0, 0) = white → sRGB ~(255, 255, 255).
+        // Byte encoding: L=255, a=128, b=128.
+        let d65: [f64; 3] = [0.9505, 1.0, 1.0890];
+        let [r, g, b] = super::lab_pixel_to_rgb(255, 128, 128, d65);
+        for (label, v) in [("R", r), ("G", g), ("B", b)] {
+            assert!(v >= 250, "Lab(100,0,0) {label}: expected ~255, got {v}");
+        }
+    }
+
+    #[test]
+    fn lab_pixel_black() {
+        // Lab(0, 0, 0) = black → sRGB ~(0, 0, 0).
+        // Byte encoding: L=0, a=128, b=128.
+        let d65: [f64; 3] = [0.9505, 1.0, 1.0890];
+        let [r, g, b] = super::lab_pixel_to_rgb(0, 128, 128, d65);
+        for (label, v) in [("R", r), ("G", g), ("B", b)] {
+            assert!(v <= 5, "Lab(0,0,0) {label}: expected ~0, got {v}");
+        }
+    }
+
+    #[test]
+    fn lab_pixel_red_tint() {
+        // Lab(50, 80, 0) has a strong red-magenta tint.
+        // Byte encoding: L=128, a=208 (128+80), b=128.
+        let d65: [f64; 3] = [0.9505, 1.0, 1.0890];
+        let [r, g, b] = super::lab_pixel_to_rgb(128, 208, 128, d65);
+        assert!(r > g + 50, "Lab(50,80,0) should have R >> G: R={r}, G={g}");
+        assert!(r > b, "Lab(50,80,0) should have R > B: R={r}, B={b}");
+    }
+
+    #[test]
+    fn lab_palette_round_trip() {
+        // 3-entry Lab palette → RGB palette should have 9 bytes.
+        let d65: [f64; 3] = [0.9505, 1.0, 1.0890];
+        let palette: Vec<u8> = vec![
+            0, 128, 128, // black
+            128, 128, 128, // mid-gray
+            255, 128, 128, // white
+        ];
+        let rgb = super::lab_palette_to_rgb(&palette, d65);
+        assert_eq!(rgb.len(), 9, "3 Lab entries → 9 RGB bytes");
+        // Black entry: all near 0
+        assert!(rgb[0] <= 5 && rgb[1] <= 5 && rgb[2] <= 5);
+        // White entry: all near 255
+        assert!(rgb[6] >= 250 && rgb[7] >= 250 && rgb[8] >= 250);
+    }
+
+    #[test]
+    fn extract_lab_whitepoint_d65() {
+        use crate::object::Object;
+        let cs = Object::Array(vec![
+            Object::Name("Lab".to_string()),
+            Object::Dictionary({
+                let mut d = std::collections::HashMap::new();
+                d.insert(
+                    "WhitePoint".to_string(),
+                    Object::Array(vec![
+                        Object::Real(0.9505),
+                        Object::Real(1.0),
+                        Object::Real(1.0890),
+                    ]),
+                );
+                d
+            }),
+        ]);
+        let wp = super::extract_lab_whitepoint(&cs);
+        assert!((wp[0] - 0.9505).abs() < 1e-6);
+        assert!((wp[1] - 1.0).abs() < 1e-6);
+        assert!((wp[2] - 1.0890).abs() < 1e-6);
+    }
+
+    #[test]
+    fn extract_lab_whitepoint_missing_falls_back_to_d65() {
+        use crate::object::Object;
+        let cs = Object::Name("Lab".to_string());
+        let wp = super::extract_lab_whitepoint(&cs);
+        assert!((wp[0] - 0.9505).abs() < 1e-6);
     }
 }
