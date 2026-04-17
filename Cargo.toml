@@ -98,10 +98,10 @@ tiff = "0.11"  # TIFF support including CCITT decompression
 fax = "0.2"   # CCITT Group 3/4 decompression for scanned PDFs (more lenient with malformed EOFB)
 
 # Encryption support
-aes = "0.8"          # AES encryption for PDF 1.6+
-cbc = "0.1"          # CBC mode for AES
-md-5 = "0.10"        # MD5 for key derivation
-sha2 = "0.10"        # SHA-256 for newer encryption
+aes = "0.9"          # AES encryption for PDF 1.6+
+cbc = "0.2"          # CBC mode for AES
+md-5 = "0.11"        # MD5 for key derivation
+sha2 = "0.11"        # SHA-256 for newer encryption
 stringprep = "0.1"   # SASLprep for Unicode PDF passwords (R>=5)
 
 # Digital signatures (optional)
@@ -113,7 +113,7 @@ spki = { version = "0.7", optional = true }           # SubjectPublicKeyInfo
 pkcs1 = { version = "0.7", optional = true }          # PKCS#1 RSA format
 pkcs8 = { version = "0.10", optional = true }         # PKCS#8 private keys
 signature = { version = "2.2", optional = true }      # Signature traits
-sha1 = { version = "0.10", optional = true }          # SHA-1 for legacy signatures
+sha1 = { version = "0.11", optional = true }          # SHA-1 for legacy signatures
 
 # Parallel extraction
 rayon = { version = "1.12", optional = true }
