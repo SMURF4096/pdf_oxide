@@ -152,7 +152,7 @@ pub struct PathExtractor {
     /// explosion when multiple parent XObjects reference the same children
     /// (e.g., chart/plot pages where 9 top-level Form XObjects each contain
     /// 25-42 nested `Do` operators pointing to the same shared XObjects).
-    processed_xobjects: std::collections::HashSet<crate::object::ObjectRef>,
+    processed_xobjects: std::collections::HashSet<(crate::object::ObjectRef, [i32; 6])>,
     /// Maximum XObject nesting depth (prevent stack overflow)
     max_xobject_depth: usize,
     /// Cached XObject name → ObjectRef mapping, built on first lookup.
@@ -261,8 +261,24 @@ impl PathExtractor {
         self.cached_xobject_dict.as_ref()?.get(name).copied()
     }
 
+    /// Compute a rounded fingerprint of the current CTM for dedup purposes.
+    /// Translation components (e, f) are rounded to 0.1 while scale/rotation
+    /// components (a-d) are rounded to 0.01, balancing dedup accuracy with
+    /// floating-point tolerance.
+    fn ctm_fingerprint(ctm: &Matrix) -> [i32; 6] {
+        [
+            (ctm.a * 100.0) as i32,
+            (ctm.b * 100.0) as i32,
+            (ctm.c * 100.0) as i32,
+            (ctm.d * 100.0) as i32,
+            (ctm.e * 10.0) as i32,
+            (ctm.f * 10.0) as i32,
+        ]
+    }
+
     pub(crate) fn can_process_xobject(&self, xobject_ref: crate::object::ObjectRef) -> bool {
-        if self.processed_xobjects.contains(&xobject_ref) {
+        let key = (xobject_ref, Self::ctm_fingerprint(&self.ctm));
+        if self.processed_xobjects.contains(&key) {
             return false;
         }
         if self.xobject_processing_stack.contains(&xobject_ref) {
@@ -282,10 +298,11 @@ impl PathExtractor {
 
     /// Pop an XObject from the processing stack after successful processing.
     /// Marks it as permanently processed to prevent re-processing from
-    /// other parent XObjects.
+    /// other parent XObjects at the same CTM.
     pub(crate) fn pop_xobject(&mut self) {
         if let Some(ref_obj) = self.xobject_processing_stack.pop() {
-            self.processed_xobjects.insert(ref_obj);
+            let key = (ref_obj, Self::ctm_fingerprint(&self.ctm));
+            self.processed_xobjects.insert(key);
         }
     }
 

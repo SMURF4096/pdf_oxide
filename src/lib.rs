@@ -137,6 +137,9 @@
 // Error handling
 pub mod error;
 
+// General-purpose caching utilities
+pub(crate) mod cache;
+
 // Core PDF parsing
 pub mod document;
 pub mod lexer;

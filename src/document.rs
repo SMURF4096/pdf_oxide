@@ -23,26 +23,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
 
-/// Extension trait for Mutex to recover from poisoned locks.
-///
-/// When a thread panics while holding a Mutex, the lock becomes "poisoned"
-/// and the standard `.lock().unwrap()` would cascade panics. This trait
-/// provides `.lock_or_recover()` which discards the poison flag and returns
-/// the inner data, since the Mutexes in PdfDocument protect caches and
-/// bookkeeping (not safety-critical invariants).
-pub(crate) trait MutexExt<T> {
-    /// Lock the mutex, recovering from poison if needed.
-    fn lock_or_recover(&self) -> std::sync::MutexGuard<'_, T>;
-}
-
-impl<T> MutexExt<T> for Mutex<T> {
-    fn lock_or_recover(&self) -> std::sync::MutexGuard<'_, T> {
-        self.lock().unwrap_or_else(|poisoned| {
-            log::debug!("Mutex was poisoned, recovering");
-            poisoned.into_inner()
-        })
-    }
-}
+// Re-export MutexExt from cache module for local use and backward compatibility
+pub(crate) use crate::cache::MutexExt;
 
 /// Reading order mode for span extraction.
 ///
@@ -142,63 +124,8 @@ const DEFAULT_OBJECT_CACHE_MAX_BYTES: usize = 64 * 1024 * 1024;
 /// Default maximum number of entries for the XObject span/image caches.
 const DEFAULT_XOBJECT_CACHE_MAX_ENTRIES: usize = 1024;
 
-/// Entry-count-bounded cache with FIFO eviction.
-///
-/// Used for caches where estimating per-entry byte size is impractical
-/// (e.g., `Vec<TextSpan>`, `Vec<PdfImage>`). Evicts the oldest entry
-/// when the entry count exceeds `max_entries`.
-pub(crate) struct BoundedEntryCache<K: Eq + std::hash::Hash + Copy, V> {
-    map: HashMap<K, V>,
-    insertion_order: std::collections::VecDeque<K>,
-    max_entries: usize,
-}
-
-impl<K: Eq + std::hash::Hash + Copy, V> BoundedEntryCache<K, V> {
-    pub(crate) fn new(max_entries: usize) -> Self {
-        Self {
-            map: HashMap::new(),
-            insertion_order: std::collections::VecDeque::new(),
-            max_entries,
-        }
-    }
-
-    pub(crate) fn get(&mut self, key: &K) -> Option<&V> {
-        if self.map.contains_key(key) {
-            // Move to back for LRU — frequently accessed entries survive eviction
-            if let Some(pos) = self.insertion_order.iter().position(|k| k == key) {
-                self.insertion_order.remove(pos);
-            }
-            self.insertion_order.push_back(*key);
-        }
-        self.map.get(key)
-    }
-
-    pub(crate) fn insert(&mut self, key: K, value: V) {
-        use std::collections::hash_map::Entry;
-        // Short-circuit on re-insert: replace value without evicting an unrelated entry
-        if let Entry::Occupied(mut e) = self.map.entry(key) {
-            e.insert(value);
-            return;
-        }
-        // Evict oldest entries if at capacity
-        while self.map.len() >= self.max_entries && !self.insertion_order.is_empty() {
-            if let Some(old_key) = self.insertion_order.pop_front() {
-                self.map.remove(&old_key);
-            }
-        }
-        self.map.insert(key, value);
-        self.insertion_order.push_back(key);
-    }
-
-    pub(crate) fn clear(&mut self) {
-        self.map.clear();
-        self.insertion_order.clear();
-    }
-
-    pub(crate) fn len(&self) -> usize {
-        self.map.len()
-    }
-}
+// Re-export BoundedEntryCache from cache module for local use and backward compatibility
+pub(crate) use crate::cache::BoundedEntryCache;
 
 /// Size-bounded object cache with FIFO eviction.
 ///

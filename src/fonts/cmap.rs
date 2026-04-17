@@ -22,7 +22,7 @@
 //!   - Support for 100k+ entry CMaps
 //!   - 20-40% faster parsing performance
 
-use crate::document::MutexExt;
+use crate::cache::MutexExt;
 use crate::error::Result;
 use regex::Regex;
 use std::collections::hash_map::DefaultHasher;
@@ -178,8 +178,8 @@ fn compute_stream_hash(data: &[u8]) -> CMapKey {
 const MAX_CMAP_CACHE_ENTRIES: usize = 1024;
 
 lazy_static::lazy_static! {
-    static ref CMAP_CACHE: Mutex<crate::document::BoundedEntryCache<CMapKey, Arc<CMap>>> =
-        Mutex::new(crate::document::BoundedEntryCache::new(MAX_CMAP_CACHE_ENTRIES));
+    static ref CMAP_CACHE: Mutex<crate::cache::BoundedEntryCache<CMapKey, Arc<CMap>>> =
+        Mutex::new(crate::cache::BoundedEntryCache::new(MAX_CMAP_CACHE_ENTRIES));
 }
 
 /// Clear the global CMap cache.
