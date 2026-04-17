@@ -1443,4 +1443,72 @@ mod indexed_tests {
             assert!(result.is_ok(), "bpc={bpc} must be accepted, got {result:?}");
         }
     }
+
+    // Regression test for #336. Per ISO 32000-1 §8.6.6.3, the lookup element of
+    // `[/Indexed base hival lookup]` must be either a byte string or a stream.
+    // Historical behaviour when it was neither: `resolve_indexed_palette` returned
+    // `Ok(None)` and `extract_image_from_xobject` silently fell back to treating
+    // the raw 1-byte/pixel index stream as 3-byte/pixel RGB, producing the
+    // misleading "Invalid RGB image dimensions" error. The fix returns an
+    // explicit `Error::Image("Unable to resolve Indexed color space palette")`.
+    #[test]
+    fn resolve_indexed_palette_array_lookup_returns_none() {
+        use crate::object::Object;
+        let cs = Object::Array(vec![
+            Object::Name("Indexed".to_string()),
+            Object::Name("DeviceRGB".to_string()),
+            Object::Integer(1),
+            // Lookup as Array-of-Array (not String or Stream) — unresolvable.
+            Object::Array(vec![
+                Object::Array(vec![
+                    Object::Integer(0),
+                    Object::Integer(0),
+                    Object::Integer(0),
+                ]),
+                Object::Array(vec![
+                    Object::Integer(255),
+                    Object::Integer(255),
+                    Object::Integer(255),
+                ]),
+            ]),
+        ]);
+        assert!(resolve_indexed_palette(None, &cs).unwrap().is_none());
+    }
+
+    #[test]
+    fn extract_image_errors_when_indexed_lookup_is_array() {
+        use crate::object::Object;
+        use std::collections::HashMap;
+
+        let mut dict = HashMap::new();
+        dict.insert("Subtype".to_string(), Object::Name("Image".to_string()));
+        dict.insert("Width".to_string(), Object::Integer(2));
+        dict.insert("Height".to_string(), Object::Integer(1));
+        dict.insert("BitsPerComponent".to_string(), Object::Integer(8));
+        dict.insert(
+            "ColorSpace".to_string(),
+            Object::Array(vec![
+                Object::Name("Indexed".to_string()),
+                Object::Name("DeviceRGB".to_string()),
+                Object::Integer(1),
+                Object::Array(vec![Object::Integer(0), Object::Integer(0), Object::Integer(0)]),
+            ]),
+        );
+        let xobject = Object::Stream {
+            dict,
+            data: bytes::Bytes::from_static(&[0, 1]),
+        };
+
+        let err = extract_image_from_xobject(None, &xobject, None, None)
+            .expect_err("Indexed with Array lookup must error");
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("Unable to resolve Indexed color space palette"),
+            "error message should identify palette-resolution failure, got: {msg}"
+        );
+        assert!(
+            !msg.contains("Invalid RGB image dimensions"),
+            "must not fall through to misleading RGB-dimension error, got: {msg}"
+        );
+    }
 }
