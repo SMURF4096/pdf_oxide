@@ -2,6 +2,48 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [0.3.33] - 2026-04-16
+
+### Text extraction correctness
+
+- **ToUnicode CMap miss no longer emits ASCII-shifted ciphertext (#363, B5).** Subset Type0 fonts with Identity-H encoding and Adobe-Identity `CIDSystemInfo` (e.g. `ABCDEE+Cambria`, `XFVTFT+Cambria-Bold`) carry a ToUnicode CMap that only covers the CIDs the subset uses. When a CID missed the CMap, the old fallback chain treated the raw CID as a Unicode codepoint via Identity-H, producing ASCII-shifted ciphertext like `%B+$%8A//$2*%01*1%6APP`. Per ISO 32000-1 §9.10.2, a present ToUnicode CMap is the authoritative mapping — a miss now returns U+FFFD. Narrow scope: simple fonts and CJK Type0 are unaffected.
+
+- **Intra-word TJ kerning no longer inserts spurious spaces (#365, B8b).** LaTeX and MS Word frequently emit TJ arrays with 0.10–0.20 em inter-letter kerning inside single words (`[(diffe) -150 (rent)]`), which cleared the default threshold and produced `"diffe rent"`, `"cha nge"`, `"equivalen t"`. Three-layer fix: (1) guard in `process_tj_array_tiebreaker` suppresses `insert_space_as_span` between letter-letter boundaries below one space-glyph width; (2) guard in `should_insert_space` suppresses font-aware merging below 1.2× space-glyph width; (3) the same guard in `document::should_insert_space` for the span-joining path. Validated on 5 Kreuzberg fixtures (`nougat_047`, `nougat_029`, `nougat_040`, `pdfa_044`, `pdfa_049`) — all zero split-word patterns.
+
+- **Cyrillic / non-Latin text no longer emits UTF-8 mojibake (#317).** Some producers (Russian CAD exporters, GOST-family fonts, MS Office localized builds) emit raw UTF-8 byte sequences inside PDF string literals for fonts with only a Latin encoding and no ToUnicode CMap. Byte-by-byte Latin decoding produced mojibake (`Ð½Ðµ` for `не`). Two-layer fix: (1) in-place UTF-8 sniff at decode time when the byte slice is valid UTF-8 with non-Latin-1 codepoints; (2) post-extraction repair walk that detects runs of Latin-1 Supplement characters whose raw byte values form valid UTF-8 with non-Latin codepoints. The non-Latin-1 gate prevents false positives on genuine Latin-1 text (`Résumé`, `naïve`). Validated on `pdfs_pdfjs/issue20232.pdf` — Cyrillic now readable.
+
+- **FlateDecode partial-recovery no longer returns garbage on MS Reporting Services PDFs (#364, B6).** On `nougat_026.pdf` (Kreuzberg corpus), pages 1/2/5 returned 0 bytes because strategy 3 (deflate after 2-byte zlib-header skip) emitted 128 bytes of repeating high-bit garbage (`P\xffj!}…`) before erroring, and the unconditional partial-recovery path accepted it. New `looks_like_real_stream` heuristic validates partial output before accepting: checks for PDF operators (BT/ET/Tj/TJ), object markers, or ≥80% printable ASCII. Pages 1/2/5 now extract 848/792/321 bytes respectively.
+
+### Image extraction
+
+- **Indexed + ICCBased palette base now resolves ICC stream references (#373).** When an Indexed color space had a base like `[/ICCBased <stream_ref>]`, inner references in the base array were not resolved before `parse_color_space` read `/N`, causing it to default to N=3 instead of reading N=4 from the actual CMYK ICC profile. The palette was then read as 3-byte RGB entries instead of 4-byte CMYK entries, producing the classic diagonal-stripe artifact. Fix: recursively resolve Reference objects inside the base array before parsing. Reported by @Charltsing.
+
+- **Lab-base Indexed palettes are now colorimetrically converted to sRGB (#337, Phase 1).** `resolve_indexed_palette` previously routed Lab through `color_space_to_pixel_format` which mapped it to `PixelFormat::RGB`, reinterpreting L\*a\*b\* palette bytes as raw RGB. Now extracts `/WhitePoint` from the Lab dictionary and converts every palette entry through Lab→XYZ→sRGB (CIE f⁻¹ inverse, IEC 61966-2-1:1999 3×3 matrix, sRGB gamma). 7 unit tests pin mid-gray, white, black, red-tint, palette round-trip, and whitepoint extraction.
+
+### Memory and performance
+
+- **All internal caches bounded with FIFO eviction (PR #369, #354).** `object_cache` (64 MB byte-size cap), 5 font caches (256–512 entry caps), `xobject_spans_cache` / `form_xobject_images_cache` (1024 entry caps), and global `CMAP_CACHE` (1024 entry cap) all grew without bound during multi-page extraction — particularly severe on TeX-produced PDFs with per-page font subsets. All now use FIFO eviction via `BoundedEntryCache` / `BoundedObjectCache`. Cache utilities extracted to `src/cache.rs` to avoid cross-module coupling.
+
+- **Path extraction OOM on chart-heavy PDFs fixed (PR #369).** `PathExtractor::process_form_xobject_paths` used stack-based cycle detection but no global dedup, causing combinatorial explosion on pages with shared nested Form XObjects. Added `processed_xobjects` dedup keyed by `(ObjectRef, CTM fingerprint)` — same XObject at same position is deduplicated (the OOM fix) but same XObject at different positions processes each invocation separately (preserves repeated logos/chart legends).
+
+- **`MutexExt::lock_or_recover()`** replaces 72 `.lock().unwrap()` calls across `document.rs` and `cmap.rs` for poison resilience.
+
+### Dependencies
+
+- **RustCrypto ecosystem upgraded to cipher 0.5 (PRs #352, #295, #291).** `aes` 0.8→0.9, `cbc` 0.1→0.2, `sha2` 0.10→0.11, `sha1` 0.10→0.11, `md-5` 0.10→0.11. API migration in `src/encryption/aes.rs`: `BlockEncryptMut`/`BlockDecryptMut` → `BlockModeEncrypt`/`BlockModeDecrypt`, `encrypt_padded_mut`/`decrypt_padded_mut` → `encrypt_padded`/`decrypt_padded`, key/IV conversion via `try_into().unwrap()`.
+
+### Test suite
+
+- **13 dead/stale ignored tests removed.** 5 `test_space_decision_*` tests that tested removed API surface (from a prior refactoring) and 5 empty email-citation placeholder stubs deleted. 2 bold/font validation tests and the #337 Lab integration test un-ignored and fixed. Ignored test count reduced from 242 to 228.
+
+- **Regression tests added** for all text-extraction fixes: `test_b5_tounicode_cid_miss.rs` (3 tests), `test_b6_flate_stream_crlf_boundary.rs` (4 framing variants), `test_b8b_tj_kerning_intra_word.rs`, `test_317_cyrillic_differences_encoding.rs` (2 tests), `test_318_dedup_prefers_flow_prose.rs`, `test_319_glyph_order_stability.rs` (2 tests), `test_337_indexed_lab_palette.rs`.
+
+- **Suite: 6,300 passed, 0 failed, 228 ignored.**
+
+### Thanks
+
+Issues reported or features requested by: [@Charltsing](https://github.com/Charltsing) (#373 Indexed+CMYK image extraction), [@ddxtanx](https://github.com/ddxtanx) (#354 memory leak on multi-page extraction), [@andrewjradcliffe](https://github.com/andrewjradcliffe) (PR #369 bounded caches + path OOM fix).
+
 ## [0.3.32] - 2026-04-15
 
 ### Release pipeline
