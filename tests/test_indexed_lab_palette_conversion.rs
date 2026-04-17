@@ -12,7 +12,7 @@ use pdf_oxide::PdfDocument;
 /// Minimal 10x10-pixel PDF with a single-entry Lab-base Indexed palette.
 /// The palette entry encodes Lab = (50, 0, 0) — perceptual mid-gray.
 ///
-/// After correct Lab → XYZ (D50 whitepoint) → sRGB conversion with
+/// After correct Lab → XYZ (D65 whitepoint) → sRGB conversion with
 /// standard sRGB gamma encoding, Lab(50, 0, 0) should land near
 /// sRGB(119, 119, 119), which is linear-sRGB 0.18406 raised through
 /// the sRGB transfer function (1.055·x^(1/2.4) − 0.055).

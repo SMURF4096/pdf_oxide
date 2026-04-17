@@ -1045,7 +1045,6 @@ pub(crate) fn cmyk_pixel_to_rgb(c: u8, m: u8, y: u8, k: u8) -> [u8; 3] {
     [r, g, b]
 }
 
-/// Convert CMYK pixel bytes to RGB.
 /// Extract `/WhitePoint` from a Lab colour-space PDF object.
 ///
 /// The object is `[/Lab << /WhitePoint [Xw Yw Zw] >>]`. Returns the
@@ -1089,7 +1088,7 @@ fn extract_lab_whitepoint(cs_obj: &crate::object::Object) -> [f64; 3] {
 ///   b* = byte_2 − 128.0
 ///
 /// Then Lab → XYZ (whitepoint-relative) → sRGB with standard gamma.
-pub fn lab_palette_to_rgb(palette: &[u8], white: [f64; 3]) -> Vec<u8> {
+pub(crate) fn lab_palette_to_rgb(palette: &[u8], white: [f64; 3]) -> Vec<u8> {
     let mut rgb = Vec::with_capacity(palette.len());
     for chunk in palette.chunks(3) {
         if chunk.len() < 3 {

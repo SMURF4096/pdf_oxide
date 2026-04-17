@@ -2391,7 +2391,7 @@ impl FontInfo {
                             .cid_system_info
                             .as_ref()
                             .map(|info| info.ordering == "Identity")
-                            .unwrap_or(true);
+                            .unwrap_or(false);
                         if is_identity_encoding && is_identity_ordering {
                             return Some("\u{FFFD}".to_string());
                         }

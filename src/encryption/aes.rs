@@ -49,7 +49,10 @@ pub fn aes128_encrypt(key: &[u8], iv: &[u8], data: &[u8]) -> Result<Vec<u8>, &'s
 
     // Encrypt in-place
     let len = padded.len();
-    let cipher = Aes128CbcEnc::new(key.try_into().unwrap(), iv.try_into().unwrap());
+    let cipher = Aes128CbcEnc::new(
+        key.try_into().map_err(|_| "AES-128 key must be 16 bytes")?,
+        iv.try_into().map_err(|_| "IV must be 16 bytes")?,
+    );
     cipher
         .encrypt_padded::<aes::cipher::block_padding::NoPadding>(&mut padded, len)
         .map_err(|_| "Encryption failed")?;
@@ -81,7 +84,10 @@ pub fn aes128_encrypt_no_padding(
 
     let mut buffer = data.to_vec();
     let len = buffer.len();
-    let cipher = Aes128CbcEnc::new(key.try_into().unwrap(), iv.try_into().unwrap());
+    let cipher = Aes128CbcEnc::new(
+        key.try_into().map_err(|_| "AES-128 key must be 16 bytes")?,
+        iv.try_into().map_err(|_| "IV must be 16 bytes")?,
+    );
     cipher
         .encrypt_padded::<aes::cipher::block_padding::NoPadding>(&mut buffer, len)
         .map_err(|_| "Encryption failed")?;

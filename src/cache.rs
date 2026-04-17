@@ -60,9 +60,14 @@ impl<K: Eq + std::hash::Hash + Copy, V> BoundedEntryCache<K, V> {
 
     pub(crate) fn insert(&mut self, key: K, value: V) {
         use std::collections::hash_map::Entry;
-        // Short-circuit on re-insert: replace value without evicting an unrelated entry
+        // On re-insert: replace value and promote to most-recently-used position
+        // so LRU eviction order stays accurate.
         if let Entry::Occupied(mut e) = self.map.entry(key) {
             e.insert(value);
+            if let Some(pos) = self.insertion_order.iter().position(|k| k == &key) {
+                self.insertion_order.remove(pos);
+            }
+            self.insertion_order.push_back(key);
             return;
         }
         // Evict oldest entries if at capacity
