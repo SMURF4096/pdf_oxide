@@ -6951,24 +6951,6 @@ mod tests {
         assert_eq!(extractor.char_count(), 0);
     }
 
-    /// Test unified space decision: TJ offset rule
-    /// NOTE: Disabled - space detection has been refactored to be PDF spec-compliant
-    #[test]
-    #[ignore]
-    fn test_space_decision_tj_offset() {
-        let config = SpanMergingConfig::default();
-        let fonts = std::collections::HashMap::new();
-
-        // TJ offset triggered should always insert space (Rule 1, confidence 0.95)
-        let decision = should_insert_space(
-            "word", "next", 0.0, 12.0, "TestFont", &fonts, true, &config, None, None, 12.0, 12.0,
-        );
-
-        assert!(decision.insert_space);
-        assert_eq!(decision.source, SpaceSource::TjOffset);
-        assert_eq!(decision.confidence, 0.95);
-    }
-
     /// Test unified space decision: Boundary space already present
     #[test]
     fn test_space_decision_boundary_space() {
@@ -6988,88 +6970,6 @@ mod tests {
         );
         assert!(!decision.insert_space);
         assert_eq!(decision.source, SpaceSource::AlreadyPresent);
-    }
-
-    /// Test unified space decision: Dual threshold rule
-    /// NOTE: Disabled - space detection has been refactored to be PDF spec-compliant
-    #[test]
-    #[ignore]
-    fn test_space_decision_dual_threshold() {
-        let config = SpanMergingConfig::default();
-        let fonts = std::collections::HashMap::new();
-        // space_threshold_em_ratio: 0.25, conservative_threshold_pt: 0.1
-
-        // 12pt font, space_threshold = 12 * 0.25 = 3pt
-        // char_width_threshold = 12 * 0.3 = 3.6pt
-        // dual_threshold = min(3, 3.6) = 3pt
-        let font_size = 12.0;
-
-        // Gap > dual_threshold should insert (Rule 2, confidence 0.8)
-        let decision = should_insert_space(
-            "word", "next", 3.5, font_size, "TestFont", &fonts, false, &config, None, None, 12.0,
-            12.0,
-        );
-        assert!(decision.insert_space);
-        assert_eq!(decision.source, SpaceSource::GeometricGap);
-        assert_eq!(decision.confidence, 0.8);
-
-        // Gap <= dual_threshold, not at heuristic boundary: no space (yet)
-        let decision = should_insert_space(
-            "word", "next", 2.5, font_size, "TestFont", &fonts, false, &config, None, None, 12.0,
-            12.0,
-        );
-        // This should not insert (no rule triggers)
-        // But conservative threshold (0.1) is still checked below
-    }
-
-    /// Test unified space decision: Character heuristic rule
-    /// NOTE: Disabled - heuristic rules removed in PDF spec-compliant refactoring
-    #[test]
-    #[ignore]
-    fn test_space_decision_heuristic_camelcase() {
-        let config = SpanMergingConfig::default();
-        let fonts = std::collections::HashMap::new();
-
-        // lowercase -> uppercase (CamelCase) should trigger heuristic (Rule 3, confidence 0.85)
-        let decision = should_insert_space(
-            "the", "General", 0.0, 12.0, "TestFont", &fonts, false, &config, None, None, 12.0, 12.0,
-        );
-        assert!(decision.insert_space);
-        assert_eq!(decision.source, SpaceSource::CharacterHeuristic);
-        assert_eq!(decision.confidence, 0.85);
-
-        // numeric -> letter should trigger heuristic
-        let decision = should_insert_space(
-            "version2", "dot3", 0.0, 12.0, "TestFont", &fonts, false, &config, None, None, 12.0,
-            12.0,
-        );
-        assert!(decision.insert_space);
-        assert_eq!(decision.source, SpaceSource::CharacterHeuristic);
-    }
-
-    /// Test unified space decision: Conservative threshold rule
-    /// NOTE: Disabled - conservative threshold rules removed in PDF spec-compliant refactoring
-    #[test]
-    #[ignore]
-    fn test_space_decision_conservative_threshold() {
-        let config = SpanMergingConfig::default();
-        let fonts = std::collections::HashMap::new();
-        // conservative_threshold_pt: 0.1
-
-        // Gap > conservative_threshold but not meeting other rules (Rule 4, confidence 0.5)
-        let decision = should_insert_space(
-            "word", "next", 0.2, 12.0, "TestFont", &fonts, false, &config, None, None, 12.0, 12.0,
-        );
-        assert!(decision.insert_space);
-        assert_eq!(decision.source, SpaceSource::GeometricGap);
-        assert_eq!(decision.confidence, 0.5);
-
-        // Gap <= conservative_threshold: no space (Rule 5 - default)
-        let decision = should_insert_space(
-            "word", "next", 0.05, 12.0, "TestFont", &fonts, false, &config, None, None, 12.0, 12.0,
-        );
-        assert!(!decision.insert_space);
-        assert_eq!(decision.source, SpaceSource::NoSpace);
     }
 
     /// Regression test for issue flagged in PR #281 review:
@@ -7104,32 +7004,6 @@ mod tests {
             "2pt gap between digits should still split adjacent table values, got: {:?}",
             table_cells
         );
-    }
-
-    /// Test unified space decision: No double spaces
-    /// NOTE: Disabled - space detection has been refactored to be PDF spec-compliant
-    #[test]
-    #[ignore]
-    fn test_space_decision_no_double_spaces() {
-        let config = SpanMergingConfig::default();
-        let fonts = std::collections::HashMap::new();
-
-        // When both TJ offset and gap would trigger, they should be coordinated
-        // TJ offset has highest priority and should be respected first
-        let decision_tj = should_insert_space(
-            "word", "next", 1.0, 12.0, "TestFont", &fonts, true, &config, None, None, 12.0, 12.0,
-        );
-        let decision_gap = should_insert_space(
-            "word", "next", 1.0, 12.0, "TestFont", &fonts, false, &config, None, None, 12.0, 12.0,
-        );
-
-        // TJ offset decision (0.95) should be preferred over gap decision
-        assert!(decision_tj.insert_space);
-        assert_eq!(decision_tj.source, SpaceSource::TjOffset);
-
-        // Gap alone would not trigger for 1pt gap (< conservative 0.1pt is false, but 1pt > 0.1pt is true)
-        // So gap should also trigger via conservative threshold
-        assert!(decision_gap.insert_space);
     }
 
     /// Test split boundary merging with space insertion
