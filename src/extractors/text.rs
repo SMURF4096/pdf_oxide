@@ -996,6 +996,55 @@ fn should_insert_space(
 
     let geometric_suggests_space = gap_pt > geometric_threshold;
 
+    // #365 / B8b: Intra-word kerning guard (letter-letter branch).
+    //
+    // On TJ-heavy producers (LaTeX, MS Word → PDF) the Primary
+    // word-boundary detector hands `should_insert_space` two adjacent
+    // clusters like "cha"→"nge", "diffe"→"rent", "equivalen"→"t"
+    // whose gap sits just above `geometric_threshold` (= 0.5 ×
+    // space-glyph width) but well below a real word gap. The
+    // consensus rule below would then emit a spurious space mid-word.
+    // Real word gaps in real producers reach one full space-glyph
+    // width or sit next to punctuation/digits, both of which fall
+    // through this guard.
+    //
+    // The guard fires regardless of `tj_offset_triggered` because the
+    // gap can also be geometric-only (when WordBoundaryDetector splits
+    // the cluster but no explicit TJ offset crossed the threshold).
+    // See the sibling guard in `process_tj_array_tiebreaker` for the
+    // upstream space-as-span insertion path.
+    // 1.2 × full space-glyph advance. Any gap below that, between two
+    // alphabetic runs, is far more likely to be inter-letter kerning
+    // emitted by LaTeX or a Word-style exporter than a real word
+    // boundary. Real producer word gaps either match the space-glyph
+    // width plus the producer's word-spacing pad, or sit next to
+    // non-letter characters that fall through this guard.
+    //
+    // Only fires when the font is available so the threshold is
+    // computed from the font's own space-glyph advance — the no-font
+    // fallback (`font_size * 0.25`) is a wider, deliberately
+    // conservative value that already separates real word gaps from
+    // kerning at the consensus level.
+    let kerning_guard_threshold = if fonts.contains_key(font_name) {
+        Some(geometric_threshold * 2.4)
+    } else {
+        None
+    };
+    if let Some(thr) = kerning_guard_threshold {
+        if gap_pt < thr {
+            let prev_last = preceding_text.chars().last();
+            let next_first = following_text.chars().next();
+            if let (Some(pc), Some(nc)) = (prev_last, next_first) {
+                if pc.is_alphabetic() && nc.is_alphabetic() {
+                    log::debug!(
+                        "#365 intra-word kerning guard (should_insert_space): suppressing space between '{pc}' and '{nc}' (gap={gap_pt:.2}pt < {thr:.2}pt = 1.2× space-glyph width)"
+                    );
+                    return SpaceDecision::no_space(SpaceSource::NoSpace, 0.9);
+                }
+            }
+        }
+    }
+
     // Consensus checking
     // Only insert space if BOTH signals agree OR geometric signal is very strong
     // This reduces false positives in justified text where TJ offsets are arbitrary
