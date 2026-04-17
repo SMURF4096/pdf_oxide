@@ -3,6 +3,7 @@
 All notable changes to PDFOxide are documented here.
 
 ## [0.3.33] - 2026-04-16
+> Text extraction, image correctness, and memory safety fixes
 
 ### Text extraction correctness
 
