@@ -4141,7 +4141,56 @@ impl PdfDocument {
             }
         }
 
+        // #317 UTF-8 mojibake repair: a run of Latin-1 Supplement chars
+        // whose raw bytes form valid UTF-8 decoding to non-Latin-1 code
+        // points is almost certainly a double-encoded non-Latin string
+        // (Cyrillic, Greek, CJK, Arabic, Hebrew, …) that surfaced
+        // because the producing font had no ToUnicode CMap and the
+        // /Differences / AGL lookup returned the UTF-8 byte sequence
+        // re-interpreted as Latin-1. Re-decode those runs in place.
+        let cleaned_text = Self::repair_utf8_mojibake(&cleaned_text);
+
         Ok(cleaned_text)
+    }
+
+    /// Walk `input` and repair runs of Latin-1 Supplement characters
+    /// whose raw byte values form a valid UTF-8 sequence whose decoded
+    /// codepoints include at least one non-Latin-1 character.
+    ///
+    /// This undoes the most common shape of "Cyrillic served as
+    /// Latin-1" mojibake that surfaces on PDFs whose fonts have no
+    /// ToUnicode CMap. The decoded-codepoint gate (≥ U+0100 somewhere
+    /// in the decoded run) ensures genuine Latin-1 content like
+    /// "Résumé" — which also decodes as valid UTF-8 but stays entirely
+    /// within U+0000..U+00FF — is left alone.
+    fn repair_utf8_mojibake(input: &str) -> String {
+        let mut out = String::with_capacity(input.len());
+        let chars: Vec<char> = input.chars().collect();
+        let mut i = 0;
+        while i < chars.len() {
+            let mut j = i;
+            while j < chars.len() {
+                let cc = chars[j] as u32;
+                if (0x80..=0xFF).contains(&cc) {
+                    j += 1;
+                } else {
+                    break;
+                }
+            }
+            if j - i >= 2 {
+                let bytes: Vec<u8> = chars[i..j].iter().map(|&c| c as u8).collect();
+                if let Ok(decoded) = std::str::from_utf8(&bytes) {
+                    if decoded.chars().any(|c| c as u32 > 0xFF) {
+                        out.push_str(decoded);
+                        i = j;
+                        continue;
+                    }
+                }
+            }
+            out.push(chars[i]);
+            i += 1;
+        }
+        out
     }
 
     /// Extract text from all pages of the document.

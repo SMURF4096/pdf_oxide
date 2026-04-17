@@ -20,18 +20,15 @@
 //! separated by large `Td` moves. The extractor must keep the prose
 //! rendering, not the positioned one.
 //!
-//! Note: the issue is flagged "Low priority — no content loss" and the
-//! heuristic that fixes it may need calibration against the real corpus.
-//! The synthetic test is `#[ignore]` for now so it does not block CI on
-//! a known-deferred symptom, but it gives any future fix a precise
-//! failing reproducer.
-//!
-//! Current status: the synthetic below emits BOTH copies of the
-//! paragraph on separate output lines (dedup does not fire on
-//! same-Y/different-X per-word spans) rather than the symptom
-//! described in the issue (positioned copy kept, flow copy dropped).
-//! The real JSTOR trigger is most likely a more specific reading-order
-//! interaction that needs the ~1.8 MB fixture to reproduce exactly.
+//! Current status (v0.3.33): the synthetic assertion passes — our
+//! extractor does not keep the wide-spaced positioned copy in
+//! preference to the flow-prose copy. Validated against the
+//! `[Vaclav-Smil]-Energy-and-Civilization` fixture from the issue:
+//! "In 1894 a new Daimler-Maybach gasoline engine …" comes through as
+//! clean flow prose without the run-of-many-spaces rendering or a
+//! duplicate wide-spaced copy. The cumulative effect of B3 (running
+//! headers), B4 (XY-cut), B7 (stroke+fill overlap), and content-based
+//! dedup keeps this case on the happy path.
 use pdf_oxide::PdfDocument;
 
 fn two_copy_pdf() -> Vec<u8> {
@@ -97,7 +94,6 @@ BT /F0 12 Tf 1 0 0 1 50 800 Tm (In) Tj \
 }
 
 #[test]
-#[ignore = "#318 — low-priority dedup preference refinement; left as a synthetic reproducer awaiting a heuristic that prefers flow-prose density over positioned wide-space renderings."]
 fn dedup_prefers_flow_prose_copy_over_positioned_copy() {
     let pdf = two_copy_pdf();
     let tmp = tempfile::NamedTempFile::new().expect("temp");
