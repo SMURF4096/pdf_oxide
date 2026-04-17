@@ -2,6 +2,45 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [0.3.33] - 2026-04-16
+> Text extraction, image correctness, and memory safety fixes
+
+### Text extraction correctness
+
+- **ToUnicode CMap miss returns U+FFFD instead of ASCII ciphertext (#363).** Subset Type0 fonts whose ToUnicode CMap doesn't cover a CID now emit the replacement character instead of falling through to the Identity-H `cid-as-Unicode` path that produced strings like `%B+$%8A//$2*%01*1%6APP`.
+- **Intra-word TJ kerning no longer splits words (#365).** Letter-pair kerning of 0.10–0.20 em inside single words (`[(diffe) -150 (rent)]`) no longer triggers space insertion. Validated on 5 Kreuzberg fixtures — zero split-word patterns.
+- **Cyrillic / non-Latin text recovered from UTF-8 mojibake (#317).** Fonts with Latin-only encoding and no ToUnicode CMap that carry raw UTF-8 byte sequences now decode correctly. Validated on `issue20232.pdf` — Russian engineering text readable.
+- **FlateDecode partial-recovery rejects garbage output (#364).** MS Reporting Services PDFs (`nougat_026.pdf`) whose content streams failed mid-decompress were returning 128 bytes of pseudo-random data. Partial-recovery paths now validate output via `looks_like_real_stream` before accepting. Pages 1/2/5 go from 0 → 848/792/321 bytes.
+
+### Image extraction
+
+- **Indexed + ICCBased palette correctly resolves component count (#373).** Unresolved ICC stream references inside the Indexed base array caused `/N` to default to 3 instead of reading the actual value (4 = CMYK), producing diagonal-stripe artifacts. Reported by @Charltsing.
+- **Lab-base Indexed palettes converted to sRGB (#337).** Palette bytes in CIE L\*a\*b\* are now converted through Lab→XYZ→sRGB instead of being reinterpreted as raw RGB.
+
+### Memory and performance
+
+- **All internal caches bounded (PR #369, #354).** Object cache (64 MB), font caches (256–512 entries), XObject span/image caches (1024 entries), and global CMap cache (1024 entries) all use FIFO eviction. Cache utilities extracted to `src/cache.rs`.
+- **Path extraction OOM on chart-heavy PDFs fixed (PR #369).** Added CTM-aware `processed_xobjects` dedup — same XObject at same position is deduplicated, same XObject at different positions processes separately.
+- **Mutex poison resilience.** `MutexExt::lock_or_recover()` replaces 72 `.lock().unwrap()` calls.
+
+### Dependencies
+
+- **RustCrypto cipher 0.5 ecosystem (PRs #352, #295, #291).** `aes` 0.8→0.9, `cbc` 0.1→0.2, `sha2` 0.10→0.11, `sha1` 0.10→0.11, `md-5` 0.10→0.11.
+
+### Test suite
+
+- 13 dead/stale ignored tests removed; 3 previously-ignored tests fixed and un-ignored.
+- Regression tests added: ToUnicode CID-miss (3 tests), FlateDecode stream boundary framing (4 variants), TJ intra-word kerning, Cyrillic encoding and UTF-8 sniff (2 tests), dedup flow-prose preference, reading-order glyph sort stability (2 tests), Indexed Lab palette conversion.
+- **Suite: 6,300 passed, 0 failed, 228 ignored.**
+
+### Community Contributors
+
+Thank you to everyone who reported issues, filed reproducers, or contributed code for this release!
+
+- **[@Charltsing](https://github.com/Charltsing)** — Reported the Indexed + CMYK image extraction failure (#373) with a reproduction PDF and screenshot comparison against pdfimages (xpdf), which exposed the unresolved ICC stream reference bug that had been silently producing garbled diagonal-stripe artifacts since the Indexed palette support landed in v0.3.27.
+- **[@ddxtanx](https://github.com/ddxtanx)** — Reported the unbounded memory growth during multi-page extraction (#354) with profiling data that showed object and font caches consuming 200 MB+ on a 609 KB arXiv PDF. This drove the bounded-cache work in PR #369.
+- **[@andrewjradcliffe](https://github.com/andrewjradcliffe)** — Authored PR #369 implementing bounded FIFO caches for all internal caches, CTM-aware XObject dedup for the path extractor OOM, `MutexExt` poison-recovery trait, Python binding hardening, and markdown inter-group spacing. The PR also included comprehensive unit tests for all new cache types.
+
 ## [0.3.32] - 2026-04-15
 
 ### Release pipeline

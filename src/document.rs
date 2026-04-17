@@ -23,6 +23,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
 
+// Re-export MutexExt from cache module for local use and backward compatibility
+pub(crate) use crate::cache::MutexExt;
+
 /// Reading order mode for span extraction.
 ///
 /// Controls how text spans are sorted after extraction from a PDF page.
@@ -111,6 +114,153 @@ pub struct PageInfo {
     pub rotation: i32,
 }
 
+/// Default maximum size in bytes for the object cache (64 MB).
+///
+/// This is a soft guardrail, not a hard ceiling. Real memory usage can be
+/// 1.5–2× the cap because `estimate_size` does not account for HashMap bucket
+/// overhead, Arc headers, or allocator padding.
+const DEFAULT_OBJECT_CACHE_MAX_BYTES: usize = 64 * 1024 * 1024;
+
+/// Default maximum number of entries for the XObject span/image caches.
+const DEFAULT_XOBJECT_CACHE_MAX_ENTRIES: usize = 1024;
+
+// Re-export BoundedEntryCache from cache module for local use and backward compatibility
+pub(crate) use crate::cache::BoundedEntryCache;
+
+/// Size-bounded object cache with FIFO eviction.
+///
+/// Wraps a `HashMap<ObjectRef, Object>` with byte-size tracking. When an
+/// insertion would push total estimated size past `max_bytes`, the oldest
+/// entries are evicted first (FIFO order via a `VecDeque` of keys).
+///
+/// FIFO is chosen over LRU because the access pattern is predominantly
+/// insert-once-read-once — higher-level caches (font caches, xobject stream
+/// cache) serve repeated lookups, so recency is not a useful signal here.
+struct BoundedObjectCache {
+    map: HashMap<ObjectRef, Object>,
+    insertion_order: std::collections::VecDeque<ObjectRef>,
+    current_bytes: usize,
+    max_bytes: usize,
+}
+
+impl BoundedObjectCache {
+    fn new(max_bytes: usize) -> Self {
+        Self {
+            map: HashMap::new(),
+            insertion_order: std::collections::VecDeque::new(),
+            current_bytes: 0,
+            max_bytes,
+        }
+    }
+
+    fn get(&self, key: &ObjectRef) -> Option<&Object> {
+        self.map.get(key)
+    }
+
+    fn insert(&mut self, key: ObjectRef, value: Object) {
+        let entry_size = Self::estimate_size(&value);
+
+        // Don't cache objects that alone exceed the budget
+        if entry_size > self.max_bytes {
+            return;
+        }
+
+        // If the key already exists, subtract old size first
+        if let Some(old_val) = self.map.get(&key) {
+            self.current_bytes = self
+                .current_bytes
+                .saturating_sub(Self::estimate_size(old_val));
+        }
+
+        // Evict oldest entries until under budget. If the front of the
+        // queue is the key we're about to (re)insert, skip past it so a
+        // larger replacement doesn't leave the cache over budget — keep
+        // evicting other entries instead.
+        let mut skipped_self = false;
+        while self.current_bytes + entry_size > self.max_bytes {
+            match self.insertion_order.pop_front() {
+                Some(old_key) => {
+                    if old_key == key {
+                        if skipped_self {
+                            self.insertion_order.push_front(old_key);
+                            break;
+                        }
+                        self.insertion_order.push_back(old_key);
+                        skipped_self = true;
+                        continue;
+                    }
+                    if let Some(old_val) = self.map.remove(&old_key) {
+                        self.current_bytes = self
+                            .current_bytes
+                            .saturating_sub(Self::estimate_size(&old_val));
+                    }
+                },
+                None => break,
+            }
+        }
+
+        // Insert (or replace) the entry
+        if self.map.insert(key, value).is_none() {
+            // New key — track insertion order
+            self.insertion_order.push_back(key);
+        }
+        self.current_bytes += entry_size;
+    }
+
+    fn len(&self) -> usize {
+        self.map.len()
+    }
+
+    fn keys(&self) -> impl Iterator<Item = &ObjectRef> {
+        self.map.keys()
+    }
+
+    fn clear(&mut self) {
+        self.map.clear();
+        self.insertion_order.clear();
+        self.current_bytes = 0;
+    }
+
+    fn estimate_size(obj: &Object) -> usize {
+        Self::estimate_size_depth(obj, 8)
+    }
+
+    /// Rough estimate of an Object's heap size in bytes.
+    /// Recurses into nested containers up to `depth` levels to avoid
+    /// both underestimation and stack overflow on adversarial input.
+    fn estimate_size_depth(obj: &Object, depth: u8) -> usize {
+        if depth == 0 {
+            return 64;
+        }
+        match obj {
+            Object::Stream { dict, data } => {
+                let dict_size: usize = dict
+                    .iter()
+                    .map(|(k, v)| k.len() + 32 + Self::estimate_size_depth(v, depth - 1))
+                    .sum();
+                data.len() + dict_size + 64
+            },
+            Object::Dictionary(d) => {
+                let inner: usize = d
+                    .iter()
+                    .map(|(k, v)| k.len() + 32 + Self::estimate_size_depth(v, depth - 1))
+                    .sum();
+                inner + 64
+            },
+            Object::Array(a) => {
+                let inner: usize = a
+                    .iter()
+                    .map(|v| Self::estimate_size_depth(v, depth - 1))
+                    .sum();
+                inner + 64
+            },
+            Object::String(s) => s.len() + 32,
+            Object::Name(s) => s.len() + 32,
+            _ => 32,
+        }
+    }
+}
+
 /// PDF document.
 ///
 /// This structure represents an open PDF document, providing access to:
@@ -128,6 +278,13 @@ pub struct PageInfo {
 /// println!("Page count: {}", doc.page_count()?);
 /// # Ok::<(), pdf_oxide::error::Error>(())
 /// ```
+///
+/// # Memory management
+///
+/// The document maintains several internal caches for performance. The main
+/// object cache is bounded at [`DEFAULT_OBJECT_CACHE_MAX_BYTES`] (64 MB) and
+/// uses FIFO eviction to prevent unbounded heap growth when processing
+/// many pages sequentially.
 pub struct PdfDocument {
     /// PDF reader — file-backed on native, memory-backed on WASM.
     ///
@@ -145,9 +302,9 @@ pub struct PdfDocument {
     /// Trailer dictionary
     trailer: Object,
     /// Cache for loaded objects to avoid re-parsing.
-    /// Wrapped in RefCell so load_object can take &self (required for safe
-    /// access through TextExtractor's *const PdfDocument pointer).
-    object_cache: Mutex<HashMap<ObjectRef, Object>>,
+    /// Bounded at [`DEFAULT_OBJECT_CACHE_MAX_BYTES`] with FIFO eviction to
+    /// prevent unbounded heap growth during multi-page extraction.
+    object_cache: Mutex<BoundedObjectCache>,
     /// Track objects being resolved (for cycle detection)
     resolving_stack: Mutex<HashSet<ObjectRef>>,
     /// Current recursion depth
@@ -169,25 +326,30 @@ pub struct PdfDocument {
     header_offset: u64,
     /// Font cache keyed by indirect ObjectRef to avoid re-parsing fonts across pages.
     /// Arc-wrapped to eliminate deep cloning when populating per-page TextExtractor.
-    font_cache: Mutex<HashMap<ObjectRef, Arc<crate::fonts::FontInfo>>>,
+    /// Bounded at 512 entries — TeX PDFs can create unique font objects per page.
+    font_cache: Mutex<BoundedEntryCache<ObjectRef, Arc<crate::fonts::FontInfo>>>,
     /// Cached font sets keyed by /Font dictionary ObjectRef.
     /// Pages sharing the same /Font dict skip the entire load_fonts() loop.
-    font_set_cache: Mutex<HashMap<ObjectRef, Vec<(String, Arc<crate::fonts::FontInfo>)>>>,
+    /// Bounded at 256 entries.
+    font_set_cache: Mutex<BoundedEntryCache<ObjectRef, Vec<(String, Arc<crate::fonts::FontInfo>)>>>,
     /// Fingerprint-based font set cache for direct /Font dictionaries.
     /// Keyed by sorted font ObjectRefs hash, catches pages with different
-    /// /Resources but same font references.
-    font_fingerprint_cache: Mutex<HashMap<u64, Vec<(String, Arc<crate::fonts::FontInfo>)>>>,
+    /// /Resources but same font references. Bounded at 256 entries.
+    font_fingerprint_cache:
+        Mutex<BoundedEntryCache<u64, Vec<(String, Arc<crate::fonts::FontInfo>)>>>,
     /// Name-based font set cache keyed by hash of sorted font names.
     /// Catches pages with different font ObjectRefs but the same font name→base font
     /// mapping (common in PDFs that create new font objects per page).
     /// Stores the resolved font set (Arc-wrapped to avoid cloning) plus a spot-check
-    /// (font_name, content_hash) pair for verification before reuse.
-    font_name_set_cache:
-        Mutex<HashMap<u64, (Arc<Vec<(String, Arc<crate::fonts::FontInfo>)>>, String, u64)>>,
+    /// (font_name, content_hash) pair for verification before reuse. Bounded at 256 entries.
+    font_name_set_cache: Mutex<
+        BoundedEntryCache<u64, (Arc<Vec<(String, Arc<crate::fonts::FontInfo>)>>, String, u64)>,
+    >,
     /// Per-font identity cache keyed by font_identity_hash (BaseFont + Subtype + Encoding +
     /// ToUnicode + FontDescriptor + DescendantFonts references). Skips expensive
     /// `FontInfo::from_dict()` when a structurally identical font was already parsed.
-    font_identity_cache: Mutex<HashMap<u64, Arc<crate::fonts::FontInfo>>>,
+    /// Bounded at 512 entries.
+    font_identity_cache: Mutex<BoundedEntryCache<u64, Arc<crate::fonts::FontInfo>>>,
     /// Cached structure tree (None = not yet checked, Some(None) = untagged, Some(Some) = tagged).
     /// Uses Arc to avoid expensive deep clones on every page extraction.
     structure_tree_cache: Option<Option<Arc<crate::structure::StructTreeRoot>>>,
@@ -222,11 +384,14 @@ pub struct PdfDocument {
     pub(crate) xobject_stream_cache_bytes: AtomicUsize,
     /// Cache of extracted TextSpan results from self-contained Form XObjects
     /// (those with own /Resources/Font). None = processed but no spans.
-    pub(crate) xobject_spans_cache: Mutex<HashMap<ObjectRef, Option<Vec<crate::layout::TextSpan>>>>,
+    /// Bounded at [`DEFAULT_XOBJECT_CACHE_MAX_ENTRIES`] entries with FIFO eviction.
+    pub(crate) xobject_spans_cache:
+        Mutex<BoundedEntryCache<ObjectRef, Option<Vec<crate::layout::TextSpan>>>>,
     /// Cache of extracted images from Form XObjects (keyed by ObjectRef).
     /// Images are stored without CTM applied — caller applies its own CTM.
+    /// Bounded at [`DEFAULT_XOBJECT_CACHE_MAX_ENTRIES`] entries with FIFO eviction.
     pub(crate) form_xobject_images_cache:
-        Mutex<HashMap<ObjectRef, Vec<crate::extractors::PdfImage>>>,
+        Mutex<BoundedEntryCache<ObjectRef, Vec<crate::extractors::PdfImage>>>,
     /// Regions marked for erasure per page
     pub(crate) erase_regions: HashMap<usize, Vec<crate::geometry::Rect>>,
     /// Cached decompressed content stream for last accessed page.
@@ -258,8 +423,8 @@ impl std::fmt::Debug for PdfDocument {
         f.debug_struct("PdfDocument")
             .field("version", &self.version)
             .field("xref_entries", &self.xref.len())
-            .field("cached_objects", &self.object_cache.lock().unwrap().len())
-            .field("recursion_depth", &self.recursion_depth.lock().unwrap())
+            .field("cached_objects", &self.object_cache.lock_or_recover().len())
+            .field("recursion_depth", &self.recursion_depth.lock_or_recover())
             .finish_non_exhaustive()
     }
 }
@@ -562,18 +727,18 @@ impl PdfDocument {
             version,
             xref,
             trailer,
-            object_cache: Mutex::new(HashMap::new()),
+            object_cache: Mutex::new(BoundedObjectCache::new(DEFAULT_OBJECT_CACHE_MAX_BYTES)),
             resolving_stack: Mutex::new(HashSet::new()),
             recursion_depth: Mutex::new(0),
             encryption_handler: Mutex::new(None),
             encrypt_dict_ref: Mutex::new(None),
             options: ParserOptions::default(),
             header_offset,
-            font_cache: Mutex::new(HashMap::new()),
-            font_set_cache: Mutex::new(HashMap::new()),
-            font_fingerprint_cache: Mutex::new(HashMap::new()),
-            font_name_set_cache: Mutex::new(HashMap::new()),
-            font_identity_cache: Mutex::new(HashMap::new()),
+            font_cache: Mutex::new(BoundedEntryCache::new(512)),
+            font_set_cache: Mutex::new(BoundedEntryCache::new(256)),
+            font_fingerprint_cache: Mutex::new(BoundedEntryCache::new(256)),
+            font_name_set_cache: Mutex::new(BoundedEntryCache::new(256)),
+            font_identity_cache: Mutex::new(BoundedEntryCache::new(512)),
             structure_tree_cache: None,
             structure_content_cache: None,
             page_cache: HashMap::new(),
@@ -584,8 +749,12 @@ impl PdfDocument {
             xobject_text_free_cache: Mutex::new(HashSet::new()),
             xobject_stream_cache: Mutex::new(HashMap::new()),
             xobject_stream_cache_bytes: AtomicUsize::new(0),
-            xobject_spans_cache: Mutex::new(HashMap::new()),
-            form_xobject_images_cache: Mutex::new(HashMap::new()),
+            xobject_spans_cache: Mutex::new(BoundedEntryCache::new(
+                DEFAULT_XOBJECT_CACHE_MAX_ENTRIES,
+            )),
+            form_xobject_images_cache: Mutex::new(BoundedEntryCache::new(
+                DEFAULT_XOBJECT_CACHE_MAX_ENTRIES,
+            )),
             erase_regions: HashMap::new(),
             page_content_cache: Mutex::new(None),
             running_artifact_signatures: Mutex::new(None),
@@ -639,7 +808,7 @@ impl PdfDocument {
     /// the document is fully constructed and can load objects.
     fn ensure_encryption_initialized(&self) -> Result<()> {
         // Already initialized?
-        if self.encryption_handler.lock().unwrap().is_some() {
+        if self.encryption_handler.lock_or_recover().is_some() {
             return Ok(());
         }
 
@@ -695,7 +864,7 @@ impl PdfDocument {
                 log::debug!("Loading /Encrypt object reference {} {}", obj_ref.id, obj_ref.gen);
                 // Remember which object holds the /Encrypt dict so its own
                 // strings are skipped during per-object string decryption.
-                *self.encrypt_dict_ref.lock().unwrap() = Some(obj_ref);
+                *self.encrypt_dict_ref.lock_or_recover() = Some(obj_ref);
                 self.load_object(obj_ref)?
             },
             _ => {
@@ -743,7 +912,7 @@ impl PdfDocument {
             },
         }
 
-        *self.encryption_handler.lock().unwrap() = Some(handler);
+        *self.encryption_handler.lock_or_recover() = Some(handler);
         Ok(())
     }
 
@@ -786,7 +955,7 @@ impl PdfDocument {
             false
         };
 
-        let handler_ref = self.encryption_handler.lock().unwrap();
+        let handler_ref = self.encryption_handler.lock_or_recover();
         if let Some(handler) = handler_ref.as_ref() {
             if is_unencrypted_stream_type {
                 // These stream types are never encrypted per spec
@@ -843,13 +1012,12 @@ impl PdfDocument {
         // #323.
         let was_authenticated = self
             .encryption_handler
-            .lock()
-            .unwrap()
+            .lock_or_recover()
             .as_ref()
             .map(|h| h.is_authenticated())
             .unwrap_or(true);
 
-        let result = match self.encryption_handler.lock().unwrap().as_mut() {
+        let result = match self.encryption_handler.lock_or_recover().as_mut() {
             Some(handler) => handler.authenticate(password),
             None => return Ok(true), // Not encrypted, always "authenticated"
         };
@@ -863,7 +1031,7 @@ impl PdfDocument {
                 // string values. The `/Encrypt` dictionary is not in this
                 // cache path (it is resolved independently), so clearing
                 // is always safe.
-                self.object_cache.lock().unwrap().clear();
+                self.object_cache.lock_or_recover().clear();
                 log::debug!(
                     "authenticate(): object cache cleared after successful authentication \
                      to force re-decryption of any pre-auth cached objects (#323)"
@@ -891,7 +1059,7 @@ impl PdfDocument {
     /// ```
     pub fn is_encrypted(&self) -> bool {
         // Check if encryption handler is already initialized
-        if self.encryption_handler.lock().unwrap().is_some() {
+        if self.encryption_handler.lock_or_recover().is_some() {
             return true;
         }
         // Check trailer for /Encrypt entry without initializing
@@ -907,7 +1075,7 @@ impl PdfDocument {
     /// yet been provided. Extraction methods use this to return a clear error
     /// instead of silently producing empty output.
     fn is_encrypted_and_unauthenticated(&self) -> bool {
-        if let Some(handler) = self.encryption_handler.lock().unwrap().as_ref() {
+        if let Some(handler) = self.encryption_handler.lock_or_recover().as_ref() {
             !handler.is_authenticated()
         } else {
             // Handler not yet initialized — check if /Encrypt exists
@@ -981,7 +1149,7 @@ impl PdfDocument {
     fn scan_for_object(&self, obj_ref: ObjectRef) -> Result<u64> {
         // Check cached scan results first
         {
-            let scan_cache = self.scanned_object_offsets.lock().unwrap();
+            let scan_cache = self.scanned_object_offsets.lock_or_recover();
             if let Some(offsets) = scan_cache.as_ref() {
                 if let Some(&offset) = offsets.get(&obj_ref.id) {
                     return Ok(offset);
@@ -997,9 +1165,9 @@ impl PdfDocument {
             obj_ref.gen
         );
 
-        self.reader.lock().unwrap().seek(SeekFrom::Start(0))?;
+        self.reader.lock_or_recover().seek(SeekFrom::Start(0))?;
         let mut content = Vec::new();
-        self.reader.lock().unwrap().read_to_end(&mut content)?;
+        self.reader.lock_or_recover().read_to_end(&mut content)?;
 
         let mut offsets = HashMap::new();
 
@@ -1063,7 +1231,7 @@ impl PdfDocument {
         log::info!("File scan found {} objects", offsets.len());
 
         let result = offsets.get(&obj_ref.id).copied();
-        *self.scanned_object_offsets.lock().unwrap() = Some(offsets);
+        *self.scanned_object_offsets.lock_or_recover() = Some(offsets);
 
         match result {
             Some(offset) => Ok(offset),
@@ -1091,7 +1259,7 @@ impl PdfDocument {
         use crate::objstm::parse_object_stream_with_decryption;
 
         {
-            let done = self.objstm_recovery_done.lock().unwrap();
+            let done = self.objstm_recovery_done.lock_or_recover();
             if *done {
                 return;
             }
@@ -1112,7 +1280,7 @@ impl PdfDocument {
         // pass; a transient seek/read failure should leave the flag unset
         // so a later retry can still attempt recovery.
         let file_bytes = {
-            let mut r = self.reader.lock().unwrap();
+            let mut r = self.reader.lock_or_recover();
             if r.seek(SeekFrom::Start(0)).is_err() {
                 return;
             }
@@ -1159,7 +1327,7 @@ impl PdfDocument {
                 },
             };
 
-            let mut cache = self.object_cache.lock().unwrap();
+            let mut cache = self.object_cache.lock_or_recover();
             for (obj_num, object) in objects_map {
                 let cache_ref = ObjectRef::new(obj_num, 0);
                 // Only overwrite entries we'd otherwise have resolved to
@@ -1182,7 +1350,7 @@ impl PdfDocument {
             recovered
         );
 
-        *self.objstm_recovery_done.lock().unwrap() = true;
+        *self.objstm_recovery_done.lock_or_recover() = true;
     }
 
     /// Load an object by its reference.
@@ -1219,7 +1387,7 @@ impl PdfDocument {
 
         // Check recursion depth
         {
-            let depth = *self.recursion_depth.lock().unwrap();
+            let depth = *self.recursion_depth.lock_or_recover();
             if depth >= MAX_RECURSION_DEPTH {
                 log::error!(
                     "Recursion depth limit exceeded ({}) while loading object {} gen {}",
@@ -1232,18 +1400,18 @@ impl PdfDocument {
         }
 
         // Check for circular references
-        if self.resolving_stack.lock().unwrap().contains(&obj_ref) {
+        if self.resolving_stack.lock_or_recover().contains(&obj_ref) {
             log::error!(
                 "Circular reference detected for object {} gen {} (depth: {})",
                 obj_ref.id,
                 obj_ref.gen,
-                self.recursion_depth.lock().unwrap()
+                self.recursion_depth.lock_or_recover()
             );
             return Err(Error::CircularReference(obj_ref));
         }
 
         // Check cache first
-        let cached_opt = self.object_cache.lock().unwrap().get(&obj_ref).cloned();
+        let cached_opt = self.object_cache.lock_or_recover().get(&obj_ref).cloned();
         if let Some(cached) = cached_opt {
             return Ok(cached);
         }
@@ -1273,19 +1441,19 @@ impl PdfDocument {
                         );
 
                         // Mark as being resolved (cycle detection)
-                        self.resolving_stack.lock().unwrap().insert(obj_ref);
+                        self.resolving_stack.lock_or_recover().insert(obj_ref);
 
                         // Increment recursion depth
-                        *self.recursion_depth.lock().unwrap() += 1;
+                        *self.recursion_depth.lock_or_recover() += 1;
 
                         // Load the object
                         let result = self.load_uncompressed_object(obj_ref, offset);
 
                         // Decrement recursion depth
-                        *self.recursion_depth.lock().unwrap() -= 1;
+                        *self.recursion_depth.lock_or_recover() -= 1;
 
                         // Unmark when done
-                        self.resolving_stack.lock().unwrap().remove(&obj_ref);
+                        self.resolving_stack.lock_or_recover().remove(&obj_ref);
 
                         return result;
                     },
@@ -1293,8 +1461,7 @@ impl PdfDocument {
                         // PDF Spec §7.3.10: missing object reference "shall be treated as null"
                         log::warn!("Object {} gen {} not found (xref + file scan failed), treating as Null per §7.3.10", obj_ref.id, obj_ref.gen);
                         self.object_cache
-                            .lock()
-                            .unwrap()
+                            .lock_or_recover()
                             .insert(obj_ref, Object::Null);
                         return Ok(Object::Null);
                     },
@@ -1337,11 +1504,11 @@ impl PdfDocument {
                     obj_ref.id,
                     scanned_offset
                 );
-                self.resolving_stack.lock().unwrap().insert(obj_ref);
-                *self.recursion_depth.lock().unwrap() += 1;
+                self.resolving_stack.lock_or_recover().insert(obj_ref);
+                *self.recursion_depth.lock_or_recover() += 1;
                 let result = self.load_uncompressed_object(obj_ref, scanned_offset);
-                *self.recursion_depth.lock().unwrap() -= 1;
-                self.resolving_stack.lock().unwrap().remove(&obj_ref);
+                *self.recursion_depth.lock_or_recover() -= 1;
+                self.resolving_stack.lock_or_recover().remove(&obj_ref);
                 return result;
             }
 
@@ -1350,7 +1517,7 @@ impl PdfDocument {
             // mis-flag every compressed object's xref slot as free, so
             // sweep the object streams once and recheck the cache.
             self.recover_from_object_streams();
-            if let Some(obj) = self.object_cache.lock().unwrap().get(&obj_ref).cloned() {
+            if let Some(obj) = self.object_cache.lock_or_recover().get(&obj_ref).cloned() {
                 if !matches!(obj, Object::Null) {
                     log::debug!("Object {} recovered from object-stream sweep", obj_ref.id);
                     return Ok(obj);
@@ -1364,17 +1531,16 @@ impl PdfDocument {
                 obj_ref.gen
             );
             self.object_cache
-                .lock()
-                .unwrap()
+                .lock_or_recover()
                 .insert(obj_ref, Object::Null);
             return Ok(Object::Null);
         }
 
         // Mark as being resolved (cycle detection)
-        self.resolving_stack.lock().unwrap().insert(obj_ref);
+        self.resolving_stack.lock_or_recover().insert(obj_ref);
 
         // Increment recursion depth
-        *self.recursion_depth.lock().unwrap() += 1;
+        *self.recursion_depth.lock_or_recover() += 1;
 
         // Handle different entry types
         use crate::xref::XRefEntryType;
@@ -1406,18 +1572,17 @@ impl PdfDocument {
                     obj_ref.id
                 );
                 self.object_cache
-                    .lock()
-                    .unwrap()
+                    .lock_or_recover()
                     .insert(obj_ref, Object::Null);
                 Ok(Object::Null)
             },
         };
 
         // Decrement recursion depth
-        *self.recursion_depth.lock().unwrap() -= 1;
+        *self.recursion_depth.lock_or_recover() -= 1;
 
         // Unmark when done
-        self.resolving_stack.lock().unwrap().remove(&obj_ref);
+        self.resolving_stack.lock_or_recover().remove(&obj_ref);
 
         result
     }
@@ -1499,13 +1664,17 @@ impl PdfDocument {
     pub fn is_form_xobject(&self, obj_ref: ObjectRef) -> bool {
         // Check negative cache first (known non-Form XObjects)
         {
-            if self.image_xobject_cache.lock().unwrap().contains(&obj_ref) {
+            if self
+                .image_xobject_cache
+                .lock_or_recover()
+                .contains(&obj_ref)
+            {
                 return false;
             }
         }
 
         // If already in object cache, check directly
-        let cached_opt = self.object_cache.lock().unwrap().get(&obj_ref).cloned();
+        let cached_opt = self.object_cache.lock_or_recover().get(&obj_ref).cloned();
         if let Some(cached) = cached_opt {
             let is_form = cached
                 .as_dict()
@@ -1513,7 +1682,7 @@ impl PdfDocument {
                 .and_then(|s| s.as_name())
                 == Some("Form");
             if !is_form {
-                self.image_xobject_cache.lock().unwrap().insert(obj_ref);
+                self.image_xobject_cache.lock_or_recover().insert(obj_ref);
             }
             return is_form;
         }
@@ -1534,8 +1703,7 @@ impl PdfDocument {
         let offset = entry.offset;
         if self
             .reader
-            .lock()
-            .unwrap()
+            .lock_or_recover()
             .seek(SeekFrom::Start(offset))
             .is_err()
         {
@@ -1544,7 +1712,7 @@ impl PdfDocument {
 
         // Read enough bytes for the object header + dictionary (typically <1KB)
         let mut buf = [0u8; 1024];
-        let n = match self.reader.lock().unwrap().read(&mut buf) {
+        let n = match self.reader.lock_or_recover().read(&mut buf) {
             Ok(n) => n,
             Err(_) => return true,
         };
@@ -1564,7 +1732,7 @@ impl PdfDocument {
                     return true;
                 }
                 // Image, PS, or anything else — not a Form
-                self.image_xobject_cache.lock().unwrap().insert(obj_ref);
+                self.image_xobject_cache.lock_or_recover().insert(obj_ref);
                 return false;
             }
         }
@@ -1993,15 +2161,16 @@ impl PdfDocument {
         already_corrected: bool,
     ) -> Result<Object> {
         // Seek to object offset
-        self.reader.lock().unwrap().seek(SeekFrom::Start(offset))?;
+        self.reader
+            .lock_or_recover()
+            .seek(SeekFrom::Start(offset))?;
 
         // Read bytes for object header (e.g., "1 0 obj")
         // Use bytes instead of String to handle binary data gracefully
         let mut header_bytes = Vec::new();
         let bytes_read = self
             .reader
-            .lock()
-            .unwrap()
+            .lock_or_recover()
             .read_until(b'\n', &mut header_bytes)?;
 
         if bytes_read == 0 {
@@ -2023,8 +2192,7 @@ impl PdfDocument {
             let mut next_bytes = Vec::new();
             let next_read = self
                 .reader
-                .lock()
-                .unwrap()
+                .lock_or_recover()
                 .read_until(b'\n', &mut next_bytes)?;
 
             if next_read == 0 {
@@ -2165,7 +2333,10 @@ impl PdfDocument {
 
         loop {
             let mut chunk = Vec::new();
-            let bytes_read = self.reader.lock().unwrap().read_until(b'\n', &mut chunk)?;
+            let bytes_read = self
+                .reader
+                .lock_or_recover()
+                .read_until(b'\n', &mut chunk)?;
 
             if data.len() > MAX_BYTES {
                 log::warn!(
@@ -2237,9 +2408,9 @@ impl PdfDocument {
         // and the non-authenticated case (no key derived yet). Strings
         // inside compressed objects ride along with the ObjStm payload
         // and are already in clear text per ISO 32000-1:2008 §7.6.2.
-        let is_encrypt_dict = *self.encrypt_dict_ref.lock().unwrap() == Some(obj_ref);
+        let is_encrypt_dict = *self.encrypt_dict_ref.lock_or_recover() == Some(obj_ref);
         if !is_encrypt_dict {
-            let handler_guard = self.encryption_handler.lock().unwrap();
+            let handler_guard = self.encryption_handler.lock_or_recover();
             if let Some(handler) = handler_guard.as_ref() {
                 if handler.is_authenticated() {
                     Self::decrypt_strings_in_object(
@@ -2254,8 +2425,7 @@ impl PdfDocument {
 
         // Cache the object
         self.object_cache
-            .lock()
-            .unwrap()
+            .lock_or_recover()
             .insert(obj_ref, obj.clone());
 
         Ok(obj)
@@ -2299,8 +2469,7 @@ impl PdfDocument {
                         obj_ref.id
                     );
                     self.object_cache
-                        .lock()
-                        .unwrap()
+                        .lock_or_recover()
                         .insert(obj_ref, Object::Null);
                     return Ok(Object::Null);
                 },
@@ -2329,7 +2498,7 @@ impl PdfDocument {
         // future PDF is encountered where the producer DID encrypt the ObjStm
         // (non-standard), the unencrypted parse will fail and we fall back to
         // trying with decryption.
-        let handler_ref = self.encryption_handler.lock().unwrap();
+        let handler_ref = self.encryption_handler.lock_or_recover();
         let objects_map = if handler_ref.is_some() {
             // First try without decryption (spec-compliant path)
             match parse_object_stream_with_decryption(&stream_obj, None, 0, 0) {
@@ -2382,7 +2551,9 @@ impl PdfDocument {
                 true
             };
             if should_cache {
-                self.object_cache.lock().unwrap().insert(cache_ref, object);
+                self.object_cache
+                    .lock_or_recover()
+                    .insert(cache_ref, object);
             } else {
                 log::debug!(
                     "[cache_debug] NOT caching obj {} from stream {} (xref points elsewhere)",
@@ -2418,11 +2589,10 @@ impl PdfDocument {
 
         // Read the search region
         self.reader
-            .lock()
-            .unwrap()
+            .lock_or_recover()
             .seek(SeekFrom::Start(search_start))?;
         let mut buffer = vec![0u8; search_distance as usize + 100]; // Extra bytes to read full line
-        let bytes_read = self.reader.lock().unwrap().read(&mut buffer)?;
+        let bytes_read = self.reader.lock_or_recover().read(&mut buffer)?;
 
         if bytes_read == 0 {
             return Err(Error::ParseError {
@@ -3070,7 +3240,11 @@ impl PdfDocument {
             if let Some(xobj_dict) = xobj_obj.as_dict() {
                 for val in xobj_dict.values() {
                     if let Some(obj_ref) = val.as_reference() {
-                        if !self.image_xobject_cache.lock().unwrap().contains(&obj_ref) {
+                        if !self
+                            .image_xobject_cache
+                            .lock_or_recover()
+                            .contains(&obj_ref)
+                        {
                             xobj_refs.push(obj_ref);
                         }
                     }
@@ -3205,7 +3379,7 @@ impl PdfDocument {
         // ids recovered from the ObjStm sweep so that pages compressed in
         // streams whose xref slots were mis-flagged free still get visited.
         let mut obj_nums: Vec<u32> = self.xref.all_object_numbers().collect();
-        for r in self.object_cache.lock().unwrap().keys() {
+        for r in self.object_cache.lock_or_recover().keys() {
             obj_nums.push(r.id);
         }
         obj_nums.sort_unstable();
@@ -4141,7 +4315,62 @@ impl PdfDocument {
             }
         }
 
+        // #317 UTF-8 mojibake repair: a run of Latin-1 Supplement chars
+        // whose raw bytes form valid UTF-8 decoding to non-Latin-1 code
+        // points is almost certainly a double-encoded non-Latin string
+        // (Cyrillic, Greek, CJK, Arabic, Hebrew, …) that surfaced
+        // because the producing font had no ToUnicode CMap and the
+        // /Differences / AGL lookup returned the UTF-8 byte sequence
+        // re-interpreted as Latin-1. Re-decode those runs in place.
+        let cleaned_text = Self::repair_utf8_mojibake(&cleaned_text);
+
         Ok(cleaned_text)
+    }
+
+    /// Walk `input` and repair runs of Latin-1 Supplement characters
+    /// whose raw byte values form a valid UTF-8 sequence whose decoded
+    /// codepoints include at least one non-Latin-1 character.
+    ///
+    /// This undoes the most common shape of "Cyrillic served as
+    /// Latin-1" mojibake that surfaces on PDFs whose fonts have no
+    /// ToUnicode CMap. The decoded-codepoint gate (≥ U+0100 somewhere
+    /// in the decoded run) ensures genuine Latin-1 content like
+    /// "Résumé" — which also decodes as valid UTF-8 but stays entirely
+    /// within U+0000..U+00FF — is left alone.
+    fn repair_utf8_mojibake(input: &str) -> String {
+        // Fast-path: if the string contains no Latin-1 Supplement codepoints
+        // (U+0080..=U+00FF), there is nothing to repair. This avoids the
+        // O(n) `Vec<char>` allocation on every ASCII-only page.
+        if !input.chars().any(|c| matches!(c as u32, 0x80..=0xFF)) {
+            return input.to_string();
+        }
+        let mut out = String::with_capacity(input.len());
+        let chars: Vec<char> = input.chars().collect();
+        let mut i = 0;
+        while i < chars.len() {
+            let mut j = i;
+            while j < chars.len() {
+                let cc = chars[j] as u32;
+                if (0x80..=0xFF).contains(&cc) {
+                    j += 1;
+                } else {
+                    break;
+                }
+            }
+            if j - i >= 2 {
+                let bytes: Vec<u8> = chars[i..j].iter().map(|&c| c as u8).collect();
+                if let Ok(decoded) = std::str::from_utf8(&bytes) {
+                    if decoded.chars().any(|c| c as u32 > 0xFF) {
+                        out.push_str(decoded);
+                        i = j;
+                        continue;
+                    }
+                }
+            }
+            out.push(chars[i]);
+            i += 1;
+        }
+        out
     }
 
     /// Extract text from all pages of the document.
@@ -6434,7 +6663,7 @@ impl PdfDocument {
         &mut self,
     ) -> Result<std::collections::HashMap<String, usize>> {
         {
-            let guard = self.running_artifact_signatures.lock().unwrap();
+            let guard = self.running_artifact_signatures.lock_or_recover();
             if let Some(ref map) = *guard {
                 return Ok(map.clone());
             }
@@ -6442,7 +6671,7 @@ impl PdfDocument {
         let page_count = self.page_count()?;
         if page_count < 2 {
             let empty = std::collections::HashMap::new();
-            *self.running_artifact_signatures.lock().unwrap() = Some(empty.clone());
+            *self.running_artifact_signatures.lock_or_recover() = Some(empty.clone());
             return Ok(empty);
         }
 
@@ -6526,7 +6755,7 @@ impl PdfDocument {
                 (sig, first)
             })
             .collect();
-        *self.running_artifact_signatures.lock().unwrap() = Some(signatures.clone());
+        *self.running_artifact_signatures.lock_or_recover() = Some(signatures.clone());
         Ok(signatures)
     }
 
@@ -7373,7 +7602,7 @@ impl PdfDocument {
     /// The content stream contains PDF operators that define the page's appearance.
     pub fn get_page_content_data(&mut self, page_index: usize) -> Result<Vec<u8>> {
         {
-            let cache = self.page_content_cache.lock().unwrap();
+            let cache = self.page_content_cache.lock_or_recover();
             if let Some((cached_page, data)) = cache.as_ref() {
                 if *cached_page == page_index {
                     return Ok(data.as_ref().clone());
@@ -7486,7 +7715,7 @@ impl PdfDocument {
             String::from_utf8_lossy(&content_data)
         );
 
-        *self.page_content_cache.lock().unwrap() =
+        *self.page_content_cache.lock_or_recover() =
             Some((page_index, std::sync::Arc::new(content_data.clone())));
 
         Ok(content_data)
@@ -7879,14 +8108,14 @@ impl PdfDocument {
         let xobject = match self.load_object(xobject_ref) {
             Ok(obj) => obj,
             Err(e) => {
-                extractor.pop_xobject();
+                extractor.pop_xobject_failed();
                 return Err(e);
             },
         };
         let xobject_dict = match xobject.as_dict() {
             Some(dict) => dict,
             None => {
-                extractor.pop_xobject();
+                extractor.pop_xobject_failed();
                 return Err(Error::ParseError {
                     offset: 0,
                     reason: "XObject is not a dictionary".to_string(),
@@ -7916,8 +8145,7 @@ impl PdfDocument {
         // Decode stream — reuse document-level cache shared with text extraction.
         let cached_stream = {
             self.xobject_stream_cache
-                .lock()
-                .unwrap()
+                .lock_or_recover()
                 .get(&xobject_ref)
                 .cloned()
         };
@@ -7932,14 +8160,13 @@ impl PdfDocument {
                         self.xobject_stream_cache_bytes
                             .store(current + data.len(), Ordering::Relaxed);
                         self.xobject_stream_cache
-                            .lock()
-                            .unwrap()
+                            .lock_or_recover()
                             .insert(xobject_ref, std::sync::Arc::new(data.clone()));
                     }
                     data
                 },
                 Err(e) => {
-                    extractor.pop_xobject();
+                    extractor.pop_xobject_failed();
                     return Err(e);
                 },
             }
@@ -7948,7 +8175,7 @@ impl PdfDocument {
         let operators = match parse_content_stream_paths_only(&stream_data) {
             Ok(ops) => ops,
             Err(e) => {
-                extractor.pop_xobject();
+                extractor.pop_xobject_failed();
                 return Err(e);
             },
         };
@@ -8560,8 +8787,7 @@ impl PdfDocument {
             if let Some(font_dict_ref) = font_dict_ref {
                 let cached_set_opt = self
                     .font_set_cache
-                    .lock()
-                    .unwrap()
+                    .lock_or_recover()
                     .get(&font_dict_ref)
                     .cloned();
                 if let Some(cached_set) = cached_set_opt {
@@ -8598,8 +8824,7 @@ impl PdfDocument {
 
                 let cached_fingerprint_opt = self
                     .font_fingerprint_cache
-                    .lock()
-                    .unwrap()
+                    .lock_or_recover()
                     .get(&fingerprint)
                     .cloned();
                 if let Some(cached_set) = cached_fingerprint_opt {
@@ -8626,8 +8851,7 @@ impl PdfDocument {
 
                 let cached_name_set = self
                     .font_name_set_cache
-                    .lock()
-                    .unwrap()
+                    .lock_or_recover()
                     .get(&name_hash)
                     .cloned();
                 if let Some((cached_set, _check_name, _check_hash)) = cached_name_set {
@@ -8655,7 +8879,7 @@ impl PdfDocument {
                     // If font is a reference, check per-font cache first
                     if let Some(font_ref) = font_obj.as_reference() {
                         let cached_font_opt =
-                            self.font_cache.lock().unwrap().get(&font_ref).cloned();
+                            self.font_cache.lock_or_recover().get(&font_ref).cloned();
                         if let Some(cached) = cached_font_opt {
                             extractor.add_font_shared(name.clone(), cached);
                             continue;
@@ -8675,14 +8899,12 @@ impl PdfDocument {
                         // structurally identical font was already parsed elsewhere.
                         let cached_identity_opt = self
                             .font_identity_cache
-                            .lock()
-                            .unwrap()
+                            .lock_or_recover()
                             .get(&id_hash)
                             .cloned();
                         if let Some(cached) = cached_identity_opt {
                             self.font_cache
-                                .lock()
-                                .unwrap()
+                                .lock_or_recover()
                                 .insert(font_ref, Arc::clone(&cached));
                             extractor.add_font_shared(name.clone(), cached);
                             continue;
@@ -8694,12 +8916,10 @@ impl PdfDocument {
                             crate::fonts::global_cache::global_font_cache_get(id_hash)
                         {
                             self.font_identity_cache
-                                .lock()
-                                .unwrap()
+                                .lock_or_recover()
                                 .insert(id_hash, Arc::clone(&cached));
                             self.font_cache
-                                .lock()
-                                .unwrap()
+                                .lock_or_recover()
                                 .insert(font_ref, Arc::clone(&cached));
                             extractor.add_font_shared(name.clone(), cached);
                             continue;
@@ -8714,12 +8934,10 @@ impl PdfDocument {
                                     Arc::clone(&arc),
                                 );
                                 self.font_identity_cache
-                                    .lock()
-                                    .unwrap()
+                                    .lock_or_recover()
                                     .insert(id_hash, Arc::clone(&arc));
                                 self.font_cache
-                                    .lock()
-                                    .unwrap()
+                                    .lock_or_recover()
                                     .insert(font_ref, Arc::clone(&arc));
                                 extractor.add_font_shared(name.clone(), arc);
                             },
@@ -8762,20 +8980,17 @@ impl PdfDocument {
                 let font_set = extractor.get_font_set();
                 if let Some(fdr) = font_dict_ref {
                     self.font_set_cache
-                        .lock()
-                        .unwrap()
+                        .lock_or_recover()
                         .insert(fdr, font_set.clone());
                 }
                 self.font_fingerprint_cache
-                    .lock()
-                    .unwrap()
+                    .lock_or_recover()
                     .insert(fingerprint, font_set.clone());
 
                 // Cache by font names with spot-check data for Layer 4
                 if let Some((check_name, check_hash)) = spot_check {
                     self.font_name_set_cache
-                        .lock()
-                        .unwrap()
+                        .lock_or_recover()
                         .insert(name_hash, (Arc::new(font_set), check_name, check_hash));
                 }
 
@@ -10077,8 +10292,7 @@ impl PdfDocument {
         {
             if let Some(cached_images) = self
                 .form_xobject_images_cache
-                .lock()
-                .unwrap()
+                .lock_or_recover()
                 .get(&xobject_ref)
             {
                 let images = cached_images
@@ -10140,8 +10354,7 @@ impl PdfDocument {
         // Decode form stream — check cache first to avoid repeated decompression
         let cached_stream = self
             .xobject_stream_cache
-            .lock()
-            .unwrap()
+            .lock_or_recover()
             .get(&xobject_ref)
             .cloned();
         let stream_data = if let Some(cached) = cached_stream {
@@ -10155,8 +10368,7 @@ impl PdfDocument {
                         self.xobject_stream_cache_bytes
                             .store(current_bytes + data.len(), Ordering::Relaxed);
                         self.xobject_stream_cache
-                            .lock()
-                            .unwrap()
+                            .lock_or_recover()
                             .insert(xobject_ref, std::sync::Arc::new(data.clone()));
                     }
                     data
@@ -10242,8 +10454,7 @@ impl PdfDocument {
 
         // Cache the raw images (with Form's own Matrix applied, but no parent CTM)
         self.form_xobject_images_cache
-            .lock()
-            .unwrap()
+            .lock_or_recover()
             .insert(xobject_ref, raw_images.clone());
 
         // Apply parent_ctm to produce final images for this call
@@ -14842,5 +15053,106 @@ mod tests {
             .page_count()
             .expect("page_count should work with encrypted objstm");
         assert!(page_count > 0, "Should have at least one page");
+    }
+
+    // ====================================================================
+    // MutexExt
+    // ====================================================================
+
+    #[test]
+    fn test_lock_or_recover_on_poisoned_mutex() {
+        use std::sync::Mutex;
+        let m = Mutex::new(42);
+        // Poison the mutex by panicking while holding the lock
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = m.lock().unwrap();
+            panic!("intentional");
+        }));
+        assert!(m.lock().is_err(), "Mutex should be poisoned");
+        // lock_or_recover should still return the inner value
+        let val = *m.lock_or_recover();
+        assert_eq!(val, 42);
+    }
+
+    // ====================================================================
+    // BoundedEntryCache
+    // ====================================================================
+
+    #[test]
+    fn test_bounded_entry_cache_lru_eviction_order() {
+        let mut c = BoundedEntryCache::new(3);
+        c.insert(1u32, "a");
+        c.insert(2, "b");
+        c.insert(3, "c");
+        // Touch key 1 so it becomes most-recently-used
+        assert_eq!(c.get(&1), Some(&"a"));
+        // Insert key 4 — should evict 2 (oldest untouched), not 1
+        c.insert(4, "d");
+        assert_eq!(c.get(&1), Some(&"a"), "LRU-promoted key should survive");
+        assert!(c.get(&2).is_none(), "Oldest untouched key should be evicted");
+        assert_eq!(c.get(&3), Some(&"c"));
+        assert_eq!(c.get(&4), Some(&"d"));
+    }
+
+    #[test]
+    fn test_bounded_entry_cache_reinsert_no_eviction() {
+        let mut c = BoundedEntryCache::new(1);
+        c.insert(1u32, "a");
+        // Re-insert same key — should NOT evict, just replace
+        c.insert(1, "b");
+        assert_eq!(c.len(), 1);
+        assert_eq!(c.get(&1), Some(&"b"));
+    }
+
+    #[test]
+    fn test_bounded_entry_cache_fifo_eviction_without_get() {
+        let mut c = BoundedEntryCache::new(2);
+        c.insert(1u32, "a");
+        c.insert(2, "b");
+        // No get() calls — pure insertion order
+        c.insert(3, "c");
+        assert!(c.get(&1).is_none(), "First inserted should be evicted");
+        assert_eq!(c.get(&2), Some(&"b"));
+        assert_eq!(c.get(&3), Some(&"c"));
+    }
+
+    // ====================================================================
+    // BoundedObjectCache
+    // ====================================================================
+
+    #[test]
+    fn test_bounded_object_cache_oversized_rejection() {
+        let mut c = BoundedObjectCache::new(100); // 100 bytes max
+        let big = Object::String(vec![0u8; 200]); // well over 100 bytes
+        c.insert(ObjectRef::new(1, 0), big);
+        assert_eq!(c.len(), 0, "Oversized object should be rejected");
+    }
+
+    #[test]
+    fn test_bounded_object_cache_byte_budget_eviction() {
+        // Use a budget that fits ~2 small objects but not 3
+        let small = Object::Integer(1); // estimate_size = 32
+        let budget = 80; // fits 2 × 32, not 3
+        let mut c = BoundedObjectCache::new(budget);
+        c.insert(ObjectRef::new(1, 0), small.clone());
+        c.insert(ObjectRef::new(2, 0), small.clone());
+        assert_eq!(c.len(), 2);
+        // Third insertion should evict the first
+        c.insert(ObjectRef::new(3, 0), small.clone());
+        assert!(c.get(&ObjectRef::new(1, 0)).is_none(), "Oldest should be evicted");
+        assert!(c.get(&ObjectRef::new(3, 0)).is_some());
+        assert!(c.current_bytes <= budget);
+    }
+
+    #[test]
+    fn test_estimate_size_depth_bottoms_out() {
+        // Deeply nested array — should not stack overflow
+        let mut obj = Object::Integer(1);
+        for _ in 0..100 {
+            obj = Object::Array(vec![obj]);
+        }
+        // Should return a finite value without panicking
+        let size = BoundedObjectCache::estimate_size(&obj);
+        assert!(size > 0);
     }
 }

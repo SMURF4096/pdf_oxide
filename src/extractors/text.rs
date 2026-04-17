@@ -996,6 +996,60 @@ fn should_insert_space(
 
     let geometric_suggests_space = gap_pt > geometric_threshold;
 
+    // #365 / B8b: Intra-word kerning guard (letter-letter branch).
+    //
+    // On TJ-heavy producers (LaTeX, MS Word → PDF) the Primary
+    // word-boundary detector hands `should_insert_space` two adjacent
+    // clusters like "cha"→"nge", "diffe"→"rent", "equivalen"→"t"
+    // whose gap sits just above `geometric_threshold` (= 0.5 ×
+    // space-glyph width) but well below a real word gap. The
+    // consensus rule below would then emit a spurious space mid-word.
+    // Real word gaps in real producers reach one full space-glyph
+    // width or sit next to punctuation/digits, both of which fall
+    // through this guard.
+    //
+    // The guard fires regardless of `tj_offset_triggered` because the
+    // gap can also be geometric-only (when WordBoundaryDetector splits
+    // the cluster but no explicit TJ offset crossed the threshold).
+    // See the sibling guard in `process_tj_array_tiebreaker` for the
+    // upstream space-as-span insertion path.
+    // 1.2 × full space-glyph advance. Any gap below that, between two
+    // alphabetic runs, is far more likely to be inter-letter kerning
+    // emitted by LaTeX or a Word-style exporter than a real word
+    // boundary. Real producer word gaps either match the space-glyph
+    // width plus the producer's word-spacing pad, or sit next to
+    // non-letter characters that fall through this guard.
+    //
+    // Only fires when the font is available so the threshold is
+    // computed from the font's own space-glyph advance — the no-font
+    // fallback (`font_size * 0.25`) is a wider, deliberately
+    // conservative value that already separates real word gaps from
+    // kerning at the consensus level.
+    let kerning_guard_threshold = if fonts.contains_key(font_name) {
+        Some(geometric_threshold * 2.4)
+    } else {
+        None
+    };
+    if let Some(thr) = kerning_guard_threshold {
+        if gap_pt < thr {
+            let prev_last = preceding_text.chars().last();
+            let next_first = following_text.chars().next();
+            if let (Some(pc), Some(nc)) = (prev_last, next_first) {
+                // Use is_lowercase on both sides: LaTeX/microtype intra-word kerning
+                // occurs within lowercase letter runs. Real word boundaries in
+                // professional PDFs frequently involve uppercase letters (headings,
+                // abbreviations, proper nouns) — those fall through to the consensus
+                // path, avoiding word-gluing like "APPENDIXA" or "OLIVERA.".
+                if pc.is_lowercase() && nc.is_lowercase() {
+                    log::debug!(
+                        "intra-word kerning guard: suppressing space between '{pc}' and '{nc}' (gap={gap_pt:.2}pt < {thr:.2}pt, threshold = 1.2× space-glyph width)"
+                    );
+                    return SpaceDecision::no_space(SpaceSource::NoSpace, 0.9);
+                }
+            }
+        }
+    }
+
     // Consensus checking
     // Only insert space if BOTH signals agree OR geometric signal is very strong
     // This reduces false positives in justified text where TJ offsets are arbitrary
@@ -1446,6 +1500,28 @@ impl TjBuffer {
         // Avoids String allocation in decode_text_to_unicode (2 allocations per call).
         if let Some(font) = font {
             if font.subtype != "Type0" {
+                // #317 UTF-8-in-simple-font detection — see long comment in
+                // `append_advance_buffer`. Some producers emit UTF-8 byte
+                // sequences inside PDF string literals for fonts that only
+                // declare a Latin encoding with no ToUnicode CMap. When the
+                // entire byte slice is valid UTF-8 whose decoded chars
+                // include at least one non-Latin-1 codepoint, treat it as
+                // UTF-8 so we recover Cyrillic / Greek / CJK instead of
+                // Latin-1 mojibake.
+                if font.to_unicode.is_none() && bytes.len() >= 2 {
+                    let has_high = bytes.iter().any(|&b| b >= 0x80);
+                    if has_high {
+                        if let Ok(decoded) = std::str::from_utf8(bytes) {
+                            if decoded.chars().any(|c| c as u32 > 0xFF) {
+                                for ch in decoded.chars() {
+                                    self.unicode.push(ch);
+                                }
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+
                 let table = font.get_byte_to_char_table();
                 for &byte in bytes {
                     let c = table[byte as usize];
@@ -5204,6 +5280,18 @@ impl TextExtractor {
                     // Use geometry-based adaptive threshold
                     let threshold = self.calculate_adaptive_tj_threshold();
                     if *offset < threshold {
+                        // Note: #365 split-word symptoms ("diffe rent", "cha nge",
+                        // "equivalen t") are handled at the higher level by the
+                        // intra-word kerning guard in `should_insert_space`. An
+                        // earlier TJ-side guard here (commit b2c6484) used a
+                        // letter-letter + |offset| < space-glyph-width rule, but
+                        // that rule misclassified real inter-word gaps in
+                        // tightly-justified PDFs (LaTeX academic papers, Docling
+                        // output) where producers encode word boundaries as TJ
+                        // offsets smaller than a full space glyph. The
+                        // span-merge-time guard has more context (full bbox,
+                        // WordBoundaryDetector) and avoids that false positive.
+                        //
                         // Check if buffer ends with space BEFORE flushing
                         // This prevents double spaces when TJ processor inserts space
                         // AND span merging would insert space at the same boundary.
@@ -5734,6 +5822,49 @@ impl TextExtractor {
 
         let total_width = if let Some(font) = font {
             if font.subtype != "Type0" {
+                // #317: UTF-8-in-simple-font detection (same heuristic as
+                // `append_advance_buffer`). Some producers emit raw UTF-8
+                // bytes inside PDF string literals when the font declares
+                // only a Latin encoding and no ToUnicode CMap. Byte-by-byte
+                // Latin decoding produces mojibake. When the slice is valid
+                // UTF-8 with at least one non-Latin-1 codepoint, decode as
+                // UTF-8 so non-Latin scripts (Cyrillic, Greek, CJK, …) come
+                // through as their intended codepoints.
+                if font.to_unicode.is_none() && text.len() >= 2 {
+                    let has_high = text.iter().any(|&b| b >= 0x80);
+                    if has_high {
+                        if let Ok(decoded) = std::str::from_utf8(text) {
+                            if decoded.chars().any(|c| c as u32 > 0xFF) {
+                                let width_table = font.get_byte_to_width_table();
+                                let mut w_sum = 0.0f32;
+                                for &byte in text {
+                                    let mut w = width_table[byte as usize] * fs_factor * hs_factor;
+                                    w += cs_hs;
+                                    if byte == 0x20 {
+                                        w += ws_hs;
+                                    }
+                                    w_sum += w;
+                                }
+                                let char_count = decoded.chars().count();
+                                if char_count > 0 {
+                                    let per_char = w_sum / char_count as f32;
+                                    for ch in decoded.chars() {
+                                        buffer.unicode.push(ch);
+                                        buffer.char_widths.push(per_char);
+                                    }
+                                }
+                                // Fall through to the matrix update at the
+                                // bottom of the function via `w_sum`.
+                                let state = self.state_stack.current_mut();
+                                let text_matrix = state.text_matrix;
+                                state.text_matrix.e += w_sum * text_matrix.a;
+                                state.text_matrix.f += w_sum * text_matrix.b;
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+
                 // Fast path: single pass over bytes for both Unicode and width
                 let char_table = font.get_byte_to_char_table();
                 let width_table = font.get_byte_to_width_table();
@@ -5850,6 +5981,74 @@ impl TextExtractor {
 
         let total_width = if let Some(font) = font {
             if font.subtype != "Type0" {
+                // #317: UTF-8-in-simple-font detection.
+                //
+                // Some producers (Russian CAD exporters, MS Office via
+                // non-English locales) emit UTF-8 byte sequences inside PDF
+                // string literals for a font that only declares a Latin
+                // encoding (WinAnsi, StandardEncoding, MacRoman) and no
+                // ToUnicode CMap. Byte-by-byte decoding through the Latin
+                // encoding produces mojibake like `ÐÐ¸ÑÑ` for "Лист".
+                //
+                // Heuristic: when the font has no ToUnicode and the entire
+                // text slice is a valid UTF-8 sequence whose decoded
+                // codepoints contain at least one non-Latin-1 character
+                // (U+0100 and above), treat the slice as UTF-8 directly.
+                // The non-Latin-1 gate prevents mis-interpreting genuine
+                // Latin-1 Supplement content (`Résumé`, etc.) — those
+                // decode entirely into U+0000..U+00FF and are left alone.
+                let utf8_width: Option<f32> = if font.to_unicode.is_none() && text.len() >= 2 {
+                    let has_high = text.iter().any(|&b| b >= 0x80);
+                    if has_high {
+                        if let Ok(decoded) = std::str::from_utf8(text) {
+                            let has_non_latin1 = decoded.chars().any(|c| c as u32 > 0xFF);
+                            if has_non_latin1 {
+                                let width_table = font.get_byte_to_width_table();
+                                let mut w_sum = 0.0f32;
+                                for &byte in text {
+                                    let mut w = width_table[byte as usize] * fs_factor * hs_factor;
+                                    w += cs_hs;
+                                    if byte == 0x20 {
+                                        w += ws_hs;
+                                    }
+                                    w_sum += w;
+                                }
+                                let char_count = decoded.chars().count();
+                                if char_count > 0 {
+                                    let per_char = w_sum / char_count as f32;
+                                    for ch in decoded.chars() {
+                                        buffer.unicode.push(ch);
+                                        buffer.char_widths.push(per_char);
+                                    }
+                                }
+                                log::debug!(
+                                    "UTF-8 mojibake repair: decoded {} Latin-1 bytes as {} chars via UTF-8 in font '{}'",
+                                    text.len(),
+                                    char_count,
+                                    font.base_font
+                                );
+                                Some(w_sum)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                if let Some(w) = utf8_width {
+                    buffer.accumulated_width += w;
+                    let state = self.state_stack.current_mut();
+                    let text_matrix = state.text_matrix;
+                    state.text_matrix.e += w * text_matrix.a;
+                    state.text_matrix.f += w * text_matrix.b;
+                    return Ok(());
+                }
+
                 let char_table = font.get_byte_to_char_table();
                 let width_table = font.get_byte_to_width_table();
                 let mut w_sum = 0.0f32;
@@ -6709,24 +6908,6 @@ mod tests {
         assert_eq!(extractor.char_count(), 0);
     }
 
-    /// Test unified space decision: TJ offset rule
-    /// NOTE: Disabled - space detection has been refactored to be PDF spec-compliant
-    #[test]
-    #[ignore]
-    fn test_space_decision_tj_offset() {
-        let config = SpanMergingConfig::default();
-        let fonts = std::collections::HashMap::new();
-
-        // TJ offset triggered should always insert space (Rule 1, confidence 0.95)
-        let decision = should_insert_space(
-            "word", "next", 0.0, 12.0, "TestFont", &fonts, true, &config, None, None, 12.0, 12.0,
-        );
-
-        assert!(decision.insert_space);
-        assert_eq!(decision.source, SpaceSource::TjOffset);
-        assert_eq!(decision.confidence, 0.95);
-    }
-
     /// Test unified space decision: Boundary space already present
     #[test]
     fn test_space_decision_boundary_space() {
@@ -6746,88 +6927,6 @@ mod tests {
         );
         assert!(!decision.insert_space);
         assert_eq!(decision.source, SpaceSource::AlreadyPresent);
-    }
-
-    /// Test unified space decision: Dual threshold rule
-    /// NOTE: Disabled - space detection has been refactored to be PDF spec-compliant
-    #[test]
-    #[ignore]
-    fn test_space_decision_dual_threshold() {
-        let config = SpanMergingConfig::default();
-        let fonts = std::collections::HashMap::new();
-        // space_threshold_em_ratio: 0.25, conservative_threshold_pt: 0.1
-
-        // 12pt font, space_threshold = 12 * 0.25 = 3pt
-        // char_width_threshold = 12 * 0.3 = 3.6pt
-        // dual_threshold = min(3, 3.6) = 3pt
-        let font_size = 12.0;
-
-        // Gap > dual_threshold should insert (Rule 2, confidence 0.8)
-        let decision = should_insert_space(
-            "word", "next", 3.5, font_size, "TestFont", &fonts, false, &config, None, None, 12.0,
-            12.0,
-        );
-        assert!(decision.insert_space);
-        assert_eq!(decision.source, SpaceSource::GeometricGap);
-        assert_eq!(decision.confidence, 0.8);
-
-        // Gap <= dual_threshold, not at heuristic boundary: no space (yet)
-        let decision = should_insert_space(
-            "word", "next", 2.5, font_size, "TestFont", &fonts, false, &config, None, None, 12.0,
-            12.0,
-        );
-        // This should not insert (no rule triggers)
-        // But conservative threshold (0.1) is still checked below
-    }
-
-    /// Test unified space decision: Character heuristic rule
-    /// NOTE: Disabled - heuristic rules removed in PDF spec-compliant refactoring
-    #[test]
-    #[ignore]
-    fn test_space_decision_heuristic_camelcase() {
-        let config = SpanMergingConfig::default();
-        let fonts = std::collections::HashMap::new();
-
-        // lowercase -> uppercase (CamelCase) should trigger heuristic (Rule 3, confidence 0.85)
-        let decision = should_insert_space(
-            "the", "General", 0.0, 12.0, "TestFont", &fonts, false, &config, None, None, 12.0, 12.0,
-        );
-        assert!(decision.insert_space);
-        assert_eq!(decision.source, SpaceSource::CharacterHeuristic);
-        assert_eq!(decision.confidence, 0.85);
-
-        // numeric -> letter should trigger heuristic
-        let decision = should_insert_space(
-            "version2", "dot3", 0.0, 12.0, "TestFont", &fonts, false, &config, None, None, 12.0,
-            12.0,
-        );
-        assert!(decision.insert_space);
-        assert_eq!(decision.source, SpaceSource::CharacterHeuristic);
-    }
-
-    /// Test unified space decision: Conservative threshold rule
-    /// NOTE: Disabled - conservative threshold rules removed in PDF spec-compliant refactoring
-    #[test]
-    #[ignore]
-    fn test_space_decision_conservative_threshold() {
-        let config = SpanMergingConfig::default();
-        let fonts = std::collections::HashMap::new();
-        // conservative_threshold_pt: 0.1
-
-        // Gap > conservative_threshold but not meeting other rules (Rule 4, confidence 0.5)
-        let decision = should_insert_space(
-            "word", "next", 0.2, 12.0, "TestFont", &fonts, false, &config, None, None, 12.0, 12.0,
-        );
-        assert!(decision.insert_space);
-        assert_eq!(decision.source, SpaceSource::GeometricGap);
-        assert_eq!(decision.confidence, 0.5);
-
-        // Gap <= conservative_threshold: no space (Rule 5 - default)
-        let decision = should_insert_space(
-            "word", "next", 0.05, 12.0, "TestFont", &fonts, false, &config, None, None, 12.0, 12.0,
-        );
-        assert!(!decision.insert_space);
-        assert_eq!(decision.source, SpaceSource::NoSpace);
     }
 
     /// Regression test for issue flagged in PR #281 review:
@@ -6862,32 +6961,6 @@ mod tests {
             "2pt gap between digits should still split adjacent table values, got: {:?}",
             table_cells
         );
-    }
-
-    /// Test unified space decision: No double spaces
-    /// NOTE: Disabled - space detection has been refactored to be PDF spec-compliant
-    #[test]
-    #[ignore]
-    fn test_space_decision_no_double_spaces() {
-        let config = SpanMergingConfig::default();
-        let fonts = std::collections::HashMap::new();
-
-        // When both TJ offset and gap would trigger, they should be coordinated
-        // TJ offset has highest priority and should be respected first
-        let decision_tj = should_insert_space(
-            "word", "next", 1.0, 12.0, "TestFont", &fonts, true, &config, None, None, 12.0, 12.0,
-        );
-        let decision_gap = should_insert_space(
-            "word", "next", 1.0, 12.0, "TestFont", &fonts, false, &config, None, None, 12.0, 12.0,
-        );
-
-        // TJ offset decision (0.95) should be preferred over gap decision
-        assert!(decision_tj.insert_space);
-        assert_eq!(decision_tj.source, SpaceSource::TjOffset);
-
-        // Gap alone would not trigger for 1pt gap (< conservative 0.1pt is false, but 1pt > 0.1pt is true)
-        // So gap should also trigger via conservative threshold
-        assert!(decision_gap.insert_space);
     }
 
     /// Test split boundary merging with space insertion

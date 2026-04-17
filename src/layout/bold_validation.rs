@@ -623,7 +623,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_fix_2b_no_empty_markers_with_unicode_spaces() {
         // Fix 2B: Integration test - Unicode spaces can't create empty bold markers
         // Even if content is surrounded by NBSP, we either accept valid text or reject empty
@@ -636,9 +635,11 @@ mod tests {
             last_char_in_group: Some('\u{3000}'),
         };
 
+        // WhitespaceOnly is caught before boundary checks (validator
+        // rejects all-whitespace content at the top level).
         assert_eq!(
             BoldMarkerValidator::can_insert_markers(&unicode_only),
-            BoldMarkerDecision::Skip(ValidatorError::InvalidOpeningBoundary)
+            BoldMarkerDecision::Skip(ValidatorError::WhitespaceOnly)
         );
         // Prediction: no bold markers
         assert_eq!(BoldMarkerValidator::predict_markdown(&unicode_only), unicode_only.text);
