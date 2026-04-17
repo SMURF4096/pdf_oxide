@@ -1035,7 +1035,12 @@ fn should_insert_space(
             let prev_last = preceding_text.chars().last();
             let next_first = following_text.chars().next();
             if let (Some(pc), Some(nc)) = (prev_last, next_first) {
-                if pc.is_alphabetic() && nc.is_alphabetic() {
+                // Use is_lowercase on both sides: LaTeX/microtype intra-word kerning
+                // occurs within lowercase letter runs. Real word boundaries in
+                // professional PDFs frequently involve uppercase letters (headings,
+                // abbreviations, proper nouns) — those fall through to the consensus
+                // path, avoiding word-gluing like "APPENDIXA" or "OLIVERA.".
+                if pc.is_lowercase() && nc.is_lowercase() {
                     log::debug!(
                         "#365 intra-word kerning guard (should_insert_space): suppressing space between '{pc}' and '{nc}' (gap={gap_pt:.2}pt < {thr:.2}pt = 1.2× space-glyph width)"
                     );
