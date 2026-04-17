@@ -5275,66 +5275,18 @@ impl TextExtractor {
                     // Use geometry-based adaptive threshold
                     let threshold = self.calculate_adaptive_tj_threshold();
                     if *offset < threshold {
-                        // #365 / B8b: Intra-word TJ-kerning guard
+                        // Note: #365 split-word symptoms ("diffe rent", "cha nge",
+                        // "equivalen t") are handled at the higher level by the
+                        // intra-word kerning guard in `should_insert_space`. An
+                        // earlier TJ-side guard here (commit b2c6484) used a
+                        // letter-letter + |offset| < space-glyph-width rule, but
+                        // that rule misclassified real inter-word gaps in
+                        // tightly-justified PDFs (LaTeX academic papers, Docling
+                        // output) where producers encode word boundaries as TJ
+                        // offsets smaller than a full space glyph. The
+                        // span-merge-time guard has more context (full bbox,
+                        // WordBoundaryDetector) and avoids that false positive.
                         //
-                        // LaTeX and MS Word frequently encode inter-letter
-                        // kerning as small negative TJ offsets (typically
-                        // 0.10-0.20 em) *within* single words. Those values
-                        // clear the default `tj_offset_threshold` (-120)
-                        // but do not represent a word boundary — inserting
-                        // a space here produced the Kreuzberg-corpus
-                        // symptoms "diffe rent", "cha nge", "equivalen t".
-                        //
-                        // Signal: if the buffer so far ends in a letter
-                        // AND the next String element starts with a letter
-                        // AND |offset| is strictly smaller than the font's
-                        // own space-glyph advance, the gap is a typography
-                        // kerning hint, not a word break. Suppress the
-                        // space insertion.
-                        //
-                        // Real word gaps in TJ typically reach or exceed
-                        // the full space-glyph width (space-as-TJ encoding
-                        // or justification distribution), and word gaps
-                        // adjacent to punctuation/digits fall through this
-                        // guard unchanged.
-                        let is_intra_word_kerning = {
-                            let prev_is_letter = buffer
-                                .unicode
-                                .chars()
-                                .next_back()
-                                .map(|c| c.is_alphabetic())
-                                .unwrap_or(false);
-                            let next_is_letter = if idx + 1 < array.len() {
-                                if let TextElement::String(next_s) = &array[idx + 1] {
-                                    next_s
-                                        .first()
-                                        .map(|&b| (b as char).is_ascii_alphabetic())
-                                        .unwrap_or(false)
-                                } else {
-                                    false
-                                }
-                            } else {
-                                false
-                            };
-                            let space_width_units = font_name
-                                .as_ref()
-                                .and_then(|name| self.fonts.get(name))
-                                .map(|font| font.get_space_glyph_width())
-                                .unwrap_or(250.0);
-                            // Strictly smaller than one full space-glyph
-                            // advance. Real word gaps either match or
-                            // exceed it; intra-word kerns stay below.
-                            let below_word_gap = (-(*offset)) < space_width_units;
-                            prev_is_letter && next_is_letter && below_word_gap
-                        };
-                        if is_intra_word_kerning {
-                            log::debug!(
-                                "#365 intra-word TJ-kerning guard: suppressing TJ-driven space (offset={offset}, letter-letter boundary)"
-                            );
-                            self.advance_position_for_offset(*offset)?;
-                            continue;
-                        }
-
                         // Check if buffer ends with space BEFORE flushing
                         // This prevents double spaces when TJ processor inserts space
                         // AND span merging would insert space at the same boundary.
