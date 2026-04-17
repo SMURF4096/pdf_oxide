@@ -2596,7 +2596,10 @@ impl DocumentEditor {
                                                     Object::Dictionary(d) => Some(d.clone()),
                                                     Object::Reference(r) => {
                                                         let loaded =
-                                                            self.source.load_object(*r).ok();
+                                                            self.source.load_object(*r).map_err(|e| {
+                                                                log::warn!("Failed to load resource object {} during save: {}", r.id, e);
+                                                                e
+                                                            }).ok();
                                                         if !written_ids.contains(&r.id) {
                                                             if let Some(ref obj) = loaded {
                                                                 let offset =
@@ -2654,7 +2657,10 @@ impl DocumentEditor {
                                                     Object::Dictionary(d) => Some(d.clone()),
                                                     Object::Reference(r) => {
                                                         let loaded =
-                                                            self.source.load_object(*r).ok();
+                                                            self.source.load_object(*r).map_err(|e| {
+                                                                log::warn!("Failed to load resource object {} during save: {}", r.id, e);
+                                                                e
+                                                            }).ok();
                                                         if !written_ids.contains(&r.id) {
                                                             if let Some(ref obj) = loaded {
                                                                 let offset =

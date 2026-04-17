@@ -146,10 +146,17 @@ impl CharacterMapper {
     /// ISO 32000-1:2008, Section 9.10.2 - Character-to-Unicode Mapping Priorities
     pub fn map_character(&self, code: u32) -> Option<String> {
         // Priority 1: ToUnicode CMap
+        //
+        // Per ISO 32000-1 §9.10.2, when a ToUnicode CMap is attached to a font
+        // it is the authoritative character→Unicode mapping. A miss against a
+        // present CMap must produce U+FFFD — falling back to AGL or an Identity
+        // CID-as-Unicode heuristic produces "ciphertext" on subset Type0 fonts
+        // whose CIDs are insertion-ordered (not codepoint-aligned). See #363.
         if let Some(ref cmap) = self.tounicode_cmap {
-            if let Some(mapped) = cmap.get(&code) {
-                return Some(mapped.clone());
-            }
+            return match cmap.get(&code) {
+                Some(mapped) => Some(mapped.clone()),
+                None => Some("\u{FFFD}".to_string()),
+            };
         }
 
         // Priority 2: Adobe Glyph List (standard glyph for code)
@@ -628,5 +635,64 @@ mod internal_tests {
         };
         let cloned = config.clone();
         assert_eq!(cloned.ordering, "Japan1");
+    }
+
+    // Regression test for #363: subset Type0 font with Identity-H and an
+    // incomplete ToUnicode CMap. When the CMap is present but misses a CID,
+    // the old fallback chain would either:
+    //   - Priority 2 map the CID through the ASCII glyph list (treating cid
+    //     0x25 as '%' even though the font's CID 0x25 is some other letter)
+    //   - Priority 3 with Identity ordering return `cid as u32` directly
+    //
+    // Both produce ASCII-shifted "ciphertext" like `%B+$%8A//$2*%01*1%6APP` in
+    // real PDFs (nougat_035.pdf page 13 was the original symptom).
+    //
+    // Per ISO 32000-1 §9.10.2: when a ToUnicode CMap is attached to a font,
+    // it is authoritative. A miss must produce U+FFFD, not be papered over
+    // by a code-as-ASCII or CID-as-Unicode heuristic.
+    #[test]
+    fn tounicode_miss_on_identity_h_font_returns_replacement() {
+        use super::super::cmap::parse_tounicode_cmap;
+
+        let mut mapper = CharacterMapper::new();
+        mapper.set_predefined_cmap(Some(PredefinedCMapConfig {
+            ordering: "Identity".to_string(),
+        }));
+
+        // Minimal ToUnicode: only CID 0x0001 → 'T'. 0x0025 is absent.
+        let cmap_data = b"/CIDInit /ProcSet findresource begin\n\
+            12 dict begin\n\
+            begincmap\n\
+            /CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n\
+            /CMapName /Adobe-Identity-UCS def\n\
+            1 beginbfchar\n\
+            <0001> <0054>\n\
+            endbfchar\n\
+            endcmap\n\
+            CMapName currentdict /CMap defineresource pop\n\
+            end\n\
+            end";
+        mapper.set_tounicode_cmap(Some(parse_tounicode_cmap(cmap_data).unwrap()));
+
+        // ToUnicode hit: baseline sanity.
+        assert_eq!(mapper.map_character(0x0001), Some("T".to_string()));
+
+        // ToUnicode miss: must return U+FFFD, not '%' (AGL) and not U+0025 (Identity).
+        let result = mapper.map_character(0x0025);
+        assert_eq!(
+            result,
+            Some("\u{FFFD}".to_string()),
+            "ToUnicode-present-but-missed must produce U+FFFD, got {result:?}"
+        );
+    }
+
+    // Guard: simple fonts (Type1 / TrueType with WinAnsiEncoding) that have no
+    // ToUnicode CMap must still resolve codes via the Adobe Glyph List. The
+    // #363 fix only activates when a ToUnicode CMap is attached.
+    #[test]
+    fn no_tounicode_still_uses_adobe_glyph_list() {
+        let mapper = CharacterMapper::new();
+        assert_eq!(mapper.map_character(0x41), Some("A".to_string()));
+        assert_eq!(mapper.map_character(0x25), Some("%".to_string()));
     }
 }

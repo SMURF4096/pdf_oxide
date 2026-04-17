@@ -13,11 +13,11 @@ The fastest Go PDF library for text extraction, image extraction, and markdown c
 go get github.com/yfedoseev/pdf_oxide/go
 
 # One-time per machine: download the native FFI library
-go run github.com/yfedoseev/pdf_oxide/go/cmd/install@v0.3.32
+go run github.com/yfedoseev/pdf_oxide/go/cmd/install@v0.3.33
 
 # Installer prints the CGO_* env vars to export — e.g.:
-export CGO_CFLAGS="-I$HOME/.pdf_oxide/v0.3.32/include"
-export CGO_LDFLAGS="$HOME/.pdf_oxide/v0.3.32/lib/linux_amd64/libpdf_oxide.a \
+export CGO_CFLAGS="-I$HOME/.pdf_oxide/v0.3.33/include"
+export CGO_LDFLAGS="$HOME/.pdf_oxide/v0.3.33/lib/linux_amd64/libpdf_oxide.a \
   -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
 ```
 

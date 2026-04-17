@@ -9,7 +9,7 @@
 //!
 //! PDF Spec: Section 7.6.2 - General Encryption Algorithm
 
-use aes::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit};
+use aes::cipher::{BlockModeDecrypt, BlockModeEncrypt, KeyIvInit};
 use aes::{Aes128, Aes256};
 use cbc::{Decryptor, Encryptor};
 
@@ -49,9 +49,12 @@ pub fn aes128_encrypt(key: &[u8], iv: &[u8], data: &[u8]) -> Result<Vec<u8>, &'s
 
     // Encrypt in-place
     let len = padded.len();
-    let cipher = Aes128CbcEnc::new(key.into(), iv.into());
+    let cipher = Aes128CbcEnc::new(
+        key.try_into().map_err(|_| "AES-128 key must be 16 bytes")?,
+        iv.try_into().map_err(|_| "IV must be 16 bytes")?,
+    );
     cipher
-        .encrypt_padded_mut::<aes::cipher::block_padding::NoPadding>(&mut padded, len)
+        .encrypt_padded::<aes::cipher::block_padding::NoPadding>(&mut padded, len)
         .map_err(|_| "Encryption failed")?;
 
     Ok(padded)
@@ -81,9 +84,12 @@ pub fn aes128_encrypt_no_padding(
 
     let mut buffer = data.to_vec();
     let len = buffer.len();
-    let cipher = Aes128CbcEnc::new(key.into(), iv.into());
+    let cipher = Aes128CbcEnc::new(
+        key.try_into().map_err(|_| "AES-128 key must be 16 bytes")?,
+        iv.try_into().map_err(|_| "IV must be 16 bytes")?,
+    );
     cipher
-        .encrypt_padded_mut::<aes::cipher::block_padding::NoPadding>(&mut buffer, len)
+        .encrypt_padded::<aes::cipher::block_padding::NoPadding>(&mut buffer, len)
         .map_err(|_| "Encryption failed")?;
 
     Ok(buffer)
@@ -112,9 +118,9 @@ pub fn aes256_decrypt_no_padding(
     }
 
     let mut buffer = data.to_vec();
-    let cipher = Aes256CbcDec::new(key.into(), iv.into());
+    let cipher = Aes256CbcDec::new(key.try_into().unwrap(), iv.try_into().unwrap());
     cipher
-        .decrypt_padded_mut::<aes::cipher::block_padding::NoPadding>(&mut buffer)
+        .decrypt_padded::<aes::cipher::block_padding::NoPadding>(&mut buffer)
         .map_err(|_| "Decryption failed")?;
 
     Ok(buffer)
@@ -147,9 +153,9 @@ pub fn aes128_decrypt(key: &[u8], iv: &[u8], data: &[u8]) -> Result<Vec<u8>, &'s
 
     // Decrypt in-place
     let mut buffer = data.to_vec();
-    let cipher = Aes128CbcDec::new(key.into(), iv.into());
+    let cipher = Aes128CbcDec::new(key.try_into().unwrap(), iv.try_into().unwrap());
     let decrypted = cipher
-        .decrypt_padded_mut::<aes::cipher::block_padding::NoPadding>(&mut buffer)
+        .decrypt_padded::<aes::cipher::block_padding::NoPadding>(&mut buffer)
         .map_err(|_| "Decryption failed")?;
 
     // Remove PKCS#7 padding manually
@@ -202,9 +208,9 @@ pub fn aes256_encrypt(key: &[u8], iv: &[u8], data: &[u8]) -> Result<Vec<u8>, &'s
 
     // Encrypt in-place
     let len = padded.len();
-    let cipher = Aes256CbcEnc::new(key.into(), iv.into());
+    let cipher = Aes256CbcEnc::new(key.try_into().unwrap(), iv.try_into().unwrap());
     cipher
-        .encrypt_padded_mut::<aes::cipher::block_padding::NoPadding>(&mut padded, len)
+        .encrypt_padded::<aes::cipher::block_padding::NoPadding>(&mut padded, len)
         .map_err(|_| "Encryption failed")?;
 
     Ok(padded)
@@ -240,9 +246,9 @@ pub fn aes256_decrypt(key: &[u8], iv: &[u8], data: &[u8]) -> Result<Vec<u8>, &'s
 
     // Decrypt in-place
     let mut buffer = data.to_vec();
-    let cipher = Aes256CbcDec::new(key.into(), iv.into());
+    let cipher = Aes256CbcDec::new(key.try_into().unwrap(), iv.try_into().unwrap());
     let decrypted = cipher
-        .decrypt_padded_mut::<aes::cipher::block_padding::NoPadding>(&mut buffer)
+        .decrypt_padded::<aes::cipher::block_padding::NoPadding>(&mut buffer)
         .map_err(|_| "Decryption failed")?;
 
     // Remove PKCS#7 padding manually

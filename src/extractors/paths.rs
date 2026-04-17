@@ -147,9 +147,12 @@ pub struct PathExtractor {
     /// Page resources for XObject resolution (Issue #40)
     resources: Option<crate::object::Object>,
     /// Stack of XObjects being processed to detect cycles (Issue #40)
-    /// Uses a call stack approach instead of global "processed" set to allow
-    /// the same XObject to be extracted at different transformations
     xobject_processing_stack: Vec<crate::object::ObjectRef>,
+    /// Set of XObjects already fully processed. Prevents combinatorial
+    /// explosion when multiple parent XObjects reference the same children
+    /// (e.g., chart/plot pages where 9 top-level Form XObjects each contain
+    /// 25-42 nested `Do` operators pointing to the same shared XObjects).
+    processed_xobjects: std::collections::HashSet<(crate::object::ObjectRef, [i32; 6])>,
     /// Maximum XObject nesting depth (prevent stack overflow)
     max_xobject_depth: usize,
     /// Cached XObject name → ObjectRef mapping, built on first lookup.
@@ -172,6 +175,7 @@ impl PathExtractor {
             ctm: Matrix::identity(),
             resources: None,
             xobject_processing_stack: Vec::new(),
+            processed_xobjects: std::collections::HashSet::new(),
             max_xobject_depth: 100,
             cached_xobject_dict: None,
         }
@@ -257,7 +261,27 @@ impl PathExtractor {
         self.cached_xobject_dict.as_ref()?.get(name).copied()
     }
 
+    /// Compute a rounded fingerprint of the current CTM for dedup purposes.
+    /// Translation components (e, f) are rounded to 0.1 while scale/rotation
+    /// components (a-d) are rounded to 0.01, balancing dedup accuracy with
+    /// floating-point tolerance. Uses banker's-style `f32::round` so negative
+    /// values round symmetrically rather than truncating toward zero.
+    fn ctm_fingerprint(ctm: &Matrix) -> [i32; 6] {
+        [
+            (ctm.a * 100.0).round() as i32,
+            (ctm.b * 100.0).round() as i32,
+            (ctm.c * 100.0).round() as i32,
+            (ctm.d * 100.0).round() as i32,
+            (ctm.e * 10.0).round() as i32,
+            (ctm.f * 10.0).round() as i32,
+        ]
+    }
+
     pub(crate) fn can_process_xobject(&self, xobject_ref: crate::object::ObjectRef) -> bool {
+        let key = (xobject_ref, Self::ctm_fingerprint(&self.ctm));
+        if self.processed_xobjects.contains(&key) {
+            return false;
+        }
         if self.xobject_processing_stack.contains(&xobject_ref) {
             return false;
         }
@@ -273,8 +297,19 @@ impl PathExtractor {
         self.xobject_processing_stack.push(xobject_ref);
     }
 
-    /// Pop an XObject from the processing stack (called after processing).
+    /// Pop an XObject from the processing stack after successful processing.
+    /// Marks it as permanently processed to prevent re-processing from
+    /// other parent XObjects at the same CTM.
     pub(crate) fn pop_xobject(&mut self) {
+        if let Some(ref_obj) = self.xobject_processing_stack.pop() {
+            let key = (ref_obj, Self::ctm_fingerprint(&self.ctm));
+            self.processed_xobjects.insert(key);
+        }
+    }
+
+    /// Pop an XObject from the processing stack after a failure.
+    /// Does NOT mark it as permanently processed, allowing retry.
+    pub(crate) fn pop_xobject_failed(&mut self) {
         self.xobject_processing_stack.pop();
     }
 
@@ -873,5 +908,30 @@ mod tests {
         assert_eq!(paths[0].stroke_width, 5.0);
         assert_eq!(paths[0].line_cap, LineCap::Round);
         assert_eq!(paths[0].line_join, LineJoin::Bevel);
+    }
+
+    #[test]
+    fn test_pop_xobject_marks_as_processed() {
+        let mut ext = PathExtractor::new();
+        let r = crate::object::ObjectRef::new(42, 0);
+
+        assert!(ext.can_process_xobject(r));
+        ext.push_xobject(r);
+        ext.pop_xobject(); // success path
+        assert!(
+            !ext.can_process_xobject(r),
+            "Successfully processed XObject should be permanently skipped"
+        );
+    }
+
+    #[test]
+    fn test_pop_xobject_failed_allows_retry() {
+        let mut ext = PathExtractor::new();
+        let r = crate::object::ObjectRef::new(42, 0);
+
+        assert!(ext.can_process_xobject(r));
+        ext.push_xobject(r);
+        ext.pop_xobject_failed(); // failure path
+        assert!(ext.can_process_xobject(r), "Failed XObject should be retryable");
     }
 }
