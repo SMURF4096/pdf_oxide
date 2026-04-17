@@ -549,4 +549,3 @@ mod citation_tests {
         );
     }
 }
-

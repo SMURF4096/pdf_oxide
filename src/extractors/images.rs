@@ -649,7 +649,6 @@ pub fn extract_image_from_xobject(
         };
 
     let color_space = parse_color_space(&resolved_color_space)?;
-
     // For Indexed color spaces, resolve the base color space and palette now so we
     // can expand indices to RGB after decoding the stream. Without this, raw
     // Indexed pixel data (1 byte per pixel) is mislabelled as RGB (3 bytes per
@@ -778,11 +777,26 @@ fn resolve_indexed_palette(
         return Ok(None);
     }
 
+    // Resolve the base color-space object. When it's an array like
+    // [/ICCBased <stream_ref>], resolve inner references so
+    // parse_color_space can read /N from the ICC stream dict (#373).
     let base_obj = if let Some(ref mut d) = doc {
-        if let Some(r) = arr[1].as_reference() {
+        let outer = if let Some(r) = arr[1].as_reference() {
             d.load_object(r)?
         } else {
             arr[1].clone()
+        };
+        if let Object::Array(mut inner) = outer {
+            for item in inner.iter_mut() {
+                if let Some(r) = item.as_reference() {
+                    if let Ok(resolved) = d.load_object(r) {
+                        *item = resolved;
+                    }
+                }
+            }
+            Object::Array(inner)
+        } else {
+            outer
         }
     } else {
         arr[1].clone()
