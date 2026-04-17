@@ -1460,11 +1460,7 @@ mod indexed_tests {
             Object::Integer(1),
             // Lookup as Array-of-Array (not String or Stream) — unresolvable.
             Object::Array(vec![
-                Object::Array(vec![
-                    Object::Integer(0),
-                    Object::Integer(0),
-                    Object::Integer(0),
-                ]),
+                Object::Array(vec![Object::Integer(0), Object::Integer(0), Object::Integer(0)]),
                 Object::Array(vec![
                     Object::Integer(255),
                     Object::Integer(255),
