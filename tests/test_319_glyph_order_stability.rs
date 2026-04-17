@@ -6,19 +6,30 @@
 //! hypothesises that a sort comparator in the reading-order pipeline is
 //! unstable or that its X-coordinate tolerance is too loose.
 //!
-//! Without the 1-GB+ *Principles of Neural Science* fixture (the one
-//! the issue cites) we cannot pin the exact residual trigger. This test
-//! instead asserts the guardrails that any future fix must not regress:
+//! Fixture diagnosis note (v0.3.33): we validated extract_text on a
+//! dense multi-column textbook from `pdfs_slow3/` (Hartwell et al.,
+//! Genetics) and saw fragments like `accompaally`, `aaand`. Tracing
+//! these back to the source text showed they are *not* intra-word
+//! glyph transpositions but **multi-column row interleaving** — the
+//! reading-order pass reads one line from column 1, one from column 2,
+//! one from column 1, etc. The fragment `accompaally resulting in
+//! death … The nying table` is column-1 "accompa" + column-2 "ally
+//! resulting in death …" + column-1 "nying table" zipped together.
+//!
+//! That is a deeper reading-order issue (XY-cut column detection is
+//! not firing on this layout) and needs a separate fix than the sort
+//! comparator tweaks this file guards.
+//!
+//! These tests assert the guardrails the sort comparator must hold:
 //!
 //!   1. `sort_by_reading_order` is **stable** — a content stream that
 //!      emits glyphs in visual order must come out in visual order.
 //!   2. Glyphs explicitly positioned out of left-to-right order on the
 //!      same baseline must be sorted into visual order.
 //!
-//! The two helpers below cover those cases; both pass today and the
-//! test lives as a regression guard. The residual fragment population
-//! is tracked on #319 and needs fixture-driven diagnostics to isolate
-//! further.
+//! Both pass today. The column-interleaving residual on dense
+//! textbooks is tracked on #319 and needs deeper column-detection
+//! work.
 use pdf_oxide::PdfDocument;
 
 fn helper_pdf(content: &str) -> Vec<u8> {
