@@ -2364,6 +2364,38 @@ impl FontInfo {
                         "ToUnicode CMap MISS: font='{}' subtype='{}' code=0x{:04X} (cmap has {} entries)",
                         self.base_font, self.subtype, char_code, cmap.len()
                     );
+
+                    // #363: subset Type0 + Identity-H + Adobe-Identity ordering.
+                    // The font's CIDs are insertion-ordered and have no relation
+                    // to Unicode code points, so the Priority 2 Identity-H
+                    // CID-as-Unicode fallback (`char::from_u32(cid)`) produces
+                    // ASCII-shifted ciphertext (e.g. `%B+$%8A` on nougat_035.pdf).
+                    // Per ISO 32000-1 §9.10.2, a present ToUnicode CMap is the
+                    // authoritative char→Unicode mapping; a miss means the
+                    // glyph has no Unicode equivalent, so return U+FFFD rather
+                    // than fall through.
+                    //
+                    // Narrow on purpose: simple fonts (Type1/TrueType with
+                    // standard encoding) still fall through — their encoding
+                    // is a real mapping. CJK Type0 (Adobe-GB1/Japan1/etc.) also
+                    // falls through to the predefined-CMap path.
+                    if self.subtype == "Type0" {
+                        let is_identity_encoding = matches!(
+                            &self.encoding,
+                            Encoding::Standard(name) if name == "Identity-H" || name == "Identity-V"
+                        ) || matches!(
+                            &self.encoding,
+                            Encoding::Identity
+                        );
+                        let is_identity_ordering = self
+                            .cid_system_info
+                            .as_ref()
+                            .map(|info| info.ordering == "Identity")
+                            .unwrap_or(true);
+                        if is_identity_encoding && is_identity_ordering {
+                            return Some("\u{FFFD}".to_string());
+                        }
+                    }
                 }
             } else {
                 log::warn!(
