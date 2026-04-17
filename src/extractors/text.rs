@@ -1042,7 +1042,7 @@ fn should_insert_space(
                 // path, avoiding word-gluing like "APPENDIXA" or "OLIVERA.".
                 if pc.is_lowercase() && nc.is_lowercase() {
                     log::debug!(
-                        "#365 intra-word kerning guard (should_insert_space): suppressing space between '{pc}' and '{nc}' (gap={gap_pt:.2}pt < {thr:.2}pt = 1.2× space-glyph width)"
+                        "intra-word kerning guard: suppressing space between '{pc}' and '{nc}' (gap={gap_pt:.2}pt < {thr:.2}pt, threshold = 1.2× space-glyph width)"
                     );
                     return SpaceDecision::no_space(SpaceSource::NoSpace, 0.9);
                 }
@@ -6022,7 +6022,7 @@ impl TextExtractor {
                                     }
                                 }
                                 log::debug!(
-                                    "#317 UTF-8 sniff: decoded {} bytes as {} chars (non-Latin-1 run detected) in font '{}'",
+                                    "UTF-8 mojibake repair: decoded {} Latin-1 bytes as {} chars via UTF-8 in font '{}'",
                                     text.len(),
                                     char_count,
                                     font.base_font
