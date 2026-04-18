@@ -2284,11 +2284,13 @@ fn combine_transforms(base: Transform, ctm: &Matrix) -> Transform {
     base.pre_concat(Transform::from_row(ctm.a, ctm.b, ctm.c, ctm.d, ctm.e, ctm.f))
 }
 
-/// Convert CMYK color components (0.0 to 1.0) to RGB (0.0 to 1.0).
+/// Convert DeviceCMYK (0.0–1.0) to DeviceRGB (0.0–1.0) per ISO 32000-1:2008
+/// §10.3.5. The additive-clamp formula `R = 1 − min(1, C+K)` is the
+/// spec-mandated fallback when no ICC profile is available.
 fn cmyk_to_rgb(c: f32, m: f32, y: f32, k: f32) -> (f32, f32, f32) {
-    let r = (1.0 - c) * (1.0 - k);
-    let g = (1.0 - m) * (1.0 - k);
-    let b = (1.0 - y) * (1.0 - k);
+    let r = 1.0 - (c + k).min(1.0);
+    let g = 1.0 - (m + k).min(1.0);
+    let b = 1.0 - (y + k).min(1.0);
     (r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0))
 }
 

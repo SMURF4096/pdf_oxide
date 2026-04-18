@@ -2753,6 +2753,75 @@ impl PdfDocument {
         crate::structure::parse_structure_tree(self)
     }
 
+    /// Find the document's default CMYK output-intent profile.
+    ///
+    /// Per ISO 32000-1:2008 §14.11.5, an `/OutputIntents` array in the
+    /// catalog advertises the colour characteristics of the target
+    /// output device. Each entry is a dictionary; the `DestOutputProfile`
+    /// key (when present) references an ICC profile stream identifying
+    /// the intended press / display calibration.
+    ///
+    /// This method returns the **first CMYK** `DestOutputProfile` it
+    /// finds (N = 4) — the usual match for "here is how my CMYK ink
+    /// should look" on PDF/X files. Callers can use it as a fallback
+    /// profile for plain `/DeviceCMYK` images that lack their own ICC
+    /// colour space.
+    ///
+    /// Returns `None` when no output intent exists, no CMYK entry is
+    /// present, or the profile stream can't be parsed as ICC.
+    pub fn output_intent_cmyk_profile(
+        &mut self,
+    ) -> Option<std::sync::Arc<crate::color::IccProfile>> {
+        let catalog = self.catalog().ok()?;
+        let cat_dict = catalog.as_dict()?;
+
+        let intents_obj = cat_dict.get("OutputIntents")?;
+        let intents_obj = match intents_obj {
+            Object::Reference(r) => self.load_object(*r).ok()?,
+            _ => intents_obj.clone(),
+        };
+        let intents_arr = match &intents_obj {
+            Object::Array(a) => a.clone(),
+            _ => return None,
+        };
+
+        for entry in intents_arr {
+            let entry = match entry {
+                Object::Reference(r) => self.load_object(r).ok()?,
+                other => other,
+            };
+            let entry_dict = match entry.as_dict() {
+                Some(d) => d.clone(),
+                None => continue,
+            };
+            let profile_obj = match entry_dict.get("DestOutputProfile") {
+                Some(p) => p.clone(),
+                None => continue,
+            };
+            let profile_stream = match profile_obj {
+                Object::Reference(r) => match self.load_object(r) {
+                    Ok(o) => o,
+                    Err(_) => continue,
+                },
+                other => other,
+            };
+
+            let Object::Stream { dict, .. } = &profile_stream else { continue };
+            let n = match dict.get("N").and_then(|o| o.as_integer()) {
+                Some(4) => 4u8, // only CMYK; ignore RGB/Gray output intents here
+                _ => continue,
+            };
+            let bytes = match profile_stream.decode_stream_data() {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            if let Some(prof) = crate::color::IccProfile::parse(bytes, n) {
+                return Some(std::sync::Arc::new(prof));
+            }
+        }
+        None
+    }
+
     /// Get the MarkInfo dictionary from the document catalog.
     ///
     /// The MarkInfo dictionary indicates whether the document conforms to
@@ -7865,9 +7934,10 @@ impl PdfDocument {
                 },
                 Operator::SetStrokeCmyk { c, m, y, k } => {
                     // Simple CMYK to RGB conversion
-                    let r = (1.0 - c) * (1.0 - k);
-                    let g = (1.0 - m) * (1.0 - k);
-                    let b = (1.0 - y) * (1.0 - k);
+                    // ISO 32000-1:2008 §10.3.5: DeviceCMYK → DeviceRGB.
+                    let r = 1.0 - (c + k).min(1.0);
+                    let g = 1.0 - (m + k).min(1.0);
+                    let b = 1.0 - (y + k).min(1.0);
                     state_stack.current_mut().stroke_color_rgb = (r, g, b);
                     extractor.set_stroke_color(Color::new(r, g, b));
                 },
@@ -7882,9 +7952,10 @@ impl PdfDocument {
                     extractor.set_fill_color(Color::new(gray, gray, gray));
                 },
                 Operator::SetFillCmyk { c, m, y, k } => {
-                    let r = (1.0 - c) * (1.0 - k);
-                    let g = (1.0 - m) * (1.0 - k);
-                    let b = (1.0 - y) * (1.0 - k);
+                    // ISO 32000-1:2008 §10.3.5: DeviceCMYK → DeviceRGB.
+                    let r = 1.0 - (c + k).min(1.0);
+                    let g = 1.0 - (m + k).min(1.0);
+                    let b = 1.0 - (y + k).min(1.0);
                     state_stack.current_mut().fill_color_rgb = (r, g, b);
                     extractor.set_fill_color(Color::new(r, g, b));
                 },
@@ -8307,9 +8378,10 @@ impl PdfDocument {
                     extractor.set_stroke_color(Color::new(gray, gray, gray));
                 },
                 Operator::SetStrokeCmyk { c, m, y, k } => {
-                    let r = (1.0 - c) * (1.0 - k);
-                    let g = (1.0 - m) * (1.0 - k);
-                    let b = (1.0 - y) * (1.0 - k);
+                    // ISO 32000-1:2008 §10.3.5: DeviceCMYK → DeviceRGB.
+                    let r = 1.0 - (c + k).min(1.0);
+                    let g = 1.0 - (m + k).min(1.0);
+                    let b = 1.0 - (y + k).min(1.0);
                     state_stack.current_mut().stroke_color_rgb = (r, g, b);
                     extractor.set_stroke_color(Color::new(r, g, b));
                 },
@@ -8322,9 +8394,10 @@ impl PdfDocument {
                     extractor.set_fill_color(Color::new(gray, gray, gray));
                 },
                 Operator::SetFillCmyk { c, m, y, k } => {
-                    let r = (1.0 - c) * (1.0 - k);
-                    let g = (1.0 - m) * (1.0 - k);
-                    let b = (1.0 - y) * (1.0 - k);
+                    // ISO 32000-1:2008 §10.3.5: DeviceCMYK → DeviceRGB.
+                    let r = 1.0 - (c + k).min(1.0);
+                    let g = 1.0 - (m + k).min(1.0);
+                    let b = 1.0 - (y + k).min(1.0);
                     state_stack.current_mut().fill_color_rgb = (r, g, b);
                     extractor.set_fill_color(Color::new(r, g, b));
                 },
@@ -9702,7 +9775,7 @@ impl PdfDocument {
             Vec::new()
         };
 
-        // Step 3: Create pipeline config from options (using adapter from Phase 2)
+        // Step 3: Create pipeline config from options.
         let pipeline_config = TextPipelineConfig::from_conversion_options(options);
 
         // Step 4: Create pipeline with config

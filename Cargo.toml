@@ -118,6 +118,11 @@ sha1 = { version = "0.11", optional = true }          # SHA-1 for legacy signatu
 # Parallel extraction
 rayon = { version = "1.12", optional = true }
 
+# ICC colour management (Firefox's qcms, pure Rust). Default features
+# bring in `cmyk` + `iccv4-enabled` which cover every colour space PDF
+# /ICCBased streams actually use.
+qcms = { version = "0.3", optional = true }
+
 # Math and algorithms
 ndarray = { version = "0.17", optional = true, features = ["std"] }
 linfa = { version = "0.7", optional = true }
@@ -183,10 +188,17 @@ crc32fast = "1.3"
 wasm-bindgen-test = "0.3"
 
 [features]
-default = []
+default = ["icc"]
 
 # Enable logging for the extraction pipeline
 logging = []
+
+# Real ICC colour management via qcms (Firefox's colour engine).
+# When enabled, ICCBased colour spaces and CMYK images are converted
+# using the embedded profile instead of ISO 32000-1 §10.3.5's
+# additive-clamp fallback. Pure Rust, so WASM and C# AOT targets keep
+# working without a C toolchain dependency.
+icc = ["dep:qcms"]
 
 # Python bindings (v0.1.0)
 python = ["pyo3", "pyo3-log", "rendering", "parallel", "logging", "signatures", "barcodes", "office"]

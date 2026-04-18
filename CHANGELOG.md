@@ -93,6 +93,60 @@ a proper `Table[]` with cell text accessors, matching Go and Rust.
   and `release.yml` Python wheel build matrix (Linux targets only via
   `if: runner.os == 'Linux'` guard).
 
+### Image extraction correctness
+
+- **4-bit-per-component Indexed images no longer decode to vertical-stripe
+  noise (#375).** The PNG predictor decoder was honouring the numeric
+  `/Predictor` value from `/DecodeParms` instead of the per-row filter
+  tag byte written into each row. ISO 32000-1:2008 §7.4.4.4 makes the
+  per-row tag authoritative: a producer may declare `/Predictor 12` (Up)
+  on the parameters and still write tag 0 (None) on every row. Reading
+  the declared predictor instead produced Up-cascade on raw index bytes,
+  rendering a 710×1012 scanned-book page as a diagonal-stripe noise
+  pattern. Reported by @Charltsing.
+- **Indexed palette streams whose first byte is `0x0D` (CR) or `0x0A` (LF)
+  no longer decode to solid black (#375).** `decode_stream_data` was
+  running a post-parse `trim_leading_stream_whitespace` pass that
+  stripped CR/LF bytes from the start of every unencrypted stream. The
+  parser already consumes exactly one EOL after the `stream` keyword per
+  ISO 32000-1:2008 §7.3.8.1, so re-trimming corrupted binary streams
+  that legitimately start with those bytes. For an Indexed-backed image,
+  shrinking a 4-byte CMYK palette `0d 0c 0c 04` to 3 bytes pushed every
+  lookup into the expander's out-of-range branch, producing `(0,0,0)`
+  for every pixel. Reported by @Charltsing.
+- **DeviceCMYK → DeviceRGB fallback now matches ISO 32000-1:2008 §10.3.5
+  (#375).** All CMYK→RGB paths — image-level bulk conversion,
+  Indexed-CMYK palette expansion, content-stream fill/stroke colour
+  state, JPEG CMYK decoding — now use the spec's additive-clamp formula
+  `R = 1 − min(1, C + K)`. Four inline copies and three helper functions
+  were collapsed onto this single form; the common multiplicative
+  `(1-C)(1-K)` variant differed on heavily-inked samples and was the
+  default we inherited from imaging libraries, not what the spec specifies.
+
+### Colour management (new)
+
+- **Real ICC profile-driven colour conversion via qcms (#375; opt-out
+  `icc` feature, on by default).** When a PDF's `/ICCBased` colour space
+  or `/OutputIntents → DestOutputProfile` provides an ICC profile, image
+  extraction now compiles it to a `qcms::Transform` and routes CMYK
+  samples through the CMM instead of the §10.3.5 fallback. RGB- and
+  gray-ICCBased profiles use the same pipeline. The graphics-state
+  rendering intent (`/Intent` on image dictionaries, `/RI`, or the `ri`
+  operator) is honoured; unrecognised intent names fall through to
+  `RelativeColorimetric` per §8.6.5.8. qcms is pure Rust (no C/FFI) so
+  WASM and C# AOT builds keep working; opt out with
+  `default-features = false`. Reported by @Charltsing.
+- **New `pdf_oxide::color` module** exposes `IccProfile`, `IccHeader`,
+  `RenderingIntent`, and `Transform` for consumers that want to drive
+  colour conversion directly.
+- **Measured impact on a representative CMYK-heavy fixture** (218
+  images, `/ICCBased 4` throughout): mean PSNR vs poppler's reference
+  rendering improved from 27.9 dB (§10.3.5 fallback) to 39.2 dB
+  (qcms). Worst-case PSNR rose from 16.4 dB ("visibly wrong saturation")
+  to 33.8 dB ("perceptually indistinguishable"). A representative blue
+  swatch shifted from `RGB(62, 142, 252)` to `RGB(58, 123, 190)` vs the
+  ICC reference's `RGB(62, 124, 191)`.
+
 ### Community Contributors
 
 - **[@SeanPedersen](https://github.com/SeanPedersen)** — Proposed the page-first
