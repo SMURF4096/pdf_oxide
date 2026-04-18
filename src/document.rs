@@ -4303,6 +4303,25 @@ impl PdfDocument {
                             if !text.ends_with('\n') {
                                 text.push('\n');
                             }
+                        } else if delta_x < -fs * 3.0 {
+                            // Same baseline (y_diff <= 2.0) but the
+                            // current span starts well to the LEFT of
+                            // the previous span's start — i.e., the
+                            // upstream sort handed us spans in
+                            // non-monotonic X order. Common cause: a
+                            // multi-column page whose XY-cut routing
+                            // groups column-side spans across rows so
+                            // adjacent iteration items belong to
+                            // different visual rows that happen to
+                            // share a Y band. Without a separator the
+                            // texts glue together (e.g.
+                            // `instancesinstancesinstances` from three
+                            // table-header cells in a stats grid).
+                            // Treat the backwards jump as a logical
+                            // break and emit a newline.
+                            if !text.ends_with('\n') {
+                                text.push('\n');
+                            }
                         } else if prev.font_name != span.font_name
                             && span_end_x > prev_end_x + 0.5
                             && !text.ends_with(' ')
