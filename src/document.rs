@@ -6631,7 +6631,23 @@ impl PdfDocument {
         let right_span = (right_y_max - right_y_min).max(0.0);
         let overlap = left_y_max.min(right_y_max) - left_y_min.max(right_y_min);
         let min_span = left_span.min(right_span);
-        min_span > 0.0 && overlap > 0.5 * min_span
+        if !(min_span > 0.0 && overlap > 0.5 * min_span) {
+            return false;
+        }
+
+        // Require each half to contain enough spans to represent genuine body
+        // text columns. Copyright pages, title pages, and other sparse layouts
+        // can produce two X-center peaks with only 2–7 spans per "column" —
+        // these are not true multi-column body text.
+        let left_count = spans
+            .iter()
+            .filter(|s| {
+                let cx = s.bbox.x + s.bbox.width * 0.5;
+                (cx - median).abs() <= MAX_EXTENT_FROM_MEDIAN && cx < mid_x
+            })
+            .count();
+        let right_count = spans.len() - left_count;
+        left_count.min(right_count) >= 15
     }
 
     /// Normalize a span's text for cross-page signature matching.
