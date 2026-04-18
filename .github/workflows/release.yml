@@ -596,10 +596,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # Pin to ubuntu-22.04 (glibc 2.35) so the .node prebuild runs on
+          # Debian 11+, Ubuntu 20.04+, and RHEL 8+. Combined with the
+          # static-libstdc++/static-libgcc flags in binding.gyp, this makes
+          # the linux-x64-gnu prebuild self-contained: no system libstdc++
+          # version mismatch (was failing on Debian 12 / GLIBCXX_3.4.30).
+          - os: ubuntu-22.04
             triple: linux-x64-gnu
             native_artifact: native-linux-x86_64
-          - os: ubuntu-24.04-arm
+          - os: ubuntu-22.04-arm
             triple: linux-arm64-gnu
             native_artifact: native-linux-aarch64
           - os: macos-latest

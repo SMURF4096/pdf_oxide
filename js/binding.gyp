@@ -36,8 +36,11 @@
             "-lpthread",
             "-ldl",
             "-lrt",
-            "-lgcc_s",
             "-lutil"
+          ],
+          "ldflags": [
+            "-static-libstdc++",
+            "-static-libgcc"
           ]
         }],
         ["OS==\"mac\"", {
