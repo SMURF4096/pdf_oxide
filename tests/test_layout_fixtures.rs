@@ -366,15 +366,23 @@ fn fixture_legal_style_columns_no_section_marker_interleave() {
 /// sparse fax layouts; row-aware sort runs as before.
 #[test]
 fn fixture_fax_scattered_fragments_no_reversal() {
-    // 7 rows of 5 separate fragments each at scattered X.
+    // 12 rows × 6 fragments = 72 spans, weighted toward the right half
+    // so `is_multi_column_page` returns true (≥15 spans per side) and
+    // the page routes through XY-cut — that's the failure path that
+    // produces the L3YHC reversal.
     let lines: &[&[(f32, &str)]] = &[
-        &[(72.0, "WORDONE"), (140.0, "WORDTWO"), (190.0, "WORDTHREE"), (245.0, "WORDFOUR"), (300.0, "WORDFIVE")],
-        &[(72.0, "ALPHA"), (115.0, "BETA"), (155.0, "GAMMA"), (210.0, "DELTA"), (260.0, "EPSILON")],
-        &[(72.0, "First"), (105.0, "Second"), (150.0, "Third"), (195.0, "Fourth"), (245.0, "Fifth")],
-        &[(72.0, "PartA"), (105.0, "PartB"), (140.0, "PartC"), (185.0, "PartD"), (235.0, "PartE")],
-        &[(72.0, "ItemX"), (115.0, "ItemY"), (155.0, "ItemZ"), (195.0, "ItemW"), (245.0, "ItemV")],
-        &[(72.0, "Quux"), (110.0, "Garply"), (160.0, "Waldo"), (210.0, "Fred"), (250.0, "Plugh")],
-        &[(72.0, "Foo"), (95.0, "Bar"), (125.0, "Baz"), (160.0, "Qux"), (200.0, "Corge")],
+        &[(72.0, "WORDONE"), (140.0, "WORDTWO"), (200.0, "WORDTHREE"), (260.0, "WORDFOUR"), (320.0, "WORDFIVE"), (390.0, "WORDSIX")],
+        &[(72.0, "ALPHA"), (130.0, "BETA"), (190.0, "GAMMA"), (260.0, "DELTA"), (320.0, "EPSILON"), (400.0, "ZETA")],
+        &[(72.0, "First"), (130.0, "Second"), (200.0, "Third"), (260.0, "Fourth"), (320.0, "Fifth"), (390.0, "Sixth")],
+        &[(72.0, "PartA"), (130.0, "PartB"), (200.0, "PartC"), (260.0, "PartD"), (320.0, "PartE"), (390.0, "PartF")],
+        &[(72.0, "ItemX"), (130.0, "ItemY"), (190.0, "ItemZ"), (260.0, "ItemW"), (320.0, "ItemV"), (400.0, "ItemU")],
+        &[(72.0, "Quux"), (130.0, "Garply"), (200.0, "Waldo"), (260.0, "Fred"), (320.0, "Plugh"), (390.0, "Xyzzy")],
+        &[(72.0, "Foo"), (130.0, "Bar"), (190.0, "Baz"), (260.0, "Qux"), (320.0, "Corge"), (400.0, "Grault")],
+        &[(72.0, "Apple"), (130.0, "Banana"), (200.0, "Cherry"), (260.0, "Date"), (320.0, "Elder"), (390.0, "Fig")],
+        &[(72.0, "Red"), (130.0, "Green"), (200.0, "Blue"), (260.0, "Cyan"), (320.0, "Magenta"), (390.0, "Yellow")],
+        &[(72.0, "North"), (130.0, "South"), (200.0, "East"), (260.0, "West"), (320.0, "Up"), (390.0, "Down")],
+        &[(72.0, "Mon"), (130.0, "Tue"), (200.0, "Wed"), (260.0, "Thu"), (320.0, "Fri"), (390.0, "Sat")],
+        &[(72.0, "Spring"), (130.0, "Summer"), (200.0, "Autumn"), (260.0, "Winter"), (320.0, "Solstice"), (390.0, "Equinox")],
     ];
 
     let out = build_and_extract(|w| {
@@ -400,18 +408,47 @@ fn fixture_fax_scattered_fragments_no_reversal() {
         );
     }
 
-    let one = out.find("WORDONE").expect("WORDONE missing");
-    let five = out.find("WORDFIVE").expect("WORDFIVE missing");
-    assert!(
-        one < five,
-        "Reading order reversed: WORDONE at {one}, WORDFIVE at {five}\n--- output ---\n{out}"
-    );
+    // Within-row order: every fragment of row 1 must precede every
+    // fragment of row 2, otherwise we have column-major output (the
+    // L3YHC failure mode where XY-cut treats this fax-style page as
+    // multi-column and reads all left-column words before any
+    // right-column word).
+    let pos = |needle: &str| {
+        out.find(needle)
+            .unwrap_or_else(|| panic!("{needle:?} missing in output:\n{out}"))
+    };
+    let row1 = ["WORDONE", "WORDTWO", "WORDTHREE", "WORDFOUR", "WORDFIVE", "WORDSIX"];
+    let row2 = ["ALPHA", "BETA", "GAMMA", "DELTA", "EPSILON", "ZETA"];
 
-    let alpha = out.find("ALPHA").expect("ALPHA missing");
-    let epsilon = out.find("EPSILON").expect("EPSILON missing");
+    // Row 1 in left-to-right order.
+    for pair in row1.windows(2) {
+        assert!(
+            pos(pair[0]) < pos(pair[1]),
+            "Row-1 reading order reversed: {} at {} > {} at {}\n--- output ---\n{out}",
+            pair[0],
+            pos(pair[0]),
+            pair[1],
+            pos(pair[1])
+        );
+    }
+    // Row 2 in left-to-right order.
+    for pair in row2.windows(2) {
+        assert!(
+            pos(pair[0]) < pos(pair[1]),
+            "Row-2 reading order reversed: {} at {} > {} at {}\n--- output ---\n{out}",
+            pair[0],
+            pos(pair[0]),
+            pair[1],
+            pos(pair[1])
+        );
+    }
+    // The last fragment of row 1 must come BEFORE the first fragment
+    // of row 2 — proves we're reading row-major, not column-major.
+    let last_row1 = pos("WORDSIX");
+    let first_row2 = pos("ALPHA");
     assert!(
-        alpha < epsilon,
-        "Reading order reversed on Greek-letter line\n--- output ---\n{out}"
+        last_row1 < first_row2,
+        "Column-major output detected (L3YHC failure mode): WORDSIX at {last_row1} > ALPHA at {first_row2} — XY-cut wrongly read this fax page as multi-column\n--- output ---\n{out}"
     );
 }
 
