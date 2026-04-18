@@ -9,6 +9,7 @@
 pub mod area_filter;
 pub mod clustering;
 pub mod document_analyzer;
+pub mod font_stats;
 pub mod reading_order;
 pub mod text_block;
 
@@ -19,6 +20,7 @@ pub mod font_normalization;
 // Re-export main types
 pub use area_filter::{LayoutObjectSpatial, RectFilterMode, SpatialCollectionFiltering};
 pub use document_analyzer::{AdaptiveLayoutParams, DocumentProperties};
+pub use font_stats::PageFontStats;
 pub use reading_order::graph_based_reading_order;
 pub use text_block::{Color, FontWeight, PageText, TextBlock, TextChar, TextLine, TextSpan, Word};
 
