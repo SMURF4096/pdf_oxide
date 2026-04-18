@@ -6717,7 +6717,59 @@ impl PdfDocument {
             })
             .count();
         let right_count = spans.len() - left_count;
-        left_count.min(right_count) >= 15
+        if left_count.min(right_count) < 15 {
+            return false;
+        }
+
+        // Font-aware column-shape gate.
+        //
+        // Real two-column body text has tight column-edge alignment:
+        // most spans on each side share one dominant X position
+        // (the column start), with a handful of indented or
+        // section-header outliers. Scattered-fragment layouts spread
+        // their spans evenly across many X positions on each side.
+        //
+        // Measure the fraction of side-spans that fall into the
+        // largest X-cluster (cluster gap = `dominant_em`). Body text
+        // typically scores ≥ 0.5; scattered layouts score < 0.4.
+        // Reject pages where either side fails the threshold so
+        // XY-cut doesn't mis-route scattered content as multi-column.
+        let stats = crate::layout::PageFontStats::from_spans(spans);
+        let cluster_gap = stats.dominant_em.max(4.0);
+        let dominant_cluster_fraction = |take: &dyn Fn(f32) -> bool| -> f32 {
+            let mut xs: Vec<f32> = spans
+                .iter()
+                .filter(|s| {
+                    let cx = s.bbox.x + s.bbox.width * 0.5;
+                    (cx - median).abs() <= MAX_EXTENT_FROM_MEDIAN && take(cx)
+                })
+                .map(|s| s.bbox.x)
+                .collect();
+            let total = xs.len();
+            if total == 0 {
+                return 0.0;
+            }
+            xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let mut best = 1usize;
+            let mut current = 1usize;
+            let mut last = xs[0];
+            for &x in &xs[1..] {
+                if x - last <= cluster_gap {
+                    current += 1;
+                    if current > best {
+                        best = current;
+                    }
+                } else {
+                    current = 1;
+                }
+                last = x;
+            }
+            best as f32 / total as f32
+        };
+        const MIN_DOMINANT_FRACTION: f32 = 0.5;
+        let left_frac = dominant_cluster_fraction(&|cx| cx < mid_x);
+        let right_frac = dominant_cluster_fraction(&|cx| cx >= mid_x);
+        left_frac >= MIN_DOMINANT_FRACTION && right_frac >= MIN_DOMINANT_FRACTION
     }
 
     /// Normalize a span's text for cross-page signature matching.
