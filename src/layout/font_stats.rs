@@ -105,8 +105,8 @@ impl PageFontStats {
         // between vertically-adjacent same-font same-size spans.
         // Sort spans by (font_name, x_center, y descending) and walk
         // adjacent pairs.
-        let dominant_line_height = compute_line_height(spans, &body_font_name, dominant_em)
-            .unwrap_or(dominant_em * 1.2);
+        let dominant_line_height =
+            compute_line_height(spans, &body_font_name, dominant_em).unwrap_or(dominant_em * 1.2);
 
         // Dominant char width: total width of dominant-font spans
         // divided by their total character count. Falls back to

@@ -70,12 +70,9 @@ fn fixture_body_single_column_preserves_order() {
 
     let mut last_pos = 0usize;
     for line in &lines {
-        let pos = out[last_pos..]
-            .find(line.as_str())
-            .unwrap_or_else(|| {
-                panic!("line not found in expected order: {line:?}\n--- output ---\n{out}")
-            })
-            + last_pos;
+        let pos = out[last_pos..].find(line.as_str()).unwrap_or_else(|| {
+            panic!("line not found in expected order: {line:?}\n--- output ---\n{out}")
+        }) + last_pos;
         last_pos = pos + line.len();
     }
 }
@@ -101,8 +98,12 @@ fn fixture_body_two_column_no_interleave() {
         place_column(&mut page, 360.0, PAGE_H - MARGIN, &right);
     });
 
-    let last_left = out.find(left.last().unwrap().as_str()).expect("last-left missing");
-    let first_right = out.find(right.first().unwrap().as_str()).expect("first-right missing");
+    let last_left = out
+        .find(left.last().unwrap().as_str())
+        .expect("last-left missing");
+    let first_right = out
+        .find(right.first().unwrap().as_str())
+        .expect("first-right missing");
     assert!(
         last_left < first_right,
         "two-column reading order broken: last-left at {last_left}, first-right at {first_right}\n--- output ---\n{out}"
@@ -151,8 +152,12 @@ fn fixture_body_two_column_narrow_gutter_still_splits() {
         place_column(&mut page, 340.0, PAGE_H - MARGIN, &right_wide);
     });
 
-    let last_left = out.find(left_wide.last().unwrap().as_str()).expect("last-left missing");
-    let first_right = out.find(right_wide.first().unwrap().as_str()).expect("first-right missing");
+    let last_left = out
+        .find(left_wide.last().unwrap().as_str())
+        .expect("last-left missing");
+    let first_right = out
+        .find(right_wide.first().unwrap().as_str())
+        .expect("first-right missing");
     assert!(
         last_left < first_right,
         "narrow-gutter two-column reading order broken\n--- output ---\n{out}"
@@ -186,8 +191,12 @@ fn fixture_mixed_size_columns_dominant_em_picks_mode() {
         }
     });
 
-    let last_left = out.find(left.last().unwrap().as_str()).expect("last-left missing");
-    let first_right = out.find(right.first().unwrap().as_str()).expect("first-right missing");
+    let last_left = out
+        .find(left.last().unwrap().as_str())
+        .expect("last-left missing");
+    let first_right = out
+        .find(right.first().unwrap().as_str())
+        .expect("first-right missing");
     assert!(
         last_left < first_right,
         "mixed-size two-column reading order broken\n--- output ---\n{out}"
@@ -211,12 +220,16 @@ fn fixture_mixed_size_columns_dominant_em_picks_mode() {
 #[test]
 fn fixture_two_column_accompa_nying_no_interleave() {
     // 30 lines per column to trigger multi-column detection.
-    let mut left: Vec<String> = (1..=12).map(|i| format!("LeftPad{i:02} body text")).collect();
+    let mut left: Vec<String> = (1..=12)
+        .map(|i| format!("LeftPad{i:02} body text"))
+        .collect();
     left.push("We refer to the accompa-".to_string());
     left.push("nying table for details.".to_string());
     left.extend((15..=30).map(|i| format!("LeftPad{i:02} body text")));
 
-    let mut right: Vec<String> = (1..=12).map(|i| format!("RightPad{i:02} other text")).collect();
+    let mut right: Vec<String> = (1..=12)
+        .map(|i| format!("RightPad{i:02} other text"))
+        .collect();
     right.push("This line reads really clearly.".to_string());
     right.push("This line is independent text.".to_string());
     right.extend((15..=30).map(|i| format!("RightPad{i:02} other text")));
@@ -249,12 +262,16 @@ fn fixture_two_column_accompa_nying_no_interleave() {
 /// in the left column, `anonymous` on the right side at interleave Y.
 #[test]
 fn fixture_two_column_correla_tion_no_interleave() {
-    let mut left: Vec<String> = (1..=10).map(|i| format!("LeftPad{i:02} body text")).collect();
+    let mut left: Vec<String> = (1..=10)
+        .map(|i| format!("LeftPad{i:02} body text"))
+        .collect();
     left.push("We compute pairwise correla-".to_string());
     left.push("tion across all sample pairs.".to_string());
     left.extend((13..=30).map(|i| format!("LeftPad{i:02} body text")));
 
-    let mut right: Vec<String> = (1..=10).map(|i| format!("RightPad{i:02} other text")).collect();
+    let mut right: Vec<String> = (1..=10)
+        .map(|i| format!("RightPad{i:02} other text"))
+        .collect();
     right.push("All datasets are anonymous and labelled.".to_string());
     right.push("This line is independent text.".to_string());
     right.extend((13..=30).map(|i| format!("RightPad{i:02} other text")));
@@ -331,7 +348,9 @@ fn fixture_legal_style_columns_no_section_marker_interleave() {
         .find("certified")
         .or_else(|| out.find("certi-fied"))
         .expect("`certified` (or hyphenated variant) missing from left column");
-    let office_pos = out.find("Office").expect("`Office` missing from left column");
+    let office_pos = out
+        .find("Office")
+        .expect("`Office` missing from left column");
     assert!(
         certified_pos < office_pos,
         "Left column reading order broken: certified at {certified_pos}, Office at {office_pos}\n--- output ---\n{out}"
@@ -359,18 +378,102 @@ fn fixture_fax_scattered_fragments_no_reversal() {
     // the font-aware column-shape gate is the only thing keeping XY-cut
     // from mis-routing this page as multi-column.
     let lines: &[&[(f32, &str)]] = &[
-        &[(72.0, "WORDONE"), (140.0, "WORDTWO"), (200.0, "WORDTHREE"), (260.0, "WORDFOUR"), (320.0, "WORDFIVE"), (390.0, "WORDSIX")],
-        &[(72.0, "ALPHA"), (130.0, "BETA"), (190.0, "GAMMA"), (260.0, "DELTA"), (320.0, "EPSILON"), (400.0, "ZETA")],
-        &[(72.0, "First"), (130.0, "Second"), (200.0, "Third"), (260.0, "Fourth"), (320.0, "Fifth"), (390.0, "Sixth")],
-        &[(72.0, "PartA"), (130.0, "PartB"), (200.0, "PartC"), (260.0, "PartD"), (320.0, "PartE"), (390.0, "PartF")],
-        &[(72.0, "ItemX"), (130.0, "ItemY"), (190.0, "ItemZ"), (260.0, "ItemW"), (320.0, "ItemV"), (400.0, "ItemU")],
-        &[(72.0, "Quux"), (130.0, "Garply"), (200.0, "Waldo"), (260.0, "Fred"), (320.0, "Plugh"), (390.0, "Xyzzy")],
-        &[(72.0, "Foo"), (130.0, "Bar"), (190.0, "Baz"), (260.0, "Qux"), (320.0, "Corge"), (400.0, "Grault")],
-        &[(72.0, "Apple"), (130.0, "Banana"), (200.0, "Cherry"), (260.0, "Date"), (320.0, "Elder"), (390.0, "Fig")],
-        &[(72.0, "Red"), (130.0, "Green"), (200.0, "Blue"), (260.0, "Cyan"), (320.0, "Magenta"), (390.0, "Yellow")],
-        &[(72.0, "North"), (130.0, "South"), (200.0, "East"), (260.0, "West"), (320.0, "Up"), (390.0, "Down")],
-        &[(72.0, "Mon"), (130.0, "Tue"), (200.0, "Wed"), (260.0, "Thu"), (320.0, "Fri"), (390.0, "Sat")],
-        &[(72.0, "Spring"), (130.0, "Summer"), (200.0, "Autumn"), (260.0, "Winter"), (320.0, "Solstice"), (390.0, "Equinox")],
+        &[
+            (72.0, "WORDONE"),
+            (140.0, "WORDTWO"),
+            (200.0, "WORDTHREE"),
+            (260.0, "WORDFOUR"),
+            (320.0, "WORDFIVE"),
+            (390.0, "WORDSIX"),
+        ],
+        &[
+            (72.0, "ALPHA"),
+            (130.0, "BETA"),
+            (190.0, "GAMMA"),
+            (260.0, "DELTA"),
+            (320.0, "EPSILON"),
+            (400.0, "ZETA"),
+        ],
+        &[
+            (72.0, "First"),
+            (130.0, "Second"),
+            (200.0, "Third"),
+            (260.0, "Fourth"),
+            (320.0, "Fifth"),
+            (390.0, "Sixth"),
+        ],
+        &[
+            (72.0, "PartA"),
+            (130.0, "PartB"),
+            (200.0, "PartC"),
+            (260.0, "PartD"),
+            (320.0, "PartE"),
+            (390.0, "PartF"),
+        ],
+        &[
+            (72.0, "ItemX"),
+            (130.0, "ItemY"),
+            (190.0, "ItemZ"),
+            (260.0, "ItemW"),
+            (320.0, "ItemV"),
+            (400.0, "ItemU"),
+        ],
+        &[
+            (72.0, "Quux"),
+            (130.0, "Garply"),
+            (200.0, "Waldo"),
+            (260.0, "Fred"),
+            (320.0, "Plugh"),
+            (390.0, "Xyzzy"),
+        ],
+        &[
+            (72.0, "Foo"),
+            (130.0, "Bar"),
+            (190.0, "Baz"),
+            (260.0, "Qux"),
+            (320.0, "Corge"),
+            (400.0, "Grault"),
+        ],
+        &[
+            (72.0, "Apple"),
+            (130.0, "Banana"),
+            (200.0, "Cherry"),
+            (260.0, "Date"),
+            (320.0, "Elder"),
+            (390.0, "Fig"),
+        ],
+        &[
+            (72.0, "Red"),
+            (130.0, "Green"),
+            (200.0, "Blue"),
+            (260.0, "Cyan"),
+            (320.0, "Magenta"),
+            (390.0, "Yellow"),
+        ],
+        &[
+            (72.0, "North"),
+            (130.0, "South"),
+            (200.0, "East"),
+            (260.0, "West"),
+            (320.0, "Up"),
+            (390.0, "Down"),
+        ],
+        &[
+            (72.0, "Mon"),
+            (130.0, "Tue"),
+            (200.0, "Wed"),
+            (260.0, "Thu"),
+            (320.0, "Fri"),
+            (390.0, "Sat"),
+        ],
+        &[
+            (72.0, "Spring"),
+            (130.0, "Summer"),
+            (200.0, "Autumn"),
+            (260.0, "Winter"),
+            (320.0, "Solstice"),
+            (390.0, "Equinox"),
+        ],
     ];
 
     let out = build_and_extract(|w| {
@@ -390,10 +493,7 @@ fn fixture_fax_scattered_fragments_no_reversal() {
         "EPSILONDELTAGAMMABETAALPHA",
         "FifthFourthThirdSecondFirst",
     ] {
-        assert!(
-            !out.contains(bad),
-            "Reversal artifact `{bad}` detected in output:\n{out}"
-        );
+        assert!(!out.contains(bad), "Reversal artifact `{bad}` detected in output:\n{out}");
     }
 
     // Within-row order: every fragment of row 1 must precede every
@@ -405,7 +505,14 @@ fn fixture_fax_scattered_fragments_no_reversal() {
         out.find(needle)
             .unwrap_or_else(|| panic!("{needle:?} missing in output:\n{out}"))
     };
-    let row1 = ["WORDONE", "WORDTWO", "WORDTHREE", "WORDFOUR", "WORDFIVE", "WORDSIX"];
+    let row1 = [
+        "WORDONE",
+        "WORDTWO",
+        "WORDTHREE",
+        "WORDFOUR",
+        "WORDFIVE",
+        "WORDSIX",
+    ];
     let row2 = ["ALPHA", "BETA", "GAMMA", "DELTA", "EPSILON", "ZETA"];
 
     // Row 1 in left-to-right order.
@@ -448,7 +555,11 @@ fn fixture_fax_scattered_fragments_no_reversal() {
 fn fixture_table_3x3_cells_not_concatenated() {
     let cell_text = "instances";
     let cols = [120.0_f32, 250.0, 380.0];
-    let rows = [PAGE_H - MARGIN, PAGE_H - MARGIN - 30.0, PAGE_H - MARGIN - 60.0];
+    let rows = [
+        PAGE_H - MARGIN,
+        PAGE_H - MARGIN - 30.0,
+        PAGE_H - MARGIN - 60.0,
+    ];
 
     let out = build_and_extract(|w| {
         let mut page = w.add_letter_page();
@@ -476,12 +587,16 @@ fn fixture_table_3x3_cells_not_concatenated() {
 /// a literal newline before `hensive`) leaves the prose unreadable.
 #[test]
 fn fixture_two_column_hyphen_rejoin() {
-    let mut left: Vec<String> = (1..=10).map(|i| format!("LeftPad{i:02} body text")).collect();
+    let mut left: Vec<String> = (1..=10)
+        .map(|i| format!("LeftPad{i:02} body text"))
+        .collect();
     left.push("Continuation requires compre-".to_string());
     left.push("hensive understanding here.".to_string());
     left.extend((13..=30).map(|i| format!("LeftPad{i:02} body text")));
 
-    let mut right: Vec<String> = (1..=10).map(|i| format!("RightPad{i:02} other text")).collect();
+    let mut right: Vec<String> = (1..=10)
+        .map(|i| format!("RightPad{i:02} other text"))
+        .collect();
     right.push("Some financial terms cross-".to_string());
     right.push("collateralized in detail.".to_string());
     right.extend((13..=30).map(|i| format!("RightPad{i:02} other text")));
@@ -543,10 +658,7 @@ fn fixture_figure_caption_not_merged_into_body() {
         "belowSynthetic",
         "conceptIllustration",
     ] {
-        assert!(
-            !out.contains(bad),
-            "Body word collided with caption word (`{bad}`):\n{out}"
-        );
+        assert!(!out.contains(bad), "Body word collided with caption word (`{bad}`):\n{out}");
     }
 
     let concept = out.find("concept").expect("concept missing");
