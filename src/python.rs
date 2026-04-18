@@ -1814,12 +1814,19 @@ impl PyPdfDocument {
         if idx < 0 || idx >= count {
             return Err(pyo3::exceptions::PyIndexError::new_err("page index out of range"));
         }
-        Ok(PyDocPage { doc: slf, page_index: idx as usize })
+        Ok(PyDocPage {
+            doc: slf,
+            page_index: idx as usize,
+        })
     }
 
     fn __iter__(slf: Py<Self>, py: Python<'_>) -> PyResult<PyDocPageIter> {
         let count = slf.borrow_mut(py).page_count()?;
-        Ok(PyDocPageIter { doc: slf, index: 0, count })
+        Ok(PyDocPageIter {
+            doc: slf,
+            index: 0,
+            count,
+        })
     }
 
     fn __repr__(&self) -> String {
@@ -1845,7 +1852,10 @@ impl PyDocPageIter {
         if self.index >= self.count {
             return None;
         }
-        let page = PyDocPage { doc: self.doc.clone_ref(py), page_index: self.index };
+        let page = PyDocPage {
+            doc: self.doc.clone_ref(py),
+            page_index: self.index,
+        };
         self.index += 1;
         Some(page)
     }
@@ -1896,27 +1906,37 @@ impl PyDocPage {
 
     #[getter]
     fn words(&self, py: Python<'_>) -> PyResult<Vec<PyWord>> {
-        self.doc.borrow_mut(py).extract_words(self.page_index, None, None, None)
+        self.doc
+            .borrow_mut(py)
+            .extract_words(self.page_index, None, None, None)
     }
 
     #[getter]
     fn lines(&self, py: Python<'_>) -> PyResult<Vec<PyTextLine>> {
-        self.doc.borrow_mut(py).extract_text_lines(self.page_index, None, None, None, None)
+        self.doc
+            .borrow_mut(py)
+            .extract_text_lines(self.page_index, None, None, None, None)
     }
 
     #[getter]
     fn spans(&self, py: Python<'_>) -> PyResult<Vec<PyTextSpan>> {
-        self.doc.borrow_mut(py).extract_spans(self.page_index, None, None)
+        self.doc
+            .borrow_mut(py)
+            .extract_spans(self.page_index, None, None)
     }
 
     #[getter]
     fn tables(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        self.doc.borrow_mut(py).extract_tables(py, self.page_index, None, None)
+        self.doc
+            .borrow_mut(py)
+            .extract_tables(py, self.page_index, None, None)
     }
 
     #[getter]
     fn images(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        self.doc.borrow_mut(py).extract_images(py, self.page_index, None)
+        self.doc
+            .borrow_mut(py)
+            .extract_images(py, self.page_index, None)
     }
 
     #[getter]
@@ -1926,7 +1946,9 @@ impl PyDocPage {
 
     #[getter]
     fn paths(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        self.doc.borrow_mut(py).extract_paths(py, self.page_index, None)
+        self.doc
+            .borrow_mut(py)
+            .extract_paths(py, self.page_index, None)
     }
 
     #[pyo3(signature = (preserve_layout=false, detect_headings=true, include_images=false, image_output_dir=None, embed_images=true, include_form_fields=true))]
@@ -1960,9 +1982,13 @@ impl PyDocPage {
         include_images: bool,
         image_output_dir: Option<String>,
     ) -> PyResult<String> {
-        self.doc
-            .borrow_mut(py)
-            .to_plain_text(self.page_index, preserve_layout, detect_headings, include_images, image_output_dir)
+        self.doc.borrow_mut(py).to_plain_text(
+            self.page_index,
+            preserve_layout,
+            detect_headings,
+            include_images,
+            image_output_dir,
+        )
     }
 
     #[pyo3(signature = (preserve_layout=false, detect_headings=true, include_images=false, image_output_dir=None, embed_images=true, include_form_fields=true))]
@@ -1989,7 +2015,9 @@ impl PyDocPage {
 
     #[pyo3(signature = (dpi=None, format=None))]
     fn render(&self, py: Python<'_>, dpi: Option<u32>, format: Option<&str>) -> PyResult<Vec<u8>> {
-        self.doc.borrow_mut(py).render_page(self.page_index, dpi, format)
+        self.doc
+            .borrow_mut(py)
+            .render_page(self.page_index, dpi, format)
     }
 
     #[pyo3(signature = (pattern, case_insensitive=false, literal=false, whole_word=false, max_results=100))]

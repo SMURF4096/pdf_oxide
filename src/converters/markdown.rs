@@ -1197,7 +1197,7 @@ fn should_insert_bold_marker(prev_char: Option<char>, next_char: Option<char>) -
 
 /// Render a markdown table from an extracted table structure.
 ///
-/// Converts an Table into Markdown table format with:
+/// Converts a Table into Markdown table format with:
 /// - Header row (if present) separated by | delimiters
 /// - Separator row with |---|---|...
 /// - Data rows in same format

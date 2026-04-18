@@ -10,8 +10,10 @@ export interface Table {
   cols: number;
   /** True if the first row is a header row. */
   hasHeader: boolean;
-  /** Cell text: cells[row][col]. */
-  cells: string[][];
+  /** Cell text: cells[row][col]. Individual cells may be `null` when the
+   *  native binding has no text for that position (missing cell, decoding
+   *  failure, etc.). */
+  cells: (string | null)[][];
 }
 
 import type {

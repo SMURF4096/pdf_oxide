@@ -113,7 +113,12 @@ impl IccHeader {
         let device_class = [bytes[12], bytes[13], bytes[14], bytes[15]];
         let color_space = [bytes[16], bytes[17], bytes[18], bytes[19]];
         let pcs = [bytes[20], bytes[21], bytes[22], bytes[23]];
-        Some(Self { version, device_class, color_space, pcs })
+        Some(Self {
+            version,
+            device_class,
+            color_space,
+            pcs,
+        })
     }
 
     /// Number of components implied by the input colour space
@@ -266,13 +271,19 @@ impl Transform {
     pub fn new_srgb_target(profile: Arc<IccProfile>, intent: RenderingIntent) -> Self {
         #[cfg(feature = "icc")]
         {
-            let inner =
-                try_build_qcms_holder(profile.bytes(), profile.n_components(), intent);
-            Self { source_profile: profile, intent, inner }
+            let inner = try_build_qcms_holder(profile.bytes(), profile.n_components(), intent);
+            Self {
+                source_profile: profile,
+                intent,
+                inner,
+            }
         }
         #[cfg(not(feature = "icc"))]
         {
-            Self { source_profile: profile, intent }
+            Self {
+                source_profile: profile,
+                intent,
+            }
         }
     }
 
@@ -448,14 +459,8 @@ mod tests {
             RenderingIntent::from_pdf_name("WhateverNotReal"),
             RenderingIntent::RelativeColorimetric,
         );
-        assert_eq!(
-            RenderingIntent::from_pdf_name("Perceptual"),
-            RenderingIntent::Perceptual,
-        );
-        assert_eq!(
-            RenderingIntent::from_pdf_name("Saturation"),
-            RenderingIntent::Saturation,
-        );
+        assert_eq!(RenderingIntent::from_pdf_name("Perceptual"), RenderingIntent::Perceptual,);
+        assert_eq!(RenderingIntent::from_pdf_name("Saturation"), RenderingIntent::Saturation,);
         assert_eq!(
             RenderingIntent::from_pdf_name("AbsoluteColorimetric"),
             RenderingIntent::AbsoluteColorimetric,

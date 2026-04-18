@@ -383,12 +383,15 @@ impl XYCutStrategy {
             })
             .collect();
 
-        // Find the strongest peak in each half.
+        // Find the strongest peak in each half. Use `safe_float_cmp` for
+        // NaN-safe total ordering — matches the comparator used elsewhere
+        // in the reading-order code so `density` sentinel values can't
+        // reach a `partial_cmp` that maps them to `Equal`.
         let mid = n / 2;
-        let left_peak = (0..mid)
-            .max_by(|&a, &b| smoothed[a].partial_cmp(&smoothed[b]).unwrap_or(std::cmp::Ordering::Equal))?;
-        let right_peak = (mid..n)
-            .max_by(|&a, &b| smoothed[a].partial_cmp(&smoothed[b]).unwrap_or(std::cmp::Ordering::Equal))?;
+        let left_peak =
+            (0..mid).max_by(|&a, &b| crate::utils::safe_float_cmp(smoothed[a], smoothed[b]))?;
+        let right_peak =
+            (mid..n).max_by(|&a, &b| crate::utils::safe_float_cmp(smoothed[a], smoothed[b]))?;
 
         if smoothed[left_peak] == 0.0 || smoothed[right_peak] == 0.0 {
             return None;
@@ -402,7 +405,7 @@ impl XYCutStrategy {
         }
 
         let trough_pos = (search_start..search_end)
-            .min_by(|&a, &b| smoothed[a].partial_cmp(&smoothed[b]).unwrap_or(std::cmp::Ordering::Equal))?;
+            .min_by(|&a, &b| crate::utils::safe_float_cmp(smoothed[a], smoothed[b]))?;
 
         // Only use if trough is a genuine valley: ≤ 50% of the weaker peak.
         let weaker_peak = smoothed[left_peak].min(smoothed[right_peak]);
@@ -802,7 +805,14 @@ mod tests {
         make_span_text(x, y, width, height, &text, 12.0)
     }
 
-    fn make_span_text(x: f32, y: f32, width: f32, height: f32, text: &str, font_size: f32) -> TextSpan {
+    fn make_span_text(
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        text: &str,
+        font_size: f32,
+    ) -> TextSpan {
         use crate::layout::{Color, FontWeight};
 
         TextSpan {

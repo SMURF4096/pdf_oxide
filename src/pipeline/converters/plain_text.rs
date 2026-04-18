@@ -64,7 +64,7 @@ impl OutputConverter for PlainTextConverter {
 }
 
 impl PlainTextConverter {
-    /// Render an Table as space-padded plain text.
+    /// Render a Table as space-padded plain text.
     ///
     /// Delegates to the table's own `render_text()` method to ensure consistent
     /// formatting across all plain text output paths.

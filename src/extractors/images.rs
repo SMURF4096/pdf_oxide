@@ -254,10 +254,7 @@ impl PdfImage {
             ImageData::Jpeg(jpeg_data) => {
                 if self.color_space.components() == 4 {
                     let transform = self.build_cmyk_transform();
-                    let rgb = decode_cmyk_jpeg_to_rgb_with_profile(
-                        jpeg_data,
-                        transform.as_ref(),
-                    )?;
+                    let rgb = decode_cmyk_jpeg_to_rgb_with_profile(jpeg_data, transform.as_ref())?;
                     let buf = image::ImageBuffer::<image::Rgb<u8>, _>::from_raw(
                         self.width,
                         self.height,
@@ -276,14 +273,7 @@ impl PdfImage {
                 } else {
                     None
                 };
-                save_raw_as_png(
-                    pixels,
-                    self.width,
-                    self.height,
-                    *format,
-                    transform.as_ref(),
-                    path,
-                )
+                save_raw_as_png(pixels, self.width, self.height, *format, transform.as_ref(), path)
             },
         }
     }
@@ -304,10 +294,7 @@ impl PdfImage {
             ImageData::Jpeg(jpeg_data) => {
                 if self.color_space.components() == 4 {
                     let transform = self.build_cmyk_transform();
-                    let rgb = decode_cmyk_jpeg_to_rgb_with_profile(
-                        jpeg_data,
-                        transform.as_ref(),
-                    )?;
+                    let rgb = decode_cmyk_jpeg_to_rgb_with_profile(jpeg_data, transform.as_ref())?;
                     let buf = image::ImageBuffer::<image::Rgb<u8>, _>::from_raw(
                         self.width,
                         self.height,
@@ -326,14 +313,7 @@ impl PdfImage {
                 } else {
                     None
                 };
-                save_raw_as_jpeg(
-                    pixels,
-                    self.width,
-                    self.height,
-                    *format,
-                    transform.as_ref(),
-                    path,
-                )
+                save_raw_as_jpeg(pixels, self.width, self.height, *format, transform.as_ref(), path)
             },
         }
     }
@@ -462,12 +442,10 @@ impl PdfImage {
                                 PixelFormat::Grayscale => {
                                     pixels.iter().flat_map(|&g| vec![g, g, g]).collect()
                                 },
-                                PixelFormat::CMYK => {
-                                    cmyk_to_rgb_with_transform(
-                                        pixels,
-                                        self.build_cmyk_transform().as_ref(),
-                                    )
-                                },
+                                PixelFormat::CMYK => cmyk_to_rgb_with_transform(
+                                    pixels,
+                                    self.build_cmyk_transform().as_ref(),
+                                ),
                                 PixelFormat::RGB => pixels.clone(),
                             };
                             image::ImageBuffer::<image::Rgb<u8>, Vec<u8>>::from_raw(
@@ -766,7 +744,8 @@ pub fn extract_image_from_xobject(
     let direct_icc_profile = if matches!(color_space, ColorSpace::ICCBased(_)) {
         resolve_icc_profile_from_obj(doc.as_deref_mut(), &resolved_color_space)
     } else if color_space == ColorSpace::DeviceCMYK {
-        doc.as_deref_mut().and_then(|d| d.output_intent_cmyk_profile())
+        doc.as_deref_mut()
+            .and_then(|d| d.output_intent_cmyk_profile())
     } else {
         None
     };
@@ -915,7 +894,9 @@ pub(crate) fn resolve_icc_profile_from_obj(
 ) -> Option<std::sync::Arc<crate::color::IccProfile>> {
     use crate::object::Object;
 
-    let Object::Array(arr) = cs_obj else { return None };
+    let Object::Array(arr) = cs_obj else {
+        return None;
+    };
     if arr.len() < 2 || arr[0].as_name() != Some("ICCBased") {
         return None;
     }
@@ -931,7 +912,9 @@ pub(crate) fn resolve_icc_profile_from_obj(
         _ => return None,
     };
 
-    let Object::Stream { dict, .. } = &profile_obj else { return None };
+    let Object::Stream { dict, .. } = &profile_obj else {
+        return None;
+    };
     // `N` is mandatory per PDF 32000-1 §8.6.5.5 Table 66.
     let n = dict
         .get("N")

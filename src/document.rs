@@ -2806,7 +2806,9 @@ impl PdfDocument {
                 other => other,
             };
 
-            let Object::Stream { dict, .. } = &profile_stream else { continue };
+            let Object::Stream { dict, .. } = &profile_stream else {
+                continue;
+            };
             let n = match dict.get("N").and_then(|o| o.as_integer()) {
                 Some(4) => 4u8, // only CMYK; ignore RGB/Gray output intents here
                 _ => continue,
@@ -4226,11 +4228,10 @@ impl PdfDocument {
             // spans sit above them, preserving existing behaviour
             // semantics while inlining the rendering at its spatial
             // reading-order position.
-            let mut pending_tables: Vec<(f32, &crate::structure::table_extractor::Table)> =
-                tables
-                    .iter()
-                    .filter_map(|t| t.bbox.map(|b| (b.y + b.height, t)))
-                    .collect();
+            let mut pending_tables: Vec<(f32, &crate::structure::table_extractor::Table)> = tables
+                .iter()
+                .filter_map(|t| t.bbox.map(|b| (b.y + b.height, t)))
+                .collect();
             // Sort descending by top-Y so `pop()` returns the next table
             // to emit in reading order (larger Y first).
             pending_tables.sort_by(|(a, _), (b, _)| crate::utils::safe_float_cmp(*b, *a));

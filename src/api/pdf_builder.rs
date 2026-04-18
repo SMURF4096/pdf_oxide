@@ -2401,9 +2401,7 @@ impl<'a> PdfPageRegion<'a> {
     }
 
     /// Extract tables from this region.
-    pub fn extract_tables(
-        &mut self,
-    ) -> Result<Vec<crate::structure::table_extractor::Table>> {
+    pub fn extract_tables(&mut self) -> Result<Vec<crate::structure::table_extractor::Table>> {
         self.pdf
             .extract_tables_in_rect(self.page_index, self.region)
     }

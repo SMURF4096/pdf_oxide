@@ -417,10 +417,7 @@ pub fn extract_table_from_spans(
 ///
 /// # Returns
 /// * `Table` containing all rows and cells
-pub fn extract_table(
-    table_elem: &StructElem,
-    text_blocks: &[TextBlock],
-) -> Result<Table, Error> {
+pub fn extract_table(table_elem: &StructElem, text_blocks: &[TextBlock]) -> Result<Table, Error> {
     let mut table = Table::new();
 
     // Check table structure

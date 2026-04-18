@@ -442,7 +442,7 @@ impl HtmlOutputConverter {
         Ok(result)
     }
 
-    /// Render an Table as an HTML table string.
+    /// Render a Table as an HTML table string.
     fn render_table_html(table: &Table) -> String {
         if table.rows.is_empty() {
             return String::new();

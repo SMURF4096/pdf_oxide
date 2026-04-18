@@ -271,7 +271,7 @@ impl MarkdownOutputConverter {
         }
     }
 
-    /// Render an Table as a markdown table string.
+    /// Render a Table as a markdown table string.
     ///
     /// Normalizes column counts so every row has the same number of pipe-delimited
     /// cells. Without this, markdown parsers silently drop trailing cells from

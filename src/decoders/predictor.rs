@@ -453,7 +453,7 @@ mod tests {
         };
         let encoded = vec![
             0, 10, 20, 30, 40, 50, // Row 0: None
-            2, 5, 5, 5, 5, 5,      // Row 1: Up → [15, 25, 35, 45, 55]
+            2, 5, 5, 5, 5, 5, // Row 1: Up → [15, 25, 35, 45, 55]
         ];
         let result = decode_predictor(&encoded, &params).unwrap();
         assert_eq!(result, vec![10, 20, 30, 40, 50, 15, 25, 35, 45, 55]);

@@ -20,7 +20,7 @@ fn make_4bpc_indexed_pdf_with_predictor12_tag0() -> Vec<u8> {
     let mut raw = Vec::with_capacity(h as usize * (bytes_per_row + 1));
     for _ in 0..h {
         raw.push(0u8); // per-row predictor tag: None
-        // All nibbles set to 0xF → every pixel picks palette index 0xF.
+                       // All nibbles set to 0xF → every pixel picks palette index 0xF.
         raw.extend(std::iter::repeat(0xFFu8).take(bytes_per_row));
     }
     let mut enc = ZlibEncoder::new(Vec::new(), Compression::default());

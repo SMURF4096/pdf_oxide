@@ -484,10 +484,7 @@ pub fn detect_tables_from_spans_column_aware(
 }
 
 /// Detect tables from spatial layout of text spans.
-pub fn detect_tables_from_spans(
-    spans: &[TextSpan],
-    config: &TableDetectionConfig,
-) -> Vec<Table> {
+pub fn detect_tables_from_spans(spans: &[TextSpan], config: &TableDetectionConfig) -> Vec<Table> {
     if !config.enabled || spans.is_empty() {
         return Vec::new();
     }
