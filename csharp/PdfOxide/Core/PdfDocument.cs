@@ -867,6 +867,32 @@ namespace PdfOxide.Core
             }
         }
 
+        /// <summary>Gets all pages as a read-only list. Enables foreach and LINQ.</summary>
+        public IReadOnlyList<PdfPage> Pages
+        {
+            get
+            {
+                ThrowIfDisposed();
+                var count = PageCount;
+                var pages = new PdfPage[count];
+                for (int i = 0; i < count; i++)
+                    pages[i] = new PdfPage(this, i);
+                return pages;
+            }
+        }
+
+        /// <summary>Returns the page at the given zero-based index.</summary>
+        public PdfPage this[int pageIndex]
+        {
+            get
+            {
+                ThrowIfDisposed();
+                if (pageIndex < 0 || pageIndex >= PageCount)
+                    throw new ArgumentOutOfRangeException(nameof(pageIndex));
+                return new PdfPage(this, pageIndex);
+            }
+        }
+
         private void ThrowIfDisposed()
         {
             if (_disposed)
@@ -949,5 +975,90 @@ namespace PdfOxide.Core
             FieldType = fieldType;
             Value = value;
         }
+    }
+
+    /// <summary>
+    /// Represents a single page of a <see cref="PdfDocument"/>.
+    /// All extraction methods dispatch to the parent document.
+    /// </summary>
+    public sealed class PdfPage
+    {
+        private readonly PdfDocument _doc;
+
+        /// <summary>Zero-based page index.</summary>
+        public int Index { get; }
+
+        internal PdfPage(PdfDocument doc, int index)
+        {
+            _doc = doc;
+            Index = index;
+        }
+
+        /// <summary>Extracts plain text from the page.</summary>
+        public string ExtractText() => _doc.ExtractText(Index);
+
+        /// <summary>Extracts plain text asynchronously.</summary>
+        public Task<string> ExtractTextAsync(CancellationToken ct = default) =>
+            _doc.ExtractTextAsync(Index, ct);
+
+        /// <summary>Converts the page to Markdown.</summary>
+        public string ToMarkdown() => _doc.ToMarkdown(Index);
+
+        /// <summary>Converts the page to Markdown asynchronously.</summary>
+        public Task<string> ToMarkdownAsync(CancellationToken ct = default) =>
+            Task.Run(() => _doc.ToMarkdown(Index), ct);
+
+        /// <summary>Converts the page to HTML.</summary>
+        public string ToHtml() => _doc.ToHtml(Index);
+
+        /// <summary>Converts the page to HTML asynchronously.</summary>
+        public Task<string> ToHtmlAsync(CancellationToken ct = default) =>
+            Task.Run(() => _doc.ToHtml(Index), ct);
+
+        /// <summary>Converts the page to plain text.</summary>
+        public string ToPlainText() => _doc.ToPlainText(Index);
+
+        /// <summary>Converts the page to plain text asynchronously.</summary>
+        public Task<string> ToPlainTextAsync(CancellationToken ct = default) =>
+            Task.Run(() => _doc.ToPlainText(Index), ct);
+
+        /// <summary>Extracts words with bounding boxes.</summary>
+        public (string Text, float X, float Y, float W, float H)[] ExtractWords() =>
+            _doc.ExtractWords(Index);
+
+        /// <summary>Extracts text lines with bounding boxes.</summary>
+        public (string Text, float X, float Y, float W, float H)[] ExtractLines() =>
+            _doc.ExtractTextLines(Index);
+
+        /// <summary>Extracts tables from the page.</summary>
+        public (int RowCount, int ColCount)[] ExtractTables() => _doc.ExtractTables(Index);
+
+        /// <summary>Extracts embedded images from the page.</summary>
+        public ExtractedImage[] ExtractImages() => _doc.ExtractImages(Index);
+
+        /// <summary>Extracts characters with bounding boxes.</summary>
+        public (char Char, float X, float Y, float W, float H)[] ExtractChars() =>
+            _doc.ExtractChars(Index);
+
+        /// <summary>Extracts path geometries from the page.</summary>
+        public (float X, float Y, float W, float H, float StrokeWidth)[] ExtractPaths() =>
+            _doc.ExtractPaths(Index);
+
+        /// <summary>Returns font names used on the page.</summary>
+        public string[] GetFonts() => _doc.GetFonts(Index);
+
+        /// <summary>Searches for text on the page.</summary>
+        public (int Page, string Text, float X, float Y, float W, float H)[] Search(
+            string text, bool caseSensitive = false) =>
+            _doc.SearchPage(Index, text, caseSensitive);
+
+        /// <summary>Renders the page to image bytes.</summary>
+        public byte[] Render(int format = 0) => _doc.RenderPage(Index, format);
+
+        /// <summary>Renders a thumbnail of the page.</summary>
+        public byte[] RenderThumbnail(int format = 0) => _doc.RenderThumbnail(Index, format);
+
+        /// <inheritdoc/>
+        public override string ToString() => $"PdfPage(index={Index})";
     }
 }
