@@ -3,7 +3,7 @@
 All notable changes to PDFOxide are documented here.
 
 ## [0.3.34] - 2026-04-17
-> Idiomatic page API across all bindings; structured table extraction; naming cleanup
+> Idiomatic page API across all bindings; structured table extraction; column-detection fix; portable Node.js Linux prebuild
 
 ### API — Page abstraction (#371)
 
@@ -31,31 +31,77 @@ with PdfDocument("paper.pdf") as doc:
 - **Go** — `Page` struct with full method surface. `doc.Page(i)` and
   `doc.Pages()` added to `PdfDocument`.
 
-### API — Structured table extraction (#289)
+### API — Structured table extraction with consistent naming (#289)
 
-`extract_tables()` (Python), `ExtractTables()` (C#/Go), `extractTables()` (Node.js)
-return structured data — rows, cells with text and bounding boxes — not just
-Markdown. Available on both `PdfDocument` and the new `PdfPage` objects.
+`extract_tables()` returns structured data — rows, cells with text and bounding
+boxes — not just Markdown. Available on both `PdfDocument` and the new `PdfPage`
+objects across all bindings, with a single consistent type name `Table`:
 
-```python
-for table in page.tables:
-    for row in table["rows"]:
-        print([cell["text"] for cell in row["cells"]])
-```
+| Language | Type | Cell access |
+|---|---|---|
+| Rust   | `Table`             | iterate `rows[i].cells[j]` |
+| Python | `dict`              | `row["cells"][i]["text"]` |
+| Go     | `Table`             | `table.CellText(row, col)` |
+| C#     | `Table`             | `table.CellText(row, col)` |
+| Node.js| `Table` (interface) | `table.cells[row][col]` |
 
-### Refactoring
+C# previously returned only `(int RowCount, int ColCount)` tuples — now returns
+a proper `Table[]` with cell text accessors, matching Go and Rust.
 
-- **`ExtractedTable` → `Table` in Rust core (#289).** `Extracted` prefix was
-  redundant given the module and function names already provide that context.
+### Text extraction correctness
+
+- **Multi-column reading-order interleaving fixed (#319).** On untagged
+  multi-column PDFs (academic textbooks, genetics references), `extract_text`
+  was applying XY-cut column ordering inside `extract_spans()` and then
+  re-sorting with row-aware sort in `extract_text_with_options`, undoing the
+  column structure. Result: garbled fragments like `accompaally` (= "accompa"
+  from column 1 + "ally" from column 2). Fix: skip the row-aware re-sort when
+  the page is genuinely multi-column. Verified on Hartwell Genetics, Murphy ML,
+  and Kandel Neural Science textbooks — all known garbled tokens eliminated.
+- **XY-cut column-detection improvements** for mixed-layout pages (table + body
+  text). Wide spans (>55% of region width) excluded from the projection density
+  so tab-expanded table rows no longer fill the column gutter. Single-character
+  spans (table cell values like `G`, `T`) excluded from projection so they
+  don't scatter across the gutter. Coverage check uses character-count estimate
+  rather than bbox width so tab-padded rows don't masquerade as dense body text.
+- **Sparse-layout false-positive guard** for `is_multi_column_page`. Copyright
+  pages, title pages, and colophons can produce two X-center peaks with only
+  7-10 spans per "column" — these are no longer treated as multi-column,
+  preventing XY-cut from splitting sentences whose halves are at different X
+  positions on the same line.
+
+### Distribution
+
+- **Node.js Linux prebuild now portable across glibc 2.35+ systems.** Previous
+  builds were dynamically linked against `libstdc++.so.6` requiring
+  `GLIBCXX_3.4.31` (GCC 13+), failing to load on Debian 12 stable, Ubuntu
+  22.04, and RHEL 8/9. Fix: `binding.gyp` now passes `-static-libstdc++` and
+  `-static-libgcc`, and the Linux runner is pinned to `ubuntu-22.04` /
+  `ubuntu-22.04-arm` (glibc 2.35). The resulting `.node` is fully self-contained
+  for C++ runtime — `ldd` shows only `libm`/`libc`. Size impact: +210 KB.
+- **Go installer documents `@latest`.** `go run github.com/yfedoseev/pdf_oxide/go/cmd/install@latest`
+  is now the recommended install command (the installer auto-resolves the
+  matching version via `runtime/debug.ReadBuildInfo()`).
+
+### CI
+
+- **Free-disk-space step added to all Ubuntu jobs that do heavy Rust + Python
+  builds.** A v0.3.33 release-pipeline failure (`No space left on device` on
+  `actions-runner` log writes) traced to GitHub Ubuntu runners filling up at
+  the `maturin build --release` step. Now applied to `python.yml` test job
+  (was only one fixed initially), `ci.yml` Python Bindings + WASM Build jobs,
+  and `release.yml` Python wheel build matrix (Linux targets only via
+  `if: runner.os == 'Linux'` guard).
 
 ### Community Contributors
 
 - **[@SeanPedersen](https://github.com/SeanPedersen)** — Proposed the page-first
-  API (#371) with lazy evaluation and sequence semantics. Python follows his design
-  exactly; extended to Node.js, C#, and Go.
+  API (#371) with lazy evaluation and sequence semantics. Python follows his
+  design exactly; extended to Node.js, C#, and Go.
 - **[@pdenapo](https://github.com/pdenapo)** — Requested structured table
-  extraction returning data structures rather than Markdown (#289), which prompted
-  the `extract_tables()` documentation and the `Table` rename.
+  extraction returning data structures rather than Markdown (#289), which
+  prompted the cell-text API surfacing in C# / Node.js and the `Table` rename
+  for cross-language consistency.
 
 ## [0.3.33] - 2026-04-16
 > Text extraction, image correctness, and memory safety fixes

@@ -519,7 +519,7 @@ pub fn detect_tables_from_spans(
         return Vec::new();
     }
 
-    let table = grid_to_extracted_table(&grid, spans, None);
+    let table = grid_to_table(&grid, spans, None);
     if !is_valid_table(&table) || !passes_spatial_quality_gate(&table) {
         return Vec::new();
     }
@@ -1253,7 +1253,7 @@ fn detect_tables_in_cluster(
             };
             grid = grid.trim_empty_columns();
             if validate_table_structure_internal(&grid, config) {
-                let mut table = grid_to_extracted_table(
+                let mut table = grid_to_table(
                     &grid,
                     spans,
                     Some(detect_merged_cells_visually(&grid, spans, cluster, all_lines)),
@@ -2847,7 +2847,7 @@ pub fn detect_tables_with_lines(
     final_tables
 }
 
-fn grid_to_extracted_table(
+fn grid_to_table(
     grid: &GridStructure,
     spans: &[TextSpan],
     visual_merge_info: Option<Vec<Vec<CellMergeInfo>>>,
