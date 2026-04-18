@@ -317,13 +317,20 @@ impl XYCutStrategy {
         indices: &[usize],
     ) -> Option<(Vec<usize>, Vec<usize>)> {
         let profile = self.horizontal_projection_indexed(all_spans, indices)?;
-        let (valley_start, valley_end, valley_width) = self.find_valley(&profile)?;
 
-        if valley_width < self.min_valley_width {
-            return None;
-        }
-
-        let split_x = profile.x_min + (valley_start + valley_end) as f32 / 2.0;
+        let split_x = if let Some((vs, ve, vw)) = self.find_valley(&profile) {
+            if vw < self.min_valley_width {
+                return None;
+            }
+            profile.x_min + (vs + ve) as f32 / 2.0
+        } else {
+            // Fallback: when narrow table-cell spans fill the column gutter
+            // and prevent zero-density valley detection, find the relative
+            // minimum between the two strongest density peaks. Only use
+            // this when the minimum is ≤ 50% of the weaker peak (genuine
+            // trough) so we don't split single-column pages on shallow dips.
+            self.find_split_between_peaks(&profile)?
+        };
 
         // Partition by span LEFT EDGE (where the glyphs actually start),
         // not bbox.right() and not center. Extractor bboxes overreach to
@@ -347,6 +354,70 @@ impl XYCutStrategy {
         }
 
         Some((left, right))
+    }
+
+    /// Fallback column split: find the deepest trough between the two
+    /// strongest density peaks. Used when the standard valley detection
+    /// fails because narrow table-cell spans partially fill the gutter.
+    ///
+    /// Returns the split X coordinate (absolute, not relative to x_min) if
+    /// a genuine trough exists — i.e., the minimum between the peaks is ≤
+    /// 50% of the weaker peak density.
+    fn find_split_between_peaks(&self, profile: &ProjectionProfile) -> Option<f32> {
+        let density = &profile.density;
+        let n = density.len();
+        if n < 3 {
+            return None;
+        }
+
+        // Smooth with a small box filter (window = min_valley_width) to
+        // average out individual narrow peaks before finding mass centres.
+        let smooth_window = (self.min_valley_width as usize).max(3);
+        let half = smooth_window / 2;
+        let smoothed: Vec<f32> = (0..n)
+            .map(|i| {
+                let s = i.saturating_sub(half);
+                let e = (i + half + 1).min(n);
+                let sum: f32 = density[s..e].iter().sum();
+                sum / (e - s) as f32
+            })
+            .collect();
+
+        // Find the strongest peak in each half.
+        let mid = n / 2;
+        let left_peak = (0..mid)
+            .max_by(|&a, &b| smoothed[a].partial_cmp(&smoothed[b]).unwrap_or(std::cmp::Ordering::Equal))?;
+        let right_peak = (mid..n)
+            .max_by(|&a, &b| smoothed[a].partial_cmp(&smoothed[b]).unwrap_or(std::cmp::Ordering::Equal))?;
+
+        if smoothed[left_peak] == 0.0 || smoothed[right_peak] == 0.0 {
+            return None;
+        }
+
+        // Find the minimum density in the interior between the two peaks.
+        let search_start = left_peak.min(right_peak) + 1;
+        let search_end = left_peak.max(right_peak);
+        if search_start >= search_end {
+            return None;
+        }
+
+        let trough_pos = (search_start..search_end)
+            .min_by(|&a, &b| smoothed[a].partial_cmp(&smoothed[b]).unwrap_or(std::cmp::Ordering::Equal))?;
+
+        // Only use if trough is a genuine valley: ≤ 50% of the weaker peak.
+        let weaker_peak = smoothed[left_peak].min(smoothed[right_peak]);
+        if smoothed[trough_pos] > weaker_peak * 0.5 {
+            return None;
+        }
+
+        // Trough must be at least min_valley_width from both edges.
+        if trough_pos < self.min_valley_width as usize
+            || trough_pos + self.min_valley_width as usize > n
+        {
+            return None;
+        }
+
+        Some(profile.x_min + trough_pos as f32)
     }
 
     /// Find horizontal line (Y-axis) split using index-based partitioning.

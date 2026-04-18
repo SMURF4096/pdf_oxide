@@ -4081,18 +4081,26 @@ impl PdfDocument {
             // would interleave cells from the same tabular row whose Y
             // values differ by typographic jitter (common in CJK layouts,
             // superscripts, and centered multi-line labels).
-            spans.sort_by(|a, b| {
-                let cmp = crate::utils::row_aware_span_cmp(a.bbox.y, a.bbox.x, b.bbox.y, b.bbox.x);
-                if cmp != std::cmp::Ordering::Equal {
-                    return cmp;
-                }
-                a.sequence.cmp(&b.sequence)
-            });
+            //
+            // Skip for multi-column pages: extract_spans() already applied
+            // XY-cut column ordering. Re-sorting with row-aware would
+            // interleave left/right columns line-by-line, producing garbled
+            // output like "accompaally" instead of "accompanying table".
+            if !Self::is_multi_column_page(&spans) {
+                spans.sort_by(|a, b| {
+                    let cmp =
+                        crate::utils::row_aware_span_cmp(a.bbox.y, a.bbox.x, b.bbox.y, b.bbox.x);
+                    if cmp != std::cmp::Ordering::Equal {
+                        return cmp;
+                    }
+                    a.sequence.cmp(&b.sequence)
+                });
 
-            // Promote multi-row-spanning labels (sparse-column spans
-            // vertically centred across several dense-column data rows)
-            // to sort at the top of their row block.
-            Self::reorder_rowspan_labels(&mut spans);
+                // Promote multi-row-spanning labels (sparse-column spans
+                // vertically centred across several dense-column data rows)
+                // to sort at the top of their row block.
+                Self::reorder_rowspan_labels(&mut spans);
+            }
 
             // OCR fallback for scanned PDFs
             #[cfg(feature = "ocr")]
