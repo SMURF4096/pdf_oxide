@@ -52,9 +52,12 @@ v0.3.30 — NativeAOT + LibraryImport migration (#333) + v0.3.30 shipping fixes
   osx-x64/arm64.
     </PackageReleaseNotes>
 
-    <!-- Licensing -->
+    <!-- Licensing. NuGet deprecated <LicenseUrl> in favour of
+         <PackageLicenseExpression>; keeping both simultaneously triggers a
+         warning and may be rejected by strict feeds. The raw LICENSE files
+         are also embedded (see ItemGroup below) so the full notice ships
+         inside the .nupkg per MIT's "include copyright notice" requirement. -->
     <PackageLicenseExpression>MIT OR Apache-2.0</PackageLicenseExpression>
-    <LicenseUrl>https://github.com/yfedoseev/pdf_oxide/blob/main/LICENSE-MIT</LicenseUrl>
 
     <!-- Repository Information -->
     <RepositoryUrl>https://github.com/yfedoseev/pdf_oxide</RepositoryUrl>
@@ -123,6 +126,14 @@ v0.3.30 — NativeAOT + LibraryImport migration (#333) + v0.3.30 shipping fixes
   <!-- Package README: the canonical C# binding README lives one level up in csharp/ -->
   <ItemGroup>
     <None Include="../README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- Embed dual-licence text in the .nupkg root so `dotnet nuget` clients
+       can surface the full notice alongside the <PackageLicenseExpression>
+       identifier. -->
+  <ItemGroup>
+    <None Include="LICENSE-APACHE" Pack="true" PackagePath="\" />
+    <None Include="LICENSE-MIT" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <!-- Defensively exclude any native PDB files that might land in runtimes/

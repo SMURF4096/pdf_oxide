@@ -90,6 +90,14 @@ a proper `Table[]` with cell text accessors, matching Go and Rust.
   `LICENSE-APACHE` + `LICENSE-MIT` live. Fix: duplicate both files into
   `go/LICENSE-APACHE` and `go/LICENSE-MIT`, filenames both on
   pkg.go.dev's accepted list. Takes effect on the next tag.
+- **npm, NuGet, and PyPI packages now embed both licence files.** Same
+  class of gap as the Go fix: `js/package.json`'s `files` list, the C#
+  `.csproj`, and the maturin `[tool.maturin] include` all omitted the
+  licence text so shipped artifacts lacked the notice MIT requires.
+  `js/package.json`'s `license` field also flattened to `"MIT"`,
+  contradicting the crate's declared `MIT OR Apache-2.0`; corrected to
+  match. The C# csproj carried a deprecated `<LicenseUrl>` alongside
+  `<PackageLicenseExpression>` that NuGet warns on — removed.
 
 ### CI
 

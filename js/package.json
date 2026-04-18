@@ -19,7 +19,9 @@
   "files": [
     "lib/",
     "prebuilds/",
-    "README.md"
+    "README.md",
+    "LICENSE-APACHE",
+    "LICENSE-MIT"
   ],
   "keywords": [
     "pdf",
@@ -30,7 +32,7 @@
     "prebuilt"
   ],
   "author": "PDF Oxide Contributors",
-  "license": "MIT",
+  "license": "MIT OR Apache-2.0",
   "homepage": "https://github.com/yfedoseev/pdf_oxide",
   "repository": {
     "type": "git",
