@@ -6497,14 +6497,11 @@ namespace PdfOxide.Internal
         /// <summary>
         /// Checks if a table has a header row.
         /// </summary>
-        [LibraryImport(LibName, EntryPoint = "pdf_oxide_table_has_header", StringMarshalling = StringMarshalling.Utf8)]
-        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-        [return: MarshalAs(UnmanagedType.I1)]
-        public static partial bool pdf_oxide_table_has_header(
-            NativeHandle tables,
-            int index,
-            out int errorCode);
-
+        // All other table API P/Invokes take `IntPtr tables` (see
+        // `pdf_oxide_table_count`, `pdf_oxide_table_get_row_count`, etc.)
+        // because the caller owns the raw handle returned by
+        // `pdf_document_extract_tables`. Keeping a second `NativeHandle`
+        // overload would be dead code.
         [LibraryImport(LibName, EntryPoint = "pdf_oxide_table_has_header")]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         [return: MarshalAs(UnmanagedType.I1)]

@@ -363,6 +363,13 @@ impl Transform {
         out
     }
 
+    /// Component count the source profile accepts (1, 3, or 4). Callers
+    /// use this to pick the matching `convert_*_buffer` method for a
+    /// given pixel format and to suppress mismatched transforms.
+    pub fn source_n_components(&self) -> u8 {
+        self.source_profile.n_components()
+    }
+
     /// Whether a real ICC transform is in play (vs the §10.3.5 fallback).
     pub fn has_cmm(&self) -> bool {
         #[cfg(feature = "icc")]

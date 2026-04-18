@@ -240,9 +240,13 @@ impl PdfImage {
     /// Build the source→sRGB transform from this image's embedded ICC
     /// profile (if any). Returns `None` when the image uses purely
     /// device-dependent colour, or when no profile was resolved at
-    /// extraction time. The resulting transform is safe to pass to
-    /// `decode_cmyk_jpeg_to_rgb_with_profile` / `cmyk_to_rgb_with_transform`.
-    fn build_cmyk_transform(&self) -> Option<crate::color::Transform> {
+    /// extraction time.
+    ///
+    /// The resulting transform is component-agnostic: callers pick the
+    /// matching `Transform::convert_{cmyk,rgb,gray}_*` method based on
+    /// the source pixel format. Used by the `decode_cmyk_jpeg_to_rgb_…`,
+    /// `cmyk_to_rgb_with_transform`, and `save_raw_as_*` paths.
+    fn build_icc_transform(&self) -> Option<crate::color::Transform> {
         self.icc_profile
             .as_ref()
             .map(|p| crate::color::Transform::new_srgb_target(p.clone(), self.rendering_intent))
@@ -253,7 +257,7 @@ impl PdfImage {
         match &self.data {
             ImageData::Jpeg(jpeg_data) => {
                 if self.color_space.components() == 4 {
-                    let transform = self.build_cmyk_transform();
+                    let transform = self.build_icc_transform();
                     let rgb = decode_cmyk_jpeg_to_rgb_with_profile(jpeg_data, transform.as_ref())?;
                     let buf = image::ImageBuffer::<image::Rgb<u8>, _>::from_raw(
                         self.width,
@@ -268,11 +272,13 @@ impl PdfImage {
                 }
             },
             ImageData::Raw { pixels, format } => {
-                let transform = if *format == PixelFormat::CMYK {
-                    self.build_cmyk_transform()
-                } else {
-                    None
-                };
+                // Always build the transform if a profile is present; the
+                // save helper picks the right convert_* method for the
+                // pixel format. RGB/Gray ICCBased samples would otherwise
+                // be written as-is, which is wrong when the profile is
+                // wide-gamut (Adobe RGB, ProPhoto, …) or a calibrated
+                // grayscale other than sRGB gamma.
+                let transform = self.build_icc_transform();
                 save_raw_as_png(pixels, self.width, self.height, *format, transform.as_ref(), path)
             },
         }
@@ -293,7 +299,7 @@ impl PdfImage {
             // is a follow-up).
             ImageData::Jpeg(jpeg_data) => {
                 if self.color_space.components() == 4 {
-                    let transform = self.build_cmyk_transform();
+                    let transform = self.build_icc_transform();
                     let rgb = decode_cmyk_jpeg_to_rgb_with_profile(jpeg_data, transform.as_ref())?;
                     let buf = image::ImageBuffer::<image::Rgb<u8>, _>::from_raw(
                         self.width,
@@ -308,11 +314,7 @@ impl PdfImage {
                 }
             },
             ImageData::Raw { pixels, format } => {
-                let transform = if *format == PixelFormat::CMYK {
-                    self.build_cmyk_transform()
-                } else {
-                    None
-                };
+                let transform = self.build_icc_transform();
                 save_raw_as_jpeg(pixels, self.width, self.height, *format, transform.as_ref(), path)
             },
         }
@@ -444,7 +446,7 @@ impl PdfImage {
                                 },
                                 PixelFormat::CMYK => cmyk_to_rgb_with_transform(
                                     pixels,
-                                    self.build_cmyk_transform().as_ref(),
+                                    self.build_icc_transform().as_ref(),
                                 ),
                                 PixelFormat::RGB => pixels.clone(),
                             };
@@ -1551,6 +1553,30 @@ fn save_jpeg_as_png(jpeg_data: &[u8], path: impl AsRef<Path>) -> Result<()> {
         .map_err(|e| Error::Image(format!("Failed to save PNG: {}", e)))
 }
 
+/// Decide whether a given ICC transform should actually be applied to a
+/// buffer of the given pixel format. The transform was compiled for
+/// whatever component count the profile advertised; applying it to a
+/// mismatched buffer (e.g. a 4-component CMYK transform to a 3-channel
+/// RGB buffer) would produce garbage. A `None` transform, or a
+/// transform whose profile components disagree with `format`, is
+/// suppressed so the caller falls through to identity / fallback math.
+fn icc_matches_format(
+    transform: Option<&crate::color::Transform>,
+    format: PixelFormat,
+) -> Option<&crate::color::Transform> {
+    let t = transform?;
+    let needed = match format {
+        PixelFormat::RGB => 3,
+        PixelFormat::Grayscale => 1,
+        PixelFormat::CMYK => 4,
+    };
+    if t.source_n_components() == needed {
+        Some(t)
+    } else {
+        None
+    }
+}
+
 fn save_raw_as_png(
     pixels: &[u8],
     width: u32,
@@ -1563,19 +1589,40 @@ fn save_raw_as_png(
 
     match format {
         PixelFormat::RGB => {
-            let img = ImageBuffer::<Rgb<u8>, _>::from_raw(width, height, pixels.to_vec())
+            // RGB source through an ICC profile (Adobe RGB, ProPhoto, wide-
+            // gamut cameras) → convert to sRGB before writing. With no
+            // profile the bytes are assumed sRGB already and passed through.
+            let rgb = match icc_matches_format(transform, format) {
+                Some(t) => t.convert_rgb_buffer(pixels),
+                None => pixels.to_vec(),
+            };
+            let img = ImageBuffer::<Rgb<u8>, _>::from_raw(width, height, rgb)
                 .ok_or_else(|| Error::Image("Invalid RGB image dimensions".to_string()))?;
             img.save_with_format(path, ImageFormat::Png)
                 .map_err(|e| Error::Image(format!("Failed to save PNG: {}", e)))
         },
         PixelFormat::Grayscale => {
-            let img = ImageBuffer::<Luma<u8>, _>::from_raw(width, height, pixels.to_vec())
-                .ok_or_else(|| Error::Image("Invalid grayscale image dimensions".to_string()))?;
-            img.save_with_format(path, ImageFormat::Png)
-                .map_err(|e| Error::Image(format!("Failed to save PNG: {}", e)))
+            // A Gray ICC profile promotes to sRGB RGB; without one the
+            // single channel is written as an L8 PNG.
+            if let Some(t) = icc_matches_format(transform, format) {
+                let rgb = t.convert_gray_buffer(pixels);
+                let img =
+                    ImageBuffer::<Rgb<u8>, _>::from_raw(width, height, rgb).ok_or_else(|| {
+                        Error::Image("Invalid grayscale image dimensions".to_string())
+                    })?;
+                img.save_with_format(path, ImageFormat::Png)
+                    .map_err(|e| Error::Image(format!("Failed to save PNG: {}", e)))
+            } else {
+                let img = ImageBuffer::<Luma<u8>, _>::from_raw(width, height, pixels.to_vec())
+                    .ok_or_else(|| {
+                        Error::Image("Invalid grayscale image dimensions".to_string())
+                    })?;
+                img.save_with_format(path, ImageFormat::Png)
+                    .map_err(|e| Error::Image(format!("Failed to save PNG: {}", e)))
+            }
         },
         PixelFormat::CMYK => {
-            let rgb = cmyk_to_rgb_with_transform(pixels, transform);
+            let rgb = cmyk_to_rgb_with_transform(pixels, icc_matches_format(transform, format));
             let img = ImageBuffer::<Rgb<u8>, _>::from_raw(width, height, rgb)
                 .ok_or_else(|| Error::Image("Invalid CMYK image dimensions".to_string()))?;
             img.save_with_format(path, ImageFormat::Png)
@@ -1596,19 +1643,35 @@ fn save_raw_as_jpeg(
 
     match format {
         PixelFormat::RGB => {
-            let img = ImageBuffer::<Rgb<u8>, _>::from_raw(width, height, pixels.to_vec())
+            let rgb = match icc_matches_format(transform, format) {
+                Some(t) => t.convert_rgb_buffer(pixels),
+                None => pixels.to_vec(),
+            };
+            let img = ImageBuffer::<Rgb<u8>, _>::from_raw(width, height, rgb)
                 .ok_or_else(|| Error::Image("Invalid RGB image dimensions".to_string()))?;
             img.save_with_format(path, ImageFormat::Jpeg)
                 .map_err(|e| Error::Image(format!("Failed to save JPEG: {}", e)))
         },
         PixelFormat::Grayscale => {
-            let img = ImageBuffer::<Luma<u8>, _>::from_raw(width, height, pixels.to_vec())
-                .ok_or_else(|| Error::Image("Invalid grayscale image dimensions".to_string()))?;
-            img.save_with_format(path, ImageFormat::Jpeg)
-                .map_err(|e| Error::Image(format!("Failed to save JPEG: {}", e)))
+            if let Some(t) = icc_matches_format(transform, format) {
+                let rgb = t.convert_gray_buffer(pixels);
+                let img =
+                    ImageBuffer::<Rgb<u8>, _>::from_raw(width, height, rgb).ok_or_else(|| {
+                        Error::Image("Invalid grayscale image dimensions".to_string())
+                    })?;
+                img.save_with_format(path, ImageFormat::Jpeg)
+                    .map_err(|e| Error::Image(format!("Failed to save JPEG: {}", e)))
+            } else {
+                let img = ImageBuffer::<Luma<u8>, _>::from_raw(width, height, pixels.to_vec())
+                    .ok_or_else(|| {
+                        Error::Image("Invalid grayscale image dimensions".to_string())
+                    })?;
+                img.save_with_format(path, ImageFormat::Jpeg)
+                    .map_err(|e| Error::Image(format!("Failed to save JPEG: {}", e)))
+            }
         },
         PixelFormat::CMYK => {
-            let rgb = cmyk_to_rgb_with_transform(pixels, transform);
+            let rgb = cmyk_to_rgb_with_transform(pixels, icc_matches_format(transform, format));
             let img = ImageBuffer::<Rgb<u8>, _>::from_raw(width, height, rgb)
                 .ok_or_else(|| Error::Image("Invalid CMYK image dimensions".to_string()))?;
             img.save_with_format(path, ImageFormat::Jpeg)
