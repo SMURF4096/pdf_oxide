@@ -3,63 +3,59 @@
 All notable changes to PDFOxide are documented here.
 
 ## [0.3.34] - 2026-04-17
-> Idiomatic page API across Python, Node.js, C#, and Go; naming refactor
+> Idiomatic page API across all bindings; structured table extraction; naming cleanup
 
 ### API — Page abstraction (#371)
 
-All four language bindings now expose a `PdfPage` / `Page` object so callers can
-iterate a document by page and call extraction methods directly on the page handle,
-without passing a page index to every call.
+All four language bindings now expose a page object so callers can iterate a
+document and call extraction methods on the page directly.
 
-- **Python.** `PdfDocument` now supports `len(doc)`, `for page in doc`, and
-  `doc[i]` (negative indices supported). Each yields a `PdfPage` with lazy
-  properties (`text`, `chars`, `words`, `lines`, `spans`, `tables`, `images`,
-  `paths`, `annotations`) and methods (`markdown()`, `plain_text()`, `html()`,
-  `render()`, `search()`, `region()`). The editor page class is now exported as
-  `EditorPage` to avoid a name collision.
+```python
+with PdfDocument("paper.pdf") as doc:
+    for page in doc:           # len(doc), doc[i], doc[-1] also work
+        text = page.text
+        md   = page.markdown(detect_headings=True)
+```
 
-  ```python
-  with PdfDocument("paper.pdf") as doc:
-      for page in doc:
-          text = page.text
-          md   = page.markdown(detect_headings=True)
-  ```
+- **Python** — `PdfPage` with lazy properties: `text`, `chars`, `words`, `lines`,
+  `spans`, `tables`, `images`, `paths`, `annotations`; methods: `markdown()`,
+  `plain_text()`, `html()`, `render()`, `search()`, `region()`. Editor page
+  renamed to `EditorPage` to avoid collision.
+- **Node.js** — `PdfPage` with cached `width`/`height`/`rotation` and extraction
+  methods. `[Symbol.iterator]` and `page(index)` added to `PdfDocument`. Six
+  previously native-only methods wired into the TS layer: `extractWords`,
+  `extractTextLines`, `extractTables`, `extractPaths`, `getEmbeddedImages`,
+  `ocrExtractText`.
+- **C#** — `PdfPage` with full sync + async surface. `doc.Pages`
+  (`IReadOnlyList<PdfPage>`) and `doc[i]` indexer added to `PdfDocument`.
+- **Go** — `Page` struct with full method surface. `doc.Page(i)` and
+  `doc.Pages()` added to `PdfDocument`.
 
-- **Node.js.** `PdfDocument` gains `[Symbol.iterator]` and `page(index)`.
-  New `PdfPage` class wraps `(handle, pageIndex)` with cached `width` / `height` /
-  `rotation` properties and full extraction methods (`text()`, `words()`, `lines()`,
-  `tables()`, `images()`, `paths()`, `annotations()`, `markdown()`, `search()`).
-  Six previously native-only extraction methods now wired into `PdfDocumentImpl`:
-  `extractWords`, `extractTextLines`, `extractTables`, `extractPaths`,
-  `getEmbeddedImages`, `ocrExtractText` (no C++ changes — TypeScript wrappers only).
+### API — Structured table extraction (#289)
 
-- **C#.** `PdfDocument` gains a `Pages` property (`IReadOnlyList<PdfPage>`) and an
-  `int` indexer (`doc[i]`). New `PdfPage` class delegates to the parent document
-  with full sync + async method surface (`ExtractText/Async`, `ToMarkdown/Async`,
-  `ToHtml/Async`, `ToPlainText/Async`, `ExtractChars`, `ExtractWords`, `ExtractLines`,
-  `ExtractTables`, `ExtractImages`, `ExtractPaths`, `GetFonts`, `Search`, `Render`,
-  `RenderThumbnail`).
+`extract_tables()` (Python), `ExtractTables()` (C#/Go), `extractTables()` (Node.js)
+return structured data — rows, cells with text and bounding boxes — not just
+Markdown. Available on both `PdfDocument` and the new `PdfPage` objects.
 
-- **Go.** `PdfDocument` gains `Page(index int)` and `Pages()` returning `[]*Page`.
-  New `Page` struct with methods: `Text`, `Markdown`, `Html`, `PlainText`, `Chars`,
-  `Words`, `Lines`, `Tables`, `Images`, `Paths`, `Fonts`, `Annotations`, `Info`,
-  `Search`, `NeedsOcr`, `TextWithOcr`.
+```python
+for table in page.tables:
+    for row in table["rows"]:
+        print([cell["text"] for cell in row["cells"]])
+```
 
 ### Refactoring
 
-- **`ExtractedTable` renamed to `Table` (#289).** The `Extracted` prefix was
-  redundant given the module (`table_extractor`) and function (`extract_tables`)
-  already supply that context. Internal `DetectedTable` (intermediate result in
-  `spatial_table_detector`) is unchanged.
+- **`ExtractedTable` → `Table` in Rust core (#289).** `Extracted` prefix was
+  redundant given the module and function names already provide that context.
 
 ### Community Contributors
 
-Thank you to everyone who reported issues or suggested improvements for this release!
-
-- **[@SeanPedersen](https://github.com/SeanPedersen)** — Opened #371 proposing the
-  page-first API with a detailed design rationale covering lazy evaluation, caching,
-  and sequence semantics. The Python implementation follows his proposed shape
-  exactly; the same pattern was extended to Node.js, C#, and Go.
+- **[@SeanPedersen](https://github.com/SeanPedersen)** — Proposed the page-first
+  API (#371) with lazy evaluation and sequence semantics. Python follows his design
+  exactly; extended to Node.js, C#, and Go.
+- **[@pdenapo](https://github.com/pdenapo)** — Requested structured table
+  extraction returning data structures rather than Markdown (#289), which prompted
+  the `extract_tables()` documentation and the `Table` rename.
 
 ## [0.3.33] - 2026-04-16
 > Text extraction, image correctness, and memory safety fixes
