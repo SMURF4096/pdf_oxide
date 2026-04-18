@@ -548,7 +548,7 @@ impl XYCutStrategy {
             // like 'G', 'T', '1', 'A') that scatter across the full X range
             // and fill the column gutter in the density profile. Body text
             // spans always contain multiple characters.
-            if (char_count as usize) < 2 {
+            if char_count < 2 {
                 continue;
             }
             let core_left = span.bbox.left();

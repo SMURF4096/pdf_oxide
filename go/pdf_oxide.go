@@ -2950,19 +2950,19 @@ func (doc *PdfDocument) Pages() ([]*Page, error) {
 	return pages, nil
 }
 
-func (p *Page) Text() (string, error)                           { return p.doc.ExtractText(p.Index) }
-func (p *Page) Markdown() (string, error)                       { return p.doc.ToMarkdown(p.Index) }
-func (p *Page) Html() (string, error)                           { return p.doc.ToHtml(p.Index) }
-func (p *Page) PlainText() (string, error)                      { return p.doc.ToPlainText(p.Index) }
-func (p *Page) Chars() ([]Char, error)                          { return p.doc.ExtractChars(p.Index) }
-func (p *Page) Words() ([]Word, error)                          { return p.doc.ExtractWords(p.Index) }
-func (p *Page) Lines() ([]TextLine, error)                      { return p.doc.ExtractTextLines(p.Index) }
-func (p *Page) Tables() ([]Table, error)                        { return p.doc.ExtractTables(p.Index) }
-func (p *Page) Images() ([]Image, error)                        { return p.doc.Images(p.Index) }
-func (p *Page) Paths() ([]Path, error)                          { return p.doc.ExtractPaths(p.Index) }
-func (p *Page) Fonts() ([]Font, error)                          { return p.doc.Fonts(p.Index) }
-func (p *Page) Annotations() ([]Annotation, error)              { return p.doc.Annotations(p.Index) }
-func (p *Page) Info() (*PageInfo, error)                        { return p.doc.PageInfo(p.Index) }
+func (p *Page) Text() (string, error)              { return p.doc.ExtractText(p.Index) }
+func (p *Page) Markdown() (string, error)          { return p.doc.ToMarkdown(p.Index) }
+func (p *Page) Html() (string, error)              { return p.doc.ToHtml(p.Index) }
+func (p *Page) PlainText() (string, error)         { return p.doc.ToPlainText(p.Index) }
+func (p *Page) Chars() ([]Char, error)             { return p.doc.ExtractChars(p.Index) }
+func (p *Page) Words() ([]Word, error)             { return p.doc.ExtractWords(p.Index) }
+func (p *Page) Lines() ([]TextLine, error)         { return p.doc.ExtractTextLines(p.Index) }
+func (p *Page) Tables() ([]Table, error)           { return p.doc.ExtractTables(p.Index) }
+func (p *Page) Images() ([]Image, error)           { return p.doc.Images(p.Index) }
+func (p *Page) Paths() ([]Path, error)             { return p.doc.ExtractPaths(p.Index) }
+func (p *Page) Fonts() ([]Font, error)             { return p.doc.Fonts(p.Index) }
+func (p *Page) Annotations() ([]Annotation, error) { return p.doc.Annotations(p.Index) }
+func (p *Page) Info() (*PageInfo, error)           { return p.doc.PageInfo(p.Index) }
 func (p *Page) Search(term string, cs bool) ([]SearchResult, error) {
 	return p.doc.SearchPage(p.Index, term, cs)
 }

@@ -36,26 +36,21 @@ use std::sync::Arc;
 /// Per §8.6.5.8: "If a conforming reader does not recognize the
 /// specified name, it shall use the RelativeColorimetric intent by
 /// default."
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize)]
 pub enum RenderingIntent {
     /// Preserve perceptual relationships; may modify in-gamut colours
     /// to maintain their relationship with out-of-gamut colours.
     Perceptual,
-    /// Default. Map source white to destination white; preserve
-    /// in-gamut colours exactly, clip out-of-gamut.
+    /// Default per ISO 32000-1:2008 §8.6.5.8. Map source white to
+    /// destination white; preserve in-gamut colours exactly, clip
+    /// out-of-gamut.
+    #[default]
     RelativeColorimetric,
     /// Preserve colour saturation over precise colourimetric values.
     Saturation,
     /// No white-point adaptation; preserve absolute colourimetric
     /// values across source and destination.
     AbsoluteColorimetric,
-}
-
-impl Default for RenderingIntent {
-    fn default() -> Self {
-        // §8.6.5.8: default intent is RelativeColorimetric.
-        Self::RelativeColorimetric
-    }
 }
 
 impl RenderingIntent {

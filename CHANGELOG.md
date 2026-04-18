@@ -2,7 +2,7 @@
 
 All notable changes to PDFOxide are documented here.
 
-## [0.3.34] - 2026-04-17
+## [0.3.34] - 2026-04-18
 > Idiomatic page API, structured tables, column-order, image, and ICC colour fixes
 
 ### API — Page abstraction (#371)

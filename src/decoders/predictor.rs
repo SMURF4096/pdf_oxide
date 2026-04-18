@@ -475,9 +475,9 @@ mod tests {
 
         let mut encoded = Vec::with_capacity(356 * 2);
         encoded.push(0); // Row 0 tag: None
-        encoded.extend(std::iter::repeat(0xFF).take(355));
+        encoded.extend(std::iter::repeat_n(0xFFu8, 355));
         encoded.push(0); // Row 1 tag: None (not Up)
-        encoded.extend(std::iter::repeat(0xFF).take(355));
+        encoded.extend(std::iter::repeat_n(0xFFu8, 355));
 
         let result = decode_predictor(&encoded, &params).unwrap();
         // Both rows are pure 0xFF; an Up-cascade on row 1 would wrap to
