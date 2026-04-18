@@ -471,21 +471,34 @@ namespace PdfOxide.Core
         }
 
         /// <summary>Extracts tables from a page. Returns row/col counts per table.</summary>
-        public (int RowCount, int ColCount)[] ExtractTables(int pageIndex)
+        public Table[] ExtractTables(int pageIndex)
         {
             ThrowIfDisposed();
             var handle = NativeMethods.pdf_document_extract_tables(_handle.Ptr, pageIndex, out var errorCode);
             ExceptionMapper.ThrowIfError(errorCode);
-            if (handle == IntPtr.Zero) return Array.Empty<(int, int)>();
+            if (handle == IntPtr.Zero) return Array.Empty<Table>();
             try
             {
                 var count = NativeMethods.pdf_oxide_table_count(handle);
-                var results = new (int, int)[count];
+                var results = new Table[count];
                 for (int i = 0; i < count; i++)
                 {
                     var rows = NativeMethods.pdf_oxide_table_get_row_count(handle, i, out _);
                     var cols = NativeMethods.pdf_oxide_table_get_col_count(handle, i, out _);
-                    results[i] = (rows, cols);
+                    var hasHeader = NativeMethods.pdf_oxide_table_has_header(handle, i, out _);
+                    var cells = new string[rows, cols];
+                    for (int r = 0; r < rows; r++)
+                        for (int c = 0; c < cols; c++)
+                        {
+                            var ptr = NativeMethods.pdf_oxide_table_get_cell_text(handle, i, r, c, out _);
+                            if (ptr != IntPtr.Zero)
+                            {
+                                cells[r, c] = System.Runtime.InteropServices.Marshal.PtrToStringUTF8(ptr) ?? string.Empty;
+                                NativeMethods.FreeString(ptr);
+                            }
+                            else cells[r, c] = string.Empty;
+                        }
+                    results[i] = new Table(rows, cols, hasHeader, cells);
                 }
                 return results;
             }
@@ -867,6 +880,32 @@ namespace PdfOxide.Core
             }
         }
 
+        /// <summary>Gets all pages as a read-only list. Enables foreach and LINQ.</summary>
+        public IReadOnlyList<Page> Pages
+        {
+            get
+            {
+                ThrowIfDisposed();
+                var count = PageCount;
+                var pages = new Page[count];
+                for (int i = 0; i < count; i++)
+                    pages[i] = new Page(this, i);
+                return pages;
+            }
+        }
+
+        /// <summary>Returns the page at the given zero-based index.</summary>
+        public Page this[int pageIndex]
+        {
+            get
+            {
+                ThrowIfDisposed();
+                if (pageIndex < 0 || pageIndex >= PageCount)
+                    throw new ArgumentOutOfRangeException(nameof(pageIndex));
+                return new Page(this, pageIndex);
+            }
+        }
+
         private void ThrowIfDisposed()
         {
             if (_disposed)
@@ -893,6 +932,34 @@ namespace PdfOxide.Core
         {
             return NativeMethods.PdfOxideGetLogLevel();
         }
+    }
+
+    /// <summary>
+    /// A table extracted from a PDF page, with row/column dimensions and per-cell text.
+    /// </summary>
+    public sealed class Table
+    {
+        private readonly string[,] _cells;
+
+        /// <summary>Number of rows.</summary>
+        public int RowCount { get; }
+
+        /// <summary>Number of columns.</summary>
+        public int ColCount { get; }
+
+        /// <summary>True if the first row is a header row.</summary>
+        public bool HasHeader { get; }
+
+        internal Table(int rowCount, int colCount, bool hasHeader, string[,] cells)
+        {
+            RowCount = rowCount;
+            ColCount = colCount;
+            HasHeader = hasHeader;
+            _cells = cells;
+        }
+
+        /// <summary>Returns the text of the cell at (row, col). Both indices are zero-based.</summary>
+        public string CellText(int row, int col) => _cells[row, col];
     }
 
     /// <summary>
@@ -949,5 +1016,90 @@ namespace PdfOxide.Core
             FieldType = fieldType;
             Value = value;
         }
+    }
+
+    /// <summary>
+    /// Represents a single page of a <see cref="PdfDocument"/>.
+    /// All extraction methods dispatch to the parent document.
+    /// </summary>
+    public sealed class Page
+    {
+        private readonly PdfDocument _doc;
+
+        /// <summary>Zero-based page index.</summary>
+        public int Index { get; }
+
+        internal Page(PdfDocument doc, int index)
+        {
+            _doc = doc;
+            Index = index;
+        }
+
+        /// <summary>Extracts plain text from the page.</summary>
+        public string ExtractText() => _doc.ExtractText(Index);
+
+        /// <summary>Extracts plain text asynchronously.</summary>
+        public Task<string> ExtractTextAsync(CancellationToken ct = default) =>
+            _doc.ExtractTextAsync(Index, ct);
+
+        /// <summary>Converts the page to Markdown.</summary>
+        public string ToMarkdown() => _doc.ToMarkdown(Index);
+
+        /// <summary>Converts the page to Markdown asynchronously.</summary>
+        public Task<string> ToMarkdownAsync(CancellationToken ct = default) =>
+            Task.Run(() => _doc.ToMarkdown(Index), ct);
+
+        /// <summary>Converts the page to HTML.</summary>
+        public string ToHtml() => _doc.ToHtml(Index);
+
+        /// <summary>Converts the page to HTML asynchronously.</summary>
+        public Task<string> ToHtmlAsync(CancellationToken ct = default) =>
+            Task.Run(() => _doc.ToHtml(Index), ct);
+
+        /// <summary>Converts the page to plain text.</summary>
+        public string ToPlainText() => _doc.ToPlainText(Index);
+
+        /// <summary>Converts the page to plain text asynchronously.</summary>
+        public Task<string> ToPlainTextAsync(CancellationToken ct = default) =>
+            Task.Run(() => _doc.ToPlainText(Index), ct);
+
+        /// <summary>Extracts words with bounding boxes.</summary>
+        public (string Text, float X, float Y, float W, float H)[] ExtractWords() =>
+            _doc.ExtractWords(Index);
+
+        /// <summary>Extracts text lines with bounding boxes.</summary>
+        public (string Text, float X, float Y, float W, float H)[] ExtractLines() =>
+            _doc.ExtractTextLines(Index);
+
+        /// <summary>Extracts tables from the page.</summary>
+        public Table[] ExtractTables() => _doc.ExtractTables(Index);
+
+        /// <summary>Extracts embedded images from the page.</summary>
+        public ExtractedImage[] ExtractImages() => _doc.ExtractImages(Index);
+
+        /// <summary>Extracts characters with bounding boxes.</summary>
+        public (char Char, float X, float Y, float W, float H)[] ExtractChars() =>
+            _doc.ExtractChars(Index);
+
+        /// <summary>Extracts path geometries from the page.</summary>
+        public (float X, float Y, float W, float H, float StrokeWidth)[] ExtractPaths() =>
+            _doc.ExtractPaths(Index);
+
+        /// <summary>Returns font names used on the page.</summary>
+        public string[] GetFonts() => _doc.GetFonts(Index);
+
+        /// <summary>Searches for text on the page.</summary>
+        public (int Page, string Text, float X, float Y, float W, float H)[] Search(
+            string text, bool caseSensitive = false) =>
+            _doc.SearchPage(Index, text, caseSensitive);
+
+        /// <summary>Renders the page to image bytes.</summary>
+        public byte[] Render(int format = 0) => _doc.RenderPage(Index, format);
+
+        /// <summary>Renders a thumbnail of the page.</summary>
+        public byte[] RenderThumbnail(int format = 0) => _doc.RenderThumbnail(Index, format);
+
+        /// <inheritdoc/>
+        public override string ToString() => $"Page(index={Index})";
     }
 }

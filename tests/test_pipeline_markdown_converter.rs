@@ -285,10 +285,10 @@ fn test_bold_and_italic() {
 #[test]
 fn test_table_detection_simple_2x2() {
     use pdf_oxide::geometry::Rect;
-    use pdf_oxide::structure::table_extractor::{ExtractedTable, TableCell, TableRow};
+    use pdf_oxide::structure::table_extractor::{Table, TableCell, TableRow};
 
     // Given: Pre-detected table (tables are now detected upstream, not inline)
-    let mut table = ExtractedTable::new();
+    let mut table = Table::new();
     table.bbox = Some(Rect::new(10.0, 80.0, 80.0, 32.0));
     table.col_count = 2;
     table.has_header = true;

@@ -209,12 +209,15 @@ fn decode_png_predictor(data: &[u8], params: &DecodeParams) -> Result<Vec<u8>> {
         let row_start = row_idx * bytes_per_row;
         let row_data = &data[row_start..row_start + bytes_per_row];
 
-        // First byte is predictor tag (or use fixed predictor if < 15)
-        let predictor_tag = if params.predictor == 15 {
-            row_data[0]
-        } else {
-            (params.predictor - 10) as u8
-        };
+        // PDF 32000-1:2008 §7.4.4.4: when PNG predictors (10-15) are used on
+        // encoding, every row of the filtered data carries an explicit tag
+        // byte identifying the per-row algorithm. For decoding, that per-row
+        // tag is authoritative regardless of whether /Predictor is 10, 11,
+        // 12, 13, 14, or 15 — the numeric /Predictor only signals encoder
+        // intent. Honouring the declared predictor instead of the per-row
+        // tag byte produces cascade noise on producers that emit tag 0
+        // (None) under a non-10 /Predictor value, which the spec permits.
+        let predictor_tag = row_data[0];
 
         let encoded_pixels = &row_data[1..]; // Skip predictor tag
 
@@ -415,5 +418,71 @@ mod tests {
         assert_eq!(params.columns, 1);
         assert_eq!(params.colors, 1);
         assert_eq!(params.bits_per_component, 8);
+    }
+
+    /// A producer may declare `/Predictor 12` and still write tag 0 (None)
+    /// on every row. The per-row tag is authoritative for decoding, so
+    /// rows must be copied verbatim even when the declared /Predictor
+    /// nominally says Up.
+    #[test]
+    fn test_png_predictor_12_respects_per_row_tag_none() {
+        let params = DecodeParams {
+            predictor: 12,
+            columns: 5,
+            colors: 1,
+            bits_per_component: 8,
+        };
+        let encoded = vec![
+            0, 10, 20, 30, 40, 50, // Row 0: tag=None, raw bytes
+            0, 11, 21, 31, 41, 51, // Row 1: tag=None, raw bytes (NOT diffs vs above)
+        ];
+        let result = decode_predictor(&encoded, &params).unwrap();
+        assert_eq!(result, vec![10, 20, 30, 40, 50, 11, 21, 31, 41, 51]);
+    }
+
+    /// Mixed per-row tags (None on row 0, Up on row 1) under a single
+    /// declared /Predictor 12 must still decode correctly. The PDF spec
+    /// allows the encoder to pick a different PNG filter per row.
+    #[test]
+    fn test_png_predictor_12_mixed_per_row_tags() {
+        let params = DecodeParams {
+            predictor: 12,
+            columns: 5,
+            colors: 1,
+            bits_per_component: 8,
+        };
+        let encoded = vec![
+            0, 10, 20, 30, 40, 50, // Row 0: None
+            2, 5, 5, 5, 5, 5, // Row 1: Up → [15, 25, 35, 45, 55]
+        ];
+        let result = decode_predictor(&encoded, &params).unwrap();
+        assert_eq!(result, vec![10, 20, 30, 40, 50, 15, 25, 35, 45, 55]);
+    }
+
+    /// 4-bit-per-component indexed image row decodes by byte; predictor
+    /// framing operates at byte granularity regardless of sub-byte sample
+    /// packing. Two 710-pixel 4bpc rows → 355 bytes each + 1 tag byte.
+    #[test]
+    fn test_png_predictor_12_4bpc_tag_none() {
+        let params = DecodeParams {
+            predictor: 12,
+            columns: 710,
+            colors: 1,
+            bits_per_component: 4,
+        };
+        assert_eq!(params.pixel_bytes_per_row(), 355);
+        assert_eq!(params.bytes_per_row(), 356);
+
+        let mut encoded = Vec::with_capacity(356 * 2);
+        encoded.push(0); // Row 0 tag: None
+        encoded.extend(std::iter::repeat_n(0xFFu8, 355));
+        encoded.push(0); // Row 1 tag: None (not Up)
+        encoded.extend(std::iter::repeat_n(0xFFu8, 355));
+
+        let result = decode_predictor(&encoded, &params).unwrap();
+        // Both rows are pure 0xFF; an Up-cascade on row 1 would wrap to
+        // 0xFE (0xFF + 0xFF). The per-row tag=None must suppress that.
+        assert_eq!(result.len(), 710);
+        assert!(result.iter().all(|&b| b == 0xFF));
     }
 }

@@ -2,6 +2,20 @@
  * Common type definitions and utilities
  */
 
+/** A table extracted from a PDF page. */
+export interface Table {
+  /** Number of rows. */
+  rows: number;
+  /** Number of columns. */
+  cols: number;
+  /** True if the first row is a header row. */
+  hasHeader: boolean;
+  /** Cell text: cells[row][col]. Individual cells may be `null` when the
+   *  native binding has no text for that position (missing cell, decoding
+   *  failure, etc.). */
+  cells: (string | null)[][];
+}
+
 import type {
   SearchOptions,
   SearchResult,

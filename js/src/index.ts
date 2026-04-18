@@ -1,5 +1,6 @@
 // PDF Oxide Node.js bindings - Native module loader
 
+import type { Table } from './types/common.js';
 import { platform, arch } from 'node:process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -311,6 +312,32 @@ class PdfDocumentImpl {
   getPageAnnotations(pageIndex: number): any { this.ensureOpen(); return native.getPageAnnotations(this._handle, pageIndex); }
   getEmbeddedFonts(pageIndex: number): any { this.ensureOpen(); return native.getEmbeddedFonts(this._handle, pageIndex); }
   getEmbeddedImages(pageIndex: number): any { this.ensureOpen(); return native.getEmbeddedImages(this._handle, pageIndex); }
+  extractWords(pageIndex: number): any { this.ensureOpen(); return native.extractWords(this._handle, pageIndex); }
+  extractTextLines(pageIndex: number): any { this.ensureOpen(); return native.extractTextLines(this._handle, pageIndex); }
+  extractTables(pageIndex: number): Table[] { this.ensureOpen(); return native.extractTables(this._handle, pageIndex); }
+  extractPaths(pageIndex: number): any { this.ensureOpen(); return native.extractPaths(this._handle, pageIndex); }
+  ocrExtractText(pageIndex: number, engineHandle: any): any { this.ensureOpen(); return native.ocrExtractText(this._handle, pageIndex, engineHandle); }
+
+  page(index: number): Page {
+    this.ensureOpen();
+    const count = this.pageCount();
+    const idx = index < 0 ? count + index : index;
+    if (idx < 0 || idx >= count) throw new RangeError(`page index ${index} out of range`);
+    return new Page(this, idx);
+  }
+
+  [Symbol.iterator](): Iterator<Page> {
+    this.ensureOpen();
+    const count = this.pageCount();
+    let i = 0;
+    const doc = this;
+    return {
+      next(): IteratorResult<Page> {
+        if (i >= count) return { value: undefined as any, done: true };
+        return { value: new Page(doc, i++), done: false };
+      },
+    };
+  }
 
   close(): void {
     if (!this._closed && this._handle) {
@@ -320,6 +347,49 @@ class PdfDocumentImpl {
   }
 
   [Symbol.dispose](): void { this.close(); }
+}
+
+class Page {
+  private _doc: PdfDocumentImpl;
+  private _index: number;
+  private _cache: Map<string, any> = new Map();
+
+  constructor(doc: PdfDocumentImpl, index: number) {
+    this._doc = doc;
+    this._index = index;
+  }
+
+  get index(): number { return this._index; }
+
+  get width(): number {
+    if (!this._cache.has('width')) this._cache.set('width', this._doc.getPageWidth(this._index));
+    return this._cache.get('width');
+  }
+
+  get height(): number {
+    if (!this._cache.has('height')) this._cache.set('height', this._doc.getPageHeight(this._index));
+    return this._cache.get('height');
+  }
+
+  get rotation(): number {
+    if (!this._cache.has('rotation')) this._cache.set('rotation', this._doc.getPageRotation(this._index));
+    return this._cache.get('rotation');
+  }
+
+  text(): string { return this._doc.extractText(this._index); }
+  markdown(): string { return this._doc.toMarkdown(this._index); }
+  html(): string { return this._doc.toHtml(this._index); }
+  plainText(): string { return this._doc.toPlainText(this._index); }
+  words(): any { return this._doc.extractWords(this._index); }
+  lines(): any { return this._doc.extractTextLines(this._index); }
+  tables(): Table[] { return this._doc.extractTables(this._index); }
+  images(): any { return this._doc.getEmbeddedImages(this._index); }
+  paths(): any { return this._doc.extractPaths(this._index); }
+  annotations(): any { return this._doc.getPageAnnotations(this._index); }
+  fonts(): any { return this._doc.getEmbeddedFonts(this._index); }
+  search(query: string, caseSensitive = false): any { return this._doc.searchPage(this._index, query, caseSensitive); }
+
+  toString(): string { return `Page(index=${this._index})`; }
 }
 
 class PdfImpl {
@@ -392,6 +462,7 @@ export {
   // Main classes
   PdfDocument,
   Pdf,
+  Page,
 
   // Error types
   PdfError,
@@ -515,4 +586,5 @@ export type {
   BatchResult,
   BatchOptions,
   BatchStatistics,
+  Table,
 };

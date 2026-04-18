@@ -154,6 +154,9 @@ pub mod xref_reconstruction;
 // Stream decoders
 pub mod decoders;
 
+// Colour management (ICC profile handling)
+pub mod color;
+
 // Encryption support
 pub mod encryption;
 

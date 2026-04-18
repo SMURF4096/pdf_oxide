@@ -5,7 +5,7 @@
 //! table markup in the structure tree.
 
 use crate::layout::text_block::TextSpan;
-use crate::structure::table_extractor::{ExtractedTable, TableCell, TableRow};
+use crate::structure::table_extractor::{Table, TableCell, TableRow};
 use std::collections::HashMap;
 
 /// Disjoint-set (union-find) with path compression.
@@ -159,7 +159,7 @@ impl TableDetectionConfig {
 ///   the wrapped value text. This exact shape is a reliable false-positive
 ///   signal. Sparse 2-column tables with *legitimately* missing right-hand
 ///   values (e.g. "Fax: ", "N/A" rows) are NOT rejected by this rule.
-fn is_valid_table(table: &ExtractedTable) -> bool {
+fn is_valid_table(table: &Table) -> bool {
     if table.rows.is_empty() || table.col_count == 0 {
         return false;
     }
@@ -210,7 +210,7 @@ fn is_valid_table(table: &ExtractedTable) -> bool {
 /// This gate is NOT applied when rulings/lines define the table — in
 /// that case the author explicitly marked the structure and we trust it
 /// even if cells are single-character (census forms, sparse grids).
-fn passes_spatial_quality_gate(table: &ExtractedTable) -> bool {
+fn passes_spatial_quality_gate(table: &Table) -> bool {
     if table.col_count < 5 {
         return true;
     }
@@ -450,7 +450,7 @@ fn detect_page_columns(spans: &[TextSpan]) -> Vec<(f32, f32)> {
 pub fn detect_tables_from_spans_column_aware(
     spans: &[TextSpan],
     config: &TableDetectionConfig,
-) -> Vec<ExtractedTable> {
+) -> Vec<Table> {
     if !config.enabled || spans.is_empty() {
         return Vec::new();
     }
@@ -484,10 +484,7 @@ pub fn detect_tables_from_spans_column_aware(
 }
 
 /// Detect tables from spatial layout of text spans.
-pub fn detect_tables_from_spans(
-    spans: &[TextSpan],
-    config: &TableDetectionConfig,
-) -> Vec<ExtractedTable> {
+pub fn detect_tables_from_spans(spans: &[TextSpan], config: &TableDetectionConfig) -> Vec<Table> {
     if !config.enabled || spans.is_empty() {
         return Vec::new();
     }
@@ -519,7 +516,7 @@ pub fn detect_tables_from_spans(
         return Vec::new();
     }
 
-    let table = grid_to_extracted_table(&grid, spans, None);
+    let table = grid_to_table(&grid, spans, None);
     if !is_valid_table(&table) || !passes_spatial_quality_gate(&table) {
         return Vec::new();
     }
@@ -967,7 +964,7 @@ impl SpatialTableDetector {
         &self,
         spans: &[TextSpan],
         lines: &[crate::elements::PathContent],
-    ) -> Vec<ExtractedTable> {
+    ) -> Vec<Table> {
         detect_tables_with_lines(spans, lines, &self.config)
     }
 }
@@ -1163,7 +1160,7 @@ fn detect_tables_in_cluster(
     all_lines: &[crate::elements::PathContent],
     cluster: &LineCluster,
     config: &TableDetectionConfig,
-) -> Vec<ExtractedTable> {
+) -> Vec<Table> {
     const MIN_LINE_LENGTH: f32 = 5.0;
     const LINE_AXIS_TOL: f32 = 2.0;
     let mut h_ys: Vec<f32> = Vec::new();
@@ -1253,7 +1250,7 @@ fn detect_tables_in_cluster(
             };
             grid = grid.trim_empty_columns();
             if validate_table_structure_internal(&grid, config) {
-                let mut table = grid_to_extracted_table(
+                let mut table = grid_to_table(
                     &grid,
                     spans,
                     Some(detect_merged_cells_visually(&grid, spans, cluster, all_lines)),
@@ -2030,7 +2027,7 @@ fn detect_tables_from_intersections(
     spans: &[TextSpan],
     lines: &[crate::elements::PathContent],
     config: &TableDetectionConfig,
-) -> Vec<ExtractedTable> {
+) -> Vec<Table> {
     let groups = build_grid_from_lines(lines, config);
 
     let mut tables = Vec::new();
@@ -2264,14 +2261,14 @@ fn assign_spans_to_intersection_grid(
 }
 
 /// Row splitting, form-artifact stripping, empty-row splitting, and bbox
-/// computation. Produces the final `ExtractedTable` entries for one table group.
+/// computation. Produces the final `Table` entries for one table group.
 fn finalize_intersection_tables(
     table_rows: Vec<TableRow>,
     row_cell_span_indices: &[Vec<Vec<usize>>],
     spans: &[TextSpan],
     config: &TableDetectionConfig,
     num_cols: usize,
-) -> Vec<ExtractedTable> {
+) -> Vec<Table> {
     // Hybrid row splitting: if a row contains text spans at multiple distinct
     // Y positions (no horizontal lines between them), split into sub-rows
     // based on text Y-clustering.
@@ -2324,7 +2321,7 @@ fn finalize_intersection_tables(
             } else {
                 None
             };
-            tables.push(ExtractedTable {
+            tables.push(Table {
                 rows: sub_rows,
                 has_header: false,
                 col_count: num_cols,
@@ -2344,11 +2341,11 @@ const SECTION_DIVIDER_WIDTH_RATIO: f32 = 0.80;
 /// table width ("section dividers").  Returns a new list of tables where each
 /// original table may have been broken into multiple smaller ones.
 fn split_tables_at_section_dividers(
-    tables: Vec<ExtractedTable>,
+    tables: Vec<Table>,
     h_edges: &[Edge],
     v_edges: &[Edge],
     config: &TableDetectionConfig,
-) -> Vec<ExtractedTable> {
+) -> Vec<Table> {
     let mut result = Vec::new();
     for table in tables {
         let parts = split_table_at_section_dividers(table, h_edges, v_edges, config);
@@ -2363,11 +2360,11 @@ fn split_tables_at_section_dividers(
 /// V-edges cross through — indicating that the vertical lines stop at that
 /// boundary (separate bordered sections stacked vertically).
 fn split_table_at_section_dividers(
-    table: ExtractedTable,
+    table: Table,
     h_edges: &[Edge],
     v_edges: &[Edge],
     config: &TableDetectionConfig,
-) -> Vec<ExtractedTable> {
+) -> Vec<Table> {
     let Some(bbox) = table.bbox else {
         return vec![table];
     };
@@ -2547,7 +2544,7 @@ fn split_table_at_section_dividers(
         } else {
             None
         };
-        result.push(ExtractedTable {
+        result.push(Table {
             rows: sub_rows,
             has_header: false,
             col_count: num_cols,
@@ -2557,7 +2554,7 @@ fn split_table_at_section_dividers(
 
     if result.is_empty() {
         // Don't lose data; return original if all sub-tables were too small.
-        return vec![ExtractedTable {
+        return vec![Table {
             rows: all_rows,
             has_header: false,
             col_count: num_cols,
@@ -2579,7 +2576,7 @@ const MERGE_COL_DIFF_TOLERANCE: usize = 2;
 /// Merge tables that are vertically adjacent (small gap between bottom of one
 /// and top of another) and have similar column counts (difference <= `MERGE_COL_DIFF_TOLERANCE`).
 /// When column counts differ, the narrower table's rows are padded with empty cells.
-fn merge_vertically_adjacent_tables(tables: &mut Vec<ExtractedTable>) {
+fn merge_vertically_adjacent_tables(tables: &mut Vec<Table>) {
     if tables.len() < 2 {
         return;
     }
@@ -2591,9 +2588,9 @@ fn merge_vertically_adjacent_tables(tables: &mut Vec<ExtractedTable>) {
         crate::utils::safe_float_cmp(ay, by)
     });
 
-    let mut merged: Vec<ExtractedTable> = Vec::new();
+    let mut merged: Vec<Table> = Vec::new();
     for table in tables.drain(..) {
-        let should_merge = merged.last().is_some_and(|prev: &ExtractedTable| {
+        let should_merge = merged.last().is_some_and(|prev: &Table| {
             let col_diff = (prev.col_count as isize - table.col_count as isize).unsigned_abs();
             if col_diff > MERGE_COL_DIFF_TOLERANCE {
                 return false;
@@ -2679,7 +2676,7 @@ fn detect_tables_from_horizontal_rules(
     spans: &[TextSpan],
     h_edges: &[Edge],
     config: &TableDetectionConfig,
-) -> Vec<ExtractedTable> {
+) -> Vec<Table> {
     const MIN_RULE_WIDTH: f32 = 100.0;
     const Y_SNAP: f32 = 4.0;
 
@@ -2771,7 +2768,7 @@ pub fn detect_tables_with_lines(
     spans: &[TextSpan],
     lines: &[crate::elements::PathContent],
     config: &TableDetectionConfig,
-) -> Vec<ExtractedTable> {
+) -> Vec<Table> {
     if !config.enabled || spans.is_empty() {
         return Vec::new();
     }
@@ -2847,11 +2844,11 @@ pub fn detect_tables_with_lines(
     final_tables
 }
 
-fn grid_to_extracted_table(
+fn grid_to_table(
     grid: &GridStructure,
     spans: &[TextSpan],
     visual_merge_info: Option<Vec<Vec<CellMergeInfo>>>,
-) -> ExtractedTable {
+) -> Table {
     let num_rows = grid.cells.len();
     let num_cols = grid.columns.len();
     let merge_info = visual_merge_info.unwrap_or_else(|| detect_merged_cells(grid, spans));
@@ -2916,7 +2913,7 @@ fn grid_to_extracted_table(
         }
         bbox = Some(crate::geometry::Rect::new(min_x, min_y, max_x - min_x, max_y - min_y));
     }
-    ExtractedTable {
+    Table {
         rows: table_rows,
         has_header: header_row_idx.is_some(),
         col_count: num_cols,
@@ -4179,7 +4176,7 @@ mod tests {
     #[test]
     fn test_reject_table_with_too_many_empty_cells() {
         // Build a table with 12 columns but ~80% empty cells — should be rejected.
-        use crate::structure::table_extractor::{ExtractedTable, TableCell, TableRow};
+        use crate::structure::table_extractor::{Table, TableCell, TableRow};
         let col_count = 12;
         let mut rows = Vec::new();
         // Header row: only 3 of 12 cells have text
@@ -4220,7 +4217,7 @@ mod tests {
             }
             rows.push(row);
         }
-        let table = ExtractedTable {
+        let table = Table {
             rows,
             has_header: true,
             col_count,
@@ -4232,7 +4229,7 @@ mod tests {
 
     #[test]
     fn test_valid_table_passes_validation() {
-        use crate::structure::table_extractor::{ExtractedTable, TableCell, TableRow};
+        use crate::structure::table_extractor::{Table, TableCell, TableRow};
         let col_count = 3;
         let mut rows = Vec::new();
         for r in 0..4 {
@@ -4250,7 +4247,7 @@ mod tests {
             }
             rows.push(row);
         }
-        let table = ExtractedTable {
+        let table = Table {
             rows,
             has_header: true,
             col_count,
@@ -4267,7 +4264,7 @@ mod tests {
     /// must be rejected so their rows remain in the flow text.
     #[test]
     fn test_narrow_shallow_table_rejected_as_false_positive() {
-        use crate::structure::table_extractor::{ExtractedTable, TableCell, TableRow};
+        use crate::structure::table_extractor::{Table, TableCell, TableRow};
         let col_count = 2;
         let rows_data: Vec<(&str, &str)> = vec![
             ("Temperature resistance", "adhered to aluminium, -56° C to +82° C"),
@@ -4301,7 +4298,7 @@ mod tests {
             });
             rows.push(row);
         }
-        let table = ExtractedTable {
+        let table = Table {
             rows,
             has_header: false,
             col_count,
@@ -4319,7 +4316,7 @@ mod tests {
     /// narrow-table guard does not regress genuine two-column tables.
     #[test]
     fn test_narrow_deep_table_still_accepted() {
-        use crate::structure::table_extractor::{ExtractedTable, TableCell, TableRow};
+        use crate::structure::table_extractor::{Table, TableCell, TableRow};
         let col_count = 2;
         let mut rows = Vec::new();
         for i in 0..6 {
@@ -4344,7 +4341,7 @@ mod tests {
             });
             rows.push(row);
         }
-        let table = ExtractedTable {
+        let table = Table {
             rows,
             has_header: true,
             col_count,
@@ -4359,7 +4356,7 @@ mod tests {
     /// targets empty-LEFT / filled-RIGHT continuation rows specifically.
     #[test]
     fn test_narrow_sparse_table_with_missing_right_value_accepted() {
-        use crate::structure::table_extractor::{ExtractedTable, TableCell, TableRow};
+        use crate::structure::table_extractor::{Table, TableCell, TableRow};
         let col_count = 2;
         let rows_data: Vec<(&str, &str)> = vec![
             ("Name", "ACME Corp"),
@@ -4390,7 +4387,7 @@ mod tests {
             });
             rows.push(row);
         }
-        let table = ExtractedTable {
+        let table = Table {
             rows,
             has_header: false,
             col_count,
@@ -4478,7 +4475,7 @@ mod tests {
     #[test]
     fn test_merge_vertically_adjacent_tables() {
         // Two tables with 3 columns each, bboxes separated by 5pt (< ADJACENT_TABLE_MERGE_GAP).
-        let table1 = ExtractedTable {
+        let table1 = Table {
             rows: vec![TableRow {
                 cells: vec![
                     TableCell {
@@ -4515,7 +4512,7 @@ mod tests {
             col_count: 3,
             bbox: Some(Rect::new(0.0, 100.0, 300.0, 50.0)),
         };
-        let table2 = ExtractedTable {
+        let table2 = Table {
             rows: vec![TableRow {
                 cells: vec![
                     TableCell {
@@ -4563,7 +4560,7 @@ mod tests {
 
     #[test]
     fn test_no_merge_when_gap_too_large() {
-        let table1 = ExtractedTable {
+        let table1 = Table {
             rows: vec![TableRow {
                 cells: vec![TableCell {
                     text: "A".into(),
@@ -4580,7 +4577,7 @@ mod tests {
             col_count: 1,
             bbox: Some(Rect::new(0.0, 100.0, 300.0, 50.0)),
         };
-        let table2 = ExtractedTable {
+        let table2 = Table {
             rows: vec![TableRow {
                 cells: vec![TableCell {
                     text: "B".into(),

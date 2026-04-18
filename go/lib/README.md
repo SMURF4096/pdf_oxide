@@ -8,18 +8,18 @@ repository bloat (Rust staticlibs for 6 platforms).
 ## Install (one-time per machine)
 
 ```bash
-go run github.com/yfedoseev/pdf_oxide/go/cmd/install@v0.3.33
+go run github.com/yfedoseev/pdf_oxide/go/cmd/install@v0.3.34
 ```
 
 The installer detects `GOOS`/`GOARCH`, downloads the matching asset from
-`https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.33/…`, and
-extracts `libpdf_oxide.a` + `pdf_oxide.h` into `~/.pdf_oxide/v0.3.33/`.
+`https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.34/…`, and
+extracts `libpdf_oxide.a` + `pdf_oxide.h` into `~/.pdf_oxide/v0.3.34/`.
 
 It then prints the `CGO_CFLAGS` / `CGO_LDFLAGS` you need to export:
 
 ```
-export CGO_CFLAGS="-I$HOME/.pdf_oxide/v0.3.33/include"
-export CGO_LDFLAGS="$HOME/.pdf_oxide/v0.3.33/lib/linux_amd64/libpdf_oxide.a -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
+export CGO_CFLAGS="-I$HOME/.pdf_oxide/v0.3.34/include"
+export CGO_LDFLAGS="$HOME/.pdf_oxide/v0.3.34/lib/linux_amd64/libpdf_oxide.a -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
 ```
 
 After that, `go build` / `go test` work normally.
@@ -30,7 +30,7 @@ If you prefer to wire installation into your own project's build, add this
 to any `.go` file in your project:
 
 ```go
-//go:generate go run github.com/yfedoseev/pdf_oxide/go/cmd/install@v0.3.33 --write-flags=.
+//go:generate go run github.com/yfedoseev/pdf_oxide/go/cmd/install@v0.3.34 --write-flags=.
 ```
 
 Running `go generate ./...` then drops a `cgo_flags.go` next to your

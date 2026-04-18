@@ -2753,6 +2753,77 @@ impl PdfDocument {
         crate::structure::parse_structure_tree(self)
     }
 
+    /// Find the document's default CMYK output-intent profile.
+    ///
+    /// Per ISO 32000-1:2008 §14.11.5, an `/OutputIntents` array in the
+    /// catalog advertises the colour characteristics of the target
+    /// output device. Each entry is a dictionary; the `DestOutputProfile`
+    /// key (when present) references an ICC profile stream identifying
+    /// the intended press / display calibration.
+    ///
+    /// This method returns the **first CMYK** `DestOutputProfile` it
+    /// finds (N = 4) — the usual match for "here is how my CMYK ink
+    /// should look" on PDF/X files. Callers can use it as a fallback
+    /// profile for plain `/DeviceCMYK` images that lack their own ICC
+    /// colour space.
+    ///
+    /// Returns `None` when no output intent exists, no CMYK entry is
+    /// present, or the profile stream can't be parsed as ICC.
+    pub fn output_intent_cmyk_profile(
+        &mut self,
+    ) -> Option<std::sync::Arc<crate::color::IccProfile>> {
+        let catalog = self.catalog().ok()?;
+        let cat_dict = catalog.as_dict()?;
+
+        let intents_obj = cat_dict.get("OutputIntents")?;
+        let intents_obj = match intents_obj {
+            Object::Reference(r) => self.load_object(*r).ok()?,
+            _ => intents_obj.clone(),
+        };
+        let intents_arr = match &intents_obj {
+            Object::Array(a) => a.clone(),
+            _ => return None,
+        };
+
+        for entry in intents_arr {
+            let entry = match entry {
+                Object::Reference(r) => self.load_object(r).ok()?,
+                other => other,
+            };
+            let entry_dict = match entry.as_dict() {
+                Some(d) => d.clone(),
+                None => continue,
+            };
+            let profile_obj = match entry_dict.get("DestOutputProfile") {
+                Some(p) => p.clone(),
+                None => continue,
+            };
+            let profile_stream = match profile_obj {
+                Object::Reference(r) => match self.load_object(r) {
+                    Ok(o) => o,
+                    Err(_) => continue,
+                },
+                other => other,
+            };
+
+            let Object::Stream { dict, .. } = &profile_stream else {
+                continue;
+            };
+            let n = match dict.get("N").and_then(|o| o.as_integer()) {
+                Some(4) => 4u8, // only CMYK; ignore RGB/Gray output intents here
+                _ => continue,
+            };
+            let bytes = match profile_stream.decode_stream_data() {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            if let Some(prof) = crate::color::IccProfile::parse(bytes, n) {
+                return Some(std::sync::Arc::new(prof));
+            }
+        }
+        None
+    }
+
     /// Get the MarkInfo dictionary from the document catalog.
     ///
     /// The MarkInfo dictionary indicates whether the document conforms to
@@ -3915,7 +3986,7 @@ impl PdfDocument {
     /// Extract text from a page.
     pub fn extract_text(&mut self, page_index: usize) -> Result<String> {
         // Enable table extraction so that tabular content is preserved as
-        // space-padded, column-aligned rows (see ExtractedTable::render_text).
+        // space-padded, column-aligned rows (see Table::render_text).
         let options = crate::converters::ConversionOptions {
             extract_tables: true,
             ..Default::default()
@@ -4081,18 +4152,26 @@ impl PdfDocument {
             // would interleave cells from the same tabular row whose Y
             // values differ by typographic jitter (common in CJK layouts,
             // superscripts, and centered multi-line labels).
-            spans.sort_by(|a, b| {
-                let cmp = crate::utils::row_aware_span_cmp(a.bbox.y, a.bbox.x, b.bbox.y, b.bbox.x);
-                if cmp != std::cmp::Ordering::Equal {
-                    return cmp;
-                }
-                a.sequence.cmp(&b.sequence)
-            });
+            //
+            // Skip for multi-column pages: extract_spans() already applied
+            // XY-cut column ordering. Re-sorting with row-aware would
+            // interleave left/right columns line-by-line, producing garbled
+            // output like "accompaally" instead of "accompanying table".
+            if !Self::is_multi_column_page(&spans) {
+                spans.sort_by(|a, b| {
+                    let cmp =
+                        crate::utils::row_aware_span_cmp(a.bbox.y, a.bbox.x, b.bbox.y, b.bbox.x);
+                    if cmp != std::cmp::Ordering::Equal {
+                        return cmp;
+                    }
+                    a.sequence.cmp(&b.sequence)
+                });
 
-            // Promote multi-row-spanning labels (sparse-column spans
-            // vertically centred across several dense-column data rows)
-            // to sort at the top of their row block.
-            Self::reorder_rowspan_labels(&mut spans);
+                // Promote multi-row-spanning labels (sparse-column spans
+                // vertically centred across several dense-column data rows)
+                // to sort at the top of their row block.
+                Self::reorder_rowspan_labels(&mut spans);
+            }
 
             // OCR fallback for scanned PDFs
             #[cfg(feature = "ocr")]
@@ -4149,17 +4228,16 @@ impl PdfDocument {
             // spans sit above them, preserving existing behaviour
             // semantics while inlining the rendering at its spatial
             // reading-order position.
-            let mut pending_tables: Vec<(f32, &crate::structure::table_extractor::ExtractedTable)> =
-                tables
-                    .iter()
-                    .filter_map(|t| t.bbox.map(|b| (b.y + b.height, t)))
-                    .collect();
+            let mut pending_tables: Vec<(f32, &crate::structure::table_extractor::Table)> = tables
+                .iter()
+                .filter_map(|t| t.bbox.map(|b| (b.y + b.height, t)))
+                .collect();
             // Sort descending by top-Y so `pop()` returns the next table
             // to emit in reading order (larger Y first).
             pending_tables.sort_by(|(a, _), (b, _)| crate::utils::safe_float_cmp(*b, *a));
 
             let flush_table =
-                |text: &mut String, table: &crate::structure::table_extractor::ExtractedTable| {
+                |text: &mut String, table: &crate::structure::table_extractor::Table| {
                     if !text.is_empty() && !text.ends_with('\n') {
                         text.push('\n');
                     }
@@ -4222,6 +4300,25 @@ impl PdfDocument {
                     } else if gap < -1.0 {
                         let fs = span.font_size.max(prev.font_size).max(6.0);
                         if gap < -(fs * 20.0) {
+                            if !text.ends_with('\n') {
+                                text.push('\n');
+                            }
+                        } else if delta_x < -fs * 3.0 {
+                            // Same baseline (y_diff <= 2.0) but the
+                            // current span starts well to the LEFT of
+                            // the previous span's start — i.e., the
+                            // upstream sort handed us spans in
+                            // non-monotonic X order. Common cause: a
+                            // multi-column page whose XY-cut routing
+                            // groups column-side spans across rows so
+                            // adjacent iteration items belong to
+                            // different visual rows that happen to
+                            // share a Y band. Without a separator the
+                            // texts glue together (e.g.
+                            // `instancesinstancesinstances` from three
+                            // table-header cells in a stats grid).
+                            // Treat the backwards jump as a logical
+                            // break and emit a newline.
                             if !text.ends_with('\n') {
                                 text.push('\n');
                             }
@@ -6623,7 +6720,75 @@ impl PdfDocument {
         let right_span = (right_y_max - right_y_min).max(0.0);
         let overlap = left_y_max.min(right_y_max) - left_y_min.max(right_y_min);
         let min_span = left_span.min(right_span);
-        min_span > 0.0 && overlap > 0.5 * min_span
+        if !(min_span > 0.0 && overlap > 0.5 * min_span) {
+            return false;
+        }
+
+        // Require each half to contain enough spans to represent genuine body
+        // text columns. Copyright pages, title pages, and other sparse layouts
+        // can produce two X-center peaks with only 2–7 spans per "column" —
+        // these are not true multi-column body text.
+        let left_count = spans
+            .iter()
+            .filter(|s| {
+                let cx = s.bbox.x + s.bbox.width * 0.5;
+                (cx - median).abs() <= MAX_EXTENT_FROM_MEDIAN && cx < mid_x
+            })
+            .count();
+        let right_count = spans.len() - left_count;
+        if left_count.min(right_count) < 15 {
+            return false;
+        }
+
+        // Font-aware column-shape gate.
+        //
+        // Real two-column body text has tight column-edge alignment:
+        // most spans on each side share one dominant X position
+        // (the column start), with a handful of indented or
+        // section-header outliers. Scattered-fragment layouts spread
+        // their spans evenly across many X positions on each side.
+        //
+        // Measure the fraction of side-spans that fall into the
+        // largest X-cluster (cluster gap = `dominant_em`). Body text
+        // typically scores ≥ 0.5; scattered layouts score < 0.4.
+        // Reject pages where either side fails the threshold so
+        // XY-cut doesn't mis-route scattered content as multi-column.
+        let stats = crate::layout::PageFontStats::from_spans(spans);
+        let cluster_gap = stats.dominant_em.max(4.0);
+        let dominant_cluster_fraction = |take: &dyn Fn(f32) -> bool| -> f32 {
+            let mut xs: Vec<f32> = spans
+                .iter()
+                .filter(|s| {
+                    let cx = s.bbox.x + s.bbox.width * 0.5;
+                    (cx - median).abs() <= MAX_EXTENT_FROM_MEDIAN && take(cx)
+                })
+                .map(|s| s.bbox.x)
+                .collect();
+            let total = xs.len();
+            if total == 0 {
+                return 0.0;
+            }
+            xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let mut best = 1usize;
+            let mut current = 1usize;
+            let mut last = xs[0];
+            for &x in &xs[1..] {
+                if x - last <= cluster_gap {
+                    current += 1;
+                    if current > best {
+                        best = current;
+                    }
+                } else {
+                    current = 1;
+                }
+                last = x;
+            }
+            best as f32 / total as f32
+        };
+        const MIN_DOMINANT_FRACTION: f32 = 0.5;
+        let left_frac = dominant_cluster_fraction(&|cx| cx < mid_x);
+        let right_frac = dominant_cluster_fraction(&|cx| cx >= mid_x);
+        left_frac >= MIN_DOMINANT_FRACTION && right_frac >= MIN_DOMINANT_FRACTION
     }
 
     /// Normalize a span's text for cross-page signature matching.
@@ -7841,9 +8006,10 @@ impl PdfDocument {
                 },
                 Operator::SetStrokeCmyk { c, m, y, k } => {
                     // Simple CMYK to RGB conversion
-                    let r = (1.0 - c) * (1.0 - k);
-                    let g = (1.0 - m) * (1.0 - k);
-                    let b = (1.0 - y) * (1.0 - k);
+                    // ISO 32000-1:2008 §10.3.5: DeviceCMYK → DeviceRGB.
+                    let r = 1.0 - (c + k).min(1.0);
+                    let g = 1.0 - (m + k).min(1.0);
+                    let b = 1.0 - (y + k).min(1.0);
                     state_stack.current_mut().stroke_color_rgb = (r, g, b);
                     extractor.set_stroke_color(Color::new(r, g, b));
                 },
@@ -7858,9 +8024,10 @@ impl PdfDocument {
                     extractor.set_fill_color(Color::new(gray, gray, gray));
                 },
                 Operator::SetFillCmyk { c, m, y, k } => {
-                    let r = (1.0 - c) * (1.0 - k);
-                    let g = (1.0 - m) * (1.0 - k);
-                    let b = (1.0 - y) * (1.0 - k);
+                    // ISO 32000-1:2008 §10.3.5: DeviceCMYK → DeviceRGB.
+                    let r = 1.0 - (c + k).min(1.0);
+                    let g = 1.0 - (m + k).min(1.0);
+                    let b = 1.0 - (y + k).min(1.0);
                     state_stack.current_mut().fill_color_rgb = (r, g, b);
                     extractor.set_fill_color(Color::new(r, g, b));
                 },
@@ -8008,7 +8175,7 @@ impl PdfDocument {
     pub fn extract_tables(
         &mut self,
         page_index: usize,
-    ) -> Result<Vec<crate::structure::table_extractor::ExtractedTable>> {
+    ) -> Result<Vec<crate::structure::table_extractor::Table>> {
         self.extract_tables_with_config(
             page_index,
             crate::structure::spatial_table_detector::TableDetectionConfig::default(),
@@ -8020,7 +8187,7 @@ impl PdfDocument {
         &mut self,
         page_index: usize,
         config: crate::structure::spatial_table_detector::TableDetectionConfig,
-    ) -> Result<Vec<crate::structure::table_extractor::ExtractedTable>> {
+    ) -> Result<Vec<crate::structure::table_extractor::Table>> {
         use crate::structure::spatial_table_detector::detect_tables_with_lines;
 
         // Use words instead of spans for better granularity.
@@ -8283,9 +8450,10 @@ impl PdfDocument {
                     extractor.set_stroke_color(Color::new(gray, gray, gray));
                 },
                 Operator::SetStrokeCmyk { c, m, y, k } => {
-                    let r = (1.0 - c) * (1.0 - k);
-                    let g = (1.0 - m) * (1.0 - k);
-                    let b = (1.0 - y) * (1.0 - k);
+                    // ISO 32000-1:2008 §10.3.5: DeviceCMYK → DeviceRGB.
+                    let r = 1.0 - (c + k).min(1.0);
+                    let g = 1.0 - (m + k).min(1.0);
+                    let b = 1.0 - (y + k).min(1.0);
                     state_stack.current_mut().stroke_color_rgb = (r, g, b);
                     extractor.set_stroke_color(Color::new(r, g, b));
                 },
@@ -8298,9 +8466,10 @@ impl PdfDocument {
                     extractor.set_fill_color(Color::new(gray, gray, gray));
                 },
                 Operator::SetFillCmyk { c, m, y, k } => {
-                    let r = (1.0 - c) * (1.0 - k);
-                    let g = (1.0 - m) * (1.0 - k);
-                    let b = (1.0 - y) * (1.0 - k);
+                    // ISO 32000-1:2008 §10.3.5: DeviceCMYK → DeviceRGB.
+                    let r = 1.0 - (c + k).min(1.0);
+                    let g = 1.0 - (m + k).min(1.0);
+                    let b = 1.0 - (y + k).min(1.0);
                     state_stack.current_mut().fill_color_rgb = (r, g, b);
                     extractor.set_fill_color(Color::new(r, g, b));
                 },
@@ -8559,7 +8728,7 @@ impl PdfDocument {
         &mut self,
         page_index: usize,
         region: crate::geometry::Rect,
-    ) -> Result<Vec<crate::structure::table_extractor::ExtractedTable>> {
+    ) -> Result<Vec<crate::structure::table_extractor::Table>> {
         self.extract_tables_in_rect_with_config(
             page_index,
             region,
@@ -8573,7 +8742,7 @@ impl PdfDocument {
         page_index: usize,
         region: crate::geometry::Rect,
         config: crate::structure::spatial_table_detector::TableDetectionConfig,
-    ) -> Result<Vec<crate::structure::table_extractor::ExtractedTable>> {
+    ) -> Result<Vec<crate::structure::table_extractor::Table>> {
         let tables = self.extract_tables_with_config(page_index, config)?;
         Ok(tables
             .into_iter()
@@ -9015,7 +9184,7 @@ impl PdfDocument {
         page_index: usize,
         spans: &[TextSpan],
         options: &crate::converters::ConversionOptions,
-    ) -> Vec<crate::structure::ExtractedTable> {
+    ) -> Vec<crate::structure::Table> {
         // Strategy 1: Structure tree (tagged PDFs)
         let struct_tree_opt = match &self.structure_tree_cache {
             Some(cached) => cached.clone(),
@@ -9678,7 +9847,7 @@ impl PdfDocument {
             Vec::new()
         };
 
-        // Step 3: Create pipeline config from options (using adapter from Phase 2)
+        // Step 3: Create pipeline config from options.
         let pipeline_config = TextPipelineConfig::from_conversion_options(options);
 
         // Step 4: Create pipeline with config

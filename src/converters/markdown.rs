@@ -20,7 +20,7 @@ use crate::layout::{
     TextSpan,
 };
 use crate::structure::spatial_table_detector::SpatialTableDetector;
-use crate::structure::table_extractor::{ExtractedTable, TableRow};
+use crate::structure::table_extractor::{Table, TableRow};
 use crate::XYCutStrategy;
 use lazy_static::lazy_static;
 use regex::{Captures, Regex};
@@ -1197,7 +1197,7 @@ fn should_insert_bold_marker(prev_char: Option<char>, next_char: Option<char>) -
 
 /// Render a markdown table from an extracted table structure.
 ///
-/// Converts an ExtractedTable into Markdown table format with:
+/// Converts a Table into Markdown table format with:
 /// - Header row (if present) separated by | delimiters
 /// - Separator row with |---|---|...
 /// - Data rows in same format
@@ -1210,7 +1210,7 @@ fn should_insert_bold_marker(prev_char: Option<char>, next_char: Option<char>) -
 ///
 /// A string containing the Markdown table representation
 #[allow(dead_code)]
-fn render_markdown_table(table: &ExtractedTable) -> String {
+fn render_markdown_table(table: &Table) -> String {
     let mut md = String::new();
 
     if table.rows.is_empty() {

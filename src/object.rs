@@ -220,11 +220,14 @@ impl Object {
                         },
                     }
                 } else {
-                    // For unencrypted streams, trim leading whitespace
-                    // Some malformed PDFs have extra whitespace after the "stream" keyword
-                    // PDF Spec allows a single EOL marker, but some PDFs add more
-                    let trimmed_data = trim_leading_stream_whitespace(data);
-                    trimmed_data.to_vec()
+                    // `parse_stream_data` in the parser already consumes
+                    // exactly one EOL after the `stream` keyword per
+                    // ISO 32000-1:2008 §7.3.8.1, so `data` begins with the
+                    // first byte of actual stream content. Re-trimming
+                    // CR/LF here would corrupt binary streams that
+                    // legitimately start with 0x0A or 0x0D — e.g. an
+                    // Indexed palette whose first CMYK byte is 0x0D.
+                    data.to_vec()
                 };
 
                 // Step 2: Apply filters (decompression)
@@ -276,27 +279,6 @@ impl Object {
             }),
         }
     }
-}
-
-/// Trim leading PDF whitespace from stream data.
-///
-/// PDF Spec ISO 32000-1:2008, Section 7.3.4.2 states that stream data begins
-/// immediately after the EOL marker following "stream". However, some PDF generators
-/// add extra whitespace characters.
-///
-/// Per §7.3.8.2, the "stream" keyword is followed by a single EOL (CR, LF, or CRLF).
-/// Some malformed PDFs have extra EOL markers. We only strip CR/LF characters — not
-/// spaces, tabs, or NUL — because stream content (images, object streams) can
-/// legitimately start with those bytes.
-fn trim_leading_stream_whitespace(data: &[u8]) -> &[u8] {
-    let mut start = 0;
-    while start < data.len() {
-        match data[start] {
-            0x0A | 0x0D => start += 1,
-            _ => break,
-        }
-    }
-    &data[start..]
 }
 
 /// Extract filter names from a Filter object.
@@ -811,79 +793,6 @@ mod tests {
         assert_eq!(a.id, 10);
     }
 
-    // ---- Tests for trim_leading_stream_whitespace ----
-
-    #[test]
-    fn test_trim_leading_stream_whitespace_lf() {
-        let data = b"\nstream content";
-        let result = trim_leading_stream_whitespace(data);
-        assert_eq!(result, b"stream content");
-    }
-
-    #[test]
-    fn test_trim_leading_stream_whitespace_cr() {
-        let data = b"\rstream content";
-        let result = trim_leading_stream_whitespace(data);
-        assert_eq!(result, b"stream content");
-    }
-
-    #[test]
-    fn test_trim_leading_stream_whitespace_crlf() {
-        let data = b"\r\nstream content";
-        let result = trim_leading_stream_whitespace(data);
-        assert_eq!(result, b"stream content");
-    }
-
-    #[test]
-    fn test_trim_leading_stream_whitespace_multiple() {
-        let data = b"\r\n\r\nstream content";
-        let result = trim_leading_stream_whitespace(data);
-        assert_eq!(result, b"stream content");
-    }
-
-    #[test]
-    fn test_trim_leading_stream_whitespace_no_whitespace() {
-        let data = b"stream content";
-        let result = trim_leading_stream_whitespace(data);
-        assert_eq!(result, b"stream content");
-    }
-
-    #[test]
-    fn test_trim_leading_stream_whitespace_empty() {
-        let data = b"";
-        let result = trim_leading_stream_whitespace(data);
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn test_trim_leading_stream_whitespace_only_whitespace() {
-        let data = b"\r\n\n\r";
-        let result = trim_leading_stream_whitespace(data);
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn test_trim_leading_stream_whitespace_preserves_spaces() {
-        // Spaces should NOT be trimmed - only CR/LF
-        let data = b" content with leading space";
-        let result = trim_leading_stream_whitespace(data);
-        assert_eq!(result, b" content with leading space");
-    }
-
-    #[test]
-    fn test_trim_leading_stream_whitespace_preserves_tabs() {
-        let data = b"\tcontent with tab";
-        let result = trim_leading_stream_whitespace(data);
-        assert_eq!(result, b"\tcontent with tab");
-    }
-
-    #[test]
-    fn test_trim_leading_stream_whitespace_preserves_nul() {
-        let data = b"\x00binary data";
-        let result = trim_leading_stream_whitespace(data);
-        assert_eq!(result, b"\x00binary data");
-    }
-
     // ---- Tests for extract_filter_names edge cases ----
 
     #[test]
@@ -1162,16 +1071,21 @@ mod tests {
         }
     }
 
+    /// Stream data must be returned verbatim. The parser already
+    /// consumes the single EOL that follows the `stream` keyword per
+    /// ISO 32000-1:2008 §7.3.8.1, so `decode_stream_data` must not
+    /// further strip leading CR/LF bytes — that would corrupt binary
+    /// streams whose first byte is legitimately 0x0A or 0x0D.
     #[test]
-    fn test_decode_stream_trims_leading_cr_lf() {
+    fn test_decode_stream_preserves_leading_cr_lf() {
         let mut dict = HashMap::new();
-        dict.insert("Length".to_string(), Object::Integer(5));
+        dict.insert("Length".to_string(), Object::Integer(7));
         let obj = Object::Stream {
             dict,
             data: bytes::Bytes::from_static(b"\r\nHello"),
         };
         let decoded = obj.decode_stream_data().unwrap();
-        assert_eq!(decoded, b"Hello");
+        assert_eq!(decoded, b"\r\nHello");
     }
 
     #[test]

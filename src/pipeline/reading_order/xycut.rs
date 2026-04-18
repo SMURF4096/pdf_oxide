@@ -203,6 +203,7 @@ impl XYCutStrategy {
         // like one wide continuous run; core_right (char_count × em) is
         // a conservative fallback used ONLY when adjacent bbox edges
         // overlap (a signal of bbox inflation).
+        //
         let mut lines: std::collections::BTreeMap<i32, Vec<(f32, f32, f32)>> =
             std::collections::BTreeMap::new();
         for &i in indices {
@@ -283,13 +284,18 @@ impl XYCutStrategy {
             if extent < width_threshold {
                 continue;
             }
+            // Use core_right (char-count estimate) rather than bbox.right
+            // for coverage. bbox.right is inflated by tab characters and
+            // trailing whitespace — tab-expanded table rows would otherwise
+            // score 100% coverage and be misidentified as dense body text.
             let mut covered = 0.0f32;
             let mut last_end = f32::MIN;
-            for &(l, r, _) in &sorted {
+            for &(l, _, cr) in &sorted {
+                let effective_right = cr.min(extent_right);
                 let start = l.max(last_end);
-                if r > start {
-                    covered += r - start;
-                    last_end = r;
+                if effective_right > start {
+                    covered += effective_right - start;
+                    last_end = effective_right;
                 }
             }
             if covered >= extent * 0.8 {
@@ -311,13 +317,20 @@ impl XYCutStrategy {
         indices: &[usize],
     ) -> Option<(Vec<usize>, Vec<usize>)> {
         let profile = self.horizontal_projection_indexed(all_spans, indices)?;
-        let (valley_start, valley_end, valley_width) = self.find_valley(&profile)?;
 
-        if valley_width < self.min_valley_width {
-            return None;
-        }
-
-        let split_x = profile.x_min + (valley_start + valley_end) as f32 / 2.0;
+        let split_x = if let Some((vs, ve, vw)) = self.find_valley(&profile) {
+            if vw < self.min_valley_width {
+                return None;
+            }
+            profile.x_min + (vs + ve) as f32 / 2.0
+        } else {
+            // Fallback: when narrow table-cell spans fill the column gutter
+            // and prevent zero-density valley detection, find the relative
+            // minimum between the two strongest density peaks. Only use
+            // this when the minimum is ≤ 50% of the weaker peak (genuine
+            // trough) so we don't split single-column pages on shallow dips.
+            self.find_split_between_peaks(&profile)?
+        };
 
         // Partition by span LEFT EDGE (where the glyphs actually start),
         // not bbox.right() and not center. Extractor bboxes overreach to
@@ -341,6 +354,73 @@ impl XYCutStrategy {
         }
 
         Some((left, right))
+    }
+
+    /// Fallback column split: find the deepest trough between the two
+    /// strongest density peaks. Used when the standard valley detection
+    /// fails because narrow table-cell spans partially fill the gutter.
+    ///
+    /// Returns the split X coordinate (absolute, not relative to x_min) if
+    /// a genuine trough exists — i.e., the minimum between the peaks is ≤
+    /// 50% of the weaker peak density.
+    fn find_split_between_peaks(&self, profile: &ProjectionProfile) -> Option<f32> {
+        let density = &profile.density;
+        let n = density.len();
+        if n < 3 {
+            return None;
+        }
+
+        // Smooth with a small box filter (window = min_valley_width) to
+        // average out individual narrow peaks before finding mass centres.
+        let smooth_window = (self.min_valley_width as usize).max(3);
+        let half = smooth_window / 2;
+        let smoothed: Vec<f32> = (0..n)
+            .map(|i| {
+                let s = i.saturating_sub(half);
+                let e = (i + half + 1).min(n);
+                let sum: f32 = density[s..e].iter().sum();
+                sum / (e - s) as f32
+            })
+            .collect();
+
+        // Find the strongest peak in each half. Use `safe_float_cmp` for
+        // NaN-safe total ordering — matches the comparator used elsewhere
+        // in the reading-order code so `density` sentinel values can't
+        // reach a `partial_cmp` that maps them to `Equal`.
+        let mid = n / 2;
+        let left_peak =
+            (0..mid).max_by(|&a, &b| crate::utils::safe_float_cmp(smoothed[a], smoothed[b]))?;
+        let right_peak =
+            (mid..n).max_by(|&a, &b| crate::utils::safe_float_cmp(smoothed[a], smoothed[b]))?;
+
+        if smoothed[left_peak] == 0.0 || smoothed[right_peak] == 0.0 {
+            return None;
+        }
+
+        // Find the minimum density in the interior between the two peaks.
+        let search_start = left_peak.min(right_peak) + 1;
+        let search_end = left_peak.max(right_peak);
+        if search_start >= search_end {
+            return None;
+        }
+
+        let trough_pos = (search_start..search_end)
+            .min_by(|&a, &b| crate::utils::safe_float_cmp(smoothed[a], smoothed[b]))?;
+
+        // Only use if trough is a genuine valley: ≤ 50% of the weaker peak.
+        let weaker_peak = smoothed[left_peak].min(smoothed[right_peak]);
+        if smoothed[trough_pos] > weaker_peak * 0.5 {
+            return None;
+        }
+
+        // Trough must be at least min_valley_width from both edges.
+        if trough_pos < self.min_valley_width as usize
+            || trough_pos + self.min_valley_width as usize > n
+        {
+            return None;
+        }
+
+        Some(profile.x_min + trough_pos as f32)
     }
 
     /// Find horizontal line (Y-axis) split using index-based partitioning.
@@ -436,6 +516,14 @@ impl XYCutStrategy {
         // anchored to its LEFT edge (where glyphs actually start), with
         // length proportional to character count. The left edge is
         // reliable; the right edge is not.
+        //
+        // Additionally, spans whose core width exceeds 55% of the region
+        // width are full-width elements (section headers, figure captions,
+        // table titles) that span both columns. Including them fills the
+        // inter-column gutter in the density array and prevents valley
+        // detection. They are excluded from the projection; the column
+        // split boundary will still assign them correctly by left edge.
+        let region_width = (x_max - x_min).max(1.0);
         for &i in indices {
             let span = &all_spans[i];
             let height = span.bbox.bottom() - span.bbox.top();
@@ -450,6 +538,19 @@ impl XYCutStrategy {
             // than the 0.5em advance used for monospace.
             let approx_char_width = (span.font_size * 0.45).max(2.5);
             let core_width = char_count as f32 * approx_char_width;
+            let span_width = span.bbox.right() - span.bbox.left();
+            // Skip full-width elements (captions, headers, table rows) whose
+            // bbox spans more than 55% of the region — they fill the gutter.
+            if span_width > region_width * 0.55 {
+                continue;
+            }
+            // Skip isolated single-character/digit spans (table cell values
+            // like 'G', 'T', '1', 'A') that scatter across the full X range
+            // and fill the column gutter in the density profile. Body text
+            // spans always contain multiple characters.
+            if char_count < 2 {
+                continue;
+            }
             let core_left = span.bbox.left();
             let core_right = (core_left + core_width).min(span.bbox.right());
             let x_start = (core_left - x_min).max(0.0).ceil() as usize;
@@ -565,12 +666,29 @@ impl XYCutStrategy {
             valleys.push((valley_start, profile.density.len()));
         }
 
-        // Return the widest INTERIOR valley (strictly between first and
-        // last non-zero positions). Leading/trailing margin valleys are
-        // filtered out.
-        valleys
+        // Merge adjacent interior valley segments separated by a narrow
+        // bridge (≤ half the minimum valley width). A callout box or small
+        // figure positioned in the column gutter creates a density bump
+        // that splits what should be a single valley into two fragments.
+        // Bridging re-joins them so the gap is still recognised as a
+        // column boundary.
+        let bridge_limit = (self.min_valley_width / 2.0).ceil() as usize;
+        let interior: Vec<(usize, usize)> = valleys
             .into_iter()
             .filter(|&(start, end)| start > first_nonzero && end <= last_nonzero + 1)
+            .collect();
+        let mut merged: Vec<(usize, usize)> = Vec::with_capacity(interior.len());
+        for seg in interior {
+            if let Some(last) = merged.last_mut() {
+                if seg.0 <= last.1 + bridge_limit {
+                    last.1 = last.1.max(seg.1);
+                    continue;
+                }
+            }
+            merged.push(seg);
+        }
+        merged
+            .into_iter()
             .map(|(start, end)| (start, end, (end - start) as f32))
             .max_by(|a, b| crate::utils::safe_float_cmp(a.2, b.2))
     }
@@ -674,13 +792,34 @@ mod tests {
     use crate::geometry::Rect;
 
     fn make_span(x: f32, y: f32, width: f32, height: f32) -> TextSpan {
+        make_span_text(x, y, width, height, "test", 12.0)
+    }
+
+    /// Like make_span but with realistic body-text density (~72 non-whitespace chars
+    /// at 12pt, matching a full Letter-width column). Used when is_single_column_region
+    /// must correctly identify a wide single-column page as not multi-column.
+    fn make_body_span(x: f32, y: f32, width: f32, height: f32) -> TextSpan {
+        // 72 non-whitespace characters at 12pt → core_width = 72 × 5.4 = 388.8pt
+        // which is 83% of a 468pt column — enough to pass the 80% dense check.
+        let text = "abcdefghijklmnopqrstuvwxyz".repeat(3); // 78 non-whitespace chars
+        make_span_text(x, y, width, height, &text, 12.0)
+    }
+
+    fn make_span_text(
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        text: &str,
+        font_size: f32,
+    ) -> TextSpan {
         use crate::layout::{Color, FontWeight};
 
         TextSpan {
             artifact_type: None,
-            text: "test".to_string(),
+            text: text.to_string(),
             bbox: Rect::new(x, y, width, height),
-            font_size: 12.0,
+            font_size,
             font_name: "Arial".to_string(),
             font_weight: FontWeight::Normal,
             is_italic: false,
@@ -739,8 +878,9 @@ mod tests {
             if i == 30 {
                 y -= 30.0;
             }
-            // Lines are ~full-width body text
-            spans.push(make_span(left, y, width, line_height));
+            // Use realistic body text density (78 non-whitespace chars at 12pt) so
+            // is_single_column_region correctly classifies the region as single-column.
+            spans.push(make_body_span(left, y, width, line_height));
             y -= leading;
         }
 

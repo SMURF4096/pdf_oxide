@@ -4,7 +4,7 @@
 
 use crate::error::Result;
 use crate::pipeline::{OrderedTextSpan, TextPipelineConfig};
-use crate::structure::table_extractor::ExtractedTable;
+use crate::structure::table_extractor::Table;
 use crate::text::HyphenationHandler;
 
 use super::OutputConverter;
@@ -48,7 +48,7 @@ impl OutputConverter for PlainTextConverter {
     fn convert_with_tables(
         &self,
         spans: &[OrderedTextSpan],
-        tables: &[ExtractedTable],
+        tables: &[Table],
         config: &TextPipelineConfig,
     ) -> Result<String> {
         self.render_spans(spans, tables, config)
@@ -64,11 +64,11 @@ impl OutputConverter for PlainTextConverter {
 }
 
 impl PlainTextConverter {
-    /// Render an ExtractedTable as space-padded plain text.
+    /// Render a Table as space-padded plain text.
     ///
     /// Delegates to the table's own `render_text()` method to ensure consistent
     /// formatting across all plain text output paths.
-    fn render_table_text(table: &ExtractedTable) -> String {
+    fn render_table_text(table: &Table) -> String {
         table.render_text()
     }
 
@@ -368,7 +368,7 @@ impl PlainTextConverter {
     fn render_spans(
         &self,
         spans: &[OrderedTextSpan],
-        tables: &[ExtractedTable],
+        tables: &[Table],
         config: &TextPipelineConfig,
     ) -> Result<String> {
         if spans.is_empty() && tables.is_empty() {
@@ -726,7 +726,7 @@ mod tests {
 
     #[test]
     fn test_render_table_text_basic() {
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         let mut row1 = TableRow::new(false);
         row1.add_cell(TableCell::new("A".to_string(), false));
         row1.add_cell(TableCell::new("B".to_string(), false));
@@ -743,14 +743,14 @@ mod tests {
 
     #[test]
     fn test_render_table_text_empty() {
-        let table = ExtractedTable::new();
+        let table = Table::new();
         let result = PlainTextConverter::render_table_text(&table);
         assert_eq!(result, "");
     }
 
     #[test]
     fn test_render_table_text_trims_whitespace() {
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         let mut row = TableRow::new(false);
         row.add_cell(TableCell::new("  padded  ".to_string(), false));
         table.add_row(row);
@@ -764,7 +764,7 @@ mod tests {
         let converter = PlainTextConverter::new();
         let config = TextPipelineConfig::default();
 
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         table.bbox = Some(Rect::new(10.0, 50.0, 200.0, 100.0));
         let mut row = TableRow::new(false);
         row.add_cell(TableCell::new("X".to_string(), false));
@@ -795,7 +795,7 @@ mod tests {
         let mut span_in_table = make_span("Cell", 50.0, 70.0);
         span_in_table.reading_order = 1;
 
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         table.bbox = Some(Rect::new(10.0, 50.0, 200.0, 100.0));
         let mut row = TableRow::new(false);
         row.add_cell(TableCell::new("Cell".to_string(), false));
@@ -823,7 +823,7 @@ mod tests {
 
     #[test]
     fn test_span_in_table_plain_text() {
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         table.bbox = Some(Rect::new(10.0, 50.0, 200.0, 100.0));
 
         let inside = make_span("inside", 50.0, 70.0);
@@ -835,7 +835,7 @@ mod tests {
 
     #[test]
     fn test_span_in_table_no_bbox() {
-        let table = ExtractedTable::new(); // No bbox
+        let table = Table::new(); // No bbox
         let span = make_span("text", 50.0, 70.0);
 
         assert_eq!(span_in_table(&span, &[table]), None);
@@ -932,7 +932,7 @@ mod tests {
         let config = TextPipelineConfig::default();
 
         // Table covers region x=50..250, y=100..300
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         table.bbox = Some(Rect::new(50.0, 100.0, 200.0, 200.0));
         table.col_count = 2;
         let mut row = TableRow::new(false);
@@ -998,7 +998,7 @@ mod tests {
         let config = TextPipelineConfig::default();
 
         // Table covers region x=50..250, y=200..400
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         table.bbox = Some(Rect::new(50.0, 200.0, 200.0, 200.0));
         table.col_count = 1;
         let mut row = TableRow::new(false);

@@ -2,6 +2,203 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [0.3.34] - 2026-04-18
+> Idiomatic page API, structured tables, column-order, image, and ICC colour fixes
+
+### API — Page abstraction (#371)
+
+All four language bindings now expose a page object so callers can iterate a
+document and call extraction methods on the page directly. Named consistently
+as `Page` in Python, Node.js, C#, and Go.
+
+```python
+with PdfDocument("paper.pdf") as doc:
+    for page in doc:           # len(doc), doc[i], doc[-1] also work
+        text = page.text
+        md   = page.markdown(detect_headings=True)
+```
+
+- **Python** — `Page` with lazy properties: `text`, `chars`, `words`, `lines`,
+  `spans`, `tables`, `images`, `paths`, `annotations`; methods: `markdown()`,
+  `plain_text()`, `html()`, `render()`, `search()`, `region()`. The pre-existing
+  editor `PdfPage` is unchanged.
+- **Node.js** — `Page` with cached `width`/`height`/`rotation` and extraction
+  methods. `[Symbol.iterator]` and `page(index)` added to `PdfDocument`. Six
+  previously native-only methods wired into the TS layer: `extractWords`,
+  `extractTextLines`, `extractTables`, `extractPaths`, `getEmbeddedImages`,
+  `ocrExtractText`.
+- **C#** — `Page` with full sync + async surface. `doc.Pages`
+  (`IReadOnlyList<Page>`) and `doc[i]` indexer added to `PdfDocument`.
+- **Go** — `Page` struct with full method surface. `doc.Page(i)` and
+  `doc.Pages()` added to `PdfDocument`.
+
+### API — Structured table extraction with consistent naming (#289)
+
+`extract_tables()` returns structured data — rows, cells with text and bounding
+boxes — not just Markdown. Available on both `PdfDocument` and the new `Page`
+objects across all bindings, with a single consistent type name `Table`:
+
+| Language | Type | Cell access |
+|---|---|---|
+| Rust   | `Table`             | iterate `rows[i].cells[j]` |
+| Python | `dict`              | `row["cells"][i]["text"]` |
+| Go     | `Table`             | `table.CellText(row, col)` |
+| C#     | `Table`             | `table.CellText(row, col)` |
+| Node.js| `Table` (interface) | `table.cells[row][col]` |
+
+C# previously returned only `(int RowCount, int ColCount)` tuples — now returns
+a proper `Table[]` with cell text accessors, matching Go and Rust.
+
+### Text extraction correctness
+
+- **Multi-column reading-order interleaving fixed (#319).** On untagged
+  multi-column PDFs (academic textbooks, genetics references), `extract_text`
+  was applying XY-cut column ordering inside `extract_spans()` and then
+  re-sorting with row-aware sort in `extract_text_with_options`, undoing the
+  column structure. Result: garbled fragments like `accompaally` (= "accompa"
+  from column 1 + "ally" from column 2). Fix: skip the row-aware re-sort when
+  the page is genuinely multi-column. Verified on Hartwell Genetics, Murphy ML,
+  and Kandel Neural Science textbooks — all known garbled tokens eliminated.
+- **XY-cut column-detection improvements** for mixed-layout pages (table + body
+  text). Wide spans (>55% of region width) excluded from the projection density
+  so tab-expanded table rows no longer fill the column gutter. Single-character
+  spans (table cell values like `G`, `T`) excluded from projection so they
+  don't scatter across the gutter. Coverage check uses character-count estimate
+  rather than bbox width so tab-padded rows don't masquerade as dense body text.
+- **Sparse-layout false-positive guard** for `is_multi_column_page`. Copyright
+  pages, title pages, and colophons can produce two X-center peaks with only
+  7-10 spans per "column" — these are no longer treated as multi-column,
+  preventing XY-cut from splitting sentences whose halves are at different X
+  positions on the same line.
+- **Font-aware column-shape gate** in `is_multi_column_page`. Fax-style and
+  scattered-fragment layouts (each row built from several individually
+  positioned word fragments) used to clear every prior multi-column check
+  and routed through XY-cut, which then read the page column-major and could
+  reverse fragments within a row. The new gate measures the fraction of
+  side-spans falling into the largest X-cluster (cluster gap derived from the
+  page's dominant em); body text scores ≥ 0.5 while scattered layouts score
+  < 0.4. Pages that fail either side fall back to row-aware sort, so
+  scanned-fax PDFs again read left-to-right line-by-line. Per-page font
+  statistics are computed once via the new `pdf_oxide::layout::PageFontStats`
+  type and reused by every threshold the layout pipeline derives.
+- **Newline insertion on backwards-X jumps in span join.** When the upstream
+  sort handed the join loop two same-baseline spans whose X positions went
+  backwards (a multi-column page whose XY-cut routing groups column-side
+  spans across rows so adjacent iteration items share a Y band but belong
+  to different visual rows), no separator was being inserted and texts
+  glued together — producing tokens like `instancesinstancesinstances` from
+  three table-header cells in a stats grid. Same-baseline pairs whose
+  delta-x is more negative than 3 em now emit a newline.
+
+### Distribution
+
+- **Node.js Linux prebuild now portable across glibc 2.35+ systems.** Previous
+  builds were dynamically linked against `libstdc++.so.6` requiring
+  `GLIBCXX_3.4.31` (GCC 13+), failing to load on Debian 12 stable, Ubuntu
+  22.04, and RHEL 8/9. Fix: `binding.gyp` now passes `-static-libstdc++` and
+  `-static-libgcc`, and the Linux runner is pinned to `ubuntu-22.04` /
+  `ubuntu-22.04-arm` (glibc 2.35). The resulting `.node` is fully self-contained
+  for C++ runtime — `ldd` shows only `libm`/`libc`. Size impact: +210 KB.
+- **Go installer documents `@latest`.** `go run github.com/yfedoseev/pdf_oxide/go/cmd/install@latest`
+  is now the recommended install command (the installer auto-resolves the
+  matching version via `runtime/debug.ReadBuildInfo()`).
+- **pkg.go.dev now shows Go documentation.** The Go module (rooted at
+  `go/go.mod` with module path `github.com/yfedoseev/pdf_oxide/go`) was
+  returning `Documentation not displayed due to license restrictions`
+  because pkg.go.dev's licensecheck only inspects the module's own
+  subtree — it does not walk up to the repo root where
+  `LICENSE-APACHE` + `LICENSE-MIT` live. Fix: duplicate both files into
+  `go/LICENSE-APACHE` and `go/LICENSE-MIT`, filenames both on
+  pkg.go.dev's accepted list. Takes effect on the next tag.
+- **npm, NuGet, and PyPI packages now embed both licence files.** Same
+  class of gap as the Go fix: `js/package.json`'s `files` list, the C#
+  `.csproj`, and the maturin `[tool.maturin] include` all omitted the
+  licence text so shipped artifacts lacked the notice MIT requires.
+  `js/package.json`'s `license` field also flattened to `"MIT"`,
+  contradicting the crate's declared `MIT OR Apache-2.0`; corrected to
+  match. The C# csproj carried a deprecated `<LicenseUrl>` alongside
+  `<PackageLicenseExpression>` that NuGet warns on — removed.
+- **`LICENSE-MIT` copyright corrected.** All four `LICENSE-MIT` copies
+  (root, `go/`, `js/`, `csharp/PdfOxide/`) carried `Copyright (c) The
+  Rust Project Contributors` left over from the `cargo init` template.
+  Updated to `Copyright (c) 2025-present Yury Fedoseev`. Verified with
+  google/licensecheck — all four still classify as 100% MIT, so
+  pkg.go.dev / NuGet / npm license detection is unaffected.
+
+### CI
+
+- **Free-disk-space step added to all Ubuntu jobs that do heavy Rust + Python
+  builds.** A v0.3.33 release-pipeline failure (`No space left on device` on
+  `actions-runner` log writes) traced to GitHub Ubuntu runners filling up at
+  the `maturin build --release` step. Now applied to `python.yml` test job
+  (was only one fixed initially), `ci.yml` Python Bindings + WASM Build jobs,
+  and `release.yml` Python wheel build matrix (Linux targets only via
+  `if: runner.os == 'Linux'` guard).
+
+### Image extraction correctness
+
+- **4-bit-per-component Indexed images no longer decode to vertical-stripe
+  noise (#375).** The PNG predictor decoder was honouring the numeric
+  `/Predictor` value from `/DecodeParms` instead of the per-row filter
+  tag byte written into each row. ISO 32000-1:2008 §7.4.4.4 makes the
+  per-row tag authoritative: a producer may declare `/Predictor 12` (Up)
+  on the parameters and still write tag 0 (None) on every row. Reading
+  the declared predictor instead produced Up-cascade on raw index bytes,
+  rendering a 710×1012 scanned-book page as a diagonal-stripe noise
+  pattern. Reported by @Charltsing.
+- **Indexed palette streams whose first byte is `0x0D` (CR) or `0x0A` (LF)
+  no longer decode to solid black (#375).** `decode_stream_data` was
+  running a post-parse `trim_leading_stream_whitespace` pass that
+  stripped CR/LF bytes from the start of every unencrypted stream. The
+  parser already consumes exactly one EOL after the `stream` keyword per
+  ISO 32000-1:2008 §7.3.8.1, so re-trimming corrupted binary streams
+  that legitimately start with those bytes. For an Indexed-backed image,
+  shrinking a 4-byte CMYK palette `0d 0c 0c 04` to 3 bytes pushed every
+  lookup into the expander's out-of-range branch, producing `(0,0,0)`
+  for every pixel. Reported by @Charltsing.
+- **DeviceCMYK → DeviceRGB fallback now matches ISO 32000-1:2008 §10.3.5
+  (#375).** All CMYK→RGB paths — image-level bulk conversion,
+  Indexed-CMYK palette expansion, content-stream fill/stroke colour
+  state, JPEG CMYK decoding — now use the spec's additive-clamp formula
+  `R = 1 − min(1, C + K)`. Four inline copies and three helper functions
+  were collapsed onto this single form; the common multiplicative
+  `(1-C)(1-K)` variant differed on heavily-inked samples and was the
+  default we inherited from imaging libraries, not what the spec specifies.
+
+### Colour management (new)
+
+- **Real ICC profile-driven colour conversion via qcms (#375; opt-out
+  `icc` feature, on by default).** When a PDF's `/ICCBased` colour space
+  or `/OutputIntents → DestOutputProfile` provides an ICC profile, image
+  extraction now compiles it to a `qcms::Transform` and routes CMYK
+  samples through the CMM instead of the §10.3.5 fallback. RGB- and
+  gray-ICCBased profiles use the same pipeline. The graphics-state
+  rendering intent (`/Intent` on image dictionaries, `/RI`, or the `ri`
+  operator) is honoured; unrecognised intent names fall through to
+  `RelativeColorimetric` per §8.6.5.8. qcms is pure Rust (no C/FFI) so
+  WASM and C# AOT builds keep working; opt out with
+  `default-features = false`. Reported by @Charltsing.
+- **New `pdf_oxide::color` module** exposes `IccProfile`, `IccHeader`,
+  `RenderingIntent`, and `Transform` for consumers that want to drive
+  colour conversion directly.
+- **Measured impact on a representative CMYK-heavy fixture** (218
+  images, `/ICCBased 4` throughout): mean PSNR vs poppler's reference
+  rendering improved from 27.9 dB (§10.3.5 fallback) to 39.2 dB
+  (qcms). Worst-case PSNR rose from 16.4 dB ("visibly wrong saturation")
+  to 33.8 dB ("perceptually indistinguishable"). A representative blue
+  swatch shifted from `RGB(62, 142, 252)` to `RGB(58, 123, 190)` vs the
+  ICC reference's `RGB(62, 124, 191)`.
+
+### Community Contributors
+
+- **[@SeanPedersen](https://github.com/SeanPedersen)** — Proposed the page-first
+  API (#371) with lazy evaluation and sequence semantics. Python follows his
+  design exactly; extended to Node.js, C#, and Go.
+- **[@pdenapo](https://github.com/pdenapo)** — Requested structured table
+  extraction returning data structures rather than Markdown (#289), which
+  prompted the cell-text API surfacing in C# / Node.js and the `Table` rename
+  for cross-language consistency.
+
 ## [0.3.33] - 2026-04-16
 > Text extraction, image correctness, and memory safety fixes
 

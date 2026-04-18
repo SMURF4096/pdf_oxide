@@ -1804,8 +1804,253 @@ impl PyPdfDocument {
         }
     }
 
+    fn __len__(&mut self) -> PyResult<usize> {
+        self.page_count()
+    }
+
+    fn __getitem__(slf: Py<Self>, py: Python<'_>, index: isize) -> PyResult<PyDocPage> {
+        let count = slf.borrow_mut(py).page_count()? as isize;
+        let idx = if index < 0 { count + index } else { index };
+        if idx < 0 || idx >= count {
+            return Err(pyo3::exceptions::PyIndexError::new_err("page index out of range"));
+        }
+        Ok(PyDocPage {
+            doc: slf,
+            page_index: idx as usize,
+        })
+    }
+
+    fn __iter__(slf: Py<Self>, py: Python<'_>) -> PyResult<PyDocPageIter> {
+        let count = slf.borrow_mut(py).page_count()?;
+        Ok(PyDocPageIter {
+            doc: slf,
+            index: 0,
+            count,
+        })
+    }
+
     fn __repr__(&self) -> String {
         format!("PdfDocument(version={}.{})", self.inner.version().0, self.inner.version().1)
+    }
+}
+
+/// Iterator over pages of a PdfDocument.
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "PdfDocumentIter")]
+pub struct PyDocPageIter {
+    doc: Py<PyPdfDocument>,
+    index: usize,
+    count: usize,
+}
+
+#[pymethods]
+impl PyDocPageIter {
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __next__(&mut self, py: Python<'_>) -> Option<PyDocPage> {
+        if self.index >= self.count {
+            return None;
+        }
+        let page = PyDocPage {
+            doc: self.doc.clone_ref(py),
+            page_index: self.index,
+        };
+        self.index += 1;
+        Some(page)
+    }
+}
+
+/// A single page of a PdfDocument, providing lazy access to all page-level operations.
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "Page", subclass)]
+pub struct PyDocPage {
+    doc: Py<PyPdfDocument>,
+    page_index: usize,
+}
+
+#[pymethods]
+impl PyDocPage {
+    #[getter]
+    fn index(&self) -> usize {
+        self.page_index
+    }
+
+    #[getter]
+    fn bbox(&self, py: Python<'_>) -> PyResult<(f32, f32, f32, f32)> {
+        self.doc
+            .borrow_mut(py)
+            .inner
+            .get_page_media_box(self.page_index)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    #[getter]
+    fn width(&self, py: Python<'_>) -> PyResult<f32> {
+        self.bbox(py).map(|(llx, _, urx, _)| urx - llx)
+    }
+
+    #[getter]
+    fn height(&self, py: Python<'_>) -> PyResult<f32> {
+        self.bbox(py).map(|(_, lly, _, ury)| ury - lly)
+    }
+
+    #[getter]
+    fn text(&self, py: Python<'_>) -> PyResult<String> {
+        self.doc.borrow_mut(py).extract_text(self.page_index, None)
+    }
+
+    #[getter]
+    fn chars(&self, py: Python<'_>) -> PyResult<Vec<PyTextChar>> {
+        self.doc.borrow_mut(py).extract_chars(self.page_index, None)
+    }
+
+    #[getter]
+    fn words(&self, py: Python<'_>) -> PyResult<Vec<PyWord>> {
+        self.doc
+            .borrow_mut(py)
+            .extract_words(self.page_index, None, None, None)
+    }
+
+    #[getter]
+    fn lines(&self, py: Python<'_>) -> PyResult<Vec<PyTextLine>> {
+        self.doc
+            .borrow_mut(py)
+            .extract_text_lines(self.page_index, None, None, None, None)
+    }
+
+    #[getter]
+    fn spans(&self, py: Python<'_>) -> PyResult<Vec<PyTextSpan>> {
+        self.doc
+            .borrow_mut(py)
+            .extract_spans(self.page_index, None, None)
+    }
+
+    #[getter]
+    fn tables(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.doc
+            .borrow_mut(py)
+            .extract_tables(py, self.page_index, None, None)
+    }
+
+    #[getter]
+    fn images(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.doc
+            .borrow_mut(py)
+            .extract_images(py, self.page_index, None)
+    }
+
+    #[getter]
+    fn annotations(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.doc.borrow_mut(py).get_annotations(py, self.page_index)
+    }
+
+    #[getter]
+    fn paths(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.doc
+            .borrow_mut(py)
+            .extract_paths(py, self.page_index, None)
+    }
+
+    #[pyo3(signature = (preserve_layout=false, detect_headings=true, include_images=false, image_output_dir=None, embed_images=true, include_form_fields=true))]
+    fn markdown(
+        &self,
+        py: Python<'_>,
+        preserve_layout: bool,
+        detect_headings: bool,
+        include_images: bool,
+        image_output_dir: Option<String>,
+        embed_images: bool,
+        include_form_fields: bool,
+    ) -> PyResult<String> {
+        self.doc.borrow_mut(py).to_markdown(
+            self.page_index,
+            preserve_layout,
+            detect_headings,
+            include_images,
+            image_output_dir,
+            embed_images,
+            include_form_fields,
+        )
+    }
+
+    #[pyo3(signature = (preserve_layout=false, detect_headings=true, include_images=false, image_output_dir=None))]
+    fn plain_text(
+        &self,
+        py: Python<'_>,
+        preserve_layout: bool,
+        detect_headings: bool,
+        include_images: bool,
+        image_output_dir: Option<String>,
+    ) -> PyResult<String> {
+        self.doc.borrow_mut(py).to_plain_text(
+            self.page_index,
+            preserve_layout,
+            detect_headings,
+            include_images,
+            image_output_dir,
+        )
+    }
+
+    #[pyo3(signature = (preserve_layout=false, detect_headings=true, include_images=false, image_output_dir=None, embed_images=true, include_form_fields=true))]
+    fn html(
+        &self,
+        py: Python<'_>,
+        preserve_layout: bool,
+        detect_headings: bool,
+        include_images: bool,
+        image_output_dir: Option<String>,
+        embed_images: bool,
+        include_form_fields: bool,
+    ) -> PyResult<String> {
+        self.doc.borrow_mut(py).to_html(
+            self.page_index,
+            preserve_layout,
+            detect_headings,
+            include_images,
+            image_output_dir,
+            embed_images,
+            include_form_fields,
+        )
+    }
+
+    #[pyo3(signature = (dpi=None, format=None))]
+    fn render(&self, py: Python<'_>, dpi: Option<u32>, format: Option<&str>) -> PyResult<Vec<u8>> {
+        self.doc
+            .borrow_mut(py)
+            .render_page(self.page_index, dpi, format)
+    }
+
+    #[pyo3(signature = (pattern, case_insensitive=false, literal=false, whole_word=false, max_results=100))]
+    fn search(
+        &self,
+        py: Python<'_>,
+        pattern: &str,
+        case_insensitive: bool,
+        literal: bool,
+        whole_word: bool,
+        max_results: usize,
+    ) -> PyResult<Py<PyAny>> {
+        self.doc.borrow_mut(py).search_page(
+            py,
+            self.page_index,
+            pattern,
+            case_insensitive,
+            literal,
+            whole_word,
+            max_results,
+        )
+    }
+
+    fn region(&self, py: Python<'_>, x: f32, y: f32, width: f32, height: f32) -> PyPdfPageRegion {
+        PyPdfPageRegion {
+            doc: self.doc.clone_ref(py),
+            page_index: self.page_index,
+            region: crate::geometry::Rect::new(x, y, width, height),
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!("Page(index={})", self.page_index)
     }
 }
 
@@ -3883,6 +4128,8 @@ fn pdf_oxide(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyWord>()?;
     m.add_class::<PyTextLine>()?;
     m.add_class::<PyPdfPageRegion>()?;
+    m.add_class::<PyDocPage>()?;
+    m.add_class::<PyDocPageIter>()?;
     m.add_class::<PyLayoutParams>()?;
     m.add_class::<PyExtractionProfile>()?;
     m.add_class::<PyFormField>()?;

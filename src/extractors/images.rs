@@ -40,6 +40,18 @@ pub struct PdfImage {
     /// CCITT decompression parameters (for 1-bit bilevel images)
     #[serde(skip)]
     ccitt_params: Option<crate::decoders::CcittParams>,
+    /// Embedded ICC profile associated with the image's colour space,
+    /// if any. For a plain `/ICCBased` image this is the profile from
+    /// the array; for an `Indexed` image with an `ICCBased` base this
+    /// is the base profile. `None` when the document only used
+    /// device-dependent colour. Consumed by `save_as_*` to drive the
+    /// CMYK→sRGB conversion through the CMM instead of the §10.3.5
+    /// additive-clamp fallback.
+    #[serde(skip)]
+    icc_profile: Option<std::sync::Arc<crate::color::IccProfile>>,
+    /// Rendering intent from the image dictionary's `/Intent`, or the
+    /// graphics-state default per ISO 32000-1:2008 §8.6.5.8.
+    rendering_intent: crate::color::RenderingIntent,
 }
 
 impl PdfImage {
@@ -61,6 +73,8 @@ impl PdfImage {
             rotation_degrees: 0,
             matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
             ccitt_params: None,
+            icc_profile: None,
+            rendering_intent: crate::color::RenderingIntent::default(),
         }
     }
 
@@ -85,6 +99,8 @@ impl PdfImage {
             rotation_degrees: rotation,
             matrix,
             ccitt_params: None,
+            icc_profile: None,
+            rendering_intent: crate::color::RenderingIntent::default(),
         }
     }
 
@@ -128,6 +144,8 @@ impl PdfImage {
             rotation_degrees: 0,
             matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
             ccitt_params: Some(ccitt_params),
+            icc_profile: None,
+            rendering_intent: crate::color::RenderingIntent::default(),
         }
     }
 
@@ -196,12 +214,51 @@ impl PdfImage {
         self.ccitt_params.as_ref()
     }
 
+    /// Embedded ICC profile associated with the image, if any.
+    pub fn icc_profile(&self) -> Option<&std::sync::Arc<crate::color::IccProfile>> {
+        self.icc_profile.as_ref()
+    }
+
+    /// Attach an ICC profile (used by extractors; colour conversion
+    /// picks it up automatically when present).
+    pub fn set_icc_profile(&mut self, profile: std::sync::Arc<crate::color::IccProfile>) {
+        self.icc_profile = Some(profile);
+    }
+
+    /// Rendering intent — ISO 32000-1:2008 §8.6.5.8, defaults to
+    /// `RelativeColorimetric`.
+    pub fn rendering_intent(&self) -> crate::color::RenderingIntent {
+        self.rendering_intent
+    }
+
+    /// Set the rendering intent (used by extractors when they see an
+    /// explicit `/Intent` entry on the image dictionary).
+    pub fn set_rendering_intent(&mut self, intent: crate::color::RenderingIntent) {
+        self.rendering_intent = intent;
+    }
+
+    /// Build the source→sRGB transform from this image's embedded ICC
+    /// profile (if any). Returns `None` when the image uses purely
+    /// device-dependent colour, or when no profile was resolved at
+    /// extraction time.
+    ///
+    /// The resulting transform is component-agnostic: callers pick the
+    /// matching `Transform::convert_{cmyk,rgb,gray}_*` method based on
+    /// the source pixel format. Used by the `decode_cmyk_jpeg_to_rgb_…`,
+    /// `cmyk_to_rgb_with_transform`, and `save_raw_as_*` paths.
+    fn build_icc_transform(&self) -> Option<crate::color::Transform> {
+        self.icc_profile
+            .as_ref()
+            .map(|p| crate::color::Transform::new_srgb_target(p.clone(), self.rendering_intent))
+    }
+
     /// Save the image as PNG format.
     pub fn save_as_png(&self, path: impl AsRef<Path>) -> Result<()> {
         match &self.data {
             ImageData::Jpeg(jpeg_data) => {
                 if self.color_space.components() == 4 {
-                    let rgb = decode_cmyk_jpeg_to_rgb(jpeg_data)?;
+                    let transform = self.build_icc_transform();
+                    let rgb = decode_cmyk_jpeg_to_rgb_with_profile(jpeg_data, transform.as_ref())?;
                     let buf = image::ImageBuffer::<image::Rgb<u8>, _>::from_raw(
                         self.width,
                         self.height,
@@ -215,7 +272,14 @@ impl PdfImage {
                 }
             },
             ImageData::Raw { pixels, format } => {
-                save_raw_as_png(pixels, self.width, self.height, *format, path)
+                // Always build the transform if a profile is present; the
+                // save helper picks the right convert_* method for the
+                // pixel format. RGB/Gray ICCBased samples would otherwise
+                // be written as-is, which is wrong when the profile is
+                // wide-gamut (Adobe RGB, ProPhoto, …) or a calibrated
+                // grayscale other than sRGB gamma.
+                let transform = self.build_icc_transform();
+                save_raw_as_png(pixels, self.width, self.height, *format, transform.as_ref(), path)
             },
         }
     }
@@ -235,7 +299,8 @@ impl PdfImage {
             // is a follow-up).
             ImageData::Jpeg(jpeg_data) => {
                 if self.color_space.components() == 4 {
-                    let rgb = decode_cmyk_jpeg_to_rgb(jpeg_data)?;
+                    let transform = self.build_icc_transform();
+                    let rgb = decode_cmyk_jpeg_to_rgb_with_profile(jpeg_data, transform.as_ref())?;
                     let buf = image::ImageBuffer::<image::Rgb<u8>, _>::from_raw(
                         self.width,
                         self.height,
@@ -249,7 +314,8 @@ impl PdfImage {
                 }
             },
             ImageData::Raw { pixels, format } => {
-                save_raw_as_jpeg(pixels, self.width, self.height, *format, path)
+                let transform = self.build_icc_transform();
+                save_raw_as_jpeg(pixels, self.width, self.height, *format, transform.as_ref(), path)
             },
         }
     }
@@ -378,7 +444,10 @@ impl PdfImage {
                                 PixelFormat::Grayscale => {
                                     pixels.iter().flat_map(|&g| vec![g, g, g]).collect()
                                 },
-                                PixelFormat::CMYK => cmyk_to_rgb(pixels),
+                                PixelFormat::CMYK => cmyk_to_rgb_with_transform(
+                                    pixels,
+                                    self.build_icc_transform().as_ref(),
+                                ),
                                 PixelFormat::RGB => pixels.clone(),
                             };
                             image::ImageBuffer::<image::Rgb<u8>, Vec<u8>>::from_raw(
@@ -655,7 +724,7 @@ pub fn extract_image_from_xobject(
     // pixel) and ImageBuffer::from_raw rejects the wrong length. Fail fast if
     // the palette cannot be resolved so the error points at the real root cause
     // instead of the downstream "Invalid RGB image dimensions" symptom.
-    let indexed_palette: Option<(PixelFormat, Vec<u8>)> = if color_space == ColorSpace::Indexed {
+    let indexed_resolution: Option<IndexedResolution> = if color_space == ColorSpace::Indexed {
         let resolved = resolve_indexed_palette(doc.as_deref_mut(), &resolved_color_space)?;
         if resolved.is_none() {
             return Err(Error::Image("Unable to resolve Indexed color space palette".to_string()));
@@ -664,6 +733,33 @@ pub fn extract_image_from_xobject(
     } else {
         None
     };
+
+    // For a plain (non-Indexed) `[/ICCBased <stream>]` colour space,
+    // capture the profile bytes so the CMM can convert through the
+    // document's actual source characterisation instead of the
+    // §10.3.5 additive-clamp fallback.
+    //
+    // When the image uses plain `/DeviceCMYK` with no ICC profile of
+    // its own, fall back to the document's `/OutputIntents` CMYK
+    // profile if one exists — the standard PDF/X assumption per
+    // ISO 32000-1:2008 §14.11.5.
+    let direct_icc_profile = if matches!(color_space, ColorSpace::ICCBased(_)) {
+        resolve_icc_profile_from_obj(doc.as_deref_mut(), &resolved_color_space)
+    } else if color_space == ColorSpace::DeviceCMYK {
+        doc.as_deref_mut()
+            .and_then(|d| d.output_intent_cmyk_profile())
+    } else {
+        None
+    };
+
+    // Per §8.6.5.8, an image dictionary may override the graphics-state
+    // rendering intent via `/Intent`. Unrecognised names fall through
+    // to `RelativeColorimetric`.
+    let rendering_intent = dict
+        .get("Intent")
+        .and_then(|obj| obj.as_name())
+        .map(crate::color::RenderingIntent::from_pdf_name)
+        .unwrap_or_default();
 
     let filter_names = if let Some(filter_obj) = dict.get("Filter") {
         match filter_obj {
@@ -719,14 +815,21 @@ pub fn extract_image_from_xobject(
         } else {
             xobject.decode_stream_data()?
         };
-        if let Some((base_fmt, palette)) = indexed_palette.as_ref() {
-            let expanded = expand_indexed_to_rgb(
+        if let Some(ir) = indexed_resolution.as_ref() {
+            // Build a Transform if the Indexed base has a profile so
+            // palette entries render through the real CMM (when linked).
+            let transform = ir
+                .base_profile
+                .clone()
+                .map(|p| crate::color::Transform::new_srgb_target(p, rendering_intent));
+            let expanded = expand_indexed_to_rgb_with_transform(
                 &decoded_data,
-                palette,
-                *base_fmt,
+                &ir.palette,
+                ir.base_fmt,
                 width,
                 height,
                 bits_per_component,
+                transform.as_ref(),
             )?;
             ImageData::Raw {
                 pixels: expanded,
@@ -742,6 +845,18 @@ pub fn extract_image_from_xobject(
     };
 
     let mut image = PdfImage::new(width, height, color_space, bits_per_component, data);
+
+    // Attach the ICC profile if we found one — prefer the direct ICCBased
+    // profile, then fall back to an Indexed base's profile so the CMM has
+    // something to work with for palette-backed CMYK/Lab images too.
+    if let Some(p) = direct_icc_profile {
+        image.set_icc_profile(p);
+    } else if let Some(ir) = indexed_resolution.as_ref() {
+        if let Some(p) = ir.base_profile.clone() {
+            image.set_icc_profile(p);
+        }
+    }
+    image.set_rendering_intent(rendering_intent);
 
     if let Some(ccitt_params) = ccitt_params_override {
         image.set_ccitt_params(ccitt_params);
@@ -759,6 +874,72 @@ pub fn extract_image_from_xobject(
     Ok(image)
 }
 
+/// Extract and parse an `ICCBased` colour-space's profile stream.
+///
+/// Accepts either a fully-resolved `[/ICCBased <Stream>]` array (the
+/// stream is an `Object::Stream` directly), or a `[/ICCBased <Ref>]`
+/// array where the second element is a live reference — in that case
+/// `doc` must be supplied so we can dereference.
+///
+/// Returns `None` if:
+///   - `cs_obj` isn't an ICCBased array,
+///   - the profile stream can't be decoded,
+///   - the profile bytes fail ICC header validation, or
+///   - the declared `/N` disagrees with the profile header's
+///     colourSpace signature (PDF §8.6.5.5 mandates they match).
+///
+/// No error is returned — callers treat "no profile" as "fall back to
+/// device colour space" per §8.6.5.5's /Alternate clause.
+pub(crate) fn resolve_icc_profile_from_obj(
+    doc: Option<&mut crate::document::PdfDocument>,
+    cs_obj: &crate::object::Object,
+) -> Option<std::sync::Arc<crate::color::IccProfile>> {
+    use crate::object::Object;
+
+    let Object::Array(arr) = cs_obj else {
+        return None;
+    };
+    if arr.len() < 2 || arr[0].as_name() != Some("ICCBased") {
+        return None;
+    }
+
+    // Second element should be a stream (already resolved by the caller
+    // in the common path) or a reference we still need to dereference.
+    let profile_obj = match (&arr[1], doc) {
+        (Object::Stream { .. }, _) => arr[1].clone(),
+        (Object::Reference(r), Some(d)) => match d.load_object(*r) {
+            Ok(obj) => obj,
+            Err(_) => return None,
+        },
+        _ => return None,
+    };
+
+    let Object::Stream { dict, .. } = &profile_obj else {
+        return None;
+    };
+    // `N` is mandatory per PDF 32000-1 §8.6.5.5 Table 66.
+    let n = dict
+        .get("N")
+        .and_then(|obj| obj.as_integer())
+        .filter(|n| matches!(*n, 1 | 3 | 4))? as u8;
+
+    let bytes = profile_obj.decode_stream_data().ok()?;
+    let profile = crate::color::IccProfile::parse(bytes, n)?;
+    Some(std::sync::Arc::new(profile))
+}
+
+/// Outcome of resolving an `[/Indexed base hival lookup]` colour space:
+/// the palette in the base's pixel format, plus the base's ICC profile
+/// when the base is `ICCBased`.
+pub(crate) struct IndexedResolution {
+    pub base_fmt: PixelFormat,
+    pub palette: Vec<u8>,
+    /// `None` for device-dependent bases or bases we already folded
+    /// colourimetrically (e.g. Lab, whose palette is rewritten to RGB
+    /// before being returned).
+    pub base_profile: Option<std::sync::Arc<crate::color::IccProfile>>,
+}
+
 /// Resolve an Indexed color space's base color space and palette lookup bytes.
 ///
 /// PDF Indexed color spaces are `[/Indexed base hival lookup]` where `lookup`
@@ -767,7 +948,7 @@ pub fn extract_image_from_xobject(
 fn resolve_indexed_palette(
     mut doc: Option<&mut crate::document::PdfDocument>,
     cs_obj: &crate::object::Object,
-) -> Result<Option<(PixelFormat, Vec<u8>)>> {
+) -> Result<Option<IndexedResolution>> {
     use crate::object::Object;
 
     let Object::Array(arr) = cs_obj else {
@@ -779,7 +960,7 @@ fn resolve_indexed_palette(
 
     // Resolve the base color-space object. When it's an array like
     // [/ICCBased <stream_ref>], resolve inner references so
-    // parse_color_space can read /N from the ICC stream dict (#373).
+    // parse_color_space can read /N from the ICC stream dict.
     let base_obj = if let Some(ref mut d) = doc {
         let outer = if let Some(r) = arr[1].as_reference() {
             d.load_object(r)?
@@ -804,6 +985,16 @@ fn resolve_indexed_palette(
     let base_cs = parse_color_space(&base_obj)?;
     let base_fmt = color_space_to_pixel_format(&base_cs);
     let n = base_fmt.bytes_per_pixel();
+
+    // When the base is `/ICCBased`, capture the profile bytes so the
+    // extractor can later hand them to a CMM. Parse failures reduce to
+    // `None` — the decoder then falls back to §10.3.5 CMYK→RGB math as
+    // if no profile were present.
+    let base_profile = if matches!(base_cs, ColorSpace::ICCBased(_)) {
+        resolve_icc_profile_from_obj(doc.as_deref_mut(), &base_obj)
+    } else {
+        None
+    };
 
     // hival bounds the valid index range. Resolve via indirect reference if
     // needed; treat invalid / missing values as "unknown" and skip truncation.
@@ -853,18 +1044,27 @@ fn resolve_indexed_palette(
         }
     }
 
-    // #337 Phase 1: convert device-independent colour-space palettes to
-    // RGB before returning. The expander downstream assumes palette bytes
-    // are already in the output colour space; without this conversion
-    // Lab triples are mis-interpreted as raw RGB, producing perceptually
-    // wrong colours.
+    // Device-independent colour-space palettes must be converted to
+    // RGB before being handed to the expander, which assumes palette
+    // bytes are already in the output colour space. Without this step
+    // Lab triples are mis-interpreted as raw RGB and render with
+    // perceptually wrong colours.
     if matches!(base_cs, ColorSpace::Lab) {
         let white = extract_lab_whitepoint(&base_obj);
         let rgb_palette = lab_palette_to_rgb(&palette_bytes, white);
-        return Ok(Some((PixelFormat::RGB, rgb_palette)));
+        // Lab palettes are now RGB; no base ICC profile to carry through.
+        return Ok(Some(IndexedResolution {
+            base_fmt: PixelFormat::RGB,
+            palette: rgb_palette,
+            base_profile: None,
+        }));
     }
 
-    Ok(Some((base_fmt, palette_bytes)))
+    Ok(Some(IndexedResolution {
+        base_fmt,
+        palette: palette_bytes,
+        base_profile,
+    }))
 }
 
 /// Expand packed Indexed image indices into RGB bytes using the palette.
@@ -879,6 +1079,7 @@ fn resolve_indexed_palette(
 /// requested height. This is an input-amplification guard for maliciously
 /// crafted PDFs that pair tiny streams with extreme Indexed image
 /// dimensions — see issue #324.
+#[cfg(test)]
 fn expand_indexed_to_rgb(
     raw: &[u8],
     palette: &[u8],
@@ -886,6 +1087,21 @@ fn expand_indexed_to_rgb(
     width: u32,
     height: u32,
     bpc: u8,
+) -> Result<Vec<u8>> {
+    expand_indexed_to_rgb_with_transform(raw, palette, base_fmt, width, height, bpc, None)
+}
+
+/// Like [`expand_indexed_to_rgb`] but routes CMYK palette entries
+/// through an ICC transform when one is supplied. Used during image
+/// extraction when the base colour space is `/ICCBased` with N=4.
+fn expand_indexed_to_rgb_with_transform(
+    raw: &[u8],
+    palette: &[u8],
+    base_fmt: PixelFormat,
+    width: u32,
+    height: u32,
+    bpc: u8,
+    transform: Option<&crate::color::Transform>,
 ) -> Result<Vec<u8>> {
     /// Hard cap on the decoded output buffer size (256 MiB). Legitimate
     /// Indexed images in real PDFs are several orders of magnitude below
@@ -1012,12 +1228,15 @@ fn expand_indexed_to_rgb(
                     out.push(g);
                 },
                 PixelFormat::CMYK => {
-                    let [r, g, b] = cmyk_pixel_to_rgb(
-                        palette[off],
-                        palette[off + 1],
-                        palette[off + 2],
-                        palette[off + 3],
-                    );
+                    let c = palette[off];
+                    let m = palette[off + 1];
+                    let y_c = palette[off + 2];
+                    let k = palette[off + 3];
+                    let [r, g, b] = if let Some(t) = transform {
+                        t.convert_cmyk_pixel(c, m, y_c, k)
+                    } else {
+                        cmyk_pixel_to_rgb(c, m, y_c, k)
+                    };
                     out.push(r);
                     out.push(g);
                     out.push(b);
@@ -1032,15 +1251,27 @@ fn expand_indexed_to_rgb(
 ///
 /// Shared conversion math used by both bulk CMYK→RGB and Indexed palette
 /// expansion so the two paths cannot drift apart.
+/// Convert one CMYK pixel to RGB using the PDF 32000-1:2008 §10.3.5 formula:
+///
+///   R = 1 − min(1, C + K)
+///   G = 1 − min(1, M + K)
+///   B = 1 − min(1, Y + K)
+///
+/// This is the spec-mandated fallback used whenever no ICC profile drives the
+/// conversion. For pixels inside an `/ICCBased` colour space a real CMM
+/// (qcms / lcms2) would replace this — tracked separately. Note the spec
+/// formula is strictly additive-then-clamp; a multiplicative `(1-C)(1-K)`
+/// variant is common in imaging stacks but does not match §10.3.5 on
+/// heavily-inked samples.
 pub(crate) fn cmyk_pixel_to_rgb(c: u8, m: u8, y: u8, k: u8) -> [u8; 3] {
     let c = c as f32 / 255.0;
     let m = m as f32 / 255.0;
     let y = y as f32 / 255.0;
     let k = k as f32 / 255.0;
 
-    let r = ((1.0 - c) * (1.0 - k) * 255.0) as u8;
-    let g = ((1.0 - m) * (1.0 - k) * 255.0) as u8;
-    let b = ((1.0 - y) * (1.0 - k) * 255.0) as u8;
+    let r = ((1.0 - (c + k).min(1.0)) * 255.0).round() as u8;
+    let g = ((1.0 - (m + k).min(1.0)) * 255.0).round() as u8;
+    let b = ((1.0 - (y + k).min(1.0)) * 255.0).round() as u8;
 
     [r, g, b]
 }
@@ -1157,15 +1388,26 @@ fn srgb_gamma(lin: f64) -> u8 {
 /// This is a non-ICC conversion and does not handle Adobe-inverted JPEG CMYK;
 /// for JPEG-encoded CMYK streams use `decode_adobe_cmyk_jpeg` instead.
 pub fn cmyk_to_rgb(cmyk: &[u8]) -> Vec<u8> {
-    let mut rgb = Vec::with_capacity((cmyk.len() / 4) * 3);
+    cmyk_to_rgb_with_transform(cmyk, None)
+}
 
+/// Like [`cmyk_to_rgb`] but routes through an ICC transform when given,
+/// and falls through to §10.3.5 otherwise. Used by save_raw_as_* when
+/// the source image carries an ICC profile.
+pub fn cmyk_to_rgb_with_transform(
+    cmyk: &[u8],
+    transform: Option<&crate::color::Transform>,
+) -> Vec<u8> {
+    if let Some(t) = transform {
+        return t.convert_cmyk_buffer(cmyk);
+    }
+    let mut rgb = Vec::with_capacity((cmyk.len() / 4) * 3);
     for chunk in cmyk.chunks_exact(4) {
         let [r, g, b] = cmyk_pixel_to_rgb(chunk[0], chunk[1], chunk[2], chunk[3]);
         rgb.push(r);
         rgb.push(g);
         rgb.push(b);
     }
-
     rgb
 }
 
@@ -1186,7 +1428,21 @@ pub fn cmyk_to_rgb(cmyk: &[u8]) -> Vec<u8> {
 /// ICC handling (qcms / lcms) is a follow-up; this path is purely about
 /// emitting sRGB that viewers can display without mis-interpreting the
 /// channel polarity.
+/// Thin wrapper that falls back to the intent-less, profile-less
+/// variant — kept as the public, backwards-compatible entry point.
 pub fn decode_cmyk_jpeg_to_rgb(jpeg_data: &[u8]) -> Result<Vec<u8>> {
+    decode_cmyk_jpeg_to_rgb_with_profile(jpeg_data, None)
+}
+
+/// Like [`decode_cmyk_jpeg_to_rgb`] but applies the given ICC transform
+/// when provided, falling back to §10.3.5 otherwise. Used internally by
+/// `PdfImage::save_as_*` when the source image carries an ICCBased
+/// colour space (or when the document's `OutputIntents` supplied a
+/// default CMYK profile).
+pub fn decode_cmyk_jpeg_to_rgb_with_profile(
+    jpeg_data: &[u8],
+    transform: Option<&crate::color::Transform>,
+) -> Result<Vec<u8>> {
     let mut decoder = jpeg_decoder::Decoder::new(std::io::Cursor::new(jpeg_data));
     let cmyk = decoder
         .decode()
@@ -1214,14 +1470,31 @@ pub fn decode_cmyk_jpeg_to_rgb(jpeg_data: &[u8]) -> Result<Vec<u8>> {
         )));
     }
 
+    // Normalize Adobe-inverted CMYK into straight CMYK first; the CMM
+    // (or §10.3.5 fallback) always expects non-inverted input.
+    let straight_cmyk: Vec<u8> = if adobe_inverted {
+        let mut buf = Vec::with_capacity(pixel_count * 4);
+        for chunk in cmyk.chunks_exact(4).take(pixel_count) {
+            buf.extend_from_slice(&[
+                255 - chunk[0],
+                255 - chunk[1],
+                255 - chunk[2],
+                255 - chunk[3],
+            ]);
+        }
+        buf
+    } else {
+        cmyk[..pixel_count * 4].to_vec()
+    };
+
+    if let Some(t) = transform {
+        return Ok(t.convert_cmyk_buffer(&straight_cmyk));
+    }
+
+    // §10.3.5 additive-clamp fallback.
     let mut rgb = Vec::with_capacity(pixel_count * 3);
-    for chunk in cmyk.chunks_exact(4).take(pixel_count) {
-        let (c, m, y, k) = if adobe_inverted {
-            (255 - chunk[0], 255 - chunk[1], 255 - chunk[2], 255 - chunk[3])
-        } else {
-            (chunk[0], chunk[1], chunk[2], chunk[3])
-        };
-        let [r, g, b] = cmyk_pixel_to_rgb(c, m, y, k);
+    for chunk in straight_cmyk.chunks_exact(4) {
+        let [r, g, b] = cmyk_pixel_to_rgb(chunk[0], chunk[1], chunk[2], chunk[3]);
         rgb.push(r);
         rgb.push(g);
         rgb.push(b);
@@ -1280,30 +1553,76 @@ fn save_jpeg_as_png(jpeg_data: &[u8], path: impl AsRef<Path>) -> Result<()> {
         .map_err(|e| Error::Image(format!("Failed to save PNG: {}", e)))
 }
 
+/// Decide whether a given ICC transform should actually be applied to a
+/// buffer of the given pixel format. The transform was compiled for
+/// whatever component count the profile advertised; applying it to a
+/// mismatched buffer (e.g. a 4-component CMYK transform to a 3-channel
+/// RGB buffer) would produce garbage. A `None` transform, or a
+/// transform whose profile components disagree with `format`, is
+/// suppressed so the caller falls through to identity / fallback math.
+fn icc_matches_format(
+    transform: Option<&crate::color::Transform>,
+    format: PixelFormat,
+) -> Option<&crate::color::Transform> {
+    let t = transform?;
+    let needed = match format {
+        PixelFormat::RGB => 3,
+        PixelFormat::Grayscale => 1,
+        PixelFormat::CMYK => 4,
+    };
+    if t.source_n_components() == needed {
+        Some(t)
+    } else {
+        None
+    }
+}
+
 fn save_raw_as_png(
     pixels: &[u8],
     width: u32,
     height: u32,
     format: PixelFormat,
+    transform: Option<&crate::color::Transform>,
     path: impl AsRef<Path>,
 ) -> Result<()> {
     use image::{ImageBuffer, ImageFormat, Luma, Rgb};
 
     match format {
         PixelFormat::RGB => {
-            let img = ImageBuffer::<Rgb<u8>, _>::from_raw(width, height, pixels.to_vec())
+            // RGB source through an ICC profile (Adobe RGB, ProPhoto, wide-
+            // gamut cameras) → convert to sRGB before writing. With no
+            // profile the bytes are assumed sRGB already and passed through.
+            let rgb = match icc_matches_format(transform, format) {
+                Some(t) => t.convert_rgb_buffer(pixels),
+                None => pixels.to_vec(),
+            };
+            let img = ImageBuffer::<Rgb<u8>, _>::from_raw(width, height, rgb)
                 .ok_or_else(|| Error::Image("Invalid RGB image dimensions".to_string()))?;
             img.save_with_format(path, ImageFormat::Png)
                 .map_err(|e| Error::Image(format!("Failed to save PNG: {}", e)))
         },
         PixelFormat::Grayscale => {
-            let img = ImageBuffer::<Luma<u8>, _>::from_raw(width, height, pixels.to_vec())
-                .ok_or_else(|| Error::Image("Invalid grayscale image dimensions".to_string()))?;
-            img.save_with_format(path, ImageFormat::Png)
-                .map_err(|e| Error::Image(format!("Failed to save PNG: {}", e)))
+            // A Gray ICC profile promotes to sRGB RGB; without one the
+            // single channel is written as an L8 PNG.
+            if let Some(t) = icc_matches_format(transform, format) {
+                let rgb = t.convert_gray_buffer(pixels);
+                let img =
+                    ImageBuffer::<Rgb<u8>, _>::from_raw(width, height, rgb).ok_or_else(|| {
+                        Error::Image("Invalid grayscale image dimensions".to_string())
+                    })?;
+                img.save_with_format(path, ImageFormat::Png)
+                    .map_err(|e| Error::Image(format!("Failed to save PNG: {}", e)))
+            } else {
+                let img = ImageBuffer::<Luma<u8>, _>::from_raw(width, height, pixels.to_vec())
+                    .ok_or_else(|| {
+                        Error::Image("Invalid grayscale image dimensions".to_string())
+                    })?;
+                img.save_with_format(path, ImageFormat::Png)
+                    .map_err(|e| Error::Image(format!("Failed to save PNG: {}", e)))
+            }
         },
         PixelFormat::CMYK => {
-            let rgb = cmyk_to_rgb(pixels);
+            let rgb = cmyk_to_rgb_with_transform(pixels, icc_matches_format(transform, format));
             let img = ImageBuffer::<Rgb<u8>, _>::from_raw(width, height, rgb)
                 .ok_or_else(|| Error::Image("Invalid CMYK image dimensions".to_string()))?;
             img.save_with_format(path, ImageFormat::Png)
@@ -1317,25 +1636,42 @@ fn save_raw_as_jpeg(
     width: u32,
     height: u32,
     format: PixelFormat,
+    transform: Option<&crate::color::Transform>,
     path: impl AsRef<Path>,
 ) -> Result<()> {
     use image::{ImageBuffer, ImageFormat, Luma, Rgb};
 
     match format {
         PixelFormat::RGB => {
-            let img = ImageBuffer::<Rgb<u8>, _>::from_raw(width, height, pixels.to_vec())
+            let rgb = match icc_matches_format(transform, format) {
+                Some(t) => t.convert_rgb_buffer(pixels),
+                None => pixels.to_vec(),
+            };
+            let img = ImageBuffer::<Rgb<u8>, _>::from_raw(width, height, rgb)
                 .ok_or_else(|| Error::Image("Invalid RGB image dimensions".to_string()))?;
             img.save_with_format(path, ImageFormat::Jpeg)
                 .map_err(|e| Error::Image(format!("Failed to save JPEG: {}", e)))
         },
         PixelFormat::Grayscale => {
-            let img = ImageBuffer::<Luma<u8>, _>::from_raw(width, height, pixels.to_vec())
-                .ok_or_else(|| Error::Image("Invalid grayscale image dimensions".to_string()))?;
-            img.save_with_format(path, ImageFormat::Jpeg)
-                .map_err(|e| Error::Image(format!("Failed to save JPEG: {}", e)))
+            if let Some(t) = icc_matches_format(transform, format) {
+                let rgb = t.convert_gray_buffer(pixels);
+                let img =
+                    ImageBuffer::<Rgb<u8>, _>::from_raw(width, height, rgb).ok_or_else(|| {
+                        Error::Image("Invalid grayscale image dimensions".to_string())
+                    })?;
+                img.save_with_format(path, ImageFormat::Jpeg)
+                    .map_err(|e| Error::Image(format!("Failed to save JPEG: {}", e)))
+            } else {
+                let img = ImageBuffer::<Luma<u8>, _>::from_raw(width, height, pixels.to_vec())
+                    .ok_or_else(|| {
+                        Error::Image("Invalid grayscale image dimensions".to_string())
+                    })?;
+                img.save_with_format(path, ImageFormat::Jpeg)
+                    .map_err(|e| Error::Image(format!("Failed to save JPEG: {}", e)))
+            }
         },
         PixelFormat::CMYK => {
-            let rgb = cmyk_to_rgb(pixels);
+            let rgb = cmyk_to_rgb_with_transform(pixels, icc_matches_format(transform, format));
             let img = ImageBuffer::<Rgb<u8>, _>::from_raw(width, height, rgb)
                 .ok_or_else(|| Error::Image("Invalid CMYK image dimensions".to_string()))?;
             img.save_with_format(path, ImageFormat::Jpeg)
@@ -1423,9 +1759,11 @@ mod indexed_tests {
                 100, 110, 120,
             ]),
         ]);
-        let (fmt, palette) = resolve_indexed_palette(None, &cs).unwrap().unwrap();
-        assert_eq!(fmt, PixelFormat::RGB);
-        assert_eq!(palette, vec![10, 20, 30, 40, 50, 60]);
+        let ir = resolve_indexed_palette(None, &cs).unwrap().unwrap();
+        assert_eq!(ir.base_fmt, PixelFormat::RGB);
+        assert_eq!(ir.palette, vec![10, 20, 30, 40, 50, 60]);
+        assert!(ir.base_profile.is_none(), "DeviceRGB base has no ICC profile");
+        let (fmt, palette) = (ir.base_fmt, ir.palette);
 
         // Index 2 (> hival) must now be treated as out-of-range → black pixel.
         let raw = vec![0, 1, 2];

@@ -2913,3 +2913,60 @@ func SetLogLevel(level LogLevel) {
 func GetLogLevel() LogLevel {
 	return LogLevel(C.pdf_oxide_get_log_level())
 }
+
+// ================================================================
+// Page — a lightweight handle for a single page of a PdfDocument.
+// ================================================================
+
+// Page represents a single page of a PdfDocument.
+// All methods dispatch to the parent document.
+type Page struct {
+	doc   *PdfDocument
+	Index int
+}
+
+// Page returns a handle to the page at the given zero-based index.
+func (doc *PdfDocument) Page(index int) (*Page, error) {
+	count, err := doc.PageCount()
+	if err != nil {
+		return nil, err
+	}
+	if index < 0 || index >= count {
+		return nil, fmt.Errorf("page index %d out of range [0, %d)", index, count)
+	}
+	return &Page{doc: doc, Index: index}, nil
+}
+
+// Pages returns all pages as a slice. Enables range loops.
+func (doc *PdfDocument) Pages() ([]*Page, error) {
+	count, err := doc.PageCount()
+	if err != nil {
+		return nil, err
+	}
+	pages := make([]*Page, count)
+	for i := 0; i < count; i++ {
+		pages[i] = &Page{doc: doc, Index: i}
+	}
+	return pages, nil
+}
+
+func (p *Page) Text() (string, error)              { return p.doc.ExtractText(p.Index) }
+func (p *Page) Markdown() (string, error)          { return p.doc.ToMarkdown(p.Index) }
+func (p *Page) Html() (string, error)              { return p.doc.ToHtml(p.Index) }
+func (p *Page) PlainText() (string, error)         { return p.doc.ToPlainText(p.Index) }
+func (p *Page) Chars() ([]Char, error)             { return p.doc.ExtractChars(p.Index) }
+func (p *Page) Words() ([]Word, error)             { return p.doc.ExtractWords(p.Index) }
+func (p *Page) Lines() ([]TextLine, error)         { return p.doc.ExtractTextLines(p.Index) }
+func (p *Page) Tables() ([]Table, error)           { return p.doc.ExtractTables(p.Index) }
+func (p *Page) Images() ([]Image, error)           { return p.doc.Images(p.Index) }
+func (p *Page) Paths() ([]Path, error)             { return p.doc.ExtractPaths(p.Index) }
+func (p *Page) Fonts() ([]Font, error)             { return p.doc.Fonts(p.Index) }
+func (p *Page) Annotations() ([]Annotation, error) { return p.doc.Annotations(p.Index) }
+func (p *Page) Info() (*PageInfo, error)           { return p.doc.PageInfo(p.Index) }
+func (p *Page) Search(term string, cs bool) ([]SearchResult, error) {
+	return p.doc.SearchPage(p.Index, term, cs)
+}
+func (p *Page) NeedsOcr() (bool, error) { return p.doc.NeedsOcr(p.Index) }
+func (p *Page) TextWithOcr(engine *OcrEngine) (string, error) {
+	return p.doc.ExtractTextWithOcr(p.Index, engine)
+}

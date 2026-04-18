@@ -6489,16 +6489,19 @@ impl TextExtractor {
     }
 }
 
-/// Convert CMYK color to RGB color.
+/// Convert DeviceCMYK to DeviceRGB per ISO 32000-1:2008 §10.3.5:
 ///
-/// CMYK uses subtractive color model (for print), RGB uses additive (for screen).
-/// Conversion formula: R = 1 - min(1, C*(1-K) + K)
+///   R = 1 − min(1, C + K)
+///   G = 1 − min(1, M + K)
+///   B = 1 − min(1, Y + K)
 ///
-/// PDF Spec: ISO 32000-1:2008, Section 8.6.4.4 - DeviceCMYK Color Space
+/// Spec-mandated additive-clamp fallback for when no ICC profile drives
+/// the conversion. The multiplicative `(1-c)(1-k)` form is common in
+/// imaging libraries but is not what §10.3.5 specifies.
 fn cmyk_to_rgb(c: f32, m: f32, y: f32, k: f32) -> (f32, f32, f32) {
-    let r = 1.0 - (c * (1.0 - k) + k).min(1.0);
-    let g = 1.0 - (m * (1.0 - k) + k).min(1.0);
-    let b = 1.0 - (y * (1.0 - k) + k).min(1.0);
+    let r = 1.0 - (c + k).min(1.0);
+    let g = 1.0 - (m + k).min(1.0);
+    let b = 1.0 - (y + k).min(1.0);
     (r, g, b)
 }
 

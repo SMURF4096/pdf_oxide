@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "pdf_oxide"
-version = "0.3.33"
+version = "0.3.34"
 description = "The fastest Python PDF library: 0.8ms mean, 5× faster than PyMuPDF. Text extraction, markdown conversion, PDF creation. 100% pass rate on 3,830 PDFs."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -104,8 +104,11 @@ analyze-pdf-spacing = [
 features = ["python"]
 python-source = "python"
 module-name = "pdf_oxide.pdf_oxide"
-# Ensure generated .pyi stubs are packaged (they are gitignored, so include explicitly)
-include = ["python/pdf_oxide/*.pyi"]
+# Ensure generated .pyi stubs are packaged (they are gitignored, so include explicitly).
+# LICENSE-APACHE and LICENSE-MIT are included explicitly so the wheel's METADATA
+# directory carries the full dual-licence notice per MIT's "include copyright
+# notice" requirement and PEP 639 best-practice.
+include = ["python/pdf_oxide/*.pyi", "LICENSE-APACHE", "LICENSE-MIT"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
