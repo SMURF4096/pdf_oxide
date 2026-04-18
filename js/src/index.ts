@@ -318,23 +318,23 @@ class PdfDocumentImpl {
   extractPaths(pageIndex: number): any { this.ensureOpen(); return native.extractPaths(this._handle, pageIndex); }
   ocrExtractText(pageIndex: number, engineHandle: any): any { this.ensureOpen(); return native.ocrExtractText(this._handle, pageIndex, engineHandle); }
 
-  page(index: number): PdfPage {
+  page(index: number): Page {
     this.ensureOpen();
     const count = this.pageCount();
     const idx = index < 0 ? count + index : index;
     if (idx < 0 || idx >= count) throw new RangeError(`page index ${index} out of range`);
-    return new PdfPage(this, idx);
+    return new Page(this, idx);
   }
 
-  [Symbol.iterator](): Iterator<PdfPage> {
+  [Symbol.iterator](): Iterator<Page> {
     this.ensureOpen();
     const count = this.pageCount();
     let i = 0;
     const doc = this;
     return {
-      next(): IteratorResult<PdfPage> {
+      next(): IteratorResult<Page> {
         if (i >= count) return { value: undefined as any, done: true };
-        return { value: new PdfPage(doc, i++), done: false };
+        return { value: new Page(doc, i++), done: false };
       },
     };
   }
@@ -349,7 +349,7 @@ class PdfDocumentImpl {
   [Symbol.dispose](): void { this.close(); }
 }
 
-class PdfPage {
+class Page {
   private _doc: PdfDocumentImpl;
   private _index: number;
   private _cache: Map<string, any> = new Map();
@@ -389,7 +389,7 @@ class PdfPage {
   fonts(): any { return this._doc.getEmbeddedFonts(this._index); }
   search(query: string, caseSensitive = false): any { return this._doc.searchPage(this._index, query, caseSensitive); }
 
-  toString(): string { return `PdfPage(index=${this._index})`; }
+  toString(): string { return `Page(index=${this._index})`; }
 }
 
 class PdfImpl {
@@ -462,7 +462,7 @@ export {
   // Main classes
   PdfDocument,
   Pdf,
-  PdfPage,
+  Page,
 
   // Error types
   PdfError,

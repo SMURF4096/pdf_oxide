@@ -8,7 +8,8 @@ All notable changes to PDFOxide are documented here.
 ### API — Page abstraction (#371)
 
 All four language bindings now expose a page object so callers can iterate a
-document and call extraction methods on the page directly.
+document and call extraction methods on the page directly. Named consistently
+as `Page` in Python, Node.js, C#, and Go.
 
 ```python
 with PdfDocument("paper.pdf") as doc:
@@ -17,24 +18,24 @@ with PdfDocument("paper.pdf") as doc:
         md   = page.markdown(detect_headings=True)
 ```
 
-- **Python** — `PdfPage` with lazy properties: `text`, `chars`, `words`, `lines`,
+- **Python** — `Page` with lazy properties: `text`, `chars`, `words`, `lines`,
   `spans`, `tables`, `images`, `paths`, `annotations`; methods: `markdown()`,
-  `plain_text()`, `html()`, `render()`, `search()`, `region()`. Editor page
-  renamed to `EditorPage` to avoid collision.
-- **Node.js** — `PdfPage` with cached `width`/`height`/`rotation` and extraction
+  `plain_text()`, `html()`, `render()`, `search()`, `region()`. The pre-existing
+  editor `PdfPage` is unchanged.
+- **Node.js** — `Page` with cached `width`/`height`/`rotation` and extraction
   methods. `[Symbol.iterator]` and `page(index)` added to `PdfDocument`. Six
   previously native-only methods wired into the TS layer: `extractWords`,
   `extractTextLines`, `extractTables`, `extractPaths`, `getEmbeddedImages`,
   `ocrExtractText`.
-- **C#** — `PdfPage` with full sync + async surface. `doc.Pages`
-  (`IReadOnlyList<PdfPage>`) and `doc[i]` indexer added to `PdfDocument`.
+- **C#** — `Page` with full sync + async surface. `doc.Pages`
+  (`IReadOnlyList<Page>`) and `doc[i]` indexer added to `PdfDocument`.
 - **Go** — `Page` struct with full method surface. `doc.Page(i)` and
   `doc.Pages()` added to `PdfDocument`.
 
 ### API — Structured table extraction with consistent naming (#289)
 
 `extract_tables()` returns structured data — rows, cells with text and bounding
-boxes — not just Markdown. Available on both `PdfDocument` and the new `PdfPage`
+boxes — not just Markdown. Available on both `PdfDocument` and the new `Page`
 objects across all bindings, with a single consistent type name `Table`:
 
 | Language | Type | Cell access |

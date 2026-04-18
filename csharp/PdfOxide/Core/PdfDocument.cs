@@ -881,28 +881,28 @@ namespace PdfOxide.Core
         }
 
         /// <summary>Gets all pages as a read-only list. Enables foreach and LINQ.</summary>
-        public IReadOnlyList<PdfPage> Pages
+        public IReadOnlyList<Page> Pages
         {
             get
             {
                 ThrowIfDisposed();
                 var count = PageCount;
-                var pages = new PdfPage[count];
+                var pages = new Page[count];
                 for (int i = 0; i < count; i++)
-                    pages[i] = new PdfPage(this, i);
+                    pages[i] = new Page(this, i);
                 return pages;
             }
         }
 
         /// <summary>Returns the page at the given zero-based index.</summary>
-        public PdfPage this[int pageIndex]
+        public Page this[int pageIndex]
         {
             get
             {
                 ThrowIfDisposed();
                 if (pageIndex < 0 || pageIndex >= PageCount)
                     throw new ArgumentOutOfRangeException(nameof(pageIndex));
-                return new PdfPage(this, pageIndex);
+                return new Page(this, pageIndex);
             }
         }
 
@@ -1022,14 +1022,14 @@ namespace PdfOxide.Core
     /// Represents a single page of a <see cref="PdfDocument"/>.
     /// All extraction methods dispatch to the parent document.
     /// </summary>
-    public sealed class PdfPage
+    public sealed class Page
     {
         private readonly PdfDocument _doc;
 
         /// <summary>Zero-based page index.</summary>
         public int Index { get; }
 
-        internal PdfPage(PdfDocument doc, int index)
+        internal Page(PdfDocument doc, int index)
         {
             _doc = doc;
             Index = index;
@@ -1100,6 +1100,6 @@ namespace PdfOxide.Core
         public byte[] RenderThumbnail(int format = 0) => _doc.RenderThumbnail(Index, format);
 
         /// <inheritdoc/>
-        public override string ToString() => $"PdfPage(index={Index})";
+        public override string ToString() => $"Page(index={Index})";
     }
 }

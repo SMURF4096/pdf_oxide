@@ -1862,7 +1862,7 @@ impl PyDocPageIter {
 }
 
 /// A single page of a PdfDocument, providing lazy access to all page-level operations.
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "PdfPage", subclass)]
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "Page", subclass)]
 pub struct PyDocPage {
     doc: Py<PyPdfDocument>,
     page_index: usize,
@@ -2050,7 +2050,7 @@ impl PyDocPage {
     }
 
     fn __repr__(&self) -> String {
-        format!("PdfPage(index={})", self.page_index)
+        format!("Page(index={})", self.page_index)
     }
 }
 
@@ -2494,7 +2494,7 @@ impl PyPdfPageRegion {
     }
 }
 
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "EditorPage")]
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "PdfPage")]
 pub struct PyPdfPage {
     inner: RustPdfPage,
 }
