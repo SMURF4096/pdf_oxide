@@ -70,6 +70,25 @@ a proper `Table[]` with cell text accessors, matching Go and Rust.
   7-10 spans per "column" — these are no longer treated as multi-column,
   preventing XY-cut from splitting sentences whose halves are at different X
   positions on the same line.
+- **Font-aware column-shape gate** in `is_multi_column_page`. Fax-style and
+  scattered-fragment layouts (each row built from several individually
+  positioned word fragments) used to clear every prior multi-column check
+  and routed through XY-cut, which then read the page column-major and could
+  reverse fragments within a row. The new gate measures the fraction of
+  side-spans falling into the largest X-cluster (cluster gap derived from the
+  page's dominant em); body text scores ≥ 0.5 while scattered layouts score
+  < 0.4. Pages that fail either side fall back to row-aware sort, so
+  scanned-fax PDFs again read left-to-right line-by-line. Per-page font
+  statistics are computed once via the new `pdf_oxide::layout::PageFontStats`
+  type and reused by every threshold the layout pipeline derives.
+- **Newline insertion on backwards-X jumps in span join.** When the upstream
+  sort handed the join loop two same-baseline spans whose X positions went
+  backwards (a multi-column page whose XY-cut routing groups column-side
+  spans across rows so adjacent iteration items share a Y band but belong
+  to different visual rows), no separator was being inserted and texts
+  glued together — producing tokens like `instancesinstancesinstances` from
+  three table-header cells in a stats grid. Same-baseline pairs whose
+  delta-x is more negative than 3 em now emit a newline.
 
 ### Distribution
 
@@ -99,6 +118,12 @@ a proper `Table[]` with cell text accessors, matching Go and Rust.
   contradicting the crate's declared `MIT OR Apache-2.0`; corrected to
   match. The C# csproj carried a deprecated `<LicenseUrl>` alongside
   `<PackageLicenseExpression>` that NuGet warns on — removed.
+- **`LICENSE-MIT` copyright corrected.** All four `LICENSE-MIT` copies
+  (root, `go/`, `js/`, `csharp/PdfOxide/`) carried `Copyright (c) The
+  Rust Project Contributors` left over from the `cargo init` template.
+  Updated to `Copyright (c) 2025-present Yury Fedoseev`. Verified with
+  google/licensecheck — all four still classify as 100% MIT, so
+  pkg.go.dev / NuGet / npm license detection is unaffected.
 
 ### CI
 

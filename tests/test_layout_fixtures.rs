@@ -1,29 +1,23 @@
-//! Layout-fix fixtures (TDD-1 of v0.3.34 layout-fix plan).
+//! Layout regression fixtures.
 //!
-//! Hand-crafted PDFs that capture every text-layout failure class we
-//! found in the v0.3.33 → release/v0.3.34 regression study, plus the
-//! cases that should already work. Built deterministically via the
-//! low-level `PdfWriter` so each text fragment is its own BT/ET block
-//! and the extractor's run-grouper sees independent spans.
+//! Hand-crafted PDFs that pin down each text-layout invariant the
+//! reading-order pipeline must preserve: single-column flow, two-column
+//! reading order, narrow-gutter detection, mixed-size column handling,
+//! multi-column hyphenation rejoin, and resilience against
+//! scattered-fragment layouts that previously routed through XY-cut
+//! and produced reversed or column-major output.
 //!
-//! On a clean tree the "bug" tests (L3YHC reversal, table cell
-//! concatenation, end-of-line hyphenation, distinct-region collision)
-//! must FAIL — that's the red bar that gates the four corresponding
-//! fixes. The "should already work" tests (single column, two column,
-//! narrow gutter, mixed-size columns, the #319 wins) must stay green
-//! from day one and across every fix.
-//!
-//! See `docs/v0.3.34-layout-fix-plan.md` for the design context.
-//!
-//! Builder convention: PDF coordinate origin is bottom-left.
-//! Letter page = 612 × 792 pt. We use 72 pt margins, 12 pt body,
-//! 14.4 pt line height (= 1.2 × body) unless stated.
+//! All fixtures are built in-process via the low-level [`PdfWriter`]
+//! API. PDF coordinate origin is bottom-left; Letter page = 612 × 792
+//! pt; default body is 12 pt with 14.4 pt line height unless a fixture
+//! sets otherwise.
 //!
 //! BT/ET separation: between consecutive `add_text` calls we insert a
-//! zero-size `draw_rect(0,0,0,0)` which forces an `ET` marker, so the
-//! next `add_text` starts a fresh `BT`. Without this the writer keeps
-//! one open BT block across all calls and the extractor merges
-//! adjacent text into a single span — defeating multi-column layout.
+//! zero-size `draw_rect(0, 0, 0, 0)` which forces an `ET` marker so
+//! the next `add_text` starts a fresh `BT`. Without this the writer
+//! keeps one open BT block across all calls and the extractor merges
+//! adjacent text into a single wide span, which would defeat any
+//! multi-column assertion.
 
 use pdf_oxide::document::PdfDocument;
 use pdf_oxide::writer::{PageBuilder, PdfWriter};
@@ -201,21 +195,19 @@ fn fixture_mixed_size_columns_dominant_em_picks_mode() {
 }
 
 // =====================================================================
-// Fixtures that lock in the #319 multi-column-interleave fixes.
+// Multi-column interleave invariants (issue #319).
 //
-// These were broken on v0.3.33 (`accompaally` / `correlaanonymous`
-// garbled tokens from row-aware re-sort interleaving left and right
-// columns). They became correct on commit cb86499 (#319). They must
-// stay green through every future layout change — that's the explicit
-// reason we cannot revert cb86499 to fix L3YHC.
+// On the prior release the row-aware sort that ran after column
+// detection re-interleaved the left- and right-column lines, producing
+// garbled tokens like `accompaally` (= `accompa` from the left column
+// glued to `ally` from the right). These fixtures pin the fix in place
+// so the regression cannot recur silently.
 // =====================================================================
 
-/// `two_column_accompa_nying_no_interleave.pdf` — the canonical #319
-/// case: left column has the word `accompa-` at the end of its line,
-/// continuing as `nying` on the next left-column line. The right
-/// column at the same Y carries unrelated text. v0.3.33 produced
-/// `accompaally`-style mash by row-interleaving the two columns;
-/// the cb86499 fix reads each column to completion first.
+/// Two-column body with hyphenation in the left column and unrelated
+/// text on the right at the interleave Y. The hyphenated word must
+/// rejoin cleanly within the left column without any right-column
+/// tokens leaking into it.
 #[test]
 fn fixture_two_column_accompa_nying_no_interleave() {
     // 30 lines per column to trigger multi-column detection.
@@ -347,29 +339,25 @@ fn fixture_legal_style_columns_no_section_marker_interleave() {
 }
 
 // =====================================================================
-// Fixtures that MUST currently fail — these gate the four bug fixes.
+// Scattered-fragment layout invariants.
+//
+// Pages whose text is rendered as many positioned word-fragments
+// (typical of older fax-style PDFs) used to look "multi-column" to the
+// X-center histogram and routed through XY-cut, which then reversed
+// fragments within each row or read the page column-major instead of
+// row-major. The font-aware column-shape gate rejects these layouts.
 // =====================================================================
 
-/// `fax_scattered_fragments.pdf` — synthetic fixture mimicking the
-/// shape of the L3YHC.pdf failure mode (a fax-style layout where each
-/// "word" is a separately-positioned text fragment along the same
-/// baseline). Content is fully fabricated; no text from the real
-/// reporter PDF is used.
-///
-/// Bug on current HEAD: `is_multi_column_page` false-positives this
-/// layout, the row-aware re-sort gets skipped, and the resulting
-/// XY-cut order reverses fragments within a "column" — producing
-/// concatenations like `WORDFIVEWORDFOURWORDTHREE` instead of
-/// `WORDONE WORDTWO ... WORDFIVE`.
-///
-/// Fix: font-aware density check in `is_multi_column_page` rejects
-/// sparse fax layouts; row-aware sort runs as before.
+/// Fax-style page: each row contains several separately positioned
+/// word-fragments along the same baseline. The extractor must read
+/// each row left-to-right; column-major or reversed output would mean
+/// the multi-column gate let a sparse layout through.
 #[test]
 fn fixture_fax_scattered_fragments_no_reversal() {
     // 12 rows × 6 fragments = 72 spans, weighted toward the right half
-    // so `is_multi_column_page` returns true (≥15 spans per side) and
-    // the page routes through XY-cut — that's the failure path that
-    // produces the L3YHC reversal.
+    // so `is_multi_column_page` clears the ≥15-spans-per-side check and
+    // the font-aware column-shape gate is the only thing keeping XY-cut
+    // from mis-routing this page as multi-column.
     let lines: &[&[(f32, &str)]] = &[
         &[(72.0, "WORDONE"), (140.0, "WORDTWO"), (200.0, "WORDTHREE"), (260.0, "WORDFOUR"), (320.0, "WORDFIVE"), (390.0, "WORDSIX")],
         &[(72.0, "ALPHA"), (130.0, "BETA"), (190.0, "GAMMA"), (260.0, "DELTA"), (320.0, "EPSILON"), (400.0, "ZETA")],
@@ -409,10 +397,10 @@ fn fixture_fax_scattered_fragments_no_reversal() {
     }
 
     // Within-row order: every fragment of row 1 must precede every
-    // fragment of row 2, otherwise we have column-major output (the
-    // L3YHC failure mode where XY-cut treats this fax-style page as
-    // multi-column and reads all left-column words before any
-    // right-column word).
+    // fragment of row 2, otherwise the page was read column-major —
+    // the failure mode where XY-cut treats a scattered-fragment page
+    // as multi-column and reads all left-column words before any
+    // right-column word.
     let pos = |needle: &str| {
         out.find(needle)
             .unwrap_or_else(|| panic!("{needle:?} missing in output:\n{out}"))
@@ -448,19 +436,14 @@ fn fixture_fax_scattered_fragments_no_reversal() {
     let first_row2 = pos("ALPHA");
     assert!(
         last_row1 < first_row2,
-        "Column-major output detected (L3YHC failure mode): WORDSIX at {last_row1} > ALPHA at {first_row2} — XY-cut wrongly read this fax page as multi-column\n--- output ---\n{out}"
+        "Column-major output detected: WORDSIX at {last_row1} > ALPHA at {first_row2} — XY-cut wrongly read this scattered page as multi-column\n--- output ---\n{out}"
     );
 }
 
-/// `table_simple_3x3.pdf` — a 3-column table where the same word
-/// appears stacked in three vertical cells. Vertical gap between cells
-/// is ≈ 2 × line_height.
-///
-/// Bug on current HEAD: vertically-stacked cells get concatenated with
-/// no separator, producing `instancesinstancesinstances` instead of
-/// three separate occurrences.
-///
-/// Fix: span-emitter inserts `\n` when vertical gap > 0.7 × line_height.
+/// 3×3 table where the same word stacks in three vertical cells. The
+/// span emitter must insert a separator between cells whose vertical
+/// gap exceeds the line-height threshold; concatenation without one
+/// produces tokens like `instancesinstancesinstances`.
 #[test]
 fn fixture_table_3x3_cells_not_concatenated() {
     let cell_text = "instances";
@@ -487,14 +470,10 @@ fn fixture_table_3x3_cells_not_concatenated() {
     );
 }
 
-/// `body_two_column_hyphenated.pdf` — two columns where some lines
-/// end with `-` to indicate the word continues on the next line.
-///
-/// Bug on current HEAD: `cross-` + newline + `collateralized` collapses
-/// into `crosscollateralized` (hyphen dropped, no space, no proper rejoin).
-///
-/// Fix: end-of-line hyphen rejoin — strip the trailing `-` and join the
-/// next-line continuation.
+/// Two columns where some lines end with `-` to mark a word continuing
+/// on the next line. The dehyphenation pass must strip the hyphen and
+/// rejoin the continuation; an unjoined output (`compre-` followed by
+/// a literal newline before `hensive`) leaves the prose unreadable.
 #[test]
 fn fixture_two_column_hyphen_rejoin() {
     let mut left: Vec<String> = (1..=10).map(|i| format!("LeftPad{i:02} body text")).collect();
@@ -525,17 +504,10 @@ fn fixture_two_column_hyphen_rejoin() {
     );
 }
 
-/// `body_with_figure_caption.pdf` — body text in 12pt with a figure
-/// caption in 9pt embedded mid-column. The caption is a distinct
-/// region and must not concatenate into the body sentence.
-///
-/// Bug on current HEAD: caption's first word gets sucked into the body,
-/// producing tokens like `conceptFigure` where body word `concept` glues
-/// to caption word `Figure`.
-///
-/// Fix: distinct-region detection — a span whose font_size differs from
-/// its neighbours by > 25% AND has a different font_id is treated as a
-/// region break (`\n\n` separator).
+/// Body text in 12 pt with a 9 pt caption embedded mid-column. The
+/// caption is a distinct typographic region; concatenating its first
+/// word onto the body sentence (`conceptFigure`) would corrupt the
+/// surrounding prose.
 #[test]
 fn fixture_figure_caption_not_merged_into_body() {
     let body_lines_pre = [
