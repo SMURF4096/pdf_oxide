@@ -2,6 +2,18 @@
  * Common type definitions and utilities
  */
 
+/** A table extracted from a PDF page. */
+export interface Table {
+  /** Number of rows. */
+  rows: number;
+  /** Number of columns. */
+  cols: number;
+  /** True if the first row is a header row. */
+  hasHeader: boolean;
+  /** Cell text: cells[row][col]. */
+  cells: string[][];
+}
+
 import type {
   SearchOptions,
   SearchResult,

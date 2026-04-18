@@ -1,5 +1,6 @@
 // PDF Oxide Node.js bindings - Native module loader
 
+import type { Table } from './types/common.js';
 import { platform, arch } from 'node:process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -313,7 +314,7 @@ class PdfDocumentImpl {
   getEmbeddedImages(pageIndex: number): any { this.ensureOpen(); return native.getEmbeddedImages(this._handle, pageIndex); }
   extractWords(pageIndex: number): any { this.ensureOpen(); return native.extractWords(this._handle, pageIndex); }
   extractTextLines(pageIndex: number): any { this.ensureOpen(); return native.extractTextLines(this._handle, pageIndex); }
-  extractTables(pageIndex: number): any { this.ensureOpen(); return native.extractTables(this._handle, pageIndex); }
+  extractTables(pageIndex: number): Table[] { this.ensureOpen(); return native.extractTables(this._handle, pageIndex); }
   extractPaths(pageIndex: number): any { this.ensureOpen(); return native.extractPaths(this._handle, pageIndex); }
   ocrExtractText(pageIndex: number, engineHandle: any): any { this.ensureOpen(); return native.ocrExtractText(this._handle, pageIndex, engineHandle); }
 
@@ -381,7 +382,7 @@ class PdfPage {
   plainText(): string { return this._doc.toPlainText(this._index); }
   words(): any { return this._doc.extractWords(this._index); }
   lines(): any { return this._doc.extractTextLines(this._index); }
-  tables(): any { return this._doc.extractTables(this._index); }
+  tables(): Table[] { return this._doc.extractTables(this._index); }
   images(): any { return this._doc.getEmbeddedImages(this._index); }
   paths(): any { return this._doc.extractPaths(this._index); }
   annotations(): any { return this._doc.getPageAnnotations(this._index); }
@@ -585,4 +586,5 @@ export type {
   BatchResult,
   BatchOptions,
   BatchStatistics,
+  Table,
 };

@@ -6505,6 +6505,14 @@ namespace PdfOxide.Internal
             int index,
             out int errorCode);
 
+        [LibraryImport(LibName, EntryPoint = "pdf_oxide_table_has_header")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static partial bool pdf_oxide_table_has_header(
+            IntPtr tables,
+            int index,
+            out int errorCode);
+
         /// <summary>
         /// Gets the icon name of a text annotation.
         /// </summary>

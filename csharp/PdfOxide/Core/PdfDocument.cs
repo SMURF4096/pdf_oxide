@@ -471,21 +471,34 @@ namespace PdfOxide.Core
         }
 
         /// <summary>Extracts tables from a page. Returns row/col counts per table.</summary>
-        public (int RowCount, int ColCount)[] ExtractTables(int pageIndex)
+        public Table[] ExtractTables(int pageIndex)
         {
             ThrowIfDisposed();
             var handle = NativeMethods.pdf_document_extract_tables(_handle.Ptr, pageIndex, out var errorCode);
             ExceptionMapper.ThrowIfError(errorCode);
-            if (handle == IntPtr.Zero) return Array.Empty<(int, int)>();
+            if (handle == IntPtr.Zero) return Array.Empty<Table>();
             try
             {
                 var count = NativeMethods.pdf_oxide_table_count(handle);
-                var results = new (int, int)[count];
+                var results = new Table[count];
                 for (int i = 0; i < count; i++)
                 {
                     var rows = NativeMethods.pdf_oxide_table_get_row_count(handle, i, out _);
                     var cols = NativeMethods.pdf_oxide_table_get_col_count(handle, i, out _);
-                    results[i] = (rows, cols);
+                    var hasHeader = NativeMethods.pdf_oxide_table_has_header(handle, i, out _);
+                    var cells = new string[rows, cols];
+                    for (int r = 0; r < rows; r++)
+                        for (int c = 0; c < cols; c++)
+                        {
+                            var ptr = NativeMethods.pdf_oxide_table_get_cell_text(handle, i, r, c, out _);
+                            if (ptr != IntPtr.Zero)
+                            {
+                                cells[r, c] = System.Runtime.InteropServices.Marshal.PtrToStringUTF8(ptr) ?? string.Empty;
+                                NativeMethods.FreeString(ptr);
+                            }
+                            else cells[r, c] = string.Empty;
+                        }
+                    results[i] = new Table(rows, cols, hasHeader, cells);
                 }
                 return results;
             }
@@ -922,6 +935,34 @@ namespace PdfOxide.Core
     }
 
     /// <summary>
+    /// A table extracted from a PDF page, with row/column dimensions and per-cell text.
+    /// </summary>
+    public sealed class Table
+    {
+        private readonly string[,] _cells;
+
+        /// <summary>Number of rows.</summary>
+        public int RowCount { get; }
+
+        /// <summary>Number of columns.</summary>
+        public int ColCount { get; }
+
+        /// <summary>True if the first row is a header row.</summary>
+        public bool HasHeader { get; }
+
+        internal Table(int rowCount, int colCount, bool hasHeader, string[,] cells)
+        {
+            RowCount = rowCount;
+            ColCount = colCount;
+            HasHeader = hasHeader;
+            _cells = cells;
+        }
+
+        /// <summary>Returns the text of the cell at (row, col). Both indices are zero-based.</summary>
+        public string CellText(int row, int col) => _cells[row, col];
+    }
+
+    /// <summary>
     /// An embedded image extracted from a PDF page.
     /// </summary>
     public sealed class ExtractedImage
@@ -1031,7 +1072,7 @@ namespace PdfOxide.Core
             _doc.ExtractTextLines(Index);
 
         /// <summary>Extracts tables from the page.</summary>
-        public (int RowCount, int ColCount)[] ExtractTables() => _doc.ExtractTables(Index);
+        public Table[] ExtractTables() => _doc.ExtractTables(Index);
 
         /// <summary>Extracts embedded images from the page.</summary>
         public ExtractedImage[] ExtractImages() => _doc.ExtractImages(Index);
