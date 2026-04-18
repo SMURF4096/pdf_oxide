@@ -5,7 +5,7 @@
 
 use pdf_oxide::geometry::Rect;
 use pdf_oxide::layout::TextBlock;
-use pdf_oxide::structure::table_extractor::{extract_table, ExtractedTable, TableCell, TableRow};
+use pdf_oxide::structure::table_extractor::{extract_table, Table, TableCell, TableRow};
 use pdf_oxide::structure::types::{StructChild, StructElem, StructType};
 
 /// Helper to create a mock text block with specific MCID
@@ -328,7 +328,7 @@ fn test_table_missing_mcid() {
 
 #[test]
 fn test_extracted_table_operations() {
-    let mut table = ExtractedTable::new();
+    let mut table = Table::new();
 
     assert!(table.is_empty());
     assert_eq!(table.col_count, 0);
