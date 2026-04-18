@@ -19,7 +19,7 @@ use crate::structure::types::{StructChild, StructElem, StructType};
 
 /// A complete extracted table with rows and optional header information.
 #[derive(Debug, Clone)]
-pub struct ExtractedTable {
+pub struct Table {
     /// Rows of the table (alternating between header and body rows)
     pub rows: Vec<TableRow>,
 
@@ -69,13 +69,13 @@ pub struct TableCell {
     pub is_header: bool,
 }
 
-impl Default for ExtractedTable {
+impl Default for Table {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl ExtractedTable {
+impl Table {
     /// Create a new extracted table
     pub fn new() -> Self {
         Self {
@@ -382,11 +382,11 @@ fn element_has_page_content(elem: &StructElem, page_num: u32) -> bool {
 /// * `spans` - Text spans from the page (with MCID values)
 ///
 /// # Returns
-/// * `ExtractedTable` containing all rows and cells
+/// * `Table` containing all rows and cells
 pub fn extract_table_from_spans(
     table_elem: &StructElem,
     spans: &[crate::layout::TextSpan],
-) -> Result<ExtractedTable, Error> {
+) -> Result<Table, Error> {
     // Convert spans to TextBlocks for MCID matching
     let text_blocks: Vec<TextBlock> = spans
         .iter()
@@ -416,12 +416,12 @@ pub fn extract_table_from_spans(
 /// * `text_blocks` - All text blocks in the document (for MCID matching)
 ///
 /// # Returns
-/// * `ExtractedTable` containing all rows and cells
+/// * `Table` containing all rows and cells
 pub fn extract_table(
     table_elem: &StructElem,
     text_blocks: &[TextBlock],
-) -> Result<ExtractedTable, Error> {
-    let mut table = ExtractedTable::new();
+) -> Result<Table, Error> {
+    let mut table = Table::new();
 
     // Check table structure
     let has_thead = table_elem
@@ -475,7 +475,7 @@ fn extract_row_group(
     group_elem: &StructElem,
     text_blocks: &[TextBlock],
     is_header: bool,
-    table: &mut ExtractedTable,
+    table: &mut Table,
 ) -> Result<(), Error> {
     for child in &group_elem.children {
         match child {
@@ -585,7 +585,7 @@ mod tests {
 
     #[test]
     fn test_extracted_table_new() {
-        let table = ExtractedTable::new();
+        let table = Table::new();
         assert!(table.is_empty());
         assert_eq!(table.col_count, 0);
         assert!(!table.has_header);
@@ -594,7 +594,7 @@ mod tests {
 
     #[test]
     fn test_extracted_table_bbox() {
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         assert!(table.bbox.is_none());
 
         table.bbox = Some(Rect::new(10.0, 20.0, 100.0, 50.0));
@@ -655,7 +655,7 @@ mod tests {
 
     #[test]
     fn test_extracted_table_add_rows() {
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         let mut row1 = TableRow::new(false);
         row1.add_cell(TableCell::new("A".to_string(), false));
         row1.add_cell(TableCell::new("B".to_string(), false));
@@ -667,7 +667,7 @@ mod tests {
 
     #[test]
     fn test_extracted_table_has_header() {
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         assert!(!table.has_header);
 
         table.has_header = true;

@@ -3915,7 +3915,7 @@ impl PdfDocument {
     /// Extract text from a page.
     pub fn extract_text(&mut self, page_index: usize) -> Result<String> {
         // Enable table extraction so that tabular content is preserved as
-        // space-padded, column-aligned rows (see ExtractedTable::render_text).
+        // space-padded, column-aligned rows (see Table::render_text).
         let options = crate::converters::ConversionOptions {
             extract_tables: true,
             ..Default::default()
@@ -4149,7 +4149,7 @@ impl PdfDocument {
             // spans sit above them, preserving existing behaviour
             // semantics while inlining the rendering at its spatial
             // reading-order position.
-            let mut pending_tables: Vec<(f32, &crate::structure::table_extractor::ExtractedTable)> =
+            let mut pending_tables: Vec<(f32, &crate::structure::table_extractor::Table)> =
                 tables
                     .iter()
                     .filter_map(|t| t.bbox.map(|b| (b.y + b.height, t)))
@@ -4159,7 +4159,7 @@ impl PdfDocument {
             pending_tables.sort_by(|(a, _), (b, _)| crate::utils::safe_float_cmp(*b, *a));
 
             let flush_table =
-                |text: &mut String, table: &crate::structure::table_extractor::ExtractedTable| {
+                |text: &mut String, table: &crate::structure::table_extractor::Table| {
                     if !text.is_empty() && !text.ends_with('\n') {
                         text.push('\n');
                     }
@@ -8008,7 +8008,7 @@ impl PdfDocument {
     pub fn extract_tables(
         &mut self,
         page_index: usize,
-    ) -> Result<Vec<crate::structure::table_extractor::ExtractedTable>> {
+    ) -> Result<Vec<crate::structure::table_extractor::Table>> {
         self.extract_tables_with_config(
             page_index,
             crate::structure::spatial_table_detector::TableDetectionConfig::default(),
@@ -8020,7 +8020,7 @@ impl PdfDocument {
         &mut self,
         page_index: usize,
         config: crate::structure::spatial_table_detector::TableDetectionConfig,
-    ) -> Result<Vec<crate::structure::table_extractor::ExtractedTable>> {
+    ) -> Result<Vec<crate::structure::table_extractor::Table>> {
         use crate::structure::spatial_table_detector::detect_tables_with_lines;
 
         // Use words instead of spans for better granularity.
@@ -8559,7 +8559,7 @@ impl PdfDocument {
         &mut self,
         page_index: usize,
         region: crate::geometry::Rect,
-    ) -> Result<Vec<crate::structure::table_extractor::ExtractedTable>> {
+    ) -> Result<Vec<crate::structure::table_extractor::Table>> {
         self.extract_tables_in_rect_with_config(
             page_index,
             region,
@@ -8573,7 +8573,7 @@ impl PdfDocument {
         page_index: usize,
         region: crate::geometry::Rect,
         config: crate::structure::spatial_table_detector::TableDetectionConfig,
-    ) -> Result<Vec<crate::structure::table_extractor::ExtractedTable>> {
+    ) -> Result<Vec<crate::structure::table_extractor::Table>> {
         let tables = self.extract_tables_with_config(page_index, config)?;
         Ok(tables
             .into_iter()
@@ -9015,7 +9015,7 @@ impl PdfDocument {
         page_index: usize,
         spans: &[TextSpan],
         options: &crate::converters::ConversionOptions,
-    ) -> Vec<crate::structure::ExtractedTable> {
+    ) -> Vec<crate::structure::Table> {
         // Strategy 1: Structure tree (tagged PDFs)
         let struct_tree_opt = match &self.structure_tree_cache {
             Some(cached) => cached.clone(),

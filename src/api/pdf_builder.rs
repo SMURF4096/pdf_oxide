@@ -832,7 +832,7 @@ impl Pdf {
     pub fn extract_tables(
         &mut self,
         page: usize,
-    ) -> Result<Vec<crate::structure::table_extractor::ExtractedTable>> {
+    ) -> Result<Vec<crate::structure::table_extractor::Table>> {
         self.ensure_editor()?;
         if let Some(ref mut editor) = self.editor {
             editor.source_mut().extract_tables(page)
@@ -846,7 +846,7 @@ impl Pdf {
         &mut self,
         page: usize,
         config: crate::structure::spatial_table_detector::TableDetectionConfig,
-    ) -> Result<Vec<crate::structure::table_extractor::ExtractedTable>> {
+    ) -> Result<Vec<crate::structure::table_extractor::Table>> {
         self.ensure_editor()?;
         if let Some(ref mut editor) = self.editor {
             editor.source_mut().extract_tables_with_config(page, config)
@@ -940,7 +940,7 @@ impl Pdf {
         &mut self,
         page: usize,
         region: crate::geometry::Rect,
-    ) -> Result<Vec<crate::structure::table_extractor::ExtractedTable>> {
+    ) -> Result<Vec<crate::structure::table_extractor::Table>> {
         self.ensure_editor()?;
         if let Some(ref mut editor) = self.editor {
             editor.source_mut().extract_tables_in_rect(page, region)
@@ -2403,7 +2403,7 @@ impl<'a> PdfPageRegion<'a> {
     /// Extract tables from this region.
     pub fn extract_tables(
         &mut self,
-    ) -> Result<Vec<crate::structure::table_extractor::ExtractedTable>> {
+    ) -> Result<Vec<crate::structure::table_extractor::Table>> {
         self.pdf
             .extract_tables_in_rect(self.page_index, self.region)
     }

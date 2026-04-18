@@ -9,7 +9,7 @@
 use crate::error::Result;
 use crate::layout::FontWeight;
 use crate::pipeline::{OrderedTextSpan, TextPipelineConfig};
-use crate::structure::table_extractor::ExtractedTable;
+use crate::structure::table_extractor::Table;
 use crate::text::HyphenationHandler;
 
 use super::OutputConverter;
@@ -236,7 +236,7 @@ impl OutputConverter for HtmlOutputConverter {
     fn convert_with_tables(
         &self,
         spans: &[OrderedTextSpan],
-        tables: &[ExtractedTable],
+        tables: &[Table],
         config: &TextPipelineConfig,
     ) -> Result<String> {
         if config.output.preserve_layout {
@@ -310,7 +310,7 @@ impl HtmlOutputConverter {
     fn convert_semantic_mode(
         &self,
         spans: &[OrderedTextSpan],
-        tables: &[ExtractedTable],
+        tables: &[Table],
         config: &TextPipelineConfig,
     ) -> Result<String> {
         if spans.is_empty() && tables.is_empty() {
@@ -442,8 +442,8 @@ impl HtmlOutputConverter {
         Ok(result)
     }
 
-    /// Render an ExtractedTable as an HTML table string.
-    fn render_table_html(table: &ExtractedTable) -> String {
+    /// Render an Table as an HTML table string.
+    fn render_table_html(table: &Table) -> String {
         if table.rows.is_empty() {
             return String::new();
         }
@@ -605,14 +605,14 @@ mod tests {
 
     #[test]
     fn test_render_table_html_empty() {
-        let table = ExtractedTable::new();
+        let table = Table::new();
         let result = HtmlOutputConverter::render_table_html(&table);
         assert_eq!(result, "");
     }
 
     #[test]
     fn test_render_table_html_basic() {
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         table.has_header = true;
 
         let mut header = TableRow::new(true);
@@ -640,7 +640,7 @@ mod tests {
 
     #[test]
     fn test_render_table_html_no_header() {
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
 
         let mut row = TableRow::new(false);
         row.add_cell(TableCell::new("A".to_string(), false));
@@ -655,7 +655,7 @@ mod tests {
 
     #[test]
     fn test_render_table_html_colspan() {
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         let mut row = TableRow::new(false);
         row.add_cell(TableCell::new("Wide".to_string(), false).with_colspan(3));
         table.add_row(row);
@@ -666,7 +666,7 @@ mod tests {
 
     #[test]
     fn test_render_table_html_rowspan() {
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         let mut row = TableRow::new(false);
         row.add_cell(TableCell::new("Tall".to_string(), false).with_rowspan(2));
         table.add_row(row);
@@ -677,7 +677,7 @@ mod tests {
 
     #[test]
     fn test_render_table_html_escapes_content() {
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         let mut row = TableRow::new(false);
         row.add_cell(TableCell::new("<b>bold</b>".to_string(), false));
         row.add_cell(TableCell::new("A & B".to_string(), false));
@@ -691,7 +691,7 @@ mod tests {
 
     #[test]
     fn test_render_table_html_all_header_rows() {
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         table.has_header = true;
 
         let mut h1 = TableRow::new(true);
@@ -719,7 +719,7 @@ mod tests {
         let converter = HtmlOutputConverter::new();
         let config = TextPipelineConfig::default();
 
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         table.bbox = Some(Rect::new(10.0, 50.0, 200.0, 100.0));
         table.has_header = true;
 
@@ -751,7 +751,7 @@ mod tests {
         let mut span_in_table = make_span("Inside", 50.0, 70.0, 12.0, FontWeight::Normal);
         span_in_table.reading_order = 1;
 
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         table.bbox = Some(Rect::new(10.0, 50.0, 200.0, 100.0));
         let mut row = TableRow::new(false);
         row.add_cell(TableCell::new("Cell".to_string(), false));
@@ -887,7 +887,7 @@ mod tests {
 
     #[test]
     fn test_span_in_table_html() {
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         table.bbox = Some(Rect::new(10.0, 50.0, 200.0, 100.0));
 
         let inside = make_span("inside", 50.0, 70.0, 12.0, FontWeight::Normal);

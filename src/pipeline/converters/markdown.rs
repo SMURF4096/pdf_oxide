@@ -5,7 +5,7 @@
 use crate::error::Result;
 use crate::layout::FontWeight;
 use crate::pipeline::{OrderedTextSpan, TextPipelineConfig};
-use crate::structure::table_extractor::ExtractedTable;
+use crate::structure::table_extractor::Table;
 use crate::text::HyphenationHandler;
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -271,13 +271,13 @@ impl MarkdownOutputConverter {
         }
     }
 
-    /// Render an ExtractedTable as a markdown table string.
+    /// Render an Table as a markdown table string.
     ///
     /// Normalizes column counts so every row has the same number of pipe-delimited
     /// cells. Without this, markdown parsers silently drop trailing cells from
     /// short rows, which causes data loss (e.g. "CERTIFICATE NO.: 403852" missing
     /// from converted output).
-    fn render_table_markdown(&self, table: &ExtractedTable, config: &TextPipelineConfig) -> String {
+    fn render_table_markdown(&self, table: &Table, config: &TextPipelineConfig) -> String {
         if table.rows.is_empty() {
             return String::new();
         }
@@ -442,7 +442,7 @@ impl MarkdownOutputConverter {
     fn render_spans(
         &self,
         spans: &[OrderedTextSpan],
-        tables: &[ExtractedTable],
+        tables: &[Table],
         config: &TextPipelineConfig,
     ) -> Result<String> {
         if spans.is_empty() && tables.is_empty() {
@@ -906,7 +906,7 @@ impl OutputConverter for MarkdownOutputConverter {
     fn convert_with_tables(
         &self,
         spans: &[OrderedTextSpan],
-        tables: &[ExtractedTable],
+        tables: &[Table],
         config: &TextPipelineConfig,
     ) -> Result<String> {
         self.render_spans(spans, tables, config)
@@ -1042,7 +1042,7 @@ mod tests {
         let converter = MarkdownOutputConverter::new();
         let config = TextPipelineConfig::default();
 
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         table.bbox = Some(Rect::new(10.0, 50.0, 200.0, 100.0));
         table.col_count = 2;
         table.has_header = true;
@@ -1074,7 +1074,7 @@ mod tests {
 
     #[test]
     fn test_render_table_markdown_empty() {
-        let table = ExtractedTable::new();
+        let table = Table::new();
         let result = MarkdownOutputConverter::new()
             .render_table_markdown(&table, &crate::pipeline::TextPipelineConfig::default());
         assert_eq!(result, "");
@@ -1082,7 +1082,7 @@ mod tests {
 
     #[test]
     fn test_render_table_markdown_single_row_no_header() {
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         let mut row = TableRow::new(false);
         row.add_cell(TableCell::new("A".to_string(), false));
         row.add_cell(TableCell::new("B".to_string(), false));
@@ -1098,7 +1098,7 @@ mod tests {
 
     #[test]
     fn test_render_table_markdown_with_colspan() {
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         table.has_header = true;
         let mut header = TableRow::new(true);
         header.add_cell(TableCell::new("Wide".to_string(), true).with_colspan(2));
@@ -1118,7 +1118,7 @@ mod tests {
 
     #[test]
     fn test_render_table_markdown_escapes_pipes() {
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         let mut row = TableRow::new(false);
         row.add_cell(TableCell::new("A|B".to_string(), false));
         table.add_row(row);
@@ -1130,7 +1130,7 @@ mod tests {
 
     #[test]
     fn test_render_table_markdown_replaces_newlines() {
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         let mut row = TableRow::new(false);
         row.add_cell(TableCell::new("Line1\nLine2".to_string(), false));
         table.add_row(row);
@@ -1143,7 +1143,7 @@ mod tests {
 
     #[test]
     fn test_render_table_markdown_trims_whitespace() {
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         let mut row = TableRow::new(false);
         row.add_cell(TableCell::new("  padded  ".to_string(), false));
         table.add_row(row);
@@ -1155,7 +1155,7 @@ mod tests {
 
     #[test]
     fn test_render_table_markdown_multiple_header_rows() {
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         table.has_header = true;
 
         let mut h1 = TableRow::new(true);
@@ -1186,7 +1186,7 @@ mod tests {
     fn test_span_in_table_match() {
         let span = make_span("text", 50.0, 70.0, 12.0, FontWeight::Normal);
 
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         table.bbox = Some(Rect::new(10.0, 50.0, 200.0, 100.0));
 
         assert_eq!(span_in_table(&span, &[table]), Some(0));
@@ -1196,7 +1196,7 @@ mod tests {
     fn test_span_in_table_no_match() {
         let span = make_span("text", 500.0, 500.0, 12.0, FontWeight::Normal);
 
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         table.bbox = Some(Rect::new(10.0, 50.0, 200.0, 100.0));
 
         assert_eq!(span_in_table(&span, &[table]), None);
@@ -1206,7 +1206,7 @@ mod tests {
     fn test_span_in_table_none_bbox() {
         let span = make_span("text", 50.0, 70.0, 12.0, FontWeight::Normal);
 
-        let table = ExtractedTable::new(); // No bbox
+        let table = Table::new(); // No bbox
         assert_eq!(span_in_table(&span, &[table]), None);
     }
 
@@ -1215,7 +1215,7 @@ mod tests {
         // Span at bbox edge minus tolerance (2.0)
         let span = make_span("text", 8.5, 48.5, 12.0, FontWeight::Normal);
 
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         table.bbox = Some(Rect::new(10.0, 50.0, 200.0, 100.0));
 
         assert_eq!(span_in_table(&span, &[table]), Some(0), "Should match within tolerance");
@@ -1225,10 +1225,10 @@ mod tests {
     fn test_span_in_table_multiple_tables() {
         let span = make_span("text", 350.0, 70.0, 12.0, FontWeight::Normal);
 
-        let mut t1 = ExtractedTable::new();
+        let mut t1 = Table::new();
         t1.bbox = Some(Rect::new(10.0, 50.0, 200.0, 100.0));
 
-        let mut t2 = ExtractedTable::new();
+        let mut t2 = Table::new();
         t2.bbox = Some(Rect::new(300.0, 50.0, 200.0, 100.0));
 
         assert_eq!(span_in_table(&span, &[t1, t2]), Some(1));
@@ -1256,7 +1256,7 @@ mod tests {
         let mut span_in_table = make_span("Val", 50.0, 70.0, 12.0, FontWeight::Normal);
         span_in_table.reading_order = 1;
 
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         table.bbox = Some(Rect::new(10.0, 50.0, 200.0, 100.0));
         table.has_header = true;
         let mut header = TableRow::new(true);
@@ -1292,8 +1292,8 @@ mod tests {
         let converter = MarkdownOutputConverter::new();
         let config = TextPipelineConfig::default();
 
-        let make_table = |x: f32, text: &str| -> ExtractedTable {
-            let mut t = ExtractedTable::new();
+        let make_table = |x: f32, text: &str| -> Table {
+            let mut t = Table::new();
             t.bbox = Some(Rect::new(x, 50.0, 100.0, 50.0));
             let mut row = TableRow::new(false);
             row.add_cell(TableCell::new(text.to_string(), false));
@@ -1626,7 +1626,7 @@ mod tests {
         // Simulates a financial statement table:
         //   Row 1 (header): "Account No." | "Reference" | "Tax ID" | "Confirmation"
         //   Row 2 (data):   "20003035"    | "403852"    | "123 456 789" | "4351966"
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         table.has_header = true;
         table.col_count = 4;
 
@@ -1667,7 +1667,7 @@ mod tests {
         // When a data row has fewer cells than the header, the markdown table
         // must pad with empty cells so every row has the same column count.
         // Otherwise markdown parsers silently drop trailing columns.
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         table.has_header = true;
         table.col_count = 4;
 
@@ -1704,7 +1704,7 @@ mod tests {
     fn test_render_table_markdown_short_header_padded() {
         // When the header has fewer cells than the widest data row, the header
         // must also be padded.
-        let mut table = ExtractedTable::new();
+        let mut table = Table::new();
         table.has_header = true;
         table.col_count = 3;
 

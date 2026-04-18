@@ -3679,10 +3679,10 @@ pub extern "C" fn pdf_oxide_line_list_free(handle: *mut FfiTextLineList) {
 
 // --- Tables ---
 
-use crate::structure::table_extractor::ExtractedTable;
+use crate::structure::table_extractor::Table;
 
 pub struct FfiTableList {
-    tables: Vec<ExtractedTable>,
+    tables: Vec<Table>,
 }
 
 #[no_mangle]

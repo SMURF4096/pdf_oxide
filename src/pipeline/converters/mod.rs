@@ -33,7 +33,7 @@ pub use toc_detector::{TocDetector, TocEntry};
 use crate::error::Result;
 use crate::layout::TextSpan;
 use crate::pipeline::{OrderedTextSpan, TextPipelineConfig};
-use crate::structure::table_extractor::ExtractedTable;
+use crate::structure::table_extractor::Table;
 
 /// Trait for converting ordered text spans to output formats.
 ///
@@ -66,7 +66,7 @@ pub trait OutputConverter: Send + Sync {
     fn convert_with_tables(
         &self,
         spans: &[OrderedTextSpan],
-        tables: &[ExtractedTable],
+        tables: &[Table],
         config: &TextPipelineConfig,
     ) -> Result<String> {
         let _ = tables;
@@ -96,7 +96,7 @@ pub(crate) fn has_horizontal_gap(prev: &TextSpan, current: &TextSpan) -> bool {
 
 /// Return the index of the table whose bounding box contains the span's origin,
 /// or `None` if the span does not fall inside any table region.
-pub(crate) fn span_in_table(span: &OrderedTextSpan, tables: &[ExtractedTable]) -> Option<usize> {
+pub(crate) fn span_in_table(span: &OrderedTextSpan, tables: &[Table]) -> Option<usize> {
     let sx = span.span.bbox.x;
     let sy = span.span.bbox.y;
 
