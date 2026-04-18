@@ -82,6 +82,14 @@ a proper `Table[]` with cell text accessors, matching Go and Rust.
 - **Go installer documents `@latest`.** `go run github.com/yfedoseev/pdf_oxide/go/cmd/install@latest`
   is now the recommended install command (the installer auto-resolves the
   matching version via `runtime/debug.ReadBuildInfo()`).
+- **pkg.go.dev now shows Go documentation.** The Go module (rooted at
+  `go/go.mod` with module path `github.com/yfedoseev/pdf_oxide/go`) was
+  returning `Documentation not displayed due to license restrictions`
+  because pkg.go.dev's licensecheck only inspects the module's own
+  subtree — it does not walk up to the repo root where
+  `LICENSE-APACHE` + `LICENSE-MIT` live. Fix: duplicate both files into
+  `go/LICENSE-APACHE` and `go/LICENSE-MIT`, filenames both on
+  pkg.go.dev's accepted list. Takes effect on the next tag.
 
 ### CI
 
