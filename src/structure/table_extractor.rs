@@ -584,7 +584,7 @@ mod tests {
     use crate::structure::types::StructTreeRoot;
 
     #[test]
-    fn test_extracted_table_new() {
+    fn test_table_new() {
         let table = Table::new();
         assert!(table.is_empty());
         assert_eq!(table.col_count, 0);
@@ -593,7 +593,7 @@ mod tests {
     }
 
     #[test]
-    fn test_extracted_table_bbox() {
+    fn test_table_bbox() {
         let mut table = Table::new();
         assert!(table.bbox.is_none());
 
@@ -654,7 +654,7 @@ mod tests {
     }
 
     #[test]
-    fn test_extracted_table_add_rows() {
+    fn test_table_add_rows() {
         let mut table = Table::new();
         let mut row1 = TableRow::new(false);
         row1.add_cell(TableCell::new("A".to_string(), false));
@@ -666,7 +666,7 @@ mod tests {
     }
 
     #[test]
-    fn test_extracted_table_has_header() {
+    fn test_table_has_header() {
         let mut table = Table::new();
         assert!(!table.has_header);
 

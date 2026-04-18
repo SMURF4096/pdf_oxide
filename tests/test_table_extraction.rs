@@ -327,7 +327,7 @@ fn test_table_missing_mcid() {
 }
 
 #[test]
-fn test_extracted_table_operations() {
+fn test_table_operations() {
     let mut table = Table::new();
 
     assert!(table.is_empty());
