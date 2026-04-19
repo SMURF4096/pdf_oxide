@@ -15,6 +15,7 @@
 //! - **LAYOUT-4..7** — floats, margin collapsing, multi-column, tables.
 
 pub mod box_tree;
+pub mod floats;
 pub mod inline;
 pub mod taffy_style;
 
@@ -22,5 +23,6 @@ pub use box_tree::{
     build_box_tree, BoxId, BoxKind, BoxNode, BoxTree, BoxTreeError, DisplayInside,
     DisplayOutside,
 };
+pub use floats::{read_clear, read_float, Clear, FloatBox, FloatContext, FloatSide};
 pub use inline::{layout_paragraph, InlineItem, LineBox, LineFragment, TextAlign, WhiteSpace};
 pub use taffy_style::{run_layout, style_to_taffy, LayoutBox, LayoutResult};
