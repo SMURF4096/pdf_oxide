@@ -32,3 +32,4 @@ pub mod css;
 pub mod html;
 pub mod layout;
 pub mod paginate;
+pub mod paint;
