@@ -4,6 +4,7 @@
 //! and the rationale for hand-rolling instead of depending on the
 //! Mozilla stack (MPL-2.0 — denied by `deny.toml`).
 
+pub mod cascade;
 pub mod matcher;
 pub mod parser;
 pub mod selectors;
@@ -13,6 +14,7 @@ pub use parser::{
     parse_declaration_list, parse_stylesheet, AtRule, AtRuleBlock, ComponentValue, Declaration,
     QualifiedRule, Rule, Stylesheet,
 };
+pub use cascade::{apply_inline_declarations, cascade, initial_value, ComputedStyles, ResolvedValue};
 pub use matcher::{match_complex_selector, match_selector_list, Element};
 pub use selectors::{
     parse_selector_list, AnPlusB, AttributeCase, AttributeOp, AttributeSelector, Combinator,
