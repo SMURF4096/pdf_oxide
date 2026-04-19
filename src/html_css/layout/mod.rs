@@ -17,6 +17,7 @@
 pub mod box_tree;
 pub mod floats;
 pub mod inline;
+pub mod margin_collapse;
 pub mod taffy_style;
 
 pub use box_tree::{
@@ -24,5 +25,6 @@ pub use box_tree::{
     DisplayOutside,
 };
 pub use floats::{read_clear, read_float, Clear, FloatBox, FloatContext, FloatSide};
+pub use margin_collapse::{collapse_margins, parent_child_bottom, parent_child_top, sibling_gap};
 pub use inline::{layout_paragraph, InlineItem, LineBox, LineFragment, TextAlign, WhiteSpace};
 pub use taffy_style::{run_layout, style_to_taffy, LayoutBox, LayoutResult};
