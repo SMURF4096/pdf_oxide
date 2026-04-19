@@ -7,6 +7,7 @@
 pub mod at_rules;
 pub mod calc;
 pub mod cascade;
+pub mod counters;
 pub mod matcher;
 pub mod parser;
 pub mod selectors;
@@ -22,6 +23,10 @@ pub use calc::{evaluate as evaluate_calc_expr, evaluate_function as evaluate_cal
                parse_expr as parse_calc_expr, Context as CalcContext, EvalError as CalcError,
                Expr as CalcExpr, Unit};
 pub use cascade::{apply_inline_declarations, cascade, initial_value, ComputedStyles, ResolvedValue};
+pub use counters::{
+    evaluate_content, parse_content, parse_counter_ops, Content, CounterOp, CounterState,
+    ListStyle,
+};
 pub use at_rules::{
     resolve as resolve_stylesheet, FontFaceDescriptor, MediaContext, PageRule, PageSelector,
     ResolvedStylesheet, SrcEntry,
