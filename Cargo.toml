@@ -221,7 +221,13 @@ wasm-ml = ["wasm", "ml"]
 debug-span-merging = []
 
 # Page rendering to images (pure Rust via tiny-skia)
-rendering = ["dep:tiny-skia", "dep:fontdb", "dep:rustybuzz"]
+rendering = ["dep:tiny-skia", "system-fonts"]
+
+# System font discovery (fontdb) + shaping (rustybuzz). v0.3.35 splits
+# this out of `rendering` so HTML+CSS→PDF can pick it up without pulling
+# in tiny-skia. Default-on for native bindings; off for WASM (no
+# filesystem) and off for the bare Rust crate so library embedders opt in.
+system-fonts = ["dep:fontdb", "dep:rustybuzz"]
 
 # Digital signatures (create and verify PDF signatures)
 signatures = ["dep:x509-parser", "dep:cms", "dep:rsa", "dep:der", "dep:spki", "dep:pkcs1", "dep:pkcs8", "dep:signature", "dep:sha1"]
