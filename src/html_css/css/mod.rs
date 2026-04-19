@@ -10,6 +10,7 @@ pub mod matcher;
 pub mod parser;
 pub mod selectors;
 pub mod tokenizer;
+pub mod var;
 
 pub use parser::{
     parse_declaration_list, parse_stylesheet, AtRule, AtRuleBlock, ComponentValue, Declaration,
@@ -19,6 +20,7 @@ pub use calc::{evaluate as evaluate_calc_expr, evaluate_function as evaluate_cal
                parse_expr as parse_calc_expr, Context as CalcContext, EvalError as CalcError,
                Expr as CalcExpr, Unit};
 pub use cascade::{apply_inline_declarations, cascade, initial_value, ComputedStyles, ResolvedValue};
+pub use var::{resolve_custom_properties, substitute as substitute_vars, VarError};
 pub use matcher::{match_complex_selector, match_selector_list, Element};
 pub use selectors::{
     parse_selector_list, AnPlusB, AttributeCase, AttributeOp, AttributeSelector, Combinator,

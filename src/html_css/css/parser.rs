@@ -465,34 +465,38 @@ fn declarations_from_component_values(values: Vec<ComponentValue<'_>>) -> Vec<De
 
 fn component_values_to_tokens(values: Vec<ComponentValue<'_>>) -> Vec<(Token<'_>, SourceLocation)> {
     let mut out = Vec::new();
+    flatten_into(values, &mut out);
+    out.push((Token::Eof, SourceLocation::start()));
+    out
+}
+
+fn flatten_into<'i>(values: Vec<ComponentValue<'i>>, out: &mut Vec<(Token<'i>, SourceLocation)>) {
     let loc = SourceLocation::start();
     for cv in values {
         match cv {
             ComponentValue::Token(t) => out.push((t, loc)),
             ComponentValue::Function { name, body } => {
                 out.push((Token::Function(name), loc));
-                out.extend(component_values_to_tokens(body));
+                flatten_into(body, out);
                 out.push((Token::RightParen, loc));
             }
             ComponentValue::Parens(body) => {
                 out.push((Token::LeftParen, loc));
-                out.extend(component_values_to_tokens(body));
+                flatten_into(body, out);
                 out.push((Token::RightParen, loc));
             }
             ComponentValue::Square(body) => {
                 out.push((Token::LeftSquare, loc));
-                out.extend(component_values_to_tokens(body));
+                flatten_into(body, out);
                 out.push((Token::RightSquare, loc));
             }
             ComponentValue::Curly(body) => {
                 out.push((Token::LeftBrace, loc));
-                out.extend(component_values_to_tokens(body));
+                flatten_into(body, out);
                 out.push((Token::RightBrace, loc));
             }
         }
     }
-    out.push((Token::Eof, loc));
-    out
 }
 
 fn is_important_suffix(value: &[ComponentValue<'_>]) -> bool {
