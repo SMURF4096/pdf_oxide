@@ -29,3 +29,4 @@
 //! - `paint` — display list → ContentStreamBuilder (PAINT-1..7).
 
 pub mod css;
+pub mod html;
