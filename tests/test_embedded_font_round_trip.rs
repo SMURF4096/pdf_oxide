@@ -78,6 +78,30 @@ fn round_trip_cyrillic() {
 }
 
 #[test]
+fn round_trip_greek() {
+    let input = "Καλημέρα κόσμε";
+    let bytes = build_pdf_with_text(input, 14.0);
+    let extracted = extract_text_from_bytes(bytes);
+    assert!(
+        extracted.contains(input),
+        "expected Greek {input:?} in extracted text, got: {extracted:?}",
+    );
+}
+
+#[test]
+fn round_trip_hebrew() {
+    // Hebrew is RTL but at this layer (no shaping) we just round-trip
+    // the codepoints as-is. Phase LAYOUT will add proper BiDi.
+    let input = "שלום עולם";
+    let bytes = build_pdf_with_text(input, 14.0);
+    let extracted = extract_text_from_bytes(bytes);
+    assert!(
+        extracted.contains(input),
+        "expected Hebrew {input:?} in extracted text, got: {extracted:?}",
+    );
+}
+
+#[test]
 fn pdf_validates_as_pdf_1_7() {
     // Sanity: produced bytes start with the PDF header and end with the
     // EOF marker.
