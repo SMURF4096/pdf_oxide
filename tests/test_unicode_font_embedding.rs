@@ -6,8 +6,9 @@
 //! - Unicode encoding
 //! - ToUnicode CMap generation
 
-use pdf_oxide::fonts::{FontSubsetter, TrueTypeError, UnicodeEncoder};
+use pdf_oxide::fonts::{subset_font_bytes, FontSubsetter, TrueTypeError, UnicodeEncoder};
 use pdf_oxide::writer::{EmbeddedFont, EmbeddedFontManager};
+use std::collections::BTreeSet;
 
 /// Test that the font subsetter tracks used glyphs correctly.
 #[test]
@@ -238,4 +239,81 @@ fn test_encode_text_auto_selection() {
     // Unicode -> UTF-16BE hex string
     let result = UnicodeEncoder::encode_text("Hello \u{4E2D}\u{6587}"); // Hello 中文
     assert!(result.starts_with("<FEFF")); // UTF-16BE BOM
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Binary subsetting (FONT-2). subset_font_bytes wraps Typst's `subsetter`
+// crate so that EmbeddedFont can shrink the embedded TTF to only the
+// glyphs actually used. Acceptance from the v0.3.35 plan: typical
+// English content shrinks DejaVuSans from ~760 KB to under 30 KB.
+// ──────────────────────────────────────────────────────────────────────
+
+const DEJAVU_SANS: &[u8] = include_bytes!("fixtures/fonts/DejaVuSans.ttf");
+
+#[test]
+fn test_subset_dejavu_for_english_under_30kb() {
+    // Glyph IDs covering a typical English alphabet plus digits and
+    // common punctuation. We hard-code GIDs so the test does not depend
+    // on TrueTypeFont parsing — that path is exercised elsewhere.
+    let mut used: BTreeSet<u16> = BTreeSet::new();
+    // DejaVuSans GID range covering 0x20..0x7e is roughly 3..=94; that's
+    // dense enough that a remap-from-zero subset is the realistic
+    // worst case for "English text only."
+    for gid in 3..=94u16 {
+        used.insert(gid);
+    }
+
+    let (subset, remapper) =
+        subset_font_bytes(DEJAVU_SANS, 0, &used).expect("subsetting must succeed");
+
+    // Shrink ratio: DejaVuSans is ~760 KB; subset for ~90 glyphs should
+    // be well under 30 KB. The acceptance bar is the v0.3.35 plan's
+    // contract; we keep margin to absorb font-version drift.
+    assert!(
+        subset.len() < 30_000,
+        "subset should be < 30 KB for ASCII coverage, got {} bytes",
+        subset.len()
+    );
+    assert!(
+        subset.len() < DEJAVU_SANS.len() / 10,
+        "subset should be at least 10× smaller than the original ({} vs {})",
+        subset.len(),
+        DEJAVU_SANS.len()
+    );
+
+    // Remapper must round-trip every kept glyph and renumber to a dense
+    // 0..=N range starting from 0 (which is always .notdef).
+    assert_eq!(
+        remapper.get(0),
+        Some(0),
+        ".notdef must remain at GID 0 after subsetting"
+    );
+    for &original_gid in &used {
+        assert!(
+            remapper.get(original_gid).is_some(),
+            "kept glyph {original_gid} disappeared from remapper",
+        );
+    }
+}
+
+#[test]
+fn test_subset_always_includes_notdef_even_when_caller_omits_it() {
+    let mut used = BTreeSet::new();
+    used.insert(36u16); // any glyph other than 0
+    let (subset, remapper) =
+        subset_font_bytes(DEJAVU_SANS, 0, &used).expect("subsetting must succeed");
+    assert_eq!(remapper.get(0), Some(0), ".notdef auto-included");
+    assert!(remapper.get(36).is_some());
+    assert!(!subset.is_empty());
+}
+
+#[test]
+fn test_subset_rejects_garbage_input() {
+    let used: BTreeSet<u16> = (0..5).collect();
+    let err = subset_font_bytes(b"not a font", 0, &used).unwrap_err();
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("font subsetting failed"),
+        "expected SubsetError::Subsetter wrapper, got: {msg}",
+    );
 }
