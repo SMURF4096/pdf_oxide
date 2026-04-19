@@ -338,6 +338,124 @@ impl Pdf {
         PdfBuilder::new().from_html(content)
     }
 
+    /// Create a PDF from HTML + optional CSS using the v0.3.35 HTML→
+    /// PDF pipeline (issue #248).
+    ///
+    /// Walks the full pipeline:
+    /// HTML → DOM → cascade → box tree → Taffy layout → paginate →
+    /// paint → PDF.
+    ///
+    /// # Arguments
+    /// * `html` - HTML source string. Inline `<style>` blocks are
+    ///   extracted automatically.
+    /// * `css` - Additional CSS to apply (concatenated with inline
+    ///   `<style>` blocks).
+    /// * `font_bytes` - TTF/OTF font bytes for body text (any
+    ///   permissive-licence sans-serif works; tests/fixtures/fonts/
+    ///   DejaVuSans.ttf is the suggested default during development).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use pdf_oxide::api::Pdf;
+    /// let font = std::fs::read("DejaVuSans.ttf")?;
+    /// let pdf = Pdf::from_html_css(
+    ///     "<h1>Hello</h1><p>World</p>",
+    ///     "h1 { color: blue }",
+    ///     font,
+    /// )?;
+    /// pdf.save("out.pdf")?;
+    /// ```
+    pub fn from_html_css(html: &str, css: &str, font_bytes: Vec<u8>) -> Result<Self> {
+        use crate::html_css::css::{cascade, parse_stylesheet};
+        use crate::html_css::html::{extract_stylesheets, parse_document, StylesheetSource};
+        use crate::html_css::layout::{build_box_tree, run_layout};
+        use crate::html_css::paginate::{paginate, PageConfig};
+        use crate::html_css::paint::paint_document;
+        use crate::writer::{EmbeddedFont, PdfWriter};
+        use taffy::prelude::Size;
+
+        // Concatenate inline <style> blocks + caller's css.
+        let dom = parse_document(html);
+        let extracted = extract_stylesheets(&dom);
+        let mut combined_css = String::new();
+        for src in &extracted.sheets {
+            if let StylesheetSource::Inline(s) = src {
+                combined_css.push_str(s);
+                combined_css.push('\n');
+            }
+        }
+        combined_css.push_str(css);
+
+        // Box::leak the CSS source itself so the parsed stylesheet
+        // (which holds Cow borrows into the source) can outlive the
+        // local scope. Pdf::from_html_css is a one-shot factory so
+        // each call leaks one HTML+CSS source — acceptable footprint
+        // for the v0.3.35 first cut; v0.3.36 polish item is to extend
+        // the cascade API to consume an owned stylesheet.
+        let css_static: &'static str = Box::leak(combined_css.into_boxed_str());
+        let stylesheet = parse_stylesheet(css_static)
+            .map_err(|e| crate::error::Error::Unsupported(format!("CSS parse error: {e}")))?;
+        let ss_static: &'static _ = Box::leak(Box::new(stylesheet));
+        let dom_static: &'static _ = Box::leak(Box::new(dom));
+
+        let tree = build_box_tree(dom_static, ss_static)
+            .map_err(|e| crate::error::Error::Unsupported(format!("box tree error: {e}")))?;
+
+        let calc_ctx = crate::html_css::css::CalcContext::default();
+        let layout = run_layout(
+            &tree,
+            |id| {
+                let node = tree.get(id);
+                let Some(elem_id) = node.element else {
+                    return crate::html_css::css::ComputedStyles::default();
+                };
+                let element = dom_static.element(elem_id).unwrap();
+                cascade(ss_static, element, None)
+            },
+            Size {
+                width: 600.0,
+                height: 800.0,
+            },
+            &calc_ctx,
+        );
+
+        let paginated = paginate(&tree, &layout, PageConfig::a4());
+
+        let mut writer = PdfWriter::new();
+        let font = EmbeddedFont::from_data(Some("Body".to_string()), font_bytes)
+            .map_err(|e| crate::error::Error::Unsupported(format!("font parse: {e}")))?;
+        let resource_name = writer.register_embedded_font(font);
+
+        paint_document(
+            &mut writer,
+            &paginated,
+            &tree,
+            |id| {
+                let node = tree.get(id);
+                let Some(elem_id) = node.element else {
+                    return None;
+                };
+                let element = dom_static.element(elem_id).unwrap();
+                Some(cascade(ss_static, element, None))
+            },
+            &resource_name,
+            12.0,
+        );
+
+        let bytes = writer
+            .finish()
+            .map_err(|e| crate::error::Error::Unsupported(format!("PDF emission: {e}")))?;
+        // Store the writer bytes directly without going through
+        // DocumentEditor — the editor's parse-and-re-serialise loop
+        // doesn't preserve the embedded-font object graph, which is
+        // the whole point of the v0.3.35 pipeline. Direct byte storage
+        // keeps the PDF byte-stable.
+        let mut pdf = Pdf::new();
+        pdf.bytes = bytes;
+        Ok(pdf)
+    }
+
     /// Create a PDF from plain text.
     ///
     /// The text is rendered as-is with the default font and size.
