@@ -55,6 +55,8 @@ mod embedded_files;
 mod font_discovery;
 mod font_manager;
 mod font_pdf_objects;
+#[cfg(feature = "system-fonts")]
+mod font_shaping;
 pub mod form_fields;
 mod freetext;
 mod graphics_state;
@@ -106,6 +108,8 @@ pub use font_pdf_objects::{build_embedded_font_objects, EmbeddedFontIds, FontRes
 
 #[cfg(feature = "system-fonts")]
 pub use font_discovery::{FontResolveError, FontStyle, ResolvedFont, SystemFontDb};
+#[cfg(feature = "system-fonts")]
+pub use font_shaping::{shape as shape_text, Direction as ShapeDirection, ShapedGlyph, ShapedRun};
 pub use form_fields::{
     ButtonFieldFlags, CheckboxWidget, ChoiceFieldFlags, ChoiceOption, ComboBoxWidget, FieldFlags,
     FormAction, FormAppearanceGenerator, FormFieldEntry, FormFieldWidget, ListBoxWidget,
