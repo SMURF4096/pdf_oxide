@@ -127,6 +127,54 @@ impl<'a> PageBuilder<'a> {
         self
     }
 
+    /// Add Unicode text on a page using a previously-registered embedded
+    /// TrueType font. The font must have been registered with
+    /// [`PdfWriter::register_embedded_font`] first; the returned resource
+    /// name is what `font_resource_name` should be (e.g. `"EF1"`).
+    ///
+    /// Glyph IDs are looked up via the font's `cmap`, encoded as
+    /// big-endian Identity-H hex strings, and emitted as a `Tj` operand.
+    /// The font's internal subsetter is updated so that finalisation
+    /// (in [`PdfWriter::finish`]) only carries the glyphs actually used.
+    pub fn add_embedded_text(
+        &mut self,
+        text: &str,
+        x: f32,
+        y: f32,
+        font_resource_name: &str,
+        font_size: f32,
+    ) -> &mut Self {
+        // Look up the font, encode glyphs, then emit. We split the borrow
+        // so we touch `embedded_fonts` (mut) and `pages` (mut) in sequence.
+        let font_name_lookup = self
+            .writer
+            .embedded_font_resource_to_name
+            .get(font_resource_name)
+            .cloned();
+        let Some(font_key) = font_name_lookup else {
+            // Caller passed an unknown resource name. Silently no-op rather
+            // than panic — the missing-text symptom is easier to debug than
+            // a panic deep inside the writer, and HTML→PDF is going to hit
+            // unknown fonts often during early development.
+            return self;
+        };
+        let encoded_hex = self
+            .writer
+            .embedded_fonts
+            .get_mut(&font_key)
+            .map(|font| font.encode_string(text));
+        let Some(encoded_hex) = encoded_hex else {
+            return self;
+        };
+
+        let page = &mut self.writer.pages[self.page_index];
+        page.content_builder
+            .begin_text()
+            .set_font(font_resource_name, font_size)
+            .hex_text(&encoded_hex, x, y);
+        self
+    }
+
     /// Add a content element to the page.
     pub fn add_element(&mut self, element: &ContentElement) -> &mut Self {
         let page = &mut self.writer.pages[self.page_index];
@@ -807,6 +855,19 @@ pub struct PdfWriter {
     objects: HashMap<u32, Object>,
     /// Font resources used (name -> object ref)
     fonts: HashMap<String, ObjectRef>,
+    /// Registered embedded TrueType fonts, keyed by the user-supplied
+    /// font name (e.g. "DejaVuSans"). Populated by
+    /// [`PdfWriter::register_embedded_font`]; consumed in
+    /// [`PdfWriter::finish`] where each font's five PDF objects are
+    /// emitted and the Type-0 ref is added to every page's `/Font`
+    /// resource dict.
+    embedded_fonts: HashMap<String, super::font_manager::EmbeddedFont>,
+    /// Resource-name → font-key map for content-stream `add_embedded_text`
+    /// calls. Resource names follow the `EFn` convention (E for embedded)
+    /// to avoid collision with the dash-stripped Base-14 names.
+    embedded_font_resource_to_name: HashMap<String, String>,
+    /// Counter for allocating `EFn` resource names.
+    next_embedded_font_id: u32,
     /// AcroForm builder for interactive forms
     acroform: Option<AcroFormBuilder>,
 }
@@ -825,8 +886,35 @@ impl PdfWriter {
             next_obj_id: 1,
             objects: HashMap::new(),
             fonts: HashMap::new(),
+            embedded_fonts: HashMap::new(),
+            embedded_font_resource_to_name: HashMap::new(),
+            next_embedded_font_id: 1,
             acroform: None,
         }
+    }
+
+    /// Register an embedded TrueType font for use in content streams.
+    ///
+    /// Returns the resource name (e.g. `"EF1"`) that `add_embedded_text`
+    /// should use. The font is consumed; `finish()` emits its five PDF
+    /// objects (Type 0 / CIDFontType2 / FontDescriptor / FontFile2 stream
+    /// / ToUnicode CMap stream — ISO 32000-1 §9.6.4 / §9.7.4 / §9.8 / §9.9
+    /// / §9.10.2).
+    ///
+    /// The font's display name (used in PostScript/BaseFont fields) is
+    /// taken from `EmbeddedFont::name`. Callers wanting a stable subset
+    /// tag should track the resource name they get back and reuse it.
+    pub fn register_embedded_font(
+        &mut self,
+        font: super::font_manager::EmbeddedFont,
+    ) -> String {
+        let resource_name = format!("EF{}", self.next_embedded_font_id);
+        self.next_embedded_font_id += 1;
+        let font_key = font.name.clone();
+        self.embedded_fonts.insert(font_key.clone(), font);
+        self.embedded_font_resource_to_name
+            .insert(resource_name.clone(), font_key);
+        resource_name
     }
 
     /// Allocate a new object ID.
@@ -907,8 +995,8 @@ impl PdfWriter {
             self.get_font_ref(font_name);
         }
 
-        // Build font resources dictionary
-        let font_resources: HashMap<String, Object> = self
+        // Build font resources dictionary — Base-14 first.
+        let mut font_resources: HashMap<String, Object> = self
             .fonts
             .iter()
             .map(|(name, obj_ref)| {
@@ -918,6 +1006,42 @@ impl PdfWriter {
                 (simple_name, Object::Reference(*obj_ref))
             })
             .collect();
+
+        // Emit each embedded font's five-object graph (FONT-3) and add
+        // the Type 0 ref to the resource dict under its EFn name.
+        // Drained so we own the EmbeddedFont (encode_string is &mut).
+        let embedded = std::mem::take(&mut self.embedded_fonts);
+        let mut embedded_object_ids: Vec<u32> = Vec::new();
+        let mut font_key_to_type0: HashMap<String, u32> = HashMap::new();
+        for (font_key, mut font) in embedded {
+            // Allocate IDs upfront so we don't need to borrow `self` inside
+            // the build closure.
+            let mut allocated: Vec<u32> = (0..5)
+                .map(|_| {
+                    let id = self.next_obj_id;
+                    self.next_obj_id += 1;
+                    id
+                })
+                .collect();
+            let (ids, objects) = super::font_pdf_objects::build_embedded_font_objects(
+                &mut font,
+                || allocated.remove(0),
+            );
+            font_key_to_type0.insert(font_key, ids.type0);
+            for (id, obj) in objects {
+                embedded_object_ids.push(id);
+                self.objects.insert(id, obj);
+            }
+        }
+        // Wire each EFn resource name → its Type 0 ref.
+        for (resource_name, font_key) in &self.embedded_font_resource_to_name {
+            if let Some(&type0_id) = font_key_to_type0.get(font_key) {
+                font_resources.insert(
+                    resource_name.clone(),
+                    ObjectSerializer::reference(type0_id, 0),
+                );
+            }
+        }
 
         // Catalog object (object 1)
         let catalog_id = self.alloc_obj_id();
@@ -1123,11 +1247,21 @@ impl PdfWriter {
         xref_offsets.push((pages_id, output.len()));
         output.extend_from_slice(&serializer.serialize_indirect(pages_id, 0, &pages_obj));
 
-        // Font objects
+        // Font objects (Base-14)
         for font_ref in self.fonts.values() {
             if let Some(font_obj) = self.objects.get(&font_ref.id) {
                 xref_offsets.push((font_ref.id, output.len()));
                 output.extend_from_slice(&serializer.serialize_indirect(font_ref.id, 0, font_obj));
+            }
+        }
+
+        // Embedded font objects (FONT-3): the five-object graph per font
+        // (Type 0, CIDFontType2, FontDescriptor, FontFile2 stream,
+        // ToUnicode stream).
+        for &id in &embedded_object_ids {
+            if let Some(obj) = self.objects.get(&id) {
+                xref_offsets.push((id, output.len()));
+                output.extend_from_slice(&serializer.serialize_indirect(id, 0, obj));
             }
         }
 

@@ -52,6 +52,7 @@ mod content_stream;
 mod document_builder;
 mod embedded_files;
 mod font_manager;
+mod font_pdf_objects;
 pub mod form_fields;
 mod freetext;
 mod graphics_state;
@@ -99,6 +100,7 @@ pub use embedded_files::{AFRelationship, EmbeddedFile, EmbeddedFilesBuilder};
 pub use font_manager::{
     EmbeddedFont, EmbeddedFontManager, FontFamily, FontInfo, FontManager, FontWeight, TextLayout,
 };
+pub use font_pdf_objects::{build_embedded_font_objects, EmbeddedFontIds, FontResourceName};
 pub use form_fields::{
     ButtonFieldFlags, CheckboxWidget, ChoiceFieldFlags, ChoiceOption, ComboBoxWidget, FieldFlags,
     FormAction, FormAppearanceGenerator, FormFieldEntry, FormFieldWidget, ListBoxWidget,
