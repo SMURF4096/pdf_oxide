@@ -19,6 +19,7 @@ pub mod floats;
 pub mod inline;
 pub mod margin_collapse;
 pub mod multicol;
+pub mod tables;
 pub mod taffy_style;
 
 pub use box_tree::{
@@ -28,5 +29,6 @@ pub use box_tree::{
 pub use floats::{read_clear, read_float, Clear, FloatBox, FloatContext, FloatSide};
 pub use margin_collapse::{collapse_margins, parent_child_bottom, parent_child_top, sibling_gap};
 pub use multicol::{column_rects, distribute_lines_into_columns, read_multicol, ColumnRect, MultiColConfig};
+pub use tables::{compute_column_widths, compute_row_heights, CellHint, LayoutAlgorithm, RowGroupKind, RowHint, TableLayout};
 pub use inline::{layout_paragraph, InlineItem, LineBox, LineFragment, TextAlign, WhiteSpace};
 pub use taffy_style::{run_layout, style_to_taffy, LayoutBox, LayoutResult};
