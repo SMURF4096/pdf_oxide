@@ -2637,7 +2637,7 @@ checksum = "35fb2e5f958ec131621fdd531e9fc186ed768cbe395337403ae56c17a74c68ec"
 
 [[package]]
 name = "pdf_oxide"
-version = "0.3.36"
+version = "0.3.37"
 dependencies = [
  "aes",
  "barcoders",
@@ -2710,6 +2710,7 @@ dependencies = [
  "tract-onnx",
  "ttf-parser",
  "unicode-bidi",
+ "unicode-linebreak",
  "uuid",
  "wasm-bindgen",
  "wasm-bindgen-test",
@@ -2721,7 +2722,7 @@ dependencies = [
 
 [[package]]
 name = "pdf_oxide_cli"
-version = "0.3.36"
+version = "0.3.37"
 dependencies = [
  "clap",
  "is-terminal",
@@ -2732,7 +2733,7 @@ dependencies = [
 
 [[package]]
 name = "pdf_oxide_mcp"
-version = "0.3.36"
+version = "0.3.37"
 dependencies = [
  "pdf_oxide",
  "serde",
@@ -4400,6 +4401,12 @@ name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+
+[[package]]
+name = "unicode-linebreak"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b09c83c3c29d37506a3e260c08c03743a6bb66a9cd432c6934ab501a190571f"
 
 [[package]]
 name = "unicode-normalization"

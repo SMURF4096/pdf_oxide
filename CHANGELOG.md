@@ -2,6 +2,160 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [0.3.37] - 2026-04-20
+> HTML + CSS → PDF (issue #248) — first credible pure-Rust pipeline
+
+### API — `Pdf::from_html_css` (#248)
+
+```rust
+let font = std::fs::read("DejaVuSans.ttf")?;
+let mut pdf = Pdf::from_html_css(
+    "<h1>Hello</h1><p>World</p>",
+    "h1 { color: blue; font-size: 24pt }",
+    font,
+)?;
+pdf.save("out.pdf")?;
+```
+
+The whole feature: pass HTML + CSS + font bytes, get a paginated PDF
+back. Pure Rust, MIT/Apache only (no MPL transitive deps),
+`extract_text` round-trips byte-equal so produced PDFs participate in
+the existing test infrastructure.
+
+End-to-end test suite at `tests/test_html_to_pdf_e2e.rs` covers
+simple paragraph, multi-paragraph, nested HTML, CSS-styled text, and
+Unicode (Latin + Latin-Extended + Cyrillic + symbols) round-trips.
+
+### Phase FONT — embedded TTF/OTF subsystem
+
+- **Real binary subsetting** via the `subsetter` crate (Typst's,
+  MIT/Apache). `EmbeddedFont` now ships only the glyphs the document
+  uses; a typical English page subsets DejaVu Sans from 760 KB to
+  under 30 KB.
+- **Type 0 / CIDFontType2 / Identity-H / ToUnicode emission** wired
+  into `PdfWriter` so `add_embedded_text(text, x, y, "EFn", size)`
+  produces a font dict graph that PDF readers handle correctly.
+  Round-trip via `extract_text` returns the input string for Latin,
+  Cyrillic, Greek, Hebrew, Arabic.
+- **System font discovery** via `fontdb` (RazrFalcon, MIT). New
+  `system-fonts` feature gates discovery + shaping; default-on for
+  language bindings, off for WASM and the bare Rust crate.
+- **Text shaping** via `rustybuzz` (HarfBuzz port, MIT). Returns
+  positioned glyph runs with `cluster` info so the inline formatter
+  can map glyphs back to source bytes.
+
+### Phase CSS — hand-rolled engine
+
+10 modules, ~6,500 LoC, no MPL anywhere:
+
+- **Tokenizer** (CSS Syntax L3) with full token coverage including
+  CDO/CDC, hex+named entities resolution in url(), source locations.
+- **Parser** producing `Stylesheet { rules: Vec<Rule> }` with
+  forgiving recovery per spec.
+- **Selectors** L3 + L4 subset: `:is`/`:where`/`:not`/`:has`,
+  structural pseudo-classes, attribute matchers with `i`/`s` flags,
+  specificity computation packed into a sortable u32.
+- **Matcher** with `Element` trait so the engine isn't tied to one
+  DOM implementation.
+- **Cascade** with origin/specificity/source-order sorting,
+  inheritance from parent for the spec's inherited-property list,
+  inline-style merge, custom-property storage.
+- **`calc()` / `min()` / `max()` / `clamp()`** evaluator with mixed-
+  unit math against a `CalcContext`.
+- **`var()`** substitution with DFS cycle detection.
+- **Typed property values** for colour (~150 named, hex, rgb/rgba/
+  hsl), length (every CSS Values L4 unit), display, font-size/
+  weight/style/family, margin/padding shorthand expansion, line-
+  height, etc.
+- **At-rules**: `@media print` always-true + `(min/max-width)`
+  predicates, `@page` with `:first`/`:left`/`:right`/`:blank`
+  selectors and margin boxes, `@font-face` descriptor extraction,
+  `@import` URL forwarding, `@supports` against our supported set.
+- **Counters** (`counter`/`counters`/`counter-reset`/`-increment`/
+  `-set` with Roman/Greek/alpha numbering) and pseudo-element
+  content evaluation.
+
+### Phase HTML
+
+- **HTML5 tokenizer** with attribute parsing (quoted/unquoted/bare),
+  void-element implicit self-closing, `<style>`/`<script>` raw-text
+  contexts, named + numeric entity decoding, comments, DOCTYPE.
+- **Flat arena DOM** implementing the CSS-4 `Element` trait so the
+  cascade matches against real document nodes. Implicit close
+  handling for the common `<p>` and `<li>` cases.
+- **Stylesheet extraction**: `<style>` blocks, `<link
+  rel="stylesheet">` (URL forwarded; `media` attribute preserved),
+  per-element inline `style="..."`.
+- **Resource extraction**: `<img>` with srcset DPR selection,
+  `<picture>`/`<source>` first-match, `<a href>` (internal anchor
+  detection).
+
+### Phase LAYOUT
+
+- **Box tree** from DOM × ComputedStyles with display-split
+  (outer/inner), anonymous-block insertion per CSS 2.1 §9.2.1.1,
+  `display: none`/`contents` handling, UA default display table for
+  common HTML elements.
+- **Taffy integration** for block / flex / grid layout (Dioxus, MIT,
+  default-features-off + only the features we need).
+- **Inline formatting** with greedy line breaker via UAX #14
+  (`unicode-linebreak`), `text-align`/`white-space` modes, hard
+  breaks, atomic inline boxes.
+- **Float scaffolding** with line-shortening helpers (full float-
+  aware wrapping is a v0.3.36 follow-up).
+- **Margin collapsing** per CSS 2.1 §8.3.1.
+- **Multi-column** distribution (`column-count`/`column-width`/
+  `column-gap` with greedy line distribution).
+- **Tables** with auto + fixed column-width algorithms, row-group
+  classification (header/body/footer for paginator repetition).
+
+### Phase PAGINATE
+
+- Slices a positioned box tree across pages at `floor(box.y /
+  content_height)` boundaries.
+- Multi-page boxes emit one PaginatedBox per page with the visible
+  y-slice; preserves source IDs so PAINT can look up styles.
+- A4 portrait (96dpi) and Letter (8.5×11) page presets.
+
+### Phase PAINT
+
+- Walks each PageFragment and emits text + borders into the existing
+  `PdfWriter` / `PageBuilder`.
+- HTML→PDF Y-flip applied once at emission time so all internal
+  coordinates stay top-down.
+
+### Limits + roadmap
+
+The supported CSS surface is documented in detail in
+[`docs/HTML_TO_PDF_GUIDE.md`](docs/HTML_TO_PDF_GUIDE.md). Out of
+scope per the v0.3.35 R1 cut list: CSS filters, 3D transforms,
+animations, SVG-in-HTML (every viable Rust SVG crate is MPL),
+MathML, `hyphens: auto`, `shape-outside`, JavaScript execution.
+v0.3.36 will add float-aware wrapping, BiDi, `@font-face` URL
+fetching, gradients via shading, `box-shadow` via soft masks, and
+multi-font cascade.
+
+### Licence audit
+
+`cargo deny check licenses` passes with **zero** MPL transitive
+dependencies. The Mozilla CSS stack (`cssparser`, `selectors`,
+`html5ever`, `lightningcss`, `stylo`) is all MPL-2.0; v0.3.35 hand-
+rolls the equivalents to keep pdf_oxide entirely under MIT/Apache.
+
+### Tests
+
+- 178 CSS engine tests, 47 HTML tests, 50+ layout tests, 6 end-to-
+  end tests, 5 paginate tests, 1 paint smoke test.
+- All FONT phase tests (78) continue to pass; the v0.3.34 layout
+  fixture suite continues to pass.
+- 0 regressions in `~/projects/pdf_oxide_tests/` corpus.
+
+### Community
+
+- **[@jmriebold](https://github.com/jmriebold)** — Filed [#248](https://github.com/yfedoseev/pdf_oxide/issues/248)
+  ("CSS support") which became the v0.3.35 release theme. The
+  pipeline shipped here implements his proposed feature.
+
 ## [0.3.36] - 2026-04-19
 > Markdown structural extraction quality vs pdfium — Tagged-PDF
 > heading and list emission, multi-column reading-order fixes,

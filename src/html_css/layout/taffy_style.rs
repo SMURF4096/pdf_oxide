@@ -518,7 +518,7 @@ pub fn run_layout<'sty>(
     let mut out = LayoutResult {
         boxes: vec![LayoutBox::zero(); tree.boxes.len()],
     };
-    walk_absolute(tree, &taffy, &tid, BoxTree::ROOT, 0.0, 0.0, &mut out);
+    walk_absolute(tree, &taffy, &tid, BoxTree::ROOT, 0.0, 0.0, available.width, &mut out);
     out
 }
 
@@ -529,14 +529,17 @@ fn walk_absolute(
     box_id: BoxId,
     parent_x: f32,
     parent_y: f32,
+    parent_width: f32,
     out: &mut LayoutResult,
 ) {
     let mut self_x = parent_x;
     let mut self_y = parent_y;
+    let mut self_width = parent_width;
     if let Some(t) = tid[box_id as usize] {
         if let Ok(layout) = taffy.layout(t) {
             self_x = parent_x + layout.location.x;
             self_y = parent_y + layout.location.y;
+            self_width = layout.size.width;
             out.boxes[box_id as usize] = LayoutBox {
                 x: self_x,
                 y: self_y,
@@ -544,9 +547,21 @@ fn walk_absolute(
                 height: layout.size.height,
             };
         }
+    } else {
+        // No taffy node for this box (text/inline). Inherit position
+        // and width from the parent so the paginator and paint phase
+        // see real coordinates. Height is a small default so paginate
+        // doesn't filter it out; LAYOUT-3's inline formatter will
+        // refine when it's wired in via the measure-callback.
+        out.boxes[box_id as usize] = LayoutBox {
+            x: self_x,
+            y: self_y,
+            width: self_width,
+            height: 16.0,
+        };
     }
     for &child in &tree.get(box_id).children {
-        walk_absolute(tree, taffy, tid, child, self_x, self_y, out);
+        walk_absolute(tree, taffy, tid, child, self_x, self_y, self_width, out);
     }
 }
 
