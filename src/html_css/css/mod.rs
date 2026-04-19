@@ -4,6 +4,11 @@
 //! and the rationale for hand-rolling instead of depending on the
 //! Mozilla stack (MPL-2.0 — denied by `deny.toml`).
 
+pub mod parser;
 pub mod tokenizer;
 
+pub use parser::{
+    parse_declaration_list, parse_stylesheet, AtRule, AtRuleBlock, ComponentValue, Declaration,
+    QualifiedRule, Rule, Stylesheet,
+};
 pub use tokenizer::{tokenize, SourceLocation, Token, TokenizerError};
