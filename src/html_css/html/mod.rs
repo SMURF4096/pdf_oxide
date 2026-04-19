@@ -14,9 +14,11 @@
 //! before feeding the resulting HTML string here.
 
 pub mod dom;
+pub mod resources;
 pub mod stylesheets;
 pub mod tokenizer;
 
 pub use dom::{parse_document, Dom, DomElement, NodeId, NodeKind};
+pub use resources::{extract_resources, Hyperlink, ImageRef, Resources};
 pub use stylesheets::{extract_stylesheets, ExtractedStyles, InlineStyle, StylesheetSource};
 pub use tokenizer::{tokenize, HtmlToken};
