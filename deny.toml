@@ -12,7 +12,19 @@ ignore = []
 
 [licenses]
 version = 2
-# We allow copyleft licenses since we're AGPL
+# pdf_oxide is licensed MIT OR Apache-2.0. The allow list reflects that:
+# every transitive dep must be a permissive licence we can ship under either
+# of our two outward licences without restricting downstream users.
+#
+# Locked decision (v0.3.35 plan, PLAN-1): no MPL-2.0, no GPL/AGPL/SSPL.
+# MPL is *file-level* copyleft — workable but causes friction for some
+# downstream legal teams, and we chose the no-MPL path to keep the ecosystem
+# story simple. If you're tempted to add a Mozilla-stack crate (cssparser,
+# selectors, html5ever, lightningcss, stylo) to satisfy a feature, talk to
+# the release owner first; the v0.3.35 plan has the rationale.
+#
+# cargo-deny [licenses] is allow-list only — anything not listed below
+# fails the build. There is no separate `deny` array for licences.
 allow = [
     "MIT",
     "Apache-2.0",
@@ -23,9 +35,6 @@ allow = [
     "ISC",
     "CC0-1.0",
     "BSL-1.0",
-    "MPL-2.0",
-    "NCSA",
-    "OpenSSL",
 ]
 
 [bans]
