@@ -90,6 +90,8 @@ ttf-parser = "0.25"  # TrueType font parser for embedded font cmap tables
 subsetter = "0.2"    # Binary TrueType/OpenType subsetting (Typst's; MIT/Apache). Used by writer-side
                      # EmbeddedFont to shrink embedded fonts to only the glyphs actually used.
 taffy = { version = "0.10", default-features = false, features = ["std", "taffy_tree", "block_layout", "flexbox", "grid"] }
+unicode-linebreak = "0.1"  # UAX #14 line-break opportunities for the inline formatter (LAYOUT-3)
+unicode-bidi = "0.3"       # BiDi (Hebrew, Arabic) reordering for inline runs
                      # Block/flex/grid layout (Dioxus; MIT, no MPL). Used by Phase LAYOUT to position
                      # box tree nodes; inline formatting is ours (Phase LAYOUT inline_formatting module).
 phf = { version = "0.13", features = ["macros"] }  # Perfect hash maps for Adobe Glyph List
