@@ -230,6 +230,7 @@ impl<'i> Tokenizer<'i> {
     }
 
     /// Returns true and consumes if the upcoming char matches.
+    #[allow(dead_code)] // Used by future at-rule extensions
     fn eat(&mut self, c: char) -> bool {
         if self.peek() == Some(c) {
             self.bump();
@@ -240,6 +241,7 @@ impl<'i> Tokenizer<'i> {
     }
 
     /// Returns true and consumes if the upcoming chars match.
+    #[allow(dead_code)] // Used by future at-rule extensions
     fn eat_str(&mut self, s: &str) -> bool {
         if self.input[self.pos..].starts_with(s) {
             for _ in s.chars() {

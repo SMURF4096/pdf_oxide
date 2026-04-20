@@ -442,7 +442,7 @@ fn emit_wrapped_text(
 }
 
 fn push_run(
-    lines: &mut Vec<RawLine>,
+    lines: &mut [RawLine],
     text: &str,
     char_width_px: f32,
     line_height_px: f32,

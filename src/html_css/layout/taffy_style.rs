@@ -387,9 +387,9 @@ fn align_content_keyword(styles: &ComputedStyles<'_>, prop: &str) -> Option<Alig
 // Layout runner
 // ─────────────────────────────────────────────────────────────────────
 
-/// Layout result for one box: position relative to the containing block
-/// + size in px. Positions are top-left origin (HTML semantics); the
-/// PAINT phase flips Y when emitting PDF.
+/// Layout result for one box: position relative to the containing block,
+/// and size in px. Positions are top-left origin (HTML semantics);
+/// the PAINT phase flips Y when emitting PDF.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LayoutBox {
     /// X in px from parent's content-box origin.

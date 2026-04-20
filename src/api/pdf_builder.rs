@@ -433,9 +433,7 @@ impl Pdf {
             &tree,
             |id| {
                 let node = tree.get(id);
-                let Some(elem_id) = node.element else {
-                    return None;
-                };
+                let elem_id = node.element?;
                 let element = dom_static.element(elem_id).unwrap();
                 Some(cascade(ss_static, element, None))
             },

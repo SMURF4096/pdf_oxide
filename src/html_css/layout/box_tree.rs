@@ -31,7 +31,7 @@ use thiserror::Error;
 use crate::html_css::css::{
     cascade, parse_property, ComputedStyles, ResolvedValue, Stylesheet, Value,
 };
-use crate::html_css::html::{Dom, DomElement, NodeId, NodeKind};
+use crate::html_css::html::{Dom, NodeId, NodeKind};
 
 // ─────────────────────────────────────────────────────────────────────
 // Display split per CSS Display L3
@@ -206,8 +206,6 @@ pub fn build_box_tree(
 
     // Walk the DOM children of the synthetic Document root.
     let doc_node = dom.node(Dom::ROOT);
-    let mut parent_styles: Vec<Option<ComputedStyles<'_>>> = Vec::new();
-    parent_styles.push(None);
 
     for &child_id in &doc_node.children {
         build_subtree(
@@ -309,6 +307,7 @@ fn push_box(tree: &mut BoxTree, mut node: BoxNode) -> BoxId {
 
 /// Resolve `display` (and the associated `position`/box-affecting
 /// keywords) into outer + inner display types.
+#[allow(dead_code)] // Convenience wrapper retained for future call sites
 fn resolve_display(styles: &ComputedStyles<'_>) -> (DisplayOutside, DisplayInside) {
     resolve_display_for(styles, None)
 }
