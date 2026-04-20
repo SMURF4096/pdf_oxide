@@ -19,6 +19,7 @@
 //! - Shadows + opacity via ExtGState soft masks.
 //! - Transforms (`cm` operator already in ContentStreamBuilder).
 
+use crate::geometry::Rect;
 use crate::html_css::css::{parse_color, parse_property, ComputedStyles, Value};
 use crate::html_css::layout::{BoxKind, BoxTree};
 use crate::html_css::paginate::{PageFragment, PaginatedDocument};
@@ -38,6 +39,7 @@ pub fn paint_document<'sty>(
     style_for: impl Fn(u32) -> Option<ComputedStyles<'sty>>,
     font_resource_name: &str,
     font_size_px: f32,
+    link_href_for: impl Fn(u32) -> Option<String>,
 ) {
     for page in &doc.pages {
         let mut page_builder = writer.add_page(doc.config.width_px, doc.config.height_px);
@@ -51,6 +53,7 @@ pub fn paint_document<'sty>(
             &style_for,
             font_resource_name,
             font_size_px,
+            &link_href_for,
         );
     }
 }
@@ -65,6 +68,7 @@ fn paint_page<'sty>(
     style_for: &impl Fn(u32) -> Option<ComputedStyles<'sty>>,
     font_resource_name: &str,
     font_size_px: f32,
+    link_href_for: &impl Fn(u32) -> Option<String>,
 ) {
     for pb in &fragment.boxes {
         let node = tree.get(pb.box_id);
@@ -96,6 +100,17 @@ fn paint_page<'sty>(
             });
             if has_border {
                 page_builder.draw_rect(abs_x, pdf_y, pb.local.width, pb.local.height);
+            }
+        }
+
+        // Link annotation — paint a clickable rect over the box if
+        // the API layer says its DOM element is an `<a href=…>`.
+        if let Some(href) = link_href_for(pb.box_id) {
+            if !href.is_empty() && pb.local.width > 0.0 && pb.local.height > 0.0 {
+                page_builder.link(
+                    Rect::new(abs_x, pdf_y, pb.local.width, pb.local.height),
+                    href,
+                );
             }
         }
 
@@ -215,6 +230,7 @@ mod tests {
             },
             &rn,
             12.0,
+            |_id| None,
         );
 
         let bytes = writer.finish().expect("PDF emission");

@@ -440,6 +440,30 @@ impl Pdf {
             },
             &resource_name,
             12.0,
+            |id| {
+                // Walk up from the box's element (and its ancestors in
+                // the box tree) looking for an <a href=…>. This covers
+                // both the anchor box itself and inner text/inline
+                // children that should inherit the link.
+                let mut cur = Some(id);
+                while let Some(bid) = cur {
+                    let node = tree.get(bid);
+                    if let Some(elem_id) = node.element {
+                        if let Some(element) = dom_static.element(elem_id) {
+                            use crate::html_css::css::matcher::Element;
+                            if element.local_name().eq_ignore_ascii_case("a") {
+                                if let Some(href) = element.attribute("href") {
+                                    if !href.is_empty() {
+                                        return Some(href.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    cur = node.parent;
+                }
+                None
+            },
         );
 
         let bytes = writer

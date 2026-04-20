@@ -172,6 +172,29 @@ fn three_paragraphs_have_decreasing_y_baselines() {
     );
 }
 
+/// FU7 — `<a href>` must emit a PDF link annotation. Smoke-test at the
+/// byte level (no public link-extraction API yet) by looking for the
+/// `/URI (…)` action in the PDF stream.
+#[test]
+fn anchor_link_emits_uri_annotation() {
+    let pdf = Pdf::from_html_css(
+        "<p>Visit <a href=\"https://example.com\">example.com</a> today.</p>",
+        "",
+        DEJAVU.to_vec(),
+    )
+    .expect("from_html_css");
+    let bytes = pdf.into_bytes();
+    let s = String::from_utf8_lossy(&bytes);
+    assert!(
+        s.contains("/Subtype /Link") || s.contains("/Subtype/Link"),
+        "expected a /Link annotation in the PDF stream"
+    );
+    assert!(
+        s.contains("example.com"),
+        "expected the href `example.com` to appear in the /URI action"
+    );
+}
+
 #[test]
 fn produces_valid_pdf_header() {
     let pdf = Pdf::from_html_css("<p>x</p>", "", DEJAVU.to_vec()).unwrap();
