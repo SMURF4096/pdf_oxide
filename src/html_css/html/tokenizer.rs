@@ -130,11 +130,18 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn starts_with_ignore_case(&self, s: &str) -> bool {
-        let rest = &self.input[self.pos..];
-        rest.len() >= s.len()
-            && rest[..s.len()].chars().zip(s.chars()).all(|(a, b)| {
-                a.eq_ignore_ascii_case(&b)
-            })
+        // Compare char-by-char to avoid slicing the haystack on a
+        // non-char boundary when it starts with a multi-byte codepoint
+        // (CSS `content: "» "` etc.). Length-by-bytes can land mid-
+        // codepoint and panic.
+        let mut rest = self.input[self.pos..].chars();
+        for needle_ch in s.chars() {
+            match rest.next() {
+                Some(c) if c.eq_ignore_ascii_case(&needle_ch) => {}
+                _ => return false,
+            }
+        }
+        true
     }
 
     fn next_token(&mut self) -> HtmlToken {
@@ -689,6 +696,16 @@ mod tests {
             }
             _ => panic!(),
         }
+    }
+
+    #[test]
+    fn multibyte_codepoint_does_not_panic_on_ignore_case_lookahead() {
+        // Regression: a multi-byte codepoint at the cursor used to panic
+        // because starts_with_ignore_case sliced the haystack by byte
+        // length before the char-boundary check.
+        let _ = tokenize("<style>p::before { content: \"» \"; }</style>");
+        let _ = tokenize("«guillemets at start»");
+        let _ = tokenize("❤<p>after-heart</p>");
     }
 
     #[test]
