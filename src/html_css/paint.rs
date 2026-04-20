@@ -40,6 +40,7 @@ pub fn paint_document<'sty>(
     font_resource_name: &str,
     font_size_px: f32,
     link_href_for: impl Fn(u32) -> Option<String>,
+    marker_for: impl Fn(u32) -> Option<String>,
 ) {
     for page in &doc.pages {
         let mut page_builder = writer.add_page(doc.config.width_px, doc.config.height_px);
@@ -54,6 +55,7 @@ pub fn paint_document<'sty>(
             font_resource_name,
             font_size_px,
             &link_href_for,
+            &marker_for,
         );
     }
 }
@@ -69,6 +71,7 @@ fn paint_page<'sty>(
     font_resource_name: &str,
     font_size_px: f32,
     link_href_for: &impl Fn(u32) -> Option<String>,
+    marker_for: &impl Fn(u32) -> Option<String>,
 ) {
     for pb in &fragment.boxes {
         let node = tree.get(pb.box_id);
@@ -100,6 +103,22 @@ fn paint_page<'sty>(
             });
             if has_border {
                 page_builder.draw_rect(abs_x, pdf_y, pb.local.width, pb.local.height);
+            }
+        }
+
+        // List marker — bullet or number drawn at the top-left of the
+        // <li> box, offset into the gutter to the left of the content.
+        if let Some(marker) = marker_for(pb.box_id) {
+            if !marker.is_empty() {
+                let marker_pdf_y = page_height_px - abs_top_y - font_size_px;
+                let marker_x = (abs_x - font_size_px * 1.2).max(0.0);
+                page_builder.add_embedded_text(
+                    &marker,
+                    marker_x,
+                    marker_pdf_y,
+                    font_resource_name,
+                    font_size_px,
+                );
             }
         }
 
@@ -230,6 +249,7 @@ mod tests {
             },
             &rn,
             12.0,
+            |_id| None,
             |_id| None,
         );
 

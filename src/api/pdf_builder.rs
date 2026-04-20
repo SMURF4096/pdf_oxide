@@ -441,10 +441,8 @@ impl Pdf {
             &resource_name,
             12.0,
             |id| {
-                // Walk up from the box's element (and its ancestors in
-                // the box tree) looking for an <a href=…>. This covers
-                // both the anchor box itself and inner text/inline
-                // children that should inherit the link.
+                // Walk up the box tree looking for an <a href=…> — inline
+                // text children inherit the link.
                 let mut cur = Some(id);
                 while let Some(bid) = cur {
                     let node = tree.get(bid);
@@ -461,6 +459,47 @@ impl Pdf {
                         }
                     }
                     cur = node.parent;
+                }
+                None
+            },
+            |id| {
+                // List marker — bullet for <ul>, "N." for <ol>.
+                let node = tree.get(id);
+                let elem_id = node.element?;
+                let element = dom_static.element(elem_id)?;
+                use crate::html_css::css::matcher::Element;
+                if !element.local_name().eq_ignore_ascii_case("li") {
+                    return None;
+                }
+                let mut cur = node.parent;
+                while let Some(bid) = cur {
+                    let pnode = tree.get(bid);
+                    if let Some(peid) = pnode.element {
+                        if let Some(pel) = dom_static.element(peid) {
+                            let tag = pel.local_name();
+                            if tag.eq_ignore_ascii_case("ol") {
+                                let mut idx = 1usize;
+                                for &sib in &pnode.children {
+                                    if sib == id {
+                                        break;
+                                    }
+                                    let sn = tree.get(sib);
+                                    if let Some(seid) = sn.element {
+                                        if let Some(se) = dom_static.element(seid) {
+                                            if se.local_name().eq_ignore_ascii_case("li") {
+                                                idx += 1;
+                                            }
+                                        }
+                                    }
+                                }
+                                return Some(format!("{idx}."));
+                            }
+                            if tag.eq_ignore_ascii_case("ul") {
+                                return Some("\u{2022}".to_string());
+                            }
+                        }
+                    }
+                    cur = pnode.parent;
                 }
                 None
             },

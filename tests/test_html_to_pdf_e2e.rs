@@ -195,6 +195,24 @@ fn anchor_link_emits_uri_annotation() {
     );
 }
 
+/// FU6 — `<ul>` gets bullet markers, `<ol>` gets numeric markers.
+#[test]
+fn list_markers_are_emitted() {
+    let extracted = build_and_extract(
+        "<ul><li>Apple</li><li>Banana</li></ul><ol><li>First</li><li>Second</li></ol>",
+        "",
+    );
+    // Bullet char (U+2022)
+    assert!(
+        extracted.contains('\u{2022}') || extracted.contains("•"),
+        "expected a bullet marker; got {extracted:?}"
+    );
+    assert!(
+        extracted.contains("1.") && extracted.contains("2."),
+        "expected numeric markers `1.` and `2.`; got {extracted:?}"
+    );
+}
+
 #[test]
 fn produces_valid_pdf_header() {
     let pdf = Pdf::from_html_css("<p>x</p>", "", DEJAVU.to_vec()).unwrap();
