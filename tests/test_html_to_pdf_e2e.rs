@@ -9,6 +9,7 @@ use pdf_oxide::api::Pdf;
 use pdf_oxide::PdfDocument;
 
 const DEJAVU: &[u8] = include_bytes!("fixtures/fonts/DejaVuSans.ttf");
+const DEJAVU_MONO: &[u8] = include_bytes!("fixtures/fonts/DejaVuSansMono.ttf");
 
 fn build_and_extract(html: &str, css: &str) -> String {
     let pdf = Pdf::from_html_css(html, css, DEJAVU.to_vec()).expect("from_html_css");
@@ -237,6 +238,31 @@ fn inline_style_page_break_before_forces_new_page() {
     assert!(
         doc.page_count().unwrap() >= 2,
         "inline page-break-before should yield ≥2 pages"
+    );
+}
+
+/// B4/FU8 — `font-family` picks a registered font; unknown families
+/// fall back to the default (first-registered) font.
+#[test]
+fn multi_font_cascade_selects_registered_family() {
+    let pdf = Pdf::from_html_css_with_fonts(
+        "<p>body</p><p class=\"m\">mono</p>",
+        ".m { font-family: 'DejaVu Sans Mono' }",
+        vec![
+            ("DejaVu Sans".to_string(), DEJAVU.to_vec()),
+            ("DejaVu Sans Mono".to_string(), DEJAVU_MONO.to_vec()),
+        ],
+    )
+    .expect("from_html_css_with_fonts");
+    let bytes = pdf.into_bytes();
+    let font_file_count = String::from_utf8_lossy(&bytes).matches("/FontFile2").count();
+    let mut doc = PdfDocument::from_bytes(bytes).expect("reopen");
+    let text = doc.extract_text(0).expect("extract");
+    assert!(text.contains("body"));
+    assert!(text.contains("mono"));
+    assert!(
+        font_file_count >= 2,
+        "expected ≥2 embedded fonts in PDF; got {font_file_count}"
     );
 }
 

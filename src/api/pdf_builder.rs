@@ -367,6 +367,33 @@ impl Pdf {
     /// pdf.save("out.pdf")?;
     /// ```
     pub fn from_html_css(html: &str, css: &str, font_bytes: Vec<u8>) -> Result<Self> {
+        Self::from_html_css_with_fonts(html, css, vec![("Body".to_string(), font_bytes)])
+    }
+
+    /// Like [`Pdf::from_html_css`] but accepts multiple fonts keyed by
+    /// their CSS `font-family` name. The first entry is the default
+    /// used by any element whose family doesn't match a registered
+    /// name. Family matching is case-insensitive, and the CSS value's
+    /// quoted/unquoted forms are both accepted.
+    ///
+    /// ```ignore
+    /// use pdf_oxide::api::Pdf;
+    /// let sans = std::fs::read("DejaVuSans.ttf")?;
+    /// let mono = std::fs::read("DejaVuSansMono.ttf")?;
+    /// let pdf = Pdf::from_html_css_with_fonts(
+    ///     "<p>body <code>code</code></p>",
+    ///     "code { font-family: 'DejaVu Sans Mono' }",
+    ///     vec![
+    ///         ("DejaVu Sans".to_string(), sans),
+    ///         ("DejaVu Sans Mono".to_string(), mono),
+    ///     ],
+    /// )?;
+    /// ```
+    pub fn from_html_css_with_fonts(
+        html: &str,
+        css: &str,
+        fonts: Vec<(String, Vec<u8>)>,
+    ) -> Result<Self> {
         use crate::html_css::css::{apply_inline_declarations, cascade, parse_stylesheet};
         use crate::html_css::html::{extract_stylesheets, parse_document, StylesheetSource};
         use crate::html_css::layout::{build_box_tree, run_layout};
@@ -469,10 +496,28 @@ impl Pdf {
             },
         );
 
+        if fonts.is_empty() {
+            return Err(crate::error::Error::Unsupported(
+                "from_html_css_with_fonts needs at least one font".into(),
+            ));
+        }
         let mut writer = PdfWriter::new();
-        let font = EmbeddedFont::from_data(Some("Body".to_string()), font_bytes)
-            .map_err(|e| crate::error::Error::Unsupported(format!("font parse: {e}")))?;
-        let resource_name = writer.register_embedded_font(font);
+        // Register every font and remember (family_lowercase, resource_name).
+        let mut family_to_resource: Vec<(String, String)> = Vec::with_capacity(fonts.len());
+        let mut default_resource = String::new();
+        for (family, bytes) in fonts {
+            let font = EmbeddedFont::from_data(Some(family.clone()), bytes)
+                .map_err(|e| crate::error::Error::Unsupported(format!("font parse: {e}")))?;
+            let rn = writer.register_embedded_font(font);
+            if default_resource.is_empty() {
+                default_resource = rn.clone();
+            }
+            family_to_resource.push((family.to_lowercase(), rn));
+        }
+        let resource_name = default_resource;
+        // Leak the family map so the paint closure can borrow 'static.
+        let family_map: &'static [(String, String)] =
+            Box::leak(family_to_resource.into_boxed_slice());
 
         paint_document(
             &mut writer,
@@ -564,6 +609,64 @@ impl Pdf {
                         }
                     }
                     cur = pnode.parent;
+                }
+                None
+            },
+            |id| {
+                // font-family resolution: walk up the box tree to find the
+                // nearest ancestor with a declared `font-family`, then
+                // match each comma-separated family name (case-insensitive,
+                // quotes stripped) against the registered family_map. First
+                // hit wins; None falls back to the default font.
+                let mut cur = Some(id);
+                while let Some(bid) = cur {
+                    let node = tree.get(bid);
+                    if let Some(elem_id) = node.element {
+                        if let Some(element) = dom_static.element(elem_id) {
+                            let mut styles = cascade(ss_static, element, None);
+                            // Inline styles can override font-family too.
+                            let inline_style: Option<&'static str> =
+                                match &dom_static.node(elem_id).kind {
+                                    crate::html_css::html::NodeKind::Element {
+                                        attrs,
+                                        ..
+                                    } => attrs
+                                        .iter()
+                                        .find(|(k, _)| k.eq_ignore_ascii_case("style"))
+                                        .map(|(_, v)| v.as_str()),
+                                    _ => None,
+                                };
+                            if let Some(inline) = inline_style {
+                                if let Ok(decls) =
+                                    crate::html_css::css::parser::parse_declaration_list(inline)
+                                {
+                                    apply_inline_declarations(&mut styles, &decls);
+                                }
+                            }
+                            if let Some(rv) = styles.get("font-family") {
+                                for cv in &rv.value {
+                                    let name_opt = match cv {
+                                        crate::html_css::css::parser::ComponentValue::Token(
+                                            crate::html_css::css::tokenizer::Token::Ident(s),
+                                        ) => Some(s.as_ref().to_string()),
+                                        crate::html_css::css::parser::ComponentValue::Token(
+                                            crate::html_css::css::tokenizer::Token::String(s),
+                                        ) => Some(s.as_ref().to_string()),
+                                        _ => None,
+                                    };
+                                    if let Some(name) = name_opt {
+                                        let needle = name.to_lowercase();
+                                        for (fam, rn) in family_map {
+                                            if fam == &needle {
+                                                return Some(rn.clone());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    cur = node.parent;
                 }
                 None
             },
