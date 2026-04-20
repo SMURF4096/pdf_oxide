@@ -418,6 +418,7 @@ impl Pdf {
                 height: 800.0,
             },
             &calc_ctx,
+            12.0,
         );
 
         let paginated = paginate(&tree, &layout, PageConfig::a4());

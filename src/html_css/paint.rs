@@ -175,6 +175,7 @@ mod tests {
                 height: 800.0,
             },
             &crate::html_css::css::CalcContext::default(),
+            12.0,
         );
         let doc = paginate(&tree, &layout, PageConfig::a4());
         assert!(!doc.pages.is_empty());

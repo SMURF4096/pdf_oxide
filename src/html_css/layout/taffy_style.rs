@@ -432,11 +432,70 @@ pub struct LayoutResult {
 /// `style_for` returns the computed style for a given box id; the
 /// caller (Phase API) wires it to the cascade. The 'sty lifetime
 /// allows the closure to borrow the source stylesheet.
+/// Sum the character count of every descendant Text box under
+/// `box_id`. Used to give block-level containers an intrinsic height
+/// before Taffy layout — without this every `<p>` would be a 0×0 leaf
+/// (text children are skipped by Taffy assembly) and sibling `<p>`s
+/// would all stack at y=0. Issue #248 release(v0.3.37) B1.
+fn collect_text_chars(tree: &BoxTree, id: BoxId) -> usize {
+    let mut acc = 0usize;
+    let n = tree.get(id);
+    if let BoxKind::Text(s) = &n.kind {
+        // Compress runs of whitespace to one logical space so the
+        // estimate matches what the inline formatter (LAYOUT-3) would
+        // produce after `white-space: normal` collapsing.
+        let mut last_ws = false;
+        for c in s.chars() {
+            let is_ws = c.is_whitespace();
+            if is_ws {
+                if !last_ws {
+                    acc += 1;
+                }
+            } else {
+                acc += 1;
+            }
+            last_ws = is_ws;
+        }
+    }
+    for &c in &n.children {
+        acc += collect_text_chars(tree, c);
+    }
+    acc
+}
+
+/// Estimate the wrapped-text height for a block container holding
+/// inline text. Approximate but sufficient to make sibling block
+/// elements stack vertically at distinct baselines (the precise
+/// per-glyph positioning is the inline formatter's job in PAINT).
+///
+/// Heuristic: char width ≈ 0.5 × font_size, line-height ≈ 1.2 ×
+/// font_size, computed wrapped lines = ceil(chars / chars_per_line).
+fn estimate_block_text_height(
+    tree: &BoxTree,
+    box_id: BoxId,
+    available_width_px: f32,
+    font_size_px: f32,
+) -> f32 {
+    let chars = collect_text_chars(tree, box_id);
+    if chars == 0 {
+        return 0.0;
+    }
+    let char_width = (font_size_px * 0.5).max(1.0);
+    let chars_per_line = (available_width_px / char_width).max(1.0);
+    let lines = ((chars as f32) / chars_per_line).ceil().max(1.0);
+    lines * font_size_px * 1.2
+}
+
+/// Run Taffy layout over `tree`, returning per-box positions and sizes.
+///
+/// `body_font_size_px` is the inherited body font-size used as a fallback
+/// when estimating intrinsic text height for inline-bearing blocks.
 pub fn run_layout<'sty>(
     tree: &BoxTree,
     style_for: impl Fn(BoxId) -> ComputedStyles<'sty>,
     available: Size<f32>,
     ctx: &CalcContext,
+    body_font_size_px: f32,
 ) -> LayoutResult {
     use taffy::prelude::TaffyTree;
 
@@ -470,6 +529,12 @@ pub fn run_layout<'sty>(
                 width: Dimension::percent(1.0),
                 height: Dimension::auto(),
             };
+            // Stamp text-content height so an anonymous block
+            // wrapping inline text has a real intrinsic height.
+            let h = estimate_block_text_height(tree, id, available.width, body_font_size_px);
+            if h > 0.0 {
+                s.min_size.height = Dimension::length(h);
+            }
             s
         } else {
             let mut computed = style_to_taffy(&style_for(id), ctx, node.outside, node.inside);
@@ -482,6 +547,21 @@ pub fn run_layout<'sty>(
                 && computed.size.width == Dimension::auto()
             {
                 computed.size.width = Dimension::percent(1.0);
+            }
+            // Inline content height: when this block has only inline /
+            // text descendants (no block children that would otherwise
+            // contribute their own heights), give it an intrinsic
+            // wrapped-text height so sibling blocks stack vertically
+            // (B1 fix). Without this, every `<p>` becomes a 0×0
+            // Taffy leaf and they all sit at y=0.
+            if matches!(node.outside, DisplayOutside::Block | DisplayOutside::ListItem)
+                && computed.size.height == Dimension::auto()
+                && computed.min_size.height == Dimension::auto()
+            {
+                let h = estimate_block_text_height(tree, id, available.width, body_font_size_px);
+                if h > 0.0 {
+                    computed.min_size.height = Dimension::length(h);
+                }
             }
             computed
         };
@@ -610,6 +690,7 @@ mod tests {
                 height: 400.0,
             },
             &CalcContext::default(),
+            12.0,
         );
         // Find the div's BoxId.
         let div_id = tree.iter_ids()
@@ -636,6 +717,7 @@ mod tests {
                 height: 400.0,
             },
             &CalcContext::default(),
+            12.0,
         );
         let div_id = tree.iter_ids()
             .into_iter()
@@ -659,6 +741,7 @@ mod tests {
                 height: 400.0,
             },
             &CalcContext::default(),
+            12.0,
         );
         let div_id = tree.iter_ids()
             .into_iter()
@@ -683,6 +766,7 @@ mod tests {
                 height: 400.0,
             },
             &CalcContext::default(),
+            12.0,
         );
         let div_id = tree.iter_ids()
             .into_iter()
@@ -707,6 +791,7 @@ mod tests {
                 height: 400.0,
             },
             &CalcContext::default(),
+            12.0,
         );
         let divs: Vec<BoxId> = tree
             .iter_ids()
@@ -735,6 +820,7 @@ mod tests {
                 height: 400.0,
             },
             &CalcContext::default(),
+            12.0,
         );
         let elements: Vec<BoxId> = tree
             .iter_ids()
