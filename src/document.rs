@@ -9397,7 +9397,7 @@ impl PdfDocument {
 
         let pipeline_config = TextPipelineConfig::from_conversion_options(options);
 
-        let mcid_order = {
+        let (mcid_order, mcid_to_role, mcid_to_block_id) = {
             let cached_tree = match &self.structure_tree_cache {
                 Some(cached) => cached.clone(),
                 None => {
@@ -9415,33 +9415,114 @@ impl PdfDocument {
                     self.structure_content_cache = Some(all_content);
                 }
 
-                // Extract MCID order from cached content for this page
-                let order: Vec<u32> = self
+                // Extract MCID order AND per-MCID structural role for this page.
+                // The role map drives the markdown converter's heading/list
+                // emission (issue #377 D1). Without it, every tagged Word doc
+                // loses its heading hierarchy and consecutive list items
+                // collapse into a single paragraph.
+                let cached_page = self
                     .structure_content_cache
                     .as_ref()
-                    .and_then(|cache| cache.get(&(page_index as u32)))
+                    .and_then(|cache| cache.get(&(page_index as u32)));
+
+                let order: Vec<u32> = cached_page
                     .map(|content| content.iter().filter_map(|c| c.mcid).collect())
                     .unwrap_or_default();
 
+                let mut role_map: std::collections::HashMap<u32, crate::pipeline::StructRole> =
+                    std::collections::HashMap::new();
+                let mut block_map: std::collections::HashMap<u32, u32> =
+                    std::collections::HashMap::new();
+                if let Some(content) = cached_page {
+                    for item in content {
+                        if let Some(mcid) = item.mcid {
+                            // Heading takes precedence over list role on the
+                            // same MCR (a heading-marked-content doesn't
+                            // also play a list role in any sane PDF).
+                            let role = if let Some(level) = item.heading_level {
+                                Some(crate::pipeline::StructRole::Heading(level))
+                            } else {
+                                item.list_role.map(|lr| match lr {
+                                    crate::structure::ListRole::LI => {
+                                        crate::pipeline::StructRole::ListItem
+                                    },
+                                    crate::structure::ListRole::Lbl => {
+                                        crate::pipeline::StructRole::ListItemLabel
+                                    },
+                                    crate::structure::ListRole::LBody => {
+                                        crate::pipeline::StructRole::ListItemBody
+                                    },
+                                })
+                            };
+                            if let Some(r) = role {
+                                // Heading wins over list role on the same MCID.
+                                // The comment further up in this function asserts the
+                                // precedence ("Heading takes precedence over list role
+                                // on the same MCR"); plain `or_insert` would silently
+                                // keep whichever role was seen first when the same
+                                // MCID appears in two `OrderedContent` entries
+                                // (e.g. one referenced from an /H1 sibling and one
+                                // from an enclosing /LI in a tagged-tree quirk).
+                                use std::collections::hash_map::Entry;
+                                match role_map.entry(mcid) {
+                                    Entry::Vacant(e) => {
+                                        e.insert(r);
+                                    },
+                                    Entry::Occupied(mut e) => {
+                                        let existing = *e.get();
+                                        let new_is_heading =
+                                            matches!(r, crate::pipeline::StructRole::Heading(_));
+                                        let existing_is_heading = matches!(
+                                            existing,
+                                            crate::pipeline::StructRole::Heading(_)
+                                        );
+                                        if new_is_heading && !existing_is_heading {
+                                            e.insert(r);
+                                        }
+                                    },
+                                }
+                            }
+                            // First block_id wins per MCID — multiple OrderedContent
+                            // entries can share an MCID when the same content is
+                            // referenced from sibling structure elements; the first
+                            // emit reflects the document order.
+                            block_map.entry(mcid).or_insert(item.block_id);
+                        }
+                    }
+                }
+
+                let role_map_opt = if role_map.is_empty() {
+                    None
+                } else {
+                    Some(role_map)
+                };
+                let block_map_opt = if block_map.is_empty() {
+                    None
+                } else {
+                    Some(block_map)
+                };
+
                 if !order.is_empty() {
                     log::debug!(
-                        "Extracted {} MCIDs from cached structure tree for page {}",
+                        "Extracted {} MCIDs ({} typed, {} blocked) from structure tree for page {}",
                         order.len(),
+                        role_map_opt.as_ref().map(|m| m.len()).unwrap_or(0),
+                        block_map_opt.as_ref().map(|m| m.len()).unwrap_or(0),
                         page_index
                     );
-                    Some(order)
+                    (Some(order), role_map_opt, block_map_opt)
                 } else {
                     log::debug!(
                         "No MCIDs found for page {}, reading order strategy will use geometric fallback",
                         page_index
                     );
-                    None
+                    (None, role_map_opt, block_map_opt)
                 }
             } else {
                 log::debug!(
                     "No structure tree found, reading order strategy will use geometric fallback"
                 );
-                None
+                (None, None, None)
             }
         };
 
@@ -9455,7 +9536,26 @@ impl PdfDocument {
         }
 
         // Step 7: Process through pipeline (applies reading order strategy)
-        let ordered_spans = pipeline.process(spans, context)?;
+        let mut ordered_spans = pipeline.process(spans, context)?;
+
+        // Annotate ordered spans with the per-MCID structural role and
+        // paragraph block-id so the markdown converter can emit headings
+        // and bullets directly from the source PDF's `/StructTreeRoot`
+        // and respect tagged paragraph boundaries even when the
+        // geometric inter-paragraph gap is too small for the heuristic
+        // (issue #377 D1 + D5 unlock).
+        if mcid_to_role.is_some() || mcid_to_block_id.is_some() {
+            for s in ordered_spans.iter_mut() {
+                if let Some(mcid) = s.span.mcid {
+                    if let Some(role) = mcid_to_role.as_ref().and_then(|m| m.get(&mcid)) {
+                        s.struct_role = Some(*role);
+                    }
+                    if let Some(bid) = mcid_to_block_id.as_ref().and_then(|m| m.get(&mcid)) {
+                        s.block_id = Some(*bid);
+                    }
+                }
+            }
+        }
 
         // Step 8: Use pipeline converter with tables
         let converter = MarkdownOutputConverter::new();
@@ -9501,6 +9601,15 @@ impl PdfDocument {
         let mut markdown = String::new();
         let mut has_content = false;
 
+        // Cap on base64 data URI size in characters. Anything larger
+        // emits a placeholder instead so a multi-page PDF with high-
+        // resolution images doesn't balloon the markdown output to
+        // megabytes (issue #377 corpus-comparison observation: a
+        // 17-page arxiv paper produced 11 MB of markdown, ~600 KB
+        // per page of base64 PNG data, swamping any text-content
+        // signal). 200 KB per image keeps small thumbnails and
+        // diagrams while skipping full-page renders.
+        const MAX_BASE64_DATA_URI: usize = 200 * 1024;
         for (i, image) in images.iter().enumerate() {
             if options.embed_images {
                 match image.to_base64_data_uri() {
@@ -9510,7 +9619,27 @@ impl PdfDocument {
                             has_content = true;
                         }
                         let alt = format!("Image {} from page {}", i + 1, page_index + 1);
-                        markdown.push_str(&format!("![{}]({})\n\n", alt, data_uri));
+                        if data_uri.len() > MAX_BASE64_DATA_URI {
+                            // Estimate decoded binary size from the base64
+                            // payload: each 4 chars decode to 3 bytes (minus
+                            // padding). Drop the `data:...;base64,` prefix
+                            // before measuring.
+                            let payload = data_uri
+                                .split_once(',')
+                                .map(|(_, p)| p)
+                                .unwrap_or(&data_uri);
+                            let unpadded = payload.trim_end_matches('=').len();
+                            let approx_binary_kb = (unpadded * 3 / 4) / 1024;
+                            markdown.push_str(&format!(
+                                "<!-- ![{}] suppressed: ~{} KB decoded image (base64 data URI {} KB) exceeds {} KB inline-image cap -->\n\n",
+                                alt,
+                                approx_binary_kb,
+                                data_uri.len() / 1024,
+                                MAX_BASE64_DATA_URI / 1024
+                            ));
+                        } else {
+                            markdown.push_str(&format!("![{}]({})\n\n", alt, data_uri));
+                        }
                     },
                     Err(e) => {
                         log::warn!("Failed to encode image {}: {}", i, e);

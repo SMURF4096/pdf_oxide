@@ -24,7 +24,7 @@ manual_checked_ops = "allow"
 
 [package]
 name = "pdf_oxide"
-version = "0.3.35"
+version = "0.3.36"
 # Anchor patterns with a leading slash — Cargo uses gitignore-style globs, so
 # a bare "README.md" matches every README.md recursively (was pulling in 20+
 # subdir READMEs plus js/node_modules/*/README.md into the sdist). Leading /
@@ -89,6 +89,9 @@ brotli = "8"  # Brotli compression (PDF 2.0, ISO 32000-2:2020)
 ttf-parser = "0.25"  # TrueType font parser for embedded font cmap tables
 phf = { version = "0.13", features = ["macros"] }  # Perfect hash maps for Adobe Glyph List
 encoding_rs = "0.8"  # Shift-JIS, EUC-JP, and other CJK encodings for predefined CMaps
+
+# Unicode bidirectional algorithm (UAX #9) for RTL paragraph reordering (#377 D7)
+unicode-bidi = { version = "0.3", default-features = false }
 
 # Image processing
 image = { version = "0.24", default-features = false, features = ["png", "jpeg", "tiff"] }
