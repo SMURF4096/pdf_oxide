@@ -195,6 +195,51 @@ fn anchor_link_emits_uri_annotation() {
     );
 }
 
+/// FU1 — `page-break-before: always` and `page-break-after: always`
+/// move content onto a new page.
+#[test]
+fn page_break_before_forces_new_page() {
+    let pdf = Pdf::from_html_css(
+        "<p>First page content.</p>\
+         <h1 class=\"pb\">Second Page</h1>\
+         <p>Body on page two.</p>",
+        ".pb { page-break-before: always }",
+        DEJAVU.to_vec(),
+    )
+    .expect("from_html_css");
+    let mut doc = PdfDocument::from_bytes(pdf.into_bytes()).expect("re-open");
+    let pages = doc.page_count().expect("page_count");
+    assert!(
+        pages >= 2,
+        "page-break-before should yield ≥2 pages; got {pages}"
+    );
+    let p0 = doc.extract_text(0).expect("p0");
+    let p1 = doc.extract_text(1).expect("p1");
+    assert!(p0.contains("First"), "page 0 should have `First`; got {p0:?}");
+    assert!(
+        p1.contains("Second Page") || p1.contains("Second"),
+        "page 1 should have `Second Page`; got {p1:?}"
+    );
+}
+
+/// FU1 (b) — inline `style="page-break-before: always"` also works.
+#[test]
+fn inline_style_page_break_before_forces_new_page() {
+    let pdf = Pdf::from_html_css(
+        "<p>First page.</p>\
+         <h1 style=\"page-break-before: always\">Second</h1>\
+         <p>Two.</p>",
+        "",
+        DEJAVU.to_vec(),
+    )
+    .expect("from_html_css");
+    let mut doc = PdfDocument::from_bytes(pdf.into_bytes()).expect("re-open");
+    assert!(
+        doc.page_count().unwrap() >= 2,
+        "inline page-break-before should yield ≥2 pages"
+    );
+}
+
 /// FU6 — `<ul>` gets bullet markers, `<ol>` gets numeric markers.
 #[test]
 fn list_markers_are_emitted() {

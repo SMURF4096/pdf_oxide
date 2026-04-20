@@ -125,7 +125,64 @@ pub fn paginate(
     layout: &LayoutResult,
     config: PageConfig,
 ) -> PaginatedDocument {
+    paginate_with_styles(tree, layout, config, |_| None)
+}
+
+/// Slice a positioned box tree into pages, consulting a per-box
+/// `style_for` closure for CSS page-break properties.
+///
+/// Honours `page-break-before: always` and `page-break-after: always`
+/// on element boxes by shifting the box (and every box that follows in
+/// document order) downward to the next page boundary before the
+/// geometric overflow pass.
+pub fn paginate_with_styles<'sty>(
+    tree: &BoxTree,
+    layout: &LayoutResult,
+    config: PageConfig,
+    style_for: impl Fn(BoxId) -> Option<crate::html_css::css::ComputedStyles<'sty>>,
+) -> PaginatedDocument {
     let content_h = config.content_height_px().max(1.0);
+
+    // Apply page-break-* as a cumulative y-shift over doc order. Each
+    // box's y moves by the running shift; when a break fires, the
+    // shift grows by the distance needed to land on the next page
+    // boundary.
+    use crate::html_css::css::{parser::ComponentValue, tokenizer::Token};
+    fn first_ident_matches(values: &[ComponentValue<'_>], want: &str) -> bool {
+        for v in values {
+            if let ComponentValue::Token(Token::Ident(s)) = v {
+                return s.eq_ignore_ascii_case(want);
+            }
+        }
+        false
+    }
+    let mut shifted = layout.boxes.clone();
+    let mut y_shift = 0.0f32;
+    for id in tree.iter_ids() {
+        let idx = id as usize;
+        let styles = style_for(id);
+        let pre_break = styles
+            .as_ref()
+            .and_then(|s| s.get("page-break-before"))
+            .map(|v| first_ident_matches(&v.value, "always"))
+            .unwrap_or(false);
+        if pre_break {
+            let y_before_break = shifted[idx].y + y_shift;
+            let next_boundary = ((y_before_break / content_h).floor() + 1.0) * content_h;
+            y_shift += (next_boundary - y_before_break).max(0.0);
+        }
+        shifted[idx].y += y_shift;
+        let post_break = styles
+            .as_ref()
+            .and_then(|s| s.get("page-break-after"))
+            .map(|v| first_ident_matches(&v.value, "always"))
+            .unwrap_or(false);
+        if post_break {
+            let y_bottom = shifted[idx].y + shifted[idx].height;
+            let next_boundary = ((y_bottom / content_h).floor() + 1.0) * content_h;
+            y_shift += (next_boundary - y_bottom).max(0.0);
+        }
+    }
 
     let mut pages: Vec<PageFragment> = Vec::new();
 
@@ -139,7 +196,7 @@ pub fn paginate(
     };
 
     for id in tree.iter_ids() {
-        let layout_box = layout.boxes[id as usize];
+        let layout_box = shifted[id as usize];
         // Skip zero-sized / un-laid-out boxes.
         if layout_box.width <= 0.0 && layout_box.height <= 0.0 {
             continue;

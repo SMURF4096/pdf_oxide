@@ -367,10 +367,10 @@ impl Pdf {
     /// pdf.save("out.pdf")?;
     /// ```
     pub fn from_html_css(html: &str, css: &str, font_bytes: Vec<u8>) -> Result<Self> {
-        use crate::html_css::css::{cascade, parse_stylesheet};
+        use crate::html_css::css::{apply_inline_declarations, cascade, parse_stylesheet};
         use crate::html_css::html::{extract_stylesheets, parse_document, StylesheetSource};
         use crate::html_css::layout::{build_box_tree, run_layout};
-        use crate::html_css::paginate::{paginate, PageConfig};
+        use crate::html_css::paginate::{paginate_with_styles, PageConfig};
         use crate::html_css::paint::paint_document;
         use crate::writer::{EmbeddedFont, PdfWriter};
         use taffy::prelude::Size;
@@ -411,7 +411,25 @@ impl Pdf {
                     return crate::html_css::css::ComputedStyles::default();
                 };
                 let element = dom_static.element(elem_id).unwrap();
-                cascade(ss_static, element, None)
+                let mut styles = cascade(ss_static, element, None);
+                let inline_style: Option<&'static str> = match &dom_static
+                    .node(elem_id)
+                    .kind
+                {
+                    crate::html_css::html::NodeKind::Element { attrs, .. } => attrs
+                        .iter()
+                        .find(|(k, _)| k.eq_ignore_ascii_case("style"))
+                        .map(|(_, v)| v.as_str()),
+                    _ => None,
+                };
+                if let Some(inline) = inline_style {
+                    if let Ok(decls) =
+                        crate::html_css::css::parser::parse_declaration_list(inline)
+                    {
+                        apply_inline_declarations(&mut styles, &decls);
+                    }
+                }
+                styles
             },
             Size {
                 width: 600.0,
@@ -421,7 +439,35 @@ impl Pdf {
             12.0,
         );
 
-        let paginated = paginate(&tree, &layout, PageConfig::a4());
+        let paginated = paginate_with_styles(
+            &tree,
+            &layout,
+            PageConfig::a4(),
+            |id| {
+                let node = tree.get(id);
+                let elem_id = node.element?;
+                let element = dom_static.element(elem_id).unwrap();
+                let mut styles = cascade(ss_static, element, None);
+                let inline_style: Option<&'static str> = match &dom_static
+                    .node(elem_id)
+                    .kind
+                {
+                    crate::html_css::html::NodeKind::Element { attrs, .. } => attrs
+                        .iter()
+                        .find(|(k, _)| k.eq_ignore_ascii_case("style"))
+                        .map(|(_, v)| v.as_str()),
+                    _ => None,
+                };
+                if let Some(inline) = inline_style {
+                    if let Ok(decls) =
+                        crate::html_css::css::parser::parse_declaration_list(inline)
+                    {
+                        apply_inline_declarations(&mut styles, &decls);
+                    }
+                }
+                Some(styles)
+            },
+        );
 
         let mut writer = PdfWriter::new();
         let font = EmbeddedFont::from_data(Some("Body".to_string()), font_bytes)
@@ -436,7 +482,25 @@ impl Pdf {
                 let node = tree.get(id);
                 let elem_id = node.element?;
                 let element = dom_static.element(elem_id).unwrap();
-                Some(cascade(ss_static, element, None))
+                let mut styles = cascade(ss_static, element, None);
+                let inline_style: Option<&'static str> = match &dom_static
+                    .node(elem_id)
+                    .kind
+                {
+                    crate::html_css::html::NodeKind::Element { attrs, .. } => attrs
+                        .iter()
+                        .find(|(k, _)| k.eq_ignore_ascii_case("style"))
+                        .map(|(_, v)| v.as_str()),
+                    _ => None,
+                };
+                if let Some(inline) = inline_style {
+                    if let Ok(decls) =
+                        crate::html_css::css::parser::parse_declaration_list(inline)
+                    {
+                        apply_inline_declarations(&mut styles, &decls);
+                    }
+                }
+                Some(styles)
             },
             &resource_name,
             12.0,
