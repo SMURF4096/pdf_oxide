@@ -974,6 +974,23 @@ impl EmbeddedFont {
         hex
     }
 
+    /// Encode a sequence of pre-shaped glyph IDs as an Identity-H hex
+    /// string, registering each glyph with the subsetter.
+    ///
+    /// Glyph IDs come from `crate::writer::font_shaping::shape` (or any
+    /// other shaper). They are emitted in the order given — callers must
+    /// supply visual order, not logical order.
+    pub fn encode_shaped(&mut self, glyph_ids: &[u16]) -> String {
+        let mut hex = String::with_capacity(glyph_ids.len() * 4 + 2);
+        hex.push('<');
+        for &gid in glyph_ids {
+            self.subsetter.use_glyph(gid);
+            hex.push_str(&format!("{:04X}", gid));
+        }
+        hex.push('>');
+        hex
+    }
+
     /// Get the subset font name (generates tag if needed).
     pub fn subset_name(&mut self) -> &str {
         if self.subset_name.is_none() {

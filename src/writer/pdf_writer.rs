@@ -175,6 +175,55 @@ impl<'a> PageBuilder<'a> {
         self
     }
 
+    /// Add Unicode text on a page using the rustybuzz shaper. Required
+    /// for any complex script (Arabic, Hebrew, Devanagari) where
+    /// `add_embedded_text`'s naive char→glyph cmap lookup produces
+    /// the wrong glyphs (no contextual forms, no ligatures, no RTL
+    /// reordering).
+    ///
+    /// `direction` controls visual reordering — pass
+    /// [`crate::writer::font_shaping::Direction::Rtl`] for Arabic/
+    /// Hebrew runs after BiDi segmentation.
+    ///
+    /// On any error (unknown resource, unparseable face) this is a
+    /// silent no-op for the same reason as `add_embedded_text`: a
+    /// missing-glyph symptom is easier to debug than a panic.
+    #[cfg(feature = "system-fonts")]
+    pub fn add_shaped_embedded_text(
+        &mut self,
+        text: &str,
+        x: f32,
+        y: f32,
+        font_resource_name: &str,
+        font_size: f32,
+        direction: super::font_shaping::Direction,
+    ) -> &mut Self {
+        let font_name_lookup = self
+            .writer
+            .embedded_font_resource_to_name
+            .get(font_resource_name)
+            .cloned();
+        let Some(font_key) = font_name_lookup else {
+            return self;
+        };
+        let Some(font) = self.writer.embedded_fonts.get_mut(&font_key) else {
+            return self;
+        };
+        let face_bytes = font.font_data().to_vec();
+        let Some(shaped) = super::font_shaping::shape(text, &face_bytes, direction) else {
+            return self;
+        };
+        let glyph_ids: Vec<u16> = shaped.glyphs.iter().map(|g| g.glyph_id).collect();
+        let encoded_hex = font.encode_shaped(&glyph_ids);
+
+        let page = &mut self.writer.pages[self.page_index];
+        page.content_builder
+            .begin_text()
+            .set_font(font_resource_name, font_size)
+            .hex_text(&encoded_hex, x, y);
+        self
+    }
+
     /// Add a content element to the page.
     pub fn add_element(&mut self, element: &ContentElement) -> &mut Self {
         let page = &mut self.writer.pages[self.page_index];

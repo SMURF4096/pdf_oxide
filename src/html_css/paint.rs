@@ -107,13 +107,29 @@ fn paint_page<'sty>(
                 // simplicity; LAYOUT-3's inline formatter will
                 // produce per-glyph positions in a future commit.
                 let text_pdf_y = page_height_px - abs_top_y - font_size_px;
-                page_builder.add_embedded_text(
-                    s,
-                    abs_x,
-                    text_pdf_y,
-                    font_resource_name,
-                    font_size_px,
-                );
+                #[cfg(feature = "system-fonts")]
+                let routed_shaped = crate::text::bidi::paragraph_is_rtl(s) && {
+                    page_builder.add_shaped_embedded_text(
+                        s,
+                        abs_x,
+                        text_pdf_y,
+                        font_resource_name,
+                        font_size_px,
+                        crate::writer::ShapeDirection::Rtl,
+                    );
+                    true
+                };
+                #[cfg(not(feature = "system-fonts"))]
+                let routed_shaped = false;
+                if !routed_shaped {
+                    page_builder.add_embedded_text(
+                        s,
+                        abs_x,
+                        text_pdf_y,
+                        font_resource_name,
+                        font_size_px,
+                    );
+                }
             }
         }
     }

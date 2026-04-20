@@ -120,6 +120,16 @@ impl FontSubsetter {
         self.used_glyphs.insert(glyph_id);
     }
 
+    /// Record a glyph ID as used without an associated codepoint.
+    ///
+    /// Used by the shaping path: rustybuzz returns glyph IDs (after
+    /// ligature substitution and contextual reordering) that have no
+    /// 1:1 source codepoint. The cluster information is preserved
+    /// elsewhere for ToUnicode mapping.
+    pub fn use_glyph(&mut self, glyph_id: u16) {
+        self.used_glyphs.insert(glyph_id);
+    }
+
     /// Record multiple characters as used.
     pub fn use_string(&mut self, text: &str, glyph_lookup: impl Fn(u32) -> Option<u16>) {
         for ch in text.chars() {
