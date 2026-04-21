@@ -194,6 +194,62 @@ of the below also ship in v0.3.37:
   Unregistered font names continue to resolve against the base-14
   set. Reported by @sparkyandrew.
 
+### Bug fixes surfaced during pre-release review
+
+- **Base-14 bold text rendered non-bold.** The page `/Resources /Font`
+  dictionary keyed entries with dashes stripped (`HelveticaBold`)
+  while content streams emitted `Tf /Helvetica-Bold`. PDF readers
+  silently fell back to the default font, so every bold or italic
+  base-14 run came out regular. Resource-dict keys now match the
+  `Tf` operator names exactly.
+- **TTC system fonts (Helvetica.ttc, msgothic.ttc, …).** `fontdb`
+  surfaces collection fonts as `Source::SharedFile(path, …)`, which
+  the resolver previously rejected as `NoPath`. SharedFile entries
+  are now read the same way as regular files, so a huge swathe of
+  macOS/Windows system fonts become resolvable.
+- **Unquoted multi-word `font-family`.** `font-family: DejaVu Sans,
+  sans-serif` tokenises as two separate `Ident`s, so the registered-
+  family lookup never matched them as a single name. The resolver
+  now collects consecutive idents (whitespace-separated) into one
+  candidate and flushes at top-level commas, so quoted and unquoted
+  forms behave the same.
+- **Memory leak in `Pdf::from_html_css` / `from_html_css_with_fonts`.**
+  The factories leaked the combined CSS source, parsed stylesheet,
+  DOM, and family map on every call (four `Box::leak` sites). Long-
+  running processes (HTTP servers, batch converters) grew unbounded.
+  The downstream APIs all accept non-'static references; the
+  function now holds them in locals scoped to the call.
+- **PNG alpha / soft-mask now renders.** `ImageData::from_png`
+  already decoded and compressed the alpha channel, but
+  `ImageContent` had no field for it and the XObject emitter hard-
+  coded `SMask = None`. `ImageContent` gains a `soft_mask`, the
+  html_css paint pipeline propagates it, and the XObject path
+  actually emits a `/SMask` stream.
+- **Shaped text round-trips via `extract_text`.** The shaped path
+  (`add_shaped_embedded_text`) only recorded glyph IDs in the
+  subsetter, leaving shaped runs absent from the ToUnicode CMap and
+  uncopy-paste-able. The new `encode_shaped_run` maps glyph clusters
+  back to source codepoints so the ToUnicode entries are complete
+  for simple scripts and exact-leading-char for ligatures.
+- **Reproducible PDF output.** `PdfWriter::finish` iterated
+  `embedded_fonts` directly from the HashMap, randomising object-ID
+  order across runs. Embedded fonts are now emitted in registration
+  order via an explicit `embedded_font_order` vector.
+- **Embedded-font name collisions.** Registering two fonts with the
+  same display name silently overwrote the first. `embedded_fonts`
+  is keyed by its `EFn` resource name (unique, monotonic) so
+  registrations are independent regardless of display name.
+- **fontdb Mutex serialised on slow disks.** `SystemFontDb::resolve`
+  held the fontdb lock across the font-bytes `fs::read`.
+  Concurrent resolve calls are now lock-free during I/O — the lock
+  is released once the face path + PostScript metadata are picked.
+- **Misleading docs corrected.** Module documentation previously
+  claimed `background-color` rendered as a filled rect (currently a
+  no-op stub) and that the writer embedded a subset of the face
+  (currently embeds the full face + Identity-H, subsetter output is
+  a later follow-up). Both are now reflected accurately in the
+  relevant docstrings.
+
 ### Tests added in the corner-case pass
 
 - **E2E** (`tests/test_html_to_pdf_e2e.rs`): 36 tests (was 14),
