@@ -156,11 +156,12 @@ impl SystemFontDb {
         style: FontStyle,
     ) -> Result<ResolvedFont, FontResolveError> {
         self.ensure_loaded();
-        let guard = self.inner.lock().expect("system font db mutex");
-        let db = guard
-            .as_ref()
-            .expect("ensure_loaded populated the database");
 
+        // Hold the fontdb Mutex *only* long enough to pick a face and
+        // extract its path + PostScript metadata. The file I/O
+        // (`std::fs::read`) runs without the lock so concurrent
+        // `resolve` calls on different threads don't serialise behind
+        // slow disk reads.
         let style_db = match style {
             FontStyle::Normal => fontdb::Style::Normal,
             FontStyle::Italic => fontdb::Style::Italic,
@@ -168,47 +169,80 @@ impl SystemFontDb {
         let weight_db = fontdb::Weight(weight);
         let stretch_db = fontdb::Stretch::Normal;
 
-        for &family in families {
-            let family_norm = family.trim().trim_matches(['"', '\'']);
-            let fontdb_family = match family_norm.to_ascii_lowercase().as_str() {
-                "serif" => Family::Serif,
-                "sans-serif" => Family::SansSerif,
-                "monospace" => Family::Monospace,
-                "cursive" => Family::Cursive,
-                "fantasy" => Family::Fantasy,
-                // CSS `system-ui` doesn't have a fontdb generic; map to
-                // sans-serif which is what every browser does in
-                // practice when no system UI metadata is available.
-                "system-ui" => Family::SansSerif,
-                _ => Family::Name(family_norm),
-            };
+        let resolved_meta: Option<(String, PathBuf, String)> = {
+            let guard = self.inner.lock().expect("system font db mutex");
+            let db = guard
+                .as_ref()
+                .expect("ensure_loaded populated the database");
 
-            let query = fontdb::Query {
-                families: &[fontdb_family],
-                weight: weight_db,
-                stretch: stretch_db,
-                style: style_db,
-            };
+            let mut found: Option<(String, PathBuf, String)> = None;
+            for &family in families {
+                let family_norm = family.trim().trim_matches(['"', '\'']);
+                let fontdb_family = match family_norm.to_ascii_lowercase().as_str() {
+                    "serif" => Family::Serif,
+                    "sans-serif" => Family::SansSerif,
+                    "monospace" => Family::Monospace,
+                    "cursive" => Family::Cursive,
+                    "fantasy" => Family::Fantasy,
+                    // CSS `system-ui` doesn't have a fontdb generic; map to
+                    // sans-serif which is what every browser does in
+                    // practice when no system UI metadata is available.
+                    "system-ui" => Family::SansSerif,
+                    _ => Family::Name(family_norm),
+                };
 
-            let Some(id) = db.query(&query) else {
-                continue;
-            };
-            return load_face(db, id, family_norm);
-        }
+                let query = fontdb::Query {
+                    families: &[fontdb_family],
+                    weight: weight_db,
+                    stretch: stretch_db,
+                    style: style_db,
+                };
 
-        Err(FontResolveError::NoMatch {
-            requested: families.iter().map(|s| s.to_string()).collect(),
-            weight,
-            italic: matches!(style, FontStyle::Italic),
+                let Some(id) = db.query(&query) else {
+                    continue;
+                };
+                match face_metadata(db, id, family_norm) {
+                    Ok((path, postscript_family)) => {
+                        found = Some((family_norm.to_string(), path, postscript_family));
+                        break;
+                    },
+                    Err(_) => continue,
+                }
+            }
+            found
+        };
+        // Mutex released here.
+
+        let Some((matched_family, path, postscript_family)) = resolved_meta else {
+            return Err(FontResolveError::NoMatch {
+                requested: families.iter().map(|s| s.to_string()).collect(),
+                weight,
+                italic: matches!(style, FontStyle::Italic),
+            });
+        };
+
+        let bytes = std::fs::read(&path).map_err(|e| FontResolveError::Io {
+            path: path.clone(),
+            source: e,
+        })?;
+        Ok(ResolvedFont {
+            matched_family,
+            path,
+            bytes,
+            postscript_family,
         })
     }
 }
 
-fn load_face(
+/// Extract the chosen face's on-disk path and PostScript family name
+/// while holding the fontdb Mutex. Intentionally does **not** read
+/// the file — the caller does that after dropping the lock so
+/// concurrent `resolve` calls don't serialise on slow I/O.
+fn face_metadata(
     db: &Database,
     id: ID,
     matched_family: &str,
-) -> Result<ResolvedFont, FontResolveError> {
+) -> Result<(PathBuf, String), FontResolveError> {
     let face = db
         .face(id)
         .expect("fontdb returned an ID it doesn't recognise");
@@ -220,10 +254,6 @@ fn load_face(
             });
         },
     };
-    let bytes = std::fs::read(&path).map_err(|e| FontResolveError::Io {
-        path: path.clone(),
-        source: e,
-    })?;
     // fontdb's Face::families is a Vec<(String, Language)>; pick the
     // English entry if present, otherwise the first.
     let postscript_family = face
@@ -233,13 +263,7 @@ fn load_face(
         .or_else(|| face.families.first())
         .map(|(name, _)| name.clone())
         .unwrap_or_else(|| matched_family.to_string());
-
-    Ok(ResolvedFont {
-        matched_family: matched_family.to_string(),
-        path,
-        bytes,
-        postscript_family,
-    })
+    Ok((path, postscript_family))
 }
 
 #[cfg(test)]
