@@ -1121,8 +1121,7 @@ impl PdfWriter {
                 super::font_pdf_objects::build_embedded_font_objects(&mut font, || {
                     allocated.remove(0)
                 });
-            font_resources
-                .insert(resource_name.clone(), ObjectSerializer::reference(ids.type0, 0));
+            font_resources.insert(resource_name.clone(), ObjectSerializer::reference(ids.type0, 0));
             for (id, obj) in objects {
                 embedded_object_ids.push(id);
                 self.objects.insert(id, obj);
