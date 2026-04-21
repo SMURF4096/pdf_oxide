@@ -247,8 +247,20 @@ fn face_metadata(
         .face(id)
         .expect("fontdb returned an ID it doesn't recognise");
     let path = match &face.source {
+        // Regular on-disk font.
         fontdb::Source::File(p) => p.clone(),
-        fontdb::Source::Binary(_) | fontdb::Source::SharedFile(_, _) => {
+        // TTC collections (e.g. /System/Library/Fonts/Helvetica.ttc)
+        // surface as `SharedFile(path, …)` — the path is real and
+        // readable, we just need the file to extract the requested
+        // face index. Previously this arm rejected SharedFile entries
+        // as `NoPath`, which silently excluded huge portions of macOS
+        // / Windows system fonts.
+        fontdb::Source::SharedFile(p, _) => p.clone(),
+        // Binary fonts don't sit on disk — fontdb constructed them
+        // from an in-memory blob. `ResolvedFont` currently only
+        // expresses a path-backed result; surface as `NoPath` so the
+        // caller can choose a different family.
+        fontdb::Source::Binary(_) => {
             return Err(FontResolveError::NoPath {
                 family: matched_family.to_string(),
             });

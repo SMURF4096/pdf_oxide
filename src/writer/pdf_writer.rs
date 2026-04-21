@@ -1539,7 +1539,23 @@ fn image_content_to_xobject_stream(
     let color_space = match image.color_space {
         crate::elements::ColorSpace::Gray => WColorSpace::DeviceGray,
         crate::elements::ColorSpace::CMYK => WColorSpace::DeviceCMYK,
-        _ => WColorSpace::DeviceRGB,
+        crate::elements::ColorSpace::RGB => WColorSpace::DeviceRGB,
+        // The writer's ImageData doesn't currently model Indexed or
+        // Lab. The html_css paint pipeline only produces Gray / RGB /
+        // CMYK ImageContents so this branch is latent — but if a
+        // caller constructs an ImageContent with Indexed or Lab
+        // directly (and routes it through `PageBuilder::add_element`),
+        // silently coercing to RGB would produce wrong colours.
+        // Fall back to RGB to keep the XObject emittable, and emit a
+        // warning so the miscoloration is diagnosable.
+        crate::elements::ColorSpace::Indexed | crate::elements::ColorSpace::Lab => {
+            log::warn!(
+                "image_content_to_xobject_stream: ColorSpace::{:?} is not yet supported by \
+                 the writer pipeline; falling back to DeviceRGB (colours may be wrong)",
+                image.color_space
+            );
+            WColorSpace::DeviceRGB
+        },
     };
     let format = match image.format {
         crate::elements::ImageFormat::Jpeg => WImageFormat::Jpeg,

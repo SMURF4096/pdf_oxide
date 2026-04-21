@@ -617,25 +617,62 @@ impl Pdf {
                                     apply_inline_declarations(&mut styles, &decls);
                                 }
                             }
+                            // font-family accepts a comma-separated list where
+                            // each entry is either a quoted string or one-or-
+                            // more unquoted identifiers (CSS Fonts L4 §15.3).
+                            // Unquoted multi-word families (`DejaVu Sans`)
+                            // tokenise as two `Ident`s separated by whitespace,
+                            // so we collect consecutive idents into a buffer
+                            // and flush it as a single candidate family name
+                            // at each top-level comma (or at EOL).
                             if let Some(rv) = styles.get("font-family") {
-                                for cv in &rv.value {
-                                    let name_opt = match cv {
-                                        crate::html_css::css::parser::ComponentValue::Token(
-                                            crate::html_css::css::tokenizer::Token::Ident(s),
-                                        ) => Some(s.as_ref().to_string()),
-                                        crate::html_css::css::parser::ComponentValue::Token(
-                                            crate::html_css::css::tokenizer::Token::String(s),
-                                        ) => Some(s.as_ref().to_string()),
-                                        _ => None,
-                                    };
-                                    if let Some(name) = name_opt {
-                                        let needle = name.to_lowercase();
-                                        for (fam, rn) in &family_to_resource {
-                                            if fam == &needle {
-                                                return Some(rn.clone());
-                                            }
+                                use crate::html_css::css::parser::ComponentValue;
+                                use crate::html_css::css::tokenizer::Token;
+
+                                let try_lookup = |candidate: &str| -> Option<String> {
+                                    let needle = candidate.trim().to_lowercase();
+                                    if needle.is_empty() {
+                                        return None;
+                                    }
+                                    for (fam, rn) in &family_to_resource {
+                                        if fam == &needle {
+                                            return Some(rn.clone());
                                         }
                                     }
+                                    None
+                                };
+
+                                let mut idents: Vec<String> = Vec::new();
+                                for cv in &rv.value {
+                                    match cv {
+                                        ComponentValue::Token(Token::Ident(s)) => {
+                                            idents.push(s.as_ref().to_string());
+                                        },
+                                        ComponentValue::Token(Token::Whitespace) => {},
+                                        ComponentValue::Token(Token::Comma) => {
+                                            if let Some(rn) = try_lookup(&idents.join(" ")) {
+                                                return Some(rn);
+                                            }
+                                            idents.clear();
+                                        },
+                                        ComponentValue::Token(Token::String(s)) => {
+                                            // Flush any pending unquoted idents first, then
+                                            // try the quoted name as a standalone candidate.
+                                            if let Some(rn) = try_lookup(&idents.join(" ")) {
+                                                return Some(rn);
+                                            }
+                                            idents.clear();
+                                            if let Some(rn) = try_lookup(s.as_ref()) {
+                                                return Some(rn);
+                                            }
+                                        },
+                                        _ => {},
+                                    }
+                                }
+                                // Flush the trailing entry (no comma after the
+                                // last family name).
+                                if let Some(rn) = try_lookup(&idents.join(" ")) {
+                                    return Some(rn);
                                 }
                             }
                         }
