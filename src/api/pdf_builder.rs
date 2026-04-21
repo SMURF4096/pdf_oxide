@@ -402,7 +402,12 @@ impl Pdf {
         use crate::writer::{EmbeddedFont, PdfWriter};
         use taffy::prelude::Size;
 
-        // Concatenate inline <style> blocks + caller's css.
+        // Concatenate inline <style> blocks + caller's css. The
+        // combined source, the parsed Stylesheet, and the parsed Dom
+        // are held in local bindings that outlive every downstream
+        // closure — `parse_stylesheet` returns `Stylesheet<'a>` that
+        // borrows into `combined_css`, and `cascade`/`build_box_tree`
+        // accept non-'static references, so no `Box::leak` is needed.
         let dom = parse_document(html);
         let extracted = extract_stylesheets(&dom);
         let mut combined_css = String::new();
@@ -414,19 +419,10 @@ impl Pdf {
         }
         combined_css.push_str(css);
 
-        // Box::leak the CSS source itself so the parsed stylesheet
-        // (which holds Cow borrows into the source) can outlive the
-        // local scope. Pdf::from_html_css is a one-shot factory so
-        // each call leaks one HTML+CSS source — acceptable footprint
-        // for the v0.3.35 first cut; v0.3.36 polish item is to extend
-        // the cascade API to consume an owned stylesheet.
-        let css_static: &'static str = Box::leak(combined_css.into_boxed_str());
-        let stylesheet = parse_stylesheet(css_static)
+        let stylesheet = parse_stylesheet(&combined_css)
             .map_err(|e| crate::error::Error::Unsupported(format!("CSS parse error: {e}")))?;
-        let ss_static: &'static _ = Box::leak(Box::new(stylesheet));
-        let dom_static: &'static _ = Box::leak(Box::new(dom));
 
-        let tree = build_box_tree(dom_static, ss_static)
+        let tree = build_box_tree(&dom, &stylesheet)
             .map_err(|e| crate::error::Error::Unsupported(format!("box tree error: {e}")))?;
 
         let calc_ctx = crate::html_css::css::CalcContext::default();
@@ -437,9 +433,9 @@ impl Pdf {
                 let Some(elem_id) = node.element else {
                     return crate::html_css::css::ComputedStyles::default();
                 };
-                let element = dom_static.element(elem_id).unwrap();
-                let mut styles = cascade(ss_static, element, None);
-                let inline_style: Option<&'static str> = match &dom_static.node(elem_id).kind {
+                let element = dom.element(elem_id).unwrap();
+                let mut styles = cascade(&stylesheet, element, None);
+                let inline_style = match &dom.node(elem_id).kind {
                     crate::html_css::html::NodeKind::Element { attrs, .. } => attrs
                         .iter()
                         .find(|(k, _)| k.eq_ignore_ascii_case("style"))
@@ -465,9 +461,9 @@ impl Pdf {
         let paginated = paginate_with_styles(&tree, &layout, PageConfig::a4(), |id| {
             let node = tree.get(id);
             let elem_id = node.element?;
-            let element = dom_static.element(elem_id).unwrap();
-            let mut styles = cascade(ss_static, element, None);
-            let inline_style: Option<&'static str> = match &dom_static.node(elem_id).kind {
+            let element = dom.element(elem_id).unwrap();
+            let mut styles = cascade(&stylesheet, element, None);
+            let inline_style = match &dom.node(elem_id).kind {
                 crate::html_css::html::NodeKind::Element { attrs, .. } => attrs
                     .iter()
                     .find(|(k, _)| k.eq_ignore_ascii_case("style"))
@@ -501,9 +497,9 @@ impl Pdf {
             family_to_resource.push((family.to_lowercase(), rn));
         }
         let resource_name = default_resource;
-        // Leak the family map so the paint closure can borrow 'static.
-        let family_map: &'static [(String, String)] =
-            Box::leak(family_to_resource.into_boxed_slice());
+        // `family_to_resource` lives through `paint_document` as a
+        // local — closures borrow &family_to_resource with a scoped
+        // lifetime; no `Box::leak` required.
 
         paint_document(
             &mut writer,
@@ -512,9 +508,9 @@ impl Pdf {
             |id| {
                 let node = tree.get(id);
                 let elem_id = node.element?;
-                let element = dom_static.element(elem_id).unwrap();
-                let mut styles = cascade(ss_static, element, None);
-                let inline_style: Option<&'static str> = match &dom_static.node(elem_id).kind {
+                let element = dom.element(elem_id).unwrap();
+                let mut styles = cascade(&stylesheet, element, None);
+                let inline_style = match &dom.node(elem_id).kind {
                     crate::html_css::html::NodeKind::Element { attrs, .. } => attrs
                         .iter()
                         .find(|(k, _)| k.eq_ignore_ascii_case("style"))
@@ -538,7 +534,7 @@ impl Pdf {
                 while let Some(bid) = cur {
                     let node = tree.get(bid);
                     if let Some(elem_id) = node.element {
-                        if let Some(element) = dom_static.element(elem_id) {
+                        if let Some(element) = dom.element(elem_id) {
                             use crate::html_css::css::matcher::Element;
                             if element.local_name().eq_ignore_ascii_case("a") {
                                 if let Some(href) = element.attribute("href") {
@@ -557,7 +553,7 @@ impl Pdf {
                 // List marker — bullet for <ul>, "N." for <ol>.
                 let node = tree.get(id);
                 let elem_id = node.element?;
-                let element = dom_static.element(elem_id)?;
+                let element = dom.element(elem_id)?;
                 use crate::html_css::css::matcher::Element;
                 if !element.local_name().eq_ignore_ascii_case("li") {
                     return None;
@@ -566,7 +562,7 @@ impl Pdf {
                 while let Some(bid) = cur {
                     let pnode = tree.get(bid);
                     if let Some(peid) = pnode.element {
-                        if let Some(pel) = dom_static.element(peid) {
+                        if let Some(pel) = dom.element(peid) {
                             let tag = pel.local_name();
                             if tag.eq_ignore_ascii_case("ol") {
                                 let mut idx = 1usize;
@@ -576,7 +572,7 @@ impl Pdf {
                                     }
                                     let sn = tree.get(sib);
                                     if let Some(seid) = sn.element {
-                                        if let Some(se) = dom_static.element(seid) {
+                                        if let Some(se) = dom.element(seid) {
                                             if se.local_name().eq_ignore_ascii_case("li") {
                                                 idx += 1;
                                             }
@@ -598,23 +594,22 @@ impl Pdf {
                 // font-family resolution: walk up the box tree to find the
                 // nearest ancestor with a declared `font-family`, then
                 // match each comma-separated family name (case-insensitive,
-                // quotes stripped) against the registered family_map. First
-                // hit wins; None falls back to the default font.
+                // quotes stripped) against the registered family_to_resource
+                // map. First hit wins; None falls back to the default font.
                 let mut cur = Some(id);
                 while let Some(bid) = cur {
                     let node = tree.get(bid);
                     if let Some(elem_id) = node.element {
-                        if let Some(element) = dom_static.element(elem_id) {
-                            let mut styles = cascade(ss_static, element, None);
+                        if let Some(element) = dom.element(elem_id) {
+                            let mut styles = cascade(&stylesheet, element, None);
                             // Inline styles can override font-family too.
-                            let inline_style: Option<&'static str> =
-                                match &dom_static.node(elem_id).kind {
-                                    crate::html_css::html::NodeKind::Element { attrs, .. } => attrs
-                                        .iter()
-                                        .find(|(k, _)| k.eq_ignore_ascii_case("style"))
-                                        .map(|(_, v)| v.as_str()),
-                                    _ => None,
-                                };
+                            let inline_style = match &dom.node(elem_id).kind {
+                                crate::html_css::html::NodeKind::Element { attrs, .. } => attrs
+                                    .iter()
+                                    .find(|(k, _)| k.eq_ignore_ascii_case("style"))
+                                    .map(|(_, v)| v.as_str()),
+                                _ => None,
+                            };
                             if let Some(inline) = inline_style {
                                 if let Ok(decls) =
                                     crate::html_css::css::parser::parse_declaration_list(inline)
@@ -635,7 +630,7 @@ impl Pdf {
                                     };
                                     if let Some(name) = name_opt {
                                         let needle = name.to_lowercase();
-                                        for (fam, rn) in family_map {
+                                        for (fam, rn) in &family_to_resource {
                                             if fam == &needle {
                                                 return Some(rn.clone());
                                             }
@@ -652,9 +647,9 @@ impl Pdf {
             |id| {
                 let node = tree.get(id);
                 let elem_id = node.element?;
-                let element = dom_static.element(elem_id)?;
+                let element = dom.element(elem_id)?;
                 crate::html_css::css::pseudo_content_for(
-                    ss_static,
+                    &stylesheet,
                     element,
                     crate::html_css::css::PseudoKind::Before,
                 )
@@ -662,9 +657,9 @@ impl Pdf {
             |id| {
                 let node = tree.get(id);
                 let elem_id = node.element?;
-                let element = dom_static.element(elem_id)?;
+                let element = dom.element(elem_id)?;
                 crate::html_css::css::pseudo_content_for(
-                    ss_static,
+                    &stylesheet,
                     element,
                     crate::html_css::css::PseudoKind::After,
                 )
@@ -680,7 +675,7 @@ impl Pdf {
                 let node = tree.get(id);
                 let elem_id = node.element?;
                 use crate::html_css::css::matcher::Element;
-                let element = dom_static.element(elem_id)?;
+                let element = dom.element(elem_id)?;
                 if !element.local_name().eq_ignore_ascii_case("img") {
                     return None;
                 }

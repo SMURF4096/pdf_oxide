@@ -28,10 +28,17 @@ Unicode (Latin + Latin-Extended + Cyrillic + symbols) round-trips.
 
 ### Phase FONT — embedded TTF/OTF subsystem
 
-- **Real binary subsetting** via the `subsetter` crate (Typst's,
-  MIT/Apache). `EmbeddedFont` now ships only the glyphs the document
-  uses; a typical English page subsets DejaVu Sans from 760 KB to
-  under 30 KB.
+- **Subsetter wrapper** around the `subsetter` crate (Typst's,
+  MIT/Apache): `crate::fonts::subset_font_bytes(bytes, used_glyphs)`
+  produces a subset face, and `EmbeddedFont` tracks used glyph IDs
+  via the `FontSubsetter` type. The writer path currently embeds the
+  full font face in `FontFile2` (full-face embedding + Identity-H is
+  valid PDF 1.7 and round-trips correctly); switching to the
+  subsetter's output requires remapping glyph IDs in the already-
+  emitted content streams, which lands as a later follow-up. The
+  standalone API + glyph tracking still ship so callers that use the
+  subsetter directly (e.g. CLI tools shelling out to `subset_font_bytes`)
+  get the size benefit today.
 - **Type 0 / CIDFontType2 / Identity-H / ToUnicode emission** wired
   into `PdfWriter` so `add_embedded_text(text, x, y, "EFn", size)`
   produces a font dict graph that PDF readers handle correctly.
