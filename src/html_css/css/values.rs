@@ -143,7 +143,7 @@ impl Length {
             Length::Calc { name, body } => {
                 let cvs = raw_to_component_values(body);
                 evaluate_function(name, &cvs, ctx).ok()
-            }
+            },
         }
     }
 }
@@ -392,29 +392,47 @@ pub enum ParseError {
 /// `Err(ParseError::Unsupported)` for properties that v0.3.35 doesn't
 /// type yet — caller can fall back to inspecting the raw component
 /// values for those.
-pub fn parse_property(
-    property: &str,
-    value: &[ComponentValue<'_>],
-) -> Result<Value, ParseError> {
+pub fn parse_property(property: &str, value: &[ComponentValue<'_>]) -> Result<Value, ParseError> {
     let trimmed = trim_ws(value);
     if trimmed.is_empty() {
         return Err(ParseError::Empty);
     }
     match property.to_ascii_lowercase().as_str() {
-        "color" | "background-color" | "border-color" | "border-top-color"
-        | "border-right-color" | "border-bottom-color" | "border-left-color"
-        | "outline-color" | "text-decoration-color" | "caret-color" => {
-            parse_color_value(trimmed, property)
-        }
-        "width" | "height" | "min-width" | "min-height" | "max-width" | "max-height"
-        | "top" | "right" | "bottom" | "left"
-        | "padding-top" | "padding-right" | "padding-bottom" | "padding-left"
-        | "border-top-width" | "border-right-width" | "border-bottom-width"
-        | "border-left-width" | "font-size" | "letter-spacing" | "word-spacing"
+        "color"
+        | "background-color"
+        | "border-color"
+        | "border-top-color"
+        | "border-right-color"
+        | "border-bottom-color"
+        | "border-left-color"
+        | "outline-color"
+        | "text-decoration-color"
+        | "caret-color" => parse_color_value(trimmed, property),
+        "width"
+        | "height"
+        | "min-width"
+        | "min-height"
+        | "max-width"
+        | "max-height"
+        | "top"
+        | "right"
+        | "bottom"
+        | "left"
+        | "padding-top"
+        | "padding-right"
+        | "padding-bottom"
+        | "padding-left"
+        | "border-top-width"
+        | "border-right-width"
+        | "border-bottom-width"
+        | "border-left-width"
+        | "font-size"
+        | "letter-spacing"
+        | "word-spacing"
         | "text-indent" => parse_length_or_auto(trimmed, property),
         "margin-top" | "margin-right" | "margin-bottom" | "margin-left" => {
             parse_length_or_auto(trimmed, property)
-        }
+        },
         "margin" => parse_box_shorthand(trimmed, property),
         "padding" => parse_box_shorthand(trimmed, property),
         "display" => parse_keyword(
@@ -442,19 +460,24 @@ pub fn parse_property(
                 "contents",
             ],
         ),
-        "position" => parse_keyword(
-            trimmed,
-            property,
-            &["static", "relative", "absolute", "fixed", "sticky"],
-        ),
+        "position" => {
+            parse_keyword(trimmed, property, &["static", "relative", "absolute", "fixed", "sticky"])
+        },
         "overflow" | "overflow-x" | "overflow-y" => {
             parse_keyword(trimmed, property, &["visible", "hidden", "clip", "scroll", "auto"])
-        }
+        },
         "visibility" => parse_keyword(trimmed, property, &["visible", "hidden", "collapse"]),
         "white-space" => parse_keyword(
             trimmed,
             property,
-            &["normal", "nowrap", "pre", "pre-wrap", "pre-line", "break-spaces"],
+            &[
+                "normal",
+                "nowrap",
+                "pre",
+                "pre-wrap",
+                "pre-line",
+                "break-spaces",
+            ],
         ),
         "text-align" => parse_keyword(
             trimmed,
@@ -480,28 +503,23 @@ fn parse_color_value(value: &[ComponentValue<'_>], property: &str) -> Result<Val
 
 /// Parse a CSS colour from a value list. Handles named, hex, rgb(),
 /// rgba(), hsl(), hsla(), `transparent`, `currentColor`.
-pub fn parse_color(
-    value: &[ComponentValue<'_>],
-    property: &str,
-) -> Result<Color, ParseError> {
+pub fn parse_color(value: &[ComponentValue<'_>], property: &str) -> Result<Color, ParseError> {
     // Find the first non-whitespace component value.
     let cv = value
         .iter()
         .find(|cv| !matches!(cv, ComponentValue::Token(Token::Whitespace)))
         .ok_or(ParseError::Empty)?;
     match cv {
-        ComponentValue::Token(Token::Ident(s)) => {
-            named_color(s).ok_or(ParseError::Malformed {
-                property: property.to_string(),
-                reason: "unknown colour keyword",
-            })
-        }
+        ComponentValue::Token(Token::Ident(s)) => named_color(s).ok_or(ParseError::Malformed {
+            property: property.to_string(),
+            reason: "unknown colour keyword",
+        }),
         ComponentValue::Token(Token::Hash { value, .. }) => {
             parse_hex_colour(value).ok_or(ParseError::Malformed {
                 property: property.to_string(),
                 reason: "malformed hex colour",
             })
-        }
+        },
         ComponentValue::Function { name, body } => {
             let lower = name.to_ascii_lowercase();
             match lower.as_str() {
@@ -512,7 +530,7 @@ pub fn parse_color(
                     reason: "unsupported colour function",
                 }),
             }
-        }
+        },
         _ => Err(ParseError::Malformed {
             property: property.to_string(),
             reason: "expected colour value",
@@ -534,27 +552,27 @@ fn parse_hex_colour(s: &str) -> Option<Color> {
             let g = parse_nibble(bytes[1])?;
             let b = parse_nibble(bytes[2])?;
             Some(Color::rgb_u8(r * 17, g * 17, b * 17))
-        }
+        },
         4 => {
             let r = parse_nibble(bytes[0])?;
             let g = parse_nibble(bytes[1])?;
             let b = parse_nibble(bytes[2])?;
             let a = parse_nibble(bytes[3])?;
             Some(Color::rgba_u8(r * 17, g * 17, b * 17, a * 17))
-        }
+        },
         6 => {
             let r = (parse_nibble(bytes[0])? << 4) | parse_nibble(bytes[1])?;
             let g = (parse_nibble(bytes[2])? << 4) | parse_nibble(bytes[3])?;
             let b = (parse_nibble(bytes[4])? << 4) | parse_nibble(bytes[5])?;
             Some(Color::rgb_u8(r, g, b))
-        }
+        },
         8 => {
             let r = (parse_nibble(bytes[0])? << 4) | parse_nibble(bytes[1])?;
             let g = (parse_nibble(bytes[2])? << 4) | parse_nibble(bytes[3])?;
             let b = (parse_nibble(bytes[4])? << 4) | parse_nibble(bytes[5])?;
             let a = (parse_nibble(bytes[6])? << 4) | parse_nibble(bytes[7])?;
             Some(Color::rgba_u8(r, g, b, a))
-        }
+        },
         _ => None,
     }
 }
@@ -635,16 +653,16 @@ fn colour_components(body: &[ComponentValue<'_>]) -> Vec<ColourComponent> {
         .filter_map(|cv| match cv {
             ComponentValue::Token(Token::Number(n)) => {
                 Some(ColourComponent::Number(n.value as f32))
-            }
+            },
             ComponentValue::Token(Token::Percentage(n)) => {
                 Some(ColourComponent::Percentage(n.value as f32))
-            }
+            },
             ComponentValue::Token(Token::Dimension { value, .. }) => {
                 // hsl() accepts deg/turn/rad units for hue. We treat
                 // any dimension as a number for v0.3.35; CSS-9 (units
                 // in colour functions) refines.
                 Some(ColourComponent::Number(value.value as f32))
-            }
+            },
             _ => None,
         })
         .collect()
@@ -654,7 +672,11 @@ fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
     if s == 0.0 {
         return (l, l, l);
     }
-    let q = if l < 0.5 { l * (1.0 + s) } else { l + s - l * s };
+    let q = if l < 0.5 {
+        l * (1.0 + s)
+    } else {
+        l + s - l * s
+    };
     let p = 2.0 * l - q;
     let r = hue_to_rgb(p, q, h + 1.0 / 3.0);
     let g = hue_to_rgb(p, q, h);
@@ -680,7 +702,6 @@ fn hue_to_rgb(p: f32, q: f32, mut t: f32) -> f32 {
     }
     p
 }
-
 
 /// CSS named colour table (Color L4). Returns sRGB.
 fn named_color(name: &str) -> Option<Color> {
@@ -841,10 +862,7 @@ fn parse_length_or_auto(value: &[ComponentValue<'_>], property: &str) -> Result<
 }
 
 /// Parse one CSS length (or `auto`).
-pub fn parse_length(
-    value: &[ComponentValue<'_>],
-    property: &str,
-) -> Result<Length, ParseError> {
+pub fn parse_length(value: &[ComponentValue<'_>], property: &str) -> Result<Length, ParseError> {
     let cv = value
         .iter()
         .find(|cv| !matches!(cv, ComponentValue::Token(Token::Whitespace)))
@@ -852,7 +870,7 @@ pub fn parse_length(
     match cv {
         ComponentValue::Token(Token::Ident(s)) if s.eq_ignore_ascii_case("auto") => {
             Ok(Length::Auto)
-        }
+        },
         ComponentValue::Token(Token::Dimension { value, unit }) => {
             let u = Unit::parse(unit).ok_or(ParseError::Malformed {
                 property: property.to_string(),
@@ -862,7 +880,7 @@ pub fn parse_length(
                 value: value.value as f32,
                 unit: u,
             })
-        }
+        },
         ComponentValue::Token(Token::Percentage(n)) => Ok(Length::Dim {
             value: n.value as f32,
             unit: Unit::Percent,
@@ -884,7 +902,7 @@ pub fn parse_length(
                     reason: "unsupported length function",
                 })
             }
-        }
+        },
         _ => Err(ParseError::Malformed {
             property: property.to_string(),
             reason: "expected length, percentage, calc, or auto",
@@ -924,7 +942,9 @@ fn parse_font_weight(value: &[ComponentValue<'_>]) -> Result<Value, ParseError> 
         .find(|cv| !matches!(cv, ComponentValue::Token(Token::Whitespace)))
         .ok_or(ParseError::Empty)?;
     match cv {
-        ComponentValue::Token(Token::Number(n)) if n.is_integer => Ok(Value::Number(n.value as f32)),
+        ComponentValue::Token(Token::Number(n)) if n.is_integer => {
+            Ok(Value::Number(n.value as f32))
+        },
         ComponentValue::Token(Token::Ident(s)) => {
             let lower = s.to_ascii_lowercase();
             let n = match lower.as_str() {
@@ -936,10 +956,10 @@ fn parse_font_weight(value: &[ComponentValue<'_>]) -> Result<Value, ParseError> 
                         property: "font-weight".into(),
                         reason: "unknown font-weight keyword",
                     })
-                }
+                },
             };
             Ok(Value::Number(n))
-        }
+        },
         _ => Err(ParseError::Malformed {
             property: "font-weight".into(),
             reason: "expected number or keyword",
@@ -968,14 +988,14 @@ fn parse_font_family(value: &[ComponentValue<'_>]) -> Result<Value, ParseError> 
                         name.push(' ');
                     }
                     name.push_str(s);
-                }
-                ComponentValue::Token(Token::Whitespace) => {}
+                },
+                ComponentValue::Token(Token::Whitespace) => {},
                 _ => {
                     return Err(ParseError::Malformed {
                         property: "font-family".into(),
                         reason: "expected ident or string in family list",
                     })
-                }
+                },
             }
         }
         if !name.is_empty() {
@@ -997,7 +1017,7 @@ fn parse_line_height(value: &[ComponentValue<'_>]) -> Result<Value, ParseError> 
     match cv {
         ComponentValue::Token(Token::Ident(s)) if s.eq_ignore_ascii_case("normal") => {
             Ok(Value::Keyword("normal".into()))
-        }
+        },
         ComponentValue::Token(Token::Number(n)) => Ok(Value::Number(n.value as f32)),
         _ => parse_length(value, "line-height").map(Value::Length),
     }
@@ -1027,7 +1047,7 @@ fn parse_keyword(
                     reason: "unknown keyword",
                 })
             }
-        }
+        },
         _ => Err(ParseError::Malformed {
             property: property.to_string(),
             reason: "expected keyword",
@@ -1051,9 +1071,7 @@ fn trim_ws<'a, 'i>(cvs: &'a [ComponentValue<'i>]) -> &'a [ComponentValue<'i>] {
     &cvs[start..end]
 }
 
-fn split_top_level_commas<'a, 'i>(
-    cvs: &'a [ComponentValue<'i>],
-) -> Vec<&'a [ComponentValue<'i>]> {
+fn split_top_level_commas<'a, 'i>(cvs: &'a [ComponentValue<'i>]) -> Vec<&'a [ComponentValue<'i>]> {
     let mut out = Vec::new();
     let mut start = 0;
     for (i, cv) in cvs.iter().enumerate() {
@@ -1081,11 +1099,7 @@ mod tests {
             Rule::Qualified(q) => q,
             _ => panic!(),
         };
-        let d = r
-            .declarations
-            .iter()
-            .find(|d| d.name == property)
-            .unwrap();
+        let d = r.declarations.iter().find(|d| d.name == property).unwrap();
         parse_property(property, &d.value)
     }
 
@@ -1161,26 +1175,50 @@ mod tests {
     #[test]
     fn length_px() {
         let v = parse("p { width: 240px; }", "width").unwrap();
-        assert_eq!(v, Value::Length(Length::Dim { value: 240.0, unit: Unit::Px }));
+        assert_eq!(
+            v,
+            Value::Length(Length::Dim {
+                value: 240.0,
+                unit: Unit::Px
+            })
+        );
     }
 
     #[test]
     fn length_percent() {
         let v = parse("p { width: 50%; }", "width").unwrap();
-        assert_eq!(v, Value::Length(Length::Dim { value: 50.0, unit: Unit::Percent }));
+        assert_eq!(
+            v,
+            Value::Length(Length::Dim {
+                value: 50.0,
+                unit: Unit::Percent
+            })
+        );
     }
 
     #[test]
     fn length_em() {
         let v = parse("p { font-size: 1.5em; }", "font-size").unwrap();
-        assert_eq!(v, Value::Length(Length::Dim { value: 1.5, unit: Unit::Em }));
+        assert_eq!(
+            v,
+            Value::Length(Length::Dim {
+                value: 1.5,
+                unit: Unit::Em
+            })
+        );
     }
 
     #[test]
     fn length_zero() {
         // Bare 0 is a valid length per spec (no unit needed).
         let v = parse("p { margin-left: 0; }", "margin-left").unwrap();
-        assert_eq!(v, Value::Length(Length::Dim { value: 0.0, unit: Unit::Px }));
+        assert_eq!(
+            v,
+            Value::Length(Length::Dim {
+                value: 0.0,
+                unit: Unit::Px
+            })
+        );
     }
 
     #[test]
@@ -1193,7 +1231,10 @@ mod tests {
     fn length_calc_resolves() {
         let v = parse("p { width: calc(100% - 20px); }", "width").unwrap();
         if let Value::Length(l) = v {
-            let ctx = CalcContext { parent_px: 600.0, ..Default::default() };
+            let ctx = CalcContext {
+                parent_px: 600.0,
+                ..Default::default()
+            };
             let resolved = l.resolve(&ctx).unwrap();
             assert!((resolved - 580.0).abs() < 1e-3);
         } else {
@@ -1247,11 +1288,8 @@ mod tests {
 
     #[test]
     fn font_family_list() {
-        let v = parse(
-            r#"p { font-family: "Helvetica Neue", Arial, sans-serif; }"#,
-            "font-family",
-        )
-        .unwrap();
+        let v = parse(r#"p { font-family: "Helvetica Neue", Arial, sans-serif; }"#, "font-family")
+            .unwrap();
         if let Value::List(items) = v {
             assert_eq!(items.len(), 3);
             assert_eq!(items[0], Value::Str("Helvetica Neue".into()));

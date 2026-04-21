@@ -205,7 +205,9 @@ fn box_shorthand_sides(
                     value,
                     unit: Unit::Percent,
                 } => Some(LengthPercentage::percent(*value / 100.0)),
-                Length::Dim { value, unit } => Some(LengthPercentage::length(unit.to_px(*value, ctx))),
+                Length::Dim { value, unit } => {
+                    Some(LengthPercentage::length(unit.to_px(*value, ctx)))
+                },
                 Length::Auto => None,
                 Length::Calc { name, body } => Length::Calc {
                     name: name.clone(),
@@ -222,11 +224,11 @@ fn box_shorthand_sides(
         1 => {
             let a = lp(&items[0]);
             [a, a, a, a]
-        }
+        },
         2 => {
             let (tb, lr) = (lp(&items[0]), lp(&items[1]));
             [tb, lr, tb, lr]
-        }
+        },
         3 => [lp(&items[0]), lp(&items[1]), lp(&items[2]), lp(&items[1])],
         4 => [lp(&items[0]), lp(&items[1]), lp(&items[2]), lp(&items[3])],
         _ => [None, None, None, None],
@@ -251,7 +253,9 @@ fn box_shorthand_sides_auto(
                     value,
                     unit: Unit::Percent,
                 } => Some(LengthPercentageAuto::percent(*value / 100.0)),
-                Length::Dim { value, unit } => Some(LengthPercentageAuto::length(unit.to_px(*value, ctx))),
+                Length::Dim { value, unit } => {
+                    Some(LengthPercentageAuto::length(unit.to_px(*value, ctx)))
+                },
                 Length::Auto => Some(LengthPercentageAuto::auto()),
                 Length::Calc { name, body } => Length::Calc {
                     name: name.clone(),
@@ -268,13 +272,23 @@ fn box_shorthand_sides_auto(
         1 => {
             let a = lpa(&items[0]);
             [a, a, a, a]
-        }
+        },
         2 => {
             let (tb, lr) = (lpa(&items[0]), lpa(&items[1]));
             [tb, lr, tb, lr]
-        }
-        3 => [lpa(&items[0]), lpa(&items[1]), lpa(&items[2]), lpa(&items[1])],
-        4 => [lpa(&items[0]), lpa(&items[1]), lpa(&items[2]), lpa(&items[3])],
+        },
+        3 => [
+            lpa(&items[0]),
+            lpa(&items[1]),
+            lpa(&items[2]),
+            lpa(&items[1]),
+        ],
+        4 => [
+            lpa(&items[0]),
+            lpa(&items[1]),
+            lpa(&items[2]),
+            lpa(&items[3]),
+        ],
         _ => [None, None, None, None],
     }
 }
@@ -340,7 +354,7 @@ fn length_value(
             Length::Calc { name, body }
                 .resolve(ctx)
                 .map(LengthOrPercent::Length)
-        }
+        },
     }
 }
 
@@ -508,10 +522,8 @@ pub fn run_layout<'sty>(
     for id in order {
         let node = tree.get(id);
         // Skip boxes that don't get a taffy node (text/inline-level).
-        let participates = matches!(
-            node.outside,
-            DisplayOutside::Block | DisplayOutside::ListItem
-        ) && !matches!(node.kind, BoxKind::Text(_));
+        let participates = matches!(node.outside, DisplayOutside::Block | DisplayOutside::ListItem)
+            && !matches!(node.kind, BoxKind::Text(_));
         if !participates {
             continue;
         }
@@ -656,7 +668,14 @@ mod tests {
     use crate::html_css::html::parse_document;
     use crate::html_css::layout::box_tree::build_box_tree;
 
-    fn build(html: &'static str, css: &'static str) -> (BoxTree, &'static crate::html_css::css::Stylesheet<'static>, &'static crate::html_css::html::Dom) {
+    fn build(
+        html: &'static str,
+        css: &'static str,
+    ) -> (
+        BoxTree,
+        &'static crate::html_css::css::Stylesheet<'static>,
+        &'static crate::html_css::html::Dom,
+    ) {
         let dom: &'static _ = Box::leak(Box::new(parse_document(html)));
         let ss: &'static _ = Box::leak(Box::new(parse_stylesheet(css).unwrap()));
         let tree = build_box_tree(dom, ss).unwrap();
@@ -684,7 +703,7 @@ mod tests {
         let style_for = style_for_factory(ss, dom, &tree);
         let res = run_layout(
             &tree,
-            move |id| style_for(id),
+            style_for,
             Size {
                 width: 600.0,
                 height: 400.0,
@@ -693,7 +712,8 @@ mod tests {
             12.0,
         );
         // Find the div's BoxId.
-        let div_id = tree.iter_ids()
+        let div_id = tree
+            .iter_ids()
             .into_iter()
             .find(|&id| matches!(tree.get(id).kind, BoxKind::Element))
             .unwrap();
@@ -704,14 +724,11 @@ mod tests {
 
     #[test]
     fn explicit_width_respected() {
-        let (tree, ss, dom) = build(
-            "<div></div>",
-            "div { width: 200px }",
-        );
+        let (tree, ss, dom) = build("<div></div>", "div { width: 200px }");
         let style_for = style_for_factory(ss, dom, &tree);
         let res = run_layout(
             &tree,
-            move |id| style_for(id),
+            style_for,
             Size {
                 width: 600.0,
                 height: 400.0,
@@ -719,7 +736,8 @@ mod tests {
             &CalcContext::default(),
             12.0,
         );
-        let div_id = tree.iter_ids()
+        let div_id = tree
+            .iter_ids()
             .into_iter()
             .find(|&id| matches!(tree.get(id).kind, BoxKind::Element))
             .unwrap();
@@ -728,14 +746,11 @@ mod tests {
 
     #[test]
     fn padding_increases_outer_size_under_content_box() {
-        let (tree, ss, dom) = build(
-            "<div></div>",
-            "div { width: 200px; padding: 10px }",
-        );
+        let (tree, ss, dom) = build("<div></div>", "div { width: 200px; padding: 10px }");
         let style_for = style_for_factory(ss, dom, &tree);
         let res = run_layout(
             &tree,
-            move |id| style_for(id),
+            style_for,
             Size {
                 width: 600.0,
                 height: 400.0,
@@ -743,7 +758,8 @@ mod tests {
             &CalcContext::default(),
             12.0,
         );
-        let div_id = tree.iter_ids()
+        let div_id = tree
+            .iter_ids()
             .into_iter()
             .find(|&id| matches!(tree.get(id).kind, BoxKind::Element))
             .unwrap();
@@ -753,14 +769,12 @@ mod tests {
 
     #[test]
     fn border_box_includes_padding_in_width() {
-        let (tree, ss, dom) = build(
-            "<div></div>",
-            "div { width: 200px; padding: 10px; box-sizing: border-box }",
-        );
+        let (tree, ss, dom) =
+            build("<div></div>", "div { width: 200px; padding: 10px; box-sizing: border-box }");
         let style_for = style_for_factory(ss, dom, &tree);
         let res = run_layout(
             &tree,
-            move |id| style_for(id),
+            style_for,
             Size {
                 width: 600.0,
                 height: 400.0,
@@ -768,7 +782,8 @@ mod tests {
             &CalcContext::default(),
             12.0,
         );
-        let div_id = tree.iter_ids()
+        let div_id = tree
+            .iter_ids()
             .into_iter()
             .find(|&id| matches!(tree.get(id).kind, BoxKind::Element))
             .unwrap();
@@ -778,14 +793,11 @@ mod tests {
 
     #[test]
     fn block_stacking() {
-        let (tree, ss, dom) = build(
-            "<div></div><div></div>",
-            "div { width: 100px; height: 50px }",
-        );
+        let (tree, ss, dom) = build("<div></div><div></div>", "div { width: 100px; height: 50px }");
         let style_for = style_for_factory(ss, dom, &tree);
         let res = run_layout(
             &tree,
-            move |id| style_for(id),
+            style_for,
             Size {
                 width: 600.0,
                 height: 400.0,
@@ -814,7 +826,7 @@ mod tests {
         let style_for = style_for_factory(ss, dom, &tree);
         let res = run_layout(
             &tree,
-            move |id| style_for(id),
+            style_for,
             Size {
                 width: 600.0,
                 height: 400.0,

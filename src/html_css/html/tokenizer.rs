@@ -95,7 +95,7 @@ pub fn tokenize(input: &str) -> Vec<HtmlToken> {
             HtmlToken::Eof => {
                 out.push(HtmlToken::Eof);
                 return out;
-            }
+            },
             tok => out.push(tok),
         }
     }
@@ -137,7 +137,7 @@ impl<'a> Tokenizer<'a> {
         let mut rest = self.input[self.pos..].chars();
         for needle_ch in s.chars() {
             match rest.next() {
-                Some(c) if c.eq_ignore_ascii_case(&needle_ch) => {}
+                Some(c) if c.eq_ignore_ascii_case(&needle_ch) => {},
                 _ => return false,
             }
         }
@@ -233,13 +233,13 @@ impl<'a> Tokenizer<'a> {
                 Some('>') => {
                     self.bump();
                     break;
-                }
+                },
                 Some('/') => {
                     self.bump();
                     self_closing = true;
                     // Continue — `/` may sit before `>`.
                     continue;
-                }
+                },
                 Some(_) => {
                     if let Some(attr) = self.consume_attribute() {
                         attrs.push(attr);
@@ -247,7 +247,7 @@ impl<'a> Tokenizer<'a> {
                         // Recovery: bump one char and continue.
                         self.bump();
                     }
-                }
+                },
             }
         }
         if !self_closing && is_void_element(&name_lower) {
@@ -269,11 +269,7 @@ impl<'a> Tokenizer<'a> {
     /// the body until the matching close tag and return both as a
     /// `RawText` token. The next call to `next_token()` will yield the
     /// matching end tag.
-    fn swallow_raw_text(
-        &mut self,
-        host_tag: String,
-        attrs: Vec<(String, String)>,
-    ) -> HtmlToken {
+    fn swallow_raw_text(&mut self, host_tag: String, attrs: Vec<(String, String)>) -> HtmlToken {
         // First emit the start tag — but we need to push it back so the
         // caller still sees it. Do that by consuming the body now and
         // returning the start tag immediately; the body is emitted on
@@ -353,11 +349,11 @@ impl<'a> Tokenizer<'a> {
             Some('"') => {
                 self.bump();
                 self.consume_quoted_attr_value('"')
-            }
+            },
             Some('\'') => {
                 self.bump();
                 self.consume_quoted_attr_value('\'')
-            }
+            },
             _ => self.consume_unquoted_attr_value(),
         };
         Some((name, value))
@@ -416,7 +412,7 @@ impl<'a> Tokenizer<'a> {
         // `&` already known.
         let restore = self.pos;
         self.bump(); // consume &
-        // Numeric entity?
+                     // Numeric entity?
         if matches!(self.peek(), Some('#')) {
             self.bump();
             let hex = matches!(self.peek(), Some('x') | Some('X'));
@@ -581,7 +577,7 @@ mod tests {
                 assert_eq!(attrs[0], ("href".into(), "x".into()));
                 assert_eq!(attrs[1], ("class".into(), "foo".into()));
                 assert_eq!(attrs[2], ("data-x".into(), String::new()));
-            }
+            },
             _ => panic!(),
         }
     }
@@ -595,7 +591,7 @@ mod tests {
             } => {
                 assert_eq!(name, "img");
                 assert!(self_closing);
-            }
+            },
             _ => panic!(),
         }
     }
@@ -687,13 +683,10 @@ mod tests {
     fn case_insensitive_tag_names() {
         let t = tokenize("<DIV><P>x</P></DIV>");
         match (&t[0], &t[1]) {
-            (
-                HtmlToken::StartTag { name: a, .. },
-                HtmlToken::StartTag { name: b, .. },
-            ) => {
+            (HtmlToken::StartTag { name: a, .. }, HtmlToken::StartTag { name: b, .. }) => {
                 assert_eq!(a, "div");
                 assert_eq!(b, "p");
-            }
+            },
             _ => panic!(),
         }
     }

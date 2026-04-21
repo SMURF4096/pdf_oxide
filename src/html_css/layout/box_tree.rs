@@ -186,10 +186,7 @@ pub enum BoxTreeError {
 /// The returned tree always has a single root box anchored at the
 /// `<html>` element (or, if absent, at whichever element is the DOM's
 /// first child).
-pub fn build_box_tree(
-    dom: &Dom,
-    stylesheet: &Stylesheet<'_>,
-) -> Result<BoxTree, BoxTreeError> {
+pub fn build_box_tree(dom: &Dom, stylesheet: &Stylesheet<'_>) -> Result<BoxTree, BoxTreeError> {
     let mut tree = BoxTree::default();
     // Root box: anonymous block representing the initial containing
     // block. Per spec the root element (<html>) is its own box; we
@@ -208,14 +205,7 @@ pub fn build_box_tree(
     let doc_node = dom.node(Dom::ROOT);
 
     for &child_id in &doc_node.children {
-        build_subtree(
-            dom,
-            child_id,
-            BoxTree::ROOT,
-            stylesheet,
-            None,
-            &mut tree,
-        )?;
+        build_subtree(dom, child_id, BoxTree::ROOT, stylesheet, None, &mut tree)?;
     }
 
     // Insert anonymous-block wrappers per CSS 2.1 §9.2.1.1: in any
@@ -270,7 +260,7 @@ fn build_subtree<'i>(
             for &child in &dom.node(node_id).children {
                 build_subtree(dom, child, box_id, stylesheet, Some(&styles), tree)?;
             }
-        }
+        },
         NodeKind::Text(s) => {
             // Text is always inline-level. CSS 2.1 §9.2.2.1 requires
             // we strip whitespace-only text that sits between block
@@ -288,10 +278,10 @@ fn build_subtree<'i>(
                     parent: Some(parent_box),
                 },
             );
-        }
+        },
         NodeKind::Comment(_) | NodeKind::RawText { .. } | NodeKind::Document => {
             // No layout footprint.
-        }
+        },
     }
     Ok(())
 }
@@ -341,7 +331,7 @@ fn resolve_display_for(
         "table-row" | "table-row-group" | "table-header-group" | "table-footer-group"
         | "table-cell" | "table-caption" | "table-column" | "table-column-group" => {
             (DisplayOutside::Other, DisplayInside::Flow)
-        }
+        },
         _ => (DisplayOutside::Block, DisplayInside::Flow),
     }
 }
@@ -358,10 +348,10 @@ fn ua_default_display(tag: Option<&str>) -> &'static str {
         return "inline";
     };
     match tag {
-        "html" | "body" | "div" | "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
-        | "header" | "footer" | "main" | "section" | "article" | "aside" | "nav"
-        | "address" | "blockquote" | "figure" | "figcaption" | "form" | "fieldset"
-        | "hr" | "pre" | "dialog" => "block",
+        "html" | "body" | "div" | "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "header"
+        | "footer" | "main" | "section" | "article" | "aside" | "nav" | "address"
+        | "blockquote" | "figure" | "figcaption" | "form" | "fieldset" | "hr" | "pre"
+        | "dialog" => "block",
         "ul" | "ol" | "menu" | "dl" => "block",
         "li" | "dt" | "dd" => "list-item",
         "table" => "table",
@@ -404,7 +394,10 @@ fn insert_anonymous_blocks(tree: &mut BoxTree) {
             // (the block holds only inlines and acts as a single line
             // box host).
             let has_block = kids.iter().any(|&c| {
-                matches!(tree.boxes[c as usize].outside, DisplayOutside::Block | DisplayOutside::ListItem)
+                matches!(
+                    tree.boxes[c as usize].outside,
+                    DisplayOutside::Block | DisplayOutside::ListItem
+                )
             });
             if has_block {
                 let new_kids = wrap_inline_runs(tree, i, &kids);
@@ -447,7 +440,7 @@ fn wrap_inline_runs(tree: &mut BoxTree, parent: BoxId, kids: &[BoxId]) -> Vec<Bo
             _ => {
                 flush(tree, parent, &mut current_run, &mut out);
                 out.push(k);
-            }
+            },
         }
     }
     flush(tree, parent, &mut current_run, &mut out);
@@ -515,10 +508,7 @@ mod tests {
 
     #[test]
     fn display_contents_unwraps() {
-        let tree = build(
-            "<div><span>x</span></div>",
-            "div { display: contents; }",
-        );
+        let tree = build("<div><span>x</span></div>", "div { display: contents; }");
         // div produces no box; span sits directly under root.
         let element_boxes = count_kind(&tree, |b| matches!(b.kind, BoxKind::Element));
         assert_eq!(element_boxes, 1); // only the span
@@ -550,20 +540,14 @@ mod tests {
 
     #[test]
     fn inline_outside_for_display_inline() {
-        let tree = build(
-            "<div><a>x</a></div>",
-            "a { display: inline; }",
-        );
+        let tree = build("<div><a>x</a></div>", "a { display: inline; }");
         // <a> ends up wrapped in an anonymous block under <div> if div
         // had block children mixed in; here it's the only child so no
         // wrap needed.
-        let a_box = tree
-            .iter_ids()
-            .into_iter()
-            .find(|&id| {
-                matches!(tree.get(id).kind, BoxKind::Element)
-                    && tree.get(id).outside == DisplayOutside::Inline
-            });
+        let a_box = tree.iter_ids().into_iter().find(|&id| {
+            matches!(tree.get(id).kind, BoxKind::Element)
+                && tree.get(id).outside == DisplayOutside::Inline
+        });
         assert!(a_box.is_some());
     }
 
@@ -576,16 +560,16 @@ mod tests {
         // Expected: [anon-block(text="before"), <p>, anon-block(text="after")]
         // — three children of <div>, two of which are anonymous.
         let tree = build("<div>before<p>middle</p>after</div>", "");
-        let div_box = tree
-            .iter_ids()
-            .into_iter()
-            .find(|&id| {
-                matches!(tree.get(id).kind, BoxKind::Element)
-                    && tree.get(id).element == Some(tree.iter_ids().into_iter()
-                        .find(|&id2| matches!(tree.get(id2).kind, BoxKind::Element))
-                        .unwrap_or(0)
-                        .max(0))
-            });
+        let div_box = tree.iter_ids().into_iter().find(|&id| {
+            matches!(tree.get(id).kind, BoxKind::Element)
+                && tree.get(id).element
+                    == Some(
+                        tree.iter_ids()
+                            .into_iter()
+                            .find(|&id2| matches!(tree.get(id2).kind, BoxKind::Element))
+                            .unwrap_or(0),
+                    )
+        });
         // Just count anonymous blocks somewhere in the tree.
         let anon = count_kind(&tree, |b| matches!(b.kind, BoxKind::AnonymousBlock));
         // Root (1) + 2 wrappers around the text runs.

@@ -101,7 +101,7 @@ pub fn compute_column_widths(
                 .collect();
             normalize_to_available(&mut widths, available_px);
             widths
-        }
+        },
         LayoutAlgorithm::Auto => {
             let mut min_w = vec![0.0_f32; column_count];
             let mut max_w = vec![0.0_f32; column_count];
@@ -160,7 +160,7 @@ pub fn compute_column_widths(
                     })
                     .collect()
             }
-        }
+        },
     }
 }
 
@@ -210,7 +210,7 @@ mod tests {
 
     #[test]
     fn auto_layout_fits_at_max() {
-        let rows = vec![row(vec![cell(20.0, 100.0), cell(30.0, 120.0)])];
+        let rows = [row(vec![cell(20.0, 100.0), cell(30.0, 120.0)])];
         let row_refs: Vec<&RowHint> = rows.iter().collect();
         let w = compute_column_widths(&row_refs, 600.0, LayoutAlgorithm::Auto);
         // 100 + 120 = 220 <= 600, so widths are at max.
@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn auto_layout_squeezes_when_overconstrained() {
-        let rows = vec![row(vec![cell(50.0, 400.0), cell(50.0, 400.0)])];
+        let rows = [row(vec![cell(50.0, 400.0), cell(50.0, 400.0)])];
         let row_refs: Vec<&RowHint> = rows.iter().collect();
         let w = compute_column_widths(&row_refs, 500.0, LayoutAlgorithm::Auto);
         // total min = 100; total max = 800; available = 500.
@@ -230,7 +230,7 @@ mod tests {
 
     #[test]
     fn auto_layout_below_min_returns_min() {
-        let rows = vec![row(vec![cell(200.0, 300.0), cell(200.0, 300.0)])];
+        let rows = [row(vec![cell(200.0, 300.0), cell(200.0, 300.0)])];
         let row_refs: Vec<&RowHint> = rows.iter().collect();
         let w = compute_column_widths(&row_refs, 100.0, LayoutAlgorithm::Auto);
         // total min = 400 > 100 → return min widths (table overflows).
@@ -239,7 +239,7 @@ mod tests {
 
     #[test]
     fn fixed_layout_uses_first_row_then_normalizes() {
-        let rows = vec![
+        let rows = [
             row(vec![cell(0.0, 100.0), cell(0.0, 200.0)]),
             row(vec![cell(0.0, 999.0), cell(0.0, 999.0)]), // ignored
         ];

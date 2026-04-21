@@ -176,8 +176,8 @@ fn to_alpha(n: i32, base: char) -> String {
 fn to_greek(mut n: i32) -> String {
     // 24 lower-case Greek letters, then wrap.
     const GREEK: &[char] = &[
-        'α', 'β', 'γ', 'δ', 'ε', 'ζ', 'η', 'θ', 'ι', 'κ', 'λ', 'μ', 'ν', 'ξ', 'ο', 'π',
-        'ρ', 'σ', 'τ', 'υ', 'φ', 'χ', 'ψ', 'ω',
+        'α', 'β', 'γ', 'δ', 'ε', 'ζ', 'η', 'θ', 'ι', 'κ', 'λ', 'μ', 'ν', 'ξ', 'ο', 'π', 'ρ', 'σ',
+        'τ', 'υ', 'φ', 'χ', 'ψ', 'ω',
     ];
     let mut out = String::new();
     while n > 0 {
@@ -205,12 +205,12 @@ pub fn parse_content(value: &[ComponentValue<'_>]) -> Option<Vec<Content>> {
     let mut out = Vec::new();
     for cv in trimmed {
         match cv {
-            ComponentValue::Token(Token::Whitespace) => {}
+            ComponentValue::Token(Token::Whitespace) => {},
             ComponentValue::Token(Token::String(s)) => out.push(Content::Str(s.to_string())),
             ComponentValue::Token(Token::Ident(s)) => match s.to_ascii_lowercase().as_str() {
                 "open-quote" => out.push(Content::OpenQuote),
                 "close-quote" => out.push(Content::CloseQuote),
-                _ => {}
+                _ => {},
             },
             ComponentValue::Function { name, body } => {
                 let lower = name.to_ascii_lowercase();
@@ -221,7 +221,7 @@ pub fn parse_content(value: &[ComponentValue<'_>]) -> Option<Vec<Content>> {
                             name: n,
                             style: style.unwrap_or(ListStyle::Decimal),
                         });
-                    }
+                    },
                     "counters" => {
                         let (n, sep, style) = parse_counters_args(body);
                         out.push(Content::Counters {
@@ -229,7 +229,7 @@ pub fn parse_content(value: &[ComponentValue<'_>]) -> Option<Vec<Content>> {
                             separator: sep,
                             style: style.unwrap_or(ListStyle::Decimal),
                         });
-                    }
+                    },
                     "attr" => {
                         if let Some(name) = body.iter().find_map(|c| match c {
                             ComponentValue::Token(Token::Ident(s)) => Some(s.to_string()),
@@ -237,20 +237,23 @@ pub fn parse_content(value: &[ComponentValue<'_>]) -> Option<Vec<Content>> {
                         }) {
                             out.push(Content::Attr { name });
                         }
-                    }
-                    _ => {}
+                    },
+                    _ => {},
                 }
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
     Some(out)
 }
 
 fn parse_counter_args(body: &[ComponentValue<'_>]) -> (String, Option<ListStyle>) {
-    let mut iter = body
-        .iter()
-        .filter(|cv| !matches!(cv, ComponentValue::Token(Token::Whitespace) | ComponentValue::Token(Token::Comma)));
+    let mut iter = body.iter().filter(|cv| {
+        !matches!(
+            cv,
+            ComponentValue::Token(Token::Whitespace) | ComponentValue::Token(Token::Comma)
+        )
+    });
     let name = match iter.next() {
         Some(ComponentValue::Token(Token::Ident(s))) => s.to_string(),
         _ => return (String::new(), None),
@@ -263,9 +266,12 @@ fn parse_counter_args(body: &[ComponentValue<'_>]) -> (String, Option<ListStyle>
 }
 
 fn parse_counters_args(body: &[ComponentValue<'_>]) -> (String, String, Option<ListStyle>) {
-    let mut iter = body
-        .iter()
-        .filter(|cv| !matches!(cv, ComponentValue::Token(Token::Whitespace) | ComponentValue::Token(Token::Comma)));
+    let mut iter = body.iter().filter(|cv| {
+        !matches!(
+            cv,
+            ComponentValue::Token(Token::Whitespace) | ComponentValue::Token(Token::Comma)
+        )
+    });
     let name = match iter.next() {
         Some(ComponentValue::Token(Token::Ident(s))) => s.to_string(),
         _ => return (String::new(), String::new(), None),
@@ -317,7 +323,7 @@ pub fn parse_counter_ops(value: &[ComponentValue<'_>], default: i32) -> Vec<Coun
                     return Vec::new();
                 }
                 name = Some(s.to_string());
-            }
+            },
             ComponentValue::Token(Token::Number(n)) if n.is_integer => {
                 if let Some(prior) = name.take() {
                     out.push(CounterOp {
@@ -325,8 +331,8 @@ pub fn parse_counter_ops(value: &[ComponentValue<'_>], default: i32) -> Vec<Coun
                         value: n.value as i32,
                     });
                 }
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
     if let Some(prior) = name {
@@ -457,7 +463,7 @@ pub fn evaluate_content(
             Content::Counter { name, style } => {
                 let n = state.counter(name);
                 out.push_str(&style.render(n));
-            }
+            },
             Content::Counters {
                 name,
                 separator,
@@ -469,12 +475,12 @@ pub fn evaluate_content(
                     .map(|n| style.render(n))
                     .collect();
                 out.push_str(&parts.join(separator));
-            }
+            },
             Content::Attr { name } => {
                 if let Some(v) = attr_lookup(name) {
                     out.push_str(&v);
                 }
-            }
+            },
             // English defaults; v0.3.36 reads the `quotes` property.
             Content::OpenQuote => out.push('“'),
             Content::CloseQuote => out.push('”'),
@@ -605,10 +611,7 @@ mod tests {
 
     #[test]
     fn content_counters_with_separator() {
-        let v = first_decl_value(
-            r#"h3::before { content: counters(section, "."); }"#,
-            "content",
-        );
+        let v = first_decl_value(r#"h3::before { content: counters(section, "."); }"#, "content");
         let c = parse_content(&v).unwrap();
         assert_eq!(
             c,
@@ -624,15 +627,17 @@ mod tests {
     fn content_attr() {
         let v = first_decl_value(r#"a::after { content: attr(href); }"#, "content");
         let c = parse_content(&v).unwrap();
-        assert_eq!(c, vec![Content::Attr { name: "href".into() }]);
+        assert_eq!(
+            c,
+            vec![Content::Attr {
+                name: "href".into()
+            }]
+        );
     }
 
     #[test]
     fn content_quotes() {
-        let v = first_decl_value(
-            r#"q::before { content: open-quote; }"#,
-            "content",
-        );
+        let v = first_decl_value(r#"q::before { content: open-quote; }"#, "content");
         let c = parse_content(&v).unwrap();
         assert_eq!(c, vec![Content::OpenQuote]);
     }
@@ -667,10 +672,7 @@ mod tests {
 
     #[test]
     fn parse_counter_reset_multiple() {
-        let v = first_decl_value(
-            "body { counter-reset: chapter 0 section 1; }",
-            "counter-reset",
-        );
+        let v = first_decl_value("body { counter-reset: chapter 0 section 1; }", "counter-reset");
         let ops = parse_counter_ops(&v, 0);
         assert_eq!(
             ops,
@@ -720,12 +722,21 @@ mod tests {
     fn counter_state_nested_scopes() {
         let mut st = CounterState::new();
         // Outer
-        st.apply_reset(&CounterOp { name: "x".into(), value: 0 });
-        st.apply_increment(&CounterOp { name: "x".into(), value: 1 });
+        st.apply_reset(&CounterOp {
+            name: "x".into(),
+            value: 0,
+        });
+        st.apply_increment(&CounterOp {
+            name: "x".into(),
+            value: 1,
+        });
         assert_eq!(st.counter("x"), 1);
         // Inner shadowed reset
         st.enter();
-        st.apply_reset(&CounterOp { name: "x".into(), value: 100 });
+        st.apply_reset(&CounterOp {
+            name: "x".into(),
+            value: 100,
+        });
         assert_eq!(st.counter("x"), 100);
         // counters() sees both levels
         assert_eq!(st.counters("x"), vec![1, 100]);
@@ -737,8 +748,14 @@ mod tests {
     #[test]
     fn counter_state_set_overwrites() {
         let mut st = CounterState::new();
-        st.apply_reset(&CounterOp { name: "n".into(), value: 0 });
-        st.apply_set(&CounterOp { name: "n".into(), value: 42 });
+        st.apply_reset(&CounterOp {
+            name: "n".into(),
+            value: 0,
+        });
+        st.apply_set(&CounterOp {
+            name: "n".into(),
+            value: 42,
+        });
         assert_eq!(st.counter("n"), 42);
     }
 
@@ -753,7 +770,10 @@ mod tests {
     #[test]
     fn evaluate_counter_in_content() {
         let mut st = CounterState::new();
-        st.apply_reset(&CounterOp { name: "chapter".into(), value: 2 });
+        st.apply_reset(&CounterOp {
+            name: "chapter".into(),
+            value: 2,
+        });
         let content = parse_content(&first_decl_value(
             r#"h2::before { content: "Chapter " counter(chapter) ". "; }"#,
             "content",
@@ -766,9 +786,15 @@ mod tests {
     #[test]
     fn evaluate_counters_with_separator() {
         let mut st = CounterState::new();
-        st.apply_reset(&CounterOp { name: "section".into(), value: 1 });
+        st.apply_reset(&CounterOp {
+            name: "section".into(),
+            value: 1,
+        });
         st.enter();
-        st.apply_reset(&CounterOp { name: "section".into(), value: 2 });
+        st.apply_reset(&CounterOp {
+            name: "section".into(),
+            value: 2,
+        });
         let content = parse_content(&first_decl_value(
             r#"h3::before { content: counters(section, "."); }"#,
             "content",

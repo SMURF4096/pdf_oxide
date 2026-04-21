@@ -439,10 +439,7 @@ impl Pdf {
                 };
                 let element = dom_static.element(elem_id).unwrap();
                 let mut styles = cascade(ss_static, element, None);
-                let inline_style: Option<&'static str> = match &dom_static
-                    .node(elem_id)
-                    .kind
-                {
+                let inline_style: Option<&'static str> = match &dom_static.node(elem_id).kind {
                     crate::html_css::html::NodeKind::Element { attrs, .. } => attrs
                         .iter()
                         .find(|(k, _)| k.eq_ignore_ascii_case("style"))
@@ -450,8 +447,7 @@ impl Pdf {
                     _ => None,
                 };
                 if let Some(inline) = inline_style {
-                    if let Ok(decls) =
-                        crate::html_css::css::parser::parse_declaration_list(inline)
+                    if let Ok(decls) = crate::html_css::css::parser::parse_declaration_list(inline)
                     {
                         apply_inline_declarations(&mut styles, &decls);
                     }
@@ -466,35 +462,25 @@ impl Pdf {
             12.0,
         );
 
-        let paginated = paginate_with_styles(
-            &tree,
-            &layout,
-            PageConfig::a4(),
-            |id| {
-                let node = tree.get(id);
-                let elem_id = node.element?;
-                let element = dom_static.element(elem_id).unwrap();
-                let mut styles = cascade(ss_static, element, None);
-                let inline_style: Option<&'static str> = match &dom_static
-                    .node(elem_id)
-                    .kind
-                {
-                    crate::html_css::html::NodeKind::Element { attrs, .. } => attrs
-                        .iter()
-                        .find(|(k, _)| k.eq_ignore_ascii_case("style"))
-                        .map(|(_, v)| v.as_str()),
-                    _ => None,
-                };
-                if let Some(inline) = inline_style {
-                    if let Ok(decls) =
-                        crate::html_css::css::parser::parse_declaration_list(inline)
-                    {
-                        apply_inline_declarations(&mut styles, &decls);
-                    }
+        let paginated = paginate_with_styles(&tree, &layout, PageConfig::a4(), |id| {
+            let node = tree.get(id);
+            let elem_id = node.element?;
+            let element = dom_static.element(elem_id).unwrap();
+            let mut styles = cascade(ss_static, element, None);
+            let inline_style: Option<&'static str> = match &dom_static.node(elem_id).kind {
+                crate::html_css::html::NodeKind::Element { attrs, .. } => attrs
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case("style"))
+                    .map(|(_, v)| v.as_str()),
+                _ => None,
+            };
+            if let Some(inline) = inline_style {
+                if let Ok(decls) = crate::html_css::css::parser::parse_declaration_list(inline) {
+                    apply_inline_declarations(&mut styles, &decls);
                 }
-                Some(styles)
-            },
-        );
+            }
+            Some(styles)
+        });
 
         if fonts.is_empty() {
             return Err(crate::error::Error::Unsupported(
@@ -528,10 +514,7 @@ impl Pdf {
                 let elem_id = node.element?;
                 let element = dom_static.element(elem_id).unwrap();
                 let mut styles = cascade(ss_static, element, None);
-                let inline_style: Option<&'static str> = match &dom_static
-                    .node(elem_id)
-                    .kind
-                {
+                let inline_style: Option<&'static str> = match &dom_static.node(elem_id).kind {
                     crate::html_css::html::NodeKind::Element { attrs, .. } => attrs
                         .iter()
                         .find(|(k, _)| k.eq_ignore_ascii_case("style"))
@@ -539,8 +522,7 @@ impl Pdf {
                     _ => None,
                 };
                 if let Some(inline) = inline_style {
-                    if let Ok(decls) =
-                        crate::html_css::css::parser::parse_declaration_list(inline)
+                    if let Ok(decls) = crate::html_css::css::parser::parse_declaration_list(inline)
                     {
                         apply_inline_declarations(&mut styles, &decls);
                     }
@@ -627,10 +609,7 @@ impl Pdf {
                             // Inline styles can override font-family too.
                             let inline_style: Option<&'static str> =
                                 match &dom_static.node(elem_id).kind {
-                                    crate::html_css::html::NodeKind::Element {
-                                        attrs,
-                                        ..
-                                    } => attrs
+                                    crate::html_css::html::NodeKind::Element { attrs, .. } => attrs
                                         .iter()
                                         .find(|(k, _)| k.eq_ignore_ascii_case("style"))
                                         .map(|(_, v)| v.as_str()),

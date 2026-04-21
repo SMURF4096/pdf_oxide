@@ -53,11 +53,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let resource_name = writer.register_embedded_font(font);
 
     let lines = [
-        "Hello, World!",          // Latin
-        "café déjà vu",           // Latin Extended
-        "Привет, мир!",           // Cyrillic
-        "Καλημέρα κόσμε",         // Greek
-        "שלום עולם",              // Hebrew (visual order — no BiDi yet)
+        "Hello, World!",  // Latin
+        "café déjà vu",   // Latin Extended
+        "Привет, мир!",   // Cyrillic
+        "Καλημέρα κόσμε", // Greek
+        "שלום עולם",      // Hebrew (visual order — no BiDi yet)
     ];
 
     {
@@ -90,11 +90,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     if !all_present {
-        return Err(
-            "round-trip failed: at least one input line was not recovered \
+        return Err("round-trip failed: at least one input line was not recovered \
              from extract_text — embedded-font ToUnicode CMap is wrong"
-                .into(),
-        );
+            .into());
     }
 
     Ok(())

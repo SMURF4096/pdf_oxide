@@ -120,11 +120,7 @@ pub struct PaginatedDocument {
 }
 
 /// Slice a positioned box tree into pages.
-pub fn paginate(
-    tree: &BoxTree,
-    layout: &LayoutResult,
-    config: PageConfig,
-) -> PaginatedDocument {
+pub fn paginate(tree: &BoxTree, layout: &LayoutResult, config: PageConfig) -> PaginatedDocument {
     paginate_with_styles(tree, layout, config, |_| None)
 }
 
@@ -237,12 +233,10 @@ pub fn paginate_with_styles<'sty>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::html_css::layout::box_tree::{
-        build_box_tree, BoxKind, BoxTree, DisplayInside, DisplayOutside,
-    };
     use crate::html_css::css::parse_stylesheet;
     use crate::html_css::html::parse_document;
-    use crate::html_css::layout::{run_layout, LayoutBox, LayoutResult};
+    use crate::html_css::layout::box_tree::{build_box_tree, BoxTree};
+    use crate::html_css::layout::{run_layout, LayoutResult};
     use taffy::prelude::Size;
 
     fn build(html: &'static str, css: &'static str) -> (BoxTree, LayoutResult) {
@@ -271,10 +265,7 @@ mod tests {
 
     #[test]
     fn single_short_doc_one_page() {
-        let (tree, layout) = build(
-            "<div></div>",
-            "div { width: 100px; height: 50px }",
-        );
+        let (tree, layout) = build("<div></div>", "div { width: 100px; height: 50px }");
         let doc = paginate(&tree, &layout, PageConfig::a4());
         assert_eq!(doc.pages.len(), 1);
     }
@@ -301,10 +292,7 @@ mod tests {
 
     #[test]
     fn box_local_y_is_within_page_height() {
-        let (tree, layout) = build(
-            "<div></div><div></div>",
-            "div { width: 100px; height: 700px }",
-        );
+        let (tree, layout) = build("<div></div><div></div>", "div { width: 100px; height: 700px }");
         let doc = paginate(&tree, &layout, PageConfig::a4());
         let content_h = doc.config.content_height_px();
         for page in &doc.pages {

@@ -16,9 +16,8 @@ const DEJAVU_SANS: &[u8] = include_bytes!("fixtures/fonts/DejaVuSans.ttf");
 
 fn build_pdf_with_text(text: &str, font_size: f32) -> Vec<u8> {
     let mut writer = PdfWriter::new();
-    let font =
-        EmbeddedFont::from_data(Some("DejaVuSans".to_string()), DEJAVU_SANS.to_vec())
-            .expect("DejaVuSans must parse");
+    let font = EmbeddedFont::from_data(Some("DejaVuSans".to_string()), DEJAVU_SANS.to_vec())
+        .expect("DejaVuSans must parse");
     let resource_name = writer.register_embedded_font(font);
 
     let mut page = writer.add_letter_page();

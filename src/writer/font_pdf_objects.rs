@@ -90,10 +90,7 @@ pub fn build_embedded_font_objects(
     let font_bytes = font.font_data().to_vec();
     let length1 = font_bytes.len() as i64;
     let mut ff_dict: HashMap<String, Object> = HashMap::new();
-    ff_dict.insert(
-        "Length".to_string(),
-        ObjectSerializer::integer(length1),
-    );
+    ff_dict.insert("Length".to_string(), ObjectSerializer::integer(length1));
     ff_dict.insert("Length1".to_string(), ObjectSerializer::integer(length1));
     out.push((
         font_file_id,
@@ -113,22 +110,13 @@ pub fn build_embedded_font_objects(
             "FontBBox",
             ObjectSerializer::rect(llx as f64, lly as f64, urx as f64, ury as f64),
         ),
-        (
-            "ItalicAngle",
-            Object::Real(font.italic_angle as f64),
-        ),
+        ("ItalicAngle", Object::Real(font.italic_angle as f64)),
         ("Ascent", ObjectSerializer::integer(font.ascender as i64)),
         ("Descent", ObjectSerializer::integer(font.descender as i64)),
-        (
-            "CapHeight",
-            ObjectSerializer::integer(font.cap_height as i64),
-        ),
+        ("CapHeight", ObjectSerializer::integer(font.cap_height as i64)),
         ("XHeight", ObjectSerializer::integer(font.x_height as i64)),
         ("StemV", ObjectSerializer::integer(font.stem_v as i64)),
-        (
-            "FontFile2",
-            ObjectSerializer::reference(font_file_id, 0),
-        ),
+        ("FontFile2", ObjectSerializer::reference(font_file_id, 0)),
     ]);
     out.push((descriptor_id, descriptor));
 
@@ -147,10 +135,7 @@ pub fn build_embedded_font_objects(
         ("Subtype", ObjectSerializer::name("CIDFontType2")),
         ("BaseFont", ObjectSerializer::name(&base_font)),
         ("CIDSystemInfo", cid_system_info),
-        (
-            "FontDescriptor",
-            ObjectSerializer::reference(descriptor_id, 0),
-        ),
+        ("FontDescriptor", ObjectSerializer::reference(descriptor_id, 0)),
         ("CIDToGIDMap", ObjectSerializer::name("Identity")),
         // /W is parsed by ObjectSerializer::dict only as an Object; for the
         // raw "[ gid [ widths... ] ... ]" string the existing helper emits,
@@ -168,10 +153,7 @@ pub fn build_embedded_font_objects(
     // extract_text) walks.
     let cmap_bytes = font.generate_tounicode_cmap().into_bytes();
     let mut cmap_dict: HashMap<String, Object> = HashMap::new();
-    cmap_dict.insert(
-        "Length".to_string(),
-        ObjectSerializer::integer(cmap_bytes.len() as i64),
-    );
+    cmap_dict.insert("Length".to_string(), ObjectSerializer::integer(cmap_bytes.len() as i64));
     out.push((
         tounicode_id,
         Object::Stream {
@@ -190,10 +172,7 @@ pub fn build_embedded_font_objects(
             "DescendantFonts",
             Object::Array(vec![ObjectSerializer::reference(cidfont_id, 0)]),
         ),
-        (
-            "ToUnicode",
-            ObjectSerializer::reference(tounicode_id, 0),
-        ),
+        ("ToUnicode", ObjectSerializer::reference(tounicode_id, 0)),
     ]);
     out.push((type0_id, type0));
 
@@ -229,7 +208,7 @@ fn parse_widths_string_to_array(s: &str) -> Object {
             '[' => {
                 flush_number(&mut stack, &mut number);
                 stack.push(Vec::new());
-            }
+            },
             ']' => {
                 flush_number(&mut stack, &mut number);
                 let popped = stack.pop().unwrap_or_default();
@@ -237,7 +216,7 @@ fn parse_widths_string_to_array(s: &str) -> Object {
                     .last_mut()
                     .expect("widths-array stack must keep at least the root level")
                     .push(Object::Array(popped));
-            }
+            },
             c if c.is_ascii_digit() || c == '-' => number.push(c),
             _ => flush_number(&mut stack, &mut number),
         }

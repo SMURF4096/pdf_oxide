@@ -12,7 +12,9 @@ use std::fs;
 const DEJAVU: &[u8] = include_bytes!("../tests/fixtures/fonts/DejaVuSans.ttf");
 
 fn main() {
-    let dir = std::env::args().nth(1).unwrap_or_else(|| "/tmp/html_corpus_v2".to_string());
+    let dir = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "/tmp/html_corpus_v2".to_string());
     let write_pdfs = std::env::args().any(|a| a == "--write-pdfs");
     let out_dir = format!("{dir}/out");
     if write_pdfs {
@@ -37,21 +39,19 @@ fn main() {
             Err(err) => {
                 println!("{name}\tREAD_ERR\t0\t0\t0\t0\t{err}");
                 continue;
-            }
+            },
         };
-        let result = std::panic::catch_unwind(|| {
-            Pdf::from_html_css(&html, "", DEJAVU.to_vec())
-        });
+        let result = std::panic::catch_unwind(|| Pdf::from_html_css(&html, "", DEJAVU.to_vec()));
         let pdf = match result {
             Ok(Ok(p)) => p,
             Ok(Err(err)) => {
                 println!("{name}\tBUILD_ERR\t0\t0\t0\t0\t{err}");
                 continue;
-            }
+            },
             Err(_) => {
                 println!("{name}\tPANIC\t0\t0\t0\t0\trender panicked");
                 continue;
-            }
+            },
         };
         let bytes = pdf.into_bytes();
         let nbytes = bytes.len();
@@ -63,7 +63,7 @@ fn main() {
             Err(err) => {
                 println!("{name}\tREOPEN_ERR\t{nbytes}\t0\t0\t0\t{err}");
                 continue;
-            }
+            },
         };
         let pages = doc.page_count().unwrap_or(0);
         let mut spans = 0usize;

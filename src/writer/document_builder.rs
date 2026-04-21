@@ -715,11 +715,7 @@ impl DocumentBuilder {
     ///         .done()
     ///     .build()?;
     /// ```
-    pub fn register_embedded_font(
-        mut self,
-        name: impl Into<String>,
-        font: EmbeddedFont,
-    ) -> Self {
+    pub fn register_embedded_font(mut self, name: impl Into<String>, font: EmbeddedFont) -> Self {
         self.embedded_fonts.push((name.into(), font));
         self
     }

@@ -389,11 +389,11 @@ impl<'i> Tokenizer<'i> {
                     };
                     self.bump();
                     return result;
-                }
+                },
                 '\n' => {
                     // Unterminated.
                     return Token::BadString;
-                }
+                },
                 '\\' => {
                     let mut buf = owned.unwrap_or_else(|| self.input[start..self.pos].to_string());
                     self.bump();
@@ -401,13 +401,13 @@ impl<'i> Tokenizer<'i> {
                         buf.push(esc);
                     }
                     owned = Some(buf);
-                }
+                },
                 _ => {
                     if let Some(buf) = owned.as_mut() {
                         buf.push(c);
                     }
                     self.bump();
-                }
+                },
             }
         }
         // EOF inside string: per spec, return a String not BadString
@@ -424,7 +424,7 @@ impl<'i> Tokenizer<'i> {
             // Special-case url(.
             if name.eq_ignore_ascii_case("url") {
                 self.bump(); // (
-                // Skip leading whitespace
+                             // Skip leading whitespace
                 while self.peek().map(is_whitespace).unwrap_or(false) {
                     self.bump();
                 }
@@ -466,7 +466,7 @@ impl<'i> Tokenizer<'i> {
                 Some(')') => {
                     self.bump();
                     return Token::Url(Cow::Owned(owned));
-                }
+                },
                 None => return Token::Url(Cow::Owned(owned)),
                 Some(c) if is_whitespace(c) => {
                     while self.peek().map(is_whitespace).unwrap_or(false) {
@@ -485,7 +485,7 @@ impl<'i> Tokenizer<'i> {
                         self.bump();
                     }
                     return Token::BadUrl;
-                }
+                },
                 Some('"') | Some('\'') | Some('(') => {
                     // Spec calls these "non-printable code points or
                     // disallowed code points in url() unquoted form".
@@ -497,7 +497,7 @@ impl<'i> Tokenizer<'i> {
                         self.bump();
                     }
                     return Token::BadUrl;
-                }
+                },
                 Some('\\') => {
                     self.bump();
                     if let Some(esc) = self.consume_escape() {
@@ -513,11 +513,11 @@ impl<'i> Tokenizer<'i> {
                         }
                         return Token::BadUrl;
                     }
-                }
+                },
                 Some(c) => {
                     owned.push(c);
                     self.bump();
-                }
+                },
             }
         }
     }
@@ -611,7 +611,7 @@ impl<'i> Tokenizer<'i> {
                     Some(d) if d.is_ascii_hexdigit() => {
                         hex = hex * 16 + d.to_digit(16).unwrap();
                         self.bump();
-                    }
+                    },
                     _ => break,
                 }
             }
@@ -863,7 +863,11 @@ mod tests {
     #[test]
     fn whitespace_runs_collapse_to_one_token() {
         // Don't filter whitespace this time
-        let raw: Vec<Token<'_>> = tokenize("a    b").unwrap().into_iter().map(|(t, _)| t).collect();
+        let raw: Vec<Token<'_>> = tokenize("a    b")
+            .unwrap()
+            .into_iter()
+            .map(|(t, _)| t)
+            .collect();
         // Expect ident, whitespace, ident, eof (one whitespace, not many).
         let ws_count = raw
             .iter()

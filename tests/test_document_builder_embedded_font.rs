@@ -42,14 +42,8 @@ fn document_builder_registered_embedded_font_round_trips_cyrillic() {
     let mut doc = PdfDocument::from_bytes(bytes).expect("parse produced pdf");
     let text = doc.extract_text(0).expect("extract_text should succeed");
 
-    assert!(
-        text.contains("Привет, мир!"),
-        "Cyrillic round-trip failed — got: {text:?}"
-    );
-    assert!(
-        text.contains("Καλημέρα κόσμε"),
-        "Greek round-trip failed — got: {text:?}"
-    );
+    assert!(text.contains("Привет, мир!"), "Cyrillic round-trip failed — got: {text:?}");
+    assert!(text.contains("Καλημέρα κόσμε"), "Greek round-trip failed — got: {text:?}");
 }
 
 #[test]

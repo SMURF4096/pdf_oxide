@@ -196,7 +196,7 @@ impl<'i> Parser<'i> {
                 Token::Eof => return out,
                 Token::Whitespace => {
                     self.pos += 1;
-                }
+                },
                 Token::Cdo | Token::Cdc => {
                     if top_level {
                         // Per spec — these are tolerated at top level
@@ -210,16 +210,16 @@ impl<'i> Parser<'i> {
                             out.push(Rule::Qualified(rule));
                         }
                     }
-                }
+                },
                 Token::AtKeyword(_) => {
                     let at = self.consume_at_rule();
                     out.push(Rule::AtRule(at));
-                }
+                },
                 _ => {
                     if let Some(rule) = self.consume_qualified_rule() {
                         out.push(Rule::Qualified(rule));
                     }
-                }
+                },
             }
         }
     }
@@ -240,22 +240,22 @@ impl<'i> Parser<'i> {
                     self.pos += 1;
                     block = None;
                     break;
-                }
+                },
                 Token::Eof => {
                     block = None;
                     break;
-                }
+                },
                 Token::LeftBrace => {
                     self.pos += 1;
                     let body = self.consume_simple_block_body(Token::RightBrace);
                     block = Some(AtRuleBlock { raw: body });
                     break;
-                }
+                },
                 _ => {
                     if let Some(cv) = self.consume_component_value() {
                         prelude.push(cv);
                     }
-                }
+                },
             }
         }
 
@@ -287,12 +287,12 @@ impl<'i> Parser<'i> {
                         declarations,
                         location,
                     });
-                }
+                },
                 _ => {
                     if let Some(cv) = self.consume_component_value() {
                         prelude.push(cv);
                     }
-                }
+                },
             }
         }
     }
@@ -306,14 +306,14 @@ impl<'i> Parser<'i> {
                 Token::Eof | Token::RightBrace => return out,
                 Token::Whitespace | Token::Semicolon => {
                     self.pos += 1;
-                }
+                },
                 Token::AtKeyword(_) => {
                     // At-rule inside a declaration block (rare —
                     // @supports nested in @media etc.). We consume but
                     // discard for v0.3.35; full nesting support is a
                     // post-release item.
                     let _ = self.consume_at_rule();
-                }
+                },
                 Token::Ident(_) => {
                     if let Some(decl) = self.consume_declaration() {
                         out.push(decl);
@@ -322,11 +322,11 @@ impl<'i> Parser<'i> {
                         // close brace.
                         self.skip_until_semicolon_or_close();
                     }
-                }
+                },
                 _ => {
                     // Garbage at the start of a declaration — skip.
                     self.skip_until_semicolon_or_close();
-                }
+                },
             }
         }
     }
@@ -354,7 +354,7 @@ impl<'i> Parser<'i> {
                     if let Some(cv) = self.consume_component_value() {
                         value.push(cv);
                     }
-                }
+                },
             }
         }
 
@@ -383,15 +383,19 @@ impl<'i> Parser<'i> {
     fn consume_component_value(&mut self) -> Option<ComponentValue<'i>> {
         let (tok, _) = self.next_token();
         Some(match tok {
-            Token::LeftBrace => ComponentValue::Curly(self.consume_simple_block_body(Token::RightBrace)),
-            Token::LeftParen => ComponentValue::Parens(self.consume_simple_block_body(Token::RightParen)),
+            Token::LeftBrace => {
+                ComponentValue::Curly(self.consume_simple_block_body(Token::RightBrace))
+            },
+            Token::LeftParen => {
+                ComponentValue::Parens(self.consume_simple_block_body(Token::RightParen))
+            },
             Token::LeftSquare => {
                 ComponentValue::Square(self.consume_simple_block_body(Token::RightSquare))
-            }
+            },
             Token::Function(name) => {
                 let body = self.consume_simple_block_body(Token::RightParen);
                 ComponentValue::Function { name, body }
-            }
+            },
             t => ComponentValue::Token(t),
         })
     }
@@ -407,12 +411,12 @@ impl<'i> Parser<'i> {
                 t if mem::discriminant(t) == mem::discriminant(&close) => {
                     self.pos += 1;
                     return out;
-                }
+                },
                 _ => {
                     if let Some(cv) = self.consume_component_value() {
                         out.push(cv);
                     }
-                }
+                },
             }
         }
     }
@@ -425,19 +429,19 @@ impl<'i> Parser<'i> {
                 Token::Semicolon if depth == 0 => {
                     self.pos += 1;
                     return;
-                }
+                },
                 Token::RightBrace if depth == 0 => return,
                 Token::LeftParen | Token::LeftSquare | Token::LeftBrace => {
                     depth += 1;
                     self.pos += 1;
-                }
+                },
                 Token::RightParen | Token::RightSquare | Token::RightBrace => {
                     depth -= 1;
                     self.pos += 1;
                     if depth < 0 {
                         return;
                     }
-                }
+                },
                 _ => self.pos += 1,
             }
         }
@@ -479,31 +483,32 @@ fn flatten_into<'i>(values: Vec<ComponentValue<'i>>, out: &mut Vec<(Token<'i>, S
                 out.push((Token::Function(name), loc));
                 flatten_into(body, out);
                 out.push((Token::RightParen, loc));
-            }
+            },
             ComponentValue::Parens(body) => {
                 out.push((Token::LeftParen, loc));
                 flatten_into(body, out);
                 out.push((Token::RightParen, loc));
-            }
+            },
             ComponentValue::Square(body) => {
                 out.push((Token::LeftSquare, loc));
                 flatten_into(body, out);
                 out.push((Token::RightSquare, loc));
-            }
+            },
             ComponentValue::Curly(body) => {
                 out.push((Token::LeftBrace, loc));
                 flatten_into(body, out);
                 out.push((Token::RightBrace, loc));
-            }
+            },
         }
     }
 }
 
 fn is_important_suffix(value: &[ComponentValue<'_>]) -> bool {
     // Find the last non-whitespace token, then the one before it.
-    let mut iter = value.iter().rev().filter(|cv| {
-        !matches!(cv, ComponentValue::Token(Token::Whitespace))
-    });
+    let mut iter = value
+        .iter()
+        .rev()
+        .filter(|cv| !matches!(cv, ComponentValue::Token(Token::Whitespace)));
     let last = iter.next();
     let second_last = iter.next();
     matches!(last, Some(ComponentValue::Token(Token::Ident(s))) if s.eq_ignore_ascii_case("important"))
@@ -691,8 +696,8 @@ mod tests {
 
     #[test]
     fn comments_disappear() {
-        let s = parse_stylesheet("/* hi */ body /* mid */ { /* in */ color: red /* tail */ }")
-            .unwrap();
+        let s =
+            parse_stylesheet("/* hi */ body /* mid */ { /* in */ color: red /* tail */ }").unwrap();
         assert_eq!(s.rules.len(), 1);
         let r = match &s.rules[0] {
             Rule::Qualified(q) => q,

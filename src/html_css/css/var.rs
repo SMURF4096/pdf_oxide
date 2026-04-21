@@ -84,28 +84,28 @@ fn substitute_inner<'i>(
                         None => {
                             visiting.remove(&var_name);
                             return Err(VarError::Undefined(var_name));
-                        }
+                        },
                     },
                 };
                 visiting.remove(&var_name);
                 out.extend(resolved);
-            }
+            },
             ComponentValue::Function { name, body } => {
                 let inner = substitute_inner(body, styles, visiting)?;
                 out.push(ComponentValue::Function {
                     name: name.clone(),
                     body: inner,
                 });
-            }
+            },
             ComponentValue::Parens(body) => {
                 out.push(ComponentValue::Parens(substitute_inner(body, styles, visiting)?));
-            }
+            },
             ComponentValue::Square(body) => {
                 out.push(ComponentValue::Square(substitute_inner(body, styles, visiting)?));
-            }
+            },
             ComponentValue::Curly(body) => {
                 out.push(ComponentValue::Curly(substitute_inner(body, styles, visiting)?));
-            }
+            },
             other => out.push(other.clone()),
         }
     }
@@ -200,16 +200,36 @@ mod tests {
     #[derive(Clone, Copy)]
     struct E;
     impl Element for E {
-        fn local_name(&self) -> &str { "div" }
-        fn id(&self) -> Option<&str> { None }
-        fn has_class(&self, _: &str) -> bool { false }
-        fn attribute(&self, _: &str) -> Option<&str> { None }
-        fn has_attribute(&self, _: &str) -> bool { false }
-        fn parent(&self) -> Option<Self> { None }
-        fn prev_element_sibling(&self) -> Option<Self> { None }
-        fn next_element_sibling(&self) -> Option<Self> { None }
-        fn is_empty(&self) -> bool { true }
-        fn first_element_child(&self) -> Option<Self> { None }
+        fn local_name(&self) -> &str {
+            "div"
+        }
+        fn id(&self) -> Option<&str> {
+            None
+        }
+        fn has_class(&self, _: &str) -> bool {
+            false
+        }
+        fn attribute(&self, _: &str) -> Option<&str> {
+            None
+        }
+        fn has_attribute(&self, _: &str) -> bool {
+            false
+        }
+        fn parent(&self) -> Option<Self> {
+            None
+        }
+        fn prev_element_sibling(&self) -> Option<Self> {
+            None
+        }
+        fn next_element_sibling(&self) -> Option<Self> {
+            None
+        }
+        fn is_empty(&self) -> bool {
+            true
+        }
+        fn first_element_child(&self) -> Option<Self> {
+            None
+        }
     }
 
     fn cascade_for(css: &'static str) -> ComputedStyles<'static> {
@@ -228,21 +248,21 @@ mod tests {
                         out.push(' ');
                     }
                     out.push_str(s);
-                }
+                },
                 ComponentValue::Token(Token::Number(n)) => {
                     if !out.is_empty() {
                         out.push(' ');
                     }
                     out.push_str(&format!("{}", n.value));
-                }
+                },
                 ComponentValue::Token(Token::Dimension { value, unit }) => {
                     if !out.is_empty() {
                         out.push(' ');
                     }
                     out.push_str(&format!("{}{}", value.value, unit));
-                }
-                ComponentValue::Token(Token::Whitespace) => {}
-                _ => {}
+                },
+                ComponentValue::Token(Token::Whitespace) => {},
+                _ => {},
             }
         }
         out
@@ -274,9 +294,8 @@ mod tests {
 
     #[test]
     fn nested_var_substitution() {
-        let styles = cascade_for(
-            "div { --base: 12px; --bigger: var(--base); width: var(--bigger); }",
-        );
+        let styles =
+            cascade_for("div { --base: 12px; --bigger: var(--base); width: var(--bigger); }");
         let width = styles.get("width").unwrap();
         let resolved = substitute(&width.value, &styles).unwrap();
         assert_eq!(render_to_string(&resolved), "12px");
@@ -284,9 +303,7 @@ mod tests {
 
     #[test]
     fn cycle_two_step_detected() {
-        let styles = cascade_for(
-            "div { --a: var(--b); --b: var(--a); color: var(--a); }",
-        );
+        let styles = cascade_for("div { --a: var(--b); --b: var(--a); color: var(--a); }");
         let color = styles.get("color").unwrap();
         let res = substitute(&color.value, &styles);
         assert!(matches!(res, Err(VarError::Cycle(_))));
@@ -302,9 +319,7 @@ mod tests {
 
     #[test]
     fn fallback_can_use_var() {
-        let styles = cascade_for(
-            "div { --known: green; color: var(--missing, var(--known)); }",
-        );
+        let styles = cascade_for("div { --known: green; color: var(--missing, var(--known)); }");
         let color = styles.get("color").unwrap();
         let resolved = substitute(&color.value, &styles).unwrap();
         assert_eq!(render_to_string(&resolved), "green");
@@ -313,9 +328,7 @@ mod tests {
     #[test]
     fn substitution_inside_function() {
         // The substitution must walk into nested function bodies too.
-        let styles = cascade_for(
-            "div { --pad: 10px; width: calc(100% - var(--pad)); }",
-        );
+        let styles = cascade_for("div { --pad: 10px; width: calc(100% - var(--pad)); }");
         let width = styles.get("width").unwrap();
         let resolved = substitute(&width.value, &styles).unwrap();
         let s = format!("{:?}", resolved);
@@ -336,9 +349,7 @@ mod tests {
 
     #[test]
     fn resolve_custom_properties_collects_all() {
-        let styles = cascade_for(
-            "div { --a: red; --b: 12px; --c: var(--a); color: green; }",
-        );
+        let styles = cascade_for("div { --a: red; --b: 12px; --c: var(--a); color: green; }");
         let resolved = resolve_custom_properties(&styles);
         assert!(resolved.contains_key("--a"));
         assert!(resolved.contains_key("--b"));

@@ -212,7 +212,7 @@ fn walk_combinators<E: Element>(
                 cur = anc.parent();
             }
             false
-        }
+        },
         Combinator::Child => {
             // Single step: parent.
             if let Some(parent) = matched.parent() {
@@ -221,7 +221,7 @@ fn walk_combinators<E: Element>(
                 }
             }
             false
-        }
+        },
         Combinator::NextSibling => {
             // Single step: prev sibling.
             if let Some(sib) = matched.prev_element_sibling() {
@@ -230,7 +230,7 @@ fn walk_combinators<E: Element>(
                 }
             }
             false
-        }
+        },
         Combinator::SubsequentSibling => {
             // Try every preceding sibling.
             let mut cur = matched.prev_element_sibling();
@@ -243,7 +243,7 @@ fn walk_combinators<E: Element>(
                 cur = sib.prev_element_sibling();
             }
             false
-        }
+        },
     }
 }
 
@@ -316,32 +316,34 @@ fn match_attribute<E: Element>(a: &AttributeSelector, element: E) -> bool {
     };
     match op {
         AttributeOp::Equals => cmp(actual, expected),
-        AttributeOp::Includes => actual
-            .split_whitespace()
-            .any(|tok| cmp(tok, expected)),
+        AttributeOp::Includes => actual.split_whitespace().any(|tok| cmp(tok, expected)),
         AttributeOp::DashMatch => {
             cmp(actual, expected)
                 || actual
                     .strip_prefix(expected)
                     .map(|rest| rest.starts_with('-'))
                     .unwrap_or(false)
-        }
+        },
         AttributeOp::Prefix => {
             !expected.is_empty()
                 && (if case_insensitive {
-                    actual.to_ascii_lowercase().starts_with(&expected.to_ascii_lowercase())
+                    actual
+                        .to_ascii_lowercase()
+                        .starts_with(&expected.to_ascii_lowercase())
                 } else {
                     actual.starts_with(expected)
                 })
-        }
+        },
         AttributeOp::Suffix => {
             !expected.is_empty()
                 && (if case_insensitive {
-                    actual.to_ascii_lowercase().ends_with(&expected.to_ascii_lowercase())
+                    actual
+                        .to_ascii_lowercase()
+                        .ends_with(&expected.to_ascii_lowercase())
                 } else {
                     actual.ends_with(expected)
                 })
-        }
+        },
         AttributeOp::Substring => {
             !expected.is_empty()
                 && (if case_insensitive {
@@ -351,7 +353,7 @@ fn match_attribute<E: Element>(a: &AttributeSelector, element: E) -> bool {
                 } else {
                     actual.contains(expected)
                 })
-        }
+        },
     }
 }
 
@@ -365,13 +367,12 @@ fn match_pseudo_class<E: Element>(pc: &PseudoClass, element: E) -> bool {
         PseudoClass::FirstOfType => element.sibling_index_of_type() == 1,
         PseudoClass::LastOfType => {
             element.sibling_index_of_type() == element.sibling_count_of_type()
-        }
+        },
         PseudoClass::OnlyOfType => element.sibling_count_of_type() == 1,
         PseudoClass::NthChild(an_b) => an_plus_b_matches(*an_b, element.sibling_index()),
-        PseudoClass::NthLastChild(an_b) => an_plus_b_matches(
-            *an_b,
-            element.sibling_count() - element.sibling_index() + 1,
-        ),
+        PseudoClass::NthLastChild(an_b) => {
+            an_plus_b_matches(*an_b, element.sibling_count() - element.sibling_index() + 1)
+        },
         PseudoClass::NthOfType(an_b) => an_plus_b_matches(*an_b, element.sibling_index_of_type()),
         PseudoClass::NthLastOfType(an_b) => an_plus_b_matches(
             *an_b,
@@ -447,7 +448,10 @@ mod tests {
                 tag: tag.to_ascii_lowercase(),
                 id: id.map(|s| s.to_string()),
                 classes: classes.iter().map(|s| s.to_string()).collect(),
-                attrs: attrs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+                attrs: attrs
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
                 parent,
                 children: Vec::new(),
                 text_content_nonempty: false,
@@ -518,13 +522,10 @@ mod tests {
                 && !self.dom.nodes[self.idx].text_content_nonempty
         }
         fn first_element_child(&self) -> Option<Self> {
-            self.dom.nodes[self.idx]
-                .children
-                .first()
-                .map(|&k| MockEl {
-                    dom: self.dom,
-                    idx: k,
-                })
+            self.dom.nodes[self.idx].children.first().map(|&k| MockEl {
+                dom: self.dom,
+                idx: k,
+            })
         }
     }
 
@@ -554,13 +555,7 @@ mod tests {
         let div = d.add(Some(body), "div", Some("main"), &["container"], &[]);
         let p1 = d.add(Some(div), "p", None, &["lead"], &[]);
         let p2 = d.add(Some(div), "p", None, &[], &[]);
-        let span = d.add(
-            Some(div),
-            "span",
-            None,
-            &[],
-            &[("data-x", "42"), ("lang", "en-US")],
-        );
+        let span = d.add(Some(div), "span", None, &[], &[("data-x", "42"), ("lang", "en-US")]);
         (d, vec![html, body, div, p1, p2, span])
     }
 

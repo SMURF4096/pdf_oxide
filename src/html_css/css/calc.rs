@@ -227,7 +227,7 @@ pub fn evaluate_function(
             let val = args.pop().unwrap();
             let low = args.pop().unwrap();
             Expr::Clamp(Box::new(low), Box::new(val), Box::new(high))
-        }
+        },
         other => return Err(EvalError::UnsupportedFunction(other.to_string())),
     };
     evaluate(&expr, ctx)
@@ -247,7 +247,7 @@ pub fn evaluate(expr: &Expr, ctx: &Context) -> Result<f32, EvalError> {
             } else {
                 Ok(evaluate(a, ctx)? / denom)
             }
-        }
+        },
         Expr::Min(items) => {
             let mut acc = f32::INFINITY;
             for it in items {
@@ -257,7 +257,7 @@ pub fn evaluate(expr: &Expr, ctx: &Context) -> Result<f32, EvalError> {
                 }
             }
             Ok(acc)
-        }
+        },
         Expr::Max(items) => {
             let mut acc = f32::NEG_INFINITY;
             for it in items {
@@ -267,13 +267,13 @@ pub fn evaluate(expr: &Expr, ctx: &Context) -> Result<f32, EvalError> {
                 }
             }
             Ok(acc)
-        }
+        },
         Expr::Clamp(low, val, high) => {
             let l = evaluate(low, ctx)?;
             let v = evaluate(val, ctx)?;
             let h = evaluate(high, ctx)?;
             Ok(v.clamp(l, h))
-        }
+        },
         Expr::Calc(inner) => evaluate(inner, ctx),
     }
 }
@@ -323,10 +323,7 @@ impl<'a, 'i> ExprParser<'a, 'i> {
     }
 
     fn skip_ws(&mut self) {
-        while matches!(
-            self.peek(),
-            Some(ComponentValue::Token(Token::Whitespace))
-        ) {
+        while matches!(self.peek(), Some(ComponentValue::Token(Token::Whitespace))) {
             self.pos += 1;
         }
     }
@@ -351,12 +348,12 @@ impl<'a, 'i> ExprParser<'a, 'i> {
                     self.bump();
                     self.skip_ws();
                     Some(true)
-                }
+                },
                 Some(ComponentValue::Token(Token::Delim('-'))) => {
                     self.bump();
                     self.skip_ws();
                     Some(false)
-                }
+                },
                 _ => None,
             };
             let Some(is_add) = op else { break };
@@ -381,12 +378,12 @@ impl<'a, 'i> ExprParser<'a, 'i> {
                     self.bump();
                     self.skip_ws();
                     Some(true)
-                }
+                },
                 Some(ComponentValue::Token(Token::Delim('/'))) => {
                     self.bump();
                     self.skip_ws();
                     Some(false)
-                }
+                },
                 _ => None,
             };
             let Some(is_mul) = op else { break };
@@ -406,16 +403,15 @@ impl<'a, 'i> ExprParser<'a, 'i> {
         self.skip_ws();
         let cv = self.bump().ok_or(EvalError::Empty)?;
         match cv {
-            ComponentValue::Token(Token::Number(n)) => {
-                Ok(Expr::Number(n.value as f32, Unit::None))
-            }
+            ComponentValue::Token(Token::Number(n)) => Ok(Expr::Number(n.value as f32, Unit::None)),
             ComponentValue::Token(Token::Dimension { value, unit }) => {
-                let u = Unit::parse(unit).ok_or_else(|| EvalError::UnknownUnit(unit.to_string()))?;
+                let u =
+                    Unit::parse(unit).ok_or_else(|| EvalError::UnknownUnit(unit.to_string()))?;
                 Ok(Expr::Number(value.value as f32, u))
-            }
+            },
             ComponentValue::Token(Token::Percentage(n)) => {
                 Ok(Expr::Number(n.value as f32, Unit::Percent))
-            }
+            },
             ComponentValue::Parens(body) => parse_expr(body),
             ComponentValue::Function { name, body } => {
                 let lower = name.to_ascii_lowercase();
@@ -423,7 +419,7 @@ impl<'a, 'i> ExprParser<'a, 'i> {
                     "calc" => {
                         let inner = parse_expr(body)?;
                         Ok(Expr::Calc(Box::new(inner)))
-                    }
+                    },
                     "min" => Ok(Expr::Min(parse_arg_list(body)?)),
                     "max" => Ok(Expr::Max(parse_arg_list(body)?)),
                     "clamp" => {
@@ -435,24 +431,22 @@ impl<'a, 'i> ExprParser<'a, 'i> {
                         let val = args.pop().unwrap();
                         let low = args.pop().unwrap();
                         Ok(Expr::Clamp(Box::new(low), Box::new(val), Box::new(high)))
-                    }
+                    },
                     _ => Err(EvalError::UnsupportedFunction(lower)),
                 }
-            }
+            },
             // Unary +/- on the next atom.
             ComponentValue::Token(Token::Delim('+')) => self.parse_atom(),
             ComponentValue::Token(Token::Delim('-')) => {
                 let inner = self.parse_atom()?;
                 Ok(Expr::Sub(Box::new(Expr::Number(0.0, Unit::None)), Box::new(inner)))
-            }
+            },
             _ => Err(EvalError::UnexpectedToken),
         }
     }
 }
 
-fn split_top_level_commas<'a, 'i>(
-    cvs: &'a [ComponentValue<'i>],
-) -> Vec<&'a [ComponentValue<'i>]> {
+fn split_top_level_commas<'a, 'i>(cvs: &'a [ComponentValue<'i>]) -> Vec<&'a [ComponentValue<'i>]> {
     let mut out = Vec::new();
     let mut start = 0;
     for (i, cv) in cvs.iter().enumerate() {

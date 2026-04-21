@@ -19,10 +19,7 @@ fn main() -> Result<ExitCode, Box<dyn Error>> {
     let html = fs::read_to_string(input)?;
     let font_path = Path::new("tests/fixtures/fonts/DejaVuSans.ttf");
     if !font_path.exists() {
-        eprintln!(
-            "Run from the repo root so {} is reachable.",
-            font_path.display()
-        );
+        eprintln!("Run from the repo root so {} is reachable.", font_path.display());
         return Ok(ExitCode::from(2));
     }
     let font_bytes = fs::read(font_path)?;

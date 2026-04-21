@@ -19,7 +19,9 @@
 //! - Shadows + opacity via ExtGState soft masks.
 //! - Transforms (`cm` operator already in ContentStreamBuilder).
 
-use crate::elements::{ColorSpace as ElemColorSpace, ContentElement, ImageContent, ImageFormat as ElemImageFormat};
+use crate::elements::{
+    ColorSpace as ElemColorSpace, ContentElement, ImageContent, ImageFormat as ElemImageFormat,
+};
 use crate::geometry::Rect;
 use crate::html_css::css::{parse_color, parse_property, ComputedStyles, Value};
 use crate::html_css::layout::{BoxKind, BoxTree};
@@ -40,7 +42,7 @@ pub fn opacity_for(styles: &ComputedStyles<'_>) -> f32 {
             match token {
                 Token::Number(n) => return (n.value as f32).clamp(0.0, 1.0),
                 Token::Percentage(n) => return ((n.value as f32) / 100.0).clamp(0.0, 1.0),
-                _ => {}
+                _ => {},
             }
         }
     }
@@ -71,7 +73,7 @@ pub fn translate_offset_for(styles: &ComputedStyles<'_>) -> (f32, f32) {
                 match t {
                     Token::Dimension { value, .. } => parts.push(value.value as f32),
                     Token::Number(n) => parts.push(n.value as f32),
-                    _ => {}
+                    _ => {},
                 }
             }
         }
@@ -80,12 +82,12 @@ pub fn translate_offset_for(styles: &ComputedStyles<'_>) -> (f32, f32) {
                 if let Some(&v) = parts.first() {
                     dx += v;
                 }
-            }
+            },
             "translatey" => {
                 if let Some(&v) = parts.first() {
                     dy += v;
                 }
-            }
+            },
             "translate" => {
                 if let Some(&v) = parts.first() {
                     dx += v;
@@ -93,8 +95,8 @@ pub fn translate_offset_for(styles: &ComputedStyles<'_>) -> (f32, f32) {
                 if let Some(&v) = parts.get(1) {
                     dy += v;
                 }
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
     (dx, dy)
@@ -270,9 +272,9 @@ fn paint_page<'sty>(
             }
             // Borders (very simple — single solid stroke if any side
             // declares a non-zero width).
-            let has_border = ["border-width", "border-top-width", "border"].iter().any(|p| {
-                styles.get(p).is_some()
-            });
+            let has_border = ["border-width", "border-top-width", "border"]
+                .iter()
+                .any(|p| styles.get(p).is_some());
             if has_border {
                 page_builder.draw_rect(abs_x, pdf_y, pb.local.width, pb.local.height);
             }
@@ -301,10 +303,7 @@ fn paint_page<'sty>(
         // the API layer says its DOM element is an `<a href=…>`.
         if let Some(href) = link_href_for(pb.box_id) {
             if !href.is_empty() && pb.local.width > 0.0 && pb.local.height > 0.0 {
-                page_builder.link(
-                    Rect::new(abs_x, pdf_y, pb.local.width, pb.local.height),
-                    href,
-                );
+                page_builder.link(Rect::new(abs_x, pdf_y, pb.local.width, pb.local.height), href);
             }
         }
 
@@ -361,25 +360,13 @@ fn paint_page<'sty>(
             if let Some(before) = pseudo_before_for(pb.box_id) {
                 if !before.is_empty() {
                     let y = page_height_px - abs_top_y - font_size_px;
-                    page_builder.add_embedded_text(
-                        &before,
-                        abs_x,
-                        y,
-                        box_font_name,
-                        font_size_px,
-                    );
+                    page_builder.add_embedded_text(&before, abs_x, y, box_font_name, font_size_px);
                 }
             }
             if let Some(after) = pseudo_after_for(pb.box_id) {
                 if !after.is_empty() {
                     let y = page_height_px - abs_top_y - pb.local.height;
-                    page_builder.add_embedded_text(
-                        &after,
-                        abs_x,
-                        y,
-                        box_font_name,
-                        font_size_px,
-                    );
+                    page_builder.add_embedded_text(&after, abs_x, y, box_font_name, font_size_px);
                 }
             }
         }
@@ -492,9 +479,7 @@ mod tests {
             &tree,
             |id| {
                 let node = tree.get(id);
-                let Some(elem_id) = node.element else {
-                    return None;
-                };
+                let elem_id = node.element?;
                 let element = dom.element(elem_id).unwrap();
                 Some(crate::html_css::css::cascade(ss, element, None))
             },
@@ -518,7 +503,11 @@ mod tests {
         // 1×1 transparent PNG, pre-encoded base64.
         let src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkAAIAAAoAAv/lxKUAAAAASUVORK5CYII=";
         let bytes = decode_image_src(src).expect("decode");
-        assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"), "got {:?}", &bytes[..8.min(bytes.len())]);
+        assert!(
+            bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
+            "got {:?}",
+            &bytes[..8.min(bytes.len())]
+        );
     }
 
     #[test]
@@ -529,9 +518,10 @@ mod tests {
 
     #[test]
     fn opacity_absent_is_fully_opaque() {
-        use crate::html_css::css::{parse_stylesheet, cascade};
+        use crate::html_css::css::{cascade, parse_stylesheet};
         let ss: &'static _ = Box::leak(Box::new(parse_stylesheet("p { color: red; }").unwrap()));
-        let dom: &'static _ = Box::leak(Box::new(crate::html_css::html::parse_document("<p>x</p>")));
+        let dom: &'static _ =
+            Box::leak(Box::new(crate::html_css::html::parse_document("<p>x</p>")));
         let p_id = dom.iter_elements().find(|&id| {
             matches!(&dom.node(id).kind, crate::html_css::html::NodeKind::Element { tag, .. } if tag == "p")
         }).unwrap();
@@ -542,9 +532,10 @@ mod tests {
 
     #[test]
     fn opacity_number_parses() {
-        use crate::html_css::css::{parse_stylesheet, cascade};
+        use crate::html_css::css::{cascade, parse_stylesheet};
         let ss: &'static _ = Box::leak(Box::new(parse_stylesheet("p { opacity: 0.25; }").unwrap()));
-        let dom: &'static _ = Box::leak(Box::new(crate::html_css::html::parse_document("<p>x</p>")));
+        let dom: &'static _ =
+            Box::leak(Box::new(crate::html_css::html::parse_document("<p>x</p>")));
         let p_id = dom.iter_elements().find(|&id| {
             matches!(&dom.node(id).kind, crate::html_css::html::NodeKind::Element { tag, .. } if tag == "p")
         }).unwrap();
@@ -555,11 +546,12 @@ mod tests {
 
     #[test]
     fn translate_offset_parses_two_lengths() {
-        use crate::html_css::css::{parse_stylesheet, cascade};
+        use crate::html_css::css::{cascade, parse_stylesheet};
         let ss: &'static _ = Box::leak(Box::new(
             parse_stylesheet("p { transform: translate(10px, 20px); }").unwrap(),
         ));
-        let dom: &'static _ = Box::leak(Box::new(crate::html_css::html::parse_document("<p>x</p>")));
+        let dom: &'static _ =
+            Box::leak(Box::new(crate::html_css::html::parse_document("<p>x</p>")));
         let p_id = dom.iter_elements().find(|&id| {
             matches!(&dom.node(id).kind, crate::html_css::html::NodeKind::Element { tag, .. } if tag == "p")
         }).unwrap();
@@ -570,11 +562,11 @@ mod tests {
 
     #[test]
     fn translate_x_only_sets_dx() {
-        use crate::html_css::css::{parse_stylesheet, cascade};
-        let ss: &'static _ = Box::leak(Box::new(
-            parse_stylesheet("p { transform: translateX(7px); }").unwrap(),
-        ));
-        let dom: &'static _ = Box::leak(Box::new(crate::html_css::html::parse_document("<p>x</p>")));
+        use crate::html_css::css::{cascade, parse_stylesheet};
+        let ss: &'static _ =
+            Box::leak(Box::new(parse_stylesheet("p { transform: translateX(7px); }").unwrap()));
+        let dom: &'static _ =
+            Box::leak(Box::new(crate::html_css::html::parse_document("<p>x</p>")));
         let p_id = dom.iter_elements().find(|&id| {
             matches!(&dom.node(id).kind, crate::html_css::html::NodeKind::Element { tag, .. } if tag == "p")
         }).unwrap();

@@ -283,11 +283,7 @@ fn test_subset_dejavu_for_english_under_30kb() {
 
     // Remapper must round-trip every kept glyph and renumber to a dense
     // 0..=N range starting from 0 (which is always .notdef).
-    assert_eq!(
-        remapper.get(0),
-        Some(0),
-        ".notdef must remain at GID 0 after subsetting"
-    );
+    assert_eq!(remapper.get(0), Some(0), ".notdef must remain at GID 0 after subsetting");
     for &original_gid in &used {
         assert!(
             remapper.get(original_gid).is_some(),

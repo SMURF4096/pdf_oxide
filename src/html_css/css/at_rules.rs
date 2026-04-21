@@ -159,11 +159,7 @@ pub fn resolve<'i>(stylesheet: &Stylesheet<'i>, media: MediaContext) -> Resolved
     out
 }
 
-fn process_rules<'i>(
-    rules: &[Rule<'i>],
-    media: MediaContext,
-    out: &mut ResolvedStylesheet<'i>,
-) {
+fn process_rules<'i>(rules: &[Rule<'i>], media: MediaContext, out: &mut ResolvedStylesheet<'i>) {
     for rule in rules {
         match rule {
             Rule::Qualified(q) => out.rules.push(q.clone()),
@@ -172,11 +168,7 @@ fn process_rules<'i>(
     }
 }
 
-fn process_at_rule<'i>(
-    at: &AtRule<'i>,
-    media: MediaContext,
-    out: &mut ResolvedStylesheet<'i>,
-) {
+fn process_at_rule<'i>(at: &AtRule<'i>, media: MediaContext, out: &mut ResolvedStylesheet<'i>) {
     let lower = at.name.to_ascii_lowercase();
     match lower.as_str() {
         "media" => {
@@ -186,22 +178,22 @@ fn process_at_rule<'i>(
                     process_rules(&nested, media, out);
                 }
             }
-        }
+        },
         "page" => {
             if let Some(rule) = parse_page_rule(at) {
                 out.page_rules.push(rule);
             }
-        }
+        },
         "font-face" => {
             if let Some(desc) = parse_font_face(at) {
                 out.font_faces.push(desc);
             }
-        }
+        },
         "import" => {
             if let Some(url) = extract_import_url(&at.prelude) {
                 out.imports.push(url);
             }
-        }
+        },
         "supports" => {
             if evaluate_supports_query(&at.prelude) {
                 if let Some(block) = &at.block {
@@ -209,10 +201,10 @@ fn process_at_rule<'i>(
                     process_rules(&nested, media, out);
                 }
             }
-        }
+        },
         // @keyframes, @charset, @namespace, @counter-style, @property,
         // @layer — all parsed-and-ignored for v0.3.35.
-        _ => {}
+        _ => {},
     }
 }
 
@@ -264,7 +256,9 @@ fn evaluate_media_branch(branch: &[ComponentValue<'_>], media: MediaContext) -> 
     }
     and_groups.push(trim_ws(&trimmed[start..]));
 
-    and_groups.into_iter().all(|g| evaluate_media_atom(g, media))
+    and_groups
+        .into_iter()
+        .all(|g| evaluate_media_atom(g, media))
 }
 
 fn evaluate_media_atom(atom: &[ComponentValue<'_>], media: MediaContext) -> bool {
@@ -318,10 +312,18 @@ fn evaluate_media_feature(body: &[ComponentValue<'_>], media: MediaContext) -> b
     let value = &trimmed[j..];
 
     match name.as_str() {
-        "min-width" => extract_length_px(value).map(|px| media.width_px >= px).unwrap_or(false),
-        "max-width" => extract_length_px(value).map(|px| media.width_px <= px).unwrap_or(false),
-        "min-height" => extract_length_px(value).map(|px| media.height_px >= px).unwrap_or(false),
-        "max-height" => extract_length_px(value).map(|px| media.height_px <= px).unwrap_or(false),
+        "min-width" => extract_length_px(value)
+            .map(|px| media.width_px >= px)
+            .unwrap_or(false),
+        "max-width" => extract_length_px(value)
+            .map(|px| media.width_px <= px)
+            .unwrap_or(false),
+        "min-height" => extract_length_px(value)
+            .map(|px| media.height_px >= px)
+            .unwrap_or(false),
+        "max-height" => extract_length_px(value)
+            .map(|px| media.height_px <= px)
+            .unwrap_or(false),
         "orientation" => match value.iter().find_map(ident_str) {
             Some(s) if s.eq_ignore_ascii_case("portrait") => media.height_px >= media.width_px,
             Some(s) if s.eq_ignore_ascii_case("landscape") => media.width_px > media.height_px,
@@ -392,7 +394,7 @@ fn parse_page_selectors(prelude: &[ComponentValue<'_>]) -> Vec<PageSelector> {
                 let s = s.to_string();
                 iter.next();
                 Some(s)
-            }
+            },
             _ => None,
         };
         // Pseudo segments
@@ -413,7 +415,7 @@ fn parse_page_selectors(prelude: &[ComponentValue<'_>]) -> Vec<PageSelector> {
         match (name, pseudo) {
             (_, Some(p)) => out.push(p),
             (Some(n), None) => out.push(PageSelector::Named(n)),
-            _ => {}
+            _ => {},
         }
     }
     out
@@ -452,8 +454,12 @@ fn cv_to_owned<'i>(cv: ComponentValue<'_>) -> ComponentValue<'i> {
             name: Cow::Owned(name.into_owned()),
             body: body.into_iter().map(cv_to_owned).collect(),
         },
-        ComponentValue::Parens(b) => ComponentValue::Parens(b.into_iter().map(cv_to_owned).collect()),
-        ComponentValue::Square(b) => ComponentValue::Square(b.into_iter().map(cv_to_owned).collect()),
+        ComponentValue::Parens(b) => {
+            ComponentValue::Parens(b.into_iter().map(cv_to_owned).collect())
+        },
+        ComponentValue::Square(b) => {
+            ComponentValue::Square(b.into_iter().map(cv_to_owned).collect())
+        },
         ComponentValue::Curly(b) => ComponentValue::Curly(b.into_iter().map(cv_to_owned).collect()),
     }
 }
@@ -484,12 +490,10 @@ fn token_to_owned<'i>(t: Token<'_>) -> Token<'i> {
         Token::BadString => Token::BadString,
         Token::Url(s) => Token::Url(Cow::Owned(s.into_owned())),
         Token::BadUrl => Token::BadUrl,
-        Token::Number(Number { value, is_integer }) => {
-            Token::Number(Number { value, is_integer })
-        }
+        Token::Number(Number { value, is_integer }) => Token::Number(Number { value, is_integer }),
         Token::Percentage(Number { value, is_integer }) => {
             Token::Percentage(Number { value, is_integer })
-        }
+        },
         Token::Dimension {
             value: Number { value, is_integer },
             unit,
@@ -520,18 +524,15 @@ fn parse_font_face(at: &AtRule<'_>) -> Option<FontFaceDescriptor> {
     for decl in decls {
         match decl.name.as_ref() {
             "font-family" => {
-                family = decl
-                    .value
-                    .iter()
-                    .find_map(|cv| match cv {
-                        ComponentValue::Token(Token::String(s)) => Some(s.to_string()),
-                        ComponentValue::Token(Token::Ident(s)) => Some(s.to_string()),
-                        _ => None,
-                    });
-            }
+                family = decl.value.iter().find_map(|cv| match cv {
+                    ComponentValue::Token(Token::String(s)) => Some(s.to_string()),
+                    ComponentValue::Token(Token::Ident(s)) => Some(s.to_string()),
+                    _ => None,
+                });
+            },
             "src" => {
                 sources = parse_src_value(&decl.value);
-            }
+            },
             "font-weight" => {
                 if let Some(n) = decl.value.iter().find_map(|cv| match cv {
                     ComponentValue::Token(Token::Number(n)) => Some(n.value as u16),
@@ -543,7 +544,7 @@ fn parse_font_face(at: &AtRule<'_>) -> Option<FontFaceDescriptor> {
                         weight = 700;
                     }
                 }
-            }
+            },
             "font-style" => {
                 italic = decl
                     .value
@@ -551,7 +552,7 @@ fn parse_font_face(at: &AtRule<'_>) -> Option<FontFaceDescriptor> {
                     .find_map(ident_str)
                     .map(|s| !s.eq_ignore_ascii_case("normal"))
                     .unwrap_or(false);
-            }
+            },
             "font-stretch" => {
                 if let Some(p) = decl.value.iter().find_map(|cv| match cv {
                     ComponentValue::Token(Token::Percentage(n)) => Some(n.value as f32),
@@ -559,8 +560,8 @@ fn parse_font_face(at: &AtRule<'_>) -> Option<FontFaceDescriptor> {
                 }) {
                     stretch_pct = p;
                 }
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
 
@@ -602,13 +603,15 @@ fn parse_src_value(value: &[ComponentValue<'_>]) -> Vec<SrcEntry> {
                         })
                         .unwrap_or_default();
                     let format = trimmed[idx + 1..].iter().find_map(|c| match c {
-                        ComponentValue::Function { name, body } if name.eq_ignore_ascii_case("format") => {
+                        ComponentValue::Function { name, body }
+                            if name.eq_ignore_ascii_case("format") =>
+                        {
                             body.iter().find_map(|cc| match cc {
                                 ComponentValue::Token(Token::String(s)) => Some(s.to_string()),
                                 ComponentValue::Token(Token::Ident(s)) => Some(s.to_string()),
                                 _ => None,
                             })
-                        }
+                        },
                         _ => None,
                     });
                     out.push(SrcEntry::Url { url, format });
@@ -620,13 +623,15 @@ fn parse_src_value(value: &[ComponentValue<'_>]) -> Vec<SrcEntry> {
                 // form (Function "url") only appears for unusual cases.
                 // Either way we look for a trailing format(...).
                 let format = trimmed[idx + 1..].iter().find_map(|c| match c {
-                    ComponentValue::Function { name, body } if name.eq_ignore_ascii_case("format") => {
+                    ComponentValue::Function { name, body }
+                        if name.eq_ignore_ascii_case("format") =>
+                    {
                         body.iter().find_map(|cc| match cc {
                             ComponentValue::Token(Token::String(s)) => Some(s.to_string()),
                             ComponentValue::Token(Token::Ident(s)) => Some(s.to_string()),
                             _ => None,
                         })
-                    }
+                    },
                     _ => None,
                 });
                 out.push(SrcEntry::Url {
@@ -644,7 +649,7 @@ fn extract_import_url(prelude: &[ComponentValue<'_>]) -> Option<String> {
     // First non-whitespace component must be a string or a url() function.
     for cv in prelude {
         match cv {
-            ComponentValue::Token(Token::Whitespace) => {}
+            ComponentValue::Token(Token::Whitespace) => {},
             ComponentValue::Token(Token::String(s)) => return Some(s.to_string()),
             ComponentValue::Token(Token::Url(s)) => return Some(s.to_string()),
             ComponentValue::Function { name, body } if name.eq_ignore_ascii_case("url") => {
@@ -652,7 +657,7 @@ fn extract_import_url(prelude: &[ComponentValue<'_>]) -> Option<String> {
                     ComponentValue::Token(Token::String(s)) => Some(s.to_string()),
                     _ => None,
                 });
-            }
+            },
             _ => return None,
         }
     }
@@ -730,7 +735,7 @@ fn extract_length_px(value: &[ComponentValue<'_>]) -> Option<f32> {
                 let u = Unit::parse(unit)?;
                 let ctx = super::calc::Context::default();
                 return Some(u.to_px(value.value as f32, &ctx));
-            }
+            },
             ComponentValue::Token(Token::Number(n)) => return Some(n.value as f32),
             _ => return None,
         }
@@ -757,9 +762,7 @@ fn trim_ws<'a, 'i>(cvs: &'a [ComponentValue<'i>]) -> &'a [ComponentValue<'i>] {
     &cvs[start..end]
 }
 
-fn split_top_level_commas<'a, 'i>(
-    cvs: &'a [ComponentValue<'i>],
-) -> Vec<&'a [ComponentValue<'i>]> {
+fn split_top_level_commas<'a, 'i>(cvs: &'a [ComponentValue<'i>]) -> Vec<&'a [ComponentValue<'i>]> {
     let mut out = Vec::new();
     let mut start = 0;
     for (i, cv) in cvs.iter().enumerate() {
@@ -790,22 +793,22 @@ fn render_into(cvs: &[ComponentValue<'_>], s: &mut String) {
                 s.push('(');
                 render_into(body, s);
                 s.push(')');
-            }
+            },
             ComponentValue::Parens(body) => {
                 s.push('(');
                 render_into(body, s);
                 s.push(')');
-            }
+            },
             ComponentValue::Square(body) => {
                 s.push('[');
                 render_into(body, s);
                 s.push(']');
-            }
+            },
             ComponentValue::Curly(body) => {
                 s.push('{');
                 render_into(body, s);
                 s.push('}');
-            }
+            },
         }
     }
 }
@@ -828,15 +831,15 @@ fn render_token(t: &Token<'_>, s: &mut String) {
         Token::Function(v) => {
             s.push_str(v);
             s.push('(');
-        }
+        },
         Token::AtKeyword(v) => {
             s.push('@');
             s.push_str(v);
-        }
+        },
         Token::Hash { value, .. } => {
             s.push('#');
             s.push_str(value);
-        }
+        },
         Token::String(v) => {
             s.push('"');
             for ch in v.chars() {
@@ -846,37 +849,37 @@ fn render_token(t: &Token<'_>, s: &mut String) {
                 s.push(ch);
             }
             s.push('"');
-        }
-        Token::BadString => {}
+        },
+        Token::BadString => {},
         Token::Url(v) => {
             s.push_str("url(\"");
             s.push_str(v);
             s.push_str("\")");
-        }
-        Token::BadUrl => {}
+        },
+        Token::BadUrl => {},
         Token::Number(n) => {
             if n.is_integer {
                 s.push_str(&format!("{}", n.value as i64));
             } else {
                 s.push_str(&n.value.to_string());
             }
-        }
+        },
         Token::Percentage(n) => {
             if n.is_integer {
                 s.push_str(&format!("{}%", n.value as i64));
             } else {
                 s.push_str(&format!("{}%", n.value));
             }
-        }
+        },
         Token::Dimension { value, unit } => {
             if value.is_integer {
                 s.push_str(&format!("{}{}", value.value as i64, unit));
             } else {
                 s.push_str(&format!("{}{}", value.value, unit));
             }
-        }
+        },
         Token::Delim(c) => s.push(*c),
-        Token::Eof => {}
+        Token::Eof => {},
     }
 }
 
@@ -913,40 +916,30 @@ mod tests {
 
     #[test]
     fn media_min_width_matches() {
-        let ss = parse_stylesheet(
-            "@media (min-width: 300px) { body { color: red; } }",
-        )
-        .unwrap();
+        let ss = parse_stylesheet("@media (min-width: 300px) { body { color: red; } }").unwrap();
         let r = resolve(&ss, ctx_a4());
         assert_eq!(r.rules.len(), 1);
     }
 
     #[test]
     fn media_min_width_does_not_match_when_too_narrow() {
-        let ss = parse_stylesheet(
-            "@media (min-width: 1000px) { body { color: red; } }",
-        )
-        .unwrap();
+        let ss = parse_stylesheet("@media (min-width: 1000px) { body { color: red; } }").unwrap();
         let r = resolve(&ss, ctx_a4());
         assert!(r.rules.is_empty());
     }
 
     #[test]
     fn media_and_combination() {
-        let ss = parse_stylesheet(
-            "@media print and (min-width: 300px) { body { color: red; } }",
-        )
-        .unwrap();
+        let ss = parse_stylesheet("@media print and (min-width: 300px) { body { color: red; } }")
+            .unwrap();
         let r = resolve(&ss, ctx_a4());
         assert_eq!(r.rules.len(), 1);
     }
 
     #[test]
     fn media_comma_alternatives() {
-        let ss = parse_stylesheet(
-            "@media screen, (min-width: 1px) { body { color: red; } }",
-        )
-        .unwrap();
+        let ss =
+            parse_stylesheet("@media screen, (min-width: 1px) { body { color: red; } }").unwrap();
         // Second branch matches.
         let r = resolve(&ss, ctx_a4());
         assert_eq!(r.rules.len(), 1);
@@ -970,10 +963,7 @@ mod tests {
 
     #[test]
     fn at_page_left_right_blank() {
-        let ss = parse_stylesheet(
-            "@page :left { } @page :right { } @page :blank { }",
-        )
-        .unwrap();
+        let ss = parse_stylesheet("@page :left { } @page :right { } @page :blank { }").unwrap();
         let r = resolve(&ss, ctx_a4());
         assert_eq!(r.page_rules[0].selectors, vec![PageSelector::Left]);
         assert_eq!(r.page_rules[1].selectors, vec![PageSelector::Right]);
@@ -1002,17 +992,15 @@ mod tests {
             SrcEntry::Url { url, format } => {
                 assert_eq!(url, "my.ttf");
                 assert_eq!(format.as_deref(), Some("truetype"));
-            }
+            },
             other => panic!("expected url, got {other:?}"),
         }
     }
 
     #[test]
     fn font_face_local_source() {
-        let ss = parse_stylesheet(
-            r#"@font-face { font-family: "X"; src: local("Helvetica"); }"#,
-        )
-        .unwrap();
+        let ss = parse_stylesheet(r#"@font-face { font-family: "X"; src: local("Helvetica"); }"#)
+            .unwrap();
         let r = resolve(&ss, ctx_a4());
         match &r.font_faces[0].sources[0] {
             SrcEntry::Local(name) => assert_eq!(name, "Helvetica"),
@@ -1030,20 +1018,15 @@ mod tests {
 
     #[test]
     fn supports_known_property_passes() {
-        let ss = parse_stylesheet(
-            "@supports (display: flex) { body { color: red; } }",
-        )
-        .unwrap();
+        let ss = parse_stylesheet("@supports (display: flex) { body { color: red; } }").unwrap();
         let r = resolve(&ss, ctx_a4());
         assert_eq!(r.rules.len(), 1);
     }
 
     #[test]
     fn keyframes_silently_dropped() {
-        let ss = parse_stylesheet(
-            "@keyframes spin { from { color: red; } to { color: blue; } }",
-        )
-        .unwrap();
+        let ss = parse_stylesheet("@keyframes spin { from { color: red; } to { color: blue; } }")
+            .unwrap();
         let r = resolve(&ss, ctx_a4());
         assert!(r.rules.is_empty());
         assert!(r.page_rules.is_empty());

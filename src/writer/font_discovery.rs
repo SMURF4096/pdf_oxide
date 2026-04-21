@@ -223,7 +223,7 @@ fn load_face(
             return Err(FontResolveError::NoPath {
                 family: matched_family.to_string(),
             });
-        }
+        },
     };
     let bytes = std::fs::read(&path).map_err(|e| FontResolveError::Io {
         path: path.clone(),
@@ -264,10 +264,10 @@ mod tests {
             Ok(r) => {
                 assert!(!r.bytes.is_empty(), "resolved font had empty bytes");
                 assert!(r.path.exists(), "resolved path must exist");
-            }
+            },
             Err(FontResolveError::NoMatch { .. }) => {
                 eprintln!("no system sans-serif on this host; skipping (CI sandbox?)");
-            }
+            },
             Err(other) => panic!("unexpected resolve error: {other:?}"),
         }
     }
@@ -276,11 +276,8 @@ mod tests {
     fn resolves_specific_family_with_fallback() {
         // Try a wildly improbable family first, then sans-serif.
         let db = SystemFontDb::new();
-        let resolved = db.resolve(
-            &["NonExistentFontFromTheVoid", "sans-serif"],
-            400,
-            FontStyle::Normal,
-        );
+        let resolved =
+            db.resolve(&["NonExistentFontFromTheVoid", "sans-serif"], 400, FontStyle::Normal);
         if let Ok(r) = resolved {
             assert!(!r.bytes.is_empty());
             assert_ne!(r.matched_family, "NonExistentFontFromTheVoid");

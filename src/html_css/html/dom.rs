@@ -107,7 +107,10 @@ impl Dom {
     }
 
     /// Find the first element matching the predicate (DFS).
-    pub fn find_element(&self, mut pred: impl FnMut(&str, &[(String, String)]) -> bool) -> Option<NodeId> {
+    pub fn find_element(
+        &self,
+        mut pred: impl FnMut(&str, &[(String, String)]) -> bool,
+    ) -> Option<NodeId> {
         for id in self.iter_elements() {
             if let NodeKind::Element { tag, attrs } = &self.nodes[id as usize].kind {
                 if pred(tag, attrs) {
@@ -131,10 +134,35 @@ impl Dom {
 /// Tags that close any currently-open `<p>` when they open. The HTML5
 /// spec's full list is bigger; this covers what HTML→PDF inputs hit.
 const CLOSES_P_ON_OPEN: &[&str] = &[
-    "address", "article", "aside", "blockquote", "details", "div",
-    "dl", "fieldset", "figcaption", "figure", "footer", "form", "h1",
-    "h2", "h3", "h4", "h5", "h6", "header", "hr", "main", "menu", "nav",
-    "ol", "p", "pre", "section", "table", "ul",
+    "address",
+    "article",
+    "aside",
+    "blockquote",
+    "details",
+    "div",
+    "dl",
+    "fieldset",
+    "figcaption",
+    "figure",
+    "footer",
+    "form",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "header",
+    "hr",
+    "main",
+    "menu",
+    "nav",
+    "ol",
+    "p",
+    "pre",
+    "section",
+    "table",
+    "ul",
 ];
 
 /// Parse an HTML source string into a [`Dom`].
@@ -150,7 +178,7 @@ pub fn parse_document(input: &str) -> Dom {
                 if matches!(tok, HtmlToken::Eof) {
                     break;
                 }
-            }
+            },
             HtmlToken::Comment(body) => {
                 let parent = *stack.last().unwrap();
                 push_child(
@@ -162,7 +190,7 @@ pub fn parse_document(input: &str) -> Dom {
                         children: Vec::new(),
                     },
                 );
-            }
+            },
             HtmlToken::Text(s) => {
                 if s.is_empty() {
                     continue;
@@ -177,7 +205,7 @@ pub fn parse_document(input: &str) -> Dom {
                         children: Vec::new(),
                     },
                 );
-            }
+            },
             HtmlToken::RawText { host_tag, body } => {
                 // Synthesize a host element with one RawText child so
                 // CSS-3 (selectors) can still match `style`, `script`,
@@ -205,7 +233,7 @@ pub fn parse_document(input: &str) -> Dom {
                         children: Vec::new(),
                     },
                 );
-            }
+            },
             HtmlToken::StartTag {
                 name,
                 attrs,
@@ -234,7 +262,7 @@ pub fn parse_document(input: &str) -> Dom {
                 if !self_closing {
                     stack.push(new_id);
                 }
-            }
+            },
             HtmlToken::EndTag { name } => {
                 // Pop until we find a matching open tag, or until we
                 // can't (forgive over-eager closes by leaving the
@@ -253,7 +281,7 @@ pub fn parse_document(input: &str) -> Dom {
                         stack.pop();
                     }
                 }
-            }
+            },
         }
     }
 
@@ -347,7 +375,10 @@ impl<'a> Element for DomElement<'a> {
         if matches!(self.dom.nodes[p as usize].kind, NodeKind::Document) {
             None
         } else {
-            Some(DomElement { dom: self.dom, id: p })
+            Some(DomElement {
+                dom: self.dom,
+                id: p,
+            })
         }
     }
     fn prev_element_sibling(&self) -> Option<Self> {
@@ -356,7 +387,10 @@ impl<'a> Element for DomElement<'a> {
         let pos = kids.iter().position(|&k| k == self.id)?;
         for &kid in kids[..pos].iter().rev() {
             if matches!(self.dom.nodes[kid as usize].kind, NodeKind::Element { .. }) {
-                return Some(DomElement { dom: self.dom, id: kid });
+                return Some(DomElement {
+                    dom: self.dom,
+                    id: kid,
+                });
             }
         }
         None
@@ -367,7 +401,10 @@ impl<'a> Element for DomElement<'a> {
         let pos = kids.iter().position(|&k| k == self.id)?;
         for &kid in &kids[pos + 1..] {
             if matches!(self.dom.nodes[kid as usize].kind, NodeKind::Element { .. }) {
-                return Some(DomElement { dom: self.dom, id: kid });
+                return Some(DomElement {
+                    dom: self.dom,
+                    id: kid,
+                });
             }
         }
         None
@@ -378,7 +415,7 @@ impl<'a> Element for DomElement<'a> {
             match &self.dom.nodes[kid as usize].kind {
                 NodeKind::Element { .. } => return false,
                 NodeKind::Text(s) if !s.trim().is_empty() => return false,
-                _ => {}
+                _ => {},
             }
         }
         true
@@ -386,7 +423,10 @@ impl<'a> Element for DomElement<'a> {
     fn first_element_child(&self) -> Option<Self> {
         for &kid in &self.node().children {
             if matches!(self.dom.nodes[kid as usize].kind, NodeKind::Element { .. }) {
-                return Some(DomElement { dom: self.dom, id: kid });
+                return Some(DomElement {
+                    dom: self.dom,
+                    id: kid,
+                });
             }
         }
         None
@@ -419,7 +459,8 @@ mod tests {
     }
 
     fn first_element(d: &Dom, tag: &str) -> NodeId {
-        d.find_by_tag(tag).expect(&format!("must find <{tag}>"))
+        d.find_by_tag(tag)
+            .unwrap_or_else(|| panic!("must find <{tag}>"))
     }
 
     #[test]
@@ -465,7 +506,9 @@ mod tests {
         let kids = &d.node(body_or_root).children;
         assert_eq!(
             kids.iter()
-                .filter(|&&k| matches!(d.node(k).kind, NodeKind::Element { ref tag, .. } if tag == "p"))
+                .filter(
+                    |&&k| matches!(d.node(k).kind, NodeKind::Element { ref tag, .. } if tag == "p")
+                )
                 .count(),
             2
         );
@@ -478,7 +521,9 @@ mod tests {
         let kids = &d.node(ul).children;
         let li_count = kids
             .iter()
-            .filter(|&&k| matches!(d.node(k).kind, NodeKind::Element { ref tag, .. } if tag == "li"))
+            .filter(
+                |&&k| matches!(d.node(k).kind, NodeKind::Element { ref tag, .. } if tag == "li"),
+            )
             .count();
         assert_eq!(li_count, 3);
     }
@@ -517,7 +562,9 @@ mod tests {
 
     #[test]
     fn cascade_matches_against_dom() {
-        let d = dom(r#"<html><body><div id="main" class="container"><p class="lead">x</p></div></body></html>"#);
+        let d = dom(
+            r#"<html><body><div id="main" class="container"><p class="lead">x</p></div></body></html>"#,
+        );
         let p = first_element(&d, "p");
         let pe = d.element(p).unwrap();
 
@@ -550,7 +597,9 @@ mod tests {
         let d = dom("<ul><li>a</li><li>b</li><li>c</li></ul>");
         let lis: Vec<NodeId> = d
             .iter_elements()
-            .filter(|&id| matches!(d.node(id).kind, NodeKind::Element { ref tag, .. } if tag == "li"))
+            .filter(
+                |&id| matches!(d.node(id).kind, NodeKind::Element { ref tag, .. } if tag == "li"),
+            )
             .collect();
         assert_eq!(lis.len(), 3);
         let pe2 = d.element(lis[1]).unwrap();

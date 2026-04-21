@@ -35,20 +35,14 @@ fn simple_paragraph_round_trips() {
 
 #[test]
 fn multi_paragraph_round_trips() {
-    let extracted = build_and_extract(
-        "<p>First paragraph.</p><p>Second paragraph.</p>",
-        "",
-    );
+    let extracted = build_and_extract("<p>First paragraph.</p><p>Second paragraph.</p>", "");
     assert!(extracted.contains("First paragraph."));
     assert!(extracted.contains("Second paragraph."));
 }
 
 #[test]
 fn nested_html_round_trips() {
-    let extracted = build_and_extract(
-        "<div><h1>Title</h1><p>Body text here.</p></div>",
-        "",
-    );
+    let extracted = build_and_extract("<div><h1>Title</h1><p>Body text here.</p></div>", "");
     assert!(extracted.contains("Title"));
     assert!(extracted.contains("Body text here."));
 }
@@ -65,10 +59,7 @@ fn css_styling_does_not_lose_text() {
 
 #[test]
 fn unicode_round_trips() {
-    let extracted = build_and_extract(
-        "<p>café Привет ❤</p>",
-        "",
-    );
+    let extracted = build_and_extract("<p>café Привет ❤</p>", "");
     assert!(extracted.contains("café"));
     assert!(extracted.contains("Привет"));
 }
@@ -89,13 +80,18 @@ fn three_paragraphs_emit_all_words_in_order() {
     let normalized: String = extracted.split_whitespace().collect::<Vec<_>>().join(" ");
     // Each paragraph's full content must survive.
     let p1_words = ["Alpha", "beta", "gamma", "delta", "epsilon", "zeta"];
-    let p2_words = ["One", "two", "three", "four", "five", "six", "seven", "eight"];
-    let p3_words = ["Red", "orange", "yellow", "green", "blue", "indigo", "violet"];
-    for w in p1_words.iter().chain(p2_words.iter()).chain(p3_words.iter()) {
-        assert!(
-            normalized.contains(w),
-            "missing word `{w}` from extracted text:\n{extracted}"
-        );
+    let p2_words = [
+        "One", "two", "three", "four", "five", "six", "seven", "eight",
+    ];
+    let p3_words = [
+        "Red", "orange", "yellow", "green", "blue", "indigo", "violet",
+    ];
+    for w in p1_words
+        .iter()
+        .chain(p2_words.iter())
+        .chain(p3_words.iter())
+    {
+        assert!(normalized.contains(w), "missing word `{w}` from extracted text:\n{extracted}");
     }
     // Order: the three paragraphs' anchor words must appear in order.
     let alpha = normalized.find("Alpha").unwrap_or(usize::MAX);
@@ -117,7 +113,10 @@ fn long_single_paragraph_keeps_all_words() {
     let html = format!("<p>{body}</p>");
     let extracted = build_and_extract(&html, "");
     let normalized: String = extracted.split_whitespace().collect::<Vec<_>>().join(" ");
-    let present = words.iter().filter(|w| normalized.contains(w.as_str())).count();
+    let present = words
+        .iter()
+        .filter(|w| normalized.contains(w.as_str()))
+        .count();
     let ratio = present as f32 / words.len() as f32;
     assert!(
         ratio >= 0.90,
@@ -159,10 +158,7 @@ fn three_paragraphs_have_decreasing_y_baselines() {
         alpha_y > beta_y,
         "Alpha (y={alpha_y}) must sit ABOVE Beta (y={beta_y}) on the page (PDF y grows up)"
     );
-    assert!(
-        beta_y > gamma_y,
-        "Beta (y={beta_y}) must sit ABOVE Gamma (y={gamma_y})"
-    );
+    assert!(beta_y > gamma_y, "Beta (y={beta_y}) must sit ABOVE Gamma (y={gamma_y})");
     // And: each paragraph's body words must share that paragraph's
     // baseline (within one line height), not be scattered across the
     // page at increasing x.
@@ -210,10 +206,7 @@ fn page_break_before_forces_new_page() {
     .expect("from_html_css");
     let mut doc = PdfDocument::from_bytes(pdf.into_bytes()).expect("re-open");
     let pages = doc.page_count().expect("page_count");
-    assert!(
-        pages >= 2,
-        "page-break-before should yield ≥2 pages; got {pages}"
-    );
+    assert!(pages >= 2, "page-break-before should yield ≥2 pages; got {pages}");
     let p0 = doc.extract_text(0).expect("p0");
     let p1 = doc.extract_text(1).expect("p1");
     assert!(p0.contains("First"), "page 0 should have `First`; got {p0:?}");
@@ -235,10 +228,7 @@ fn inline_style_page_break_before_forces_new_page() {
     )
     .expect("from_html_css");
     let mut doc = PdfDocument::from_bytes(pdf.into_bytes()).expect("re-open");
-    assert!(
-        doc.page_count().unwrap() >= 2,
-        "inline page-break-before should yield ≥2 pages"
-    );
+    assert!(doc.page_count().unwrap() >= 2, "inline page-break-before should yield ≥2 pages");
 }
 
 /// B4/FU8 — `font-family` picks a registered font; unknown families
@@ -255,15 +245,14 @@ fn multi_font_cascade_selects_registered_family() {
     )
     .expect("from_html_css_with_fonts");
     let bytes = pdf.into_bytes();
-    let font_file_count = String::from_utf8_lossy(&bytes).matches("/FontFile2").count();
+    let font_file_count = String::from_utf8_lossy(&bytes)
+        .matches("/FontFile2")
+        .count();
     let mut doc = PdfDocument::from_bytes(bytes).expect("reopen");
     let text = doc.extract_text(0).expect("extract");
     assert!(text.contains("body"));
     assert!(text.contains("mono"));
-    assert!(
-        font_file_count >= 2,
-        "expected ≥2 embedded fonts in PDF; got {font_file_count}"
-    );
+    assert!(font_file_count >= 2, "expected ≥2 embedded fonts in PDF; got {font_file_count}");
 }
 
 /// FU6 — `<ul>` gets bullet markers, `<ol>` gets numeric markers.
@@ -300,10 +289,7 @@ fn produces_valid_pdf_header() {
 // ─────────────────────────────────────────────────────────────────────
 #[test]
 fn multibyte_css_selectors_do_not_panic() {
-    let extracted = build_and_extract(
-        "<p class=\"é\">café content</p>",
-        ".é { color: red }",
-    );
+    let extracted = build_and_extract("<p class=\"é\">café content</p>", ".é { color: red }");
     assert!(extracted.contains("café"));
 }
 
@@ -314,12 +300,7 @@ fn multibyte_css_selectors_do_not_panic() {
 #[cfg(feature = "system-fonts")]
 #[test]
 fn arabic_rtl_paragraph_shapes_and_renders() {
-    let pdf = Pdf::from_html_css(
-        "<p>هذا نص عربي</p>",
-        "",
-        DEJAVU.to_vec(),
-    )
-    .expect("from_html_css");
+    let pdf = Pdf::from_html_css("<p>هذا نص عربي</p>", "", DEJAVU.to_vec()).expect("from_html_css");
     let bytes = pdf.into_bytes();
     // The rustybuzz path emits a hex-encoded TJ stream; just assert
     // the PDF opens and has one page. Visual correctness is covered by
@@ -363,10 +344,7 @@ fn multiple_page_breaks_accumulate_pages() {
     )
     .expect("from_html_css");
     let mut doc = PdfDocument::from_bytes(pdf.into_bytes()).expect("reopen");
-    assert!(
-        doc.page_count().unwrap() >= 3,
-        "two page-breaks should yield ≥3 pages"
-    );
+    assert!(doc.page_count().unwrap() >= 3, "two page-breaks should yield ≥3 pages");
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -375,10 +353,8 @@ fn multiple_page_breaks_accumulate_pages() {
 // ─────────────────────────────────────────────────────────────────────
 #[test]
 fn pseudo_before_literal_string_emits_text() {
-    let extracted = build_and_extract(
-        "<p class=\"note\">Remember</p>",
-        ".note::before { content: \"§ \" }",
-    );
+    let extracted =
+        build_and_extract("<p class=\"note\">Remember</p>", ".note::before { content: \"§ \" }");
     assert!(
         extracted.contains("§") || extracted.contains("\u{00a7}"),
         "expected `§` from ::before; got {extracted:?}"
@@ -388,10 +364,8 @@ fn pseudo_before_literal_string_emits_text() {
 
 #[test]
 fn pseudo_after_literal_string_emits_text() {
-    let extracted = build_and_extract(
-        "<p class=\"note\">Header</p>",
-        ".note::after { content: \" ✓\" }",
-    );
+    let extracted =
+        build_and_extract("<p class=\"note\">Header</p>", ".note::after { content: \" ✓\" }");
     assert!(
         extracted.contains("✓") || extracted.contains("\u{2713}"),
         "expected `✓` from ::after; got {extracted:?}"
@@ -415,18 +389,12 @@ fn pseudo_attr_function_resolves_attribute() {
         "<p data-label=\"HINT\">body</p>",
         "p::before { content: attr(data-label) }",
     );
-    assert!(
-        extracted.contains("HINT"),
-        "attr(data-label) should resolve; got {extracted:?}"
-    );
+    assert!(extracted.contains("HINT"), "attr(data-label) should resolve; got {extracted:?}");
 }
 
 #[test]
 fn pseudo_content_none_emits_nothing() {
-    let extracted = build_and_extract(
-        "<p>body</p>",
-        "p::before { content: none }",
-    );
+    let extracted = build_and_extract("<p>body</p>", "p::before { content: none }");
     assert!(extracted.contains("body"));
     // No crash / no stray markers is the main assertion — the
     // literal string from content: none should NOT appear in output.
@@ -467,10 +435,7 @@ fn opacity_zero_on_ancestor_hides_descendants() {
 
 #[test]
 fn opacity_above_threshold_still_renders() {
-    let extracted = build_and_extract(
-        "<p style=\"opacity: 0.5\">halfway</p>",
-        "",
-    );
+    let extracted = build_and_extract("<p style=\"opacity: 0.5\">halfway</p>", "");
     assert!(extracted.contains("halfway"));
 }
 
@@ -512,7 +477,8 @@ fn translate_shifts_text_baseline_in_x() {
 fn data_uri_png_image_becomes_xobject() {
     // 1×1 transparent PNG via base64.
     let data_uri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkAAIAAAoAAv/lxKUAAAAASUVORK5CYII=";
-    let html = format!("<p>before</p><img src=\"{data_uri}\" width=\"32\" height=\"32\"><p>after</p>");
+    let html =
+        format!("<p>before</p><img src=\"{data_uri}\" width=\"32\" height=\"32\"><p>after</p>");
     let pdf = Pdf::from_html_css(&html, "", DEJAVU.to_vec()).expect("from_html_css");
     let bytes = pdf.into_bytes();
     let s = String::from_utf8_lossy(&bytes);
@@ -548,30 +514,19 @@ fn missing_image_src_does_not_panic() {
 // ─────────────────────────────────────────────────────────────────────
 #[test]
 fn nested_unordered_list_has_bullets_on_both_levels() {
-    let extracted = build_and_extract(
-        "<ul><li>Outer<ul><li>Inner</li></ul></li></ul>",
-        "",
-    );
+    let extracted = build_and_extract("<ul><li>Outer<ul><li>Inner</li></ul></li></ul>", "");
     let bullets = extracted.matches('\u{2022}').count();
-    assert!(
-        bullets >= 2,
-        "expected ≥2 bullets in nested ul; got {bullets} in {extracted:?}"
-    );
+    assert!(bullets >= 2, "expected ≥2 bullets in nested ul; got {bullets} in {extracted:?}");
     assert!(extracted.contains("Outer"));
     assert!(extracted.contains("Inner"));
 }
 
 #[test]
 fn ordered_list_numbers_sequentially_across_many_items() {
-    let extracted = build_and_extract(
-        "<ol><li>A</li><li>B</li><li>C</li><li>D</li><li>E</li></ol>",
-        "",
-    );
+    let extracted =
+        build_and_extract("<ol><li>A</li><li>B</li><li>C</li><li>D</li><li>E</li></ol>", "");
     for marker in ["1.", "2.", "3.", "4.", "5."] {
-        assert!(
-            extracted.contains(marker),
-            "missing `{marker}` from {extracted:?}"
-        );
+        assert!(extracted.contains(marker), "missing `{marker}` from {extracted:?}");
     }
 }
 
@@ -592,26 +547,16 @@ fn multiple_anchor_links_all_emit_annotations() {
     let bytes = pdf.into_bytes();
     let s = String::from_utf8_lossy(&bytes);
     let link_count = s.matches("/Subtype /Link").count() + s.matches("/Subtype/Link").count();
-    assert!(
-        link_count >= 3,
-        "expected ≥3 /Link annotations; got {link_count}"
-    );
+    assert!(link_count >= 3, "expected ≥3 /Link annotations; got {link_count}");
     for host in ["a.example", "b.example", "c.example"] {
-        assert!(
-            s.contains(host),
-            "expected `{host}` href in /URI action"
-        );
+        assert!(s.contains(host), "expected `{host}` href in /URI action");
     }
 }
 
 #[test]
 fn anchor_without_href_emits_no_link_annotation() {
-    let pdf = Pdf::from_html_css(
-        "<p><a>plain text</a></p>",
-        "",
-        DEJAVU.to_vec(),
-    )
-    .expect("from_html_css");
+    let pdf =
+        Pdf::from_html_css("<p><a>plain text</a></p>", "", DEJAVU.to_vec()).expect("from_html_css");
     let bytes = pdf.into_bytes();
     let s = String::from_utf8_lossy(&bytes);
     let links = s.matches("/Subtype /Link").count() + s.matches("/Subtype/Link").count();
@@ -744,4 +689,3 @@ fn kitchen_sink_document_round_trips_all_features() {
     );
     assert!(s.contains("example.com"));
 }
-

@@ -195,7 +195,7 @@ fn normalize_whitespace(items: &[InlineItem], ws: WhiteSpace) -> Vec<InlineItem>
                     color: *color,
                     font_size_px: *font_size_px,
                 }
-            }
+            },
             other => other.clone(),
         })
         .collect()
@@ -238,11 +238,7 @@ struct RawLine {
     baseline_y: f32,
 }
 
-fn break_into_lines(
-    items: &[InlineItem],
-    available_width_px: f32,
-    ws: WhiteSpace,
-) -> Vec<RawLine> {
+fn break_into_lines(items: &[InlineItem], available_width_px: f32, ws: WhiteSpace) -> Vec<RawLine> {
     let allow_wrap = !matches!(ws, WhiteSpace::Pre | WhiteSpace::Nowrap);
     let mut lines: Vec<RawLine> = vec![RawLine::default()];
 
@@ -251,7 +247,7 @@ fn break_into_lines(
             InlineItem::HardBreak => {
                 // Flush current line; start a new one.
                 lines.push(RawLine::default());
-            }
+            },
             InlineItem::Atom {
                 width,
                 height,
@@ -273,7 +269,7 @@ fn break_into_lines(
                 cur.consumed_width += *width;
                 cur.line_height = cur.line_height.max(*height);
                 cur.baseline_y = cur.baseline_y.max(baseline);
-            }
+            },
             InlineItem::Text {
                 text,
                 char_width_px,
@@ -285,11 +281,12 @@ fn break_into_lines(
                     continue;
                 }
                 // For pre / pre-wrap with embedded \n, split first.
-                let segments: Vec<&str> = if matches!(ws, WhiteSpace::Pre | WhiteSpace::PreWrap | WhiteSpace::PreLine) {
-                    text.split_inclusive('\n').collect()
-                } else {
-                    vec![text.as_str()]
-                };
+                let segments: Vec<&str> =
+                    if matches!(ws, WhiteSpace::Pre | WhiteSpace::PreWrap | WhiteSpace::PreLine) {
+                        text.split_inclusive('\n').collect()
+                    } else {
+                        vec![text.as_str()]
+                    };
                 for (seg_idx, seg) in segments.iter().enumerate() {
                     let mandatory_break_after = seg.ends_with('\n');
                     let seg_text = if mandatory_break_after {
@@ -333,13 +330,18 @@ fn break_into_lines(
                         lines.push(RawLine::default());
                     }
                 }
-            }
+            },
         }
     }
 
     // Drop a trailing empty line that would otherwise make the
     // paragraph one row too tall.
-    while lines.last().map(|l| l.fragments.is_empty()).unwrap_or(false) && lines.len() > 1 {
+    while lines
+        .last()
+        .map(|l| l.fragments.is_empty())
+        .unwrap_or(false)
+        && lines.len() > 1
+    {
         lines.pop();
     }
     lines
@@ -492,7 +494,9 @@ fn align_line(mut raw: RawLine, available_width_px: f32, align: TextAlign) -> Li
             .fragments
             .iter()
             .filter_map(|f| match f {
-                LineFragment::GlyphRun { text, .. } => Some(text.chars().filter(|c| *c == ' ').count()),
+                LineFragment::GlyphRun { text, .. } => {
+                    Some(text.chars().filter(|c| *c == ' ').count())
+                },
                 _ => None,
             })
             .sum();
@@ -502,7 +506,12 @@ fn align_line(mut raw: RawLine, available_width_px: f32, align: TextAlign) -> Li
             let mut x_acc = 0.0_f32;
             for f in &mut raw.fragments {
                 match f {
-                    LineFragment::GlyphRun { text, x, char_width_px, .. } => {
+                    LineFragment::GlyphRun {
+                        text,
+                        x,
+                        char_width_px,
+                        ..
+                    } => {
                         // New x for this run is wherever the cursor is.
                         *x = x_acc;
                         // Walk the text expanding spaces.
@@ -515,11 +524,11 @@ fn align_line(mut raw: RawLine, available_width_px: f32, align: TextAlign) -> Li
                             }
                         }
                         x_acc += local;
-                    }
+                    },
                     LineFragment::Atom { x, width, .. } => {
                         *x = x_acc;
                         x_acc += *width;
-                    }
+                    },
                 }
             }
             raw.consumed_width = x_acc;
@@ -583,12 +592,8 @@ mod tests {
     #[test]
     fn single_line_fits() {
         // "hello world" at 10px/char = 110px — fits in 300.
-        let lines = layout_paragraph(
-            &[text("hello world")],
-            300.0,
-            TextAlign::Left,
-            WhiteSpace::Normal,
-        );
+        let lines =
+            layout_paragraph(&[text("hello world")], 300.0, TextAlign::Left, WhiteSpace::Normal);
         assert_eq!(lines.len(), 1);
         assert!(line_text(&lines[0]).contains("hello"));
     }
@@ -657,12 +662,7 @@ mod tests {
 
     #[test]
     fn align_right_shifts_fragments() {
-        let lines = layout_paragraph(
-            &[text("hi")],
-            300.0,
-            TextAlign::Right,
-            WhiteSpace::Normal,
-        );
+        let lines = layout_paragraph(&[text("hi")], 300.0, TextAlign::Right, WhiteSpace::Normal);
         let f = &lines[0].fragments[0];
         if let LineFragment::GlyphRun { x, .. } = f {
             assert!(*x > 250.0, "expected right-aligned x near 280, got {x}");
@@ -673,12 +673,7 @@ mod tests {
 
     #[test]
     fn align_center_shifts_to_middle() {
-        let lines = layout_paragraph(
-            &[text("hi")],
-            300.0,
-            TextAlign::Center,
-            WhiteSpace::Normal,
-        );
+        let lines = layout_paragraph(&[text("hi")], 300.0, TextAlign::Center, WhiteSpace::Normal);
         let f = &lines[0].fragments[0];
         if let LineFragment::GlyphRun { x, .. } = f {
             // 300 - 20 = 280; center / 2 = 140
@@ -692,12 +687,8 @@ mod tests {
     fn justify_distributes_extra_across_spaces() {
         // 4 words → 3 spaces. Extra = 300 - 4*10*4 - 3*10 = 110 (or
         // similar). Each space grows by ~36.
-        let lines = layout_paragraph(
-            &[text("a b c d")],
-            300.0,
-            TextAlign::Justify,
-            WhiteSpace::Normal,
-        );
+        let lines =
+            layout_paragraph(&[text("a b c d")], 300.0, TextAlign::Justify, WhiteSpace::Normal);
         // The line should consume the full available width (or close).
         assert!((lines[0].content_width - 300.0).abs() < 1.0);
     }
@@ -729,7 +720,8 @@ mod tests {
         if let InlineItem::Text { line_height_px, .. } = &mut big {
             *line_height_px = 32.0;
         }
-        let lines = layout_paragraph(&[big, text("small")], 300.0, TextAlign::Left, WhiteSpace::Normal);
+        let lines =
+            layout_paragraph(&[big, text("small")], 300.0, TextAlign::Left, WhiteSpace::Normal);
         assert_eq!(lines[0].height, 32.0);
     }
 }

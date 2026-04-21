@@ -30,9 +30,7 @@ use std::collections::HashMap;
 use super::counters::{evaluate_content, parse_content, CounterState};
 use super::matcher::{match_complex_selector, Element};
 use super::parser::{ComponentValue, Declaration, Rule, Stylesheet};
-use super::selectors::{
-    parse_selector_list, PseudoElement, Specificity, SubclassSelector,
-};
+use super::selectors::{parse_selector_list, PseudoElement, Specificity, SubclassSelector};
 use super::tokenizer::Token;
 
 // ─────────────────────────────────────────────────────────────────────
@@ -128,13 +126,14 @@ pub fn cascade<'i, E: Element>(
             if let Some(specificity) = best_specificity {
                 for decl in &qrule.declarations {
                     source_order += 1;
-                    candidates.entry(decl.name.to_string()).or_default().push(
-                        Candidate {
+                    candidates
+                        .entry(decl.name.to_string())
+                        .or_default()
+                        .push(Candidate {
                             decl,
                             specificity,
                             source_order,
-                        },
-                    );
+                        });
                 }
             } else {
                 source_order += qrule.declarations.len();
@@ -210,17 +209,13 @@ pub fn apply_inline_declarations<'i>(
         // §6.4 (User and Author !important come after Author inline
         // when sorted).
         match styles.properties.get(decl.name.as_ref()) {
-            Some(existing)
-                if existing.important && !decl.important =>
-            {
+            Some(existing) if existing.important && !decl.important => {
                 // Don't overwrite an !important rule with a normal inline.
                 continue;
-            }
+            },
             _ => {
-                styles
-                    .properties
-                    .insert(decl.name.to_string(), candidate);
-            }
+                styles.properties.insert(decl.name.to_string(), candidate);
+            },
         }
     }
 }
@@ -242,8 +237,7 @@ impl PseudoKind {
     fn matches(self, pe: &PseudoElement) -> bool {
         matches!(
             (self, pe),
-            (PseudoKind::Before, PseudoElement::Before)
-                | (PseudoKind::After, PseudoElement::After)
+            (PseudoKind::Before, PseudoElement::Before) | (PseudoKind::After, PseudoElement::After)
         )
     }
 }
@@ -307,8 +301,10 @@ pub fn pseudo_content_for<'i, E: Element>(
             }
             let replace = match &best {
                 None => true,
-                Some(cur) => (cur.important, cur.specificity, cur.source_order)
-                    < (decl.important, specificity, source_order),
+                Some(cur) => {
+                    (cur.important, cur.specificity, cur.source_order)
+                        < (decl.important, specificity, source_order)
+                },
             };
             if replace {
                 best = Some(Cand {
@@ -321,12 +317,11 @@ pub fn pseudo_content_for<'i, E: Element>(
         }
     }
 
-    let Some(cand) = best else { return None };
+    let cand = best?;
     let parsed = parse_content(cand.value)?;
     let state = CounterState::new();
-    let rendered = evaluate_content(&parsed, &state, |name| {
-        element.attribute(name).map(|s| s.to_string())
-    });
+    let rendered =
+        evaluate_content(&parsed, &state, |name| element.attribute(name).map(|s| s.to_string()));
     if rendered.is_empty() {
         None
     } else {
@@ -492,7 +487,13 @@ mod tests {
     }
 
     impl MockDom {
-        fn add(&mut self, parent: Option<usize>, tag: &str, id: Option<&str>, classes: &[&str]) -> usize {
+        fn add(
+            &mut self,
+            parent: Option<usize>,
+            tag: &str,
+            id: Option<&str>,
+            classes: &[&str],
+        ) -> usize {
             let idx = self.nodes.len();
             self.nodes.push(MockNode {
                 tag: tag.into(),
@@ -514,29 +515,53 @@ mod tests {
         idx: usize,
     }
     impl<'a> Element for MockEl<'a> {
-        fn local_name(&self) -> &str { &self.dom.nodes[self.idx].tag }
-        fn id(&self) -> Option<&str> { self.dom.nodes[self.idx].id.as_deref() }
-        fn has_class(&self, c: &str) -> bool { self.dom.nodes[self.idx].classes.iter().any(|x| x == c) }
-        fn attribute(&self, _: &str) -> Option<&str> { None }
-        fn has_attribute(&self, _: &str) -> bool { false }
+        fn local_name(&self) -> &str {
+            &self.dom.nodes[self.idx].tag
+        }
+        fn id(&self) -> Option<&str> {
+            self.dom.nodes[self.idx].id.as_deref()
+        }
+        fn has_class(&self, c: &str) -> bool {
+            self.dom.nodes[self.idx].classes.iter().any(|x| x == c)
+        }
+        fn attribute(&self, _: &str) -> Option<&str> {
+            None
+        }
+        fn has_attribute(&self, _: &str) -> bool {
+            false
+        }
         fn parent(&self) -> Option<Self> {
-            self.dom.nodes[self.idx].parent.map(|i| MockEl { dom: self.dom, idx: i })
+            self.dom.nodes[self.idx].parent.map(|i| MockEl {
+                dom: self.dom,
+                idx: i,
+            })
         }
         fn prev_element_sibling(&self) -> Option<Self> {
             let p = self.dom.nodes[self.idx].parent?;
             let kids = &self.dom.nodes[p].children;
             let pos = kids.iter().position(|&k| k == self.idx)?;
-            (pos > 0).then(|| MockEl { dom: self.dom, idx: kids[pos - 1] })
+            (pos > 0).then(|| MockEl {
+                dom: self.dom,
+                idx: kids[pos - 1],
+            })
         }
         fn next_element_sibling(&self) -> Option<Self> {
             let p = self.dom.nodes[self.idx].parent?;
             let kids = &self.dom.nodes[p].children;
             let pos = kids.iter().position(|&k| k == self.idx)?;
-            kids.get(pos + 1).map(|&k| MockEl { dom: self.dom, idx: k })
+            kids.get(pos + 1).map(|&k| MockEl {
+                dom: self.dom,
+                idx: k,
+            })
         }
-        fn is_empty(&self) -> bool { self.dom.nodes[self.idx].children.is_empty() }
+        fn is_empty(&self) -> bool {
+            self.dom.nodes[self.idx].children.is_empty()
+        }
         fn first_element_child(&self) -> Option<Self> {
-            self.dom.nodes[self.idx].children.first().map(|&k| MockEl { dom: self.dom, idx: k })
+            self.dom.nodes[self.idx].children.first().map(|&k| MockEl {
+                dom: self.dom,
+                idx: k,
+            })
         }
     }
 
@@ -554,7 +579,10 @@ mod tests {
         let css = "p { color: red; }";
         let ss = parse_stylesheet(css).unwrap();
         let (d, ix) = build_dom();
-        let p = MockEl { dom: &d, idx: ix[3] };
+        let p = MockEl {
+            dom: &d,
+            idx: ix[3],
+        };
         let styles = cascade(&ss, p, None);
         let color = styles.get("color").expect("color must be set");
         assert_eq!(first_ident(&color.value), Some("red"));
@@ -569,7 +597,10 @@ mod tests {
         ";
         let ss = parse_stylesheet(css).unwrap();
         let (d, ix) = build_dom();
-        let p = MockEl { dom: &d, idx: ix[3] };
+        let p = MockEl {
+            dom: &d,
+            idx: ix[3],
+        };
         let styles = cascade(&ss, p, None);
         // #main p has specificity (1, 0, 1); .lead is (0, 1, 0); p is (0, 0, 1).
         // The id-bearing rule wins.
@@ -585,7 +616,10 @@ mod tests {
         ";
         let ss = parse_stylesheet(css).unwrap();
         let (d, ix) = build_dom();
-        let p = MockEl { dom: &d, idx: ix[3] };
+        let p = MockEl {
+            dom: &d,
+            idx: ix[3],
+        };
         let styles = cascade(&ss, p, None);
         let color = styles.get("color").unwrap();
         assert_eq!(first_ident(&color.value), Some("green"));
@@ -600,7 +634,10 @@ mod tests {
         ";
         let ss = parse_stylesheet(css).unwrap();
         let (d, ix) = build_dom();
-        let p = MockEl { dom: &d, idx: ix[3] };
+        let p = MockEl {
+            dom: &d,
+            idx: ix[3],
+        };
         let styles = cascade(&ss, p, None);
         let color = styles.get("color").unwrap();
         assert!(color.important);
@@ -612,8 +649,14 @@ mod tests {
         let css = "div { color: green; }";
         let ss = parse_stylesheet(css).unwrap();
         let (d, ix) = build_dom();
-        let div = MockEl { dom: &d, idx: ix[2] };
-        let p = MockEl { dom: &d, idx: ix[3] };
+        let div = MockEl {
+            dom: &d,
+            idx: ix[2],
+        };
+        let p = MockEl {
+            dom: &d,
+            idx: ix[3],
+        };
 
         let div_styles = cascade(&ss, div, None);
         assert_eq!(first_ident(&div_styles.get("color").unwrap().value), Some("green"));
@@ -629,8 +672,14 @@ mod tests {
         let css = "div { background-color: yellow; }";
         let ss = parse_stylesheet(css).unwrap();
         let (d, ix) = build_dom();
-        let div = MockEl { dom: &d, idx: ix[2] };
-        let p = MockEl { dom: &d, idx: ix[3] };
+        let div = MockEl {
+            dom: &d,
+            idx: ix[2],
+        };
+        let p = MockEl {
+            dom: &d,
+            idx: ix[3],
+        };
 
         let div_styles = cascade(&ss, div, None);
         assert!(div_styles.get("background-color").is_some());
@@ -645,7 +694,10 @@ mod tests {
         let css = "p { color: red; }";
         let ss = parse_stylesheet(css).unwrap();
         let (d, ix) = build_dom();
-        let p = MockEl { dom: &d, idx: ix[3] };
+        let p = MockEl {
+            dom: &d,
+            idx: ix[3],
+        };
         let mut styles = cascade(&ss, p, None);
         let inline = crate::html_css::css::parser::parse_declaration_list("color: blue").unwrap();
         apply_inline_declarations(&mut styles, &inline);
@@ -657,7 +709,10 @@ mod tests {
         let css = "p { color: red !important; }";
         let ss = parse_stylesheet(css).unwrap();
         let (d, ix) = build_dom();
-        let p = MockEl { dom: &d, idx: ix[3] };
+        let p = MockEl {
+            dom: &d,
+            idx: ix[3],
+        };
         let mut styles = cascade(&ss, p, None);
         let inline = crate::html_css::css::parser::parse_declaration_list("color: blue").unwrap();
         apply_inline_declarations(&mut styles, &inline);
@@ -673,7 +728,10 @@ mod tests {
         ";
         let ss = parse_stylesheet(css).unwrap();
         let (d, ix) = build_dom();
-        let p = MockEl { dom: &d, idx: ix[3] };
+        let p = MockEl {
+            dom: &d,
+            idx: ix[3],
+        };
         let styles = cascade(&ss, p, None);
         assert_eq!(first_ident(&styles.get("color").unwrap().value), Some("green"));
     }
@@ -683,7 +741,10 @@ mod tests {
         let css = r#"p::before { content: "§ "; }"#;
         let ss: &'static _ = Box::leak(Box::new(parse_stylesheet(css).unwrap()));
         let (d, ix) = build_dom();
-        let p = MockEl { dom: &d, idx: ix[3] };
+        let p = MockEl {
+            dom: &d,
+            idx: ix[3],
+        };
         let got = pseudo_content_for(ss, p, PseudoKind::Before);
         assert_eq!(got.as_deref(), Some("§ "));
     }
@@ -696,7 +757,10 @@ mod tests {
         "#;
         let ss: &'static _ = Box::leak(Box::new(parse_stylesheet(css).unwrap()));
         let (d, ix) = build_dom();
-        let p = MockEl { dom: &d, idx: ix[3] };
+        let p = MockEl {
+            dom: &d,
+            idx: ix[3],
+        };
         let before = pseudo_content_for(ss, p, PseudoKind::Before);
         let after = pseudo_content_for(ss, p, PseudoKind::After);
         assert_eq!(before.as_deref(), Some("X"));
@@ -708,7 +772,10 @@ mod tests {
         let css = "p::before { content: none; }";
         let ss: &'static _ = Box::leak(Box::new(parse_stylesheet(css).unwrap()));
         let (d, ix) = build_dom();
-        let p = MockEl { dom: &d, idx: ix[3] };
+        let p = MockEl {
+            dom: &d,
+            idx: ix[3],
+        };
         assert!(pseudo_content_for(ss, p, PseudoKind::Before).is_none());
     }
 
@@ -717,7 +784,10 @@ mod tests {
         let css = r#"div::before { content: "D"; }"#;
         let ss: &'static _ = Box::leak(Box::new(parse_stylesheet(css).unwrap()));
         let (d, ix) = build_dom();
-        let p = MockEl { dom: &d, idx: ix[3] };
+        let p = MockEl {
+            dom: &d,
+            idx: ix[3],
+        };
         assert!(pseudo_content_for(ss, p, PseudoKind::Before).is_none());
     }
 
@@ -726,7 +796,10 @@ mod tests {
         let css = "p { color: red; font-size: 14px; margin: 0; }";
         let ss = parse_stylesheet(css).unwrap();
         let (d, ix) = build_dom();
-        let p = MockEl { dom: &d, idx: ix[3] };
+        let p = MockEl {
+            dom: &d,
+            idx: ix[3],
+        };
         let styles = cascade(&ss, p, None);
         assert_eq!(styles.len(), 3);
         assert!(styles.get("color").is_some());

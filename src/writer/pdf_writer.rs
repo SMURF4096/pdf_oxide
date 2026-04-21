@@ -234,16 +234,8 @@ impl<'a> PageBuilder<'a> {
     /// path.
     pub fn add_element(&mut self, element: &ContentElement) -> &mut Self {
         if let ContentElement::Text(t) = element {
-            if let Some(resource_name) =
-                self.writer.embedded_resource_for_user_name(&t.font.name)
-            {
-                self.add_embedded_text(
-                    &t.text,
-                    t.bbox.x,
-                    t.bbox.y,
-                    &resource_name,
-                    t.font.size,
-                );
+            if let Some(resource_name) = self.writer.embedded_resource_for_user_name(&t.font.name) {
+                self.add_embedded_text(&t.text, t.bbox.x, t.bbox.y, &resource_name, t.font.size);
                 return self;
             }
         }
@@ -983,10 +975,7 @@ impl PdfWriter {
     /// The font's display name (used in PostScript/BaseFont fields) is
     /// taken from `EmbeddedFont::name`. Callers wanting a stable subset
     /// tag should track the resource name they get back and reuse it.
-    pub fn register_embedded_font(
-        &mut self,
-        font: super::font_manager::EmbeddedFont,
-    ) -> String {
+    pub fn register_embedded_font(&mut self, font: super::font_manager::EmbeddedFont) -> String {
         let resource_name = format!("EF{}", self.next_embedded_font_id);
         self.next_embedded_font_id += 1;
         let font_key = font.name.clone();
@@ -1024,10 +1013,7 @@ impl PdfWriter {
     /// `register_embedded_font_as`. Used by `PageBuilder::add_element`
     /// to decide whether `ContentElement::Text` should take the
     /// embedded-font path.
-    pub(super) fn embedded_resource_for_user_name(
-        &self,
-        user_name: &str,
-    ) -> Option<String> {
+    pub(super) fn embedded_resource_for_user_name(&self, user_name: &str) -> Option<String> {
         self.user_font_to_resource.get(user_name).cloned()
     }
 
@@ -1137,10 +1123,10 @@ impl PdfWriter {
                     id
                 })
                 .collect();
-            let (ids, objects) = super::font_pdf_objects::build_embedded_font_objects(
-                &mut font,
-                || allocated.remove(0),
-            );
+            let (ids, objects) =
+                super::font_pdf_objects::build_embedded_font_objects(&mut font, || {
+                    allocated.remove(0)
+                });
             font_key_to_type0.insert(font_key, ids.type0);
             for (id, obj) in objects {
                 embedded_object_ids.push(id);
@@ -1150,10 +1136,8 @@ impl PdfWriter {
         // Wire each EFn resource name → its Type 0 ref.
         for (resource_name, font_key) in &self.embedded_font_resource_to_name {
             if let Some(&type0_id) = font_key_to_type0.get(font_key) {
-                font_resources.insert(
-                    resource_name.clone(),
-                    ObjectSerializer::reference(type0_id, 0),
-                );
+                font_resources
+                    .insert(resource_name.clone(), ObjectSerializer::reference(type0_id, 0));
             }
         }
 
@@ -1216,8 +1200,7 @@ impl PdfWriter {
         for page_data in self.pages.iter_mut() {
             pending_per_page.push(page_data.content_builder.take_pending_images());
         }
-        let mut image_ids_per_page: Vec<Vec<(u32, Option<u32>)>> =
-            Vec::with_capacity(page_count);
+        let mut image_ids_per_page: Vec<Vec<(u32, Option<u32>)>> = Vec::with_capacity(page_count);
         let mut image_objects: Vec<(u32, Object, Vec<u8>)> = Vec::new();
         for pending in &pending_per_page {
             let mut per_page_ids: Vec<(u32, Option<u32>)> = Vec::with_capacity(pending.len());
@@ -1236,10 +1219,7 @@ impl PdfWriter {
                 // Build dictionaries.
                 let mut dict: HashMap<String, Object> = data.build_xobject_dict();
                 if let Some(sm_id) = soft_mask_id {
-                    dict.insert(
-                        "SMask".to_string(),
-                        Object::Reference(ObjectRef::new(sm_id, 0)),
-                    );
+                    dict.insert("SMask".to_string(), Object::Reference(ObjectRef::new(sm_id, 0)));
                 }
                 image_objects.push((
                     img_id,

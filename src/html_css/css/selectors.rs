@@ -343,15 +343,15 @@ fn parse_complex_selector(
             ComponentValue::Token(Token::Delim('>')) => {
                 i += 1;
                 Combinator::Child
-            }
+            },
             ComponentValue::Token(Token::Delim('+')) => {
                 i += 1;
                 Combinator::NextSibling
-            }
+            },
             ComponentValue::Token(Token::Delim('~')) => {
                 i += 1;
                 Combinator::SubsequentSibling
-            }
+            },
             _ if had_ws => Combinator::Descendant,
             _ => return Err(SelectorParseError::Other("missing combinator")),
         };
@@ -390,12 +390,12 @@ fn parse_compound_selector(
             ComponentValue::Token(Token::Delim('*')) => {
                 compound.element = Some(ElementSelector::Universal);
                 i += 1;
-            }
+            },
             ComponentValue::Token(Token::Ident(name)) => {
                 compound.element = Some(ElementSelector::Type(name.to_ascii_lowercase()));
                 i += 1;
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
 
@@ -405,39 +405,42 @@ fn parse_compound_selector(
             ComponentValue::Token(Token::Delim('.')) => {
                 i += 1;
                 if let Some(ComponentValue::Token(Token::Ident(name))) = cvs.get(i) {
-                    compound.subclasses.push(SubclassSelector::Class(name.to_string()));
+                    compound
+                        .subclasses
+                        .push(SubclassSelector::Class(name.to_string()));
                     i += 1;
                 } else {
                     return Err(SelectorParseError::Other(". without class name"));
                 }
-            }
-            ComponentValue::Token(Token::Hash {
-                value,
-                is_id: true,
-            }) => {
-                compound.subclasses.push(SubclassSelector::Id(value.to_string()));
+            },
+            ComponentValue::Token(Token::Hash { value, is_id: true }) => {
+                compound
+                    .subclasses
+                    .push(SubclassSelector::Id(value.to_string()));
                 i += 1;
-            }
+            },
             ComponentValue::Square(body) => {
                 compound
                     .subclasses
                     .push(SubclassSelector::Attribute(parse_attribute(body)?));
                 i += 1;
-            }
+            },
             ComponentValue::Token(Token::Colon) => {
                 i += 1;
                 // ::pseudo-element vs :pseudo-class
                 if matches!(cvs.get(i), Some(ComponentValue::Token(Token::Colon))) {
                     i += 1;
                     let (pe, used) = parse_pseudo_element(&cvs[i..])?;
-                    compound.subclasses.push(SubclassSelector::PseudoElement(pe));
+                    compound
+                        .subclasses
+                        .push(SubclassSelector::PseudoElement(pe));
                     i += used;
                 } else {
                     let (pc, used) = parse_pseudo_class(&cvs[i..])?;
                     compound.subclasses.push(SubclassSelector::PseudoClass(pc));
                     i += used;
                 }
-            }
+            },
             // Whitespace or combinator end the compound.
             ComponentValue::Token(Token::Whitespace)
             | ComponentValue::Token(Token::Delim('>'))
@@ -482,27 +485,42 @@ fn parse_attribute(body: &[ComponentValue<'_>]) -> Result<AttributeSelector, Sel
         (ComponentValue::Token(Token::Delim('=')), _) => {
             i += 1;
             Some(AttributeOp::Equals)
-        }
-        (ComponentValue::Token(Token::Delim('~')), Some(ComponentValue::Token(Token::Delim('=')))) => {
+        },
+        (
+            ComponentValue::Token(Token::Delim('~')),
+            Some(ComponentValue::Token(Token::Delim('='))),
+        ) => {
             i += 2;
             Some(AttributeOp::Includes)
-        }
-        (ComponentValue::Token(Token::Delim('|')), Some(ComponentValue::Token(Token::Delim('=')))) => {
+        },
+        (
+            ComponentValue::Token(Token::Delim('|')),
+            Some(ComponentValue::Token(Token::Delim('='))),
+        ) => {
             i += 2;
             Some(AttributeOp::DashMatch)
-        }
-        (ComponentValue::Token(Token::Delim('^')), Some(ComponentValue::Token(Token::Delim('=')))) => {
+        },
+        (
+            ComponentValue::Token(Token::Delim('^')),
+            Some(ComponentValue::Token(Token::Delim('='))),
+        ) => {
             i += 2;
             Some(AttributeOp::Prefix)
-        }
-        (ComponentValue::Token(Token::Delim('$')), Some(ComponentValue::Token(Token::Delim('=')))) => {
+        },
+        (
+            ComponentValue::Token(Token::Delim('$')),
+            Some(ComponentValue::Token(Token::Delim('='))),
+        ) => {
             i += 2;
             Some(AttributeOp::Suffix)
-        }
-        (ComponentValue::Token(Token::Delim('*')), Some(ComponentValue::Token(Token::Delim('=')))) => {
+        },
+        (
+            ComponentValue::Token(Token::Delim('*')),
+            Some(ComponentValue::Token(Token::Delim('='))),
+        ) => {
             i += 2;
             Some(AttributeOp::Substring)
-        }
+        },
         _ => return Err(SelectorParseError::BadAttribute),
     };
     while i < trimmed.len() && is_ws(&trimmed[i]) {
@@ -520,10 +538,10 @@ fn parse_attribute(body: &[ComponentValue<'_>]) -> Result<AttributeSelector, Sel
     let case = match trimmed.get(i) {
         Some(ComponentValue::Token(Token::Ident(s))) if s.eq_ignore_ascii_case("i") => {
             AttributeCase::Insensitive
-        }
+        },
         Some(ComponentValue::Token(Token::Ident(s))) if s.eq_ignore_ascii_case("s") => {
             AttributeCase::Sensitive
-        }
+        },
         _ => AttributeCase::Default,
     };
     Ok(AttributeSelector {
@@ -554,14 +572,14 @@ fn parse_pseudo_class(
                 "only-of-type" => PseudoClass::OnlyOfType,
                 "hover" | "focus" | "focus-within" | "focus-visible" | "active" | "visited"
                 | "link" | "target" | "checked" | "disabled" | "enabled" | "required"
-                | "optional" | "valid" | "invalid" | "in-range" | "out-of-range"
-                | "read-only" | "read-write" | "placeholder-shown" | "default" | "indeterminate" => {
+                | "optional" | "valid" | "invalid" | "in-range" | "out-of-range" | "read-only"
+                | "read-write" | "placeholder-shown" | "default" | "indeterminate" => {
                     PseudoClass::UaState(lower)
-                }
+                },
                 _ => PseudoClass::UaState(lower),
             };
             Ok((pc, 1))
-        }
+        },
         ComponentValue::Function { name, body } => {
             let lower = name.to_ascii_lowercase();
             let pc = match lower.as_str() {
@@ -576,7 +594,7 @@ fn parse_pseudo_class(
                 _ => PseudoClass::Functional { name: lower },
             };
             Ok((pc, 1))
-        }
+        },
         _ => Err(SelectorParseError::Other("expected pseudo-class name")),
     }
 }
@@ -598,11 +616,11 @@ fn parse_pseudo_element(
                 _ => PseudoElement::Other(lower),
             };
             Ok((pe, 1))
-        }
+        },
         ComponentValue::Function { name, .. } => {
             // ::part(), ::slotted() etc. — accept-and-noop.
             Ok((PseudoElement::Other(name.to_ascii_lowercase()), 1))
-        }
+        },
         _ => Err(SelectorParseError::Other("expected pseudo-element name")),
     }
 }
@@ -650,17 +668,17 @@ fn compose_an_plus_b_string(cvs: &[ComponentValue<'_>]) -> String {
                 } else {
                     s.push_str(&n.value.to_string());
                 }
-            }
+            },
             ComponentValue::Token(Token::Dimension { value, unit }) => {
                 if value.is_integer {
                     s.push_str(&format!("{}{}", value.value as i64, unit));
                 } else {
                     s.push_str(&format!("{}{}", value.value, unit));
                 }
-            }
+            },
             ComponentValue::Token(Token::Ident(id)) => s.push_str(id),
             ComponentValue::Token(Token::Delim(c)) => s.push(*c),
-            _ => {}
+            _ => {},
         }
     }
     s
@@ -708,7 +726,7 @@ fn compute_specificity_ltr(compounds: &[CompoundSelector]) -> Specificity {
     for c in compounds {
         match &c.element {
             Some(ElementSelector::Type(_)) => typ += 1,
-            Some(ElementSelector::Universal) | None => {}
+            Some(ElementSelector::Universal) | None => {},
         }
         for sub in &c.subclasses {
             match sub {
@@ -716,7 +734,7 @@ fn compute_specificity_ltr(compounds: &[CompoundSelector]) -> Specificity {
                 SubclassSelector::Class(_) | SubclassSelector::Attribute(_) => cls += 1,
                 SubclassSelector::PseudoClass(pc) => match pc {
                     // :where contributes 0
-                    PseudoClass::Where(_) => {}
+                    PseudoClass::Where(_) => {},
                     // :is takes the highest specificity inside
                     PseudoClass::Is(list) | PseudoClass::Not(list) | PseudoClass::Has(list) => {
                         let max = list
@@ -729,7 +747,7 @@ fn compute_specificity_ltr(compounds: &[CompoundSelector]) -> Specificity {
                         id += i;
                         cls += c;
                         typ += t;
-                    }
+                    },
                     _ => cls += 1,
                 },
                 SubclassSelector::PseudoElement(_) => typ += 1,
@@ -808,10 +826,7 @@ mod tests {
     fn type_selector() {
         let cs = first_complex("body {}");
         assert_eq!(cs.compounds.len(), 1);
-        assert_eq!(
-            cs.compounds[0].element,
-            Some(ElementSelector::Type("body".into()))
-        );
+        assert_eq!(cs.compounds[0].element, Some(ElementSelector::Type("body".into())));
         assert_eq!(cs.specificity, Specificity::new(0, 0, 1));
     }
 
@@ -846,10 +861,7 @@ mod tests {
     fn compound_selector_div_dot_foo() {
         let cs = first_complex("div.foo {}");
         assert_eq!(cs.compounds.len(), 1);
-        assert_eq!(
-            cs.compounds[0].element,
-            Some(ElementSelector::Type("div".into()))
-        );
+        assert_eq!(cs.compounds[0].element, Some(ElementSelector::Type("div".into())));
         assert_eq!(cs.compounds[0].subclasses.len(), 1);
         assert_eq!(cs.specificity, Specificity::new(0, 1, 1));
     }
@@ -860,14 +872,8 @@ mod tests {
         assert_eq!(cs.compounds.len(), 2);
         assert_eq!(cs.combinators, vec![Combinator::Descendant]);
         // Stored right-to-left: compounds[0] is li (rightmost).
-        assert_eq!(
-            cs.compounds[0].element,
-            Some(ElementSelector::Type("li".into()))
-        );
-        assert_eq!(
-            cs.compounds[1].element,
-            Some(ElementSelector::Type("ul".into()))
-        );
+        assert_eq!(cs.compounds[0].element, Some(ElementSelector::Type("li".into())));
+        assert_eq!(cs.compounds[1].element, Some(ElementSelector::Type("ul".into())));
     }
 
     #[test]
@@ -940,7 +946,7 @@ mod tests {
     fn pseudo_class_first_child() {
         let cs = first_complex(":first-child {}");
         match &cs.compounds[0].subclasses[0] {
-            SubclassSelector::PseudoClass(PseudoClass::FirstChild) => {}
+            SubclassSelector::PseudoClass(PseudoClass::FirstChild) => {},
             other => panic!("expected first-child, got {other:?}"),
         }
         // :first-child is class-tier specificity (0,1,0).
@@ -951,7 +957,7 @@ mod tests {
     fn pseudo_class_nth_child() {
         let cs = first_complex(":nth-child(2n+1) {}");
         match &cs.compounds[0].subclasses[0] {
-            SubclassSelector::PseudoClass(PseudoClass::NthChild(AnPlusB { a: 2, b: 1 })) => {}
+            SubclassSelector::PseudoClass(PseudoClass::NthChild(AnPlusB { a: 2, b: 1 })) => {},
             other => panic!("got {other:?}"),
         }
     }
@@ -960,12 +966,12 @@ mod tests {
     fn pseudo_class_nth_keywords() {
         let odd = first_complex(":nth-child(odd) {}");
         match &odd.compounds[0].subclasses[0] {
-            SubclassSelector::PseudoClass(PseudoClass::NthChild(AnPlusB { a: 2, b: 1 })) => {}
+            SubclassSelector::PseudoClass(PseudoClass::NthChild(AnPlusB { a: 2, b: 1 })) => {},
             other => panic!("got {other:?}"),
         }
         let even = first_complex(":nth-child(even) {}");
         match &even.compounds[0].subclasses[0] {
-            SubclassSelector::PseudoClass(PseudoClass::NthChild(AnPlusB { a: 2, b: 0 })) => {}
+            SubclassSelector::PseudoClass(PseudoClass::NthChild(AnPlusB { a: 2, b: 0 })) => {},
             other => panic!("got {other:?}"),
         }
     }
@@ -974,7 +980,7 @@ mod tests {
     fn pseudo_element_before() {
         let cs = first_complex("p::before {}");
         match &cs.compounds[0].subclasses[0] {
-            SubclassSelector::PseudoElement(PseudoElement::Before) => {}
+            SubclassSelector::PseudoElement(PseudoElement::Before) => {},
             other => panic!("got {other:?}"),
         }
         // p (1 type) + ::before (1 pseudo-element, type-tier) = (0,0,2)
@@ -1014,7 +1020,7 @@ mod tests {
         for s in [":hover {}", ":focus {}", ":visited {}", ":checked {}"] {
             let cs = first_complex(s);
             match &cs.compounds[0].subclasses[0] {
-                SubclassSelector::PseudoClass(PseudoClass::UaState(_)) => {}
+                SubclassSelector::PseudoClass(PseudoClass::UaState(_)) => {},
                 other => panic!("got {other:?}"),
             }
         }

@@ -68,18 +68,18 @@ pub fn extract_resources(dom: &Dom) -> Resources {
                 if let Some(img) = parse_img(dom, id, attrs) {
                     out.images.push(img);
                 }
-            }
+            },
             "picture" => {
                 if let Some(img) = pick_picture_source(dom, id) {
                     out.images.push(img);
                 }
-            }
+            },
             "a" => {
                 if let Some(link) = parse_anchor(id, attrs) {
                     out.links.push(link);
                 }
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
     out
@@ -97,7 +97,10 @@ fn is_inside_picture(dom: &Dom, id: NodeId) -> bool {
 
 fn parse_img(_dom: &Dom, id: NodeId, attrs: &[(String, String)]) -> Option<ImageRef> {
     // srcset wins over src when present.
-    let srcset = attrs.iter().find(|(k, _)| k == "srcset").map(|(_, v)| v.as_str());
+    let srcset = attrs
+        .iter()
+        .find(|(k, _)| k == "srcset")
+        .map(|(_, v)| v.as_str());
     let src = if let Some(set) = srcset {
         select_srcset(set).unwrap_or_else(|| {
             attrs
@@ -153,15 +156,19 @@ fn pick_picture_source(dom: &Dom, picture_id: NodeId) -> Option<ImageRef> {
                 if chosen_src.is_some() {
                     continue;
                 }
-                if let Some(set) = attrs.iter().find(|(k, _)| k == "srcset").map(|(_, v)| v.as_str()) {
+                if let Some(set) = attrs
+                    .iter()
+                    .find(|(k, _)| k == "srcset")
+                    .map(|(_, v)| v.as_str())
+                {
                     chosen_src = select_srcset(set);
                 }
-            }
+            },
             "img" => {
                 fallback_img_id = Some(kid);
                 fallback_img_attrs = Some(attrs.clone());
-            }
-            _ => {}
+            },
+            _ => {},
         }
     }
     let attrs = fallback_img_attrs.as_deref().unwrap_or(&[]);
@@ -282,9 +289,7 @@ mod tests {
 
     #[test]
     fn srcset_w_descriptors_skipped_for_v035() {
-        let d = parse_document(
-            r#"<img src="fallback.png" srcset="a.png 800w, b.png 1600w">"#,
-        );
+        let d = parse_document(r#"<img src="fallback.png" srcset="a.png 800w, b.png 1600w">"#);
         let r = extract_resources(&d);
         // No DPR entries → fall back to src.
         assert_eq!(r.images[0].src, "fallback.png");
@@ -340,9 +345,7 @@ mod tests {
 
     #[test]
     fn document_order_preserved() {
-        let d = parse_document(
-            r#"<img src="a.png"><a href="x"></a><img src="b.png">"#,
-        );
+        let d = parse_document(r#"<img src="a.png"><a href="x"></a><img src="b.png">"#);
         let r = extract_resources(&d);
         assert_eq!(r.images[0].src, "a.png");
         assert_eq!(r.images[1].src, "b.png");

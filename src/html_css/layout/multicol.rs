@@ -43,8 +43,10 @@ pub fn read_multicol(styles: &ComputedStyles<'_>, container_width_px: f32) -> Mu
         (None, Some(w)) if w > 0.0 => {
             // Fit as many columns of `w` (plus gap) as possible into
             // the container.
-            ((container_width_px + column_gap) / (w + column_gap)).floor().max(1.0) as u32
-        }
+            ((container_width_px + column_gap) / (w + column_gap))
+                .floor()
+                .max(1.0) as u32
+        },
         _ => 1,
     };
 
@@ -188,27 +190,47 @@ mod tests {
 
     #[test]
     fn read_multicol_count() {
-        use crate::html_css::css::{cascade, parse_stylesheet};
         use crate::html_css::css::matcher::Element;
+        use crate::html_css::css::{cascade, parse_stylesheet};
 
         #[derive(Clone, Copy)]
         struct E;
         impl Element for E {
-            fn local_name(&self) -> &str { "div" }
-            fn id(&self) -> Option<&str> { None }
-            fn has_class(&self, _: &str) -> bool { false }
-            fn attribute(&self, _: &str) -> Option<&str> { None }
-            fn has_attribute(&self, _: &str) -> bool { false }
-            fn parent(&self) -> Option<Self> { None }
-            fn prev_element_sibling(&self) -> Option<Self> { None }
-            fn next_element_sibling(&self) -> Option<Self> { None }
-            fn is_empty(&self) -> bool { true }
-            fn first_element_child(&self) -> Option<Self> { None }
+            fn local_name(&self) -> &str {
+                "div"
+            }
+            fn id(&self) -> Option<&str> {
+                None
+            }
+            fn has_class(&self, _: &str) -> bool {
+                false
+            }
+            fn attribute(&self, _: &str) -> Option<&str> {
+                None
+            }
+            fn has_attribute(&self, _: &str) -> bool {
+                false
+            }
+            fn parent(&self) -> Option<Self> {
+                None
+            }
+            fn prev_element_sibling(&self) -> Option<Self> {
+                None
+            }
+            fn next_element_sibling(&self) -> Option<Self> {
+                None
+            }
+            fn is_empty(&self) -> bool {
+                true
+            }
+            fn first_element_child(&self) -> Option<Self> {
+                None
+            }
         }
 
-        let ss: &'static _ = Box::leak(Box::new(parse_stylesheet(
-            "div { column-count: 3; column-gap: 20px }"
-        ).unwrap()));
+        let ss: &'static _ = Box::leak(Box::new(
+            parse_stylesheet("div { column-count: 3; column-gap: 20px }").unwrap(),
+        ));
         let styles = cascade(ss, E, None);
         // CSS-8 doesn't yet type column-count specifically; we read
         // it as a Number through the parse_property fallback. For

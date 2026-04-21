@@ -67,7 +67,7 @@ pub fn extract_stylesheets(dom: &Dom) -> ExtractedStyles {
                         out.sheets.push(StylesheetSource::Inline(body.clone()));
                     }
                 }
-            }
+            },
             "link" => {
                 let rel = attrs
                     .iter()
@@ -93,8 +93,8 @@ pub fn extract_stylesheets(dom: &Dom) -> ExtractedStyles {
                     .map(|(_, v)| v.clone())
                     .unwrap_or_else(|| "all".into());
                 out.sheets.push(StylesheetSource::External { href, media });
-            }
-            _ => {}
+            },
+            _ => {},
         }
         // Inline style attribute on any element.
         if let Some((_, value)) = attrs.iter().find(|(k, _)| k == "style") {
@@ -138,7 +138,7 @@ mod tests {
             StylesheetSource::External { href, media } => {
                 assert_eq!(href, "reset.css");
                 assert_eq!(media, "all"); // default
-            }
+            },
             _ => panic!(),
         }
     }
@@ -161,9 +161,7 @@ mod tests {
 
     #[test]
     fn link_picks_up_media_attribute() {
-        let d = parse_document(
-            r#"<link rel="stylesheet" href="print.css" media="print">"#,
-        );
+        let d = parse_document(r#"<link rel="stylesheet" href="print.css" media="print">"#);
         let s = extract_stylesheets(&d);
         match &s.sheets[0] {
             StylesheetSource::External { media, .. } => assert_eq!(media, "print"),
@@ -184,9 +182,7 @@ mod tests {
 
     #[test]
     fn multiple_inline_style_attrs() {
-        let d = parse_document(
-            r#"<div style="color: red"><p style="margin: 0">x</p></div>"#,
-        );
+        let d = parse_document(r#"<div style="color: red"><p style="margin: 0">x</p></div>"#);
         let s = extract_stylesheets(&d);
         assert_eq!(s.inline_styles.len(), 2);
     }

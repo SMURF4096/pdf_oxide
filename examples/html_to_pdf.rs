@@ -21,10 +21,7 @@ use std::path::Path;
 fn main() -> Result<(), Box<dyn Error>> {
     let font_path = Path::new("tests/fixtures/fonts/DejaVuSans.ttf");
     if !font_path.exists() {
-        eprintln!(
-            "Run this example from the repo root so it can find {}.",
-            font_path.display()
-        );
+        eprintln!("Run this example from the repo root so it can find {}.", font_path.display());
         std::process::exit(1);
     }
     let font_bytes = std::fs::read(font_path)?;
