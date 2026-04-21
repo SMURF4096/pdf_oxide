@@ -2,6 +2,294 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [0.3.37] - 2026-04-20
+> HTML + CSS → PDF (issue #248) — first credible pure-Rust pipeline
+
+### API — `Pdf::from_html_css` (#248)
+
+```rust
+let font = std::fs::read("DejaVuSans.ttf")?;
+let mut pdf = Pdf::from_html_css(
+    "<h1>Hello</h1><p>World</p>",
+    "h1 { color: blue; font-size: 24pt }",
+    font,
+)?;
+pdf.save("out.pdf")?;
+```
+
+The whole feature: pass HTML + CSS + font bytes, get a paginated PDF
+back. Pure Rust, MIT/Apache only (no MPL transitive deps),
+`extract_text` round-trips byte-equal so produced PDFs participate in
+the existing test infrastructure.
+
+End-to-end test suite at `tests/test_html_to_pdf_e2e.rs` covers
+simple paragraph, multi-paragraph, nested HTML, CSS-styled text, and
+Unicode (Latin + Latin-Extended + Cyrillic + symbols) round-trips.
+
+### Phase FONT — embedded TTF/OTF subsystem
+
+- **Subsetter wrapper** around the `subsetter` crate (Typst's,
+  MIT/Apache): `crate::fonts::subset_font_bytes(bytes, used_glyphs)`
+  produces a subset face, and `EmbeddedFont` tracks used glyph IDs
+  via the `FontSubsetter` type. The writer path currently embeds the
+  full font face in `FontFile2` (full-face embedding + Identity-H is
+  valid PDF 1.7 and round-trips correctly); switching to the
+  subsetter's output requires remapping glyph IDs in the already-
+  emitted content streams, which lands as a later follow-up. The
+  standalone API + glyph tracking still ship so callers that use the
+  subsetter directly (e.g. CLI tools shelling out to `subset_font_bytes`)
+  get the size benefit today.
+- **Type 0 / CIDFontType2 / Identity-H / ToUnicode emission** wired
+  into `PdfWriter` so `add_embedded_text(text, x, y, "EFn", size)`
+  produces a font dict graph that PDF readers handle correctly.
+  Round-trip via `extract_text` returns the input string for Latin,
+  Cyrillic, Greek, Hebrew, Arabic.
+- **System font discovery** via `fontdb` (RazrFalcon, MIT). New
+  `system-fonts` feature gates discovery + shaping; default-on for
+  language bindings, off for WASM and the bare Rust crate.
+- **Text shaping** via `rustybuzz` (HarfBuzz port, MIT). Returns
+  positioned glyph runs with `cluster` info so the inline formatter
+  can map glyphs back to source bytes.
+
+### Phase CSS — hand-rolled engine
+
+10 modules, ~6,500 LoC, no MPL anywhere:
+
+- **Tokenizer** (CSS Syntax L3) with full token coverage including
+  CDO/CDC, hex+named entities resolution in url(), source locations.
+- **Parser** producing `Stylesheet { rules: Vec<Rule> }` with
+  forgiving recovery per spec.
+- **Selectors** L3 + L4 subset: `:is`/`:where`/`:not`/`:has`,
+  structural pseudo-classes, attribute matchers with `i`/`s` flags,
+  specificity computation packed into a sortable u32.
+- **Matcher** with `Element` trait so the engine isn't tied to one
+  DOM implementation.
+- **Cascade** with origin/specificity/source-order sorting,
+  inheritance from parent for the spec's inherited-property list,
+  inline-style merge, custom-property storage.
+- **`calc()` / `min()` / `max()` / `clamp()`** evaluator with mixed-
+  unit math against a `CalcContext`.
+- **`var()`** substitution with DFS cycle detection.
+- **Typed property values** for colour (~150 named, hex, rgb/rgba/
+  hsl), length (every CSS Values L4 unit), display, font-size/
+  weight/style/family, margin/padding shorthand expansion, line-
+  height, etc.
+- **At-rules**: `@media print` always-true + `(min/max-width)`
+  predicates, `@page` with `:first`/`:left`/`:right`/`:blank`
+  selectors and margin boxes, `@font-face` descriptor extraction,
+  `@import` URL forwarding, `@supports` against our supported set.
+- **Counters** (`counter`/`counters`/`counter-reset`/`-increment`/
+  `-set` with Roman/Greek/alpha numbering) and pseudo-element
+  content evaluation.
+
+### Phase HTML
+
+- **HTML5 tokenizer** with attribute parsing (quoted/unquoted/bare),
+  void-element implicit self-closing, `<style>`/`<script>` raw-text
+  contexts, named + numeric entity decoding, comments, DOCTYPE.
+- **Flat arena DOM** implementing the CSS-4 `Element` trait so the
+  cascade matches against real document nodes. Implicit close
+  handling for the common `<p>` and `<li>` cases.
+- **Stylesheet extraction**: `<style>` blocks, `<link
+  rel="stylesheet">` (URL forwarded; `media` attribute preserved),
+  per-element inline `style="..."`.
+- **Resource extraction**: `<img>` with srcset DPR selection,
+  `<picture>`/`<source>` first-match, `<a href>` (internal anchor
+  detection).
+
+### Phase LAYOUT
+
+- **Box tree** from DOM × ComputedStyles with display-split
+  (outer/inner), anonymous-block insertion per CSS 2.1 §9.2.1.1,
+  `display: none`/`contents` handling, UA default display table for
+  common HTML elements.
+- **Taffy integration** for block / flex / grid layout (Dioxus, MIT,
+  default-features-off + only the features we need).
+- **Inline formatting** with greedy line breaker via UAX #14
+  (`unicode-linebreak`), `text-align`/`white-space` modes, hard
+  breaks, atomic inline boxes.
+- **Float scaffolding** with line-shortening helpers.
+- **Margin collapsing** per CSS 2.1 §8.3.1.
+- **Multi-column** distribution (`column-count`/`column-width`/
+  `column-gap` with greedy line distribution).
+- **Tables** with auto + fixed column-width algorithms, row-group
+  classification (header/body/footer for paginator repetition).
+
+### Phase PAGINATE
+
+- Slices a positioned box tree across pages at `floor(box.y /
+  content_height)` boundaries.
+- Multi-page boxes emit one PaginatedBox per page with the visible
+  y-slice; preserves source IDs so PAINT can look up styles.
+- A4 portrait (96dpi) and Letter (8.5×11) page presets.
+
+### Phase PAINT
+
+- Walks each PageFragment and emits text + borders into the existing
+  `PdfWriter` / `PageBuilder`.
+- HTML→PDF Y-flip applied once at emission time so all internal
+  coordinates stay top-down.
+
+### Corner-case fixes and follow-ups
+
+After the initial cut of the HTML+CSS pipeline, corner-case
+validation surfaced a set of regressions and missing features. All
+of the below also ship in v0.3.37:
+
+- **Tokenizer char-boundary safety.** The CSS tokenizer's
+  `ignore_case` lookahead indexed raw byte offsets on multi-byte
+  characters, panicking on any CSS source that put non-ASCII inside a
+  keyword-adjacent position. Fixed.
+- **Block sizing for inline-text flow.** Block boxes with only-inline
+  children were given zero intrinsic height, so paint-time
+  `y`-coordinates collapsed; multi-paragraph documents dropped every
+  paragraph but the first, and long single paragraphs retained only
+  ~20 % of their words. `run_layout` now reserves intrinsic height
+  from the body font size and the inline run count.
+- **Arabic / RTL shaping.** Paint now routes RTL paragraphs through
+  the rustybuzz shaper (feature `system-fonts`) so contextual forms,
+  ligatures, and visual reordering all work.
+- **Multi-font cascade.** New
+  `Pdf::from_html_css_with_fonts(html, css, Vec<(family, bytes)>)`.
+  CSS `font-family` on any element resolves against the registered
+  families (case-insensitive, with/without quotes); unknown families
+  fall back to the first registered font. Walks up the box tree so
+  inline children inherit their ancestor's family.
+- **Page breaks.** `page-break-before: always` and
+  `page-break-after: always` now open a fresh page, both via CSS
+  rules and via inline `style="..."`. Multiple breaks accumulate.
+- **`::before` / `::after` generated content.** New
+  `cascade::pseudo_content_for(ss, element, PseudoKind::{Before,After})`.
+  Literal strings, `attr(name)`, and `open-quote`/`close-quote` all
+  resolve.
+- **Opacity + `transform: translate*()`.** `opacity <= 0.01` on any
+  ancestor hides an element and all its text descendants.
+  `transform: translateX/Y/translate(…)` applies as a pre-paint
+  offset on the box's x/y.
+- **`<img>` data-URI embedding.** `<img src="data:image/png;base64,…">`
+  (and `data:image/jpeg;…`, percent-encoded plain payloads) now
+  decode to a real PDF Image XObject. The paint pipeline emits
+  `/Do` operators against a per-page `/XObject` resource dictionary
+  which `PdfWriter::finish()` now serializes — the missing
+  resource-dict wiring was why prior `page.add_element(Image(…))`
+  calls rendered as silent no-ops. External URLs / filesystem paths
+  return `None` from `decode_image_src` so callers can resolve those
+  themselves.
+- **List markers.** `<ul>` items get `•` (U+2022) and `<ol>` items
+  get `N.` numbering, painted in the gutter to the left of the
+  `<li>`'s content box. Nested lists work on both levels.
+- **`<a href>` link annotations.** Every anchor box with a non-empty
+  `href` emits a PDF `/Link` annotation carrying a `/URI` action;
+  inline text inside the anchor inherits the link by walking up the
+  box tree. Anchors with no `href` emit no annotation.
+- **Embedded fonts via `DocumentBuilder` (#382).** New
+  `DocumentBuilder::register_embedded_font(name, EmbeddedFont)`.
+  Text emitted through the fluent builder
+  (`FluentPageBuilder::font(name, size).text(...)`, or any
+  `ContentElement::Text` whose `FontSpec.name` matches a registered
+  embedded font — including template headers/footers) is now routed
+  through the Type-0 / CIDFontType2 path instead of silently falling
+  back to Helvetica. CJK, Cyrillic, Greek, Hebrew, Arabic text
+  emitted via the high-level API now actually embeds and renders.
+  Unregistered font names continue to resolve against the base-14
+  set. Reported by @sparkyandrew.
+
+### Bug fixes surfaced during pre-release review
+
+- **Base-14 bold text rendered non-bold.** The page `/Resources /Font`
+  dictionary keyed entries with dashes stripped (`HelveticaBold`)
+  while content streams emitted `Tf /Helvetica-Bold`. PDF readers
+  silently fell back to the default font, so every bold or italic
+  base-14 run came out regular. Resource-dict keys now match the
+  `Tf` operator names exactly.
+- **TTC system fonts (Helvetica.ttc, msgothic.ttc, …).** `fontdb`
+  surfaces collection fonts as `Source::SharedFile(path, …)`, which
+  the resolver previously rejected as `NoPath`. SharedFile entries
+  are now read the same way as regular files, so a huge swathe of
+  macOS/Windows system fonts become resolvable.
+- **Unquoted multi-word `font-family`.** `font-family: DejaVu Sans,
+  sans-serif` tokenises as two separate `Ident`s, so the registered-
+  family lookup never matched them as a single name. The resolver
+  now collects consecutive idents (whitespace-separated) into one
+  candidate and flushes at top-level commas, so quoted and unquoted
+  forms behave the same.
+- **Memory leak in `Pdf::from_html_css` / `from_html_css_with_fonts`.**
+  The factories leaked the combined CSS source, parsed stylesheet,
+  DOM, and family map on every call (four `Box::leak` sites). Long-
+  running processes (HTTP servers, batch converters) grew unbounded.
+  The downstream APIs all accept non-'static references; the
+  function now holds them in locals scoped to the call.
+- **PNG alpha / soft-mask now renders.** `ImageData::from_png`
+  already decoded and compressed the alpha channel, but
+  `ImageContent` had no field for it and the XObject emitter hard-
+  coded `SMask = None`. `ImageContent` gains a `soft_mask`, the
+  html_css paint pipeline propagates it, and the XObject path
+  actually emits a `/SMask` stream.
+- **Shaped text round-trips via `extract_text`.** The shaped path
+  (`add_shaped_embedded_text`) only recorded glyph IDs in the
+  subsetter, leaving shaped runs absent from the ToUnicode CMap and
+  uncopy-paste-able. The new `encode_shaped_run` maps glyph clusters
+  back to source codepoints so the ToUnicode entries are complete
+  for simple scripts and exact-leading-char for ligatures.
+- **Reproducible PDF output.** `PdfWriter::finish` iterated
+  `embedded_fonts` directly from the HashMap, randomising object-ID
+  order across runs. Embedded fonts are now emitted in registration
+  order via an explicit `embedded_font_order` vector.
+- **Embedded-font name collisions.** Registering two fonts with the
+  same display name silently overwrote the first. `embedded_fonts`
+  is keyed by its `EFn` resource name (unique, monotonic) so
+  registrations are independent regardless of display name.
+- **fontdb Mutex serialised on slow disks.** `SystemFontDb::resolve`
+  held the fontdb lock across the font-bytes `fs::read`.
+  Concurrent resolve calls are now lock-free during I/O — the lock
+  is released once the face path + PostScript metadata are picked.
+- **Misleading docs corrected.** Module documentation previously
+  claimed `background-color` rendered as a filled rect (currently a
+  no-op stub) and that the writer embedded a subset of the face
+  (currently embeds the full face + Identity-H, subsetter output is
+  a later follow-up). Both are now reflected accurately in the
+  relevant docstrings.
+
+### Tests added in the corner-case pass
+
+- **E2E** (`tests/test_html_to_pdf_e2e.rs`): 36 tests (was 14),
+  covering every feature above plus a kitchen-sink document that
+  exercises `::before`, list markers, page-break, opacity, translate,
+  and `<a href>` in a single round-trip.
+- **Unit**: 4 cascade pseudo-element tests, 7 paint tests (opacity /
+  translate / data-URI decode), 3 inline-text sizing tests, 1 RTL
+  shaper test, 1 multi-font cascade test, 1 tokenizer multi-byte
+  regression test.
+- Total test count: 4772 lib + 36 e2e; 168 integration suites all
+  green, 0 regressions on the existing corpus.
+
+### Limits
+
+The supported CSS surface is documented in detail in
+[`docs/HTML_TO_PDF_GUIDE.md`](docs/HTML_TO_PDF_GUIDE.md). Out of
+scope: CSS filters, 3D transforms, animations, SVG-in-HTML (every
+viable Rust SVG crate is MPL), MathML, `hyphens: auto`,
+`shape-outside`, JavaScript execution, full-matrix `transform`
+(scale/rotate), gradients, and `box-shadow`.
+
+### Licence audit
+
+`cargo deny check licenses` passes with **zero** MPL transitive
+dependencies. The Mozilla CSS stack (`cssparser`, `selectors`,
+`html5ever`, `lightningcss`, `stylo`) is all MPL-2.0; v0.3.37 hand-
+rolls the equivalents to keep pdf_oxide entirely under MIT/Apache.
+
+### Community Contributors
+
+- **[@jmriebold](https://github.com/jmriebold)** — Filed
+  [#248](https://github.com/yfedoseev/pdf_oxide/issues/248)
+  ("CSS support"). That single issue is the root of this release's
+  entire HTML+CSS→PDF pipeline — the hand-rolled CSS engine, the
+  HTML5 tokenizer + arena DOM, Taffy-backed layout, the `::before`/
+  `::after`, `page-break-*`, `<img>` data-URI, multi-font cascade,
+  opacity / transform, `<a href>` link, and RTL shaping work all
+  exist because he asked for it. Thank you.
+
 ## [0.3.36] - 2026-04-19
 > Markdown structural extraction quality vs pdfium — Tagged-PDF
 > heading and list emission, multi-column reading-order fixes,

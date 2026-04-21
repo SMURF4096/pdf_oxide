@@ -189,6 +189,12 @@ pub mod pipeline;
 // PDF writing/creation (v0.3.0)
 pub mod writer;
 
+// HTML + CSS → PDF pipeline (v0.3.35, issue #248). Hand-rolled tokenizer,
+// parser, selector matcher, cascade, layout glue, paginator, and paint
+// emitter. MIT/Apache-only deps (no MPL); see deny.toml + the v0.3.35
+// pre-flight audit doc for the rationale.
+pub mod html_css;
+
 // FDF/XFDF form data export (v0.3.3)
 pub mod fdf;
 

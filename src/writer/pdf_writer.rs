@@ -127,17 +127,128 @@ impl<'a> PageBuilder<'a> {
         self
     }
 
+    /// Add Unicode text on a page using a previously-registered embedded
+    /// TrueType font. The font must have been registered with
+    /// [`PdfWriter::register_embedded_font`] first; the returned resource
+    /// name is what `font_resource_name` should be (e.g. `"EF1"`).
+    ///
+    /// Glyph IDs are looked up via the font's `cmap`, encoded as
+    /// big-endian Identity-H hex strings, and emitted as a `Tj` operand.
+    /// The font's internal subsetter tracks which glyphs + codepoints
+    /// are referenced so `/W` and the `ToUnicode` CMap built in
+    /// [`PdfWriter::finish`] are subset-accurate. The `FontFile2`
+    /// stream itself currently embeds the full face; switching it to
+    /// [`crate::fonts::subset_font_bytes`] output is a later follow-up
+    /// and requires GID remapping in already-emitted content streams.
+    pub fn add_embedded_text(
+        &mut self,
+        text: &str,
+        x: f32,
+        y: f32,
+        font_resource_name: &str,
+        font_size: f32,
+    ) -> &mut Self {
+        // `embedded_fonts` is keyed by the `EFn` resource name directly,
+        // so no indirection through a name map. An unknown resource name
+        // is a silent no-op — missing-text is easier to debug than a
+        // panic deep inside the writer, and HTML→PDF hits unknown fonts
+        // often during early development.
+        let encoded_hex = self
+            .writer
+            .embedded_fonts
+            .get_mut(font_resource_name)
+            .map(|font| font.encode_string(text));
+        let Some(encoded_hex) = encoded_hex else {
+            return self;
+        };
+
+        let page = &mut self.writer.pages[self.page_index];
+        page.content_builder
+            .begin_text()
+            .set_font(font_resource_name, font_size)
+            .hex_text(&encoded_hex, x, y);
+        self
+    }
+
+    /// Add Unicode text on a page using the rustybuzz shaper. Required
+    /// for any complex script (Arabic, Hebrew, Devanagari) where
+    /// `add_embedded_text`'s naive char→glyph cmap lookup produces
+    /// the wrong glyphs (no contextual forms, no ligatures, no RTL
+    /// reordering).
+    ///
+    /// `direction` controls visual reordering — pass
+    /// [`crate::writer::font_shaping::Direction::Rtl`] for Arabic/
+    /// Hebrew runs after BiDi segmentation.
+    ///
+    /// On any error (unknown resource, unparseable face) this is a
+    /// silent no-op for the same reason as `add_embedded_text`: a
+    /// missing-glyph symptom is easier to debug than a panic.
+    #[cfg(feature = "system-fonts")]
+    pub fn add_shaped_embedded_text(
+        &mut self,
+        text: &str,
+        x: f32,
+        y: f32,
+        font_resource_name: &str,
+        font_size: f32,
+        direction: super::font_shaping::Direction,
+    ) -> &mut Self {
+        let Some(font) = self.writer.embedded_fonts.get_mut(font_resource_name) else {
+            return self;
+        };
+        // Shape directly against the font's owned bytes — no clone.
+        // `shape` returns owned ShapedRun, so the &[u8] borrow on `font`
+        // is released before we call `encode_shaped_run` (&mut self).
+        let Some(shaped) = super::font_shaping::shape(text, font.font_data(), direction) else {
+            return self;
+        };
+        // encode_shaped_run records (codepoint, glyph) pairs via the
+        // shaper's cluster field so the ToUnicode CMap round-trips.
+        let encoded_hex = font.encode_shaped_run(&shaped, text);
+
+        let page = &mut self.writer.pages[self.page_index];
+        page.content_builder
+            .begin_text()
+            .set_font(font_resource_name, font_size)
+            .hex_text(&encoded_hex, x, y);
+        self
+    }
+
     /// Add a content element to the page.
+    ///
+    /// Text elements whose `FontSpec.name` matches a font registered
+    /// via `PdfWriter::register_embedded_font_as` are routed through
+    /// `add_embedded_text` (Type-0 hex emission) so that CJK / Cyrillic
+    /// / Greek / etc. render with the embedded subset. All other
+    /// elements fall through to the default base-14 content-stream
+    /// path.
     pub fn add_element(&mut self, element: &ContentElement) -> &mut Self {
+        if let ContentElement::Text(t) = element {
+            // `embedded_resource_for_user_name` returns `Option<&str>`
+            // borrowing into the writer's own map — we clone once here
+            // because `add_embedded_text` takes `&mut self.writer`
+            // immediately after and the borrow rules won't let the
+            // immutable ref survive the mutable call.
+            let resource_name = self
+                .writer
+                .embedded_resource_for_user_name(&t.font.name)
+                .map(String::from);
+            if let Some(resource_name) = resource_name {
+                self.add_embedded_text(&t.text, t.bbox.x, t.bbox.y, &resource_name, t.font.size);
+                return self;
+            }
+        }
         let page = &mut self.writer.pages[self.page_index];
         page.content_builder.add_element(element);
         self
     }
 
-    /// Add multiple content elements.
+    /// Add multiple content elements. Each element is routed through
+    /// `add_element` so the embedded-font dispatch applies per-element.
     pub fn add_elements(&mut self, elements: &[ContentElement]) -> &mut Self {
-        let page = &mut self.writer.pages[self.page_index];
-        page.content_builder.add_elements(elements);
+        for element in elements {
+            self.add_element(element);
+        }
         self
     }
 
@@ -807,6 +918,29 @@ pub struct PdfWriter {
     objects: HashMap<u32, Object>,
     /// Font resources used (name -> object ref)
     fonts: HashMap<String, ObjectRef>,
+    /// Registered embedded TrueType fonts, keyed by their `EFn`
+    /// resource name. Keying by `EFn` (monotonic, guaranteed unique)
+    /// instead of `EmbeddedFont::name` means two fonts with the same
+    /// display name don't silently overwrite one another.
+    ///
+    /// Populated by [`PdfWriter::register_embedded_font`]; consumed in
+    /// [`PdfWriter::finish`] where each font's five PDF objects are
+    /// emitted and the Type-0 ref is added to every page's `/Font`
+    /// resource dict.
+    embedded_fonts: HashMap<String, super::font_manager::EmbeddedFont>,
+    /// Insertion-order list of registered `EFn` resource names so
+    /// [`PdfWriter::finish`] can iterate them in a stable, reproducible
+    /// order (HashMap iteration would otherwise randomise the emitted
+    /// font-object ordering across runs).
+    embedded_font_order: Vec<String>,
+    /// User-supplied font name (e.g. "NotoSansCJKtc") → `EFn` resource
+    /// name. Lets the high-level `DocumentBuilder` / `PageBuilder`
+    /// dispatch `ContentElement::Text` through `add_embedded_text`
+    /// when the `FontSpec.name` matches a registered embedded font
+    /// instead of silently falling back to Helvetica.
+    user_font_to_resource: HashMap<String, String>,
+    /// Counter for allocating `EFn` resource names.
+    next_embedded_font_id: u32,
     /// AcroForm builder for interactive forms
     acroform: Option<AcroFormBuilder>,
 }
@@ -825,8 +959,70 @@ impl PdfWriter {
             next_obj_id: 1,
             objects: HashMap::new(),
             fonts: HashMap::new(),
+            embedded_fonts: HashMap::new(),
+            embedded_font_order: Vec::new(),
+            user_font_to_resource: HashMap::new(),
+            next_embedded_font_id: 1,
             acroform: None,
         }
+    }
+
+    /// Register an embedded TrueType font for use in content streams.
+    ///
+    /// Returns the resource name (e.g. `"EF1"`) that `add_embedded_text`
+    /// should use. The font is consumed; `finish()` emits its five PDF
+    /// objects (Type 0 / CIDFontType2 / FontDescriptor / FontFile2 stream
+    /// / ToUnicode CMap stream — ISO 32000-1 §9.6.4 / §9.7.4 / §9.8 / §9.9
+    /// / §9.10.2).
+    ///
+    /// The font's display name (used in PostScript/BaseFont fields) is
+    /// taken from `EmbeddedFont::name`. Callers wanting a stable subset
+    /// tag should track the resource name they get back and reuse it.
+    pub fn register_embedded_font(&mut self, font: super::font_manager::EmbeddedFont) -> String {
+        let resource_name = format!("EF{}", self.next_embedded_font_id);
+        self.next_embedded_font_id += 1;
+        self.embedded_fonts.insert(resource_name.clone(), font);
+        self.embedded_font_order.push(resource_name.clone());
+        resource_name
+    }
+
+    /// Register an embedded TrueType font under a user-visible name
+    /// (e.g. `"NotoSansCJKtc"`). The name is what callers pass to
+    /// `FluentPageBuilder::font(name, size)` / `FontSpec::name`; when
+    /// a `ContentElement::Text` is dispatched, the `PageBuilder` looks
+    /// up this map and routes matching elements through
+    /// `add_embedded_text` (hex-encoded Type-0 emission) instead of the
+    /// base-14 `map_font_name` fallback that silently collapses unknown
+    /// names to `Helvetica`.
+    ///
+    /// Returns the `EFn` resource name for callers that want to mix
+    /// low-level `add_embedded_text` calls with the high-level path.
+    pub fn register_embedded_font_as(
+        &mut self,
+        user_name: impl Into<String>,
+        font: super::font_manager::EmbeddedFont,
+    ) -> String {
+        let user_name = user_name.into();
+        let resource_name = self.register_embedded_font(font);
+        self.user_font_to_resource
+            .insert(user_name, resource_name.clone());
+        resource_name
+    }
+
+    /// Resolve a user-supplied font name (as stored in `FontSpec.name`)
+    /// to its `EFn` resource name, if it was registered via
+    /// `register_embedded_font_as`. Used by `PageBuilder::add_element`
+    /// to decide whether `ContentElement::Text` should take the
+    /// embedded-font path.
+    ///
+    /// Returns a borrow into the writer's own map so the dispatch
+    /// path in `PageBuilder::add_element` doesn't allocate per text
+    /// element — matters when a page has thousands of text runs
+    /// coming through the HTML+CSS painter.
+    pub(super) fn embedded_resource_for_user_name(&self, user_name: &str) -> Option<&str> {
+        self.user_font_to_resource
+            .get(user_name)
+            .map(|s| s.as_str())
     }
 
     /// Allocate a new object ID.
@@ -907,17 +1103,55 @@ impl PdfWriter {
             self.get_font_ref(font_name);
         }
 
-        // Build font resources dictionary
-        let font_resources: HashMap<String, Object> = self
+        // Build font resources dictionary — Base-14 first.
+        //
+        // Key the resource dict by the *exact* font name the content
+        // stream uses in its `Tf` operator (e.g. `Helvetica-Bold`,
+        // with the dash). Previous versions stripped dashes here
+        // (`HelveticaBold`), which meant every `Tf /Helvetica-Bold …`
+        // referenced a missing resource — PDF readers silently fell
+        // back to the default non-bold font, so *bold base-14 text
+        // rendered without bold*. `map_font_name` in
+        // `ContentStreamBuilder` emits the dashed form; keep the key
+        // identical so the reference resolves.
+        let mut font_resources: HashMap<String, Object> = self
             .fonts
             .iter()
-            .map(|(name, obj_ref)| {
-                // Use simple names like F1, F2, etc. for the resource dict
-                // but map from the actual font name
-                let simple_name = name.replace('-', "");
-                (simple_name, Object::Reference(*obj_ref))
-            })
+            .map(|(name, obj_ref)| (name.clone(), Object::Reference(*obj_ref)))
             .collect();
+
+        // Emit each embedded font's five-object graph (FONT-3) and add
+        // the Type 0 ref to the resource dict under its EFn name.
+        // Iterate `embedded_font_order` (insertion order) rather than
+        // the HashMap itself so output PDFs are byte-reproducible
+        // regardless of HashMap randomisation. Drained because
+        // `build_embedded_font_objects` takes `&mut EmbeddedFont`.
+        let mut embedded = std::mem::take(&mut self.embedded_fonts);
+        let order = std::mem::take(&mut self.embedded_font_order);
+        let mut embedded_object_ids: Vec<u32> = Vec::new();
+        for resource_name in order {
+            let Some(mut font) = embedded.remove(&resource_name) else {
+                continue;
+            };
+            // Allocate IDs upfront so we don't need to borrow `self` inside
+            // the build closure.
+            let mut allocated: Vec<u32> = (0..5)
+                .map(|_| {
+                    let id = self.next_obj_id;
+                    self.next_obj_id += 1;
+                    id
+                })
+                .collect();
+            let (ids, objects) =
+                super::font_pdf_objects::build_embedded_font_objects(&mut font, || {
+                    allocated.remove(0)
+                });
+            font_resources.insert(resource_name.clone(), ObjectSerializer::reference(ids.type0, 0));
+            for (id, obj) in objects {
+                embedded_object_ids.push(id);
+                self.objects.insert(id, obj);
+            }
+        }
 
         // Catalog object (object 1)
         let catalog_id = self.alloc_obj_id();
@@ -968,6 +1202,60 @@ impl PdfWriter {
         let mut annotation_objects: Vec<(u32, Object)> = Vec::new();
         let mut form_field_objects: Vec<(u32, Object)> = Vec::new();
         let mut all_field_refs: Vec<ObjectRef> = Vec::new();
+
+        // Image XObjects — per page, capture the (resource_id, ImageData,
+        // soft_mask_id?) tuples and pre-allocate object IDs so the main
+        // page-build loop can weave them into Resources without needing
+        // a second &mut borrow on `self`.
+        let mut pending_per_page: Vec<Vec<super::content_stream::PendingImage>> =
+            Vec::with_capacity(page_count);
+        for page_data in self.pages.iter_mut() {
+            pending_per_page.push(page_data.content_builder.take_pending_images());
+        }
+        let mut image_ids_per_page: Vec<Vec<(u32, Option<u32>)>> = Vec::with_capacity(page_count);
+        let mut image_objects: Vec<(u32, Object, Vec<u8>)> = Vec::new();
+        for pending in &pending_per_page {
+            let mut per_page_ids: Vec<(u32, Option<u32>)> = Vec::with_capacity(pending.len());
+            for p in pending {
+                // Decode to writer::ImageData — the content stream
+                // builder kept the elements::ImageContent verbatim; we
+                // need the ColorSpace/Filter conversion from elements
+                // to build the XObject dict.
+                let (data, soft_mask) = image_content_to_xobject_stream(&p.image);
+                let img_id = self.alloc_obj_id();
+                let soft_mask_id = if soft_mask.is_some() {
+                    Some(self.alloc_obj_id())
+                } else {
+                    None
+                };
+                // Build dictionaries.
+                let mut dict: HashMap<String, Object> = data.build_xobject_dict();
+                if let Some(sm_id) = soft_mask_id {
+                    dict.insert("SMask".to_string(), Object::Reference(ObjectRef::new(sm_id, 0)));
+                }
+                image_objects.push((
+                    img_id,
+                    Object::Stream {
+                        dict,
+                        data: bytes::Bytes::from(data.data.clone()),
+                    },
+                    Vec::new(),
+                ));
+                if let (Some(sm_id), Some(sm_data)) = (soft_mask_id, &data.soft_mask) {
+                    let sm_dict = data.build_soft_mask_dict().expect("soft mask present");
+                    image_objects.push((
+                        sm_id,
+                        Object::Stream {
+                            dict: sm_dict,
+                            data: bytes::Bytes::from(sm_data.clone()),
+                        },
+                        Vec::new(),
+                    ));
+                }
+                per_page_ids.push((img_id, soft_mask_id));
+            }
+            image_ids_per_page.push(per_page_ids);
+        }
 
         for (i, page_data) in self.pages.iter().enumerate() {
             let (page_id, content_id) = page_ids[i];
@@ -1026,6 +1314,23 @@ impl PdfWriter {
                 annot_refs.push(Object::Reference(field_ref));
             }
 
+            // Build Resources dict — Font always, XObject when this
+            // page produced any image content during paint.
+            let mut resource_entries: Vec<(&str, Object)> =
+                vec![("Font", Object::Dictionary(font_resources.clone()))];
+            let pending = &pending_per_page[i];
+            let image_ids = &image_ids_per_page[i];
+            if !pending.is_empty() {
+                let mut xobject_dict: HashMap<String, Object> = HashMap::new();
+                for (pi, (img_id, _)) in pending.iter().zip(image_ids.iter()) {
+                    xobject_dict.insert(
+                        pi.resource_id.clone(),
+                        Object::Reference(ObjectRef::new(*img_id, 0)),
+                    );
+                }
+                resource_entries.push(("XObject", Object::Dictionary(xobject_dict)));
+            }
+
             // Page object
             let mut page_entries: Vec<(&str, Object)> = vec![
                 ("Type", ObjectSerializer::name("Page")),
@@ -1040,13 +1345,7 @@ impl PdfWriter {
                     ),
                 ),
                 ("Contents", ObjectSerializer::reference(content_id, 0)),
-                (
-                    "Resources",
-                    ObjectSerializer::dict(vec![(
-                        "Font",
-                        Object::Dictionary(font_resources.clone()),
-                    )]),
-                ),
+                ("Resources", ObjectSerializer::dict(resource_entries)),
             ];
 
             // Add Annots array if page has annotations
@@ -1123,7 +1422,7 @@ impl PdfWriter {
         xref_offsets.push((pages_id, output.len()));
         output.extend_from_slice(&serializer.serialize_indirect(pages_id, 0, &pages_obj));
 
-        // Font objects
+        // Font objects (Base-14)
         for font_ref in self.fonts.values() {
             if let Some(font_obj) = self.objects.get(&font_ref.id) {
                 xref_offsets.push((font_ref.id, output.len()));
@@ -1131,8 +1430,24 @@ impl PdfWriter {
             }
         }
 
+        // Embedded font objects (FONT-3): the five-object graph per font
+        // (Type 0, CIDFontType2, FontDescriptor, FontFile2 stream,
+        // ToUnicode stream).
+        for &id in &embedded_object_ids {
+            if let Some(obj) = self.objects.get(&id) {
+                xref_offsets.push((id, output.len()));
+                output.extend_from_slice(&serializer.serialize_indirect(id, 0, obj));
+            }
+        }
+
         // Page and content objects
         for (obj_id, obj, _) in &page_objects {
+            xref_offsets.push((*obj_id, output.len()));
+            output.extend_from_slice(&serializer.serialize_indirect(*obj_id, 0, obj));
+        }
+
+        // Image XObject streams (from HTML <img> / add_element Image).
+        for (obj_id, obj, _) in &image_objects {
             xref_offsets.push((*obj_id, output.len()));
             output.extend_from_slice(&serializer.serialize_indirect(*obj_id, 0, obj));
         }
@@ -1209,6 +1524,59 @@ impl Default for PdfWriter {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Convert an [`elements::ImageContent`] (what `PageBuilder::add_element`
+/// accepts) into the matching [`super::image_handler::ImageData`] so
+/// the XObject stream dictionary + soft mask dict can be emitted. The
+/// two structs carry the same payload but are owned by different
+/// layers — this keeps the paint pipeline plugged into the standard
+/// writer-side serializer without reaching across module boundaries.
+fn image_content_to_xobject_stream(
+    image: &crate::elements::ImageContent,
+) -> (super::image_handler::ImageData, Option<Vec<u8>>) {
+    use super::image_handler::{ColorSpace as WColorSpace, ImageData, ImageFormat as WImageFormat};
+    let color_space = match image.color_space {
+        crate::elements::ColorSpace::Gray => WColorSpace::DeviceGray,
+        crate::elements::ColorSpace::CMYK => WColorSpace::DeviceCMYK,
+        crate::elements::ColorSpace::RGB => WColorSpace::DeviceRGB,
+        // The writer's ImageData doesn't currently model Indexed or
+        // Lab. The html_css paint pipeline only produces Gray / RGB /
+        // CMYK ImageContents so this branch is latent — but if a
+        // caller constructs an ImageContent with Indexed or Lab
+        // directly (and routes it through `PageBuilder::add_element`),
+        // silently coercing to RGB would produce wrong colours.
+        // Fall back to RGB to keep the XObject emittable, and emit a
+        // warning so the miscoloration is diagnosable.
+        crate::elements::ColorSpace::Indexed | crate::elements::ColorSpace::Lab => {
+            log::warn!(
+                "image_content_to_xobject_stream: ColorSpace::{:?} is not yet supported by \
+                 the writer pipeline; falling back to DeviceRGB (colours may be wrong)",
+                image.color_space
+            );
+            WColorSpace::DeviceRGB
+        },
+    };
+    let format = match image.format {
+        crate::elements::ImageFormat::Jpeg => WImageFormat::Jpeg,
+        crate::elements::ImageFormat::Png => WImageFormat::Png,
+        _ => WImageFormat::Raw,
+    };
+    // Carry the alpha channel forward if the caller attached one
+    // (PNG RGBA / LA). `ImageData::from_png` compresses alpha upstream,
+    // so `soft_mask` here is already the FlateDecode payload ready to
+    // stream straight into the /SMask XObject.
+    let soft_mask = image.soft_mask.clone();
+    let data = ImageData {
+        width: image.width,
+        height: image.height,
+        bits_per_component: image.bits_per_component,
+        color_space,
+        format,
+        data: image.data.clone(),
+        soft_mask: soft_mask.clone(),
+    };
+    (data, soft_mask)
 }
 
 #[cfg(test)]

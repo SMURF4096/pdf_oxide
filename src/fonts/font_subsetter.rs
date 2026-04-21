@@ -4,22 +4,91 @@
 //! significantly reducing PDF file size. Per PDF spec Section 9.9,
 //! subset fonts use a tag prefix (e.g., "ABCDEF+FontName").
 //!
-//! # Subsetting Strategy
+//! # Two layers
 //!
-//! For maximum compatibility, we use a simple approach:
-//! 1. Track which glyphs are used in the document
-//! 2. Generate a ToUnicode CMap for those glyphs
-//! 3. Embed the full font (or use proper subsetting crate in future)
+//! - [`FontSubsetter`] tracks which Unicode codepoints + glyph IDs the
+//!   document actually uses, and computes a deterministic 6-letter
+//!   subset tag from that set.
+//! - [`subset_font_bytes`] feeds the tracked glyph IDs to the `subsetter`
+//!   crate (Typst's pure-Rust OpenType subsetter, MIT/Apache) and
+//!   returns minimal TTF bytes plus a [`subsetter::GlyphRemapper`] —
+//!   the remapper renumbers the kept glyphs starting from 0, so every
+//!   downstream consumer (PDF content stream, widths array, ToUnicode
+//!   CMap) must translate original GIDs through the remapper before
+//!   emitting. The mapping survives in `GlyphRemapper::get(old_gid)`.
 //!
-//! Full subsetting (removing unused glyph data) is complex due to:
-//! - Composite glyphs referencing other glyphs
-//! - OpenType feature tables (GSUB, GPOS)
-//! - Hinting data dependencies
-//!
-//! For v0.3.0, we track used glyphs and generate proper CID mappings,
-//! deferring binary font subsetting to a future version or external crate.
+//! Composite glyph closure, GSUB/GPOS feature tables, and hinting data
+//! are all handled by the `subsetter` crate.
 
 use std::collections::{BTreeSet, HashMap};
+
+pub use subsetter::GlyphRemapper;
+
+/// Errors from the binary subsetter.
+#[derive(Debug, thiserror::Error)]
+pub enum SubsetError {
+    /// The `subsetter` crate failed to subset the font (malformed data,
+    /// unsupported font kind, CFF2, etc.).
+    #[error("font subsetting failed: {0}")]
+    Subsetter(String),
+}
+
+/// Subset a TrueType/OpenType font face to only the glyphs in `used_glyphs`,
+/// returning the new (smaller) font bytes plus the remapper that turns
+/// original glyph IDs into post-subset glyph IDs.
+///
+/// Glyph 0 (`.notdef`) is always retained per PDF spec.
+///
+/// The returned byte buffer is suitable for embedding directly as a
+/// PDF FontFile2 stream (ISO 32000-1 §9.9). The remapper is required by
+/// every other write-side consumer:
+///
+/// - The content stream emits hex glyph IDs that must be the *new* IDs.
+/// - The `/W` widths array indexes the *new* IDs.
+/// - The ToUnicode CMap maps *new* IDs back to source codepoints.
+///
+/// # Errors
+///
+/// Returns [`SubsetError::Subsetter`] if the font is malformed, the
+/// font kind is unsupported (CFF2 in particular), or `index` points
+/// past the end of a TrueType collection.
+///
+/// # Example
+///
+/// ```ignore
+/// use pdf_oxide::fonts::{subset_font_bytes, GlyphRemapper};
+/// use std::collections::BTreeSet;
+///
+/// let face_bytes = std::fs::read("DejaVuSans.ttf")?;
+/// let mut used = BTreeSet::new();
+/// for gid in [36, 37, 38, 39, 40] { used.insert(gid); } // a few glyphs
+/// let (subset_bytes, remapper) = subset_font_bytes(&face_bytes, 0, &used)?;
+/// assert!(subset_bytes.len() < face_bytes.len());
+/// // After subsetting, original glyph 36 lives at remapper.get(36).unwrap()
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+pub fn subset_font_bytes(
+    face_bytes: &[u8],
+    index: u32,
+    used_glyphs: &BTreeSet<u16>,
+) -> Result<(Vec<u8>, GlyphRemapper), SubsetError> {
+    // Always include .notdef (glyph 0) per PDF spec; otherwise PDF readers
+    // that need to render an unmapped character will choke on a font with
+    // no fallback glyph.
+    let mut all = Vec::with_capacity(used_glyphs.len() + 1);
+    all.push(0u16);
+    for &gid in used_glyphs {
+        if gid != 0 {
+            all.push(gid);
+        }
+    }
+
+    let remapper = GlyphRemapper::new_from_glyphs(&all);
+    let subset = subsetter::subset(face_bytes, index, &remapper)
+        .map_err(|e| SubsetError::Subsetter(e.to_string()))?;
+
+    Ok((subset, remapper))
+}
 
 /// Font subsetter for tracking used glyphs and generating subset metadata.
 ///
@@ -48,6 +117,16 @@ impl FontSubsetter {
     /// * `glyph_id` - Corresponding glyph ID from the font
     pub fn use_char(&mut self, codepoint: u32, glyph_id: u16) {
         self.used_chars.insert(codepoint, glyph_id);
+        self.used_glyphs.insert(glyph_id);
+    }
+
+    /// Record a glyph ID as used without an associated codepoint.
+    ///
+    /// Used by the shaping path: rustybuzz returns glyph IDs (after
+    /// ligature substitution and contextual reordering) that have no
+    /// 1:1 source codepoint. The cluster information is preserved
+    /// elsewhere for ToUnicode mapping.
+    pub fn use_glyph(&mut self, glyph_id: u16) {
         self.used_glyphs.insert(glyph_id);
     }
 

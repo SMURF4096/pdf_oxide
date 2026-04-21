@@ -338,6 +338,404 @@ impl Pdf {
         PdfBuilder::new().from_html(content)
     }
 
+    /// Create a PDF from HTML + optional CSS using the v0.3.35 HTML→
+    /// PDF pipeline (issue #248).
+    ///
+    /// Walks the full pipeline:
+    /// HTML → DOM → cascade → box tree → Taffy layout → paginate →
+    /// paint → PDF.
+    ///
+    /// # Arguments
+    /// * `html` - HTML source string. Inline `<style>` blocks are
+    ///   extracted automatically.
+    /// * `css` - Additional CSS to apply (concatenated with inline
+    ///   `<style>` blocks).
+    /// * `font_bytes` - TTF/OTF font bytes for body text (any
+    ///   permissive-licence sans-serif works; tests/fixtures/fonts/
+    ///   DejaVuSans.ttf is the suggested default during development).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use pdf_oxide::api::Pdf;
+    /// let font = std::fs::read("DejaVuSans.ttf")?;
+    /// let pdf = Pdf::from_html_css(
+    ///     "<h1>Hello</h1><p>World</p>",
+    ///     "h1 { color: blue }",
+    ///     font,
+    /// )?;
+    /// pdf.save("out.pdf")?;
+    /// ```
+    pub fn from_html_css(html: &str, css: &str, font_bytes: Vec<u8>) -> Result<Self> {
+        Self::from_html_css_with_fonts(html, css, vec![("Body".to_string(), font_bytes)])
+    }
+
+    /// Like [`Pdf::from_html_css`] but accepts multiple fonts keyed by
+    /// their CSS `font-family` name. The first entry is the default
+    /// used by any element whose family doesn't match a registered
+    /// name. Family matching is case-insensitive, and the CSS value's
+    /// quoted/unquoted forms are both accepted.
+    ///
+    /// ```ignore
+    /// use pdf_oxide::api::Pdf;
+    /// let sans = std::fs::read("DejaVuSans.ttf")?;
+    /// let mono = std::fs::read("DejaVuSansMono.ttf")?;
+    /// let pdf = Pdf::from_html_css_with_fonts(
+    ///     "<p>body <code>code</code></p>",
+    ///     "code { font-family: 'DejaVu Sans Mono' }",
+    ///     vec![
+    ///         ("DejaVu Sans".to_string(), sans),
+    ///         ("DejaVu Sans Mono".to_string(), mono),
+    ///     ],
+    /// )?;
+    /// ```
+    pub fn from_html_css_with_fonts(
+        html: &str,
+        css: &str,
+        fonts: Vec<(String, Vec<u8>)>,
+    ) -> Result<Self> {
+        use crate::html_css::css::{apply_inline_declarations, cascade, parse_stylesheet};
+        use crate::html_css::html::{extract_stylesheets, parse_document, StylesheetSource};
+        use crate::html_css::layout::{build_box_tree, run_layout};
+        use crate::html_css::paginate::{paginate_with_styles, PageConfig};
+        use crate::html_css::paint::paint_document;
+        use crate::writer::{EmbeddedFont, PdfWriter};
+        use taffy::prelude::Size;
+
+        // Concatenate inline <style> blocks + caller's css. The
+        // combined source, the parsed Stylesheet, and the parsed Dom
+        // are held in local bindings that outlive every downstream
+        // closure — `parse_stylesheet` returns `Stylesheet<'a>` that
+        // borrows into `combined_css`, and `cascade`/`build_box_tree`
+        // accept non-'static references, so no `Box::leak` is needed.
+        let dom = parse_document(html);
+        let extracted = extract_stylesheets(&dom);
+        let mut combined_css = String::new();
+        for src in &extracted.sheets {
+            if let StylesheetSource::Inline(s) = src {
+                combined_css.push_str(s);
+                combined_css.push('\n');
+            }
+        }
+        combined_css.push_str(css);
+
+        let stylesheet = parse_stylesheet(&combined_css)
+            .map_err(|e| crate::error::Error::Unsupported(format!("CSS parse error: {e}")))?;
+
+        let tree = build_box_tree(&dom, &stylesheet)
+            .map_err(|e| crate::error::Error::Unsupported(format!("box tree error: {e}")))?;
+
+        let calc_ctx = crate::html_css::css::CalcContext::default();
+        let layout = run_layout(
+            &tree,
+            |id| {
+                let node = tree.get(id);
+                let Some(elem_id) = node.element else {
+                    return crate::html_css::css::ComputedStyles::default();
+                };
+                let element = dom.element(elem_id).unwrap();
+                let mut styles = cascade(&stylesheet, element, None);
+                let inline_style = match &dom.node(elem_id).kind {
+                    crate::html_css::html::NodeKind::Element { attrs, .. } => attrs
+                        .iter()
+                        .find(|(k, _)| k.eq_ignore_ascii_case("style"))
+                        .map(|(_, v)| v.as_str()),
+                    _ => None,
+                };
+                if let Some(inline) = inline_style {
+                    if let Ok(decls) = crate::html_css::css::parser::parse_declaration_list(inline)
+                    {
+                        apply_inline_declarations(&mut styles, &decls);
+                    }
+                }
+                styles
+            },
+            Size {
+                width: 600.0,
+                height: 800.0,
+            },
+            &calc_ctx,
+            12.0,
+        );
+
+        let paginated = paginate_with_styles(&tree, &layout, PageConfig::a4(), |id| {
+            let node = tree.get(id);
+            let elem_id = node.element?;
+            let element = dom.element(elem_id).unwrap();
+            let mut styles = cascade(&stylesheet, element, None);
+            let inline_style = match &dom.node(elem_id).kind {
+                crate::html_css::html::NodeKind::Element { attrs, .. } => attrs
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case("style"))
+                    .map(|(_, v)| v.as_str()),
+                _ => None,
+            };
+            if let Some(inline) = inline_style {
+                if let Ok(decls) = crate::html_css::css::parser::parse_declaration_list(inline) {
+                    apply_inline_declarations(&mut styles, &decls);
+                }
+            }
+            Some(styles)
+        });
+
+        if fonts.is_empty() {
+            return Err(crate::error::Error::Unsupported(
+                "from_html_css_with_fonts needs at least one font".into(),
+            ));
+        }
+        let mut writer = PdfWriter::new();
+        // Register every font and remember (family_lowercase, resource_name).
+        let mut family_to_resource: Vec<(String, String)> = Vec::with_capacity(fonts.len());
+        let mut default_resource = String::new();
+        for (family, bytes) in fonts {
+            let font = EmbeddedFont::from_data(Some(family.clone()), bytes)
+                .map_err(|e| crate::error::Error::Unsupported(format!("font parse: {e}")))?;
+            let rn = writer.register_embedded_font(font);
+            if default_resource.is_empty() {
+                default_resource = rn.clone();
+            }
+            family_to_resource.push((family.to_lowercase(), rn));
+        }
+        let resource_name = default_resource;
+        // `family_to_resource` lives through `paint_document` as a
+        // local — closures borrow &family_to_resource with a scoped
+        // lifetime; no `Box::leak` required.
+
+        paint_document(
+            &mut writer,
+            &paginated,
+            &tree,
+            |id| {
+                let node = tree.get(id);
+                let elem_id = node.element?;
+                let element = dom.element(elem_id).unwrap();
+                let mut styles = cascade(&stylesheet, element, None);
+                let inline_style = match &dom.node(elem_id).kind {
+                    crate::html_css::html::NodeKind::Element { attrs, .. } => attrs
+                        .iter()
+                        .find(|(k, _)| k.eq_ignore_ascii_case("style"))
+                        .map(|(_, v)| v.as_str()),
+                    _ => None,
+                };
+                if let Some(inline) = inline_style {
+                    if let Ok(decls) = crate::html_css::css::parser::parse_declaration_list(inline)
+                    {
+                        apply_inline_declarations(&mut styles, &decls);
+                    }
+                }
+                Some(styles)
+            },
+            &resource_name,
+            12.0,
+            |id| {
+                // Walk up the box tree looking for an <a href=…> — inline
+                // text children inherit the link.
+                let mut cur = Some(id);
+                while let Some(bid) = cur {
+                    let node = tree.get(bid);
+                    if let Some(elem_id) = node.element {
+                        if let Some(element) = dom.element(elem_id) {
+                            use crate::html_css::css::matcher::Element;
+                            if element.local_name().eq_ignore_ascii_case("a") {
+                                if let Some(href) = element.attribute("href") {
+                                    if !href.is_empty() {
+                                        return Some(href.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    cur = node.parent;
+                }
+                None
+            },
+            |id| {
+                // List marker — bullet for <ul>, "N." for <ol>.
+                let node = tree.get(id);
+                let elem_id = node.element?;
+                let element = dom.element(elem_id)?;
+                use crate::html_css::css::matcher::Element;
+                if !element.local_name().eq_ignore_ascii_case("li") {
+                    return None;
+                }
+                let mut cur = node.parent;
+                while let Some(bid) = cur {
+                    let pnode = tree.get(bid);
+                    if let Some(peid) = pnode.element {
+                        if let Some(pel) = dom.element(peid) {
+                            let tag = pel.local_name();
+                            if tag.eq_ignore_ascii_case("ol") {
+                                let mut idx = 1usize;
+                                for &sib in &pnode.children {
+                                    if sib == id {
+                                        break;
+                                    }
+                                    let sn = tree.get(sib);
+                                    if let Some(seid) = sn.element {
+                                        if let Some(se) = dom.element(seid) {
+                                            if se.local_name().eq_ignore_ascii_case("li") {
+                                                idx += 1;
+                                            }
+                                        }
+                                    }
+                                }
+                                return Some(format!("{idx}."));
+                            }
+                            if tag.eq_ignore_ascii_case("ul") {
+                                return Some("\u{2022}".to_string());
+                            }
+                        }
+                    }
+                    cur = pnode.parent;
+                }
+                None
+            },
+            |id| {
+                // font-family resolution: walk up the box tree to find the
+                // nearest ancestor with a declared `font-family`, then
+                // match each comma-separated family name (case-insensitive,
+                // quotes stripped) against the registered family_to_resource
+                // map. First hit wins; None falls back to the default font.
+                let mut cur = Some(id);
+                while let Some(bid) = cur {
+                    let node = tree.get(bid);
+                    if let Some(elem_id) = node.element {
+                        if let Some(element) = dom.element(elem_id) {
+                            let mut styles = cascade(&stylesheet, element, None);
+                            // Inline styles can override font-family too.
+                            let inline_style = match &dom.node(elem_id).kind {
+                                crate::html_css::html::NodeKind::Element { attrs, .. } => attrs
+                                    .iter()
+                                    .find(|(k, _)| k.eq_ignore_ascii_case("style"))
+                                    .map(|(_, v)| v.as_str()),
+                                _ => None,
+                            };
+                            if let Some(inline) = inline_style {
+                                if let Ok(decls) =
+                                    crate::html_css::css::parser::parse_declaration_list(inline)
+                                {
+                                    apply_inline_declarations(&mut styles, &decls);
+                                }
+                            }
+                            // font-family accepts a comma-separated list where
+                            // each entry is either a quoted string or one-or-
+                            // more unquoted identifiers (CSS Fonts L4 §15.3).
+                            // Unquoted multi-word families (`DejaVu Sans`)
+                            // tokenise as two `Ident`s separated by whitespace,
+                            // so we collect consecutive idents into a buffer
+                            // and flush it as a single candidate family name
+                            // at each top-level comma (or at EOL).
+                            if let Some(rv) = styles.get("font-family") {
+                                use crate::html_css::css::parser::ComponentValue;
+                                use crate::html_css::css::tokenizer::Token;
+
+                                let try_lookup = |candidate: &str| -> Option<String> {
+                                    let needle = candidate.trim().to_lowercase();
+                                    if needle.is_empty() {
+                                        return None;
+                                    }
+                                    for (fam, rn) in &family_to_resource {
+                                        if fam == &needle {
+                                            return Some(rn.clone());
+                                        }
+                                    }
+                                    None
+                                };
+
+                                let mut idents: Vec<String> = Vec::new();
+                                for cv in &rv.value {
+                                    match cv {
+                                        ComponentValue::Token(Token::Ident(s)) => {
+                                            idents.push(s.as_ref().to_string());
+                                        },
+                                        ComponentValue::Token(Token::Whitespace) => {},
+                                        ComponentValue::Token(Token::Comma) => {
+                                            if let Some(rn) = try_lookup(&idents.join(" ")) {
+                                                return Some(rn);
+                                            }
+                                            idents.clear();
+                                        },
+                                        ComponentValue::Token(Token::String(s)) => {
+                                            // Flush any pending unquoted idents first, then
+                                            // try the quoted name as a standalone candidate.
+                                            if let Some(rn) = try_lookup(&idents.join(" ")) {
+                                                return Some(rn);
+                                            }
+                                            idents.clear();
+                                            if let Some(rn) = try_lookup(s.as_ref()) {
+                                                return Some(rn);
+                                            }
+                                        },
+                                        _ => {},
+                                    }
+                                }
+                                // Flush the trailing entry (no comma after the
+                                // last family name).
+                                if let Some(rn) = try_lookup(&idents.join(" ")) {
+                                    return Some(rn);
+                                }
+                            }
+                        }
+                    }
+                    cur = node.parent;
+                }
+                None
+            },
+            |id| {
+                let node = tree.get(id);
+                let elem_id = node.element?;
+                let element = dom.element(elem_id)?;
+                crate::html_css::css::pseudo_content_for(
+                    &stylesheet,
+                    element,
+                    crate::html_css::css::PseudoKind::Before,
+                )
+            },
+            |id| {
+                let node = tree.get(id);
+                let elem_id = node.element?;
+                let element = dom.element(elem_id)?;
+                crate::html_css::css::pseudo_content_for(
+                    &stylesheet,
+                    element,
+                    crate::html_css::css::PseudoKind::After,
+                )
+            },
+            |id| {
+                // <img src=…> — decode data-URI sources to a
+                // PaintImage. External URLs and local paths are not
+                // resolved here (no filesystem / HTTP access from the
+                // v0.3.37 first cut); returning None leaves the <img>
+                // box empty, matching the "alt text or nothing"
+                // fallback behaviour of browsers with image loading
+                // disabled.
+                let node = tree.get(id);
+                let elem_id = node.element?;
+                use crate::html_css::css::matcher::Element;
+                let element = dom.element(elem_id)?;
+                if !element.local_name().eq_ignore_ascii_case("img") {
+                    return None;
+                }
+                let src = element.attribute("src")?;
+                let bytes = crate::html_css::paint::decode_image_src(src)?;
+                let data = crate::writer::ImageData::from_bytes(&bytes).ok()?;
+                Some(crate::html_css::paint::PaintImage { data })
+            },
+        );
+
+        let bytes = writer
+            .finish()
+            .map_err(|e| crate::error::Error::Unsupported(format!("PDF emission: {e}")))?;
+        // Store the writer bytes directly without going through
+        // DocumentEditor — the editor's parse-and-re-serialise loop
+        // doesn't preserve the embedded-font object graph, which is
+        // the whole point of the v0.3.35 pipeline. Direct byte storage
+        // keeps the PDF byte-stable.
+        let mut pdf = Pdf::new();
+        pdf.bytes = bytes;
+        Ok(pdf)
+    }
+
     /// Create a PDF from plain text.
     ///
     /// The text is rendered as-is with the default font and size.
@@ -2691,6 +3089,10 @@ impl PdfBuilder {
                 alt_text: None,
                 horizontal_dpi: None,
                 vertical_dpi: None,
+                // Preserve the source ImageData's alpha/soft-mask so
+                // transparent PNGs added via `Pdf::from_image[s]`
+                // render with their alpha channel intact.
+                soft_mask: image.soft_mask.clone(),
             };
             image_content.calculate_dpi();
 
