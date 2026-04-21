@@ -67,13 +67,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("=== SPACING ANALYSIS ===\n");
             println!("Analyzing gaps between consecutive spans on same line:\n");
 
-            let line_tolerance = 2.0;
             let mut prev_idx: Option<usize> = None;
 
             for (i, span) in spans.iter().enumerate() {
                 if let Some(prev_i) = prev_idx {
                     let prev = &spans[prev_i];
                     let y_diff = (prev.bbox.y - span.bbox.y).abs();
+
+                    // Same-line tolerance scales with the larger of the two
+                    // font sizes so superscripts and subscripts stay on the
+                    // line they belong to (matches PdfDocument::same_line_threshold).
+                    let line_tolerance = prev.font_size.max(span.font_size).max(1.0) * 0.5;
 
                     // Same line check
                     if y_diff < line_tolerance {

@@ -4290,7 +4290,7 @@ impl PdfDocument {
                     let gap = span.bbox.x - prev_end_x;
                     let delta_x = span.bbox.x - prev.bbox.x;
 
-                    if y_diff > 2.0 {
+                    if y_diff > Self::same_line_threshold(prev, span) {
                         let font_size = span.font_size.max(10.0);
                         let line_height = font_size * 1.2;
                         let num_breaks = (y_diff / line_height).round() as usize;
@@ -4304,21 +4304,15 @@ impl PdfDocument {
                                 text.push('\n');
                             }
                         } else if delta_x < -fs * 3.0 {
-                            // Same baseline (y_diff <= 2.0) but the
-                            // current span starts well to the LEFT of
-                            // the previous span's start — i.e., the
-                            // upstream sort handed us spans in
-                            // non-monotonic X order. Common cause: a
-                            // multi-column page whose XY-cut routing
-                            // groups column-side spans across rows so
-                            // adjacent iteration items belong to
-                            // different visual rows that happen to
-                            // share a Y band. Without a separator the
-                            // texts glue together (e.g.
-                            // `instancesinstancesinstances` from three
-                            // table-header cells in a stats grid).
-                            // Treat the backwards jump as a logical
-                            // break and emit a newline.
+                            // Same visual line, but the current span starts well to the LEFT of the
+                            // previous span's start — i.e., the upstream ordering is non-monotonic in X.
+                            // This commonly occurs with multi-column layouts or XY-cut artifacts where
+                            // spans from different visual rows fall within the same Y tolerance band
+                            // (see `same_line_threshold`).
+                            //
+                            // Without inserting a separator, these spans would be concatenated
+                            // (e.g. `instancesinstancesinstances` from adjacent table headers).
+                            // Treat this backward X jump as a logical break and emit a newline.
                             if !text.ends_with('\n') {
                                 text.push('\n');
                             }
@@ -5157,6 +5151,16 @@ impl PdfDocument {
                 char::from_u32(base).unwrap_or(c)
             })
             .collect()
+    }
+
+    /// Returns the Y tolerance (in points) for treating two spans as
+    /// belonging to the same visual line during text assembly.
+    ///
+    /// The threshold scales with the larger font size so mixed-size runs
+    /// (for example superscripts and subscripts) are not split by a fixed
+    /// absolute tolerance.
+    fn same_line_threshold(prev: &TextSpan, current: &TextSpan) -> f32 {
+        prev.font_size.max(current.font_size).max(1.0) * 0.5
     }
 
     /// # Returns
@@ -6221,7 +6225,7 @@ impl PdfDocument {
                     if let Some(prev) = prev_span {
                         let y_diff = (prev.bbox.y - span.bbox.y).abs();
 
-                        if y_diff > 2.0 {
+                        if y_diff > Self::same_line_threshold(prev, span) {
                             let font_size = span.font_size.max(10.0);
                             let line_height = font_size * 1.2;
                             let num_breaks = (y_diff / line_height).round() as usize;
@@ -6270,7 +6274,7 @@ impl PdfDocument {
                 for span in *spans {
                     if let Some(prev) = prev_span {
                         let y_diff = (prev.bbox.y - span.bbox.y).abs();
-                        if y_diff > 2.0 {
+                        if y_diff > Self::same_line_threshold(prev, span) {
                             text.push('\n');
                         } else if Self::should_insert_space(prev, span) {
                             text.push(' ');
@@ -6299,7 +6303,7 @@ impl PdfDocument {
             for span in &spans_without_mcid {
                 if let Some(prev) = prev_span {
                     let y_diff = (prev.bbox.y - span.bbox.y).abs();
-                    if y_diff > 2.0 {
+                    if y_diff > Self::same_line_threshold(prev, span) {
                         text.push('\n');
                     } else if Self::should_insert_space(prev, span) {
                         text.push(' ');
@@ -6402,7 +6406,7 @@ impl PdfDocument {
                 for span in spans {
                     if let Some(prev) = prev_span {
                         let y_diff = (prev.bbox.y - span.bbox.y).abs();
-                        if y_diff > 2.0 {
+                        if y_diff > Self::same_line_threshold(prev, span) {
                             let font_size = span.font_size.max(10.0);
                             let line_height = font_size * 1.2;
                             let num_breaks = (y_diff / line_height).round() as usize;
@@ -6443,7 +6447,7 @@ impl PdfDocument {
                 for span in *spans {
                     if let Some(prev) = prev_span {
                         let y_diff = (prev.bbox.y - span.bbox.y).abs();
-                        if y_diff > 2.0 {
+                        if y_diff > Self::same_line_threshold(prev, span) {
                             text.push('\n');
                         } else if Self::should_insert_space(prev, span) {
                             text.push(' ');
@@ -6477,7 +6481,7 @@ impl PdfDocument {
             for span in &spans_without_mcid {
                 if let Some(prev) = prev_span {
                     let y_diff = (prev.bbox.y - span.bbox.y).abs();
-                    if y_diff > 2.0 {
+                    if y_diff > Self::same_line_threshold(prev, span) {
                         text.push('\n');
                     } else if Self::should_insert_space(prev, span) {
                         text.push(' ');
