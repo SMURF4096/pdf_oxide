@@ -134,8 +134,12 @@ impl<'a> PageBuilder<'a> {
     ///
     /// Glyph IDs are looked up via the font's `cmap`, encoded as
     /// big-endian Identity-H hex strings, and emitted as a `Tj` operand.
-    /// The font's internal subsetter is updated so that finalisation
-    /// (in [`PdfWriter::finish`]) only carries the glyphs actually used.
+    /// The font's internal subsetter tracks which glyphs + codepoints
+    /// are referenced so `/W` and the `ToUnicode` CMap built in
+    /// [`PdfWriter::finish`] are subset-accurate. The `FontFile2`
+    /// stream itself currently embeds the full face; switching it to
+    /// [`crate::fonts::subset_font_bytes`] output is a later follow-up
+    /// and requires GID remapping in already-emitted content streams.
     pub fn add_embedded_text(
         &mut self,
         text: &str,
@@ -220,7 +224,16 @@ impl<'a> PageBuilder<'a> {
     /// path.
     pub fn add_element(&mut self, element: &ContentElement) -> &mut Self {
         if let ContentElement::Text(t) = element {
-            if let Some(resource_name) = self.writer.embedded_resource_for_user_name(&t.font.name) {
+            // `embedded_resource_for_user_name` returns `Option<&str>`
+            // borrowing into the writer's own map — we clone once here
+            // because `add_embedded_text` takes `&mut self.writer`
+            // immediately after and the borrow rules won't let the
+            // immutable ref survive the mutable call.
+            let resource_name = self
+                .writer
+                .embedded_resource_for_user_name(&t.font.name)
+                .map(String::from);
+            if let Some(resource_name) = resource_name {
                 self.add_embedded_text(&t.text, t.bbox.x, t.bbox.y, &resource_name, t.font.size);
                 return self;
             }
@@ -1001,8 +1014,15 @@ impl PdfWriter {
     /// `register_embedded_font_as`. Used by `PageBuilder::add_element`
     /// to decide whether `ContentElement::Text` should take the
     /// embedded-font path.
-    pub(super) fn embedded_resource_for_user_name(&self, user_name: &str) -> Option<String> {
-        self.user_font_to_resource.get(user_name).cloned()
+    ///
+    /// Returns a borrow into the writer's own map so the dispatch
+    /// path in `PageBuilder::add_element` doesn't allocate per text
+    /// element — matters when a page has thousands of text runs
+    /// coming through the HTML+CSS painter.
+    pub(super) fn embedded_resource_for_user_name(&self, user_name: &str) -> Option<&str> {
+        self.user_font_to_resource
+            .get(user_name)
+            .map(|s| s.as_str())
     }
 
     /// Allocate a new object ID.
@@ -1084,15 +1104,20 @@ impl PdfWriter {
         }
 
         // Build font resources dictionary — Base-14 first.
+        //
+        // Key the resource dict by the *exact* font name the content
+        // stream uses in its `Tf` operator (e.g. `Helvetica-Bold`,
+        // with the dash). Previous versions stripped dashes here
+        // (`HelveticaBold`), which meant every `Tf /Helvetica-Bold …`
+        // referenced a missing resource — PDF readers silently fell
+        // back to the default non-bold font, so *bold base-14 text
+        // rendered without bold*. `map_font_name` in
+        // `ContentStreamBuilder` emits the dashed form; keep the key
+        // identical so the reference resolves.
         let mut font_resources: HashMap<String, Object> = self
             .fonts
             .iter()
-            .map(|(name, obj_ref)| {
-                // Use simple names like F1, F2, etc. for the resource dict
-                // but map from the actual font name
-                let simple_name = name.replace('-', "");
-                (simple_name, Object::Reference(*obj_ref))
-            })
+            .map(|(name, obj_ref)| (name.clone(), Object::Reference(*obj_ref)))
             .collect();
 
         // Emit each embedded font's five-object graph (FONT-3) and add
