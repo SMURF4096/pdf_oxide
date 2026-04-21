@@ -977,15 +977,56 @@ impl EmbeddedFont {
     /// Encode a sequence of pre-shaped glyph IDs as an Identity-H hex
     /// string, registering each glyph with the subsetter.
     ///
-    /// Glyph IDs come from `crate::writer::font_shaping::shape` (or any
-    /// other shaper). They are emitted in the order given — callers must
-    /// supply visual order, not logical order.
+    /// Records only glyph IDs — the produced ToUnicode CMap will be
+    /// missing entries for every run passed through here, so
+    /// `extract_text` cannot round-trip shaped text emitted this way.
+    /// Prefer [`Self::encode_shaped_run`] which preserves the shaper's
+    /// cluster → codepoint mapping.
     pub fn encode_shaped(&mut self, glyph_ids: &[u16]) -> String {
         let mut hex = String::with_capacity(glyph_ids.len() * 4 + 2);
         hex.push('<');
         for &gid in glyph_ids {
             self.subsetter.use_glyph(gid);
-            hex.push_str(&format!("{:04X}", gid));
+            hex.push_str(&format!("{gid:04X}"));
+        }
+        hex.push('>');
+        hex
+    }
+
+    /// Encode a [`crate::writer::font_shaping::ShapedRun`] as an
+    /// Identity-H hex string AND register each glyph with the subsetter
+    /// under its source codepoint so the resulting PDF's ToUnicode CMap
+    /// round-trips the text via `extract_text`.
+    ///
+    /// The shaper preserves `cluster` (a byte index into the source
+    /// string) on every glyph. For simple scripts (CJK, Cyrillic, Greek,
+    /// Latin) cluster is 1:1 with a single codepoint and ToUnicode is
+    /// exact. For ligatures (one glyph covers multiple codepoints) we
+    /// record the *first* codepoint of the cluster — close enough to
+    /// recover the leading char on extract; exact multi-char ToUnicode
+    /// is a later refinement.
+    #[cfg(feature = "system-fonts")]
+    pub fn encode_shaped_run(
+        &mut self,
+        shaped: &crate::writer::font_shaping::ShapedRun,
+        source_text: &str,
+    ) -> String {
+        let mut hex = String::with_capacity(shaped.glyphs.len() * 4 + 2);
+        hex.push('<');
+        for g in &shaped.glyphs {
+            // Some glyphs (e.g. notdef fallbacks) may map to an empty
+            // cluster or off the end of the string — fall back to
+            // `use_glyph` (no ToUnicode) rather than panic on bad bounds.
+            let codepoint = source_text
+                .get(g.cluster as usize..)
+                .and_then(|tail| tail.chars().next())
+                .map(|ch| ch as u32);
+            if let Some(cp) = codepoint {
+                self.subsetter.use_char(cp, g.glyph_id);
+            } else {
+                self.subsetter.use_glyph(g.glyph_id);
+            }
+            hex.push_str(&format!("{:04X}", g.glyph_id));
         }
         hex.push('>');
         hex

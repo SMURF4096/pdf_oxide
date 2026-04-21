@@ -144,24 +144,15 @@ impl<'a> PageBuilder<'a> {
         font_resource_name: &str,
         font_size: f32,
     ) -> &mut Self {
-        // Look up the font, encode glyphs, then emit. We split the borrow
-        // so we touch `embedded_fonts` (mut) and `pages` (mut) in sequence.
-        let font_name_lookup = self
-            .writer
-            .embedded_font_resource_to_name
-            .get(font_resource_name)
-            .cloned();
-        let Some(font_key) = font_name_lookup else {
-            // Caller passed an unknown resource name. Silently no-op rather
-            // than panic — the missing-text symptom is easier to debug than
-            // a panic deep inside the writer, and HTML→PDF is going to hit
-            // unknown fonts often during early development.
-            return self;
-        };
+        // `embedded_fonts` is keyed by the `EFn` resource name directly,
+        // so no indirection through a name map. An unknown resource name
+        // is a silent no-op — missing-text is easier to debug than a
+        // panic deep inside the writer, and HTML→PDF hits unknown fonts
+        // often during early development.
         let encoded_hex = self
             .writer
             .embedded_fonts
-            .get_mut(&font_key)
+            .get_mut(font_resource_name)
             .map(|font| font.encode_string(text));
         let Some(encoded_hex) = encoded_hex else {
             return self;
@@ -198,23 +189,18 @@ impl<'a> PageBuilder<'a> {
         font_size: f32,
         direction: super::font_shaping::Direction,
     ) -> &mut Self {
-        let font_name_lookup = self
-            .writer
-            .embedded_font_resource_to_name
-            .get(font_resource_name)
-            .cloned();
-        let Some(font_key) = font_name_lookup else {
+        let Some(font) = self.writer.embedded_fonts.get_mut(font_resource_name) else {
             return self;
         };
-        let Some(font) = self.writer.embedded_fonts.get_mut(&font_key) else {
+        // Shape directly against the font's owned bytes — no clone.
+        // `shape` returns owned ShapedRun, so the &[u8] borrow on `font`
+        // is released before we call `encode_shaped_run` (&mut self).
+        let Some(shaped) = super::font_shaping::shape(text, font.font_data(), direction) else {
             return self;
         };
-        let face_bytes = font.font_data().to_vec();
-        let Some(shaped) = super::font_shaping::shape(text, &face_bytes, direction) else {
-            return self;
-        };
-        let glyph_ids: Vec<u16> = shaped.glyphs.iter().map(|g| g.glyph_id).collect();
-        let encoded_hex = font.encode_shaped(&glyph_ids);
+        // encode_shaped_run records (codepoint, glyph) pairs via the
+        // shaper's cluster field so the ToUnicode CMap round-trips.
+        let encoded_hex = font.encode_shaped_run(&shaped, text);
 
         let page = &mut self.writer.pages[self.page_index];
         page.content_builder
@@ -919,17 +905,21 @@ pub struct PdfWriter {
     objects: HashMap<u32, Object>,
     /// Font resources used (name -> object ref)
     fonts: HashMap<String, ObjectRef>,
-    /// Registered embedded TrueType fonts, keyed by the user-supplied
-    /// font name (e.g. "DejaVuSans"). Populated by
-    /// [`PdfWriter::register_embedded_font`]; consumed in
+    /// Registered embedded TrueType fonts, keyed by their `EFn`
+    /// resource name. Keying by `EFn` (monotonic, guaranteed unique)
+    /// instead of `EmbeddedFont::name` means two fonts with the same
+    /// display name don't silently overwrite one another.
+    ///
+    /// Populated by [`PdfWriter::register_embedded_font`]; consumed in
     /// [`PdfWriter::finish`] where each font's five PDF objects are
     /// emitted and the Type-0 ref is added to every page's `/Font`
     /// resource dict.
     embedded_fonts: HashMap<String, super::font_manager::EmbeddedFont>,
-    /// Resource-name → font-key map for content-stream `add_embedded_text`
-    /// calls. Resource names follow the `EFn` convention (E for embedded)
-    /// to avoid collision with the dash-stripped Base-14 names.
-    embedded_font_resource_to_name: HashMap<String, String>,
+    /// Insertion-order list of registered `EFn` resource names so
+    /// [`PdfWriter::finish`] can iterate them in a stable, reproducible
+    /// order (HashMap iteration would otherwise randomise the emitted
+    /// font-object ordering across runs).
+    embedded_font_order: Vec<String>,
     /// User-supplied font name (e.g. "NotoSansCJKtc") → `EFn` resource
     /// name. Lets the high-level `DocumentBuilder` / `PageBuilder`
     /// dispatch `ContentElement::Text` through `add_embedded_text`
@@ -957,7 +947,7 @@ impl PdfWriter {
             objects: HashMap::new(),
             fonts: HashMap::new(),
             embedded_fonts: HashMap::new(),
-            embedded_font_resource_to_name: HashMap::new(),
+            embedded_font_order: Vec::new(),
             user_font_to_resource: HashMap::new(),
             next_embedded_font_id: 1,
             acroform: None,
@@ -978,10 +968,8 @@ impl PdfWriter {
     pub fn register_embedded_font(&mut self, font: super::font_manager::EmbeddedFont) -> String {
         let resource_name = format!("EF{}", self.next_embedded_font_id);
         self.next_embedded_font_id += 1;
-        let font_key = font.name.clone();
-        self.embedded_fonts.insert(font_key.clone(), font);
-        self.embedded_font_resource_to_name
-            .insert(resource_name.clone(), font_key);
+        self.embedded_fonts.insert(resource_name.clone(), font);
+        self.embedded_font_order.push(resource_name.clone());
         resource_name
     }
 
@@ -1109,11 +1097,17 @@ impl PdfWriter {
 
         // Emit each embedded font's five-object graph (FONT-3) and add
         // the Type 0 ref to the resource dict under its EFn name.
-        // Drained so we own the EmbeddedFont (encode_string is &mut).
-        let embedded = std::mem::take(&mut self.embedded_fonts);
+        // Iterate `embedded_font_order` (insertion order) rather than
+        // the HashMap itself so output PDFs are byte-reproducible
+        // regardless of HashMap randomisation. Drained because
+        // `build_embedded_font_objects` takes `&mut EmbeddedFont`.
+        let mut embedded = std::mem::take(&mut self.embedded_fonts);
+        let order = std::mem::take(&mut self.embedded_font_order);
         let mut embedded_object_ids: Vec<u32> = Vec::new();
-        let mut font_key_to_type0: HashMap<String, u32> = HashMap::new();
-        for (font_key, mut font) in embedded {
+        for resource_name in order {
+            let Some(mut font) = embedded.remove(&resource_name) else {
+                continue;
+            };
             // Allocate IDs upfront so we don't need to borrow `self` inside
             // the build closure.
             let mut allocated: Vec<u32> = (0..5)
@@ -1127,17 +1121,11 @@ impl PdfWriter {
                 super::font_pdf_objects::build_embedded_font_objects(&mut font, || {
                     allocated.remove(0)
                 });
-            font_key_to_type0.insert(font_key, ids.type0);
+            font_resources
+                .insert(resource_name.clone(), ObjectSerializer::reference(ids.type0, 0));
             for (id, obj) in objects {
                 embedded_object_ids.push(id);
                 self.objects.insert(id, obj);
-            }
-        }
-        // Wire each EFn resource name → its Type 0 ref.
-        for (resource_name, font_key) in &self.embedded_font_resource_to_name {
-            if let Some(&type0_id) = font_key_to_type0.get(font_key) {
-                font_resources
-                    .insert(resource_name.clone(), ObjectSerializer::reference(type0_id, 0));
             }
         }
 
