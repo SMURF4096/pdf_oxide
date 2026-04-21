@@ -670,6 +670,46 @@ impl Pdf {
                 }
                 None
             },
+            |id| {
+                let node = tree.get(id);
+                let elem_id = node.element?;
+                let element = dom_static.element(elem_id)?;
+                crate::html_css::css::pseudo_content_for(
+                    ss_static,
+                    element,
+                    crate::html_css::css::PseudoKind::Before,
+                )
+            },
+            |id| {
+                let node = tree.get(id);
+                let elem_id = node.element?;
+                let element = dom_static.element(elem_id)?;
+                crate::html_css::css::pseudo_content_for(
+                    ss_static,
+                    element,
+                    crate::html_css::css::PseudoKind::After,
+                )
+            },
+            |id| {
+                // <img src=…> — decode data-URI sources to a
+                // PaintImage. External URLs and local paths are not
+                // resolved here (no filesystem / HTTP access from the
+                // v0.3.37 first cut); returning None leaves the <img>
+                // box empty, matching the "alt text or nothing"
+                // fallback behaviour of browsers with image loading
+                // disabled.
+                let node = tree.get(id);
+                let elem_id = node.element?;
+                use crate::html_css::css::matcher::Element;
+                let element = dom_static.element(elem_id)?;
+                if !element.local_name().eq_ignore_ascii_case("img") {
+                    return None;
+                }
+                let src = element.attribute("src")?;
+                let bytes = crate::html_css::paint::decode_image_src(src)?;
+                let data = crate::writer::ImageData::from_bytes(&bytes).ok()?;
+                Some(crate::html_css::paint::PaintImage { data })
+            },
         );
 
         let bytes = writer

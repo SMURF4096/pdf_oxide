@@ -27,9 +27,12 @@
 
 use std::collections::HashMap;
 
+use super::counters::{evaluate_content, parse_content, CounterState};
 use super::matcher::{match_complex_selector, Element};
 use super::parser::{ComponentValue, Declaration, Rule, Stylesheet};
-use super::selectors::{parse_selector_list, Specificity};
+use super::selectors::{
+    parse_selector_list, PseudoElement, Specificity, SubclassSelector,
+};
 use super::tokenizer::Token;
 
 // ─────────────────────────────────────────────────────────────────────
@@ -219,6 +222,115 @@ pub fn apply_inline_declarations<'i>(
                     .insert(decl.name.to_string(), candidate);
             }
         }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Pseudo-element generated content (::before / ::after)
+// ─────────────────────────────────────────────────────────────────────
+
+/// Which generated-content pseudo-element to resolve.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PseudoKind {
+    /// `::before`.
+    Before,
+    /// `::after`.
+    After,
+}
+
+impl PseudoKind {
+    fn matches(self, pe: &PseudoElement) -> bool {
+        matches!(
+            (self, pe),
+            (PseudoKind::Before, PseudoElement::Before)
+                | (PseudoKind::After, PseudoElement::After)
+        )
+    }
+}
+
+/// Resolve the generated text for `element`'s `::before` / `::after`
+/// pseudo-element. Returns `None` when no `content:` declaration
+/// matches, when it resolves to `none` / `normal`, or when the result
+/// is empty. `counter()` / `counters()` references use an empty counter
+/// state for the v0.3.37 first cut — literal strings, `attr()`,
+/// `open-quote` / `close-quote` all work.
+pub fn pseudo_content_for<'i, E: Element>(
+    stylesheet: &'i Stylesheet<'i>,
+    element: E,
+    pseudo: PseudoKind,
+) -> Option<String> {
+    #[derive(Default)]
+    struct Cand<'a> {
+        value: &'a [ComponentValue<'a>],
+        important: bool,
+        specificity: Specificity,
+        source_order: usize,
+    }
+
+    let mut best: Option<Cand<'_>> = None;
+    let mut source_order: usize = 0;
+    for rule in &stylesheet.rules {
+        let Rule::Qualified(qrule) = rule else {
+            continue;
+        };
+        let Ok(list) = parse_selector_list(&qrule.prelude) else {
+            source_order += qrule.declarations.len();
+            continue;
+        };
+        // Pick the highest specificity among selectors that (a) target
+        // the requested pseudo-element and (b) match the host element.
+        let mut sel_spec: Option<Specificity> = None;
+        for sel in &list.selectors {
+            if sel.compounds.is_empty() {
+                continue;
+            }
+            let subject = &sel.compounds[0];
+            let targets_pseudo = subject.subclasses.iter().any(|s| match s {
+                SubclassSelector::PseudoElement(pe) => pseudo.matches(pe),
+                _ => false,
+            });
+            if !targets_pseudo {
+                continue;
+            }
+            if match_complex_selector(sel, element) {
+                sel_spec = Some(sel_spec.map_or(sel.specificity, |s| s.max(sel.specificity)));
+            }
+        }
+        let Some(specificity) = sel_spec else {
+            source_order += qrule.declarations.len();
+            continue;
+        };
+        for decl in &qrule.declarations {
+            source_order += 1;
+            if decl.name.as_ref() != "content" {
+                continue;
+            }
+            let replace = match &best {
+                None => true,
+                Some(cur) => (cur.important, cur.specificity, cur.source_order)
+                    < (decl.important, specificity, source_order),
+            };
+            if replace {
+                best = Some(Cand {
+                    value: decl.value.as_slice(),
+                    important: decl.important,
+                    specificity,
+                    source_order,
+                });
+            }
+        }
+    }
+
+    let Some(cand) = best else { return None };
+    let parsed = parse_content(cand.value)?;
+    let state = CounterState::new();
+    let rendered = evaluate_content(&parsed, &state, |name| {
+        element.attribute(name).map(|s| s.to_string())
+    });
+    if rendered.is_empty() {
+        None
+    } else {
+        Some(rendered)
     }
 }
 
@@ -564,6 +676,49 @@ mod tests {
         let p = MockEl { dom: &d, idx: ix[3] };
         let styles = cascade(&ss, p, None);
         assert_eq!(first_ident(&styles.get("color").unwrap().value), Some("green"));
+    }
+
+    #[test]
+    fn pseudo_before_literal_string_resolves() {
+        let css = r#"p::before { content: "§ "; }"#;
+        let ss: &'static _ = Box::leak(Box::new(parse_stylesheet(css).unwrap()));
+        let (d, ix) = build_dom();
+        let p = MockEl { dom: &d, idx: ix[3] };
+        let got = pseudo_content_for(ss, p, PseudoKind::Before);
+        assert_eq!(got.as_deref(), Some("§ "));
+    }
+
+    #[test]
+    fn pseudo_after_only_matches_after_selector() {
+        let css = r#"
+            p::before { content: "X"; }
+            p::after  { content: "Y"; }
+        "#;
+        let ss: &'static _ = Box::leak(Box::new(parse_stylesheet(css).unwrap()));
+        let (d, ix) = build_dom();
+        let p = MockEl { dom: &d, idx: ix[3] };
+        let before = pseudo_content_for(ss, p, PseudoKind::Before);
+        let after = pseudo_content_for(ss, p, PseudoKind::After);
+        assert_eq!(before.as_deref(), Some("X"));
+        assert_eq!(after.as_deref(), Some("Y"));
+    }
+
+    #[test]
+    fn pseudo_content_none_returns_none() {
+        let css = "p::before { content: none; }";
+        let ss: &'static _ = Box::leak(Box::new(parse_stylesheet(css).unwrap()));
+        let (d, ix) = build_dom();
+        let p = MockEl { dom: &d, idx: ix[3] };
+        assert!(pseudo_content_for(ss, p, PseudoKind::Before).is_none());
+    }
+
+    #[test]
+    fn pseudo_content_unmatched_element_returns_none() {
+        let css = r#"div::before { content: "D"; }"#;
+        let ss: &'static _ = Box::leak(Box::new(parse_stylesheet(css).unwrap()));
+        let (d, ix) = build_dom();
+        let p = MockEl { dom: &d, idx: ix[3] };
+        assert!(pseudo_content_for(ss, p, PseudoKind::Before).is_none());
     }
 
     #[test]

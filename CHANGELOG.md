@@ -101,8 +101,7 @@ Unicode (Latin + Latin-Extended + Cyrillic + symbols) round-trips.
 - **Inline formatting** with greedy line breaker via UAX #14
   (`unicode-linebreak`), `text-align`/`white-space` modes, hard
   breaks, atomic inline boxes.
-- **Float scaffolding** with line-shortening helpers (full float-
-  aware wrapping is a v0.3.36 follow-up).
+- **Float scaffolding** with line-shortening helpers.
 - **Margin collapsing** per CSS 2.1 §8.3.1.
 - **Multi-column** distribution (`column-count`/`column-width`/
   `column-gap` with greedy line distribution).
@@ -124,37 +123,98 @@ Unicode (Latin + Latin-Extended + Cyrillic + symbols) round-trips.
 - HTML→PDF Y-flip applied once at emission time so all internal
   coordinates stay top-down.
 
-### Limits + roadmap
+### Corner-case fixes and follow-ups
+
+After the initial cut of the HTML+CSS pipeline, corner-case
+validation surfaced a set of regressions and missing features. All
+of the below also ship in v0.3.37:
+
+- **Tokenizer char-boundary safety.** The CSS tokenizer's
+  `ignore_case` lookahead indexed raw byte offsets on multi-byte
+  characters, panicking on any CSS source that put non-ASCII inside a
+  keyword-adjacent position. Fixed.
+- **Block sizing for inline-text flow.** Block boxes with only-inline
+  children were given zero intrinsic height, so paint-time
+  `y`-coordinates collapsed; multi-paragraph documents dropped every
+  paragraph but the first, and long single paragraphs retained only
+  ~20 % of their words. `run_layout` now reserves intrinsic height
+  from the body font size and the inline run count.
+- **Arabic / RTL shaping.** Paint now routes RTL paragraphs through
+  the rustybuzz shaper (feature `system-fonts`) so contextual forms,
+  ligatures, and visual reordering all work.
+- **Multi-font cascade.** New
+  `Pdf::from_html_css_with_fonts(html, css, Vec<(family, bytes)>)`.
+  CSS `font-family` on any element resolves against the registered
+  families (case-insensitive, with/without quotes); unknown families
+  fall back to the first registered font. Walks up the box tree so
+  inline children inherit their ancestor's family.
+- **Page breaks.** `page-break-before: always` and
+  `page-break-after: always` now open a fresh page, both via CSS
+  rules and via inline `style="..."`. Multiple breaks accumulate.
+- **`::before` / `::after` generated content.** New
+  `cascade::pseudo_content_for(ss, element, PseudoKind::{Before,After})`.
+  Literal strings, `attr(name)`, and `open-quote`/`close-quote` all
+  resolve.
+- **Opacity + `transform: translate*()`.** `opacity <= 0.01` on any
+  ancestor hides an element and all its text descendants.
+  `transform: translateX/Y/translate(…)` applies as a pre-paint
+  offset on the box's x/y.
+- **`<img>` data-URI embedding.** `<img src="data:image/png;base64,…">`
+  (and `data:image/jpeg;…`, percent-encoded plain payloads) now
+  decode to a real PDF Image XObject. The paint pipeline emits
+  `/Do` operators against a per-page `/XObject` resource dictionary
+  which `PdfWriter::finish()` now serializes — the missing
+  resource-dict wiring was why prior `page.add_element(Image(…))`
+  calls rendered as silent no-ops. External URLs / filesystem paths
+  return `None` from `decode_image_src` so callers can resolve those
+  themselves.
+- **List markers.** `<ul>` items get `•` (U+2022) and `<ol>` items
+  get `N.` numbering, painted in the gutter to the left of the
+  `<li>`'s content box. Nested lists work on both levels.
+- **`<a href>` link annotations.** Every anchor box with a non-empty
+  `href` emits a PDF `/Link` annotation carrying a `/URI` action;
+  inline text inside the anchor inherits the link by walking up the
+  box tree. Anchors with no `href` emit no annotation.
+
+### Tests added in the corner-case pass
+
+- **E2E** (`tests/test_html_to_pdf_e2e.rs`): 36 tests (was 14),
+  covering every feature above plus a kitchen-sink document that
+  exercises `::before`, list markers, page-break, opacity, translate,
+  and `<a href>` in a single round-trip.
+- **Unit**: 4 cascade pseudo-element tests, 7 paint tests (opacity /
+  translate / data-URI decode), 3 inline-text sizing tests, 1 RTL
+  shaper test, 1 multi-font cascade test, 1 tokenizer multi-byte
+  regression test.
+- Total test count: 4772 lib + 36 e2e; 168 integration suites all
+  green, 0 regressions on the existing corpus.
+
+### Limits
 
 The supported CSS surface is documented in detail in
 [`docs/HTML_TO_PDF_GUIDE.md`](docs/HTML_TO_PDF_GUIDE.md). Out of
-scope per the v0.3.35 R1 cut list: CSS filters, 3D transforms,
-animations, SVG-in-HTML (every viable Rust SVG crate is MPL),
-MathML, `hyphens: auto`, `shape-outside`, JavaScript execution.
-v0.3.36 will add float-aware wrapping, BiDi, `@font-face` URL
-fetching, gradients via shading, `box-shadow` via soft masks, and
-multi-font cascade.
+scope: CSS filters, 3D transforms, animations, SVG-in-HTML (every
+viable Rust SVG crate is MPL), MathML, `hyphens: auto`,
+`shape-outside`, JavaScript execution, full-matrix `transform`
+(scale/rotate), gradients, and `box-shadow`.
 
 ### Licence audit
 
 `cargo deny check licenses` passes with **zero** MPL transitive
 dependencies. The Mozilla CSS stack (`cssparser`, `selectors`,
-`html5ever`, `lightningcss`, `stylo`) is all MPL-2.0; v0.3.35 hand-
+`html5ever`, `lightningcss`, `stylo`) is all MPL-2.0; v0.3.37 hand-
 rolls the equivalents to keep pdf_oxide entirely under MIT/Apache.
 
-### Tests
+### Community Contributors
 
-- 178 CSS engine tests, 47 HTML tests, 50+ layout tests, 6 end-to-
-  end tests, 5 paginate tests, 1 paint smoke test.
-- All FONT phase tests (78) continue to pass; the v0.3.34 layout
-  fixture suite continues to pass.
-- 0 regressions in `~/projects/pdf_oxide_tests/` corpus.
-
-### Community
-
-- **[@jmriebold](https://github.com/jmriebold)** — Filed [#248](https://github.com/yfedoseev/pdf_oxide/issues/248)
-  ("CSS support") which became the v0.3.35 release theme. The
-  pipeline shipped here implements his proposed feature.
+- **[@jmriebold](https://github.com/jmriebold)** — Filed
+  [#248](https://github.com/yfedoseev/pdf_oxide/issues/248)
+  ("CSS support"). That single issue is the root of this release's
+  entire HTML+CSS→PDF pipeline — the hand-rolled CSS engine, the
+  HTML5 tokenizer + arena DOM, Taffy-backed layout, the `::before`/
+  `::after`, `page-break-*`, `<img>` data-URI, multi-font cascade,
+  opacity / transform, `<a href>` link, and RTL shaping work all
+  exist because he asked for it. Thank you.
 
 ## [0.3.36] - 2026-04-19
 > Markdown structural extraction quality vs pdfium — Tagged-PDF

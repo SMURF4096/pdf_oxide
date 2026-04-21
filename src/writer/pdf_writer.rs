@@ -1142,6 +1142,64 @@ impl PdfWriter {
         let mut form_field_objects: Vec<(u32, Object)> = Vec::new();
         let mut all_field_refs: Vec<ObjectRef> = Vec::new();
 
+        // Image XObjects — per page, capture the (resource_id, ImageData,
+        // soft_mask_id?) tuples and pre-allocate object IDs so the main
+        // page-build loop can weave them into Resources without needing
+        // a second &mut borrow on `self`.
+        let mut pending_per_page: Vec<Vec<super::content_stream::PendingImage>> =
+            Vec::with_capacity(page_count);
+        for page_data in self.pages.iter_mut() {
+            pending_per_page.push(page_data.content_builder.take_pending_images());
+        }
+        let mut image_ids_per_page: Vec<Vec<(u32, Option<u32>)>> =
+            Vec::with_capacity(page_count);
+        let mut image_objects: Vec<(u32, Object, Vec<u8>)> = Vec::new();
+        for pending in &pending_per_page {
+            let mut per_page_ids: Vec<(u32, Option<u32>)> = Vec::with_capacity(pending.len());
+            for p in pending {
+                // Decode to writer::ImageData — the content stream
+                // builder kept the elements::ImageContent verbatim; we
+                // need the ColorSpace/Filter conversion from elements
+                // to build the XObject dict.
+                let (data, soft_mask) = image_content_to_xobject_stream(&p.image);
+                let img_id = self.alloc_obj_id();
+                let soft_mask_id = if soft_mask.is_some() {
+                    Some(self.alloc_obj_id())
+                } else {
+                    None
+                };
+                // Build dictionaries.
+                let mut dict: HashMap<String, Object> = data.build_xobject_dict();
+                if let Some(sm_id) = soft_mask_id {
+                    dict.insert(
+                        "SMask".to_string(),
+                        Object::Reference(ObjectRef::new(sm_id, 0)),
+                    );
+                }
+                image_objects.push((
+                    img_id,
+                    Object::Stream {
+                        dict,
+                        data: bytes::Bytes::from(data.data.clone()),
+                    },
+                    Vec::new(),
+                ));
+                if let (Some(sm_id), Some(sm_data)) = (soft_mask_id, &data.soft_mask) {
+                    let sm_dict = data.build_soft_mask_dict().expect("soft mask present");
+                    image_objects.push((
+                        sm_id,
+                        Object::Stream {
+                            dict: sm_dict,
+                            data: bytes::Bytes::from(sm_data.clone()),
+                        },
+                        Vec::new(),
+                    ));
+                }
+                per_page_ids.push((img_id, soft_mask_id));
+            }
+            image_ids_per_page.push(per_page_ids);
+        }
+
         for (i, page_data) in self.pages.iter().enumerate() {
             let (page_id, content_id) = page_ids[i];
             let page_ref = ObjectRef::new(page_id, 0);
@@ -1199,6 +1257,23 @@ impl PdfWriter {
                 annot_refs.push(Object::Reference(field_ref));
             }
 
+            // Build Resources dict — Font always, XObject when this
+            // page produced any image content during paint.
+            let mut resource_entries: Vec<(&str, Object)> =
+                vec![("Font", Object::Dictionary(font_resources.clone()))];
+            let pending = &pending_per_page[i];
+            let image_ids = &image_ids_per_page[i];
+            if !pending.is_empty() {
+                let mut xobject_dict: HashMap<String, Object> = HashMap::new();
+                for (pi, (img_id, _)) in pending.iter().zip(image_ids.iter()) {
+                    xobject_dict.insert(
+                        pi.resource_id.clone(),
+                        Object::Reference(ObjectRef::new(*img_id, 0)),
+                    );
+                }
+                resource_entries.push(("XObject", Object::Dictionary(xobject_dict)));
+            }
+
             // Page object
             let mut page_entries: Vec<(&str, Object)> = vec![
                 ("Type", ObjectSerializer::name("Page")),
@@ -1213,13 +1288,7 @@ impl PdfWriter {
                     ),
                 ),
                 ("Contents", ObjectSerializer::reference(content_id, 0)),
-                (
-                    "Resources",
-                    ObjectSerializer::dict(vec![(
-                        "Font",
-                        Object::Dictionary(font_resources.clone()),
-                    )]),
-                ),
+                ("Resources", ObjectSerializer::dict(resource_entries)),
             ];
 
             // Add Annots array if page has annotations
@@ -1320,6 +1389,12 @@ impl PdfWriter {
             output.extend_from_slice(&serializer.serialize_indirect(*obj_id, 0, obj));
         }
 
+        // Image XObject streams (from HTML <img> / add_element Image).
+        for (obj_id, obj, _) in &image_objects {
+            xref_offsets.push((*obj_id, output.len()));
+            output.extend_from_slice(&serializer.serialize_indirect(*obj_id, 0, obj));
+        }
+
         // Annotation objects
         for (annot_id, annot_obj) in &annotation_objects {
             xref_offsets.push((*annot_id, output.len()));
@@ -1392,6 +1467,38 @@ impl Default for PdfWriter {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Convert an [`elements::ImageContent`] (what `PageBuilder::add_element`
+/// accepts) into the matching [`super::image_handler::ImageData`] so
+/// the XObject stream dictionary + soft mask dict can be emitted. The
+/// two structs carry the same payload but are owned by different
+/// layers — this keeps the paint pipeline plugged into the standard
+/// writer-side serializer without reaching across module boundaries.
+fn image_content_to_xobject_stream(
+    image: &crate::elements::ImageContent,
+) -> (super::image_handler::ImageData, Option<Vec<u8>>) {
+    use super::image_handler::{ColorSpace as WColorSpace, ImageData, ImageFormat as WImageFormat};
+    let color_space = match image.color_space {
+        crate::elements::ColorSpace::Gray => WColorSpace::DeviceGray,
+        crate::elements::ColorSpace::CMYK => WColorSpace::DeviceCMYK,
+        _ => WColorSpace::DeviceRGB,
+    };
+    let format = match image.format {
+        crate::elements::ImageFormat::Jpeg => WImageFormat::Jpeg,
+        crate::elements::ImageFormat::Png => WImageFormat::Png,
+        _ => WImageFormat::Raw,
+    };
+    let data = ImageData {
+        width: image.width,
+        height: image.height,
+        bits_per_component: image.bits_per_component,
+        color_space,
+        format,
+        data: image.data.clone(),
+        soft_mask: None,
+    };
+    (data, None)
 }
 
 #[cfg(test)]

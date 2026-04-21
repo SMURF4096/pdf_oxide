@@ -22,7 +22,10 @@ pub use parser::{
 pub use calc::{evaluate as evaluate_calc_expr, evaluate_function as evaluate_calc_function,
                parse_expr as parse_calc_expr, Context as CalcContext, EvalError as CalcError,
                Expr as CalcExpr, Unit};
-pub use cascade::{apply_inline_declarations, cascade, initial_value, ComputedStyles, ResolvedValue};
+pub use cascade::{
+    apply_inline_declarations, cascade, initial_value, pseudo_content_for, ComputedStyles,
+    PseudoKind, ResolvedValue,
+};
 pub use counters::{
     evaluate_content, parse_content, parse_counter_ops, Content, CounterOp, CounterState,
     ListStyle,
