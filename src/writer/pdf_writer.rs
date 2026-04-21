@@ -225,16 +225,39 @@ impl<'a> PageBuilder<'a> {
     }
 
     /// Add a content element to the page.
+    ///
+    /// Text elements whose `FontSpec.name` matches a font registered
+    /// via `PdfWriter::register_embedded_font_as` are routed through
+    /// `add_embedded_text` (Type-0 hex emission) so that CJK / Cyrillic
+    /// / Greek / etc. render with the embedded subset. All other
+    /// elements fall through to the default base-14 content-stream
+    /// path.
     pub fn add_element(&mut self, element: &ContentElement) -> &mut Self {
+        if let ContentElement::Text(t) = element {
+            if let Some(resource_name) =
+                self.writer.embedded_resource_for_user_name(&t.font.name)
+            {
+                self.add_embedded_text(
+                    &t.text,
+                    t.bbox.x,
+                    t.bbox.y,
+                    &resource_name,
+                    t.font.size,
+                );
+                return self;
+            }
+        }
         let page = &mut self.writer.pages[self.page_index];
         page.content_builder.add_element(element);
         self
     }
 
-    /// Add multiple content elements.
+    /// Add multiple content elements. Each element is routed through
+    /// `add_element` so the embedded-font dispatch applies per-element.
     pub fn add_elements(&mut self, elements: &[ContentElement]) -> &mut Self {
-        let page = &mut self.writer.pages[self.page_index];
-        page.content_builder.add_elements(elements);
+        for element in elements {
+            self.add_element(element);
+        }
         self
     }
 
@@ -915,6 +938,12 @@ pub struct PdfWriter {
     /// calls. Resource names follow the `EFn` convention (E for embedded)
     /// to avoid collision with the dash-stripped Base-14 names.
     embedded_font_resource_to_name: HashMap<String, String>,
+    /// User-supplied font name (e.g. "NotoSansCJKtc") → `EFn` resource
+    /// name. Lets the high-level `DocumentBuilder` / `PageBuilder`
+    /// dispatch `ContentElement::Text` through `add_embedded_text`
+    /// when the `FontSpec.name` matches a registered embedded font
+    /// instead of silently falling back to Helvetica.
+    user_font_to_resource: HashMap<String, String>,
     /// Counter for allocating `EFn` resource names.
     next_embedded_font_id: u32,
     /// AcroForm builder for interactive forms
@@ -937,6 +966,7 @@ impl PdfWriter {
             fonts: HashMap::new(),
             embedded_fonts: HashMap::new(),
             embedded_font_resource_to_name: HashMap::new(),
+            user_font_to_resource: HashMap::new(),
             next_embedded_font_id: 1,
             acroform: None,
         }
@@ -964,6 +994,41 @@ impl PdfWriter {
         self.embedded_font_resource_to_name
             .insert(resource_name.clone(), font_key);
         resource_name
+    }
+
+    /// Register an embedded TrueType font under a user-visible name
+    /// (e.g. `"NotoSansCJKtc"`). The name is what callers pass to
+    /// `FluentPageBuilder::font(name, size)` / `FontSpec::name`; when
+    /// a `ContentElement::Text` is dispatched, the `PageBuilder` looks
+    /// up this map and routes matching elements through
+    /// `add_embedded_text` (hex-encoded Type-0 emission) instead of the
+    /// base-14 `map_font_name` fallback that silently collapses unknown
+    /// names to `Helvetica`.
+    ///
+    /// Returns the `EFn` resource name for callers that want to mix
+    /// low-level `add_embedded_text` calls with the high-level path.
+    pub fn register_embedded_font_as(
+        &mut self,
+        user_name: impl Into<String>,
+        font: super::font_manager::EmbeddedFont,
+    ) -> String {
+        let user_name = user_name.into();
+        let resource_name = self.register_embedded_font(font);
+        self.user_font_to_resource
+            .insert(user_name, resource_name.clone());
+        resource_name
+    }
+
+    /// Resolve a user-supplied font name (as stored in `FontSpec.name`)
+    /// to its `EFn` resource name, if it was registered via
+    /// `register_embedded_font_as`. Used by `PageBuilder::add_element`
+    /// to decide whether `ContentElement::Text` should take the
+    /// embedded-font path.
+    pub(super) fn embedded_resource_for_user_name(
+        &self,
+        user_name: &str,
+    ) -> Option<String> {
+        self.user_font_to_resource.get(user_name).cloned()
     }
 
     /// Allocate a new object ID.

@@ -175,6 +175,17 @@ of the below also ship in v0.3.37:
   `href` emits a PDF `/Link` annotation carrying a `/URI` action;
   inline text inside the anchor inherits the link by walking up the
   box tree. Anchors with no `href` emit no annotation.
+- **Embedded fonts via `DocumentBuilder` (#382).** New
+  `DocumentBuilder::register_embedded_font(name, EmbeddedFont)`.
+  Text emitted through the fluent builder
+  (`FluentPageBuilder::font(name, size).text(...)`, or any
+  `ContentElement::Text` whose `FontSpec.name` matches a registered
+  embedded font — including template headers/footers) is now routed
+  through the Type-0 / CIDFontType2 path instead of silently falling
+  back to Helvetica. CJK, Cyrillic, Greek, Hebrew, Arabic text
+  emitted via the high-level API now actually embeds and renders.
+  Unregistered font names continue to resolve against the base-14
+  set. Reported by @sparkyandrew.
 
 ### Tests added in the corner-case pass
 

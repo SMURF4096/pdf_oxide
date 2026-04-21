@@ -23,7 +23,7 @@
 //! ```
 
 use super::annotation_builder::{Annotation, LinkAnnotation};
-use super::font_manager::TextLayout;
+use super::font_manager::{EmbeddedFont, TextLayout};
 use super::freetext::FreeTextAnnotation;
 use super::page_template::PageTemplate;
 use super::pdf_writer::{PdfWriter, PdfWriterConfig};
@@ -673,6 +673,12 @@ pub struct DocumentBuilder {
     metadata: DocumentMetadata,
     pages: Vec<PageData>,
     template: Option<PageTemplate>,
+    /// Embedded TTF/OTF fonts registered by user-supplied name.
+    /// Drained into the internal `PdfWriter` at `build()` time so that
+    /// `FluentPageBuilder::font(name, size).text(...)` can emit
+    /// CJK / Cyrillic / Greek text via Type-0 hex strings instead of
+    /// silently falling back to Helvetica.
+    embedded_fonts: Vec<(String, EmbeddedFont)>,
 }
 
 impl DocumentBuilder {
@@ -682,7 +688,40 @@ impl DocumentBuilder {
             metadata: DocumentMetadata::default(),
             pages: Vec::new(),
             template: None,
+            embedded_fonts: Vec::new(),
         }
+    }
+
+    /// Register an embedded TrueType/OpenType font under a user-visible
+    /// name. The `name` is what callers then pass to
+    /// [`FluentPageBuilder::font`]; any `.text(...)` / element emitted
+    /// with that font name is routed through the Type-0 / CIDFontType2
+    /// path at build time, so Unicode scripts (CJK, Cyrillic, Greek,
+    /// Hebrew, Arabic) render correctly.
+    ///
+    /// Unregistered font names continue to resolve against the
+    /// standard base-14 set (Helvetica / Times / Courier families).
+    ///
+    /// ```ignore
+    /// use pdf_oxide::writer::{DocumentBuilder, EmbeddedFont};
+    ///
+    /// let font = EmbeddedFont::from_file("fonts/NotoSansCJKtc-Regular.otf")?;
+    /// let pdf = DocumentBuilder::new()
+    ///     .register_embedded_font("NotoSansCJKtc", font)
+    ///     .a4_page()
+    ///         .font("NotoSansCJKtc", 10.5)
+    ///         .at(72.0, 680.0)
+    ///         .text("项目: Rust 特性")
+    ///         .done()
+    ///     .build()?;
+    /// ```
+    pub fn register_embedded_font(
+        mut self,
+        name: impl Into<String>,
+        font: EmbeddedFont,
+    ) -> Self {
+        self.embedded_fonts.push((name.into(), font));
+        self
     }
 
     /// Set document metadata.
@@ -744,6 +783,11 @@ impl DocumentBuilder {
         }
 
         let mut writer = PdfWriter::with_config(config);
+
+        for (user_name, font) in self.embedded_fonts {
+            writer.register_embedded_font_as(user_name, font);
+        }
+
         let total_pages = self.pages.len();
 
         for (idx, page_data) in self.pages.iter().enumerate() {
