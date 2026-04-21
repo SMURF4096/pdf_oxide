@@ -345,6 +345,10 @@ fn paint_page<'sty>(
                     alt_text: None,
                     horizontal_dpi: None,
                     vertical_dpi: None,
+                    // Carry the PNG alpha / soft-mask forward so the
+                    // writer can emit a real /SMask XObject; without
+                    // this the transparency is silently dropped.
+                    soft_mask: img.data.soft_mask.clone(),
                 };
                 page_builder.add_element(&ContentElement::Image(content));
             }

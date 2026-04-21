@@ -7834,6 +7834,7 @@ mod tests {
             alt_text: None,
             horizontal_dpi: None,
             vertical_dpi: None,
+            soft_mask: None,
         };
 
         let obj = DocumentEditor::build_image_xobject(&image);
@@ -7861,6 +7862,7 @@ mod tests {
             alt_text: None,
             horizontal_dpi: None,
             vertical_dpi: None,
+            soft_mask: None,
         };
 
         let obj = DocumentEditor::build_image_xobject(&image);
@@ -7888,6 +7890,7 @@ mod tests {
             alt_text: None,
             horizontal_dpi: None,
             vertical_dpi: None,
+            soft_mask: None,
         };
 
         let obj = DocumentEditor::build_image_xobject(&image);
@@ -7915,6 +7918,7 @@ mod tests {
             alt_text: None,
             horizontal_dpi: None,
             vertical_dpi: None,
+            soft_mask: None,
         };
 
         let obj = DocumentEditor::build_image_xobject(&image);
@@ -7942,6 +7946,7 @@ mod tests {
             alt_text: None,
             horizontal_dpi: None,
             vertical_dpi: None,
+            soft_mask: None,
         };
 
         let obj = DocumentEditor::build_image_xobject(&image);
@@ -7969,6 +7974,7 @@ mod tests {
             alt_text: None,
             horizontal_dpi: None,
             vertical_dpi: None,
+            soft_mask: None,
         };
 
         let obj = DocumentEditor::build_image_xobject(&image);

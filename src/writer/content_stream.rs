@@ -1565,6 +1565,7 @@ mod tests {
             alt_text: Some("Test image".to_string()),
             horizontal_dpi: None,
             vertical_dpi: None,
+            soft_mask: None,
         };
 
         let mut builder = ContentStreamBuilder::new();
@@ -1630,6 +1631,7 @@ mod tests {
             alt_text: None,
             horizontal_dpi: None,
             vertical_dpi: None,
+            soft_mask: None,
         };
         builder.add_element(&ContentElement::Image(image));
 
@@ -1661,6 +1663,7 @@ mod tests {
             alt_text: None,
             horizontal_dpi: None,
             vertical_dpi: None,
+            soft_mask: None,
         };
 
         let mut builder = ContentStreamBuilder::new();

@@ -1522,6 +1522,11 @@ fn image_content_to_xobject_stream(
         crate::elements::ImageFormat::Png => WImageFormat::Png,
         _ => WImageFormat::Raw,
     };
+    // Carry the alpha channel forward if the caller attached one
+    // (PNG RGBA / LA). `ImageData::from_png` compresses alpha upstream,
+    // so `soft_mask` here is already the FlateDecode payload ready to
+    // stream straight into the /SMask XObject.
+    let soft_mask = image.soft_mask.clone();
     let data = ImageData {
         width: image.width,
         height: image.height,
@@ -1529,9 +1534,9 @@ fn image_content_to_xobject_stream(
         color_space,
         format,
         data: image.data.clone(),
-        soft_mask: None,
+        soft_mask: soft_mask.clone(),
     };
-    (data, None)
+    (data, soft_mask)
 }
 
 #[cfg(test)]

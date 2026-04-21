@@ -34,6 +34,13 @@ pub struct ImageContent {
     pub horizontal_dpi: Option<f32>,
     /// Vertical DPI (dots per inch) calculated from pixel height and bbox
     pub vertical_dpi: Option<f32>,
+
+    /// Optional alpha / transparency channel for PNG-style soft masks.
+    /// Already compressed (FlateDecode) by the image decoder. Carried
+    /// through to the PDF as an `/SMask` XObject so transparent PNGs
+    /// render with their alpha preserved. `None` for opaque images
+    /// and for formats that don't carry transparency (JPEG, CMYK).
+    pub soft_mask: Option<Vec<u8>>,
 }
 
 impl ImageContent {
@@ -51,9 +58,18 @@ impl ImageContent {
             alt_text: None,
             horizontal_dpi: None,
             vertical_dpi: None,
+            soft_mask: None,
         };
         image.calculate_dpi();
         image
+    }
+
+    /// Attach a pre-compressed soft-mask (alpha) channel. The bytes are
+    /// emitted verbatim as a separate XObject stream linked via
+    /// `/SMask` so PDF viewers composite the alpha at paint time.
+    pub fn with_soft_mask(mut self, mask: Vec<u8>) -> Self {
+        self.soft_mask = Some(mask);
+        self
     }
 
     /// Set the reading order.
@@ -167,6 +183,7 @@ impl Default for ImageContent {
             alt_text: None,
             horizontal_dpi: None,
             vertical_dpi: None,
+            soft_mask: None,
         }
     }
 }

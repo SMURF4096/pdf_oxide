@@ -3057,6 +3057,10 @@ impl PdfBuilder {
                 alt_text: None,
                 horizontal_dpi: None,
                 vertical_dpi: None,
+                // Preserve the source ImageData's alpha/soft-mask so
+                // transparent PNGs added via `Pdf::from_image[s]`
+                // render with their alpha channel intact.
+                soft_mask: image.soft_mask.clone(),
             };
             image_content.calculate_dpi();
 
