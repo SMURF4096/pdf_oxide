@@ -6,8 +6,11 @@
 //! commands via the existing ContentStreamBuilder primitives.
 //!
 //! v0.3.35 first cut covers:
-//! - Backgrounds (background-color filled rect under each box).
 //! - Borders (1px solid stroke when border-width > 0).
+//! - Backgrounds — parsed but not yet rendered. Surfacing
+//!   `ContentStreamBuilder::fill` through `PageBuilder` is a
+//!   follow-up (tracked as PAINT-2b); `background-color` values
+//!   parse successfully but currently produce no fill.
 //! - Text content from `BoxKind::Text` rendered via the registered
 //!   embedded font (falls back to Helvetica Base-14 if no font is
 //!   registered).

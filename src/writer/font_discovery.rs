@@ -79,18 +79,13 @@ pub enum FontResolveError {
 /// CSS font-style discriminator used during matching. The CSS Fonts
 /// Module Level 4 spec also has `oblique <angle>` but for v0.3.35 we
 /// collapse to italic/non-italic — fontdb does the same.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FontStyle {
     /// `font-style: normal`
+    #[default]
     Normal,
     /// `font-style: italic` or `oblique` (any angle)
     Italic,
-}
-
-impl Default for FontStyle {
-    fn default() -> Self {
-        Self::Normal
-    }
 }
 
 /// Resolved font face: the bytes ready for `EmbeddedFont::from_data`,
