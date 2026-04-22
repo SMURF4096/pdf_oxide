@@ -79,8 +79,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // line they belong to (matches PdfDocument::same_line_threshold).
                     let line_tolerance = prev.font_size.max(span.font_size).max(1.0) * 0.5;
 
-                    // Same line check
-                    if y_diff < line_tolerance {
+                    // Same-line check. Uses `<=` so the boundary case
+                    // (y_diff exactly equal to the tolerance) is
+                    // classified as same-line. Production treats a span
+                    // as a new line only when `y_diff > threshold`, so
+                    // the equality case belongs on the same-line side;
+                    // this debug tool should report boundary deltas the
+                    // same way.
+                    if y_diff <= line_tolerance {
                         let gap = span.bbox.x - (prev.bbox.x + prev.bbox.width);
                         let space_threshold = prev.font_size * 0.25;
 

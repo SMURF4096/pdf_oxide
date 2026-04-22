@@ -124,6 +124,16 @@ const DEFAULT_OBJECT_CACHE_MAX_BYTES: usize = 64 * 1024 * 1024;
 /// Default maximum number of entries for the XObject span/image caches.
 const DEFAULT_XOBJECT_CACHE_MAX_ENTRIES: usize = 1024;
 
+/// Heuristic multiplier for the forward-gap guard in the main
+/// assembly loop's compound newline predicate
+/// (`y_diff > 2.0 && gap > K * max(fs)`). Visual gap-sweep over
+/// synthetic two-column examples at fs=10 and fs=14 placed the
+/// plausible operating band at roughly 0.7-1.5; 1.25 is a
+/// conservative interim pick. Not corpus-calibrated; a page-level
+/// layout signal would be a stronger long-term replacement for
+/// this pairwise heuristic.
+const FORWARD_GAP_K: f32 = 1.25;
+
 // Re-export BoundedEntryCache from cache module for local use and backward compatibility
 pub(crate) use crate::cache::BoundedEntryCache;
 
@@ -4291,7 +4301,7 @@ impl PdfDocument {
                     let delta_x = span.bbox.x - prev.bbox.x;
 
                     if y_diff > Self::same_line_threshold(prev, span) {
-                        let font_size = span.font_size.max(10.0);
+                        let font_size = prev.font_size.max(span.font_size).max(10.0);
                         let line_height = font_size * 1.2;
                         let num_breaks = (y_diff / line_height).round() as usize;
                         for _ in 0..num_breaks.clamp(1, 3) {
@@ -4344,6 +4354,16 @@ impl PdfDocument {
                             // -1.75 pt and -12.75 pt sit alongside
                             // delta_x values of 56 pt and 78 pt.
                             text.push(' ');
+                        }
+                    } else if y_diff > 2.0
+                        && gap > FORWARD_GAP_K * prev.font_size.max(span.font_size).max(1.0)
+                    {
+                        // Forward-gap guard: pairs newly admitted to same-line
+                        // handling by the widened threshold get a column/field-
+                        // boundary check against FORWARD_GAP_K * max(fs). See
+                        // the constant's doc comment for calibration notes.
+                        if !text.ends_with('\n') {
+                            text.push('\n');
                         }
                     } else if Self::should_insert_space(prev, span) {
                         text.push(' ');
@@ -5169,10 +5189,11 @@ impl PdfDocument {
         // Get font size (use the larger of the two)
         let font_size = prev.font_size.max(current.font_size).max(1.0);
 
-        // Check if spans are on the same line
-        // Y difference should be small (< 30% of font size)
+        // Same-line gate. Uses the shared threshold so the assembly
+        // loop's same-line decision and the space-insertion decision
+        // cannot disagree about where a line ends.
         let y_diff = (prev.bbox.y - current.bbox.y).abs();
-        if y_diff > font_size * 0.3 {
+        if y_diff > Self::same_line_threshold(prev, current) {
             return false; // Different lines - no space needed
         }
 
@@ -6226,7 +6247,7 @@ impl PdfDocument {
                         let y_diff = (prev.bbox.y - span.bbox.y).abs();
 
                         if y_diff > Self::same_line_threshold(prev, span) {
-                            let font_size = span.font_size.max(10.0);
+                            let font_size = prev.font_size.max(span.font_size).max(10.0);
                             let line_height = font_size * 1.2;
                             let num_breaks = (y_diff / line_height).round() as usize;
                             for _ in 0..num_breaks.clamp(1, 3) {
@@ -6407,7 +6428,7 @@ impl PdfDocument {
                     if let Some(prev) = prev_span {
                         let y_diff = (prev.bbox.y - span.bbox.y).abs();
                         if y_diff > Self::same_line_threshold(prev, span) {
-                            let font_size = span.font_size.max(10.0);
+                            let font_size = prev.font_size.max(span.font_size).max(10.0);
                             let line_height = font_size * 1.2;
                             let num_breaks = (y_diff / line_height).round() as usize;
                             for _ in 0..num_breaks.clamp(1, 3) {
