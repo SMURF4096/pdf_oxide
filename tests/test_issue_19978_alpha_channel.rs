@@ -43,16 +43,14 @@ fn renders_without_error() {
     );
 }
 
-/// KNOWN FAILING — this is the same regression as pdf.js#19978 on the
-/// pdf_oxide side. The yellow bar renders as a solid fill instead of
-/// the semi-transparent overlay that the underlying text should show
-/// through. Ignored (`#[ignore]`) so CI stays green while still giving
-/// us a one-line repro: `cargo test --features rendering
-/// alpha_preserved_has_non_yellow_pixels -- --ignored`. When the
-/// renderer learns to honour the source /CA + transparency-group
-/// state, the `#[ignore]` should come off.
+/// pdf.js#19978 parity: the yellow bar uses a Multiply ExtGState, so
+/// CCITT text underneath must show through as non-yellow intermediate
+/// shades, not be flattened to solid yellow. Without image filtering
+/// the bilevel CCITT source downsampled to the render resolution with
+/// nearest-neighbour collapsed every intermediate tone; the renderer
+/// now uses Bicubic filtering for image XObjects (see
+/// `page_renderer.rs::render_image`), restoring the full shade range.
 #[test]
-#[ignore = "pdf.js#19978 parity — alpha on the yellow bar is dropped (known renderer gap)"]
 fn alpha_preserved_has_non_yellow_pixels() {
     // If the yellow bar rendered as solid, the whole top band would be
     // ~pure yellow (#FFFF00). Blended against white page background,

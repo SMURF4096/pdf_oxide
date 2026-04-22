@@ -1959,10 +1959,18 @@ impl PageRenderer {
                 .pre_translate(0.0, 1.0)
                 .pre_scale(1.0 / width as f32, -1.0 / height as f32);
 
-            // Draw image with transform and clip mask
+            // Bicubic filtering: tiny-skia defaults to Nearest, which
+            // aliases bilevel/scanned images on downscale to pure
+            // black/white. pdf.js and other production renderers
+            // downsample with filtering regardless of /Interpolate; the
+            // spec only mandates pixel-replication for upsampling when
+            // Interpolate=false. See pdf.js#19978 — without this,
+            // Multiply-blended overlays on CCITT pages collapse every
+            // intermediate shade.
             let mut paint = PixmapPaint::default();
             paint.opacity = gs.fill_alpha;
             paint.blend_mode = crate::rendering::pdf_blend_mode_to_skia(&gs.blend_mode);
+            paint.quality = tiny_skia::FilterQuality::Bicubic;
 
             pixmap.draw_pixmap(0, 0, img_pixmap.as_ref(), &paint, image_transform, clip_mask);
         }
