@@ -5033,6 +5033,131 @@ impl PyExtractionProfile {
     }
 }
 
+/// RFC 3161 Time Stamp Authority client (#57 / #74).
+/// Only available when pdf_oxide was built with the `tsa-client`
+/// Rust-core feature — otherwise every call raises
+/// `NotImplementedError`.
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "TsaClient")]
+pub struct PyTsaClient {
+    #[cfg(feature = "tsa-client")]
+    inner: crate::signatures::TsaClient,
+}
+
+#[pymethods]
+impl PyTsaClient {
+    /// Build a new client.
+    #[new]
+    #[pyo3(signature = (
+        url,
+        username=None,
+        password=None,
+        timeout_seconds=30,
+        hash_algorithm=2,
+        use_nonce=true,
+        cert_req=true,
+    ))]
+    fn new(
+        url: String,
+        username: Option<String>,
+        password: Option<String>,
+        timeout_seconds: i32,
+        hash_algorithm: i32,
+        use_nonce: bool,
+        cert_req: bool,
+    ) -> PyResult<Self> {
+        #[cfg(feature = "tsa-client")]
+        {
+            let algo = match hash_algorithm {
+                1 => crate::signatures::HashAlgorithm::Sha1,
+                2 => crate::signatures::HashAlgorithm::Sha256,
+                3 => crate::signatures::HashAlgorithm::Sha384,
+                4 => crate::signatures::HashAlgorithm::Sha512,
+                _ => crate::signatures::HashAlgorithm::Sha256,
+            };
+            let cfg = crate::signatures::TsaClientConfig {
+                url,
+                username,
+                password,
+                timeout: if timeout_seconds > 0 {
+                    std::time::Duration::from_secs(timeout_seconds as u64)
+                } else {
+                    std::time::Duration::from_secs(30)
+                },
+                hash_algorithm: algo,
+                use_nonce,
+                cert_req,
+            };
+            Ok(Self {
+                inner: crate::signatures::TsaClient::new(cfg),
+            })
+        }
+        #[cfg(not(feature = "tsa-client"))]
+        {
+            let _ = (
+                url,
+                username,
+                password,
+                timeout_seconds,
+                hash_algorithm,
+                use_nonce,
+                cert_req,
+            );
+            Err(PyNotImplementedError::new_err(
+                "pdf_oxide was built without the `tsa-client` feature",
+            ))
+        }
+    }
+
+    /// Hash `data` and request a timestamp. Network call.
+    fn request_timestamp(&self, data: &Bound<'_, PyBytes>) -> PyResult<PyTimestamp> {
+        #[cfg(feature = "tsa-client")]
+        {
+            let ts = self
+                .inner
+                .request_timestamp(data.as_bytes())
+                .map_err(|e| PyRuntimeError::new_err(format!("TSA error: {e}")))?;
+            Ok(PyTimestamp { inner: ts })
+        }
+        #[cfg(not(feature = "tsa-client"))]
+        {
+            let _ = data;
+            Err(PyNotImplementedError::new_err(
+                "pdf_oxide was built without the `tsa-client` feature",
+            ))
+        }
+    }
+
+    /// Request a timestamp for a pre-computed digest.
+    fn request_timestamp_hash(
+        &self,
+        hash: &Bound<'_, PyBytes>,
+        hash_algorithm: i32,
+    ) -> PyResult<PyTimestamp> {
+        #[cfg(feature = "tsa-client")]
+        {
+            let algo = match hash_algorithm {
+                1 => crate::signatures::HashAlgorithm::Sha1,
+                2 => crate::signatures::HashAlgorithm::Sha256,
+                3 => crate::signatures::HashAlgorithm::Sha384,
+                4 => crate::signatures::HashAlgorithm::Sha512,
+                _ => crate::signatures::HashAlgorithm::Sha256,
+            };
+            let ts = self
+                .inner
+                .request_timestamp_hash(hash.as_bytes(), algo)
+                .map_err(|e| PyRuntimeError::new_err(format!("TSA error: {e}")))?;
+            Ok(PyTimestamp { inner: ts })
+        }
+        #[cfg(not(feature = "tsa-client"))]
+        {
+            let _ = (hash, hash_algorithm);
+            Err(PyNotImplementedError::new_err(
+                "pdf_oxide was built without the `tsa-client` feature",
+            ))
+        }
+    }
+}
+
 /// RFC 3161 timestamp parsed from a DER TimeStampToken or bare
 /// TSTInfo. Mirrors the C# `Timestamp` class (#52 / #73).
 #[pyclass(module = "pdf_oxide.pdf_oxide", name = "Timestamp")]
@@ -5230,6 +5355,7 @@ fn pdf_oxide(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyOfficeConverter>()?;
     m.add_class::<PySignature>()?;
     m.add_class::<PyTimestamp>()?;
+    m.add_class::<PyTsaClient>()?;
     m.add("VERSION", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

@@ -3232,6 +3232,117 @@ func (t *Timestamp) Close() {
 	}
 }
 
+// TsaClientOptions configures a TsaClient. Only Url is required;
+// everything else mirrors the Rust-core TsaClientConfig defaults.
+type TsaClientOptions struct {
+	URL            string
+	Username       string // optional
+	Password       string // optional
+	TimeoutSeconds int32  // 0 falls back to 30s
+	HashAlgorithm  TimestampHashAlgorithm
+	UseNonce       bool
+	CertReq        bool
+}
+
+// NewTsaClientOptions returns options with Rust-core-matching defaults.
+func NewTsaClientOptions(url string) TsaClientOptions {
+	return TsaClientOptions{
+		URL:            url,
+		TimeoutSeconds: 30,
+		HashAlgorithm:  TimestampHashSha256,
+		UseNonce:       true,
+		CertReq:        true,
+	}
+}
+
+// TsaClient is an RFC 3161 TSA HTTP client. Closes #57 / #74 Go side.
+// Only linked when pdf_oxide was built with the `tsa-client` Rust-core
+// feature; otherwise the FFI entry returns ErrUnsupportedFeature.
+type TsaClient struct {
+	handle unsafe.Pointer
+}
+
+// NewTsaClient builds a TSA client. Network is not touched until
+// RequestTimestamp / RequestTimestampHash is called.
+func NewTsaClient(opts TsaClientOptions) (*TsaClient, error) {
+	if opts.URL == "" {
+		return nil, fmt.Errorf("pdf_oxide: TSA url must not be empty")
+	}
+	cURL := C.CString(opts.URL)
+	defer C.free(unsafe.Pointer(cURL))
+	cUser := C.CString(opts.Username)
+	defer C.free(unsafe.Pointer(cUser))
+	cPass := C.CString(opts.Password)
+	defer C.free(unsafe.Pointer(cPass))
+	var e C.int
+	h := C.pdf_tsa_client_create(
+		cURL, cUser, cPass,
+		C.int32_t(opts.TimeoutSeconds),
+		C.int32_t(opts.HashAlgorithm),
+		C.bool(opts.UseNonce),
+		C.bool(opts.CertReq),
+		&e,
+	)
+	if e != 0 {
+		return nil, ffiError(e)
+	}
+	if h == nil {
+		return nil, fmt.Errorf("pdf_oxide: pdf_tsa_client_create returned null")
+	}
+	return &TsaClient{handle: h}, nil
+}
+
+// RequestTimestamp hashes data with the configured algorithm and
+// requests a timestamp for the digest.
+func (c *TsaClient) RequestTimestamp(data []byte) (*Timestamp, error) {
+	if c.handle == nil {
+		return nil, ErrDocumentClosed
+	}
+	var e C.int
+	var dataPtr *C.uint8_t
+	if len(data) > 0 {
+		dataPtr = (*C.uint8_t)(unsafe.Pointer(&data[0]))
+	}
+	h := C.pdf_tsa_request_timestamp(c.handle, dataPtr, C.size_t(len(data)), &e)
+	if e != 0 {
+		return nil, ffiError(e)
+	}
+	if h == nil {
+		return nil, fmt.Errorf("pdf_oxide: pdf_tsa_request_timestamp returned null")
+	}
+	return &Timestamp{handle: h}, nil
+}
+
+// RequestTimestampHash requests a timestamp for a pre-computed hash.
+func (c *TsaClient) RequestTimestampHash(hash []byte, algo TimestampHashAlgorithm) (*Timestamp, error) {
+	if c.handle == nil {
+		return nil, ErrDocumentClosed
+	}
+	var e C.int
+	var hashPtr *C.uint8_t
+	if len(hash) > 0 {
+		hashPtr = (*C.uint8_t)(unsafe.Pointer(&hash[0]))
+	}
+	h := C.pdf_tsa_request_timestamp_hash(
+		c.handle, hashPtr, C.size_t(len(hash)), C.int32_t(algo), &e,
+	)
+	if e != 0 {
+		return nil, ffiError(e)
+	}
+	if h == nil {
+		return nil, fmt.Errorf("pdf_oxide: pdf_tsa_request_timestamp_hash returned null")
+	}
+	return &Timestamp{handle: h}, nil
+}
+
+// Close releases the client handle. Safe to call more than once.
+func (c *TsaClient) Close() {
+	if c.handle != nil {
+		C.pdf_tsa_client_free(c.handle)
+		c.handle = nil
+	}
+}
+
 func sigReadString(h unsafe.Pointer, fn func(unsafe.Pointer, *C.int) *C.char) (string, error) {
 	if h == nil {
 		return "", ErrDocumentClosed
