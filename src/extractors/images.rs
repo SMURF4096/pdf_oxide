@@ -339,18 +339,21 @@ impl PdfImage {
                     && matches!(self.color_space, ColorSpace::DeviceGray | ColorSpace::CalGray)
                     && pixels.len() == expected_gray
                 {
+                    // image 0.25 changed `write_image` to take
+                    // `ExtendedColorType` — `ColorType::*` now converts
+                    // through `Into`. API-only change, same semantics.
                     encoder
-                        .write_image(pixels, self.width, self.height, image::ColorType::L8)
+                        .write_image(pixels, self.width, self.height, image::ColorType::L8.into())
                         .map_err(|e| Error::Encode(format!("Failed to encode PNG: {}", e)))?;
                 } else if *format == PixelFormat::RGB && pixels.len() == expected_rgb {
                     encoder
-                        .write_image(pixels, self.width, self.height, image::ColorType::Rgb8)
+                        .write_image(pixels, self.width, self.height, image::ColorType::Rgb8.into())
                         .map_err(|e| Error::Encode(format!("Failed to encode PNG: {}", e)))?;
                 } else {
                     let dynamic_image = self.to_dynamic_image()?;
                     let rgb = dynamic_image.to_rgb8();
                     encoder
-                        .write_image(rgb.as_raw(), self.width, self.height, image::ColorType::Rgb8)
+                        .write_image(rgb.as_raw(), self.width, self.height, image::ColorType::Rgb8.into())
                         .map_err(|e| Error::Encode(format!("Failed to encode PNG: {}", e)))?;
                 }
             },
@@ -358,7 +361,7 @@ impl PdfImage {
                 let dynamic_image = self.to_dynamic_image()?;
                 let rgb = dynamic_image.to_rgb8();
                 encoder
-                    .write_image(rgb.as_raw(), self.width, self.height, image::ColorType::Rgb8)
+                    .write_image(rgb.as_raw(), self.width, self.height, image::ColorType::Rgb8.into())
                     .map_err(|e| Error::Encode(format!("Failed to encode PNG: {}", e)))?;
             },
         }
