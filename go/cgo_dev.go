@@ -1,17 +1,19 @@
 //go:build pdf_oxide_dev
 
-// Dev-mode linker flags: used when building inside the pdf_oxide monorepo
-// after `cargo build --release --lib [--target <triple>]`. Paths are
-// relative to this file's directory (`${SRCDIR}`) and point at the Cargo
-// workspace's per-target output dir.
+// Package pdfoxide provides Go bindings to the pdf_oxide Rust PDF toolkit.
+//
+// This file (cgo_dev.go) holds dev-mode linker flags used when building
+// inside the pdf_oxide monorepo after `cargo build --release --lib
+// [--target <triple>]`. Paths are relative to this file's directory
+// (`${SRCDIR}`) and point at the Cargo workspace's per-target output dir.
 //
 // Usage:
-//   cd go && go build -tags pdf_oxide_dev ./...
+//
+//	cd go && go build -tags pdf_oxide_dev ./...
 //
 // Production consumers never hit this file — the default build has no tag,
 // in which case CGO_LDFLAGS must come from the environment (set by the
 // install CLI) or from a locally-generated cgo_flags.go.
-
 package pdfoxide
 
 /*

@@ -68,9 +68,6 @@ linters:
       check-error-type-assertions: true
       errorf: true
     revive:
-      # Start with the correctness-leaning rule set. Style rules (exported
-      # doc-comments, var-naming ALL_CAPS→CamelCase) were producing ~30 findings
-      # on pre-existing code — re-enable after a dedicated cleanup pass.
       rules:
         - name: blank-imports
         - name: context-as-argument
@@ -79,9 +76,11 @@ linters:
         - name: error-naming
         - name: error-strings
         - name: errorf
+        - name: exported
         - name: if-return
         - name: increment-decrement
         - name: indent-error-flow
+        - name: package-comments
         - name: range
         - name: receiver-naming
         - name: superfluous-else
@@ -89,6 +88,11 @@ linters:
         - name: unexported-return
         - name: unnecessary-stmt
         - name: var-declaration
+        # var-naming intentionally omitted: enabling it would demand
+        # renaming exported symbols `FromHtml` → `FromHTML`, `ToHtml` →
+        # `ToHTML`, `ToHtmlAll` → `ToHTMLAll`, which are breaking API
+        # changes for downstream Go users. Left off until a major
+        # version bump makes those renames tolerable.
         - name: waitgroup-by-value
         - name: unhandled-error
           arguments:

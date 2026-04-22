@@ -1955,7 +1955,7 @@ type FormField struct {
 	Required bool
 }
 
-// GetFormFields returns all form fields in the document
+// FormFields returns all form fields in the document.
 func (doc *PdfDocument) FormFields() ([]FormField, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
@@ -2435,7 +2435,7 @@ func (doc *PdfDocument) ExtractPaths(pageIndex int) ([]Path, error) {
 	return paths, nil
 }
 
-// GetPageLabels returns page labels as JSON string
+// PageLabels returns the document's page-label map serialised as a JSON string.
 func (doc *PdfDocument) PageLabels() (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
@@ -2451,7 +2451,7 @@ func (doc *PdfDocument) PageLabels() (string, error) {
 	return text, nil
 }
 
-// GetXmpMetadata returns XMP metadata as JSON string
+// XmpMetadata returns the document's XMP metadata serialised as a JSON string.
 func (doc *PdfDocument) XmpMetadata() (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
@@ -2467,7 +2467,7 @@ func (doc *PdfDocument) XmpMetadata() (string, error) {
 	return text, nil
 }
 
-// GetOutline returns document outline/bookmarks as JSON string
+// Outline returns the document outline / bookmarks serialised as a JSON string.
 func (doc *PdfDocument) Outline() (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
@@ -3070,23 +3070,54 @@ func (doc *PdfDocument) Pages() ([]*Page, error) {
 	return pages, nil
 }
 
-func (p *Page) Text() (string, error)              { return p.doc.ExtractText(p.Index) }
-func (p *Page) Markdown() (string, error)          { return p.doc.ToMarkdown(p.Index) }
-func (p *Page) Html() (string, error)              { return p.doc.ToHtml(p.Index) }
-func (p *Page) PlainText() (string, error)         { return p.doc.ToPlainText(p.Index) }
-func (p *Page) Chars() ([]Char, error)             { return p.doc.ExtractChars(p.Index) }
-func (p *Page) Words() ([]Word, error)             { return p.doc.ExtractWords(p.Index) }
-func (p *Page) Lines() ([]TextLine, error)         { return p.doc.ExtractTextLines(p.Index) }
-func (p *Page) Tables() ([]Table, error)           { return p.doc.ExtractTables(p.Index) }
-func (p *Page) Images() ([]Image, error)           { return p.doc.Images(p.Index) }
-func (p *Page) Paths() ([]Path, error)             { return p.doc.ExtractPaths(p.Index) }
-func (p *Page) Fonts() ([]Font, error)             { return p.doc.Fonts(p.Index) }
+// Text extracts plain text from the page. Wrapper around PdfDocument.ExtractText.
+func (p *Page) Text() (string, error) { return p.doc.ExtractText(p.Index) }
+
+// Markdown renders the page as Markdown.
+func (p *Page) Markdown() (string, error) { return p.doc.ToMarkdown(p.Index) }
+
+// Html renders the page as HTML.
+func (p *Page) Html() (string, error) { return p.doc.ToHtml(p.Index) }
+
+// PlainText returns the page's stripped plain-text form.
+func (p *Page) PlainText() (string, error) { return p.doc.ToPlainText(p.Index) }
+
+// Chars returns the individual character records for the page.
+func (p *Page) Chars() ([]Char, error) { return p.doc.ExtractChars(p.Index) }
+
+// Words returns word-level records for the page.
+func (p *Page) Words() ([]Word, error) { return p.doc.ExtractWords(p.Index) }
+
+// Lines returns text-line records for the page.
+func (p *Page) Lines() ([]TextLine, error) { return p.doc.ExtractTextLines(p.Index) }
+
+// Tables returns detected tables on the page.
+func (p *Page) Tables() ([]Table, error) { return p.doc.ExtractTables(p.Index) }
+
+// Images returns embedded images on the page.
+func (p *Page) Images() ([]Image, error) { return p.doc.Images(p.Index) }
+
+// Paths returns vector paths on the page.
+func (p *Page) Paths() ([]Path, error) { return p.doc.ExtractPaths(p.Index) }
+
+// Fonts returns the fonts referenced by the page.
+func (p *Page) Fonts() ([]Font, error) { return p.doc.Fonts(p.Index) }
+
+// Annotations returns the page's annotations.
 func (p *Page) Annotations() ([]Annotation, error) { return p.doc.Annotations(p.Index) }
-func (p *Page) Info() (*PageInfo, error)           { return p.doc.PageInfo(p.Index) }
+
+// Info returns the page's metadata (size, rotation, …).
+func (p *Page) Info() (*PageInfo, error) { return p.doc.PageInfo(p.Index) }
+
+// Search runs a text search across the page. Case-sensitive if cs is true.
 func (p *Page) Search(term string, cs bool) ([]SearchResult, error) {
 	return p.doc.SearchPage(p.Index, term, cs)
 }
+
+// NeedsOcr reports whether the page appears to be scanned image content.
 func (p *Page) NeedsOcr() (bool, error) { return p.doc.NeedsOcr(p.Index) }
+
+// TextWithOcr runs OCR on the page using the supplied engine.
 func (p *Page) TextWithOcr(engine *OcrEngine) (string, error) {
 	return p.doc.ExtractTextWithOcr(p.Index, engine)
 }
