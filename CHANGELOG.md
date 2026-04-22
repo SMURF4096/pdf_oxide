@@ -2,6 +2,140 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [0.3.38] - 2026-04-21
+> DocumentBuilder encryption (#386), real font subsetting on the write
+> path (#385 — FONT-3b), and multi-target WASM packaging (#392).
+
+### `pdf-oxide-wasm` now works in every target it advertises (#392)
+
+v0.3.37 shipped a single `wasm-bindgen --target nodejs` build under the
+`pdf-oxide-wasm` npm package, which hard-codes `__dirname` and
+`require('fs')` into the JS glue. That crashes in every browser and
+every bundler-driven environment (Vite + SvelteKit was the reported
+case) even though the package metadata advertises browser + edge
+support. Reported by @arthurlassagne.
+
+v0.3.38 ships three builds side-by-side and routes each consumer to
+the right one through `package.json` conditional exports:
+
+| Environment                                   | Build      | Init pattern                              |
+|-----------------------------------------------|------------|-------------------------------------------|
+| Node.js (`require` or ESM `import`)           | `nodejs/`  | `require('fs')` — unchanged from v0.3.37  |
+| Bundler (Vite, webpack, Rollup, esbuild, Bun) | `bundler/` | `import * as wasm from "./*.wasm"`        |
+| Browser / Deno / Cloudflare Workers / Workerd | `web/`     | `fetch(new URL('*.wasm', import.meta.url))` |
+
+Subpath imports work too, if your tool does something unusual with
+conditional exports:
+
+```javascript
+import { WasmPdfDocument } from "pdf-oxide-wasm/bundler";
+import { WasmPdfDocument } from "pdf-oxide-wasm/web";
+import { WasmPdfDocument } from "pdf-oxide-wasm/nodejs";
+```
+
+No code changes on the Rust side — this is a pure packaging fix.
+Existing Node.js consumers see identical behaviour (Node resolves via
+the `"node"` condition to the same `nodejs/pdf_oxide.js` glue as before).
+
+
+
+### `DocumentBuilder` encryption (#386)
+
+`DocumentBuilder::save` — introduced in v0.3.37 for the CJK / CSS-free
+programmatic build path — now has a matching encryption surface:
+
+```rust
+use pdf_oxide::writer::{DocumentBuilder, PageSize};
+use pdf_oxide::editor::{EncryptionAlgorithm, EncryptionConfig, Permissions};
+
+let mut builder = DocumentBuilder::new();
+builder.page(PageSize::A4).at(72.0, 700.0).text("secret").done();
+
+// AES-256, full permissions (matches Pdf::save_encrypted):
+builder.save_encrypted("out.pdf", "user-pw", "owner-pw")?;
+
+// Or custom algorithm / permissions:
+let config = EncryptionConfig::new("u", "o")
+    .with_algorithm(EncryptionAlgorithm::Aes128)
+    .with_permissions(Permissions::read_only());
+builder.save_with_encryption("out.pdf", config)?;
+
+// Bytes variants for WASM / server pipelines:
+let bytes = builder.to_bytes_encrypted("u", "o")?;
+```
+
+Prior to v0.3.38, `Pdf::save_encrypted` only worked for PDFs opened
+via `DocumentEditor` — programmatically-constructed documents had no
+encryption path at all. `DocumentBuilder::save_encrypted` &c. route
+the built bytes through `DocumentEditor::from_bytes` and re-use the
+production `write_full_to_writer` pipeline, so the output is byte-
+compatible with everything that can read `Pdf::save_encrypted` output.
+
+### Real font subsetting on the DocumentBuilder path (#385, FONT-3b)
+
+**Documents that embed a large CJK face now ship a subset, not the
+full font.** Before v0.3.38, a PDF containing five CJK characters from
+`NotoSansCJKtc-Regular.otf` was ~17 MB — the output carried the whole
+original face. After v0.3.38 it's typically under 100 KB.
+
+The Typst `subsetter` wrapper at `crate::fonts::subset_font_bytes` has
+existed since v0.3.35 and `FontSubsetter` has tracked used glyphs for
+just as long; what was missing was the **GID-remapping pass** that
+renumbers content-stream GIDs to match the subset face. This ships as
+FONT-3b:
+
+- `ContentStreamBuilder` buffers embedded-font text as a structured
+  `ContentStreamOp::ShowEmbeddedText { font_name, glyph_ids }` op
+  carrying *original-face* GIDs plus the font's PDF resource name.
+- `PdfWriter::finish` runs `subset_font_bytes` once per registered
+  embedded font, collects the `GlyphRemapper`s keyed by resource
+  name, and passes the whole map into every page's
+  `ContentStreamBuilder::build_with_remappers`.
+- Hex glyph IDs emitted into the content stream are remapped to the
+  **subset** GID space. `/W` widths and the `ToUnicode` CMap are
+  keyed on the same subset GID space, so everything round-trips
+  through `extract_text` without regression.
+
+This is not a behaviour opt-in — every document built via
+`DocumentBuilder::register_embedded_font` is subset-embedded from
+v0.3.38 onward. Registered-but-unused fonts produce a minimal
+`.notdef`-only subset (handled by `subset_font_bytes`'s unconditional
+GID 0 inclusion), so referenced-but-empty resources stay structurally
+valid.
+
+#### API breakage
+
+Both surfaces are `pub` re-exports; v0.3.x semver accepts minor breaks
+here. External crates pinning to these APIs need minor updates:
+
+- `EmbeddedFont::encode_string` and `EmbeddedFont::encode_shaped_run`
+  now return `Vec<u16>` (original-face glyph IDs) instead of a hex
+  `String`. The hex encoding happens at content-stream serialisation
+  time inside `ContentStreamBuilder::build_with_remappers` so the
+  subset remapper can be applied.
+- `EmbeddedFont::generate_widths_array(&GlyphRemapper)` and
+  `EmbeddedFont::generate_tounicode_cmap(&GlyphRemapper)` now require
+  the remapper returned by `build_embedded_font_objects` so the
+  emitted entries use subset GIDs.
+- `build_embedded_font_objects` now returns
+  `Result<(EmbeddedFontIds, Vec<(u32, Object)>, GlyphRemapper)>` — the
+  remapper **must** be kept and passed to
+  `ContentStreamBuilder::build_with_remappers` for every page that
+  references the font, or glyph hex in the content stream will not
+  match the subset font face.
+- `ContentStreamBuilder::build()` still works for content that doesn't
+  use embedded fonts; for embedded-font pages use
+  `ContentStreamBuilder::build_with_remappers(&map)` so the remappers
+  apply.
+- `EmbeddedFont::encode_shaped` (dead since v0.3.36) and
+  `ContentStreamBuilder::unicode_text` (stranded after the
+  `encode_string` signature change) are removed.
+
+Migration for typical writer-library consumers is a one-line change:
+`font.encode_string(text)` → `font.encode_string(text)` (same call,
+returned `Vec<u16>` can be passed straight into
+`builder.embedded_text(font_resource_name, gids, x, y)`).
+
 ## [0.3.37] - 2026-04-20
 > HTML + CSS → PDF (issue #248) — first credible pure-Rust pipeline
 
