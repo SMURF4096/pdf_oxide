@@ -2227,6 +2227,19 @@ namespace PdfOxide.Internal
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial void PdfPdfUaResultsFree(IntPtr results);
 
+        // #384 gap F: OCR wrappers that take an IntPtr document handle
+        // (Core/OcrEngine.cs uses IntPtr throughout). Parallel entries
+        // above use NativeHandle and can't be called from the IntPtr
+        // code path directly.
+        [LibraryImport(LibName, EntryPoint = "pdf_ocr_page_needs_ocr", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static partial bool OcrPageNeedsOcrByPtr(IntPtr documentHandle, int pageIndex, out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_ocr_extract_text", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr OcrExtractTextByPtr(IntPtr documentHandle, int pageIndex, IntPtr engine, out int errorCode);
+
         /// <summary>
         /// Frees a barcode image handle.
         /// </summary>
