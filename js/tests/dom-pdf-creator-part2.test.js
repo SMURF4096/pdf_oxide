@@ -3,23 +3,23 @@
  * Tests for AcroForm, XFA, XMP metadata, page labels, and embedded file support
  */
 
-import { describe, it } from 'node:test';
 import assert from 'node:assert';
+import { describe, it } from 'node:test';
 import {
+  AcroForm,
+  ButtonField,
+  CheckboxField,
+  DocumentInfo,
+  EmbeddedFile,
+  FormField,
+  ListField,
+  PageLabel,
   Pdf,
   PdfBuilder,
-  AcroForm,
-  FormField,
-  TextFormField,
-  CheckboxField,
   RadioButtonField,
-  ListField,
-  ButtonField,
   SignatureField,
+  TextFormField,
   XMPMetadata,
-  PageLabel,
-  EmbeddedFile,
-  DocumentInfo,
 } from '../index.js';
 
 describe('Phase 4 Part 2: Forms, Metadata, and Advanced Features', () => {
@@ -509,12 +509,7 @@ describe('Phase 4 Part 2: Forms, Metadata, and Advanced Features', () => {
 
   describe('EmbeddedFile - Embedded Documents and Resources', () => {
     it('should create embedded file', () => {
-      const file = EmbeddedFile.new(
-        'embed_1',
-        'document.pdf',
-        'application/pdf',
-        1024
-      );
+      const file = EmbeddedFile.new('embed_1', 'document.pdf', 'application/pdf', 1024);
 
       assert.strictEqual(file.filename, 'document.pdf');
       assert.strictEqual(file.mime_type, 'application/pdf');
@@ -540,7 +535,8 @@ describe('Phase 4 Part 2: Forms, Metadata, and Advanced Features', () => {
 
       assert.strictEqual(file.has_data(), false);
 
-      const base64Data = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+      const base64Data =
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
       file.set_data(base64Data);
 
       assert.strictEqual(file.has_data(), true);

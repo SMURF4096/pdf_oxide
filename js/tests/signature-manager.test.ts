@@ -1,13 +1,13 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { PdfDocument } from '../src/pdf-document';
 import {
-  SignatureManager,
-  SignatureAlgorithm,
+  type CertificateInfo,
   DigestAlgorithm,
+  SignatureAlgorithm,
+  type SignatureInfo,
+  SignatureManager,
   SignatureStatus,
-  CertificateInfo,
-  SignatureInfo,
 } from '../src/signature-manager';
-import { PdfDocument } from '../src/pdf-document';
 
 describe('SignatureManager', () => {
   let mockDocument: PdfDocument;
@@ -86,9 +86,9 @@ describe('SignatureManager', () => {
     });
 
     it('should reject null digest algorithm', async () => {
-      await expect(manager.sign('cert.p12', 'password', 'Test', 'Location', null as any)).rejects.toThrow(
-        'Digest algorithm cannot be null'
-      );
+      await expect(
+        manager.sign('cert.p12', 'password', 'Test', 'Location', null as any)
+      ).rejects.toThrow('Digest algorithm cannot be null');
     });
 
     it('should sign with default digest algorithm', async () => {
@@ -420,7 +420,7 @@ describe('SignatureManager', () => {
       ]);
 
       expect(results).toHaveLength(3);
-      expect(results.every(r => r === true)).toBe(true);
+      expect(results.every((r) => r === true)).toBe(true);
     });
 
     it('should handle concurrent cache operations', () => {

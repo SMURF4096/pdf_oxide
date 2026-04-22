@@ -6,10 +6,10 @@
  * - FormFieldManager: 32 functions
  */
 
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
-import { PdfDocument } from '../src/index';
-import { XfaManager, XfaForm } from '../src/xfa-manager';
+import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import { FormFieldManager } from '../src/form-field-manager';
+import { PdfDocument } from '../src/index';
+import { XfaForm, XfaManager } from '../src/xfa-manager';
 
 describe('Phase 1: XFA & Form Fields Implementation', () => {
   let testDocPath: string;
@@ -246,7 +246,9 @@ describe('Phase 1: XFA & Form Fields Implementation', () => {
 
     it('should set alternate field name (setFieldAlternateName)', async () => {
       if (!doc) return;
-      await expect(manager.setFieldAlternateName('testField', 'Alternate Name')).resolves.toBeUndefined();
+      await expect(
+        manager.setFieldAlternateName('testField', 'Alternate Name')
+      ).resolves.toBeUndefined();
     });
 
     // Field state (6 functions)
@@ -295,7 +297,9 @@ describe('Phase 1: XFA & Form Fields Implementation', () => {
 
     it('should set background color (setFieldBackgroundColor)', async () => {
       if (!doc) return;
-      await expect(manager.setFieldBackgroundColor('testField', 255, 0, 0)).resolves.toBeUndefined();
+      await expect(
+        manager.setFieldBackgroundColor('testField', 255, 0, 0)
+      ).resolves.toBeUndefined();
     });
 
     it('should get text color (getFieldTextColor)', async () => {

@@ -54,9 +54,7 @@ interface PagePropertyCache {
  * console.log(doc.version);     // Instead of doc.get_version()
  * ```
  */
-export function addPdfDocumentProperties<T extends { prototype: any }>(
-  PdfDocument: T
-): T {
+export function addPdfDocumentProperties<T extends { prototype: any }>(PdfDocument: T): T {
   if (!PdfDocument || !PdfDocument.prototype) {
     return PdfDocument;
   }

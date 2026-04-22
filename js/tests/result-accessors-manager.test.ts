@@ -8,11 +8,11 @@
  */
 
 import {
-  ResultAccessorsManager,
-  type SearchResultProperties,
+  type AnnotationProperties,
   type FontProperties,
   type ImageProperties,
-  type AnnotationProperties,
+  ResultAccessorsManager,
+  type SearchResultProperties,
 } from '../src/result-accessors-manager';
 
 describe('ResultAccessorsManager', () => {

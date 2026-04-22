@@ -414,7 +414,14 @@ export class PageBuilder {
    * Add a checkbox form field at the rectangle (x, y, w, h).
    * `checked` sets the initial state.
    */
-  checkbox(name: string, x: number, y: number, w: number, h: number, checked: boolean = false): this {
+  checkbox(
+    name: string,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    checked: boolean = false
+  ): this {
     native.pageBuilderCheckbox(this.h(), name, x, y, w, h, checked);
     return this;
   }
@@ -423,8 +430,15 @@ export class PageBuilder {
    * Add a dropdown combo-box form field. `options` are the user-
    * visible choices; `selected` picks the initial value.
    */
-  comboBox(name: string, x: number, y: number, w: number, h: number,
-           options: string[], selected?: string): this {
+  comboBox(
+    name: string,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    options: string[],
+    selected?: string
+  ): this {
     native.pageBuilderComboBox(this.h(), name, x, y, w, h, options, selected);
     return this;
   }
@@ -434,9 +448,11 @@ export class PageBuilder {
    * `[exportValue, x, y, w, h]` tuples — one per option. `selected`
    * picks the initial value by export value.
    */
-  radioGroup(name: string,
-             buttons: Array<[string, number, number, number, number]>,
-             selected?: string): this {
+  radioGroup(
+    name: string,
+    buttons: Array<[string, number, number, number, number]>,
+    selected?: string
+  ): this {
     native.pageBuilderRadioGroup(this.h(), name, buttons, selected);
     return this;
   }

@@ -3,10 +3,10 @@
  * Enables non-blocking parallel PDF processing
  */
 
-import { Worker } from 'worker_threads';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { Worker } from 'worker_threads';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -57,9 +57,7 @@ export class WorkerPool {
 
   private validatePoolSize(): void {
     if (this.poolSize < 1 || this.poolSize > 32) {
-      throw new Error(
-        `Pool size must be between 1 and 32, got ${this.poolSize}`
-      );
+      throw new Error(`Pool size must be between 1 and 32, got ${this.poolSize}`);
     }
   }
 
@@ -216,11 +214,7 @@ export class WorkerPool {
     // Terminate all workers
     await Promise.all(
       this.workers.map((worker) =>
-        worker
-          .terminate()
-          .catch((error) =>
-            console.warn('Error terminating worker:', error)
-          )
+        worker.terminate().catch((error) => console.warn('Error terminating worker:', error))
       )
     );
 
@@ -257,9 +251,7 @@ export class WorkerPool {
  */
 const hardwareConcurrency = Math.max(1, os.cpus().length);
 
-export const workerPool = new WorkerPool(
-  Math.min(hardwareConcurrency, 8)
-);
+export const workerPool = new WorkerPool(Math.min(hardwareConcurrency, 8));
 
 /**
  * Graceful shutdown

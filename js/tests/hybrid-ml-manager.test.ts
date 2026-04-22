@@ -4,13 +4,13 @@
 
 import { PdfDocument } from '../src';
 import {
-  HybridMLManager,
-  PageComplexity,
-  ContentType,
-  PageAnalysisResult,
-  ExtractionStrategy,
-  TableRegion,
   ColumnRegion,
+  ContentType,
+  ExtractionStrategy,
+  HybridMLManager,
+  type PageAnalysisResult,
+  PageComplexity,
+  TableRegion,
 } from '../src/hybrid-ml-manager';
 
 describe('HybridMLManager', () => {

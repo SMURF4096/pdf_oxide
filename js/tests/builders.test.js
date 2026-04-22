@@ -1,10 +1,10 @@
-import { describe, it } from 'node:test';
 import assert from 'node:assert';
+import { describe, it } from 'node:test';
 import {
-  PdfBuilder,
+  AnnotationBuilder,
   ConversionOptionsBuilder,
   MetadataBuilder,
-  AnnotationBuilder,
+  PdfBuilder,
   SearchOptionsBuilder,
 } from '../lib/builders/index.js';
 
@@ -44,9 +44,7 @@ describe('Builders - Phase 2.5', () => {
     });
 
     it('should add single keyword', () => {
-      const builder = PdfBuilder.create()
-        .addKeyword('tag1')
-        .addKeyword('tag2');
+      const builder = PdfBuilder.create().addKeyword('tag1').addKeyword('tag2');
 
       assert.ok(builder instanceof PdfBuilder);
     });
@@ -58,7 +56,7 @@ describe('Builders - Phase 2.5', () => {
 
     it('should accept valid page sizes', () => {
       const sizes = ['Letter', 'Legal', 'A4', 'A3', 'A5', 'B4', 'B5'];
-      sizes.forEach(size => {
+      sizes.forEach((size) => {
         const builder = PdfBuilder.create().pageSize(size);
         assert.ok(builder instanceof PdfBuilder);
       });
@@ -71,9 +69,7 @@ describe('Builders - Phase 2.5', () => {
     });
 
     it('should create PDF from markdown', () => {
-      const builder = PdfBuilder.create()
-        .title('Test Document')
-        .author('Test Author');
+      const builder = PdfBuilder.create().title('Test Document').author('Test Author');
 
       // Note: This would require native module to test fully
       // For now, we test the builder configuration
@@ -132,10 +128,8 @@ describe('Builders - Phase 2.5', () => {
 
     it('should accept valid image formats', () => {
       const formats = ['png', 'jpg', 'jpeg', 'webp'];
-      formats.forEach(fmt => {
-        const options = ConversionOptionsBuilder.create()
-          .imageFormat(fmt)
-          .build();
+      formats.forEach((fmt) => {
+        const options = ConversionOptionsBuilder.create().imageFormat(fmt).build();
         assert.strictEqual(options.imageFormat, fmt.toLowerCase());
       });
     });
@@ -195,10 +189,7 @@ describe('Builders - Phase 2.5', () => {
 
     it('should accept Date objects', () => {
       const now = new Date();
-      const metadata = MetadataBuilder.create()
-        .creationDate(now)
-        .modificationDate(now)
-        .build();
+      const metadata = MetadataBuilder.create().creationDate(now).modificationDate(now).build();
 
       assert.ok(metadata.creationDate instanceof Date);
       assert.ok(metadata.modificationDate instanceof Date);
@@ -234,9 +225,7 @@ describe('Builders - Phase 2.5', () => {
 
     it('should set current date', () => {
       const before = new Date();
-      const metadata = MetadataBuilder.create()
-        .withCurrentDate()
-        .build();
+      const metadata = MetadataBuilder.create().withCurrentDate().build();
       const after = new Date();
 
       assert.ok(metadata.modificationDate >= before);
@@ -317,9 +306,7 @@ describe('Builders - Phase 2.5', () => {
     });
 
     it('should set opacity', () => {
-      const annotation = AnnotationBuilder.create()
-        .opacity(0.7)
-        .build();
+      const annotation = AnnotationBuilder.create().opacity(0.7).build();
 
       assert.strictEqual(annotation.opacity, 0.7);
     });
@@ -332,10 +319,7 @@ describe('Builders - Phase 2.5', () => {
 
     it('should set bounds', () => {
       const bounds = { x: 100, y: 200, width: 150, height: 30 };
-      const annotation = AnnotationBuilder.create()
-        .asHighlight()
-        .bounds(bounds)
-        .build();
+      const annotation = AnnotationBuilder.create().asHighlight().bounds(bounds).build();
 
       assert.deepStrictEqual(annotation.bounds, bounds);
     });
@@ -346,10 +330,7 @@ describe('Builders - Phase 2.5', () => {
     });
 
     it('should set author and subject', () => {
-      const annotation = AnnotationBuilder.create()
-        .author('Reviewer')
-        .subject('Comment')
-        .build();
+      const annotation = AnnotationBuilder.create().author('Reviewer').subject('Comment').build();
 
       assert.strictEqual(annotation.author, 'Reviewer');
       assert.strictEqual(annotation.subject, 'Comment');
@@ -422,9 +403,7 @@ describe('Builders - Phase 2.5', () => {
     });
 
     it('should floor maxResults', () => {
-      const options = SearchOptionsBuilder.create()
-        .maxResults(123.7)
-        .build();
+      const options = SearchOptionsBuilder.create().maxResults(123.7).build();
 
       assert.strictEqual(options.maxResults, 123);
     });
@@ -440,16 +419,13 @@ describe('Builders - Phase 2.5', () => {
         SearchOptionsBuilder.create(),
       ];
 
-      builders.forEach(builder => {
+      builders.forEach((builder) => {
         assert.ok(builder instanceof Object);
       });
     });
 
     it('should create complete configuration', () => {
-      const metadata = MetadataBuilder.create()
-        .title('Test')
-        .author('Author')
-        .build();
+      const metadata = MetadataBuilder.create().title('Test').author('Author').build();
 
       const options = ConversionOptionsBuilder.create()
         .preserveFormatting(true)

@@ -39,201 +39,198 @@
  * ```
  */
 
-// Core Managers
-export { OutlineManager, type OutlineItem } from './outline-manager.js';
 export {
-  MetadataManager,
-  type MetadataComparison,
-  type ValidationResult,
-} from './metadata-manager.js';
+  FieldVisibility,
+  type FormField,
+  type FormFieldConfig,
+  FormFieldManager,
+  FormFieldType,
+} from '../form-field-manager.js';
+// Phase 1 Expansion: Result Accessors and Forms
 export {
-  ExtractionManager,
-  type ContentStatistics,
-  type SearchMatch,
-} from './extraction-manager.js';
+  type AnnotationProperties,
+  type FontProperties,
+  type ImageProperties,
+  ResultAccessorsManager,
+  type SearchResultProperties,
+} from '../result-accessors-manager.js';
 export {
-  SearchManager,
-  type SearchResult,
-  type SearchStatistics,
-  type SearchCapabilities,
-} from './search-manager.js';
+  AccessibilityManager,
+  type AutoTagResult,
+  type StructureElement,
+  type StructureTree,
+} from './accessibility-manager.js';
 export {
-  SecurityManager,
-  type PermissionsSummary,
-  type SecurityLevel,
-  type AccessibilityValidation,
-} from './security-manager.js';
-export {
-  AnnotationManager,
   type Annotation,
+  AnnotationManager,
   type AnnotationStatistics,
   type AnnotationValidation,
 } from './annotation-manager.js';
 export {
-  LayerManager,
-  type Layer,
-  type LayerHierarchy,
-  type LayerStatistics,
-  type LayerValidation,
-} from './layer-manager.js';
-export {
-  RenderingManager,
-  RenderOptions,
-  type RenderOptionsConfig,
-  type PageDimensions,
-  type PageBox,
-  type RenderingStatistics,
-  type PageResources,
-} from './rendering-manager.js';
-export {
-  PageManager,
-  type PageInfo,
-  type PageRange,
-  type PageStatistics,
-} from './page-manager.js';
-export {
-  ContentManager,
-  type ContentAnalysis,
-} from './content-manager.js';
-
-// Phase 2.4: Stream API support
-export {
-  SearchStream,
-  ExtractionStream,
-  MetadataStream,
-  createSearchStream,
-  createExtractionStream,
-  createMetadataStream,
-  type SearchResultData,
-  type ExtractionProgressData,
-  type PageMetadataData,
-} from './streams.js';
-
+  BarcodeErrorCorrection,
+  BarcodeFormat,
+  type BarcodeGenerationConfig,
+  BarcodeManager,
+  type DetectedBarcode,
+  QrErrorCorrection,
+} from './barcode-manager.js';
 // Phase 2.5: Batch Processing API
 export {
-  BatchManager,
   type BatchDocument,
+  BatchManager,
+  type BatchOptions,
   type BatchProgress,
   type BatchResult,
-  type BatchOptions,
   type BatchStatistics,
 } from './batch-manager.js';
-
-// Phase 1 Expansion: Result Accessors and Forms
-export {
-  ResultAccessorsManager,
-  type SearchResultProperties,
-  type FontProperties,
-  type ImageProperties,
-  type AnnotationProperties,
-} from '../result-accessors-manager.js';
-export {
-  FormFieldManager,
-  FormFieldType,
-  FieldVisibility,
-  type FormField,
-  type FormFieldConfig,
-} from '../form-field-manager.js';
-
-// Canonical Managers (Phase 9 consolidation)
-export {
-  OcrManager,
-  OCRManager,
-  OcrDetectionMode,
-  type OcrConfig,
-  type OcrSpan,
-  type OcrPageAnalysis,
-} from './ocr-manager.js';
-export {
-  SignatureManager,
-  SignatureAlgorithm,
-  DigestAlgorithm,
-  SignatureType,
-  CertificationPermission,
-  CertificateFormat,
-  TimestampStatus,
-  FfiDigestAlgorithm,
-  FfiSignatureSubFilter,
-  type DigitalSignature,
-  type SignatureField,
-  type SignatureValidationResult,
-  type SignatureConfig,
-  type Certificate,
-  type Signature,
-  type CertificateInfo,
-  type CertificateChain,
-  type LoadedCertificate,
-  type SignatureAppearance,
-  type SignatureFieldConfig,
-  type SigningOptions,
-  type TimestampConfig,
-  type SigningResult,
-  type TimestampResult,
-  type SigningCredentials,
-  type SignOptions,
-} from './signature-manager.js';
-export {
-  XfaManager,
-  XFAManager,
-  XfaFormType,
-  XfaFieldType,
-  XfaValidationType,
-  XfaBindingType,
-  type XfaField,
-  type XfaDataset,
-  type XfaFieldConfig,
-  type XfaTemplateConfig,
-  type XfaSubformConfig,
-  type XfaScriptConfig,
-  type XfaCreationResult,
-  type XfaDataOptions,
-  type XfaFieldHandle,
-} from './xfa-manager.js';
-export {
-  ComplianceManager,
-  PdfALevel,
-  PdfXLevel,
-  PdfUALevel,
-  ComplianceIssueType,
-  IssueSeverity,
-  type ComplianceIssue,
-  type ComplianceValidationResult,
-} from './compliance-manager.js';
-export {
-  BarcodeManager,
-  BarcodeFormat,
-  BarcodeErrorCorrection,
-  QrErrorCorrection,
-  type DetectedBarcode,
-  type BarcodeGenerationConfig,
-} from './barcode-manager.js';
 export {
   CacheManager,
   type CacheStatistics as CacheStats,
 } from './cache-manager.js';
 export {
+  type ComplianceIssue,
+  ComplianceIssueType,
+  ComplianceManager,
+  type ComplianceValidationResult,
+  IssueSeverity,
+  PdfALevel,
+  PdfUALevel,
+  PdfXLevel,
+} from './compliance-manager.js';
+export {
+  type ContentAnalysis,
+  ContentManager,
+} from './content-manager.js';
+export {
+  type ApplyRedactionsOptions,
   EditingManager,
   type RedactionRect,
   type RgbColor,
-  type ApplyRedactionsOptions,
   type ScrubMetadataOptions,
 } from './editing-manager.js';
 export {
-  AccessibilityManager,
-  type StructureElement,
-  type StructureTree,
-  type AutoTagResult,
-} from './accessibility-manager.js';
+  BatesPosition,
+  type Difference,
+  DifferenceType,
+  type DocumentComparisonResult,
+  EnterpriseManager,
+  type PageComparisonResult,
+  StampAlignment,
+} from './enterprise-manager.js';
+export {
+  type ContentStatistics,
+  ExtractionManager,
+  type SearchMatch,
+} from './extraction-manager.js';
+export {
+  type Layer,
+  type LayerHierarchy,
+  LayerManager,
+  type LayerStatistics,
+  type LayerValidation,
+} from './layer-manager.js';
+export {
+  type MetadataComparison,
+  MetadataManager,
+  type ValidationResult,
+} from './metadata-manager.js';
+
+// Canonical Managers (Phase 9 consolidation)
+export {
+  OCRManager,
+  type OcrConfig,
+  OcrDetectionMode,
+  OcrManager,
+  type OcrPageAnalysis,
+  type OcrSpan,
+} from './ocr-manager.js';
 export {
   OptimizationManager,
   type OptimizationResult,
 } from './optimization-manager.js';
+// Core Managers
+export { type OutlineItem, OutlineManager } from './outline-manager.js';
 export {
-  EnterpriseManager,
-  BatesPosition,
-  StampAlignment,
-  DifferenceType,
-  type Difference,
-  type PageComparisonResult,
-  type DocumentComparisonResult,
-} from './enterprise-manager.js';
+  type PageInfo,
+  PageManager,
+  type PageRange,
+  type PageStatistics,
+} from './page-manager.js';
+export {
+  type PageBox,
+  type PageDimensions,
+  type PageResources,
+  RenderingManager,
+  type RenderingStatistics,
+  RenderOptions,
+  type RenderOptionsConfig,
+} from './rendering-manager.js';
+export {
+  type SearchCapabilities,
+  SearchManager,
+  type SearchResult,
+  type SearchStatistics,
+} from './search-manager.js';
+export {
+  type AccessibilityValidation,
+  type PermissionsSummary,
+  type SecurityLevel,
+  SecurityManager,
+} from './security-manager.js';
+export {
+  type Certificate,
+  type CertificateChain,
+  CertificateFormat,
+  type CertificateInfo,
+  CertificationPermission,
+  DigestAlgorithm,
+  type DigitalSignature,
+  FfiDigestAlgorithm,
+  FfiSignatureSubFilter,
+  type LoadedCertificate,
+  type Signature,
+  SignatureAlgorithm,
+  type SignatureAppearance,
+  type SignatureConfig,
+  type SignatureField,
+  type SignatureFieldConfig,
+  SignatureManager,
+  SignatureType,
+  type SignatureValidationResult,
+  type SigningCredentials,
+  type SigningOptions,
+  type SigningResult,
+  type SignOptions,
+  type TimestampConfig,
+  type TimestampResult,
+  TimestampStatus,
+} from './signature-manager.js';
+// Phase 2.4: Stream API support
+export {
+  createExtractionStream,
+  createMetadataStream,
+  createSearchStream,
+  type ExtractionProgressData,
+  ExtractionStream,
+  MetadataStream,
+  type PageMetadataData,
+  type SearchResultData,
+  SearchStream,
+} from './streams.js';
+export {
+  XFAManager,
+  XfaBindingType,
+  type XfaCreationResult,
+  type XfaDataOptions,
+  type XfaDataset,
+  type XfaField,
+  type XfaFieldConfig,
+  type XfaFieldHandle,
+  XfaFieldType,
+  XfaFormType,
+  XfaManager,
+  type XfaScriptConfig,
+  type XfaSubformConfig,
+  type XfaTemplateConfig,
+  XfaValidationType,
+} from './xfa-manager.js';

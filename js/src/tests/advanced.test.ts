@@ -3,11 +3,10 @@
  * Tests: OCRManager, ComplianceManager, CacheManager
  */
 
-import { describe, it, expect, beforeEach } from '@jest/globals';
-
-import OCRManager from '../managers/ocr-manager';
-import ComplianceManager from '../managers/compliance-manager';
+import { beforeEach, describe, expect, it } from '@jest/globals';
 import CacheManager from '../managers/cache-manager';
+import ComplianceManager from '../managers/compliance-manager';
+import OCRManager from '../managers/ocr-manager';
 
 describe('Phase 3 Advanced Features', () => {
   describe('OCRManager', () => {
@@ -245,7 +244,9 @@ describe('Phase 3 Advanced Features', () => {
 
     it('should get from cache as string, object or null', () => {
       const result = manager.getFromCache('key');
-      expect(result === null || typeof result === 'string' || typeof result === 'object').toBe(true);
+      expect(result === null || typeof result === 'string' || typeof result === 'object').toBe(
+        true
+      );
     });
 
     it('should clear cache and return boolean', () => {

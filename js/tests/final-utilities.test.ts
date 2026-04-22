@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { beforeEach, describe, expect, it } from '@jest/globals';
 
 describe('Phase 8: Final Utilities and Security', () => {
   describe('EventManager (12 functions)', () => {
@@ -271,7 +271,9 @@ describe('Phase 8: Final Utilities and Security', () => {
 
     it('should create custom annotation', () => {
       const result = manager.createCustomAnnotation?.({ type: 'custom' });
-      expect(result === null || typeof result === 'object' || typeof result === 'string').toBe(true);
+      expect(result === null || typeof result === 'object' || typeof result === 'string').toBe(
+        true
+      );
     });
 
     it('should add custom annotation', () => {
@@ -311,7 +313,12 @@ describe('Phase 8: Final Utilities and Security', () => {
 
     it('should get annotation property', () => {
       const result = manager.getAnnotationProperty?.('anno_1', 'key');
-      expect(result === null || result === undefined || typeof result === 'string' || typeof result === 'number').toBe(true);
+      expect(
+        result === null ||
+          result === undefined ||
+          typeof result === 'string' ||
+          typeof result === 'number'
+      ).toBe(true);
     });
 
     it('should validate custom annotation', () => {

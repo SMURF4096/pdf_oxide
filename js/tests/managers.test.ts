@@ -3,10 +3,16 @@
  * Tests all managers to verify FFI wiring and functionality
  */
 
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { beforeEach, describe, expect, it } from '@jest/globals';
 import DocumentEditorManager from '../src/document-editor-manager';
 import OCRManager, { OCRLanguage } from '../src/ocr-manager';
-import { PdfCreatorManager, PageSize, PageOrientation, FontStyle, TextAlign } from '../src/pdf-creator-manager';
+import {
+  FontStyle,
+  PageOrientation,
+  PageSize,
+  PdfCreatorManager,
+  TextAlign,
+} from '../src/pdf-creator-manager';
 
 describe('DocumentEditorManager', () => {
   let mockDocument: any;
@@ -365,10 +371,7 @@ describe('Cross-Manager Integration', () => {
     creator.addPage();
     creator.addPage();
 
-    const [pdf, analysis] = await Promise.all([
-      creator.build(),
-      ocr.analyzeDocument(),
-    ]);
+    const [pdf, analysis] = await Promise.all([creator.build(), ocr.analyzeDocument()]);
 
     expect(pdf).toBeInstanceOf(Buffer);
     expect(analysis).toBeInstanceOf(Array);

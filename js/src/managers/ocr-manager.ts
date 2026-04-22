@@ -10,21 +10,21 @@
  * proper error handling, and full FFI integration.
  */
 
-import {
-  BaseManager,
-  OcrLanguage,
-  OcrResult,
-  OcrBatchResult,
-  TextRegion,
-  PdfDocumentHandle,
-  ManagerOptions,
-} from '../types/manager-types.js';
 import { promises as fs } from 'fs';
 import { dirname } from 'path';
+import {
+  BaseManager,
+  type ManagerOptions,
+  type OcrBatchResult,
+  OcrLanguage,
+  type OcrResult,
+  type PdfDocumentHandle,
+  type TextRegion,
+} from '../types/manager-types.js';
 
+export type { OcrBatchResult, OcrResult, TextRegion };
 // Re-export types for convenience
 export { OcrLanguage };
-export type { OcrResult, OcrBatchResult, TextRegion };
 
 /**
  * OCR detection modes for accuracy/speed tradeoff
@@ -191,10 +191,7 @@ export class OcrManager extends BaseManager<PdfDocumentHandle> {
         throw new Error('OCR engine not initialized. Call initializeEngine() first.');
       }
 
-      const text = await (this.document as any)?.recognizePage(
-        pageIndex,
-        this.ocrEngine
-      );
+      const text = await (this.document as any)?.recognizePage(pageIndex, this.ocrEngine);
 
       this.emit('page-recognized', {
         pageIndex,
@@ -238,10 +235,7 @@ export class OcrManager extends BaseManager<PdfDocumentHandle> {
         return [];
       }
 
-      const regions = await (this.document as any)?.detectTextRegions(
-        pageIndex,
-        this.ocrEngine
-      );
+      const regions = await (this.document as any)?.detectTextRegions(pageIndex, this.ocrEngine);
 
       return regions || [];
     } catch (error) {
@@ -265,10 +259,7 @@ export class OcrManager extends BaseManager<PdfDocumentHandle> {
         throw new Error('OCR engine not initialized');
       }
 
-      const result = await (this.document as any)?.setOcrLanguage(
-        this.ocrEngine,
-        language
-      );
+      const result = await (this.document as any)?.setOcrLanguage(this.ocrEngine, language);
 
       if (result) {
         this.currentLanguage = (language as OcrLanguage) || OcrLanguage.ENGLISH;
@@ -311,8 +302,7 @@ export class OcrManager extends BaseManager<PdfDocumentHandle> {
       this.recordOperation();
 
       const languages =
-        (await (this.document as any)?.getAvailableLanguages()) ||
-        Object.values(OcrLanguage);
+        (await (this.document as any)?.getAvailableLanguages()) || Object.values(OcrLanguage);
 
       return languages;
     } catch (error) {
@@ -328,17 +318,11 @@ export class OcrManager extends BaseManager<PdfDocumentHandle> {
   /**
    * Preprocess page before OCR for better recognition
    */
-  async preprocessPage(
-    pageIndex: number,
-    preprocessingType: string = 'auto'
-  ): Promise<boolean> {
+  async preprocessPage(pageIndex: number, preprocessingType: string = 'auto'): Promise<boolean> {
     try {
       this.recordOperation();
 
-      const result = await (this.document as any)?.preprocessPage(
-        pageIndex,
-        preprocessingType
-      );
+      const result = await (this.document as any)?.preprocessPage(pageIndex, preprocessingType);
 
       this.preprocessingType = preprocessingType;
       this.emit('page-preprocessed', {
@@ -372,14 +356,13 @@ export class OcrManager extends BaseManager<PdfDocumentHandle> {
       let content: string;
       switch (format) {
         case 'json':
-          content = JSON.stringify(
-            { pageIndex, text, timestamp: Date.now() },
-            null,
-            2
-          );
+          content = JSON.stringify({ pageIndex, text, timestamp: Date.now() }, null, 2);
           break;
         case 'xml':
-          content = `<?xml version="1.0"?>\n<page index="${pageIndex}">\n${text.split('\n').map(line => `  <line>${line}</line>`).join('\n')}\n</page>`;
+          content = `<?xml version="1.0"?>\n<page index="${pageIndex}">\n${text
+            .split('\n')
+            .map((line) => `  <line>${line}</line>`)
+            .join('\n')}\n</page>`;
           break;
         default:
           content = text;
@@ -432,10 +415,7 @@ export class OcrManager extends BaseManager<PdfDocumentHandle> {
   /**
    * Batch recognize multiple pages
    */
-  async batchRecognizePages(
-    startPage: number,
-    endPage: number
-  ): Promise<Map<number, string>> {
+  async batchRecognizePages(startPage: number, endPage: number): Promise<Map<number, string>> {
     try {
       this.recordOperation();
 
@@ -495,9 +475,7 @@ export class OcrManager extends BaseManager<PdfDocumentHandle> {
           const regions = await this.detectTextRegions(pageIdx);
           totalSpans += Math.max(regions.length, text ? 1 : 0);
           confidenceSum += confidence;
-        } catch {
-          continue;
-        }
+        } catch {}
       }
 
       const processedPages = endPage - startPage + 1 - skippedPages;

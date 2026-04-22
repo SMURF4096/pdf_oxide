@@ -164,7 +164,7 @@ export class LayerManager {
     }
 
     const layers = this.getLayers();
-    return layers.find(layer => layer.name === name) || null;
+    return layers.find((layer) => layer.name === name) || null;
   }
 
   /**
@@ -178,7 +178,7 @@ export class LayerManager {
     }
 
     const layers = this.getLayers();
-    return layers.find(layer => layer.id === id) || null;
+    return layers.find((layer) => layer.id === id) || null;
   }
 
   /**
@@ -187,7 +187,7 @@ export class LayerManager {
    */
   getRootLayers(): Layer[] {
     const layers = this.getLayers();
-    return layers.filter(layer => !layer.parentId);
+    return layers.filter((layer) => !layer.parentId);
   }
 
   /**
@@ -240,7 +240,7 @@ export class LayerManager {
     }
 
     const layers = this.getLayers();
-    return layers.filter(layer => layer.parentId === parentId);
+    return layers.filter((layer) => layer.parentId === parentId);
   }
 
   /**
@@ -296,9 +296,9 @@ export class LayerManager {
   getLayerUsages(): Record<string, number> {
     const layers = this.getLayers();
     return {
-      view: layers.filter(l => l.printable === false).length,
-      print: layers.filter(l => l.printable === true).length,
-      export: layers.filter(l => l.export !== false).length,
+      view: layers.filter((l) => l.printable === false).length,
+      print: layers.filter((l) => l.printable === true).length,
+      export: layers.filter((l) => l.export !== false).length,
     };
   }
 
@@ -339,10 +339,10 @@ export class LayerManager {
       count: layers.length,
       rootCount: hierarchy.root.length,
       maxDepth,
-      visible: layers.filter(l => l.visible !== false).length,
-      hidden: layers.filter(l => l.visible === false).length,
-      printable: layers.filter(l => l.printable !== false).length,
-      exportable: layers.filter(l => l.export !== false).length,
+      visible: layers.filter((l) => l.visible !== false).length,
+      hidden: layers.filter((l) => l.visible === false).length,
+      printable: layers.filter((l) => l.printable !== false).length,
+      exportable: layers.filter((l) => l.export !== false).length,
       hasConflicts: this._detectLayerConflicts().length > 0,
     };
 
@@ -359,7 +359,7 @@ export class LayerManager {
     const layers = this.getLayers();
     const dependencies: Record<string, any> = {};
 
-    layers.forEach(layer => {
+    layers.forEach((layer) => {
       dependencies[layer.id] = {
         dependsOn: layer.dependsOn || [],
         dependents: [],
@@ -396,9 +396,8 @@ export class LayerManager {
     const regex = pattern instanceof RegExp ? pattern : new RegExp(pattern, 'i');
     const layers = this.getLayers();
 
-    return layers.filter(layer =>
-      regex.test(layer.name) ||
-      (layer.description && regex.test(layer.description))
+    return layers.filter(
+      (layer) => regex.test(layer.name) || (layer.description && regex.test(layer.description))
     );
   }
 
@@ -412,11 +411,11 @@ export class LayerManager {
     const cycles = this._detectLayerCycles();
 
     if (conflicts.length > 0) {
-      issues.push(...conflicts.map(c => `Conflict: ${c}`));
+      issues.push(...conflicts.map((c) => `Conflict: ${c}`));
     }
 
     if (cycles.length > 0) {
-      issues.push(...cycles.map(c => `Cycle detected: ${c}`));
+      issues.push(...cycles.map((c) => `Cycle detected: ${c}`));
     }
 
     return {
@@ -436,7 +435,7 @@ export class LayerManager {
 
     // Check for layers with same name
     const nameMap = new Map<string, string>();
-    layers.forEach(layer => {
+    layers.forEach((layer) => {
       if (nameMap.has(layer.name)) {
         conflicts.push(`Duplicate layer name: ${layer.name}`);
       }
@@ -444,10 +443,10 @@ export class LayerManager {
     });
 
     // Check for orphaned layers
-    const parentIds = new Set(layers.map(l => l.parentId).filter(id => id));
-    const layerIds = new Set(layers.map(l => l.id));
+    const parentIds = new Set(layers.map((l) => l.parentId).filter((id) => id));
+    const layerIds = new Set(layers.map((l) => l.id));
 
-    parentIds.forEach(parentId => {
+    parentIds.forEach((parentId) => {
       if (!layerIds.has(parentId as string)) {
         conflicts.push(`Orphaned layer reference: ${parentId}`);
       }
@@ -489,7 +488,7 @@ export class LayerManager {
       stack.delete(layerId);
     };
 
-    layers.forEach(layer => {
+    layers.forEach((layer) => {
       if (!visited.has(layer.id)) {
         detectCycle(layer.id);
       }

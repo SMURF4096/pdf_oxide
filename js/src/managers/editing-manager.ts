@@ -126,11 +126,7 @@ export class EditingManager extends EventEmitter {
    * editor.addRedaction(1, { x1: 50, y1: 100, x2: 200, y2: 150 }, { r: 0.5, g: 0.5, b: 0.5 });
    * ```
    */
-  addRedaction(
-    page: number,
-    rect: RedactionRect,
-    color?: RgbColor
-  ): void {
+  addRedaction(page: number, rect: RedactionRect, color?: RgbColor): void {
     const fillColor = color ?? { r: 0, g: 0, b: 0 };
 
     if (this.native?.pdf_redaction_add) {
@@ -438,7 +434,11 @@ export class EditingManager extends EventEmitter {
   importFormDataFromFile(filePath: string): number {
     if (this.native?.pdf_document_import_form_data) {
       const errorCode = { value: 0 };
-      const count = this.native.pdf_document_import_form_data(this.document?.handle ?? this.document, filePath, errorCode);
+      const count = this.native.pdf_document_import_form_data(
+        this.document?.handle ?? this.document,
+        filePath,
+        errorCode
+      );
       if (errorCode.value !== 0) {
         throw mapFfiErrorCode(errorCode.value, `Failed to import form data from ${filePath}`);
       }
@@ -455,7 +455,12 @@ export class EditingManager extends EventEmitter {
   importFdfBytes(data: Buffer): number {
     if (this.native?.pdf_editor_import_fdf_bytes) {
       const errorCode = { value: 0 };
-      const count = this.native.pdf_editor_import_fdf_bytes(this.document?.handle ?? this.document, data, data.length, errorCode);
+      const count = this.native.pdf_editor_import_fdf_bytes(
+        this.document?.handle ?? this.document,
+        data,
+        data.length,
+        errorCode
+      );
       if (errorCode.value !== 0) {
         throw mapFfiErrorCode(errorCode.value, 'Failed to import FDF bytes');
       }
@@ -472,7 +477,12 @@ export class EditingManager extends EventEmitter {
   importXfdfBytes(data: Buffer): number {
     if (this.native?.pdf_editor_import_xfdf_bytes) {
       const errorCode = { value: 0 };
-      const count = this.native.pdf_editor_import_xfdf_bytes(this.document?.handle ?? this.document, data, data.length, errorCode);
+      const count = this.native.pdf_editor_import_xfdf_bytes(
+        this.document?.handle ?? this.document,
+        data,
+        data.length,
+        errorCode
+      );
       if (errorCode.value !== 0) {
         throw mapFfiErrorCode(errorCode.value, 'Failed to import XFDF bytes');
       }
@@ -490,7 +500,12 @@ export class EditingManager extends EventEmitter {
     if (this.native?.pdf_document_export_form_data_to_bytes) {
       const errorCode = { value: 0 };
       const outLen = { value: 0 };
-      const ptr = this.native.pdf_document_export_form_data_to_bytes(this.document?.handle ?? this.document, format, outLen, errorCode);
+      const ptr = this.native.pdf_document_export_form_data_to_bytes(
+        this.document?.handle ?? this.document,
+        format,
+        outLen,
+        errorCode
+      );
       if (errorCode.value !== 0 || !ptr) {
         throw mapFfiErrorCode(errorCode.value, 'Failed to export form data');
       }

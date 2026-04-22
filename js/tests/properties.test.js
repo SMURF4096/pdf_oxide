@@ -1,9 +1,9 @@
-import { describe, it } from 'node:test';
 import assert from 'node:assert';
+import { describe, it } from 'node:test';
 import {
   addPdfDocumentProperties,
-  addPdfProperties,
   addPdfPageProperties,
+  addPdfProperties,
 } from '../lib/properties.js';
 
 describe('Property Getters - Phase 2.3', () => {
@@ -154,10 +154,7 @@ describe('Property Getters - Phase 2.3', () => {
 
       addPdfDocumentProperties(MockDocument);
 
-      const descriptor = Object.getOwnPropertyDescriptor(
-        MockDocument.prototype,
-        'version'
-      );
+      const descriptor = Object.getOwnPropertyDescriptor(MockDocument.prototype, 'version');
       assert.strictEqual(descriptor.enumerable, true);
       assert.strictEqual(descriptor.configurable, true);
       assert.ok(!descriptor.writable); // Getter only

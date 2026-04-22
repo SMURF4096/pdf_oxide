@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { beforeEach, describe, expect, it } from '@jest/globals';
 
 describe('Phase 7: Hybrid ML and Advanced Utilities', () => {
   describe('HybridMLManager (29 functions)', () => {
@@ -168,7 +168,9 @@ describe('Phase 7: Hybrid ML and Advanced Utilities', () => {
 
     it('should get configuration', () => {
       const result = manager.getConfiguration?.('key');
-      expect(result === null || typeof result === 'string' || typeof result === 'object').toBe(true);
+      expect(result === null || typeof result === 'string' || typeof result === 'object').toBe(
+        true
+      );
     });
 
     it('should set configuration', () => {
@@ -192,7 +194,7 @@ describe('Phase 7: Hybrid ML and Advanced Utilities', () => {
     });
 
     it('should merge configurations', () => {
-      const result = manager.mergeConfigurations?.({}  );
+      const result = manager.mergeConfigurations?.({});
       expect(typeof result === 'boolean').toBe(true);
     });
 

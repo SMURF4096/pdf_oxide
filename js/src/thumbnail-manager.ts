@@ -11,10 +11,10 @@ import { EventEmitter } from 'events';
  * Thumbnail size presets
  */
 export enum ThumbnailSize {
-  Small = 'small',      // 100x100
-  Medium = 'medium',    // 200x200
-  Large = 'large',      // 400x400
-  ExtraLarge = 'xl',    // 600x600
+  Small = 'small', // 100x100
+  Medium = 'medium', // 200x200
+  Large = 'large', // 400x400
+  ExtraLarge = 'xl', // 600x600
   Custom = 'custom',
 }
 

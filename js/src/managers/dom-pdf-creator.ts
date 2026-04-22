@@ -16,7 +16,7 @@ export enum ElementType {
   ANNOTATION = 3,
   FORM_FIELD = 4,
   LINK = 5,
-  EMBEDDED_OBJECT = 6
+  EMBEDDED_OBJECT = 6,
 }
 
 export enum ShapeType {
@@ -25,7 +25,7 @@ export enum ShapeType {
   ELLIPSE = 2,
   LINE = 3,
   POLYGON = 4,
-  BEZIER = 5
+  BEZIER = 5,
 }
 
 export interface ElementProperties {
@@ -75,7 +75,10 @@ export class DOMElementsManager extends EventEmitter {
     super();
   }
 
-  async getElementByIndex(pageIndex: number, elementIndex: number): Promise<ElementProperties | null> {
+  async getElementByIndex(
+    pageIndex: number,
+    elementIndex: number
+  ): Promise<ElementProperties | null> {
     try {
       if (!this.document) return null;
 
@@ -91,7 +94,7 @@ export class DOMElementsManager extends EventEmitter {
         rotation: element.rotation || 0,
         opacity: element.opacity || 1.0,
         visible: element.visible !== false,
-        metadata: element.metadata
+        metadata: element.metadata,
       };
     } catch (error) {
       this.emit('error', error);
@@ -101,7 +104,7 @@ export class DOMElementsManager extends EventEmitter {
 
   async getElementType(elementIndex: number): Promise<ElementType | null> {
     try {
-      return await this.document?.getElementType(elementIndex) || null;
+      return (await this.document?.getElementType(elementIndex)) || null;
     } catch (error) {
       this.emit('error', error);
       return null;
@@ -118,7 +121,7 @@ export class DOMElementsManager extends EventEmitter {
         rotation: 0,
         opacity: 1.0,
         visible: true,
-        type: 'text'
+        type: 'text',
       };
       return properties;
     } catch (error) {
@@ -129,7 +132,7 @@ export class DOMElementsManager extends EventEmitter {
 
   async getElementChildren(elementIndex: number): Promise<number[]> {
     try {
-      return await this.document?.getElementChildren(elementIndex) || [];
+      return (await this.document?.getElementChildren(elementIndex)) || [];
     } catch (error) {
       this.emit('error', error);
       return [];
@@ -146,10 +149,13 @@ export class DOMElementsManager extends EventEmitter {
     }
   }
 
-  async setElementProperties(elementIndex: number, properties: Record<string, any>): Promise<boolean> {
+  async setElementProperties(
+    elementIndex: number,
+    properties: Record<string, any>
+  ): Promise<boolean> {
     try {
       if (!this.document) return false;
-      return await this.document?.setElementProperties(elementIndex, properties) || false;
+      return (await this.document?.setElementProperties(elementIndex, properties)) || false;
     } catch (error) {
       this.emit('error', error);
       return false;
@@ -218,7 +224,7 @@ export class PdfCreatorManager extends EventEmitter {
         index: pageIndex,
         width: pageW,
         height: pageH,
-        elements: []
+        elements: [],
       });
 
       const result = await this.document?.addPage(pageW, pageH);
@@ -266,7 +272,7 @@ export class PdfCreatorManager extends EventEmitter {
         text,
         font: fontName,
         size: fontSize,
-        color
+        color,
       };
       const page = this.pages[pageIndex];
       if (page) {
@@ -299,7 +305,7 @@ export class PdfCreatorManager extends EventEmitter {
         y,
         path: imagePath,
         width,
-        height
+        height,
       };
       const page = this.pages[pageIndex];
       if (page) {
@@ -329,7 +335,7 @@ export class PdfCreatorManager extends EventEmitter {
         fillColor: shape.fillColor,
         strokeColor: shape.strokeColor,
         strokeWidth: shape.strokeWidth,
-        rotation: shape.rotation
+        rotation: shape.rotation,
       };
       const page = this.pages[pageIndex];
       if (page) {

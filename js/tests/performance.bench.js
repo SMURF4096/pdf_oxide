@@ -15,19 +15,15 @@
  * - C#: csharp/PdfOxide.Benchmarks/
  */
 
-import { describe, it } from 'node:test';
 import assert from 'node:assert';
+import { describe, it } from 'node:test';
 import {
-  PdfBuilder,
-  MetadataBuilder,
   ConversionOptionsBuilder,
+  MetadataBuilder,
+  PdfBuilder,
   SearchOptionsBuilder,
 } from '../lib/builders/index.js';
-import {
-  PdfException,
-  PdfIoError,
-  PdfParseError,
-} from '../lib/errors.js';
+import { PdfException, PdfIoError, PdfParseError } from '../lib/errors.js';
 
 /**
  * Performance measurement helper
@@ -79,13 +75,9 @@ function generateSampleContent(pages = 10) {
 describe('Performance Benchmarks - Phase 3.2', () => {
   describe('Metadata Operations Performance', () => {
     it('should measure MetadataBuilder construction time', () => {
-
       // Warmup
       for (let i = 0; i < 100; i++) {
-        MetadataBuilder.create()
-          .title('Test')
-          .author('Author')
-          .build();
+        MetadataBuilder.create().title('Test').author('Author').build();
       }
 
       // Benchmark: 1000 metadata builders
@@ -109,13 +101,9 @@ describe('Performance Benchmarks - Phase 3.2', () => {
     });
 
     it('should measure ConversionOptionsBuilder construction time', () => {
-
       // Warmup
       for (let i = 0; i < 100; i++) {
-        ConversionOptionsBuilder.create()
-          .preserveFormatting(true)
-          .includeImages(true)
-          .build();
+        ConversionOptionsBuilder.create().preserveFormatting(true).includeImages(true).build();
       }
 
       // Benchmark: 1000 conversion options builders
@@ -140,13 +128,9 @@ describe('Performance Benchmarks - Phase 3.2', () => {
     });
 
     it('should measure SearchOptionsBuilder construction time', () => {
-
       // Warmup
       for (let i = 0; i < 100; i++) {
-        SearchOptionsBuilder.create()
-          .caseSensitive(false)
-          .wholeWords(true)
-          .build();
+        SearchOptionsBuilder.create().caseSensitive(false).wholeWords(true).build();
       }
 
       // Benchmark: 1000 search options builders
@@ -172,7 +156,6 @@ describe('Performance Benchmarks - Phase 3.2', () => {
 
   describe('Builder Pattern Performance', () => {
     it('should measure fluent builder chain performance', () => {
-
       // Warmup
       for (let i = 0; i < 100; i++) {
         PdfBuilder.create()
@@ -204,7 +187,6 @@ describe('Performance Benchmarks - Phase 3.2', () => {
     });
 
     it('should measure preset factory method performance', () => {
-
       // Warmup
       for (let i = 0; i < 100; i++) {
         ConversionOptionsBuilder.highQuality().build();
@@ -240,7 +222,6 @@ describe('Performance Benchmarks - Phase 3.2', () => {
 
   describe('Error Handling Performance', () => {
     it('should measure error class instantiation performance', () => {
-
       // Warmup
       for (let i = 0; i < 100; i++) {
         new PdfException('Test error');
@@ -270,7 +251,6 @@ describe('Performance Benchmarks - Phase 3.2', () => {
     });
 
     it('should measure error throwing and catching performance', () => {
-
       // Warmup
       for (let i = 0; i < 100; i++) {
         try {
@@ -307,7 +287,7 @@ describe('Performance Benchmarks - Phase 3.2', () => {
         'Text extraction': '< 50ms per page',
         'Markdown conversion': '< 100ms per page',
         'DOM navigation': '< 10ms for 1000 elements',
-        'Search': '< 200ms for 100-page document',
+        Search: '< 200ms for 100-page document',
       };
 
       console.log('\n  Performance Targets (Cross-Language):\n');
@@ -342,18 +322,12 @@ describe('Performance Benchmarks - Phase 3.2', () => {
 
   describe('Memory Usage Patterns', () => {
     it('should measure builder memory efficiency', () => {
-
       // Note: V8 GC prevents accurate measurement in test context
       // This provides structure for memory profiling tools
 
       const builders = [];
       for (let i = 0; i < 100; i++) {
-        builders.push(
-          MetadataBuilder.create()
-            .title(`Doc ${i}`)
-            .author('Author')
-            .build()
-        );
+        builders.push(MetadataBuilder.create().title(`Doc ${i}`).author('Author').build());
       }
 
       assert.strictEqual(builders.length, 100);
@@ -362,7 +336,6 @@ describe('Performance Benchmarks - Phase 3.2', () => {
     });
 
     it('should verify error class memory overhead', () => {
-
       const errors = [];
       for (let i = 0; i < 100; i++) {
         if (i % 2 === 0) {
@@ -386,9 +359,9 @@ describe('Performance Benchmarks - Phase 3.2', () => {
 
       const results = {
         'Builder Construction': {
-          'Metadata': '< 0.5ms',
-          'ConversionOptions': '< 0.5ms',
-          'SearchOptions': '< 0.5ms',
+          Metadata: '< 0.5ms',
+          ConversionOptions: '< 0.5ms',
+          SearchOptions: '< 0.5ms',
         },
         'Fluent Chaining': {
           'Chain construction': '< 0.3ms',

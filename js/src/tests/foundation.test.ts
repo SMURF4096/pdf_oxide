@@ -3,7 +3,7 @@
  * Tests: ResultAccessorsManager, FormFieldManager
  */
 
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { beforeEach, describe, expect, it } from '@jest/globals';
 
 import FormFieldManager from '../managers/form-field-manager';
 import ResultAccessorsManager from '../managers/result-accessors-manager';
@@ -38,7 +38,9 @@ describe('Phase 1 Foundation', () => {
 
     it('should get error code as int/string or null', () => {
       const result = manager.getErrorCode();
-      expect(result === null || typeof result === 'number' || typeof result === 'string').toBe(true);
+      expect(result === null || typeof result === 'number' || typeof result === 'string').toBe(
+        true
+      );
     });
 
     it('should check if has error details', () => {
@@ -53,8 +55,12 @@ describe('Phase 1 Foundation', () => {
 
     it('should get result data of various types', () => {
       const result = manager.getResultData();
-      expect(result === null || typeof result === 'object' || typeof result === 'string' ||
-              typeof result === 'number').toBe(true);
+      expect(
+        result === null ||
+          typeof result === 'object' ||
+          typeof result === 'string' ||
+          typeof result === 'number'
+      ).toBe(true);
     });
 
     it('should get result metadata as object or null', () => {
@@ -131,8 +137,12 @@ describe('Phase 1 Foundation', () => {
 
     it('should cast result to various types', () => {
       const result = manager.castResult('int');
-      expect(result === null || typeof result === 'number' || typeof result === 'string' ||
-              typeof result === 'boolean').toBe(true);
+      expect(
+        result === null ||
+          typeof result === 'number' ||
+          typeof result === 'string' ||
+          typeof result === 'boolean'
+      ).toBe(true);
     });
 
     it('should get result hash as string', () => {
@@ -205,8 +215,12 @@ describe('Phase 1 Foundation', () => {
 
     it('should get field value of various types', () => {
       const result = manager.getFieldValue('field_1');
-      expect(result === null || typeof result === 'string' || typeof result === 'number' ||
-              typeof result === 'boolean').toBe(true);
+      expect(
+        result === null ||
+          typeof result === 'string' ||
+          typeof result === 'number' ||
+          typeof result === 'boolean'
+      ).toBe(true);
     });
 
     it('should set field value and return boolean', () => {

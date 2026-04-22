@@ -6,11 +6,11 @@
 // Run with:
 //   LD_LIBRARY_PATH=../target/release node tests/bench.mjs ../bench_fixtures/tiny.pdf ...
 
-import { createRequire } from 'node:module';
+import { Buffer } from 'node:buffer';
 import { statSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { basename } from 'node:path';
 import { hrtime } from 'node:process';
-import { Buffer } from 'node:buffer';
 
 const require = createRequire(import.meta.url);
 const native = require('../build/Release/pdf_oxide.node');

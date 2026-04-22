@@ -272,21 +272,21 @@ export class Color {
  * Represents a standard page size
  */
 export enum PageSize {
-  Letter = "Letter",
-  Legal = "Legal",
-  A0 = "A0",
-  A1 = "A1",
-  A2 = "A2",
-  A3 = "A3",
-  A4 = "A4",
-  A5 = "A5",
-  A6 = "A6",
-  B4 = "B4",
-  B5 = "B5",
-  B6 = "B6",
-  Tabloid = "Tabloid",
-  Ledger = "Ledger",
-  Custom = "Custom"
+  Letter = 'Letter',
+  Legal = 'Legal',
+  A0 = 'A0',
+  A1 = 'A1',
+  A2 = 'A2',
+  A3 = 'A3',
+  A4 = 'A4',
+  A5 = 'A5',
+  A6 = 'A6',
+  B4 = 'B4',
+  B5 = 'B5',
+  B6 = 'B6',
+  Tabloid = 'Tabloid',
+  Ledger = 'Ledger',
+  Custom = 'Custom',
 }
 
 /**
@@ -1016,8 +1016,15 @@ export class Pdf {
    * @param strokeColor - Stroke color (optional)
    * @param strokeWidth - Stroke width (optional)
    */
-  addRect(x: number, y: number, width: number, height: number,
-          color?: Color, strokeColor?: Color, strokeWidth?: number): void;
+  addRect(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    color?: Color,
+    strokeColor?: Color,
+    strokeWidth?: number
+  ): void;
 
   /**
    * Adds a link annotation
@@ -1444,7 +1451,10 @@ export class MetadataManager {
   getMetadataSummary(): string;
   hasKeyword(keyword: string): boolean;
   getKeywordCount(): number;
-  compareWith(otherDocument: PdfDocument): { matching: Record<string, any>; differing: Record<string, any> };
+  compareWith(otherDocument: PdfDocument): {
+    matching: Record<string, any>;
+    differing: Record<string, any>;
+  };
   validate(): { isComplete: boolean; issues: string[]; missingFieldCount: number };
 }
 
@@ -1455,17 +1465,40 @@ export class ExtractionManager {
   constructor(document: PdfDocument);
   extractText(pageIndex: number, options?: ConversionOptions): string;
   extractAllText(options?: ConversionOptions): string;
-  extractTextRange(startPageIndex: number, endPageIndex: number, options?: ConversionOptions): string;
+  extractTextRange(
+    startPageIndex: number,
+    endPageIndex: number,
+    options?: ConversionOptions
+  ): string;
   extractMarkdown(pageIndex: number, options?: ConversionOptions): string;
   extractAllMarkdown(options?: ConversionOptions): string;
-  extractMarkdownRange(startPageIndex: number, endPageIndex: number, options?: ConversionOptions): string;
+  extractMarkdownRange(
+    startPageIndex: number,
+    endPageIndex: number,
+    options?: ConversionOptions
+  ): string;
   getPageWordCount(pageIndex: number): number;
   getTotalWordCount(): number;
   getPageCharacterCount(pageIndex: number): number;
   getTotalCharacterCount(): number;
   getPageLineCount(pageIndex: number): number;
-  getContentStatistics(): { pageCount: number; wordCount: number; characterCount: number; averageWordsPerPage: number; averageCharactersPerPage: number };
-  searchContent(searchText: string, contextLength?: number): Array<{ pageIndex: number; pageNumber: number; matchIndex: number; snippet: string; matchText: string }>;
+  getContentStatistics(): {
+    pageCount: number;
+    wordCount: number;
+    characterCount: number;
+    averageWordsPerPage: number;
+    averageCharactersPerPage: number;
+  };
+  searchContent(
+    searchText: string,
+    contextLength?: number
+  ): Array<{
+    pageIndex: number;
+    pageNumber: number;
+    matchIndex: number;
+    snippet: string;
+    matchText: string;
+  }>;
 }
 
 /**
@@ -1480,13 +1513,31 @@ export class SearchManager {
   contains(searchText: string, pageIndex: number, options?: SearchOptions): boolean;
   containsAnywhere(searchText: string, options?: SearchOptions): boolean;
   getPagesContaining(searchText: string, options?: SearchOptions): number[];
-  getSearchStatistics(searchText: string, options?: SearchOptions): { searchText: string; totalOccurrences: number; pagesContaining: number; firstMatchPage: number; lastMatchPage: number; pages: number[]; occurrencesPerPage: Array<any> };
+  getSearchStatistics(
+    searchText: string,
+    options?: SearchOptions
+  ): {
+    searchText: string;
+    totalOccurrences: number;
+    pagesContaining: number;
+    firstMatchPage: number;
+    lastMatchPage: number;
+    pages: number[];
+    occurrencesPerPage: Array<any>;
+  };
   searchRegex(pattern: RegExp | string, options?: SearchOptions): SearchResult[];
   findFirst(searchText: string, options?: SearchOptions): SearchResult | null;
   findLast(searchText: string, options?: SearchOptions): SearchResult | null;
   highlightMatches(searchText: string, options?: SearchOptions): SearchResult[];
   isSearchable(): boolean;
-  getCapabilities(): { caseSensitiveSearch: boolean; wholeWordSearch: boolean; regexSearch: boolean; annotationSearch: boolean; maxResults: number; isSearchable: boolean };
+  getCapabilities(): {
+    caseSensitiveSearch: boolean;
+    wholeWordSearch: boolean;
+    regexSearch: boolean;
+    annotationSearch: boolean;
+    maxResults: number;
+    isSearchable: boolean;
+  };
 }
 
 /**
@@ -1503,9 +1554,33 @@ export class SecurityManager {
   canAnnotate(): boolean;
   canFillForms(): boolean;
   isViewOnly(): boolean;
-  getPermissionsSummary(): { canPrint: boolean; canCopy: boolean; canModify: boolean; canAnnotate: boolean; canFillForms: boolean; isViewOnly: boolean; isEncrypted: boolean; requiresPassword: boolean; encryptionAlgorithm: string | null };
-  getSecurityLevel(): { level: string; description: string; isEncrypted: boolean; algorithm: string | null; restrictedAccess: boolean };
-  validateAccessibility(): { canExtractText: boolean; canExtractImages: boolean; canAnalyzeContent: boolean; canSearch: boolean; canViewContent: boolean; isAccessible: boolean; issues: string[] };
+  getPermissionsSummary(): {
+    canPrint: boolean;
+    canCopy: boolean;
+    canModify: boolean;
+    canAnnotate: boolean;
+    canFillForms: boolean;
+    isViewOnly: boolean;
+    isEncrypted: boolean;
+    requiresPassword: boolean;
+    encryptionAlgorithm: string | null;
+  };
+  getSecurityLevel(): {
+    level: string;
+    description: string;
+    isEncrypted: boolean;
+    algorithm: string | null;
+    restrictedAccess: boolean;
+  };
+  validateAccessibility(): {
+    canExtractText: boolean;
+    canExtractImages: boolean;
+    canAnalyzeContent: boolean;
+    canSearch: boolean;
+    canViewContent: boolean;
+    isAccessible: boolean;
+    issues: string[];
+  };
   generateSecurityReport(): string;
 }
 
@@ -1527,7 +1602,17 @@ export class AnnotationManager {
   getUnderlines(): Annotation[];
   getStrikeouts(): Annotation[];
   getSquigglies(): Annotation[];
-  getAnnotationStatistics(): { total: number; byType: Record<string, number>; byAuthor: Record<string, number>; authors: string[]; types: string[]; hasComments: boolean; hasHighlights: boolean; averageOpacity: number; recentModifications: number };
+  getAnnotationStatistics(): {
+    total: number;
+    byType: Record<string, number>;
+    byAuthor: Record<string, number>;
+    authors: string[];
+    types: string[];
+    hasComments: boolean;
+    hasHighlights: boolean;
+    averageOpacity: number;
+    recentModifications: number;
+  };
   getRecentAnnotations(days: number): Annotation[];
   generateAnnotationSummary(): string;
   validateAnnotation(annotation: Annotation): { isValid: boolean; issues: string[] };
@@ -1573,7 +1658,10 @@ export class RenderingManager {
   getMaxResolution(): number;
   getSupportedColorSpaces(): string[];
   getPageDimensions(pageIndex: number): { width: number; height: number; unit: string };
-  getDisplaySize(pageIndex: number, zoomLevel: number): { width: number; height: number; unit: string };
+  getDisplaySize(
+    pageIndex: number,
+    zoomLevel: number
+  ): { width: number; height: number; unit: string };
   getPageRotation(pageIndex: number): number;
   getPageCropBox(pageIndex: number): { x: number; y: number; width: number; height: number };
   getPageMediaBox(pageIndex: number): { x: number; y: number; width: number; height: number };
@@ -1584,7 +1672,9 @@ export class RenderingManager {
   calculateZoomForHeight(pageIndex: number, viewportHeight: number): number;
   calculateZoomToFit(pageIndex: number, viewportWidth: number, viewportHeight: number): number;
   getEmbeddedFonts(pageIndex: number): Array<{ name: string; embedded: boolean; subset?: boolean }>;
-  getEmbeddedImages(pageIndex: number): Array<{ name: string; width: number; height: number; colorSpace?: string }>;
+  getEmbeddedImages(
+    pageIndex: number
+  ): Array<{ name: string; width: number; height: number; colorSpace?: string }>;
   getPageResources(pageIndex: number): {
     fonts: Array<{ name: string; embedded: boolean; subset?: boolean }>;
     images: Array<{ name: string; width: number; height: number; colorSpace?: string }>;
@@ -1604,7 +1694,11 @@ export class RenderingManager {
   validateRenderingState(): { isValid: boolean; issues: string[] };
 
   // New rendering methods
-  renderPageToFile(pageIndex: number, outputPath: string, options?: RenderOptions | object | null): Promise<string>;
+  renderPageToFile(
+    pageIndex: number,
+    outputPath: string,
+    options?: RenderOptions | object | null
+  ): Promise<string>;
   renderPageToBytes(pageIndex: number, options?: RenderOptions | object | null): Promise<Buffer>;
   renderPagesRange(
     startPage: number,

@@ -131,7 +131,7 @@ export class AnnotationManager {
     }
 
     const annotations = this.getAnnotations();
-    return annotations.filter(ann => ann.type === type.toLowerCase());
+    return annotations.filter((ann) => ann.type === type.toLowerCase());
   }
 
   /**
@@ -158,7 +158,7 @@ export class AnnotationManager {
     }
 
     const annotations = this.getAnnotations();
-    return annotations.filter(ann => ann.author === author);
+    return annotations.filter((ann) => ann.author === author);
   }
 
   /**
@@ -169,7 +169,7 @@ export class AnnotationManager {
     const annotations = this.getAnnotations();
     const authors = new Set<string>();
 
-    annotations.forEach(ann => {
+    annotations.forEach((ann) => {
       if (ann.author) {
         authors.add(ann.author);
       }
@@ -194,8 +194,8 @@ export class AnnotationManager {
     }
 
     const annotations = this.getAnnotations();
-    return annotations.filter(ann =>
-      ann.modificationDate && new Date(ann.modificationDate) > date
+    return annotations.filter(
+      (ann) => ann.modificationDate && new Date(ann.modificationDate) > date
     );
   }
 
@@ -210,8 +210,8 @@ export class AnnotationManager {
     }
 
     const annotations = this.getAnnotations();
-    return annotations.filter(ann =>
-      ann.modificationDate && new Date(ann.modificationDate) < date
+    return annotations.filter(
+      (ann) => ann.modificationDate && new Date(ann.modificationDate) < date
     );
   }
 
@@ -233,9 +233,7 @@ export class AnnotationManager {
     const annotations = this.getAnnotations();
     const fragment = contentFragment.toLowerCase();
 
-    return annotations.filter(ann =>
-      ann.content && ann.content.toLowerCase().includes(fragment)
-    );
+    return annotations.filter((ann) => ann.content && ann.content.toLowerCase().includes(fragment));
   }
 
   /**
@@ -299,7 +297,7 @@ export class AnnotationManager {
     const byType: Record<string, number> = {};
     const byAuthor: Record<string, number> = {};
 
-    annotations.forEach(ann => {
+    annotations.forEach((ann) => {
       // Count by type
       byType[ann.type] = (byType[ann.type] || 0) + 1;
 
@@ -315,8 +313,8 @@ export class AnnotationManager {
       byAuthor,
       authors: Object.keys(byAuthor),
       types: Object.keys(byType),
-      hasComments: annotations.some(ann => ann.type === 'text'),
-      hasHighlights: annotations.some(ann => ann.type === 'highlight'),
+      hasComments: annotations.some((ann) => ann.type === 'text'),
+      hasHighlights: annotations.some((ann) => ann.type === 'highlight'),
       averageOpacity: this.getAverageOpacity(),
       recentModifications: this.getRecentAnnotations(7).length,
     };
@@ -423,7 +421,8 @@ export class AnnotationManager {
         if (annotation.bounds.x < 0) issues.push('Invalid bounds: x must be non-negative');
         if (annotation.bounds.y < 0) issues.push('Invalid bounds: y must be non-negative');
         if (annotation.bounds.width < 0) issues.push('Invalid bounds: width must be non-negative');
-        if (annotation.bounds.height < 0) issues.push('Invalid bounds: height must be non-negative');
+        if (annotation.bounds.height < 0)
+          issues.push('Invalid bounds: height must be non-negative');
       }
 
       if (annotation.opacity && (annotation.opacity < 0 || annotation.opacity > 1)) {

@@ -104,7 +104,9 @@ export class ComplianceManager extends EventEmitter {
   // Validation (from root-level with native FFI)
   // ===========================================================================
 
-  async validatePdfA(level: PdfALevel | string = PdfALevel.A1b): Promise<ComplianceValidationResult> {
+  async validatePdfA(
+    level: PdfALevel | string = PdfALevel.A1b
+  ): Promise<ComplianceValidationResult> {
     const cacheKey = `compliance:pdfa:${level}`;
     if (this.resultCache.has(cacheKey)) return this.resultCache.get(cacheKey);
 
@@ -118,23 +120,39 @@ export class ComplianceManager extends EventEmitter {
         isCompliant = nativeResult.is_compliant ?? true;
         validationTime = nativeResult.validation_time ?? 0;
         if (nativeResult.issues_json) {
-          try { issues = JSON.parse(nativeResult.issues_json); } catch { issues = []; }
+          try {
+            issues = JSON.parse(nativeResult.issues_json);
+          } catch {
+            issues = [];
+          }
         }
-      } catch { isCompliant = true; issues = []; }
+      } catch {
+        isCompliant = true;
+        issues = [];
+      }
     } else if (this.document?.validatePdfA) {
       try {
         const valid = await this.document.validatePdfA(typeof level === 'string' ? level : '1b');
         isCompliant = !!valid;
-      } catch { isCompliant = true; }
+      } catch {
+        isCompliant = true;
+      }
     }
 
-    const result: ComplianceValidationResult = { isCompliant, level: typeof level === 'string' ? level : level, issues, validationTime };
+    const result: ComplianceValidationResult = {
+      isCompliant,
+      level: typeof level === 'string' ? level : level,
+      issues,
+      validationTime,
+    };
     this.setCached(cacheKey, result);
     this.emit('pdfAValidated', { level, isCompliant, issueCount: issues.length });
     return result;
   }
 
-  async validatePdfX(level: PdfXLevel | string = PdfXLevel.X1a): Promise<ComplianceValidationResult> {
+  async validatePdfX(
+    level: PdfXLevel | string = PdfXLevel.X1a
+  ): Promise<ComplianceValidationResult> {
     const cacheKey = `compliance:pdfx:${level}`;
     if (this.resultCache.has(cacheKey)) return this.resultCache.get(cacheKey);
 
@@ -148,23 +166,39 @@ export class ComplianceManager extends EventEmitter {
         isCompliant = nativeResult.is_compliant ?? true;
         validationTime = nativeResult.validation_time ?? 0;
         if (nativeResult.issues_json) {
-          try { issues = JSON.parse(nativeResult.issues_json); } catch { issues = []; }
+          try {
+            issues = JSON.parse(nativeResult.issues_json);
+          } catch {
+            issues = [];
+          }
         }
-      } catch { isCompliant = true; issues = []; }
+      } catch {
+        isCompliant = true;
+        issues = [];
+      }
     } else if (this.document?.validatePdfX) {
       try {
         const valid = await this.document.validatePdfX(typeof level === 'string' ? level : '1a');
         isCompliant = !!valid;
-      } catch { isCompliant = true; }
+      } catch {
+        isCompliant = true;
+      }
     }
 
-    const result: ComplianceValidationResult = { isCompliant, level: typeof level === 'string' ? level : level, issues, validationTime };
+    const result: ComplianceValidationResult = {
+      isCompliant,
+      level: typeof level === 'string' ? level : level,
+      issues,
+      validationTime,
+    };
     this.setCached(cacheKey, result);
     this.emit('pdfXValidated', { level, isCompliant, issueCount: issues.length });
     return result;
   }
 
-  async validatePdfUA(level: PdfUALevel | string = PdfUALevel.UA1): Promise<ComplianceValidationResult> {
+  async validatePdfUA(
+    level: PdfUALevel | string = PdfUALevel.UA1
+  ): Promise<ComplianceValidationResult> {
     const cacheKey = `compliance:pdfua:${level}`;
     if (this.resultCache.has(cacheKey)) return this.resultCache.get(cacheKey);
 
@@ -178,14 +212,30 @@ export class ComplianceManager extends EventEmitter {
         isCompliant = nativeResult.is_compliant ?? true;
         validationTime = nativeResult.validation_time ?? 0;
         if (nativeResult.issues_json) {
-          try { issues = JSON.parse(nativeResult.issues_json); } catch { issues = []; }
+          try {
+            issues = JSON.parse(nativeResult.issues_json);
+          } catch {
+            issues = [];
+          }
         }
-      } catch { isCompliant = true; issues = []; }
+      } catch {
+        isCompliant = true;
+        issues = [];
+      }
     } else if (this.document?.validatePdfUA) {
-      try { isCompliant = !!(await this.document.validatePdfUA()); } catch { isCompliant = true; }
+      try {
+        isCompliant = !!(await this.document.validatePdfUA());
+      } catch {
+        isCompliant = true;
+      }
     }
 
-    const result: ComplianceValidationResult = { isCompliant, level: typeof level === 'string' ? level : level, issues, validationTime };
+    const result: ComplianceValidationResult = {
+      isCompliant,
+      level: typeof level === 'string' ? level : level,
+      issues,
+      validationTime,
+    };
     this.setCached(cacheKey, result);
     this.emit('pdfUAValidated', { level, isCompliant, issueCount: issues.length });
     return result;
@@ -200,7 +250,11 @@ export class ComplianceManager extends EventEmitter {
     if (this.resultCache.has(cacheKey)) return this.resultCache.get(cacheKey);
     let issues: ComplianceIssue[] = [];
     if (this.native?.compliance_get_all_issues) {
-      try { issues = JSON.parse(this.native.compliance_get_all_issues()) || []; } catch { issues = []; }
+      try {
+        issues = JSON.parse(this.native.compliance_get_all_issues()) || [];
+      } catch {
+        issues = [];
+      }
     }
     this.setCached(cacheKey, issues);
     this.emit('issuesRetrieved', { count: issues.length });
@@ -209,12 +263,18 @@ export class ComplianceManager extends EventEmitter {
 
   async getIssuesOfType(type: ComplianceIssueType): Promise<ComplianceIssue[]> {
     const allIssues = await this.getAllIssues();
-    return allIssues.filter(issue => issue.type === type);
+    return allIssues.filter((issue) => issue.type === type);
   }
 
-  async getIssueCount(): Promise<number> { return (await this.getAllIssues()).length; }
-  async getErrorCount(): Promise<number> { return (await this.getAllIssues()).filter(i => i.severity === IssueSeverity.Error).length; }
-  async getWarningCount(): Promise<number> { return (await this.getAllIssues()).filter(i => i.severity === IssueSeverity.Warning).length; }
+  async getIssueCount(): Promise<number> {
+    return (await this.getAllIssues()).length;
+  }
+  async getErrorCount(): Promise<number> {
+    return (await this.getAllIssues()).filter((i) => i.severity === IssueSeverity.Error).length;
+  }
+  async getWarningCount(): Promise<number> {
+    return (await this.getAllIssues()).filter((i) => i.severity === IssueSeverity.Warning).length;
+  }
 
   // ===========================================================================
   // Conversion & Fixing (from managers version)
@@ -226,7 +286,10 @@ export class ComplianceManager extends EventEmitter {
       this.resultCache.delete(`compliance:pdfa:${level}`);
       this.emit('conversion-complete', { type: 'PDF/A', level, success: result });
       return !!result;
-    } catch (error) { this.emit('error', error); return false; }
+    } catch (error) {
+      this.emit('error', error);
+      return false;
+    }
   }
 
   async convertToPdfUA(): Promise<boolean> {
@@ -235,39 +298,60 @@ export class ComplianceManager extends EventEmitter {
       this.resultCache.delete('compliance:pdfua:');
       this.emit('conversion-complete', { type: 'PDF/UA', success: result });
       return !!result;
-    } catch (error) { this.emit('error', error); return false; }
+    } catch (error) {
+      this.emit('error', error);
+      return false;
+    }
   }
 
   async getComplianceReport(complianceType: string = 'all'): Promise<string> {
-    try { return await this.document?.getComplianceReport?.(complianceType) ?? ''; }
-    catch (error) { this.emit('error', error); return ''; }
+    try {
+      return (await this.document?.getComplianceReport?.(complianceType)) ?? '';
+    } catch (error) {
+      this.emit('error', error);
+      return '';
+    }
   }
 
   async checkFontEmbedding(): Promise<boolean> {
     const cacheKey = 'compliance:fonts_embedded';
     if (this.resultCache.has(cacheKey)) return this.resultCache.get(cacheKey);
-    const result = this.document?.checkFontEmbedding?.() ?? this.native?.compliance_has_embedded_fonts?.() ?? true;
+    const result =
+      this.document?.checkFontEmbedding?.() ??
+      this.native?.compliance_has_embedded_fonts?.() ??
+      true;
     this.setCached(cacheKey, result);
     return result;
   }
 
   /** @deprecated Use checkFontEmbedding() instead */
-  async hasFontsEmbedded(): Promise<boolean> { return this.checkFontEmbedding(); }
+  async hasFontsEmbedded(): Promise<boolean> {
+    return this.checkFontEmbedding();
+  }
 
   async checkColorSpace(): Promise<boolean> {
     const cacheKey = 'compliance:valid_color_space';
     if (this.resultCache.has(cacheKey)) return this.resultCache.get(cacheKey);
-    const result = this.document?.checkColorSpace?.() ?? this.native?.compliance_has_valid_color_space?.() ?? true;
+    const result =
+      this.document?.checkColorSpace?.() ??
+      this.native?.compliance_has_valid_color_space?.() ??
+      true;
     this.setCached(cacheKey, result);
     return result;
   }
 
   /** @deprecated Use checkColorSpace() instead */
-  async hasValidColorSpace(): Promise<boolean> { return this.checkColorSpace(); }
+  async hasValidColorSpace(): Promise<boolean> {
+    return this.checkColorSpace();
+  }
 
   async checkTaggedContent(): Promise<boolean> {
-    try { return await this.document?.checkTaggedContent?.() ?? false; }
-    catch (error) { this.emit('error', error); return false; }
+    try {
+      return (await this.document?.checkTaggedContent?.()) ?? false;
+    } catch (error) {
+      this.emit('error', error);
+      return false;
+    }
   }
 
   async addMissingTags(): Promise<boolean> {
@@ -275,31 +359,43 @@ export class ComplianceManager extends EventEmitter {
       const result = await this.document?.addMissingTags?.();
       this.emit('tags-added');
       return !!result;
-    } catch (error) { this.emit('error', error); return false; }
+    } catch (error) {
+      this.emit('error', error);
+      return false;
+    }
   }
 
   async fixFontIssues(): Promise<number> {
     try {
-      const count = await this.document?.fixFontIssues?.() ?? 0;
+      const count = (await this.document?.fixFontIssues?.()) ?? 0;
       this.emit('fonts-fixed', { count });
       return count;
-    } catch (error) { this.emit('error', error); return 0; }
+    } catch (error) {
+      this.emit('error', error);
+      return 0;
+    }
   }
 
   async fixColorIssues(): Promise<number> {
     try {
-      const count = await this.document?.fixColorIssues?.() ?? 0;
+      const count = (await this.document?.fixColorIssues?.()) ?? 0;
       this.emit('colors-fixed', { count });
       return count;
-    } catch (error) { this.emit('error', error); return 0; }
+    } catch (error) {
+      this.emit('error', error);
+      return 0;
+    }
   }
 
   async removeUnsupportedFeatures(): Promise<number> {
     try {
-      const count = await this.document?.removeUnsupportedFeatures?.() ?? 0;
+      const count = (await this.document?.removeUnsupportedFeatures?.()) ?? 0;
       this.emit('features-removed', { count });
       return count;
-    } catch (error) { this.emit('error', error); return 0; }
+    } catch (error) {
+      this.emit('error', error);
+      return 0;
+    }
   }
 
   async getComplianceIssues(): Promise<string[]> {
@@ -317,7 +413,10 @@ export class ComplianceManager extends EventEmitter {
       if (!taggedContent) issues.push('Missing proper tagging');
       this.emit('issues-analyzed', { count: issues.length });
       return issues;
-    } catch (error) { this.emit('error', error); return []; }
+    } catch (error) {
+      this.emit('error', error);
+      return [];
+    }
   }
 
   getIssueSeverity(issue: string): string {
@@ -334,7 +433,10 @@ export class ComplianceManager extends EventEmitter {
       await fs.writeFile(filePath, report, 'utf8');
       this.emit('report-created', { filePath });
       return true;
-    } catch (error) { this.emit('error', error); return false; }
+    } catch (error) {
+      this.emit('error', error);
+      return false;
+    }
   }
 
   async getComplianceSummary(): Promise<object> {
@@ -348,20 +450,33 @@ export class ComplianceManager extends EventEmitter {
         taggedContent: await this.checkTaggedContent(),
         issues: await this.getComplianceIssues(),
       };
-    } catch (error) { this.emit('error', error); return {}; }
+    } catch (error) {
+      this.emit('error', error);
+      return {};
+    }
   }
 
   // ===========================================================================
   // Cache
   // ===========================================================================
 
-  clearCache(): void { this.resultCache.clear(); this.emit('cacheCleared'); }
-
-  getCacheStats(): Record<string, any> {
-    return { cacheSize: this.resultCache.size, maxCacheSize: this.maxCacheSize, entries: Array.from(this.resultCache.keys()) };
+  clearCache(): void {
+    this.resultCache.clear();
+    this.emit('cacheCleared');
   }
 
-  destroy(): void { this.resultCache.clear(); this.removeAllListeners(); }
+  getCacheStats(): Record<string, any> {
+    return {
+      cacheSize: this.resultCache.size,
+      maxCacheSize: this.maxCacheSize,
+      entries: Array.from(this.resultCache.keys()),
+    };
+  }
+
+  destroy(): void {
+    this.resultCache.clear();
+    this.removeAllListeners();
+  }
 
   private setCached(key: string, value: any): void {
     this.resultCache.set(key, value);

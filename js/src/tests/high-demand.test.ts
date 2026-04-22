@@ -3,11 +3,11 @@
  * Tests: BarcodesManager, SignaturesManager, RenderingManager
  */
 
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { beforeEach, describe, expect, it } from '@jest/globals';
 
 import BarcodesManager from '../managers/barcodes-manager';
-import SignaturesManager from '../managers/signatures-manager';
 import RenderingManager from '../managers/rendering-manager';
+import SignaturesManager from '../managers/signatures-manager';
 
 describe('Phase 2 High-Demand Features', () => {
   describe('BarcodesManager', () => {

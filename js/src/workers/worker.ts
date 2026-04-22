@@ -4,7 +4,7 @@
  */
 
 import { parentPort, workerData } from 'worker_threads';
-import type { WorkerTask, WorkerResult } from './pool.js';
+import type { WorkerResult, WorkerTask } from './pool.js';
 
 // Types for operations - will be available at runtime via the PdfDocument
 type PdfDocument = any;
@@ -32,20 +32,11 @@ async function handleTask(task: WorkerTask<any>): Promise<WorkerResult<any>> {
         const extMgr = doc.extraction;
 
         if (task.params.type === 'markdown') {
-          result = extMgr.extractMarkdown(
-            task.params.pageIndex,
-            task.params.options
-          );
+          result = extMgr.extractMarkdown(task.params.pageIndex, task.params.options);
         } else if (task.params.type === 'html') {
-          result = extMgr.extractHtml(
-            task.params.pageIndex,
-            task.params.options
-          );
+          result = extMgr.extractHtml(task.params.pageIndex, task.params.options);
         } else {
-          result = extMgr.extractText(
-            task.params.pageIndex,
-            task.params.options
-          );
+          result = extMgr.extractText(task.params.pageIndex, task.params.options);
         }
         break;
       }
@@ -53,20 +44,14 @@ async function handleTask(task: WorkerTask<any>): Promise<WorkerResult<any>> {
       case 'search': {
         const doc = PdfDocument.open(task.documentPath);
         const searchMgr = doc.search;
-        result = searchMgr.searchAll(
-          task.params.query,
-          task.params.options || {}
-        );
+        result = searchMgr.searchAll(task.params.query, task.params.options || {});
         break;
       }
 
       case 'render': {
         const doc = PdfDocument.open(task.documentPath);
         const renderMgr = doc.rendering;
-        result = renderMgr.renderPage(
-          task.params.pageIndex,
-          task.params.options || {}
-        );
+        result = renderMgr.renderPage(task.params.pageIndex, task.params.options || {});
         break;
       }
 

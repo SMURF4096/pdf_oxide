@@ -3,18 +3,18 @@
  * Tests for forms, metadata, page labels, and embedded files integration with Pdf class
  */
 
-import { describe, it } from 'node:test';
 import assert from 'node:assert';
+import { describe, it } from 'node:test';
 import {
-  Pdf,
-  PdfDocument,
-  PdfBuilder,
   AcroForm,
-  FormField,
-  XMPMetadata,
-  PageLabel,
-  EmbeddedFile,
   DocumentInfo,
+  EmbeddedFile,
+  FormField,
+  PageLabel,
+  Pdf,
+  PdfBuilder,
+  PdfDocument,
+  XMPMetadata,
 } from '../index.js';
 
 describe('Phase 4 Part 2 Integration: Pdf Class with Forms and Metadata', () => {
@@ -239,12 +239,7 @@ describe('Phase 4 Part 2 Integration: Pdf Class with Forms and Metadata', () => 
 
     it('should add embedded file to PDF', () => {
       const doc = Pdf.from_text('Report with attachments');
-      const file = EmbeddedFile.new(
-        'report_data',
-        'data.xlsx',
-        'application/vnd.ms-excel',
-        2048
-      );
+      const file = EmbeddedFile.new('report_data', 'data.xlsx', 'application/vnd.ms-excel', 2048);
       file.set_description('Report data in Excel format');
 
       const result = doc.add_embedded_file(file);
@@ -306,7 +301,10 @@ describe('Phase 4 Part 2 Integration: Pdf Class with Forms and Metadata', () => 
       // Extract file
       const extracted = doc.extract_embedded_file('report');
       // In current implementation, this returns None
-      assert.ok(extracted !== null || extracted === null, 'extract_embedded_file should be callable');
+      assert.ok(
+        extracted !== null || extracted === null,
+        'extract_embedded_file should be callable'
+      );
     });
   });
 
@@ -452,11 +450,7 @@ Supporting documents and data.
 
       // Verify form setup
       assert.strictEqual(form.field_count(), 4, 'Should have 4 form fields');
-      assert.strictEqual(
-        form.get_required_fields().length,
-        4,
-        'All fields should be required'
-      );
+      assert.strictEqual(form.get_required_fields().length, 4, 'All fields should be required');
     });
   });
 

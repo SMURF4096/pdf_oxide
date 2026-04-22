@@ -9,7 +9,7 @@
  * - Layout pattern recognition
  */
 
-import type { PdfDocument } from "../types/document-types.js";
+import type { PdfDocument } from '../types/document-types.js';
 
 /**
  * Represents a detected table region on a page.
@@ -66,12 +66,12 @@ export interface FormFieldRegion {
  * Layout pattern type enumeration.
  */
 export enum LayoutPatternType {
-  SINGLE_COLUMN = "single_column",
-  MULTI_COLUMN = "multi_column",
-  TABLE_BASED = "table_based",
-  FORM_BASED = "form_based",
-  MAGAZINE_STYLE = "magazine_style",
-  COMPLEX_MIXED = "complex_mixed",
+  SINGLE_COLUMN = 'single_column',
+  MULTI_COLUMN = 'multi_column',
+  TABLE_BASED = 'table_based',
+  FORM_BASED = 'form_based',
+  MAGAZINE_STYLE = 'magazine_style',
+  COMPLEX_MIXED = 'complex_mixed',
 }
 
 /**
@@ -121,7 +121,7 @@ export class PatternDetectionManager {
 
     // Simple heuristic: detect table-like patterns
     const tables: TableRegion[] = [];
-    const lines = text.split("\n");
+    const lines = text.split('\n');
 
     // Look for lines with multiple columns (tabs or spaces)
     let currentTableStart = -1;
@@ -176,7 +176,7 @@ export class PatternDetectionManager {
 
     // Simple heuristic: detect multi-column layouts
     const columns: ColumnRegion[] = [];
-    const lines = text.split("\n");
+    const lines = text.split('\n');
 
     // Check for indentation patterns suggesting columns
     const indentationPattern = new Map<number, number>();
@@ -269,7 +269,7 @@ export class PatternDetectionManager {
           y: (f as any).y || 0,
           width: (f as any).width || 100,
           height: (f as any).height || 20,
-          fieldType: (f as any).type || "unknown",
+          fieldType: (f as any).type || 'unknown',
           fieldName: (f as any).name,
           confidence: 0.9,
         }));
@@ -327,9 +327,7 @@ export class PatternDetectionManager {
    * @param pageIndex - Index of the page to analyze
    * @returns Object with all detected patterns
    */
-  async detectAllPatterns(
-    pageIndex: number,
-  ): Promise<{
+  async detectAllPatterns(pageIndex: number): Promise<{
     tables: TableRegion[];
     columns: ColumnRegion[];
     barcodes: BarcodeRegion[];
@@ -382,9 +380,7 @@ export class PatternDetectionManager {
    */
   async findPagesWithPattern(patternType: LayoutPatternType): Promise<number[]> {
     const patterns = await this.analyzeDocumentPatterns();
-    return patterns
-      .filter((p) => p.patternType === patternType)
-      .map((p) => p.pageIndex);
+    return patterns.filter((p) => p.patternType === patternType).map((p) => p.pageIndex);
   }
 
   /**

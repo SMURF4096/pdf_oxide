@@ -3,13 +3,13 @@
  * Tests: AnnotationsAdvancedManager, LayoutAnalysisManager, DOMAdvancedManager, XFAManager, SearchAdvancedManager
  */
 
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { beforeEach, describe, expect, it } from '@jest/globals';
 
 import AnnotationsAdvancedManager from '../managers/annotations-advanced-manager';
-import LayoutAnalysisManager from '../managers/layout-analysis-manager';
 import DOMAdvancedManager from '../managers/dom-advanced-manager';
-import XFAManager from '../managers/xfa-manager';
+import LayoutAnalysisManager from '../managers/layout-analysis-manager';
 import SearchAdvancedManager from '../managers/search-advanced-manager';
+import XFAManager from '../managers/xfa-manager';
 
 describe('Phase 5 Advanced Features', () => {
   describe('AnnotationsAdvancedManager', () => {
@@ -20,17 +20,27 @@ describe('Phase 5 Advanced Features', () => {
     });
 
     it('should add ink annotation', () => {
-      const result = manager.addInkAnnotation(0, [[10, 20], [30, 40]]);
+      const result = manager.addInkAnnotation(0, [
+        [10, 20],
+        [30, 40],
+      ]);
       expect(typeof result).toBe('boolean');
     });
 
     it('should add polygon annotation', () => {
-      const result = manager.addPolygonAnnotation(0, [[10, 20], [30, 40], [50, 60]]);
+      const result = manager.addPolygonAnnotation(0, [
+        [10, 20],
+        [30, 40],
+        [50, 60],
+      ]);
       expect(typeof result).toBe('boolean');
     });
 
     it('should add polyline annotation', () => {
-      const result = manager.addPolylineAnnotation(0, [[10, 20], [30, 40]]);
+      const result = manager.addPolylineAnnotation(0, [
+        [10, 20],
+        [30, 40],
+      ]);
       expect(typeof result).toBe('boolean');
     });
 
@@ -387,7 +397,7 @@ describe('Phase 5 Advanced Features', () => {
     });
 
     it('should search with regex', () => {
-      const result = manager.searchWithRegex(r'\d+');
+      const result = manager.searchWithRegex(/\d+/);
       expect(Array.isArray(result)).toBe(true);
     });
 

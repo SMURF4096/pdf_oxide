@@ -203,10 +203,7 @@ export class BatchManager {
       const elapsedTime = Date.now() - startTime;
       const completedDocs = completed + failed;
       const avgTimePerDoc = completedDocs > 0 ? elapsedTime / completedDocs : 0;
-      const eta =
-        completedDocs > 0
-          ? (this.documents.length - completedDocs) * avgTimePerDoc
-          : 0;
+      const eta = completedDocs > 0 ? (this.documents.length - completedDocs) * avgTimePerDoc : 0;
 
       if (options.onProgress) {
         options.onProgress({
@@ -255,10 +252,7 @@ export class BatchManager {
             const result = await Promise.race([
               processor(doc!, docIndex),
               new Promise<BatchResult<T>>((_, reject) =>
-                setTimeout(
-                  () => reject(new Error('Timeout after ' + timeout + 'ms')),
-                  timeout
-                )
+                setTimeout(() => reject(new Error('Timeout after ' + timeout + 'ms')), timeout)
               ),
             ]);
 
@@ -303,8 +297,7 @@ export class BatchManager {
     this.stats.totalTime = totalTime;
     this.stats.completed = completed;
     this.stats.failed = failed;
-    this.stats.averageTime =
-      completed > 0 ? totalTime / completed : 0;
+    this.stats.averageTime = completed > 0 ? totalTime / completed : 0;
     this.stats.throughput = totalTime > 0 ? (completed / totalTime) * 1000 : 0;
 
     return results.filter((r) => r !== undefined);
@@ -315,9 +308,7 @@ export class BatchManager {
    * @param options - Batch processing options
    * @returns Array of extraction results
    */
-  async extractTextBatch(
-    options: BatchOptions = {}
-  ): Promise<BatchResult<string>[]> {
+  async extractTextBatch(options: BatchOptions = {}): Promise<BatchResult<string>[]> {
     return this.processQueue(async (doc, _index) => {
       try {
         // Dynamic import to avoid circular dependencies
@@ -354,9 +345,7 @@ export class BatchManager {
    * @param options - Batch processing options
    * @returns Array of extraction results
    */
-  async extractMarkdownBatch(
-    options: BatchOptions = {}
-  ): Promise<BatchResult<string>[]> {
+  async extractMarkdownBatch(options: BatchOptions = {}): Promise<BatchResult<string>[]> {
     return this.processQueue(async (doc, _index) => {
       try {
         const { PdfDocument } = await import('../index.js');
@@ -401,9 +390,7 @@ export class BatchManager {
    * @param options - Batch processing options
    * @returns Array of extraction results
    */
-  async extractHtmlBatch(
-    options: BatchOptions = {}
-  ): Promise<BatchResult<string>[]> {
+  async extractHtmlBatch(options: BatchOptions = {}): Promise<BatchResult<string>[]> {
     return this.processQueue(async (doc, _index) => {
       try {
         const { PdfDocument } = await import('../index.js');

@@ -3,11 +3,10 @@
  * Tests: DocumentExtendedManager, PerformanceManager, BatchProcessingManager, UtilitiesManager
  */
 
-import { describe, it, expect, beforeEach } from '@jest/globals';
-
+import { beforeEach, describe, expect, it } from '@jest/globals';
+import BatchProcessingManager from '../managers/batch-processing-manager';
 import DocumentExtendedManager from '../managers/document-extended-manager';
 import PerformanceManager from '../managers/performance-manager';
-import BatchProcessingManager from '../managers/batch-processing-manager';
 import UtilitiesManager from '../managers/utilities-manager';
 
 describe('Phase 6 Extended Managers', () => {
@@ -284,13 +283,13 @@ describe('Phase 6 Extended Managers', () => {
     });
 
     it('should have reasonable memory overhead for manager creation', () => {
-      const memBefore = (process.memoryUsage().heapUsed / 1024 / 1024);
+      const memBefore = process.memoryUsage().heapUsed / 1024 / 1024;
 
       for (let i = 0; i < 10; i++) {
         new DocumentExtendedManager();
       }
 
-      const memAfter = (process.memoryUsage().heapUsed / 1024 / 1024);
+      const memAfter = process.memoryUsage().heapUsed / 1024 / 1024;
       const memUsed = memAfter - memBefore;
 
       // Memory usage should be reasonable

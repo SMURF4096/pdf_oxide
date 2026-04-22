@@ -295,9 +295,8 @@ export class CacheManager extends EventEmitter {
       totalSize,
       hitCount: this.hitCount,
       missCount: this.missCount,
-      hitRate: this.hitCount + this.missCount > 0
-        ? this.hitCount / (this.hitCount + this.missCount)
-        : 0,
+      hitRate:
+        this.hitCount + this.missCount > 0 ? this.hitCount / (this.hitCount + this.missCount) : 0,
       evictionCount: this.evictionCount,
       oldestEntry: timestamps.length > 0 ? Math.min(...timestamps) : undefined,
       newestEntry: timestamps.length > 0 ? Math.max(...timestamps) : undefined,

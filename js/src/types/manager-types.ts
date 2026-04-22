@@ -221,8 +221,8 @@ export interface IManager extends EventEmitter {
 
 export abstract class BaseManager<T extends PdfDocumentHandle = PdfDocumentHandle>
   extends EventEmitter
-  implements IManager {
-
+  implements IManager
+{
   private _initialized = false;
 
   get initialized(): boolean {
@@ -237,7 +237,10 @@ export abstract class BaseManager<T extends PdfDocumentHandle = PdfDocumentHandl
   protected operationCount = 0;
   protected errorCount = 0;
 
-  constructor(document: T, protected options: ManagerOptions = {}) {
+  constructor(
+    document: T,
+    protected options: ManagerOptions = {}
+  ) {
     super();
     this.document = document;
     this.initialized = true;
@@ -275,8 +278,8 @@ export abstract class BaseManager<T extends PdfDocumentHandle = PdfDocumentHandl
 
   protected invalidateCache(pattern?: string): void {
     if (pattern) {
-      const keys = Array.from(this.cache.keys()).filter(k => k.includes(pattern));
-      keys.forEach(k => this.cache.delete(k));
+      const keys = Array.from(this.cache.keys()).filter((k) => k.includes(pattern));
+      keys.forEach((k) => this.cache.delete(k));
     } else {
       this.cache.clear();
     }

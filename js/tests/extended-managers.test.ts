@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { beforeEach, describe, expect, it } from '@jest/globals';
 
 describe('Phase 6: Extended Managers Test Suite', () => {
   describe('DocumentExtendedManager (25 functions)', () => {
@@ -52,12 +52,16 @@ describe('Phase 6: Extended Managers Test Suite', () => {
 
     it('should get document created date', () => {
       const result = manager.getDocumentCreatedDate?.();
-      expect(result === null || typeof result === 'string' || typeof result === 'number').toBe(true);
+      expect(result === null || typeof result === 'string' || typeof result === 'number').toBe(
+        true
+      );
     });
 
     it('should get document modified date', () => {
       const result = manager.getDocumentModifiedDate?.();
-      expect(result === null || typeof result === 'string' || typeof result === 'number').toBe(true);
+      expect(result === null || typeof result === 'string' || typeof result === 'number').toBe(
+        true
+      );
     });
 
     it('should get document producer', () => {
@@ -97,7 +101,9 @@ describe('Phase 6: Extended Managers Test Suite', () => {
 
     it('should get document version', () => {
       const result = manager.getDocumentVersion?.();
-      expect(result === null || typeof result === 'string' || typeof result === 'number').toBe(true);
+      expect(result === null || typeof result === 'string' || typeof result === 'number').toBe(
+        true
+      );
     });
 
     it('should get document language', () => {
@@ -239,7 +245,9 @@ describe('Phase 6: Extended Managers Test Suite', () => {
 
     it('should create batch job', () => {
       const result = manager.createBatchJob?.('job_001', '/path/to/file.pdf', 'extract');
-      expect(result === null || typeof result === 'object' || typeof result === 'string').toBe(true);
+      expect(result === null || typeof result === 'object' || typeof result === 'string').toBe(
+        true
+      );
     });
 
     it('should submit batch job', () => {
@@ -274,7 +282,9 @@ describe('Phase 6: Extended Managers Test Suite', () => {
 
     it('should get batch job result', () => {
       const result = manager.getBatchJobResult?.('job_001');
-      expect(result === null || typeof result === 'object' || typeof result === 'string').toBe(true);
+      expect(result === null || typeof result === 'object' || typeof result === 'string').toBe(
+        true
+      );
     });
 
     it('should retry batch job', () => {

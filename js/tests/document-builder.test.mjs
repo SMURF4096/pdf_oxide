@@ -14,13 +14,21 @@
 // Run with:  node --test tests/document-builder.test.mjs
 // Requires:  npm run build:native (produces build/Release/pdf_oxide.node)
 
-import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { readFileSync, existsSync, statSync, mkdtempSync, writeFileSync, readFileSync as readFile, unlinkSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync as readFile,
+  readFileSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const native = require('../build/Release/pdf_oxide.node');
@@ -207,7 +215,7 @@ describe('DocumentBuilder native bindings (#384)', () => {
     const pdf = native.pdfFromHtmlCss(
       '<h1>Hello</h1><p>World</p>',
       'h1 { color: blue; font-size: 24pt }',
-      fontBytes,
+      fontBytes
     );
     // pdf is an External handle to a Rust Pdf; serialize via pdf_save_to_bytes.
     const saved = native.pdfSaveToBytes(pdf);

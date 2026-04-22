@@ -6,12 +6,12 @@
  * Tests the PdfPage class with DOM-like element access and manipulation
  */
 
-import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { Pdf, PdfBuilder } from '../index.js';
 import { promises as fs } from 'node:fs';
-import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, it } from 'node:test';
+import { Pdf, PdfBuilder } from '../index.js';
 
 const TEMP_DIR = join(tmpdir(), `pdf-oxide-dom-tests-${Date.now()}`);
 
