@@ -6807,6 +6807,30 @@ namespace PdfOxide.Internal
             IntPtr page, string name, float x, float y, float w, float h,
             [MarshalAs(UnmanagedType.I4)] bool checkedState, out int errorCode);
 
+        /// <summary>Add a dropdown combo-box form field.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_combo_box", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial int PdfPageBuilderComboBox(
+            IntPtr page, string name, float x, float y, float w, float h,
+            byte** options, nuint optionsCount, string? selected,
+            out int errorCode);
+
+        /// <summary>Add a radio-button group.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_radio_group", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial int PdfPageBuilderRadioGroup(
+            IntPtr page, string name,
+            byte** values, float* xs, float* ys, float* ws, float* hs,
+            nuint count, string? selected,
+            out int errorCode);
+
+        /// <summary>Add a push-button form field.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_push_button", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderPushButton(
+            IntPtr page, string name, float x, float y, float w, float h,
+            string caption, out int errorCode);
+
         /// <summary>Commit the page and CONSUME the page handle.</summary>
         [LibraryImport(LibName, EntryPoint = "pdf_page_builder_done", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]

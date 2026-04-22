@@ -464,6 +464,22 @@ extern "C" {
   extern int   pdf_page_builder_checkbox(void* page, const char* name,
                                          float x, float y, float w, float h,
                                          int checked, int* error_code);
+  extern int   pdf_page_builder_combo_box(void* page, const char* name,
+                                          float x, float y, float w, float h,
+                                          const char* const* options,
+                                          size_t options_count,
+                                          const char* selected,
+                                          int* error_code);
+  extern int   pdf_page_builder_radio_group(void* page, const char* name,
+                                            const char* const* values,
+                                            const float* xs, const float* ys,
+                                            const float* ws, const float* hs,
+                                            size_t count,
+                                            const char* selected,
+                                            int* error_code);
+  extern int   pdf_page_builder_push_button(void* page, const char* name,
+                                            float x, float y, float w, float h,
+                                            const char* caption, int* error_code);
 
   extern int   pdf_page_builder_done(void* page, int* error_code);
   extern void  pdf_page_builder_free(void* page);
@@ -3115,6 +3131,9 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   extern Napi::Value PageBuilderFreetext(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderTextField(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderCheckbox(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderComboBox(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderRadioGroup(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderPushButton(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderDone(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderFree(const Napi::CallbackInfo&);
   extern Napi::Value DocumentBuilderBuild(const Napi::CallbackInfo&);
@@ -3161,6 +3180,9 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("pageBuilderFreetext", Napi::Function::New(env, PageBuilderFreetext));
   exports.Set("pageBuilderTextField", Napi::Function::New(env, PageBuilderTextField));
   exports.Set("pageBuilderCheckbox", Napi::Function::New(env, PageBuilderCheckbox));
+  exports.Set("pageBuilderComboBox", Napi::Function::New(env, PageBuilderComboBox));
+  exports.Set("pageBuilderRadioGroup", Napi::Function::New(env, PageBuilderRadioGroup));
+  exports.Set("pageBuilderPushButton", Napi::Function::New(env, PageBuilderPushButton));
   exports.Set("pageBuilderDone", Napi::Function::New(env, PageBuilderDone));
   exports.Set("pageBuilderFree", Napi::Function::New(env, PageBuilderFree));
   exports.Set("documentBuilderBuild", Napi::Function::New(env, DocumentBuilderBuild));
@@ -3506,6 +3528,94 @@ Napi::Value PageBuilderCheckbox(const Napi::CallbackInfo& info) {
   int errorCode = 0;
   pdf_page_builder_checkbox(p, name.c_str(), x, y, w, h, checked ? 1 : 0, &errorCode);
   throwOnError(env, errorCode, "PageBuilder.checkbox");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderComboBox(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  std::string name = requireString(info, 1, "name");
+  float x = static_cast<float>(requireNumber(info, 2, "x"));
+  float y = static_cast<float>(requireNumber(info, 3, "y"));
+  float w = static_cast<float>(requireNumber(info, 4, "w"));
+  float h = static_cast<float>(requireNumber(info, 5, "h"));
+  if (info.Length() < 7 || !info[6].IsArray()) {
+    throw Napi::TypeError::New(env, "options must be an array of strings");
+  }
+  auto arr = info[6].As<Napi::Array>();
+  size_t n = arr.Length();
+  if (n == 0) throw Napi::Error::New(env, "options must be non-empty");
+  std::vector<std::string> storage(n);
+  std::vector<const char*> ptrs(n);
+  for (size_t i = 0; i < n; i++) {
+    Napi::Value v = arr.Get(i);
+    if (!v.IsString()) throw Napi::TypeError::New(env, "options[i] must be a string");
+    storage[i] = v.As<Napi::String>().Utf8Value();
+    ptrs[i] = storage[i].c_str();
+  }
+  const char* selected = nullptr;
+  std::string selectedStorage;
+  if (info.Length() >= 8 && info[7].IsString()) {
+    selectedStorage = info[7].As<Napi::String>().Utf8Value();
+    selected = selectedStorage.c_str();
+  }
+  int errorCode = 0;
+  pdf_page_builder_combo_box(p, name.c_str(), x, y, w, h, ptrs.data(), n, selected, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.comboBox");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderRadioGroup(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  std::string name = requireString(info, 1, "name");
+  if (info.Length() < 3 || !info[2].IsArray()) {
+    throw Napi::TypeError::New(env,
+        "buttons must be an array of [value, x, y, w, h] tuples");
+  }
+  auto arr = info[2].As<Napi::Array>();
+  size_t n = arr.Length();
+  if (n == 0) throw Napi::Error::New(env, "buttons must be non-empty");
+  std::vector<std::string> valueStorage(n);
+  std::vector<const char*> valuePtrs(n);
+  std::vector<float> xs(n), ys(n), ws(n), hs(n);
+  for (size_t i = 0; i < n; i++) {
+    Napi::Value v = arr.Get(i);
+    if (!v.IsArray()) throw Napi::TypeError::New(env, "buttons[i] must be a tuple array");
+    auto tup = v.As<Napi::Array>();
+    if (tup.Length() != 5) throw Napi::TypeError::New(env, "buttons[i] must have 5 entries");
+    valueStorage[i] = tup.Get((uint32_t)0).As<Napi::String>().Utf8Value();
+    valuePtrs[i] = valueStorage[i].c_str();
+    xs[i] = static_cast<float>(tup.Get((uint32_t)1).As<Napi::Number>().DoubleValue());
+    ys[i] = static_cast<float>(tup.Get((uint32_t)2).As<Napi::Number>().DoubleValue());
+    ws[i] = static_cast<float>(tup.Get((uint32_t)3).As<Napi::Number>().DoubleValue());
+    hs[i] = static_cast<float>(tup.Get((uint32_t)4).As<Napi::Number>().DoubleValue());
+  }
+  const char* selected = nullptr;
+  std::string selectedStorage;
+  if (info.Length() >= 4 && info[3].IsString()) {
+    selectedStorage = info[3].As<Napi::String>().Utf8Value();
+    selected = selectedStorage.c_str();
+  }
+  int errorCode = 0;
+  pdf_page_builder_radio_group(p, name.c_str(), valuePtrs.data(),
+      xs.data(), ys.data(), ws.data(), hs.data(), n, selected, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.radioGroup");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderPushButton(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  std::string name = requireString(info, 1, "name");
+  float x = static_cast<float>(requireNumber(info, 2, "x"));
+  float y = static_cast<float>(requireNumber(info, 3, "y"));
+  float w = static_cast<float>(requireNumber(info, 4, "w"));
+  float h = static_cast<float>(requireNumber(info, 5, "h"));
+  std::string caption = requireString(info, 6, "caption");
+  int errorCode = 0;
+  pdf_page_builder_push_button(p, name.c_str(), x, y, w, h, caption.c_str(), &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.pushButton");
   return env.Undefined();
 }
 

@@ -262,6 +262,116 @@ namespace PdfOxide.Core
         }
 
         /// <summary>
+        /// Add a dropdown combo-box form field. Each entry of
+        /// <paramref name="options"/> is a user-visible (and submitted)
+        /// choice. <paramref name="selected"/> picks the initial value;
+        /// pass null to leave blank.
+        /// </summary>
+        public unsafe PageBuilder ComboBox(string name, float x, float y, float w, float h,
+            System.Collections.Generic.IReadOnlyList<string> options, string? selected = null)
+        {
+            if (name == null) throw new ArgumentNullException(nameof(name));
+            if (options == null || options.Count == 0)
+                throw new ArgumentException("options must be non-empty", nameof(options));
+            int n = options.Count;
+            var buffers = new byte[n][];
+            var handles = new System.Runtime.InteropServices.GCHandle[n];
+            var pointers = new IntPtr[n];
+            try
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    buffers[i] = System.Text.Encoding.UTF8.GetBytes(options[i] + "\0");
+                    handles[i] = System.Runtime.InteropServices.GCHandle.Alloc(buffers[i], System.Runtime.InteropServices.GCHandleType.Pinned);
+                    pointers[i] = handles[i].AddrOfPinnedObject();
+                }
+                var ptrHandle = System.Runtime.InteropServices.GCHandle.Alloc(pointers, System.Runtime.InteropServices.GCHandleType.Pinned);
+                try
+                {
+                    NativeMethods.PdfPageBuilderComboBox(Handle, name, x, y, w, h,
+                        (byte**)ptrHandle.AddrOfPinnedObject(), (nuint)n, selected, out var ec);
+                    ExceptionMapper.ThrowIfError(ec);
+                }
+                finally { ptrHandle.Free(); }
+            }
+            finally
+            {
+                for (int i = 0; i < n; i++)
+                    if (handles[i].IsAllocated) handles[i].Free();
+            }
+            return this;
+        }
+
+        /// <summary>
+        /// Add a radio-button group. <paramref name="buttons"/> is a
+        /// sequence of <c>(exportValue, x, y, w, h)</c> tuples — one
+        /// entry per option. <paramref name="selected"/> picks the
+        /// initial value.
+        /// </summary>
+        public unsafe PageBuilder RadioGroup(string name,
+            System.Collections.Generic.IReadOnlyList<(string value, float x, float y, float w, float h)> buttons,
+            string? selected = null)
+        {
+            if (name == null) throw new ArgumentNullException(nameof(name));
+            if (buttons == null || buttons.Count == 0)
+                throw new ArgumentException("buttons must be non-empty", nameof(buttons));
+            int n = buttons.Count;
+            var valueBuffers = new byte[n][];
+            var handles = new System.Runtime.InteropServices.GCHandle[n];
+            var pointers = new IntPtr[n];
+            var xs = new float[n];
+            var ys = new float[n];
+            var ws = new float[n];
+            var hs = new float[n];
+            try
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    valueBuffers[i] = System.Text.Encoding.UTF8.GetBytes(buttons[i].value + "\0");
+                    handles[i] = System.Runtime.InteropServices.GCHandle.Alloc(valueBuffers[i], System.Runtime.InteropServices.GCHandleType.Pinned);
+                    pointers[i] = handles[i].AddrOfPinnedObject();
+                    xs[i] = buttons[i].x;
+                    ys[i] = buttons[i].y;
+                    ws[i] = buttons[i].w;
+                    hs[i] = buttons[i].h;
+                }
+                var ptrHandle = System.Runtime.InteropServices.GCHandle.Alloc(pointers, System.Runtime.InteropServices.GCHandleType.Pinned);
+                var xsH = System.Runtime.InteropServices.GCHandle.Alloc(xs, System.Runtime.InteropServices.GCHandleType.Pinned);
+                var ysH = System.Runtime.InteropServices.GCHandle.Alloc(ys, System.Runtime.InteropServices.GCHandleType.Pinned);
+                var wsH = System.Runtime.InteropServices.GCHandle.Alloc(ws, System.Runtime.InteropServices.GCHandleType.Pinned);
+                var hsH = System.Runtime.InteropServices.GCHandle.Alloc(hs, System.Runtime.InteropServices.GCHandleType.Pinned);
+                try
+                {
+                    NativeMethods.PdfPageBuilderRadioGroup(Handle, name,
+                        (byte**)ptrHandle.AddrOfPinnedObject(),
+                        (float*)xsH.AddrOfPinnedObject(),
+                        (float*)ysH.AddrOfPinnedObject(),
+                        (float*)wsH.AddrOfPinnedObject(),
+                        (float*)hsH.AddrOfPinnedObject(),
+                        (nuint)n, selected, out var ec);
+                    ExceptionMapper.ThrowIfError(ec);
+                }
+                finally { ptrHandle.Free(); xsH.Free(); ysH.Free(); wsH.Free(); hsH.Free(); }
+            }
+            finally
+            {
+                for (int i = 0; i < n; i++)
+                    if (handles[i].IsAllocated) handles[i].Free();
+            }
+            return this;
+        }
+
+        /// <summary>Add a clickable push button with a visible caption.</summary>
+        public PageBuilder PushButton(string name, float x, float y, float w, float h, string caption)
+        {
+            if (name == null) throw new ArgumentNullException(nameof(name));
+            if (caption == null) throw new ArgumentNullException(nameof(caption));
+            NativeMethods.PdfPageBuilderPushButton(Handle, name, x, y, w, h, caption, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
+        /// <summary>
         /// Commit the page's buffered operations back to the parent
         /// builder. Returns the parent for continued chaining. After
         /// <see cref="Done"/> this <see cref="PageBuilder"/> is invalid.

@@ -3105,6 +3105,28 @@ enum WasmPageOp {
         h: f32,
         checked: bool,
     },
+    ComboBox {
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        options: Vec<String>,
+        selected: Option<String>,
+    },
+    RadioGroup {
+        name: String,
+        buttons: Vec<(String, f32, f32, f32, f32)>,
+        selected: Option<String>,
+    },
+    PushButton {
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        caption: String,
+    },
 }
 
 /// Embedded TTF/OTF font usable by `WasmDocumentBuilder`. Single-use: once
@@ -3335,6 +3357,28 @@ impl WasmDocumentBuilder {
                     h,
                     checked,
                 } => rust_page.checkbox(name, x, y, w, h, checked),
+                WasmPageOp::ComboBox {
+                    name,
+                    x,
+                    y,
+                    w,
+                    h,
+                    options,
+                    selected,
+                } => rust_page.combo_box(name, x, y, w, h, options, selected),
+                WasmPageOp::RadioGroup {
+                    name,
+                    buttons,
+                    selected,
+                } => rust_page.radio_group(name, buttons, selected),
+                WasmPageOp::PushButton {
+                    name,
+                    x,
+                    y,
+                    w,
+                    h,
+                    caption,
+                } => rust_page.push_button(name, x, y, w, h, caption),
             };
         }
         rust_page.done();
@@ -3539,6 +3583,86 @@ impl WasmFluentPageBuilder {
             w,
             h,
             checked,
+        })
+    }
+
+    /// Add a dropdown combo-box. (#384 Phase 4)
+    #[wasm_bindgen(js_name = "comboBox")]
+    pub fn combo_box(
+        &mut self,
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        options: Vec<String>,
+        selected: Option<String>,
+    ) -> Result<(), JsValue> {
+        self.push(WasmPageOp::ComboBox {
+            name,
+            x,
+            y,
+            w,
+            h,
+            options,
+            selected,
+        })
+    }
+
+    /// Add a radio-button group. `values`, `xs`, `ys`, `ws`, `hs` are
+    /// parallel arrays of length N describing each option's export
+    /// value and rectangle. `selected` picks the initial value.
+    /// (#384 Phase 4)
+    #[wasm_bindgen(js_name = "radioGroup")]
+    pub fn radio_group(
+        &mut self,
+        name: String,
+        values: Vec<String>,
+        xs: Vec<f32>,
+        ys: Vec<f32>,
+        ws: Vec<f32>,
+        hs: Vec<f32>,
+        selected: Option<String>,
+    ) -> Result<(), JsValue> {
+        let n = values.len();
+        if xs.len() != n || ys.len() != n || ws.len() != n || hs.len() != n {
+            return Err(JsValue::from_str(
+                "radio_group: values/xs/ys/ws/hs must be equal-length arrays",
+            ));
+        }
+        let buttons: Vec<(String, f32, f32, f32, f32)> = values
+            .into_iter()
+            .zip(xs)
+            .zip(ys)
+            .zip(ws)
+            .zip(hs)
+            .map(|((((v, x), y), w), h)| (v, x, y, w, h))
+            .collect();
+        self.push(WasmPageOp::RadioGroup {
+            name,
+            buttons,
+            selected,
+        })
+    }
+
+    /// Add a clickable push button with a visible caption. (#384 Phase 4)
+    #[wasm_bindgen(js_name = "pushButton")]
+    pub fn push_button(
+        &mut self,
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        caption: String,
+    ) -> Result<(), JsValue> {
+        self.push(WasmPageOp::PushButton {
+            name,
+            x,
+            y,
+            w,
+            h,
+            caption,
         })
     }
 

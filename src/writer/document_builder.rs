@@ -680,6 +680,78 @@ impl<'a> FluentPageBuilder<'a> {
         self
     }
 
+    /// Add a dropdown combo-box form field. Each entry of `options` is
+    /// a user-visible string that also serves as the submitted value.
+    /// `selected` picks the initial choice by value; pass `None` to
+    /// leave the field blank.
+    ///
+    /// (#384 Phase 4)
+    pub fn combo_box(
+        self,
+        name: impl Into<String>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        options: Vec<String>,
+        selected: Option<String>,
+    ) -> Self {
+        let page = &mut self.builder.pages[self.page_index];
+        page.form_fields.push(PendingFormField::ComboBox {
+            name: name.into(),
+            rect: Rect::new(x, y, w, h),
+            options,
+            selected,
+        });
+        self
+    }
+
+    /// Add a radio-button group. Each entry of `buttons` is an
+    /// `(export_value, x, y, w, h)` tuple describing one option's
+    /// submitted value and its visible bounding rectangle. `selected`
+    /// picks the initial choice by export value.
+    ///
+    /// (#384 Phase 4)
+    pub fn radio_group(
+        self,
+        name: impl Into<String>,
+        buttons: Vec<(String, f32, f32, f32, f32)>,
+        selected: Option<String>,
+    ) -> Self {
+        let page = &mut self.builder.pages[self.page_index];
+        let buttons = buttons
+            .into_iter()
+            .map(|(v, x, y, w, h)| (v, Rect::new(x, y, w, h)))
+            .collect();
+        page.form_fields.push(PendingFormField::RadioGroup {
+            name: name.into(),
+            buttons,
+            selected,
+        });
+        self
+    }
+
+    /// Add a clickable push button with a visible caption.
+    ///
+    /// (#384 Phase 4)
+    pub fn push_button(
+        self,
+        name: impl Into<String>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        caption: impl Into<String>,
+    ) -> Self {
+        let page = &mut self.builder.pages[self.page_index];
+        page.form_fields.push(PendingFormField::PushButton {
+            name: name.into(),
+            rect: Rect::new(x, y, w, h),
+            caption: caption.into(),
+        });
+        self
+    }
+
     /// Finish building this page and return to the document builder.
     pub fn done(mut self) -> &'a mut DocumentBuilder {
         // Move pending annotations to page data
@@ -704,6 +776,28 @@ enum PendingFormField {
         name: String,
         rect: Rect,
         checked: bool,
+    },
+    /// A dropdown combo-box with a fixed list of string options and an
+    /// optional initial selection.
+    ComboBox {
+        name: String,
+        rect: Rect,
+        options: Vec<String>,
+        selected: Option<String>,
+    },
+    /// A radio-button group. Each entry in `buttons` has an export
+    /// value (the PDF form's submitted value if that button is chosen)
+    /// and its own rect.
+    RadioGroup {
+        name: String,
+        buttons: Vec<(String, Rect)>,
+        selected: Option<String>,
+    },
+    /// A clickable push button with a visible caption.
+    PushButton {
+        name: String,
+        rect: Rect,
+        caption: String,
     },
 }
 
@@ -1055,6 +1149,49 @@ impl DocumentBuilder {
                         let widget = CheckboxWidget::new(name.clone(), *rect);
                         let widget = if *checked { widget.checked() } else { widget };
                         page.add_checkbox(widget);
+                    },
+                    PendingFormField::ComboBox {
+                        name,
+                        rect,
+                        options,
+                        selected,
+                    } => {
+                        use super::form_fields::ComboBoxWidget;
+                        let widget =
+                            ComboBoxWidget::new(name.clone(), *rect).with_options(options.clone());
+                        let widget = if let Some(v) = selected {
+                            widget.with_value(v.clone())
+                        } else {
+                            widget
+                        };
+                        page.add_combo_box(widget);
+                    },
+                    PendingFormField::RadioGroup {
+                        name,
+                        buttons,
+                        selected,
+                    } => {
+                        use super::form_fields::RadioButtonGroup;
+                        let mut group = RadioButtonGroup::new(name.clone());
+                        for (value, rect) in buttons {
+                            group = group.add_button(value.clone(), *rect, value.clone());
+                        }
+                        let group = if let Some(v) = selected {
+                            group.selected(v.clone())
+                        } else {
+                            group
+                        };
+                        page.add_radio_group(group);
+                    },
+                    PendingFormField::PushButton {
+                        name,
+                        rect,
+                        caption,
+                    } => {
+                        use super::form_fields::PushButtonWidget;
+                        let widget = PushButtonWidget::new(name.clone(), *rect)
+                            .with_caption(caption.clone());
+                        page.add_push_button(widget);
                     },
                 }
             }

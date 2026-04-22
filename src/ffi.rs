@@ -5939,6 +5939,28 @@ enum FfiPageOp {
         h: f32,
         checked: bool,
     },
+    ComboBox {
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        options: Vec<String>,
+        selected: Option<String>,
+    },
+    RadioGroup {
+        name: String,
+        buttons: Vec<(String, f32, f32, f32, f32)>,
+        selected: Option<String>,
+    },
+    PushButton {
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        caption: String,
+    },
 }
 
 /// Parse a stamp-type name into the Rust `StampType` enum. Unknown names
@@ -6653,6 +6675,174 @@ pub extern "C" fn pdf_page_builder_checkbox(
     )
 }
 
+/// Helper — collect a C string array into a `Vec<String>`.
+unsafe fn read_cstring_array(
+    array: *const *const c_char,
+    count: usize,
+    error_code: *mut i32,
+) -> Option<Vec<String>> {
+    if array.is_null() || count == 0 {
+        set_error(error_code, ERR_INVALID_ARG);
+        return None;
+    }
+    let mut out = Vec::with_capacity(count);
+    for i in 0..count {
+        let ptr = unsafe { *array.add(i) };
+        if ptr.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return None;
+        }
+        match unsafe { CStr::from_ptr(ptr) }.to_str() {
+            Ok(s) => out.push(s.to_string()),
+            Err(_) => {
+                set_error(error_code, ERR_INVALID_ARG);
+                return None;
+            },
+        }
+    }
+    Some(out)
+}
+
+/// Add a dropdown combo-box with a fixed list of string options.
+/// `options` is an array of C-strings of length `options_count`.
+/// `selected` may be NULL for no initial selection.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_combo_box(
+    handle: *mut FfiPageBuilder,
+    name: *const c_char,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    options: *const *const c_char,
+    options_count: usize,
+    selected: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(name_s) = read_cstr_or_fail(name, error_code) else {
+        return -1;
+    };
+    let Some(opts) = (unsafe { read_cstring_array(options, options_count, error_code) }) else {
+        return -1;
+    };
+    let selected_s = if selected.is_null() {
+        None
+    } else {
+        match unsafe { CStr::from_ptr(selected) }.to_str() {
+            Ok(s) => Some(s.to_string()),
+            Err(_) => {
+                set_error(error_code, ERR_INVALID_ARG);
+                return -1;
+            },
+        }
+    };
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::ComboBox {
+            name: name_s,
+            x,
+            y,
+            w,
+            h,
+            options: opts,
+            selected: selected_s,
+        },
+    )
+}
+
+/// Add a radio-button group. `values` / `xs` / `ys` / `ws` / `hs` are
+/// parallel arrays of length `count` describing each button's export
+/// value and rect. `selected` may be NULL.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_radio_group(
+    handle: *mut FfiPageBuilder,
+    name: *const c_char,
+    values: *const *const c_char,
+    xs: *const f32,
+    ys: *const f32,
+    ws: *const f32,
+    hs: *const f32,
+    count: usize,
+    selected: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(name_s) = read_cstr_or_fail(name, error_code) else {
+        return -1;
+    };
+    if count == 0 || xs.is_null() || ys.is_null() || ws.is_null() || hs.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let Some(vs) = (unsafe { read_cstring_array(values, count, error_code) }) else {
+        return -1;
+    };
+    let xs_slice = unsafe { std::slice::from_raw_parts(xs, count) };
+    let ys_slice = unsafe { std::slice::from_raw_parts(ys, count) };
+    let ws_slice = unsafe { std::slice::from_raw_parts(ws, count) };
+    let hs_slice = unsafe { std::slice::from_raw_parts(hs, count) };
+    let buttons: Vec<(String, f32, f32, f32, f32)> = vs
+        .into_iter()
+        .zip(xs_slice.iter().copied())
+        .zip(ys_slice.iter().copied())
+        .zip(ws_slice.iter().copied())
+        .zip(hs_slice.iter().copied())
+        .map(|((((v, x), y), w), h)| (v, x, y, w, h))
+        .collect();
+    let selected_s = if selected.is_null() {
+        None
+    } else {
+        match unsafe { CStr::from_ptr(selected) }.to_str() {
+            Ok(s) => Some(s.to_string()),
+            Err(_) => {
+                set_error(error_code, ERR_INVALID_ARG);
+                return -1;
+            },
+        }
+    };
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::RadioGroup {
+            name: name_s,
+            buttons,
+            selected: selected_s,
+        },
+    )
+}
+
+/// Add a clickable push button with a visible caption.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_push_button(
+    handle: *mut FfiPageBuilder,
+    name: *const c_char,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    caption: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(name_s) = read_cstr_or_fail(name, error_code) else {
+        return -1;
+    };
+    let Some(caption_s) = read_cstr_or_fail(caption, error_code) else {
+        return -1;
+    };
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::PushButton {
+            name: name_s,
+            x,
+            y,
+            w,
+            h,
+            caption: caption_s,
+        },
+    )
+}
+
 /// Commit this page's buffered operations to its parent builder and
 /// **consume** the page handle. After a successful call the handle is
 /// invalid; do not call `_free`.
@@ -6731,6 +6921,28 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
                 h,
                 checked,
             } => rust_page.checkbox(name, x, y, w, h, checked),
+            FfiPageOp::ComboBox {
+                name,
+                x,
+                y,
+                w,
+                h,
+                options,
+                selected,
+            } => rust_page.combo_box(name, x, y, w, h, options, selected),
+            FfiPageOp::RadioGroup {
+                name,
+                buttons,
+                selected,
+            } => rust_page.radio_group(name, buttons, selected),
+            FfiPageOp::PushButton {
+                name,
+                x,
+                y,
+                w,
+                h,
+                caption,
+            } => rust_page.push_button(name, x, y, w, h, caption),
         };
     }
     rust_page.done();

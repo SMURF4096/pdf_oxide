@@ -382,6 +382,32 @@ int   pdf_page_builder_checkbox(void* page, const char* name,
                                 int checked,
                                 int* error_code);
 
+/* Dropdown combo-box with a fixed list of string options.
+ * `options` is an array of `options_count` C-strings.
+ * `selected` may be NULL for no initial selection. */
+int   pdf_page_builder_combo_box(void* page, const char* name,
+                                 float x, float y, float w, float h,
+                                 const char* const* options,
+                                 size_t options_count,
+                                 const char* selected /* nullable */,
+                                 int* error_code);
+
+/* Radio-button group. `values`, `xs`, `ys`, `ws`, `hs` are parallel
+ * arrays of length `count`. `selected` may be NULL. */
+int   pdf_page_builder_radio_group(void* page, const char* name,
+                                   const char* const* values,
+                                   const float* xs, const float* ys,
+                                   const float* ws, const float* hs,
+                                   size_t count,
+                                   const char* selected /* nullable */,
+                                   int* error_code);
+
+/* Clickable push button with a visible caption. */
+int   pdf_page_builder_push_button(void* page, const char* name,
+                                   float x, float y, float w, float h,
+                                   const char* caption,
+                                   int* error_code);
+
 /* PageBuilder — commit / drop */
 int   pdf_page_builder_done(void* page, int* error_code);
 void  pdf_page_builder_free(void* page);

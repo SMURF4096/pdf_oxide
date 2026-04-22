@@ -327,6 +327,49 @@ def test_form_field_creation():
     )
 
 
+def test_form_field_all_five_widget_types():
+    """#384 Phase 4 — every widget type the plan listed (text_field,
+    checkbox, combo_box, radio_group, push_button) is now reachable
+    from Python and produces a correct /AcroForm entry."""
+    bytes_ = (
+        pdf_oxide.DocumentBuilder()
+        .a4_page()
+        .text_field("name", 150.0, 720.0, 200.0, 20.0, "Jane Doe")
+        .checkbox("subscribe", 72.0, 680.0, 15.0, 15.0, True)
+        .combo_box(
+            "country",
+            150.0,
+            640.0,
+            200.0,
+            20.0,
+            ["US", "CA", "UK", "DE"],
+            "US",
+        )
+        .radio_group(
+            "payment",
+            [
+                ("credit", 72.0, 600.0, 15.0, 15.0),
+                ("debit", 72.0, 580.0, 15.0, 15.0),
+                ("paypal", 72.0, 560.0, 15.0, 15.0),
+            ],
+            "credit",
+        )
+        .push_button("submit", 72.0, 520.0, 80.0, 24.0, "Submit")
+        .done()
+        .build()
+    )
+    assert b"/AcroForm" in bytes_
+    doc = pdf_oxide.PdfDocument.from_bytes(bytes_)
+    fields = doc.get_form_fields()
+    names = {f.name for f in fields}
+    # Every named field we created should be present in the output
+    # (radio_group adds a parent field with the group name).
+    expected = {"name", "subscribe", "country", "payment", "submit"}
+    assert expected <= names, (
+        f"expected {expected} in output field names; got {names}"
+    )
+
+
 def test_version_is_038_or_newer():
     """Sanity check that we're running against a build that has the
     #384 write-side API — if the binding was rebuilt from a pre-0.3.38

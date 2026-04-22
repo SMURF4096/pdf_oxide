@@ -72,6 +72,22 @@ extern int   pdf_page_builder_text_field(void* page, const char* name,
 extern int   pdf_page_builder_checkbox(void* page, const char* name,
                                        float x, float y, float w, float h,
                                        int checked, int* error_code);
+extern int   pdf_page_builder_combo_box(void* page, const char* name,
+                                        float x, float y, float w, float h,
+                                        const char* const* options,
+                                        size_t options_count,
+                                        const char* selected,
+                                        int* error_code);
+extern int   pdf_page_builder_radio_group(void* page, const char* name,
+                                          const char* const* values,
+                                          const float* xs, const float* ys,
+                                          const float* ws, const float* hs,
+                                          size_t count,
+                                          const char* selected,
+                                          int* error_code);
+extern int   pdf_page_builder_push_button(void* page, const char* name,
+                                          float x, float y, float w, float h,
+                                          const char* caption, int* error_code);
 
 extern int   pdf_page_builder_done(void* page, int* error_code);
 extern void  pdf_page_builder_free(void* page);
@@ -698,6 +714,96 @@ func (p *PageBuilder) Checkbox(name string, x, y, w, h float32, checked bool) *P
 			c = 1
 		}
 		return C.pdf_page_builder_checkbox(hp, cn, C.float(x), C.float(y), C.float(w), C.float(h), c, ec)
+	})
+}
+
+// ComboBox adds a dropdown combo-box form field. Pass selected="" for no
+// initial selection. (#384 Phase 4)
+func (p *PageBuilder) ComboBox(name string, x, y, w, h float32, options []string, selected string) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		cn := C.CString(name)
+		defer C.free(unsafe.Pointer(cn))
+		cOpts := make([]*C.char, len(options))
+		for i, s := range options {
+			cOpts[i] = C.CString(s)
+		}
+		defer func() {
+			for _, c := range cOpts {
+				C.free(unsafe.Pointer(c))
+			}
+		}()
+		var cSel *C.char
+		if selected != "" {
+			cSel = C.CString(selected)
+			defer C.free(unsafe.Pointer(cSel))
+		}
+		var optsPtr **C.char
+		if len(cOpts) > 0 {
+			optsPtr = (**C.char)(unsafe.Pointer(&cOpts[0]))
+		}
+		return C.pdf_page_builder_combo_box(hp, cn, C.float(x), C.float(y), C.float(w), C.float(h),
+			optsPtr, C.size_t(len(cOpts)), cSel, ec)
+	})
+}
+
+// RadioButton describes one option of a radio group.
+type RadioButton struct {
+	Value      string
+	X, Y, W, H float32
+}
+
+// RadioGroup adds a radio-button group. Each entry of buttons is one
+// option with its own rect. Pass selected="" for no initial selection.
+// (#384 Phase 4)
+func (p *PageBuilder) RadioGroup(name string, buttons []RadioButton, selected string) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		cn := C.CString(name)
+		defer C.free(unsafe.Pointer(cn))
+		n := len(buttons)
+		cVals := make([]*C.char, n)
+		xs := make([]C.float, n)
+		ys := make([]C.float, n)
+		ws := make([]C.float, n)
+		hs := make([]C.float, n)
+		for i, b := range buttons {
+			cVals[i] = C.CString(b.Value)
+			xs[i] = C.float(b.X)
+			ys[i] = C.float(b.Y)
+			ws[i] = C.float(b.W)
+			hs[i] = C.float(b.H)
+		}
+		defer func() {
+			for _, c := range cVals {
+				C.free(unsafe.Pointer(c))
+			}
+		}()
+		var cSel *C.char
+		if selected != "" {
+			cSel = C.CString(selected)
+			defer C.free(unsafe.Pointer(cSel))
+		}
+		var valsPtr **C.char
+		var xsPtr, ysPtr, wsPtr, hsPtr *C.float
+		if n > 0 {
+			valsPtr = (**C.char)(unsafe.Pointer(&cVals[0]))
+			xsPtr = (*C.float)(unsafe.Pointer(&xs[0]))
+			ysPtr = (*C.float)(unsafe.Pointer(&ys[0]))
+			wsPtr = (*C.float)(unsafe.Pointer(&ws[0]))
+			hsPtr = (*C.float)(unsafe.Pointer(&hs[0]))
+		}
+		return C.pdf_page_builder_radio_group(hp, cn, valsPtr, xsPtr, ysPtr, wsPtr, hsPtr,
+			C.size_t(n), cSel, ec)
+	})
+}
+
+// PushButton adds a clickable push button with a visible caption. (#384 Phase 4)
+func (p *PageBuilder) PushButton(name string, x, y, w, h float32, caption string) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		cn := C.CString(name)
+		cc := C.CString(caption)
+		defer C.free(unsafe.Pointer(cn))
+		defer C.free(unsafe.Pointer(cc))
+		return C.pdf_page_builder_push_button(hp, cn, C.float(x), C.float(y), C.float(w), C.float(h), cc, ec)
 	})
 }
 

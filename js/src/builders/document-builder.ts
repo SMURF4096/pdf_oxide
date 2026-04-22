@@ -420,6 +420,34 @@ export class PageBuilder {
   }
 
   /**
+   * Add a dropdown combo-box form field. `options` are the user-
+   * visible choices; `selected` picks the initial value.
+   */
+  comboBox(name: string, x: number, y: number, w: number, h: number,
+           options: string[], selected?: string): this {
+    native.pageBuilderComboBox(this.h(), name, x, y, w, h, options, selected);
+    return this;
+  }
+
+  /**
+   * Add a radio-button group. `buttons` is an array of
+   * `[exportValue, x, y, w, h]` tuples — one per option. `selected`
+   * picks the initial value by export value.
+   */
+  radioGroup(name: string,
+             buttons: Array<[string, number, number, number, number]>,
+             selected?: string): this {
+    native.pageBuilderRadioGroup(this.h(), name, buttons, selected);
+    return this;
+  }
+
+  /** Add a clickable push button with a visible caption. */
+  pushButton(name: string, x: number, y: number, w: number, h: number, caption: string): this {
+    native.pageBuilderPushButton(this.h(), name, x, y, w, h, caption);
+    return this;
+  }
+
+  /**
    * Commit the page's buffered operations to the parent builder and
    * return the parent for chaining. After `done()` this PageBuilder is
    * invalid.

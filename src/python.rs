@@ -3923,6 +3923,28 @@ enum PendingPageOp {
         h: f32,
         checked: bool,
     },
+    ComboBox {
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        options: Vec<String>,
+        selected: Option<String>,
+    },
+    RadioGroup {
+        name: String,
+        buttons: Vec<(String, f32, f32, f32, f32)>,
+        selected: Option<String>,
+    },
+    PushButton {
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        caption: String,
+    },
 }
 
 /// Python wrapper for an embedded TTF/OTF font usable by `DocumentBuilder`.
@@ -4384,6 +4406,73 @@ impl PyFluentPageBuilder {
         Ok(slf)
     }
 
+    /// Add a dropdown combo-box form field. `options` are the user-
+    /// visible choices (also the submitted values); `selected` picks
+    /// the initial value (or pass `None` to leave blank).
+    /// (#384 Phase 4)
+    #[pyo3(signature = (name, x, y, w, h, options, selected=None))]
+    fn combo_box<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        options: Vec<String>,
+        selected: Option<String>,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::ComboBox {
+            name,
+            x,
+            y,
+            w,
+            h,
+            options,
+            selected,
+        })?;
+        Ok(slf)
+    }
+
+    /// Add a radio-button group. `buttons` is a list of
+    /// `(export_value, x, y, w, h)` tuples, one per option. `selected`
+    /// picks the initial value. (#384 Phase 4)
+    #[pyo3(signature = (name, buttons, selected=None))]
+    fn radio_group<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        name: String,
+        buttons: Vec<(String, f32, f32, f32, f32)>,
+        selected: Option<String>,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::RadioGroup {
+            name,
+            buttons,
+            selected,
+        })?;
+        Ok(slf)
+    }
+
+    /// Add a clickable push button with a visible caption.
+    /// (#384 Phase 4)
+    fn push_button<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        caption: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::PushButton {
+            name,
+            x,
+            y,
+            w,
+            h,
+            caption,
+        })?;
+        Ok(slf)
+    }
+
     /// Commit the page's buffered operations to the parent
     /// `DocumentBuilder` and return the parent for further chaining.
     /// After `done()`, this `FluentPageBuilder` is spent.
@@ -4446,6 +4535,28 @@ impl PyFluentPageBuilder {
                     h,
                     checked,
                 } => page.checkbox(name, x, y, w, h, checked),
+                PendingPageOp::ComboBox {
+                    name,
+                    x,
+                    y,
+                    w,
+                    h,
+                    options,
+                    selected,
+                } => page.combo_box(name, x, y, w, h, options, selected),
+                PendingPageOp::RadioGroup {
+                    name,
+                    buttons,
+                    selected,
+                } => page.radio_group(name, buttons, selected),
+                PendingPageOp::PushButton {
+                    name,
+                    x,
+                    y,
+                    w,
+                    h,
+                    caption,
+                } => page.push_button(name, x, y, w, h, caption),
             };
         }
         page.done();
