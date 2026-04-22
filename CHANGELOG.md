@@ -3,13 +3,20 @@
 All notable changes to PDFOxide are documented here.
 
 ## [0.3.38] - 2026-04-21
-> Write-side API across every language binding, real font subsetting, DocumentBuilder encryption, multi-target WASM packaging
+> DocumentBuilder fluent API across every language binding, real font subsetting, DocumentBuilder encryption, multi-target WASM packaging
 
-This release closes the "Rust-only write-side API" gap. `DocumentBuilder`,
-embedded fonts, the HTML+CSS pipeline, annotations, form-field creation,
-and low-level graphics primitives are now reachable from **Python, WASM,
-C#, Go, and Node/TypeScript** — the Rust implementation is the single
-source of truth and every binding is a thin translation layer.
+This release closes the "Rust-only `DocumentBuilder` gap": the fluent
+write-side builder, embedded fonts, the HTML+CSS pipeline, annotations,
+form-field creation, and low-level graphics primitives are now reachable
+from **Python, WASM, C#, Go, and Node/TypeScript** — the Rust
+implementation is the single source of truth and every binding is a
+thin translation layer.
+
+> **Scope note.** "Write-side API" here refers specifically to the
+> `DocumentBuilder` surface listed below. Reader / editor / signature /
+> rendering-options parity across bindings is ongoing work; see the
+> post-release audit (`docs/api-coverage-audit.md` / issue tracker
+> `#384` follow-ups) for the full picture.
 
 ### Write-side API × every binding (#384)
 
