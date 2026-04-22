@@ -82,8 +82,10 @@ jobs:
       - name: Run tests
         run: cargo test --verbose
 
-      - name: Build documentation
-        run: cargo doc --no-deps
+      - name: Build documentation (warnings as errors)
+        run: cargo doc --no-deps --workspace
+        env:
+          RUSTDOCFLAGS: "-D warnings"
 
   # Test Python bindings feature (only production-ready feature in v0.1.0)
   features:
@@ -237,6 +239,54 @@ jobs:
       - name: Clippy WASM
         run: cargo clippy --target wasm32-unknown-unknown --no-default-features --features wasm --lib -- -D warnings
 
+      # SOTA 2026: validate the produced module using wasm-tools
+      - name: Install wasm-tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-tools
+
+      - name: wasm-tools validate (dev build)
+        run: wasm-tools validate target/wasm32-unknown-unknown/debug/pdf_oxide.wasm
+
+      # SOTA 2026: release build + wasm-opt -Oz --converge shrinks the bundle before we ship it
+      - name: Install binaryen (wasm-opt)
+        run: |
+          set -eux
+          ver="120"
+          curl -fL -o binaryen.tar.gz "https://github.com/WebAssembly/binaryen/releases/download/version_${ver}/binaryen-version_${ver}-x86_64-linux.tar.gz"
+          tar -xzf binaryen.tar.gz
+          echo "$PWD/binaryen-version_${ver}/bin" >> "$GITHUB_PATH"
+
+      - name: Release WASM build
+        run: cargo build --release --lib --target wasm32-unknown-unknown --no-default-features --features wasm
+
+      - name: wasm-opt -Oz --converge (size gate)
+        shell: bash
+        run: |
+          in="target/wasm32-unknown-unknown/release/pdf_oxide.wasm"
+          out="target/wasm32-unknown-unknown/release/pdf_oxide.opt.wasm"
+          # Rustc emits several post-MVP features for wasm32 — enable each
+          # explicitly or wasm-opt's validator rejects the input module.
+          wasm-opt -Oz --converge \
+            --enable-nontrapping-float-to-int \
+            --enable-bulk-memory \
+            --enable-sign-ext \
+            --enable-mutable-globals \
+            --enable-reference-types \
+            "$in" -o "$out"
+          before_kb=$(( $(stat -c%s "$in") / 1024 ))
+          after_kb=$(( $(stat -c%s "$out") / 1024 ))
+          echo "Before wasm-opt: ${before_kb} KB"
+          echo "After  wasm-opt: ${after_kb} KB"
+          # Size regression gate: current baseline after -Oz is ~7.8 MB.
+          # Leave ~20% headroom; tighten after a dedicated size-reduction pass.
+          max_kb=9216
+          if [ "$after_kb" -gt "$max_kb" ]; then
+            echo "::error::wasm bundle ${after_kb} KB exceeds ceiling ${max_kb} KB"
+            exit 1
+          fi
+          wasm-tools validate "$out"
+
   # C FFI layer build check - the shared library that Go, JS, and C# bindings link against
   ffi-build:
     name: FFI Build (${{ matrix.os }})
@@ -328,6 +378,28 @@ jobs:
             exit 1
           fi
 
+      # SOTA 2026: golangci-lint v2 (single meta-linter replacing many)
+      - name: golangci-lint
+        if: matrix.os == 'ubuntu-latest'
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: go
+          args: --build-tags pdf_oxide_dev --timeout 5m
+
+      # SOTA 2026: govulncheck — module-level vulnerability scanner
+      - name: govulncheck
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: go
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck -tags pdf_oxide_dev ./...
+
+      # SOTA 2026: race detector catches data races that survive linting
+      - name: Go test -race
+        working-directory: go
+        run: go test -race -count=1 -p 1 -tags pdf_oxide_dev ./...
+
   # JavaScript/TypeScript bindings build and test
   # Mirrors the release.yml build-nodejs job: builds the Rust staticlib, then
   # runs node-gyp rebuild to produce a real .node addon, matching exactly what
@@ -382,6 +454,30 @@ jobs:
         working-directory: js
         run: npx tsc --noEmit
 
+      # SOTA 2026: Biome v2 replaces eslint+prettier (one tool, Rust-core, ~10× faster)
+      - name: Biome lint+format check
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: js
+        run: npx --yes @biomejs/biome@latest ci .
+
+      # SOTA 2026: publint — validates package.json so the published tarball works in every module system
+      - name: publint
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: js
+        run: npx --yes publint
+
+      # SOTA 2026: @arethetypeswrong/cli — checks that types resolve for every exports condition
+      - name: arethetypeswrong (types vs runtime)
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: js
+        run: npx --yes @arethetypeswrong/cli --pack . --ignore-rules=cjs-resolves-to-esm || true
+
+      # SOTA 2026: npm audit fails on high+ severity transitive vulns
+      - name: npm audit (prod deps, high severity)
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: js
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Build native addon with node-gyp
         working-directory: js
         shell: bash
@@ -423,6 +519,43 @@ jobs:
       - name: Build C# tests
         working-directory: csharp/PdfOxide.Tests
         run: dotnet build -c Release -p:TreatWarningsAsErrors=true
+
+      # SOTA 2026: dotnet format verifies whitespace + style conformance without mutating files
+      - name: dotnet format --verify-no-changes
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: csharp
+        run: dotnet format PdfOxide/PdfOxide.csproj --verify-no-changes --severity warn
+
+      - name: dotnet format tests --verify-no-changes
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: csharp
+        run: dotnet format PdfOxide.Tests/PdfOxide.Tests.csproj --verify-no-changes --severity warn
+
+      # SOTA 2026: dotnet list package --vulnerable surfaces known CVE in transitive NuGet deps
+      - name: dotnet list package --vulnerable (PdfOxide)
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: csharp/PdfOxide
+        shell: bash
+        run: |
+          output=$(dotnet list package --vulnerable --include-transitive 2>&1)
+          echo "$output"
+          # Exit non-zero if any vulnerabilities are reported
+          if echo "$output" | grep -qi "has the following vulnerable packages"; then
+            echo "::error::Vulnerable NuGet packages detected in PdfOxide"
+            exit 1
+          fi
+
+      - name: dotnet list package --vulnerable (PdfOxide.Tests)
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: csharp/PdfOxide.Tests
+        shell: bash
+        run: |
+          output=$(dotnet list package --vulnerable --include-transitive 2>&1)
+          echo "$output"
+          if echo "$output" | grep -qi "has the following vulnerable packages"; then
+            echo "::error::Vulnerable NuGet packages detected in PdfOxide.Tests"
+            exit 1
+          fi
 
       - name: Stage native lib for C# tests
         shell: bash
@@ -507,14 +640,97 @@ jobs:
       - name: Run security audit
         uses: actions-rust-lang/audit@v1
 
-  # Check dependencies are up to date
+  # cargo-deny: licenses / advisories / bans / sources (single consolidated gate)
   deny:
-    name: Dependency Check
+    name: Dependency Check (cargo-deny)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-
       - name: Check dependencies
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          arguments: ""
+          command: check
+          arguments: --all-features
+
+  # TOML formatting check (taplo)
+  taplo:
+    name: TOML format (taplo)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: taplo
+      - name: Install taplo
+        uses: taiki-e/install-action@v2
+        with:
+          tool: taplo-cli
+      - name: Check TOML formatting
+        run: taplo fmt --check
+
+  # Unused dependencies check (cargo-shear)
+  shear:
+    name: Unused deps (cargo-shear)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: shear
+      - name: Install cargo-shear
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-shear
+      - name: Check for unused dependencies
+        run: cargo shear
+
+  # Feature powerset: build with every combination of features to catch cfg-rot
+  # Only runs on ubuntu to contain cost; skips dev-dependencies.
+  features-powerset:
+    name: Feature powerset (cargo-hack)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: hack
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack
+      - name: Build every feature combination (root crate)
+        run: cargo hack check --feature-powerset --no-dev-deps --lib
+
+  # Public-API semver check (PR only — compares against base branch)
+  semver-checks:
+    name: Semver check (PR only)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          feature-group: default-features
+
+  # MSRV: verify the oldest supported Rust toolchain still builds the library
+  msrv:
+    name: MSRV build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Read MSRV from Cargo.toml
+        id: msrv
+        run: |
+          v=$(grep -E '^rust-version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "version=${v:-1.82}" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: msrv
+      - name: Build with MSRV toolchain
+        run: cargo build --lib --all-features

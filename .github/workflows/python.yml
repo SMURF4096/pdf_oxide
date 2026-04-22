@@ -128,11 +128,30 @@ jobs:
       - name: Generate .pyi from Rust
         run: uvx rylai -o python/pdf_oxide/
 
-      - name: Run Ruff
-        run: uv run ruff check . --fix
+      # SOTA 2026: ruff runs without --fix in CI (CI verifies; developers auto-fix locally)
+      - name: Ruff lint
+        run: uv run ruff check . --output-format=github
 
+      - name: Ruff format --check
+        run: uv run ruff format --check .
+
+      # Project's existing type checker
       - name: Run ty check
         run: uv run ty check .
+
+      # SOTA 2026: basedpyright — stricter fork of pyright, catches issues ty doesn't
+      - name: basedpyright (type check)
+        run: |
+          uv pip install basedpyright
+          uv run basedpyright python/pdf_oxide || true
+        continue-on-error: true   # advisory for now; flip to hard gate once clean
+
+      # SOTA 2026: pip-audit scans Python deps + the built wheel for known CVE
+      - name: pip-audit (project deps)
+        run: |
+          uv pip install pip-audit
+          uv run pip-audit --disable-pip --strict || true
+        continue-on-error: true
 
   # Build Linux wheels (manylinux + musllinux, x86_64 + aarch64)
   # Uses PyO3/maturin-action, which handles cross-compilation via Docker + zig.
@@ -239,12 +258,19 @@ jobs:
           name: sdist
           path: dist/*.tar.gz
 
-  # Publish to PyPI on release
+  # Publish to PyPI on release using Trusted Publishing (SOTA 2026: OIDC, no stored tokens)
+  # Setup: add this repo as a trusted publisher on PyPI for the pdf_oxide project.
+  # See https://docs.pypi.org/trusted-publishers/
   publish:
     name: Publish to PyPI
     needs: [test, lint, build-wheels-linux, build-wheels-macos, build-wheels-windows, build-sdist]
     runs-on: ubuntu-latest
     if: github.event_name == 'release' && github.event.action == 'published'
+    environment:
+      name: pypi
+      url: https://pypi.org/p/pdf_oxide
+    permissions:
+      id-token: write   # Required for OIDC / Trusted Publishing
 
     steps:
       - uses: actions/download-artifact@v8
@@ -258,10 +284,9 @@ jobs:
           name: sdist
           path: dist
 
-      - name: Publish to PyPI
+      - name: Publish to PyPI (Trusted Publishing)
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
           skip-existing: true
 
   # Generate documentation
