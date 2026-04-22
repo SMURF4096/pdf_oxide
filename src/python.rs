@@ -5027,7 +5027,7 @@ impl PyExtractionProfile {
     }
 }
 
-/// RFC 3161 Time Stamp Authority client (#57 / #74).
+/// RFC 3161 Time Stamp Authority client.
 /// Only available when pdf_oxide was built with the `tsa-client`
 /// Rust-core feature — otherwise every call raises
 /// `NotImplementedError`.
@@ -5153,7 +5153,7 @@ impl PyTsaClient {
 }
 
 /// RFC 3161 timestamp parsed from a DER TimeStampToken or bare
-/// TSTInfo. Mirrors the C# `Timestamp` class (#52 / #73).
+/// TSTInfo. Mirrors the C# `Timestamp` class.
 #[pyclass(module = "pdf_oxide.pdf_oxide", name = "Timestamp")]
 pub struct PyTimestamp {
     inner: crate::signatures::Timestamp,
@@ -5212,11 +5212,12 @@ impl PyTimestamp {
         PyBytes::new(py, self.inner.message_imprint_ref()).into()
     }
 
-    /// Cryptographic verify — not yet implemented (Rust CMS slice
-    /// #76).
+    /// Cryptographic verify — not yet implemented. The RFC 3161
+    /// TSA-token signer-verification path is not yet wired through
+    /// the Rust core.
     fn verify(&self) -> PyResult<bool> {
         Err(PyNotImplementedError::new_err(
-            "Timestamp.verify() requires CMS signer verification (#76, not yet landed)",
+            "Timestamp.verify() requires CMS signer verification — not yet landed",
         ))
     }
 
@@ -5231,9 +5232,10 @@ impl PyTimestamp {
 }
 
 /// A single existing PDF signature surfaced by
-/// `PdfDocument.signatures()`. Inspection-only for now — the
-/// cryptographic `verify()` path is not yet implemented Rust-side
-/// (pending #72 later slices) and raises NotImplementedError.
+/// `PdfDocument.signatures()`. `verify()` runs the RSA-PKCS#1 v1.5
+/// signer-attributes check; `verify_detached()` adds the
+/// `messageDigest` content-hash check. RSA-PSS / ECDSA signers still
+/// raise `NotImplementedError`.
 #[pyclass(module = "pdf_oxide.pdf_oxide", name = "Signature")]
 pub struct PySignature {
     info: crate::signatures::SignatureInfo,
@@ -5289,9 +5291,9 @@ impl PySignature {
     ///
     /// A True return proves the signer held the private key matching
     /// the embedded certificate and that the signed-attribute bundle
-    /// is authentic. It does **not** yet verify the messageDigest
+    /// is authentic. It does **not** verify the messageDigest
     /// attribute against the document's byte-range content hash —
-    /// that content-integrity slice of #77 is still to land.
+    /// call `verify_detached()` for that end-to-end check.
     ///
     /// Raises NotImplementedError for RSA-PSS, ECDSA, unknown digest
     /// OIDs, or signatures missing signed_attrs.

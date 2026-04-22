@@ -1,11 +1,10 @@
-//! Closes part of #71: raw-DER Certificate accessors.
+//! Raw-DER Certificate accessor surface.
 //!
-//! Rust-core gap: `SigningCredentials::from_pkcs12` remained a stub
-//! (PKCS#12 parsing not yet implemented), so C# / Go / Node `Certificate`
-//! classes had no functional accessor surface. This commit adds a
-//! `from_der` factory and subject / issuer / serial / validity / is_valid
-//! readers that parse the already-stored X.509 bytes via `x509-parser`
-//! (already a dep under the `signatures` feature).
+//! `SigningCredentials::from_pkcs12` is still a stub — PKCS#12 parsing
+//! isn't implemented yet — so this test exercises the `from_der` path
+//! that every binding's `Certificate` class relies on. Confirms
+//! subject / issuer / serial / validity / is_valid readers parse
+//! X.509 bytes correctly via `x509-parser`.
 #![cfg(feature = "signatures")]
 
 use pdf_oxide::signatures::SigningCredentials;

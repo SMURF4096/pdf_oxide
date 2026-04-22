@@ -1242,7 +1242,7 @@ impl WasmPdfDocument {
 }
 
 /// RFC 3161 timestamp parsed from a DER TimeStampToken or bare
-/// TSTInfo (#52 / #73 — wasm slice).
+/// TSTInfo. Mirrors the C#, Go, and Python `Timestamp` surfaces.
 #[cfg(feature = "signatures")]
 #[wasm_bindgen]
 pub struct WasmTimestamp {
@@ -1305,15 +1305,16 @@ impl WasmTimestamp {
     #[wasm_bindgen]
     pub fn verify(&self) -> Result<bool, JsValue> {
         Err(JsValue::from_str(
-            "Timestamp.verify() requires CMS signer verification (#76, not yet landed)",
+            "Timestamp.verify() requires CMS signer verification — not yet landed",
         ))
     }
 }
 
 /// A single existing PDF signature surfaced by
-/// `WasmPdfDocument.signatures()`. Inspection-only for now — the
-/// cryptographic `verify()` path throws until the Rust CMS slice
-/// of #72 lands.
+/// `WasmPdfDocument.signatures()`. `verify()` runs the RSA-PKCS#1 v1.5
+/// signer-attributes check; `verifyDetached()` adds the
+/// `messageDigest` content-hash check. RSA-PSS / ECDSA signers still
+/// throw an `UnsupportedFeature`-mapped JS error.
 #[cfg(feature = "signatures")]
 #[wasm_bindgen]
 pub struct WasmSignature {
@@ -1370,9 +1371,9 @@ impl WasmSignature {
     ///
     /// A `true` return proves the signer held the private key matching
     /// the embedded certificate and that the signed-attribute bundle
-    /// is authentic. It does **not** yet verify the `messageDigest`
+    /// is authentic. It does **not** verify the `messageDigest`
     /// attribute against the document's byte-range content hash —
-    /// that content-integrity slice of #77 is still to land.
+    /// call `verifyDetached()` for that end-to-end check.
     ///
     /// Throws for RSA-PSS, ECDSA, unknown digest OIDs, or signatures
     /// without signed_attrs.

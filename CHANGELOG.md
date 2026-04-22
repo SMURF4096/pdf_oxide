@@ -103,7 +103,7 @@ Fixes `ReferenceError: Can't find variable: __dirname` thrown in any
 browser bundler. Subpath imports (`pdf-oxide-wasm/web` etc.) are also
 available for manual routing.
 
-### Digital signature verification (#72, #73, #74, #75, #76, #77)
+### Digital signature verification (#208 — verification half)
 
 First cryptographically-backed signature surface on the reader side.
 Every binding (`Signature.verify()` / `.verifyDetached()` / equivalents)
@@ -131,36 +131,49 @@ for sig in doc.signatures():
 Supporting surface shipped alongside:
 
 - `Certificate` — DER inspection (subject, issuer, serial, validity,
-  `is_valid`) via `x509-parser` — **C FFI, C#, Node** (#71 / #76).
+  `is_valid`) via `x509-parser` — **C FFI, C#, Node**.
 - `Signature` — enumerate + inspect + `.GetCertificate()` —
-  **Python, WASM, C FFI, C#, Go, Node** (#51 / #72 / #76).
+  **Python, WASM, C FFI, C#, Go, Node**.
 - `Timestamp` — RFC 3161 `TSTInfo` parsing (time, serial, policy,
   TSA name, hash algorithm, message imprint) — **Python, WASM, C FFI,
-  C#, Go** (#52 / #73).
+  C#, Go**.
 - `TsaClient` — RFC 3161 HTTP POST with nonce + HTTP Basic auth,
-  behind a new `tsa-client` Cargo feature — **Python, C FFI, C#, Go**
-  (#57 / #74). Intentionally not wired on WASM (ureq is wasm-
-  incompatible).
+  behind a new `tsa-client` Cargo feature — **Python, C FFI, C#, Go**.
+  Intentionally not wired on WASM (ureq is wasm-incompatible).
 - `DocumentEditor::set_producer` / `set_creation_date` — metadata
-  writers (#70).
+  writers.
 - `render_page_region` / `render_page_fit` — clipped / fitted
-  rendering surface (#67).
-- Bicubic image filtering (#75 — pdf.js#19978 parity) — scanned /
-  bilevel pages with a Multiply-blended overlay no longer collapse
-  their grayscale range on downscale.
+  rendering surface.
+- Bicubic image filtering (pdf.js#19978 parity) — scanned / bilevel
+  pages with a Multiply-blended overlay no longer collapse their
+  grayscale range on downscale.
+
+Signing (as opposed to verification) is not covered by this release;
+#208 remains open for the signing half.
+
+### Bug fixes
+
+- **#395** — `PdfOxide.Exceptions.SignatureException: '[8500]
+  Signature error...'` raised by `doc.RenderPage(0, 0)` on a
+  specific 9-page PDF reported by
+  [@gevorgter](https://github.com/gevorgter). The failure was the
+  renderer propagating a signature-parse error up as the page-render
+  verdict even though the page itself had no interactive signature
+  widget on it. Fixed by treating unparseable signature-field
+  metadata as non-fatal at render time; pinned by
+  `tests/test_issue_395_render_signature_exception.rs` + the C#
+  regression test so this can't silently come back.
 
 ### Thanks
 
 Reports and feature requests from
 [@sparkyandrew](https://github.com/sparkyandrew) (#382 CJK via
-`DocumentBuilder`, #385 subsetter), and
+`DocumentBuilder`, #385 subsetter),
 [@arthurlassagne](https://github.com/arthurlassagne) (#392 browser
-build breakage). Both surfaced the gaps that drove this release.
-
-Signature work (#51 / #52 / #57 / #67 / #70 / #71 / #72 / #73 / #74 /
-#75 / #76 / #77) closes the internally-filed #384 cross-binding
-audit gaps for the read side; no external reporter attribution on
-those tickets.
+build breakage), and
+[@gevorgter](https://github.com/gevorgter) (#395 RenderPage
+SignatureException). All three surfaced the gaps that drove this
+release.
 
 ## [0.3.37] - 2026-04-20
 > HTML + CSS → PDF (issue #248) — first credible pure-Rust pipeline

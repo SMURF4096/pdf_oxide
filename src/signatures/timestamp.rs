@@ -8,7 +8,7 @@
 //!
 //! Backed by the `x509-tsp` crate from the RustCrypto formats family.
 //! All accessors surface through the `pdf_timestamp_*` FFI and, in
-//! turn, every binding's idiomatic `Timestamp` type (#73 / #52).
+//! turn, every binding's idiomatic `Timestamp` type.
 
 #![cfg(feature = "signatures")]
 

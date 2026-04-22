@@ -1,8 +1,7 @@
 //! Integration tests for `enumerate_signatures` / `count_signatures`.
 //!
 //! These cover the document-level surface used by every binding's
-//! `DocumentEditor.signatures` property (Phase 2 of #72 cross-binding
-//! rollout).
+//! `DocumentEditor.signatures` property.
 
 #![cfg(feature = "signatures")]
 

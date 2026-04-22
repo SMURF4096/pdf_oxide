@@ -1,4 +1,6 @@
-//! CMS signer verification (RFC 5652) — cryptographic path for #77.
+//! CMS signer verification (RFC 5652) — cryptographic path behind
+//! `Signature.verify()` / `Signature.verifyDetached()` on every
+//! binding.
 //!
 //! Two entry points, layered:
 //!

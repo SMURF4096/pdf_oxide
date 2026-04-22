@@ -6,10 +6,10 @@ using Xunit;
 namespace PdfOxide.Tests
 {
     /// <summary>
-    /// Mirror of <c>tests/test_signature_timestamp*</c> — the C# half
-    /// of #73 / #52. Pins that the RFC 3161 parser lands end-to-end
-    /// through the FFI: Parse → DateTimeOffset + Serial + PolicyOid +
-    /// HashAlgorithm + MessageImprint + TsaName.
+    /// Mirror of <c>tests/test_signature_timestamp*</c> — pins that the
+    /// RFC 3161 parser lands end-to-end through the FFI:
+    /// Parse → DateTimeOffset + Serial + PolicyOid + HashAlgorithm +
+    /// MessageImprint + TsaName.
     /// </summary>
     public class TimestampTests
     {
@@ -63,7 +63,8 @@ namespace PdfOxide.Tests
         public void Verify_CurrentlyUnsupported()
         {
             using var ts = Timestamp.Parse(BareTstInfo);
-            // Contract pin: until #76 lands, Verify surfaces as
+            // Contract pin: TSA-token signature verification is not
+            // yet wired on the Rust side, so Verify() surfaces as
             // UnsupportedFeatureException via ExceptionMapper.
             Assert.Throws<UnsupportedFeatureException>(() => ts.Verify());
         }

@@ -3091,11 +3091,9 @@ func (s *Signature) SigningTime() (int64, error) {
 //
 // A true return proves the signer held the private key matching the
 // embedded certificate and that the signed-attribute bundle is
-// authentic. It does NOT yet verify the messageDigest attribute
-// against the document's byte-range content hash — that content-
-// integrity slice of #77 is still to land, so callers that care
-// about document tampering should additionally compare
-// messageDigest against their own content hash.
+// authentic. It does NOT verify the messageDigest attribute against
+// the document's byte-range content hash — call VerifyDetached for
+// that end-to-end check.
 //
 // Returns ErrUnsupportedFeature for RSA-PSS, ECDSA, unknown digest
 // OIDs, or CMS blobs missing signed_attrs.

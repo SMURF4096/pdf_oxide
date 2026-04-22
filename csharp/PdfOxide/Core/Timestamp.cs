@@ -135,10 +135,10 @@ namespace PdfOxide.Core
 
         /// <summary>
         /// Cryptographically verify the timestamp's signer. Currently
-        /// unsupported — requires the CMS verification path pending as
-        /// #76.
+        /// unsupported — the RFC 3161 TSA-token signer-verification
+        /// path is not yet wired through the FFI.
         /// </summary>
-        /// <exception cref="UnsupportedFeatureException">Always, until Rust-core CMS lands.</exception>
+        /// <exception cref="UnsupportedFeatureException">Always, until Rust-core TSA-token verify lands.</exception>
         public bool Verify()
         {
             ThrowIfDisposed();

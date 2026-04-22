@@ -90,14 +90,10 @@ namespace PdfOxide.Core
         /// <para>
         /// A <c>true</c> result proves the signer held the private key
         /// matching the embedded certificate and that the signed-attribute
-        /// bundle has not been tampered with. It does <b>not</b> yet
+        /// bundle has not been tampered with. It does <b>not</b>
         /// verify the <c>messageDigest</c> attribute against the raw
-        /// byte-range content of the PDF — that content-integrity
-        /// check is a follow-up slice of #77 and needs the document
-        /// bytes plumbed through the FFI. Until it lands, callers who
-        /// care about tampering of the document itself should also
-        /// compare the messageDigest attribute against their own
-        /// content hash.
+        /// byte-range content of the PDF — call
+        /// <see cref="VerifyDetached"/> for that end-to-end check.
         /// </para>
         /// </summary>
         /// <returns><c>true</c> if the RSA-PKCS#1 v1.5 check succeeded;
