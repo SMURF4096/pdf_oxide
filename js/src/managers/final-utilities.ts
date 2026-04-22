@@ -50,14 +50,17 @@ export interface CompressionSettings {
 
 export class EventManager extends EventEmitter {
   private document: any;
-  private eventListeners: Map<EventType, Function[]> = new Map();
+  private eventListeners: Map<EventType, Array<(event: unknown) => void>> = new Map();
 
   constructor(document: any) {
     super();
     this.document = document;
   }
 
-  async addEventListener(eventType: EventType, handler: Function): Promise<boolean> {
+  async addEventListener(
+    eventType: EventType,
+    handler: (event: unknown) => void
+  ): Promise<boolean> {
     try {
       if (!this.eventListeners.has(eventType)) this.eventListeners.set(eventType, []);
       this.eventListeners.get(eventType)!.push(handler);
@@ -68,7 +71,10 @@ export class EventManager extends EventEmitter {
     }
   }
 
-  async removeEventListener(eventType: EventType, handler: Function): Promise<boolean> {
+  async removeEventListener(
+    eventType: EventType,
+    handler: (event: unknown) => void
+  ): Promise<boolean> {
     try {
       const handlers = this.eventListeners.get(eventType);
       return handlers ? handlers.splice(handlers.indexOf(handler), 1).length > 0 : false;
@@ -450,7 +456,10 @@ export class CustomAnnotationManager extends EventEmitter {
     }
   }
 
-  async registerAnnotationType(typeName: string, handler: Function): Promise<boolean> {
+  async registerAnnotationType(
+    typeName: string,
+    handler: (...args: unknown[]) => unknown
+  ): Promise<boolean> {
     try {
       return true;
     } catch (error) {

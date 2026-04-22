@@ -175,7 +175,10 @@ export function wrapError(error: Error | object | string): PdfError;
  * }
  * ```
  */
-export function wrapMethod(fn: Function, thisArg?: any): Function;
+export function wrapMethod(
+  fn: (...args: unknown[]) => unknown,
+  thisArg?: unknown
+): (...args: unknown[]) => unknown;
 
 /**
  * Creates an async method wrapper that catches native errors and converts them to proper JavaScript Error subclasses
@@ -194,7 +197,10 @@ export function wrapMethod(fn: Function, thisArg?: any): Function;
  * }
  * ```
  */
-export function wrapAsyncMethod(fn: Function, thisArg?: any): Function;
+export function wrapAsyncMethod(
+  fn: (...args: unknown[]) => Promise<unknown>,
+  thisArg?: unknown
+): (...args: unknown[]) => Promise<unknown>;
 
 // ============================================================================
 // Type Definitions
