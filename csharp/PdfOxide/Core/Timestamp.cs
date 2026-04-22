@@ -43,6 +43,12 @@ namespace PdfOxide.Core
         }
 
         /// <summary>
+        /// Internal factory used by <see cref="TsaClient"/> to hand off
+        /// a freshly-allocated FFI handle without re-parsing bytes.
+        /// </summary>
+        internal static Timestamp FromRawHandle(IntPtr handle) => new(handle);
+
+        /// <summary>
         /// Parse a DER-encoded RFC 3161 TimeStampToken (or bare
         /// TSTInfo) into a Timestamp.
         /// </summary>
