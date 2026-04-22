@@ -332,6 +332,184 @@ namespace PdfOxide.Core
             }, cancellationToken);
         }
 
+        // ================================================================
+        // Mutations — closes #384 gap A.
+        // Reddit user u/Raccoon12 (2026-04-21) explicitly flagged MergeFrom.
+        // All 12 methods below have long-standing `document_editor_*`
+        // P/Invoke declarations in NativeMethods.cs; this surface was the
+        // missing glue that made them reachable from C#.
+        // ================================================================
+
+        /// <summary>
+        /// Append all pages from another PDF file to the end of this document.
+        /// </summary>
+        /// <param name="sourcePath">Path of the PDF whose pages should be appended.</param>
+        public void MergeFrom(string sourcePath)
+        {
+            if (sourcePath == null) throw new ArgumentNullException(nameof(sourcePath));
+            ThrowIfDisposed();
+            NativeMethods.document_editor_merge_from(_handle, sourcePath, out int err);
+            ExceptionMapper.ThrowIfError(err);
+        }
+
+        /// <summary>
+        /// Delete the page at <paramref name="pageIndex"/> (zero-based).
+        /// </summary>
+        public void DeletePage(int pageIndex)
+        {
+            ThrowIfDisposed();
+            NativeMethods.document_editor_delete_page(_handle, pageIndex, out int err);
+            ExceptionMapper.ThrowIfError(err);
+        }
+
+        /// <summary>
+        /// Move a page from one position to another. Indices are zero-based
+        /// and refer to positions <em>before</em> the move, matching the
+        /// Rust / Python / Go contract.
+        /// </summary>
+        public void MovePage(int fromIndex, int toIndex)
+        {
+            ThrowIfDisposed();
+            NativeMethods.document_editor_move_page(_handle, fromIndex, toIndex, out int err);
+            ExceptionMapper.ThrowIfError(err);
+        }
+
+        /// <summary>
+        /// Get the rotation of a page in degrees (0, 90, 180, 270).
+        /// </summary>
+        public int GetPageRotation(int pageIndex)
+        {
+            ThrowIfDisposed();
+            int degrees = NativeMethods.document_editor_get_page_rotation(_handle, pageIndex, out int err);
+            ExceptionMapper.ThrowIfError(err);
+            return degrees;
+        }
+
+        /// <summary>
+        /// Set the rotation of a page. Valid values are 0, 90, 180, 270.
+        /// </summary>
+        public void SetPageRotation(int pageIndex, int degrees)
+        {
+            ThrowIfDisposed();
+            NativeMethods.document_editor_set_page_rotation(_handle, pageIndex, degrees, out int err);
+            ExceptionMapper.ThrowIfError(err);
+        }
+
+        /// <summary>
+        /// Crop the visible area of every page by subtracting margins (points).
+        /// </summary>
+        public void CropMargins(float left, float right, float top, float bottom)
+        {
+            ThrowIfDisposed();
+            NativeMethods.document_editor_crop_margins(_handle, left, right, top, bottom, out int err);
+            ExceptionMapper.ThrowIfError(err);
+        }
+
+        /// <summary>
+        /// Erase a rectangular region on <paramref name="pageIndex"/>.
+        /// Origin is the page's bottom-left in PDF user space.
+        /// </summary>
+        public void EraseRegion(int pageIndex, float x, float y, float width, float height)
+        {
+            ThrowIfDisposed();
+            NativeMethods.document_editor_erase_region(_handle, pageIndex, x, y, width, height, out int err);
+            ExceptionMapper.ThrowIfError(err);
+        }
+
+        /// <summary>
+        /// Flatten annotations on a single page — bakes their visual
+        /// representation into page content and removes the interactive
+        /// annotation objects.
+        /// </summary>
+        public void FlattenAnnotations(int pageIndex)
+        {
+            ThrowIfDisposed();
+            NativeMethods.document_editor_flatten_annotations(_handle, pageIndex, out int err);
+            ExceptionMapper.ThrowIfError(err);
+        }
+
+        /// <summary>
+        /// Flatten annotations across every page in the document.
+        /// </summary>
+        public void FlattenAllAnnotations()
+        {
+            ThrowIfDisposed();
+            NativeMethods.document_editor_flatten_all_annotations(_handle, out int err);
+            ExceptionMapper.ThrowIfError(err);
+        }
+
+        /// <summary>
+        /// Flatten form fields on a single page without touching the rest
+        /// of the document.
+        /// </summary>
+        public void FlattenFormsOnPage(int pageIndex)
+        {
+            ThrowIfDisposed();
+            NativeMethods.document_editor_flatten_forms_on_page(_handle, pageIndex, out int err);
+            ExceptionMapper.ThrowIfError(err);
+        }
+
+        /// <summary>
+        /// Save the document with AES-256 encryption using the supplied
+        /// user and owner passwords.
+        /// </summary>
+        public void SaveEncrypted(string path, string userPassword, string ownerPassword)
+        {
+            if (path == null) throw new ArgumentNullException(nameof(path));
+            if (userPassword == null) throw new ArgumentNullException(nameof(userPassword));
+            if (ownerPassword == null) throw new ArgumentNullException(nameof(ownerPassword));
+            ThrowIfDisposed();
+            NativeMethods.document_editor_save_encrypted(_handle, path, userPassword, ownerPassword, out int err);
+            ExceptionMapper.ThrowIfError(err);
+        }
+
+        /// <summary>
+        /// Gets or sets the document producer string (the tool that
+        /// produced the PDF). Round-trips through the
+        /// <c>/Info.Producer</c> metadata entry.
+        /// </summary>
+        public string? Producer
+        {
+            get
+            {
+                ThrowIfDisposed();
+                var ptr = NativeMethods.document_editor_get_producer(_handle, out int err);
+                ExceptionMapper.ThrowIfError(err);
+                if (ptr == IntPtr.Zero) return null;
+                try { return StringMarshaler.PtrToString(ptr); }
+                finally { NativeMethods.FreeString(ptr); }
+            }
+            set
+            {
+                ThrowIfDisposed();
+                NativeMethods.document_editor_set_producer(_handle, value ?? string.Empty, out int err);
+                ExceptionMapper.ThrowIfError(err);
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets the raw PDF creation-date string
+        /// (e.g. <c>D:20260421120000Z</c>).
+        /// </summary>
+        public string? CreationDate
+        {
+            get
+            {
+                ThrowIfDisposed();
+                var ptr = NativeMethods.document_editor_get_creation_date(_handle, out int err);
+                ExceptionMapper.ThrowIfError(err);
+                if (ptr == IntPtr.Zero) return null;
+                try { return StringMarshaler.PtrToString(ptr); }
+                finally { NativeMethods.FreeString(ptr); }
+            }
+            set
+            {
+                ThrowIfDisposed();
+                NativeMethods.document_editor_set_creation_date(_handle, value ?? string.Empty, out int err);
+                ExceptionMapper.ThrowIfError(err);
+            }
+        }
+
         /// <summary>
         /// Disposes the DocumentEditor and releases native resources.
         /// </summary>
