@@ -58,6 +58,11 @@ allow = [
     # BSD-3-Clause + disclaimer. Pulled in transitively via
     # `libfuzzer-sys` → `rav1e` → `ravif` → `image 0.25.10`.
     "NCSA",
+    # Community Data License Agreement - Permissive 2.0. Lets
+    # anyone use / modify / distribute the data (here: Mozilla's
+    # CA root bundle) with no copyleft. Pulled in transitively
+    # via `webpki-roots` → `ureq` (our TSA-client HTTP stack).
+    "CDLA-Permissive-2.0",
 ]
 
 [bans]

@@ -490,21 +490,20 @@ jobs:
         run: npx --yes publint
 
       # @arethetypeswrong/cli — checks that types resolve for every
-      # exports condition. Ignored rules:
-      # - cjs-resolves-to-esm — our package is ESM-only (type: module);
-      #   node 10 CJS is the only scenario that hits this and node 10
-      #   is EOL (we require >=18 in engines).
-      # - no-resolution / internal-resolution-error / falls-back-to-main
-      #   — same root cause, same justification; the ESM subpath
+      # exports condition. Ignored rules (all node10-specific):
+      # - cjs-resolves-to-esm — our package is ESM-only
+      #   (`"type": "module"`, `engines.node: >=18`); the node 10 CJS
+      #   resolver is the only path that can even hit this.
+      # - no-resolution / internal-resolution-error — the ESM subpath
       #   exports (`./builders`, `./managers`, `./errors`) don't
-      #   simulate cleanly under node10's CJS resolver, but we don't
-      #   target node10.
+      #   simulate cleanly under node10's CJS resolver. Same
+      #   justification.
       - name: arethetypeswrong (types vs runtime)
         if: matrix.os == 'ubuntu-latest'
         working-directory: js
         run: >-
           npx --yes @arethetypeswrong/cli --pack .
-          --ignore-rules=cjs-resolves-to-esm,no-resolution,internal-resolution-error,falls-back-to-main
+          --ignore-rules=cjs-resolves-to-esm,no-resolution,internal-resolution-error
 
       # npm audit fails on high+ severity transitive vulns.
       - name: npm audit (prod deps, high severity)

@@ -47,25 +47,20 @@ linters:
         - G115  # intentional signed/unsigned round-trips at the cgo boundary
         - G204  # subprocess from environment (build scripts only)
     misspell:
-      # Codebase mixes US and UK spellings intentionally (e.g. "colour",
-      # "finalisation"). Leave locale unset so only hard misspellings are flagged.
-      ignore-words:
-        - colour
-        - colours
-        - finalisation
-        - finalise
-        - finalised
-        - finalising
-        - behaviour
-        - centre
-        - analyse
-        - organisation
+      # Codebase mixes US and UK spellings intentionally (e.g.
+      # "colour", "finalisation"). Leave locale unset so only hard
+      # misspellings are flagged; golangci-lint v2 dropped the
+      # `ignore-words` key that used to suppress UK-spelling hits, so
+      # if a British spelling does get flagged, `//nolint:misspell` on
+      # the specific line is the workaround.
+      locale: ""
     prealloc:
       simple: true
       range-loops: true
       for-loops: false
     errorlint:
-      check-error-type-assertions: true
+      # v2 key rename: `check-error-type-assertions` became `asserts`.
+      asserts: true
       errorf: true
     revive:
       rules:

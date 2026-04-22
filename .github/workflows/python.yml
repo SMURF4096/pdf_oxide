@@ -151,11 +151,14 @@ jobs:
           uv pip install basedpyright
           uv run basedpyright python/pdf_oxide
 
-      # pip-audit scans Python deps + the built wheel for known CVEs.
+      # pip-audit scans the installed Python environment for known
+      # CVEs against the live venv (uv-resolved, post-`uv sync`).
+      # `--disable-pip` only applies to -r / requirements mode; we
+      # audit the environment here, so it's dropped.
       - name: pip-audit (project deps)
         run: |
           uv pip install pip-audit
-          uv run pip-audit --disable-pip --strict
+          uv run pip-audit --strict
 
   # Build Linux wheels (manylinux + musllinux, x86_64 + aarch64)
   # Uses PyO3/maturin-action, which handles cross-compilation via Docker + zig.
