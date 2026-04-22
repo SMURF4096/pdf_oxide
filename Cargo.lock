@@ -185,15 +185,6 @@ checksum = "170433209e817da6aae2c51aa0dd443009a613425dd041ebfb2492d1c4c11a25"
 
 [[package]]
 name = "approx"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f2a05fd1bd10b2527e20a2cd32d8873d115b8b39fe219ee25f42a8aca6ba278"
-dependencies = [
- "num-traits",
-]
-
-[[package]]
-name = "approx"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cab112f0a86d568ea0e627cc1d6be74a1e9cd55214684db5561995f6dad897c6"
@@ -1675,7 +1666,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a8046da590889acc65f5880004580ebb269bbef84d6c0f5c543ec2dece46638"
 dependencies = [
  "ab_glyph",
- "approx 0.5.1",
+ "approx",
  "getrandom 0.3.4",
  "image 0.25.10",
  "itertools 0.14.0",
@@ -1938,25 +1929,11 @@ dependencies = [
 
 [[package]]
 name = "linfa"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56f9097edc7c89d03d526efbacf6d90914e3a8fa53bd56c2d1489e3a90819370"
-dependencies = [
- "approx 0.4.0",
- "ndarray 0.15.6",
- "num-traits",
- "rand 0.8.5",
- "sprs",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "linfa"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2361c22359417e9b84bacfe81ae77f511b947282c366f141485c2beba8792c6"
 dependencies = [
- "approx 0.5.1",
+ "approx",
  "ndarray 0.16.1",
  "num-traits",
  "rand 0.8.5",
@@ -1970,7 +1947,7 @@ version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "075e220f7f69d8b0960a0b5ac8e33ee70ecc1b554a44c58a80f9893452fa214e"
 dependencies = [
- "linfa 0.8.0",
+ "linfa",
  "linfa-linalg",
  "linfa-nn",
  "ndarray 0.16.1",
@@ -2001,7 +1978,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65817bb3b1eced0b20b00abcd1dc010b5a1c2bacc827f3dbd71bbca3119e11d7"
 dependencies = [
  "kdtree",
- "linfa 0.8.0",
+ "linfa",
  "ndarray 0.16.1",
  "ndarray-stats",
  "noisy_float",
@@ -2237,7 +2214,7 @@ version = "0.34.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df76ea0ff5c7e6b88689085804d6132ded0ddb9de5ca5b8aeb9eeadc0508a70a"
 dependencies = [
- "approx 0.5.1",
+ "approx",
  "glam 0.14.0",
  "glam 0.15.2",
  "glam 0.16.0",
@@ -2270,7 +2247,6 @@ version = "0.15.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "adb12d4e967ec485a5f71c6311fe28158e9d6f4bc4a447b474184d0f91a8fa32"
 dependencies = [
- "approx 0.4.0",
  "matrixmultiply",
  "num-complex",
  "num-integer",
@@ -2284,7 +2260,7 @@ version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "882ed72dce9365842bf196bdeedf5055305f11fc8c03dee7bb0194a6cad34841"
 dependencies = [
- "approx 0.5.1",
+ "approx",
  "matrixmultiply",
  "num-complex",
  "num-integer",
@@ -2668,7 +2644,7 @@ dependencies = [
  "jpeg-decoder",
  "js-sys",
  "lazy_static",
- "linfa 0.7.1",
+ "linfa",
  "linfa-clustering",
  "log",
  "lzw",
@@ -3762,7 +3738,7 @@ version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c99284beb21666094ba2b75bbceda012e610f5479dfcc2d6e2426f53197ffd95"
 dependencies = [
- "approx 0.5.1",
+ "approx",
  "num-complex",
  "num-traits",
  "paste",
