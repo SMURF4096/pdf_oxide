@@ -60,10 +60,14 @@ manual_checked_ops = "allow"
 [package]
 name = "pdf_oxide"
 version = "0.3.38"
-# MSRV — driven up from 1.82 for v0.3.38 because transitive deps
-# (hybrid-array 0.4.10 via RustCrypto) started requiring edition2024,
-# stabilised in 1.85.0.
-rust-version = "1.85"
+# MSRV — driven up from 1.82 for v0.3.38. Transitive deps pulled in
+# this release push the floor to 1.88:
+#   - hybrid-array 0.4.10 (via RustCrypto) → edition 2024 → 1.85
+#   - image 0.25.10 / imageproc 0.26.1 → 1.87 / 1.88
+#   - nalgebra 0.34.2 → 1.87
+#   - libloading 0.9.0, ort 2.0.0-rc.12, ort-sys 2.0.0-rc.12 → 1.88
+# 1.88 was released 2025-06-26, so this is still a reasonable floor.
+rust-version = "1.88"
 # Anchor patterns with a leading slash — Cargo uses gitignore-style globs, so
 # a bare "README.md" matches every README.md recursively (was pulling in 20+
 # subdir READMEs plus js/node_modules/*/README.md into the sdist). Leading /
