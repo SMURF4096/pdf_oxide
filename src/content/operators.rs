@@ -219,7 +219,7 @@ pub enum Operator {
         /// Color components (may be empty for patterns)
         components: Vec<f32>,
         /// Optional pattern name for pattern color spaces.
-        /// Boxed to reduce Operator enum size (Option<String> is 24 bytes → 8 bytes).
+        /// Boxed to reduce Operator enum size (`Option<String>` is 24 bytes → 8 bytes).
         name: Option<Box<String>>,
     },
     /// Set stroke color with named pattern (SCN)

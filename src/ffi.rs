@@ -5690,7 +5690,7 @@ pub extern "C" fn pdf_oxide_search_results_to_json(
 // ─── OCR ────────────────────────────────────────────────────────────────────
 
 /// Create an OCR engine from model/dictionary file paths.
-/// Returns an opaque handle (Box<OcrEngine>) that must be freed with
+/// Returns an opaque handle (`Box<OcrEngine>`) that must be freed with
 /// `pdf_ocr_engine_free`. On failure returns null and sets `error_code`.
 #[no_mangle]
 pub extern "C" fn pdf_ocr_engine_create(

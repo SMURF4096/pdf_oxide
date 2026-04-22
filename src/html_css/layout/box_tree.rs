@@ -18,7 +18,7 @@
 //!
 //! Non-element nodes:
 //! - `Text` → `BoxKind::Text` (always inline-level).
-//! - `Comment`/`RawText` → skipped (raw text from <style>/<script>
+//! - `Comment`/`RawText` → skipped (raw text from `<style>`/`<script>`
 //!   never reaches layout).
 //!
 //! `display: none` elements (and their subtrees) produce no box.

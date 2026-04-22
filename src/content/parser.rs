@@ -41,8 +41,8 @@ const MAX_CONSECUTIVE_ERRORS: usize = 1024;
 /// Content streams use postfix notation where operands precede the operator.
 /// For example: `100 200 Td` means "move text position to (100, 200)".
 ///
-/// Includes safety limits: bails out after [`MAX_OPERATORS`] operators or
-/// [`MAX_CONSECUTIVE_ERRORS`] consecutive parse failures.
+/// Includes safety limits: bails out after `MAX_OPERATORS` operators or
+/// `MAX_CONSECUTIVE_ERRORS` consecutive parse failures.
 pub fn parse_content_stream(data: &[u8]) -> Result<Vec<Operator>> {
     let estimated_capacity = data.len() / 20;
     let mut operators = Vec::with_capacity(estimated_capacity.min(100_000));
@@ -411,8 +411,8 @@ pub fn parse_content_stream_paths_only(data: &[u8]) -> Result<Vec<Operator>> {
 ///
 /// # Safety limits
 ///
-/// Same as [`parse_content_stream`]: bails out after [`MAX_OPERATORS`]
-/// operators or [`MAX_CONSECUTIVE_ERRORS`] consecutive parse failures.
+/// Same as [`parse_content_stream`]: bails out after `MAX_OPERATORS`
+/// operators or `MAX_CONSECUTIVE_ERRORS` consecutive parse failures.
 pub fn parse_content_stream_text_only(data: &[u8]) -> Result<Vec<Operator>> {
     let estimated_capacity = data.len() / 40;
     let mut operators = Vec::with_capacity(estimated_capacity.min(50_000));
@@ -1157,7 +1157,7 @@ fn find_matching_et(data: &[u8], start: usize) -> Option<usize> {
 
 /// Streaming text-only parser: parse operators and call handler immediately.
 ///
-/// Same logic as `parse_content_stream_text_only` but avoids allocating a Vec<Operator>.
+/// Same logic as `parse_content_stream_text_only` but avoids allocating a `Vec<Operator>`.
 /// Each operator is passed to `handler` as soon as it's parsed, improving cache locality
 /// and eliminating the intermediate operator vector (which can be 16MB+ for graphics-heavy pages).
 pub fn parse_and_execute_text_only<F>(data: &[u8], mut handler: F) -> Result<()>

@@ -89,7 +89,7 @@ fn check_limit(output: &[u8], limit: u64) -> Result<()> {
 /// FlateDecode filter implementation.
 ///
 /// Decompresses data using the zlib/deflate algorithm. The decompression cap
-/// defaults to [`DEFAULT_MAX_DECOMPRESSED_BYTES`] and can be overridden with
+/// defaults to `DEFAULT_MAX_DECOMPRESSED_BYTES` and can be overridden with
 /// [`FlateDecoder::with_limit`].
 pub struct FlateDecoder {
     /// Maximum number of decompressed bytes accepted per stream.
