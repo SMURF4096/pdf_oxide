@@ -32,8 +32,7 @@ namespace PdfOxide.Core
         {
             get
             {
-                if (_done)
-                    throw new ObjectDisposedException(nameof(PageBuilder));
+                ObjectDisposedException.ThrowIf(_done, this);
                 return _handle;
             }
         }
@@ -43,7 +42,7 @@ namespace PdfOxide.Core
         /// <summary>Set the font + size for subsequent text.</summary>
         public PageBuilder Font(string name, float size)
         {
-            if (name == null) throw new ArgumentNullException(nameof(name));
+            ArgumentNullException.ThrowIfNull(name);
             NativeMethods.PdfPageBuilderFont(Handle, name, size, out var ec);
             ExceptionMapper.ThrowIfError(ec);
             return this;
@@ -60,7 +59,7 @@ namespace PdfOxide.Core
         /// <summary>Emit a line of text at the current cursor position.</summary>
         public PageBuilder Text(string text)
         {
-            if (text == null) throw new ArgumentNullException(nameof(text));
+            ArgumentNullException.ThrowIfNull(text);
             NativeMethods.PdfPageBuilderText(Handle, text, out var ec);
             ExceptionMapper.ThrowIfError(ec);
             return this;
@@ -69,7 +68,7 @@ namespace PdfOxide.Core
         /// <summary>Emit a heading. <paramref name="level"/> is 1–6.</summary>
         public PageBuilder Heading(byte level, string text)
         {
-            if (text == null) throw new ArgumentNullException(nameof(text));
+            ArgumentNullException.ThrowIfNull(text);
             NativeMethods.PdfPageBuilderHeading(Handle, level, text, out var ec);
             ExceptionMapper.ThrowIfError(ec);
             return this;
@@ -78,7 +77,7 @@ namespace PdfOxide.Core
         /// <summary>Emit a paragraph with automatic line wrapping.</summary>
         public PageBuilder Paragraph(string text)
         {
-            if (text == null) throw new ArgumentNullException(nameof(text));
+            ArgumentNullException.ThrowIfNull(text);
             NativeMethods.PdfPageBuilderParagraph(Handle, text, out var ec);
             ExceptionMapper.ThrowIfError(ec);
             return this;
@@ -105,7 +104,7 @@ namespace PdfOxide.Core
         /// <summary>Attach a URL link to the previously-emitted text element.</summary>
         public PageBuilder LinkUrl(string url)
         {
-            if (url == null) throw new ArgumentNullException(nameof(url));
+            ArgumentNullException.ThrowIfNull(url);
             NativeMethods.PdfPageBuilderLinkUrl(Handle, url, out var ec);
             ExceptionMapper.ThrowIfError(ec);
             return this;
@@ -122,7 +121,7 @@ namespace PdfOxide.Core
         /// <summary>Link the previous text to a named destination.</summary>
         public PageBuilder LinkNamed(string destination)
         {
-            if (destination == null) throw new ArgumentNullException(nameof(destination));
+            ArgumentNullException.ThrowIfNull(destination);
             NativeMethods.PdfPageBuilderLinkNamed(Handle, destination, out var ec);
             ExceptionMapper.ThrowIfError(ec);
             return this;
@@ -163,7 +162,7 @@ namespace PdfOxide.Core
         /// <summary>Attach a sticky-note annotation to the previous text.</summary>
         public PageBuilder StickyNote(string text)
         {
-            if (text == null) throw new ArgumentNullException(nameof(text));
+            ArgumentNullException.ThrowIfNull(text);
             NativeMethods.PdfPageBuilderStickyNote(Handle, text, out var ec);
             ExceptionMapper.ThrowIfError(ec);
             return this;
@@ -172,7 +171,7 @@ namespace PdfOxide.Core
         /// <summary>Place a sticky-note at an absolute position on the page.</summary>
         public PageBuilder StickyNoteAt(float x, float y, string text)
         {
-            if (text == null) throw new ArgumentNullException(nameof(text));
+            ArgumentNullException.ThrowIfNull(text);
             NativeMethods.PdfPageBuilderStickyNoteAt(Handle, x, y, text, out var ec);
             ExceptionMapper.ThrowIfError(ec);
             return this;
@@ -181,7 +180,7 @@ namespace PdfOxide.Core
         /// <summary>Apply a text watermark to the page.</summary>
         public PageBuilder Watermark(string text)
         {
-            if (text == null) throw new ArgumentNullException(nameof(text));
+            ArgumentNullException.ThrowIfNull(text);
             NativeMethods.PdfPageBuilderWatermark(Handle, text, out var ec);
             ExceptionMapper.ThrowIfError(ec);
             return this;
@@ -214,7 +213,7 @@ namespace PdfOxide.Core
         /// </summary>
         public PageBuilder Stamp(string typeName)
         {
-            if (typeName == null) throw new ArgumentNullException(nameof(typeName));
+            ArgumentNullException.ThrowIfNull(typeName);
             NativeMethods.PdfPageBuilderStamp(Handle, typeName, out var ec);
             ExceptionMapper.ThrowIfError(ec);
             return this;
@@ -226,7 +225,7 @@ namespace PdfOxide.Core
         /// </summary>
         public PageBuilder FreeText(float x, float y, float w, float h, string text)
         {
-            if (text == null) throw new ArgumentNullException(nameof(text));
+            ArgumentNullException.ThrowIfNull(text);
             NativeMethods.PdfPageBuilderFreetext(Handle, x, y, w, h, text, out var ec);
             ExceptionMapper.ThrowIfError(ec);
             return this;
@@ -243,7 +242,7 @@ namespace PdfOxide.Core
         /// </summary>
         public PageBuilder TextField(string name, float x, float y, float w, float h, string? defaultValue = null)
         {
-            if (name == null) throw new ArgumentNullException(nameof(name));
+            ArgumentNullException.ThrowIfNull(name);
             NativeMethods.PdfPageBuilderTextField(Handle, name, x, y, w, h, defaultValue, out var ec);
             ExceptionMapper.ThrowIfError(ec);
             return this;
@@ -255,7 +254,7 @@ namespace PdfOxide.Core
         /// </summary>
         public PageBuilder Checkbox(string name, float x, float y, float w, float h, bool @checked = false)
         {
-            if (name == null) throw new ArgumentNullException(nameof(name));
+            ArgumentNullException.ThrowIfNull(name);
             NativeMethods.PdfPageBuilderCheckbox(Handle, name, x, y, w, h, @checked, out var ec);
             ExceptionMapper.ThrowIfError(ec);
             return this;
@@ -270,7 +269,7 @@ namespace PdfOxide.Core
         public unsafe PageBuilder ComboBox(string name, float x, float y, float w, float h,
             System.Collections.Generic.IReadOnlyList<string> options, string? selected = null)
         {
-            if (name == null) throw new ArgumentNullException(nameof(name));
+            ArgumentNullException.ThrowIfNull(name);
             if (options == null || options.Count == 0)
                 throw new ArgumentException("options must be non-empty", nameof(options));
             int n = options.Count;
@@ -312,7 +311,7 @@ namespace PdfOxide.Core
             System.Collections.Generic.IReadOnlyList<(string value, float x, float y, float w, float h)> buttons,
             string? selected = null)
         {
-            if (name == null) throw new ArgumentNullException(nameof(name));
+            ArgumentNullException.ThrowIfNull(name);
             if (buttons == null || buttons.Count == 0)
                 throw new ArgumentException("buttons must be non-empty", nameof(buttons));
             int n = buttons.Count;
@@ -364,8 +363,8 @@ namespace PdfOxide.Core
         /// <summary>Add a clickable push button with a visible caption.</summary>
         public PageBuilder PushButton(string name, float x, float y, float w, float h, string caption)
         {
-            if (name == null) throw new ArgumentNullException(nameof(name));
-            if (caption == null) throw new ArgumentNullException(nameof(caption));
+            ArgumentNullException.ThrowIfNull(name);
+            ArgumentNullException.ThrowIfNull(caption);
             NativeMethods.PdfPageBuilderPushButton(Handle, name, x, y, w, h, caption, out var ec);
             ExceptionMapper.ThrowIfError(ec);
             return this;
@@ -404,8 +403,7 @@ namespace PdfOxide.Core
         /// </summary>
         public DocumentBuilder Done()
         {
-            if (_done)
-                throw new ObjectDisposedException(nameof(PageBuilder));
+            ObjectDisposedException.ThrowIf(_done, this);
             var rc = NativeMethods.PdfPageBuilderDone(_handle, out var ec);
             _done = true;
             _parent.ClearOpenPage();

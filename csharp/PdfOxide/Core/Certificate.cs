@@ -33,7 +33,7 @@ namespace PdfOxide.Core
         /// </summary>
         public static Certificate Load(byte[] data, string? password = null)
         {
-            if (data == null) throw new ArgumentNullException(nameof(data));
+            ArgumentNullException.ThrowIfNull(data);
             if (data.Length == 0)
                 throw new ArgumentException("Certificate data must not be empty.", nameof(data));
 
@@ -131,7 +131,7 @@ namespace PdfOxide.Core
 
         private void ThrowIfDisposed()
         {
-            if (_disposed) throw new ObjectDisposedException(nameof(Certificate));
+            ObjectDisposedException.ThrowIf(_disposed, this);
         }
     }
 }

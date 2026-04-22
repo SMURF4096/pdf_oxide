@@ -68,8 +68,7 @@ namespace PdfOxide.Core
         /// </example>
         public static DocumentEditor Open(string path)
         {
-            if (path == null)
-                throw new ArgumentNullException(nameof(path));
+            ArgumentNullException.ThrowIfNull(path);
 
             var handle = NativeMethods.DocumentEditorOpen(path, out var errorCode);
             if (handle.IsInvalid)
@@ -270,8 +269,7 @@ namespace PdfOxide.Core
         /// </example>
         public void Save(string path)
         {
-            if (path == null)
-                throw new ArgumentNullException(nameof(path));
+            ArgumentNullException.ThrowIfNull(path);
 
             ThrowIfDisposed();
 
@@ -291,8 +289,8 @@ namespace PdfOxide.Core
         /// <exception cref="PdfException">Thrown if the native call fails.</exception>
         public void SetFormFieldValue(string name, string value)
         {
-            if (name == null) throw new ArgumentNullException(nameof(name));
-            if (value == null) throw new ArgumentNullException(nameof(value));
+            ArgumentNullException.ThrowIfNull(name);
+            ArgumentNullException.ThrowIfNull(value);
             ThrowIfDisposed();
             int rc = NativeMethods.document_editor_set_form_field_value(_handle, name, value, out int err);
             if (rc != 0)
@@ -322,8 +320,7 @@ namespace PdfOxide.Core
         /// <exception cref="OperationCanceledException">Thrown if the operation is cancelled.</exception>
         public Task SaveAsync(string path, CancellationToken cancellationToken = default)
         {
-            if (path == null)
-                throw new ArgumentNullException(nameof(path));
+            ArgumentNullException.ThrowIfNull(path);
 
             return Task.Run(() =>
             {
@@ -346,7 +343,7 @@ namespace PdfOxide.Core
         /// <param name="sourcePath">Path of the PDF whose pages should be appended.</param>
         public void MergeFrom(string sourcePath)
         {
-            if (sourcePath == null) throw new ArgumentNullException(nameof(sourcePath));
+            ArgumentNullException.ThrowIfNull(sourcePath);
             ThrowIfDisposed();
             NativeMethods.document_editor_merge_from(_handle, sourcePath, out int err);
             ExceptionMapper.ThrowIfError(err);
@@ -455,9 +452,9 @@ namespace PdfOxide.Core
         /// </summary>
         public void SaveEncrypted(string path, string userPassword, string ownerPassword)
         {
-            if (path == null) throw new ArgumentNullException(nameof(path));
-            if (userPassword == null) throw new ArgumentNullException(nameof(userPassword));
-            if (ownerPassword == null) throw new ArgumentNullException(nameof(ownerPassword));
+            ArgumentNullException.ThrowIfNull(path);
+            ArgumentNullException.ThrowIfNull(userPassword);
+            ArgumentNullException.ThrowIfNull(ownerPassword);
             ThrowIfDisposed();
             NativeMethods.document_editor_save_encrypted(_handle, path, userPassword, ownerPassword, out int err);
             ExceptionMapper.ThrowIfError(err);
@@ -524,8 +521,7 @@ namespace PdfOxide.Core
 
         private void ThrowIfDisposed()
         {
-            if (_disposed)
-                throw new ObjectDisposedException(nameof(DocumentEditor));
+            ObjectDisposedException.ThrowIf(_disposed, this);
         }
     }
 }

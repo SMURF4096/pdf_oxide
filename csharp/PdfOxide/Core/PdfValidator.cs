@@ -85,7 +85,7 @@ namespace PdfOxide.Core
         /// </summary>
         public static PdfValidationResult ValidatePdfA(PdfDocument document, PdfALevel level = PdfALevel.A2b)
         {
-            if (document == null) throw new ArgumentNullException(nameof(document));
+            ArgumentNullException.ThrowIfNull(document);
             var docPtr = document.Handle;
             var results = NativeMethods.PdfValidatePdfALevel(docPtr, (int)level, out int err);
             if (results == IntPtr.Zero)
@@ -113,7 +113,7 @@ namespace PdfOxide.Core
         /// </summary>
         public static PdfValidationResult ValidatePdfX(PdfDocument document, PdfXLevel level = PdfXLevel.X4)
         {
-            if (document == null) throw new ArgumentNullException(nameof(document));
+            ArgumentNullException.ThrowIfNull(document);
             var docPtr = document.Handle;
             var results = NativeMethods.PdfValidatePdfXLevel(docPtr, (int)level, out int err);
             if (results == IntPtr.Zero)
@@ -139,7 +139,7 @@ namespace PdfOxide.Core
         /// </summary>
         public static PdfValidationResult ValidatePdfUA(PdfDocument document, PdfUaLevel level = PdfUaLevel.Ua1)
         {
-            if (document == null) throw new ArgumentNullException(nameof(document));
+            ArgumentNullException.ThrowIfNull(document);
             var docPtr = document.Handle;
             var results = NativeMethods.PdfValidatePdfUa(docPtr, (int)level, out int err);
             if (results == IntPtr.Zero)

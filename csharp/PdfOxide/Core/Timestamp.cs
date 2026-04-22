@@ -57,7 +57,7 @@ namespace PdfOxide.Core
         /// <exception cref="PdfException">The bytes don't parse as a TimeStampToken or TSTInfo.</exception>
         public static Timestamp Parse(byte[] data)
         {
-            if (data == null) throw new ArgumentNullException(nameof(data));
+            ArgumentNullException.ThrowIfNull(data);
             if (data.Length == 0)
                 throw new ArgumentException("Timestamp data must not be empty.", nameof(data));
 
@@ -171,7 +171,7 @@ namespace PdfOxide.Core
 
         private void ThrowIfDisposed()
         {
-            if (_disposed) throw new ObjectDisposedException(nameof(Timestamp));
+            ObjectDisposedException.ThrowIf(_disposed, this);
         }
     }
 }

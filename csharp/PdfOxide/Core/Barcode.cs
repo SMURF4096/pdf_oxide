@@ -51,7 +51,7 @@ namespace PdfOxide.Core
         /// <param name="sizePx">Target width in pixels (clamped to ≥1).</param>
         public static Barcode Generate(string data, BarcodeFormat format = BarcodeFormat.Code128, int sizePx = 300)
         {
-            if (data == null) throw new ArgumentNullException(nameof(data));
+            ArgumentNullException.ThrowIfNull(data);
             if (data.Length == 0) throw new ArgumentException("data must not be empty.", nameof(data));
             if (sizePx <= 0) throw new ArgumentException("sizePx must be > 0.", nameof(sizePx));
 
@@ -148,7 +148,7 @@ namespace PdfOxide.Core
 
         private void ThrowIfDisposed()
         {
-            if (_disposed) throw new ObjectDisposedException(nameof(Barcode));
+            ObjectDisposedException.ThrowIf(_disposed, this);
         }
     }
 }

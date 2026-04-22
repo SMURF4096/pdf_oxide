@@ -63,8 +63,7 @@ namespace PdfOxide.Core
         {
             get
             {
-                if (_consumed)
-                    throw new ObjectDisposedException(nameof(DocumentBuilder));
+                ObjectDisposedException.ThrowIf(_consumed, this);
                 return _handle;
             }
         }
@@ -85,7 +84,7 @@ namespace PdfOxide.Core
         /// <summary>Set the document title.</summary>
         public DocumentBuilder Title(string title)
         {
-            if (title == null) throw new ArgumentNullException(nameof(title));
+            ArgumentNullException.ThrowIfNull(title);
             CheckNoOpenPage();
             NativeMethods.PdfDocumentBuilderSetTitle(Handle, title, out var ec);
             ExceptionMapper.ThrowIfError(ec);
@@ -95,7 +94,7 @@ namespace PdfOxide.Core
         /// <summary>Set the document author.</summary>
         public DocumentBuilder Author(string author)
         {
-            if (author == null) throw new ArgumentNullException(nameof(author));
+            ArgumentNullException.ThrowIfNull(author);
             CheckNoOpenPage();
             NativeMethods.PdfDocumentBuilderSetAuthor(Handle, author, out var ec);
             ExceptionMapper.ThrowIfError(ec);
@@ -105,7 +104,7 @@ namespace PdfOxide.Core
         /// <summary>Set the document subject.</summary>
         public DocumentBuilder Subject(string subject)
         {
-            if (subject == null) throw new ArgumentNullException(nameof(subject));
+            ArgumentNullException.ThrowIfNull(subject);
             CheckNoOpenPage();
             NativeMethods.PdfDocumentBuilderSetSubject(Handle, subject, out var ec);
             ExceptionMapper.ThrowIfError(ec);
@@ -115,7 +114,7 @@ namespace PdfOxide.Core
         /// <summary>Set the document keywords (comma-separated).</summary>
         public DocumentBuilder Keywords(string keywords)
         {
-            if (keywords == null) throw new ArgumentNullException(nameof(keywords));
+            ArgumentNullException.ThrowIfNull(keywords);
             CheckNoOpenPage();
             NativeMethods.PdfDocumentBuilderSetKeywords(Handle, keywords, out var ec);
             ExceptionMapper.ThrowIfError(ec);
@@ -125,7 +124,7 @@ namespace PdfOxide.Core
         /// <summary>Set the creator application name.</summary>
         public DocumentBuilder Creator(string creator)
         {
-            if (creator == null) throw new ArgumentNullException(nameof(creator));
+            ArgumentNullException.ThrowIfNull(creator);
             CheckNoOpenPage();
             NativeMethods.PdfDocumentBuilderSetCreator(Handle, creator, out var ec);
             ExceptionMapper.ThrowIfError(ec);
@@ -139,8 +138,8 @@ namespace PdfOxide.Core
         /// </summary>
         public DocumentBuilder RegisterEmbeddedFont(string name, EmbeddedFont font)
         {
-            if (name == null) throw new ArgumentNullException(nameof(name));
-            if (font == null) throw new ArgumentNullException(nameof(font));
+            ArgumentNullException.ThrowIfNull(name);
+            ArgumentNullException.ThrowIfNull(font);
             CheckNoOpenPage();
             var rc = NativeMethods.PdfDocumentBuilderRegisterEmbeddedFont(
                 Handle, name, font.Handle, out var ec);
@@ -189,8 +188,7 @@ namespace PdfOxide.Core
 
         private IntPtr ConsumeHandle()
         {
-            if (_consumed)
-                throw new ObjectDisposedException(nameof(DocumentBuilder));
+            ObjectDisposedException.ThrowIf(_consumed, this);
             CheckNoOpenPage();
             var h = _handle;
             _consumed = true;
@@ -227,7 +225,7 @@ namespace PdfOxide.Core
         /// <summary>Save the PDF to <paramref name="path"/>. CONSUMES the builder.</summary>
         public void Save(string path)
         {
-            if (path == null) throw new ArgumentNullException(nameof(path));
+            ArgumentNullException.ThrowIfNull(path);
             var h = ConsumeHandle();
             try
             {
@@ -245,9 +243,9 @@ namespace PdfOxide.Core
         /// <summary>Save the PDF with AES-256 encryption. CONSUMES the builder.</summary>
         public void SaveEncrypted(string path, string userPassword, string ownerPassword)
         {
-            if (path == null) throw new ArgumentNullException(nameof(path));
-            if (userPassword == null) throw new ArgumentNullException(nameof(userPassword));
-            if (ownerPassword == null) throw new ArgumentNullException(nameof(ownerPassword));
+            ArgumentNullException.ThrowIfNull(path);
+            ArgumentNullException.ThrowIfNull(userPassword);
+            ArgumentNullException.ThrowIfNull(ownerPassword);
             var h = ConsumeHandle();
             try
             {
@@ -266,8 +264,8 @@ namespace PdfOxide.Core
         /// <summary>Return the PDF as encrypted bytes (AES-256). CONSUMES the builder.</summary>
         public byte[] ToBytesEncrypted(string userPassword, string ownerPassword)
         {
-            if (userPassword == null) throw new ArgumentNullException(nameof(userPassword));
-            if (ownerPassword == null) throw new ArgumentNullException(nameof(ownerPassword));
+            ArgumentNullException.ThrowIfNull(userPassword);
+            ArgumentNullException.ThrowIfNull(ownerPassword);
             var h = ConsumeHandle();
             var ptr = NativeMethods.PdfDocumentBuilderToBytesEncrypted(
                 h, userPassword, ownerPassword, out var outLen, out var ec);

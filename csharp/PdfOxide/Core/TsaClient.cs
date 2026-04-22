@@ -60,7 +60,7 @@ namespace PdfOxide.Core
         /// <exception cref="PdfException">The Rust core couldn't build the client.</exception>
         public static TsaClient Create(TsaClientOptions options)
         {
-            if (options == null) throw new ArgumentNullException(nameof(options));
+            ArgumentNullException.ThrowIfNull(options);
 
             var handle = NativeMethods.pdf_tsa_client_create(
                 options.Url,
@@ -87,7 +87,7 @@ namespace PdfOxide.Core
         public Timestamp RequestTimestamp(byte[] data)
         {
             ThrowIfDisposed();
-            if (data == null) throw new ArgumentNullException(nameof(data));
+            ArgumentNullException.ThrowIfNull(data);
 
             var pinned = GCHandle.Alloc(data, GCHandleType.Pinned);
             try
@@ -115,7 +115,7 @@ namespace PdfOxide.Core
         public Timestamp RequestTimestampHash(byte[] hash, TimestampHashAlgorithm hashAlgorithm)
         {
             ThrowIfDisposed();
-            if (hash == null) throw new ArgumentNullException(nameof(hash));
+            ArgumentNullException.ThrowIfNull(hash);
 
             var pinned = GCHandle.Alloc(hash, GCHandleType.Pinned);
             try
@@ -149,7 +149,7 @@ namespace PdfOxide.Core
 
         private void ThrowIfDisposed()
         {
-            if (_disposed) throw new ObjectDisposedException(nameof(TsaClient));
+            ObjectDisposedException.ThrowIf(_disposed, this);
         }
     }
 }

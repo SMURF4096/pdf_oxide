@@ -69,8 +69,7 @@ namespace PdfOxide.Core
         /// </example>
         public static Pdf FromMarkdown(string markdown)
         {
-            if (markdown == null)
-                throw new ArgumentNullException(nameof(markdown));
+            ArgumentNullException.ThrowIfNull(markdown);
 
             var handle = NativeMethods.PdfFromMarkdown(markdown, out var errorCode);
             if (handle.IsInvalid)
@@ -98,8 +97,7 @@ namespace PdfOxide.Core
         /// </example>
         public static Pdf FromHtml(string html)
         {
-            if (html == null)
-                throw new ArgumentNullException(nameof(html));
+            ArgumentNullException.ThrowIfNull(html);
 
             var handle = NativeMethods.PdfFromHtml(html, out var errorCode);
             if (handle.IsInvalid)
@@ -137,9 +135,9 @@ namespace PdfOxide.Core
         /// </example>
         public static Pdf FromHtmlCss(string html, string css, byte[] fontBytes)
         {
-            if (html == null) throw new ArgumentNullException(nameof(html));
-            if (css == null) throw new ArgumentNullException(nameof(css));
-            if (fontBytes == null) throw new ArgumentNullException(nameof(fontBytes));
+            ArgumentNullException.ThrowIfNull(html);
+            ArgumentNullException.ThrowIfNull(css);
+            ArgumentNullException.ThrowIfNull(fontBytes);
             if (fontBytes.Length == 0) throw new ArgumentException("fontBytes is empty", nameof(fontBytes));
 
             var ptr = NativeMethods.PdfFromHtmlCss(html, css, fontBytes, (nuint)fontBytes.Length, out var errorCode);
@@ -157,8 +155,8 @@ namespace PdfOxide.Core
         public static unsafe Pdf FromHtmlCssWithFonts(string html, string css,
             System.Collections.Generic.IReadOnlyList<System.Collections.Generic.KeyValuePair<string, byte[]>> fonts)
         {
-            if (html == null) throw new ArgumentNullException(nameof(html));
-            if (css == null) throw new ArgumentNullException(nameof(css));
+            ArgumentNullException.ThrowIfNull(html);
+            ArgumentNullException.ThrowIfNull(css);
             if (fonts == null || fonts.Count == 0)
                 throw new ArgumentException("at least one font must be provided", nameof(fonts));
 
@@ -239,8 +237,7 @@ namespace PdfOxide.Core
         /// </example>
         public static Pdf FromText(string text)
         {
-            if (text == null)
-                throw new ArgumentNullException(nameof(text));
+            ArgumentNullException.ThrowIfNull(text);
 
             var handle = NativeMethods.PdfFromText(text, out var errorCode);
             if (handle.IsInvalid)
@@ -262,8 +259,7 @@ namespace PdfOxide.Core
         /// <exception cref="PdfException">Thrown if the image cannot be read or converted.</exception>
         public static Pdf FromImage(string path)
         {
-            if (path == null)
-                throw new ArgumentNullException(nameof(path));
+            ArgumentNullException.ThrowIfNull(path);
 
             var handle = NativeMethods.PdfFromImage(path, out var errorCode);
             if (handle.IsInvalid)
@@ -286,8 +282,7 @@ namespace PdfOxide.Core
         /// <exception cref="PdfException">Thrown if the image is malformed or an unsupported format.</exception>
         public static Pdf FromImageBytes(byte[] data)
         {
-            if (data == null)
-                throw new ArgumentNullException(nameof(data));
+            ArgumentNullException.ThrowIfNull(data);
             if (data.Length == 0)
                 throw new ArgumentException("Image byte array must not be empty.", nameof(data));
 
@@ -333,8 +328,7 @@ namespace PdfOxide.Core
         /// </example>
         public void Save(string path)
         {
-            if (path == null)
-                throw new ArgumentNullException(nameof(path));
+            ArgumentNullException.ThrowIfNull(path);
 
             ThrowIfDisposed();
 
@@ -404,8 +398,7 @@ namespace PdfOxide.Core
         /// </example>
         public void SaveToStream(Stream stream)
         {
-            if (stream == null)
-                throw new ArgumentNullException(nameof(stream));
+            ArgumentNullException.ThrowIfNull(stream);
 
             byte[] bytes = SaveToBytes();
             stream.Write(bytes, 0, bytes.Length);
@@ -421,8 +414,7 @@ namespace PdfOxide.Core
         /// <exception cref="OperationCanceledException">Thrown if the operation is cancelled.</exception>
         public Task SaveAsync(string path, CancellationToken cancellationToken = default)
         {
-            if (path == null)
-                throw new ArgumentNullException(nameof(path));
+            ArgumentNullException.ThrowIfNull(path);
 
             return Task.Run(() =>
             {
@@ -441,8 +433,7 @@ namespace PdfOxide.Core
         /// <exception cref="OperationCanceledException">Thrown if the operation is cancelled.</exception>
         public Task SaveToStreamAsync(Stream stream, CancellationToken cancellationToken = default)
         {
-            if (stream == null)
-                throw new ArgumentNullException(nameof(stream));
+            ArgumentNullException.ThrowIfNull(stream);
 
             return Task.Run(() =>
             {
@@ -465,8 +456,7 @@ namespace PdfOxide.Core
 
         private void ThrowIfDisposed()
         {
-            if (_disposed)
-                throw new ObjectDisposedException(nameof(Pdf));
+            ObjectDisposedException.ThrowIf(_disposed, this);
         }
     }
 }

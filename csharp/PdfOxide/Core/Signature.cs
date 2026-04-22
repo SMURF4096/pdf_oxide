@@ -117,7 +117,7 @@ namespace PdfOxide.Core
 
         private void ThrowIfDisposed()
         {
-            if (_disposed) throw new ObjectDisposedException(nameof(Signature));
+            ObjectDisposedException.ThrowIf(_disposed, this);
         }
     }
 }

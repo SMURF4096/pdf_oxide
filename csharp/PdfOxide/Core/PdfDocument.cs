@@ -110,8 +110,7 @@ namespace PdfOxide.Core
         /// <exception cref="PdfParseException">Thrown if the PDF is invalid.</exception>
         public static PdfDocument Open(string path)
         {
-            if (path == null)
-                throw new ArgumentNullException(nameof(path));
+            ArgumentNullException.ThrowIfNull(path);
 
             var handle = NativeMethods.PdfDocumentOpen(path, out var errorCode);
             if (handle.IsInvalid)
@@ -135,8 +134,7 @@ namespace PdfOxide.Core
         /// <returns>An opened PdfDocument.</returns>
         public static PdfDocument Open(Stream stream)
         {
-            if (stream == null)
-                throw new ArgumentNullException(nameof(stream));
+            ArgumentNullException.ThrowIfNull(stream);
 
             byte[] data;
             using (var ms = new MemoryStream())
@@ -162,8 +160,7 @@ namespace PdfOxide.Core
         /// <exception cref="ArgumentException">Thrown if <paramref name="data"/> is empty.</exception>
         public static PdfDocument Open(byte[] data)
         {
-            if (data == null)
-                throw new ArgumentNullException(nameof(data));
+            ArgumentNullException.ThrowIfNull(data);
             if (data.Length == 0)
                 throw new ArgumentException("PDF byte array must not be empty.", nameof(data));
 
@@ -465,7 +462,7 @@ namespace PdfOxide.Core
         public bool Authenticate(string password)
         {
             ThrowIfDisposed();
-            if (password == null) throw new ArgumentNullException(nameof(password));
+            ArgumentNullException.ThrowIfNull(password);
             return NativeMethods.pdf_document_authenticate(_handle.Ptr, password, out _);
         }
 
@@ -608,7 +605,7 @@ namespace PdfOxide.Core
         public (int Page, string Text, float X, float Y, float W, float H)[] SearchAll(string text, bool caseSensitive = false)
         {
             ThrowIfDisposed();
-            if (text == null) throw new ArgumentNullException(nameof(text));
+            ArgumentNullException.ThrowIfNull(text);
             var resultsHandle = NativeMethods.pdf_document_search_all(_handle.Ptr, text, caseSensitive, out var errorCode);
             ExceptionMapper.ThrowIfError(errorCode);
             if (resultsHandle == IntPtr.Zero) return Array.Empty<(int, string, float, float, float, float)>();
@@ -623,7 +620,7 @@ namespace PdfOxide.Core
         public (int Page, string Text, float X, float Y, float W, float H)[] SearchPage(int pageIndex, string text, bool caseSensitive = false)
         {
             ThrowIfDisposed();
-            if (text == null) throw new ArgumentNullException(nameof(text));
+            ArgumentNullException.ThrowIfNull(text);
             var resultsHandle = NativeMethods.pdf_document_search_page(_handle.Ptr, pageIndex, text, caseSensitive, out var errorCode);
             ExceptionMapper.ThrowIfError(errorCode);
             if (resultsHandle == IntPtr.Zero) return Array.Empty<(int, string, float, float, float, float)>();
@@ -816,7 +813,7 @@ namespace PdfOxide.Core
         /// <exception cref="ArgumentNullException">If <paramref name="options"/> is null.</exception>
         public byte[] RenderPage(int pageIndex, RenderOptions options)
         {
-            if (options == null) throw new ArgumentNullException(nameof(options));
+            ArgumentNullException.ThrowIfNull(options);
             options.Validate();
             ThrowIfDisposed();
 
@@ -1050,8 +1047,7 @@ namespace PdfOxide.Core
 
         private void ThrowIfDisposed()
         {
-            if (_disposed)
-                throw new ObjectDisposedException(nameof(PdfDocument));
+            ObjectDisposedException.ThrowIf(_disposed, this);
         }
 
         /// <summary>

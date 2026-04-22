@@ -34,9 +34,9 @@ namespace PdfOxide.Core
         /// <param name="dictionaryPath">Path to the character dictionary (ppocr_keys_v1.txt).</param>
         public static OcrEngine Load(string detectionModelPath, string recognitionModelPath, string dictionaryPath)
         {
-            if (detectionModelPath == null) throw new ArgumentNullException(nameof(detectionModelPath));
-            if (recognitionModelPath == null) throw new ArgumentNullException(nameof(recognitionModelPath));
-            if (dictionaryPath == null) throw new ArgumentNullException(nameof(dictionaryPath));
+            ArgumentNullException.ThrowIfNull(detectionModelPath);
+            ArgumentNullException.ThrowIfNull(recognitionModelPath);
+            ArgumentNullException.ThrowIfNull(dictionaryPath);
 
             var handle = NativeMethods.pdf_ocr_engine_create(
                 detectionModelPath,
@@ -57,7 +57,7 @@ namespace PdfOxide.Core
         /// </summary>
         public static bool PageNeedsOcr(PdfDocument document, int pageIndex)
         {
-            if (document == null) throw new ArgumentNullException(nameof(document));
+            ArgumentNullException.ThrowIfNull(document);
             // NativeHandle variant: wrap the IntPtr through the document's
             // internal NativeHandle by calling the NativeHandle-typed
             // P/Invoke directly through a lightweight scope.
@@ -69,7 +69,7 @@ namespace PdfOxide.Core
         /// </summary>
         public string ExtractText(PdfDocument document, int pageIndex)
         {
-            if (document == null) throw new ArgumentNullException(nameof(document));
+            ArgumentNullException.ThrowIfNull(document);
             ThrowIfDisposed();
             var ptr = NativeMethods.OcrExtractTextByPtr(document.Handle, pageIndex, _handle, out int err);
             ExceptionMapper.ThrowIfError(err);
@@ -94,7 +94,7 @@ namespace PdfOxide.Core
 
         private void ThrowIfDisposed()
         {
-            if (_disposed) throw new ObjectDisposedException(nameof(OcrEngine));
+            ObjectDisposedException.ThrowIf(_disposed, this);
         }
     }
 }

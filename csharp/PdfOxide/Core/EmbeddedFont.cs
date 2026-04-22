@@ -48,8 +48,7 @@ namespace PdfOxide.Core
         /// <exception cref="PdfException">The font file cannot be parsed.</exception>
         public static EmbeddedFont FromFile(string path)
         {
-            if (path == null)
-                throw new ArgumentNullException(nameof(path));
+            ArgumentNullException.ThrowIfNull(path);
             if (!File.Exists(path))
                 throw new FileNotFoundException("Font file not found", path);
 
@@ -67,8 +66,7 @@ namespace PdfOxide.Core
         /// <exception cref="PdfException">The buffer is not a valid TTF/OTF file.</exception>
         public static EmbeddedFont FromBytes(byte[] data, string? name = null)
         {
-            if (data == null)
-                throw new ArgumentNullException(nameof(data));
+            ArgumentNullException.ThrowIfNull(data);
             if (data.Length == 0)
                 throw new ArgumentException("data is empty", nameof(data));
 
@@ -92,8 +90,7 @@ namespace PdfOxide.Core
         {
             get
             {
-                if (_disposed)
-                    throw new ObjectDisposedException(nameof(EmbeddedFont));
+                ObjectDisposedException.ThrowIf(_disposed, this);
                 return _handle;
             }
         }
