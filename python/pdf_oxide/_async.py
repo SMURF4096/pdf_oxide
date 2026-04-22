@@ -44,6 +44,7 @@ from .pdf_oxide import OfficeConverter, Pdf, PdfDocument
 #  Auto-generation helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_async_method(method_name: str):
     """Create an async method that delegates to ``self._doc.<method_name>``
     via ``run_in_executor`` on ``self._executor``."""
@@ -53,9 +54,7 @@ def _make_async_method(method_name: str):
         loop = asyncio.get_running_loop()
         fn = getattr(self._doc, method_name)
         if kwargs:
-            return await loop.run_in_executor(
-                self._executor, lambda: fn(*args, **kwargs)
-            )
+            return await loop.run_in_executor(self._executor, lambda: fn(*args, **kwargs))
         return await loop.run_in_executor(self._executor, fn, *args)
 
     method.__name__ = method_name
@@ -75,9 +74,7 @@ def _make_async_static(sync_cls, method_name: str, wrap_result=None):
         loop = asyncio.get_running_loop()
         fn = getattr(sync_cls, method_name)
         if kwargs:
-            result = await loop.run_in_executor(
-                None, lambda: fn(*args, **kwargs)
-            )
+            result = await loop.run_in_executor(None, lambda: fn(*args, **kwargs))
         else:
             result = await loop.run_in_executor(None, fn, *args)
         return wrap_result(result) if wrap_result else result
@@ -91,9 +88,11 @@ def _make_async_static(sync_cls, method_name: str, wrap_result=None):
 # ---------------------------------------------------------------------------
 
 # Methods that need custom handling (constructors, properties, special logic)
-_ASYNC_DOC_SKIP = frozenset({
-    "from_bytes",  # static constructor -- handled manually
-})
+_ASYNC_DOC_SKIP = frozenset(
+    {
+        "from_bytes",  # static constructor -- handled manually
+    }
+)
 
 
 class AsyncPdfDocument:
@@ -122,9 +121,7 @@ class AsyncPdfDocument:
     # -- Construction (hand-written) ----------------------------------------
 
     @staticmethod
-    async def open(
-        path: str, password: Optional[str] = None
-    ) -> "AsyncPdfDocument":
+    async def open(path: str, password: Optional[str] = None) -> "AsyncPdfDocument":
         """Open a PDF file.  The document is created on the background thread."""
         loop = asyncio.get_running_loop()
         inst = AsyncPdfDocument.__new__(AsyncPdfDocument)
@@ -137,9 +134,7 @@ class AsyncPdfDocument:
         return inst
 
     @staticmethod
-    async def from_bytes(
-        data: bytes, password: Optional[str] = None
-    ) -> "AsyncPdfDocument":
+    async def from_bytes(data: bytes, password: Optional[str] = None) -> "AsyncPdfDocument":
         """Open a PDF from bytes."""
         loop = asyncio.get_running_loop()
         inst = AsyncPdfDocument.__new__(AsyncPdfDocument)
@@ -147,9 +142,7 @@ class AsyncPdfDocument:
 
         def _open():
             return (
-                PdfDocument.from_bytes(data, password)
-                if password
-                else PdfDocument.from_bytes(data)
+                PdfDocument.from_bytes(data, password) if password else PdfDocument.from_bytes(data)
             )
 
         inst._doc = await loop.run_in_executor(inst._executor, _open)
@@ -177,20 +170,22 @@ class AsyncPdfDocument:
 
 
 # Auto-populate every public method from PdfDocument
-for _name in dir(PdfDocument):
-    if _name.startswith("_") or _name in _ASYNC_DOC_SKIP:
-        continue
-    _attr = getattr(PdfDocument, _name, None)
-    if callable(_attr) and not hasattr(AsyncPdfDocument, _name):
-        setattr(AsyncPdfDocument, _name, _make_async_method(_name))
+def _populate_async_pdf_document() -> None:
+    for name in dir(PdfDocument):
+        if name.startswith("_") or name in _ASYNC_DOC_SKIP:
+            continue
+        attr = getattr(PdfDocument, name, None)
+        if callable(attr) and not hasattr(AsyncPdfDocument, name):
+            setattr(AsyncPdfDocument, name, _make_async_method(name))
 
-# Cleanup module namespace
-del _name, _attr
+
+_populate_async_pdf_document()
 
 
 # ---------------------------------------------------------------------------
 #  AsyncPdf  --  mirrors the sync ``Pdf`` creation API
 # ---------------------------------------------------------------------------
+
 
 class AsyncPdf:
     """Async wrapper around :class:`Pdf` for PDF creation.
@@ -229,20 +224,25 @@ class AsyncPdf:
         return f"AsyncPdf({self._pdf!r})"
 
 
-# Auto-populate static factory methods from Pdf
-for _name in dir(Pdf):
-    if _name.startswith("_") or _name in ("save", "to_bytes"):
-        continue
-    _attr = getattr(Pdf, _name, None)
-    if callable(_attr) and not hasattr(AsyncPdf, _name):
-        setattr(AsyncPdf, _name, _make_async_static(Pdf, _name, wrap_result=AsyncPdf))
+# Auto-populate static factory methods from Pdf (wrapped in a function so the
+# iteration variables don't leak into module scope and so basedpyright can see
+# that any `del` is unnecessary).
+def _populate_async_pdf() -> None:
+    for name in dir(Pdf):
+        if name.startswith("_") or name in ("save", "to_bytes"):
+            continue
+        attr = getattr(Pdf, name, None)
+        if callable(attr) and not hasattr(AsyncPdf, name):
+            setattr(AsyncPdf, name, _make_async_static(Pdf, name, wrap_result=AsyncPdf))
 
-del _name, _attr
+
+_populate_async_pdf()
 
 
 # ---------------------------------------------------------------------------
 #  AsyncOfficeConverter  --  mirrors the sync ``OfficeConverter`` API
 # ---------------------------------------------------------------------------
+
 
 class AsyncOfficeConverter:
     """Async wrapper around :class:`OfficeConverter`.
@@ -256,16 +256,17 @@ class AsyncOfficeConverter:
     """
 
 
-# Auto-populate all static methods from OfficeConverter
-for _name in dir(OfficeConverter):
-    if _name.startswith("_"):
-        continue
-    _attr = getattr(OfficeConverter, _name, None)
-    if callable(_attr):
-        setattr(
-            AsyncOfficeConverter,
-            _name,
-            _make_async_static(OfficeConverter, _name, wrap_result=AsyncPdf),
-        )
+def _populate_async_office_converter() -> None:
+    for name in dir(OfficeConverter):
+        if name.startswith("_"):
+            continue
+        attr = getattr(OfficeConverter, name, None)
+        if callable(attr):
+            setattr(
+                AsyncOfficeConverter,
+                name,
+                _make_async_static(OfficeConverter, name, wrap_result=AsyncPdf),
+            )
 
-del _name, _attr
+
+_populate_async_office_converter()

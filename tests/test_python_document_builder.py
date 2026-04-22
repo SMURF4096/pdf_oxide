@@ -22,10 +22,10 @@ To run locally:
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
+
 
 pdf_oxide = pytest.importorskip("pdf_oxide")
 
@@ -56,14 +56,7 @@ def test_document_builder_minimal_ascii(tmp_path):
 
 def test_document_builder_build_returns_bytes():
     """``.build()`` returns a ``bytes`` object without touching the disk."""
-    data = (
-        pdf_oxide.DocumentBuilder()
-        .a4_page()
-        .at(72.0, 720.0)
-        .text("pytest")
-        .done()
-        .build()
-    )
+    data = pdf_oxide.DocumentBuilder().a4_page().at(72.0, 720.0).text("pytest").done().build()
     assert isinstance(data, bytes)
     assert data.startswith(b"%PDF-")
 
@@ -365,9 +358,7 @@ def test_form_field_all_five_widget_types():
     # Every named field we created should be present in the output
     # (radio_group adds a parent field with the group name).
     expected = {"name", "subscribe", "country", "payment", "submit"}
-    assert expected <= names, (
-        f"expected {expected} in output field names; got {names}"
-    )
+    assert expected <= names, f"expected {expected} in output field names; got {names}"
 
 
 def test_graphics_primitives():

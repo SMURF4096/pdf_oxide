@@ -28,5 +28,6 @@ def main():
     editor.save(output_path)
     print(f"Saved: {output_path}")
 
+
 if __name__ == "__main__":
     main()
