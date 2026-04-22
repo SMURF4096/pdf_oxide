@@ -3024,6 +3024,29 @@ fn outline_to_json(items: &[crate::outline::OutlineItem]) -> Vec<serde_json::Val
 // ============================================================================
 // Write-side API: DocumentBuilder / FluentPageBuilder / EmbeddedFont (#384)
 // ============================================================================
+
+/// Parse a stamp-type name into the Rust `StampType` enum. Unknown names
+/// fall through to `Custom(String)`.
+fn parse_wasm_stamp_type(name: &str) -> crate::writer::StampType {
+    use crate::writer::StampType;
+    match name {
+        "Approved" => StampType::Approved,
+        "Experimental" => StampType::Experimental,
+        "NotApproved" => StampType::NotApproved,
+        "AsIs" => StampType::AsIs,
+        "Expired" => StampType::Expired,
+        "NotForPublicRelease" => StampType::NotForPublicRelease,
+        "Confidential" => StampType::Confidential,
+        "Final" => StampType::Final,
+        "Sold" => StampType::Sold,
+        "Departmental" => StampType::Departmental,
+        "ForComment" => StampType::ForComment,
+        "TopSecret" => StampType::TopSecret,
+        "Draft" => StampType::Draft,
+        "ForPublicRelease" => StampType::ForPublicRelease,
+        other => StampType::Custom(other.to_string()),
+    }
+}
 //
 // Mirrors the Python bindings' surface (see src/python.rs). Same buffering
 // design: the Rust `FluentPageBuilder<'a>` borrows from `DocumentBuilder`
@@ -3058,6 +3081,14 @@ enum WasmPageOp {
     Watermark(String),
     WatermarkConfidential,
     WatermarkDraft,
+    Stamp(String),
+    FreeText {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        text: String,
+    },
 }
 
 /// Embedded TTF/OTF font usable by `WasmDocumentBuilder`. Single-use: once
@@ -3268,6 +3299,10 @@ impl WasmDocumentBuilder {
                 WasmPageOp::Watermark(text) => rust_page.watermark(&text),
                 WasmPageOp::WatermarkConfidential => rust_page.watermark_confidential(),
                 WasmPageOp::WatermarkDraft => rust_page.watermark_draft(),
+                WasmPageOp::Stamp(name) => rust_page.stamp(parse_wasm_stamp_type(&name)),
+                WasmPageOp::FreeText { x, y, w, h, text } => {
+                    rust_page.freetext(crate::geometry::Rect::new(x, y, w, h), &text)
+                },
             };
         }
         rust_page.done();
@@ -3416,6 +3451,23 @@ impl WasmFluentPageBuilder {
     #[wasm_bindgen(js_name = "watermarkDraft")]
     pub fn watermark_draft(&mut self) -> Result<(), JsValue> {
         self.push(WasmPageOp::WatermarkDraft)
+    }
+
+    #[wasm_bindgen(js_name = "stamp")]
+    pub fn stamp(&mut self, name: String) -> Result<(), JsValue> {
+        self.push(WasmPageOp::Stamp(name))
+    }
+
+    #[wasm_bindgen(js_name = "freeText")]
+    pub fn freetext(
+        &mut self,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        text: String,
+    ) -> Result<(), JsValue> {
+        self.push(WasmPageOp::FreeText { x, y, w, h, text })
     }
 
     /// Convenience: commit this page's buffered ops to `builder`. Same

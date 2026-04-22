@@ -3835,6 +3835,30 @@ impl PyFooter {
     }
 }
 
+/// Parse a stamp-type name into the Rust `StampType` enum. Unknown names
+/// fall through to `StampType::Custom(String)` so callers can use any
+/// text they like. Shared by the Python / WASM / FFI write-side bindings.
+fn parse_stamp_type(name: &str) -> crate::writer::StampType {
+    use crate::writer::StampType;
+    match name {
+        "Approved" => StampType::Approved,
+        "Experimental" => StampType::Experimental,
+        "NotApproved" => StampType::NotApproved,
+        "AsIs" => StampType::AsIs,
+        "Expired" => StampType::Expired,
+        "NotForPublicRelease" => StampType::NotForPublicRelease,
+        "Confidential" => StampType::Confidential,
+        "Final" => StampType::Final,
+        "Sold" => StampType::Sold,
+        "Departmental" => StampType::Departmental,
+        "ForComment" => StampType::ForComment,
+        "TopSecret" => StampType::TopSecret,
+        "Draft" => StampType::Draft,
+        "ForPublicRelease" => StampType::ForPublicRelease,
+        other => StampType::Custom(other.to_string()),
+    }
+}
+
 // =============================================================================
 // Write-side API: DocumentBuilder, FluentPageBuilder, EmbeddedFont (#384 Phase 1)
 // =============================================================================
@@ -3875,6 +3899,14 @@ enum PendingPageOp {
     Watermark(String),
     WatermarkConfidential,
     WatermarkDraft,
+    Stamp(String),
+    FreeText {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        text: String,
+    },
 }
 
 /// Python wrapper for an embedded TTF/OTF font usable by `DocumentBuilder`.
@@ -4264,6 +4296,32 @@ impl PyFluentPageBuilder {
         Ok(slf)
     }
 
+    /// Attach a standard stamp annotation at the current cursor position
+    /// with the default 150×50 point box. Valid names are the PDF spec's
+    /// standard stamp types ("Approved", "NotApproved", "Draft",
+    /// "Confidential", "Final", "Experimental", "Expired",
+    /// "ForPublicRelease", "NotForPublicRelease", "AsIs", "Sold",
+    /// "Departmental", "ForComment", "TopSecret") — any other name is
+    /// emitted verbatim as a custom stamp.
+    fn stamp<'a>(mut slf: PyRefMut<'a, Self>, name: String) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::Stamp(name))?;
+        Ok(slf)
+    }
+
+    /// Place free-flowing text inside a rectangular annotation (no cursor
+    /// advance; independent of the `at()`/`text()` flow).
+    fn freetext<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        text: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::FreeText { x, y, w, h, text })?;
+        Ok(slf)
+    }
+
     /// Commit the page's buffered operations to the parent
     /// `DocumentBuilder` and return the parent for further chaining.
     /// After `done()`, this `FluentPageBuilder` is spent.
@@ -4306,6 +4364,10 @@ impl PyFluentPageBuilder {
                 PendingPageOp::Watermark(text) => page.watermark(&text),
                 PendingPageOp::WatermarkConfidential => page.watermark_confidential(),
                 PendingPageOp::WatermarkDraft => page.watermark_draft(),
+                PendingPageOp::Stamp(name) => page.stamp(parse_stamp_type(&name)),
+                PendingPageOp::FreeText { x, y, w, h, text } => {
+                    page.freetext(crate::geometry::Rect::new(x, y, w, h), &text)
+                },
             };
         }
         page.done();

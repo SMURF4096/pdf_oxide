@@ -61,6 +61,9 @@ extern int   pdf_page_builder_sticky_note_at(void* page, float x, float y, const
 extern int   pdf_page_builder_watermark(void* page, const char* text, int* error_code);
 extern int   pdf_page_builder_watermark_confidential(void* page, int* error_code);
 extern int   pdf_page_builder_watermark_draft(void* page, int* error_code);
+extern int   pdf_page_builder_stamp(void* page, const char* type_name, int* error_code);
+extern int   pdf_page_builder_freetext(void* page, float x, float y, float w, float h,
+                                       const char* text, int* error_code);
 
 extern int   pdf_page_builder_done(void* page, int* error_code);
 extern void  pdf_page_builder_free(void* page);
@@ -79,6 +82,13 @@ extern uint8_t* pdf_document_builder_to_bytes_encrypted(void* handle,
 extern void* pdf_from_html_css(const char* html, const char* css,
                                const uint8_t* font_bytes, size_t font_len,
                                int* error_code);
+
+extern void* pdf_from_html_css_with_fonts(const char* html, const char* css,
+                                          const char* const* families,
+                                          const uint8_t* const* font_bytes,
+                                          const size_t* font_lens,
+                                          size_t count,
+                                          int* error_code);
 
 // Byte buffers returned by `_build` / `_to_bytes_encrypted` are freed
 // via the same `free_bytes` helper the rest of the package uses — but
@@ -636,6 +646,25 @@ func (p *PageBuilder) WatermarkDraft() *PageBuilder {
 	})
 }
 
+// Stamp attaches a standard stamp annotation at the cursor (150×50 default).
+// typeName matches the PDF spec names — unknown names become custom stamps.
+func (p *PageBuilder) Stamp(typeName string) *PageBuilder {
+	return p.callInt(func(h unsafe.Pointer, ec *C.int) C.int {
+		cs := C.CString(typeName)
+		defer C.free(unsafe.Pointer(cs))
+		return C.pdf_page_builder_stamp(h, cs, ec)
+	})
+}
+
+// FreeText places a free-flowing text annotation inside (x, y, w, h).
+func (p *PageBuilder) FreeText(x, y, w, h float32, text string) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		cs := C.CString(text)
+		defer C.free(unsafe.Pointer(cs))
+		return C.pdf_page_builder_freetext(hp, C.float(x), C.float(y), C.float(w), C.float(h), cs, ec)
+	})
+}
+
 // Done commits the page to the parent DocumentBuilder and returns any
 // error accumulated during the chain. After Done the PageBuilder is
 // invalid; reuse returns ErrPageAlreadyCommitted.
@@ -704,6 +733,62 @@ func FromHTMLCSS(html, css string, fontBytes []byte) (*PdfCreator, error) {
 		cCss,
 		(*C.uint8_t)(unsafe.Pointer(&fontBytes[0])),
 		C.size_t(len(fontBytes)),
+		&ec,
+	)
+	if handle == nil {
+		return nil, ffiError(ec)
+	}
+	return &PdfCreator{handle: handle}, nil
+}
+
+// FontEntry pairs a CSS font-family name with the TTF/OTF bytes that
+// should back it. Used by FromHTMLCSSWithFonts.
+type FontEntry struct {
+	Family string
+	Bytes  []byte
+}
+
+// FromHTMLCSSWithFonts builds a PDF from HTML+CSS with a multi-font
+// cascade. The first entry is the default used when a CSS
+// `font-family` doesn't match any registered family. Closes #384
+// Phase 2 (multi-font) for Go.
+func FromHTMLCSSWithFonts(html, css string, fonts []FontEntry) (*PdfCreator, error) {
+	if len(fonts) == 0 {
+		return nil, fmt.Errorf("pdf_oxide: FromHTMLCSSWithFonts: fonts is empty")
+	}
+	cHtml := C.CString(html)
+	cCss := C.CString(css)
+	defer C.free(unsafe.Pointer(cHtml))
+	defer C.free(unsafe.Pointer(cCss))
+
+	n := len(fonts)
+	cNames := make([]*C.char, n)
+	cBytesPtrs := make([]*C.uint8_t, n)
+	cLens := make([]C.size_t, n)
+	for i, f := range fonts {
+		if len(f.Bytes) == 0 {
+			for j := 0; j < i; j++ {
+				C.free(unsafe.Pointer(cNames[j]))
+			}
+			return nil, fmt.Errorf("pdf_oxide: FromHTMLCSSWithFonts: fonts[%d] has empty bytes", i)
+		}
+		cNames[i] = C.CString(f.Family)
+		cBytesPtrs[i] = (*C.uint8_t)(unsafe.Pointer(&f.Bytes[0]))
+		cLens[i] = C.size_t(len(f.Bytes))
+	}
+	defer func() {
+		for _, n := range cNames {
+			C.free(unsafe.Pointer(n))
+		}
+	}()
+
+	var ec C.int
+	handle := C.pdf_from_html_css_with_fonts(
+		cHtml, cCss,
+		(**C.char)(unsafe.Pointer(&cNames[0])),
+		(**C.uint8_t)(unsafe.Pointer(&cBytesPtrs[0])),
+		(*C.size_t)(unsafe.Pointer(&cLens[0])),
+		C.size_t(n),
 		&ec,
 	)
 	if handle == nil {

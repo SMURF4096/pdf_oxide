@@ -381,6 +381,24 @@ export class PageBuilder {
   }
 
   /**
+   * Attach a standard stamp annotation at the cursor (150×50 default).
+   * `typeName` matches the PDF spec's standard stamps (Approved,
+   * NotApproved, Draft, Confidential, Final, Experimental, Expired,
+   * ForPublicRelease, NotForPublicRelease, AsIs, Sold, Departmental,
+   * ForComment, TopSecret) — any other name becomes a custom stamp.
+   */
+  stamp(typeName: string): this {
+    native.pageBuilderStamp(this.h(), typeName);
+    return this;
+  }
+
+  /** Place a free-flowing text annotation inside the rectangle (x, y, w, h). */
+  freeText(x: number, y: number, w: number, h: number, text: string): this {
+    native.pageBuilderFreetext(this.h(), x, y, w, h, text);
+    return this;
+  }
+
+  /**
    * Commit the page's buffered operations to the parent builder and
    * return the parent for chaining. After `done()` this PageBuilder is
    * invalid.

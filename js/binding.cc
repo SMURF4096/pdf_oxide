@@ -454,6 +454,9 @@ extern "C" {
   extern int   pdf_page_builder_watermark(void* page, const char* text, int* error_code);
   extern int   pdf_page_builder_watermark_confidential(void* page, int* error_code);
   extern int   pdf_page_builder_watermark_draft(void* page, int* error_code);
+  extern int   pdf_page_builder_stamp(void* page, const char* type_name, int* error_code);
+  extern int   pdf_page_builder_freetext(void* page, float x, float y, float w, float h,
+                                         const char* text, int* error_code);
 
   extern int   pdf_page_builder_done(void* page, int* error_code);
   extern void  pdf_page_builder_free(void* page);
@@ -472,6 +475,12 @@ extern "C" {
   extern void* pdf_from_html_css(const char* html, const char* css,
                                  const uint8_t* font_bytes, size_t font_len,
                                  int* error_code);
+  extern void* pdf_from_html_css_with_fonts(const char* html, const char* css,
+                                            const char* const* families,
+                                            const uint8_t* const* font_bytes,
+                                            const size_t* font_lens,
+                                            size_t count,
+                                            int* error_code);
 }
 
 // ============================================================
@@ -3095,6 +3104,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   extern Napi::Value PageBuilderWatermark(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderWatermarkConfidential(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderWatermarkDraft(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderStamp(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderFreetext(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderDone(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderFree(const Napi::CallbackInfo&);
   extern Napi::Value DocumentBuilderBuild(const Napi::CallbackInfo&);
@@ -3102,6 +3113,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   extern Napi::Value DocumentBuilderSaveEncrypted(const Napi::CallbackInfo&);
   extern Napi::Value DocumentBuilderToBytesEncrypted(const Napi::CallbackInfo&);
   extern Napi::Value PdfFromHtmlCss(const Napi::CallbackInfo&);
+  extern Napi::Value PdfFromHtmlCssWithFonts(const Napi::CallbackInfo&);
 
   exports.Set("embeddedFontFromFile", Napi::Function::New(env, EmbeddedFontFromFile));
   exports.Set("embeddedFontFromBytes", Napi::Function::New(env, EmbeddedFontFromBytes));
@@ -3136,6 +3148,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("pageBuilderWatermark", Napi::Function::New(env, PageBuilderWatermark));
   exports.Set("pageBuilderWatermarkConfidential", Napi::Function::New(env, PageBuilderWatermarkConfidential));
   exports.Set("pageBuilderWatermarkDraft", Napi::Function::New(env, PageBuilderWatermarkDraft));
+  exports.Set("pageBuilderStamp", Napi::Function::New(env, PageBuilderStamp));
+  exports.Set("pageBuilderFreetext", Napi::Function::New(env, PageBuilderFreetext));
   exports.Set("pageBuilderDone", Napi::Function::New(env, PageBuilderDone));
   exports.Set("pageBuilderFree", Napi::Function::New(env, PageBuilderFree));
   exports.Set("documentBuilderBuild", Napi::Function::New(env, DocumentBuilderBuild));
@@ -3143,6 +3157,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("documentBuilderSaveEncrypted", Napi::Function::New(env, DocumentBuilderSaveEncrypted));
   exports.Set("documentBuilderToBytesEncrypted", Napi::Function::New(env, DocumentBuilderToBytesEncrypted));
   exports.Set("pdfFromHtmlCss", Napi::Function::New(env, PdfFromHtmlCss));
+  exports.Set("pdfFromHtmlCssWithFonts", Napi::Function::New(env, PdfFromHtmlCssWithFonts));
 
 
   return exports;
@@ -3423,6 +3438,30 @@ Napi::Value PageBuilderWatermarkDraft(const Napi::CallbackInfo& info) {
   return env.Undefined();
 }
 
+Napi::Value PageBuilderStamp(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  std::string name = requireString(info, 1, "typeName");
+  int errorCode = 0;
+  pdf_page_builder_stamp(p, name.c_str(), &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.stamp");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderFreetext(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  float x = static_cast<float>(requireNumber(info, 1, "x"));
+  float y = static_cast<float>(requireNumber(info, 2, "y"));
+  float w = static_cast<float>(requireNumber(info, 3, "w"));
+  float h = static_cast<float>(requireNumber(info, 4, "h"));
+  std::string text = requireString(info, 5, "text");
+  int errorCode = 0;
+  pdf_page_builder_freetext(p, x, y, w, h, text.c_str(), &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.freeText");
+  return env.Undefined();
+}
+
 Napi::Value PageBuilderDone(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   void* p = externPtr(info, 0, "page");
@@ -3507,6 +3546,53 @@ Napi::Value PdfFromHtmlCss(const Napi::CallbackInfo& info) {
   void* handle = pdf_from_html_css(html.c_str(), css.c_str(), buf.Data(), buf.Length(), &errorCode);
   throwOnError(env, errorCode, "Pdf.fromHtmlCss");
   if (!handle) throw Napi::Error::New(env, "Pdf.fromHtmlCss: null handle");
+  return Napi::External<void>::New(env, handle);
+}
+
+// Phase 2 multi-font cascade: expects (html, css, families[], fontBytes[])
+// where families[i] is a JS string and fontBytes[i] is a Buffer/Uint8Array.
+Napi::Value PdfFromHtmlCssWithFonts(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  std::string html = requireString(info, 0, "html");
+  std::string css = requireString(info, 1, "css");
+  if (info.Length() < 4 || !info[2].IsArray() || !info[3].IsArray()) {
+    throw Napi::TypeError::New(env, "families and fontBytes must be arrays of equal length");
+  }
+  auto families = info[2].As<Napi::Array>();
+  auto fontArr = info[3].As<Napi::Array>();
+  if (families.Length() != fontArr.Length()) {
+    throw Napi::TypeError::New(env, "families and fontBytes must be equal-length arrays");
+  }
+  size_t n = families.Length();
+  if (n == 0) {
+    throw Napi::Error::New(env, "at least one font must be provided");
+  }
+
+  // Own all C strings for the families; font buffers are owned by JS, we
+  // just copy their data pointers.
+  std::vector<std::string> nameStorage;
+  nameStorage.reserve(n);
+  std::vector<const char*> namePtrs(n);
+  std::vector<const uint8_t*> bytePtrs(n);
+  std::vector<size_t> byteLens(n);
+  for (size_t i = 0; i < n; i++) {
+    Napi::Value nv = families.Get(i);
+    if (!nv.IsString()) throw Napi::TypeError::New(env, "families[i] must be a string");
+    nameStorage.push_back(nv.As<Napi::String>().Utf8Value());
+    namePtrs[i] = nameStorage[i].c_str();
+    Napi::Value bv = fontArr.Get(i);
+    if (!bv.IsBuffer()) throw Napi::TypeError::New(env, "fontBytes[i] must be a Buffer/Uint8Array");
+    auto b = bv.As<Napi::Buffer<uint8_t>>();
+    bytePtrs[i] = b.Data();
+    byteLens[i] = b.Length();
+  }
+  int errorCode = 0;
+  void* handle = pdf_from_html_css_with_fonts(
+      html.c_str(), css.c_str(),
+      namePtrs.data(), bytePtrs.data(), byteLens.data(),
+      n, &errorCode);
+  throwOnError(env, errorCode, "Pdf.fromHtmlCssWithFonts");
+  if (!handle) throw Napi::Error::New(env, "Pdf.fromHtmlCssWithFonts: null handle");
   return Napi::External<void>::New(env, handle);
 }
 

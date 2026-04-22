@@ -4,7 +4,145 @@ All notable changes to PDFOxide are documented here.
 
 ## [0.3.38] - 2026-04-21
 > DocumentBuilder encryption (#386), real font subsetting on the write
-> path (#385 — FONT-3b), and multi-target WASM packaging (#392).
+> path (#385 — FONT-3b), multi-target WASM packaging (#392), and **the
+> complete write-side API exposed across every language binding (#384
+> Phase 1-3)** — DocumentBuilder, embedded fonts, annotations, and the
+> HTML+CSS pipeline now reachable from Python, WASM, C#, Go, Node, and
+> TypeScript.
+
+### Write-side API across every binding (#384)
+
+Before v0.3.38 the Rust DocumentBuilder / FluentPageBuilder /
+EmbeddedFont / HTML+CSS pipeline were unreachable from non-Rust
+consumers; every binding exposed only `Pdf::from_markdown/html/text` +
+`save` (~15% of the write-side surface). This was particularly acute
+for the CJK embedded-font workflow from #382 — the Rust fix landed in
+v0.3.37, but Python / WASM / C# / Go / Node users couldn't reach it.
+
+v0.3.38 closes the gap. Every binding now has the full fluent API for
+programmatic multi-page construction:
+
+```python
+# Python
+from pdf_oxide import DocumentBuilder, EmbeddedFont
+font = EmbeddedFont.from_file("DejaVuSans.ttf")
+bytes_ = (DocumentBuilder()
+    .register_embedded_font("DejaVu", font)
+    .a4_page().font("DejaVu", 12).at(72, 720).text("Привет, мир!").done()
+    .build())
+```
+
+```typescript
+// Node / TypeScript
+import { DocumentBuilder, EmbeddedFont } from 'pdf-oxide';
+const font = EmbeddedFont.fromFile('DejaVuSans.ttf');
+const bytes = DocumentBuilder.create()
+    .registerEmbeddedFont('DejaVu', font)
+    .a4Page().font('DejaVu', 12).at(72, 720).text('Привет, мир!').done()
+    .build();
+```
+
+```csharp
+// C#
+using var font = EmbeddedFont.FromFile("DejaVuSans.ttf");
+using var builder = DocumentBuilder.Create()
+    .RegisterEmbeddedFont("DejaVu", font);
+byte[] bytes = builder.A4Page()
+    .Font("DejaVu", 12).At(72, 720).Text("Привет, мир!")
+    .Done().Build();
+```
+
+```go
+// Go
+font, _ := EmbeddedFontFromFile("DejaVuSans.ttf")
+b, _ := NewDocumentBuilder()
+b.RegisterEmbeddedFont("DejaVu", font)
+page, _ := b.A4Page()
+page.Font("DejaVu", 12).At(72, 720).Text("Привет, мир!").Done()
+bytes, _ := b.Build()
+```
+
+```javascript
+// WASM (browser / Node / Workers / Deno — all via v0.3.38 #392 packaging)
+import { WasmDocumentBuilder, WasmEmbeddedFont } from 'pdf-oxide-wasm';
+const font = WasmEmbeddedFont.fromBytes(fontBytes);
+const b = new WasmDocumentBuilder();
+b.registerEmbeddedFont('DejaVu', font);
+const page = b.a4Page();
+page.font('DejaVu', 12); page.at(72, 720); page.text('Привет, мир!');
+page.done(b);
+const bytes = b.build();
+```
+
+#### Phase 1 — DocumentBuilder + embedded fonts (closes #382 for every language)
+
+Every binding has a `DocumentBuilder` class (plus `FluentPageBuilder` /
+`PageBuilder` and `EmbeddedFont`) with:
+
+* Metadata setters (`title`, `author`, `subject`, `keywords`, `creator`)
+* `register_embedded_font(name, font)` — TTF / OTF registration (consumes the font)
+* `a4_page()` / `letter_page()` / `page(w, h)` — page openers with a
+  "one page at a time" invariant; a second open before `done()` errors out
+* `build()` → bytes, `save(path)` → file, `save_encrypted` / `to_bytes_encrypted`
+  (AES-256, reuses the v0.3.38 #386 encryption path) — each CONSUMES
+  the builder handle
+
+#### Phase 2 — HTML+CSS pipeline
+
+`Pdf::from_html_css(html, css, font_bytes)` (and
+`from_html_css_with_fonts` where the binding supports it) is exposed
+on every binding, routing through the Rust v0.3.37 CSS pipeline
+(#248). Python and WASM also expose `from_html_css_with_fonts` for
+multi-font cascades.
+
+#### Phase 3 — annotations (13 per page)
+
+`PageBuilder` carries the full annotation surface that Rust's
+FluentPageBuilder exposes: `link_url`, `link_page`, `link_named`,
+`highlight`, `underline`, `strikeout`, `squiggly`, `sticky_note`,
+`sticky_note_at`, `watermark`, `watermark_confidential`, `watermark_draft`.
+Each attaches to the previous text element; they don't break
+`extract_text` round-tripping.
+
+#### New C FFI functions (~40)
+
+`src/ffi.rs` + `include/pdf_oxide_c/pdf_oxide.h` gain a
+`pdf_document_builder_*` / `pdf_page_builder_*` / `pdf_embedded_font_*`
+family plus `pdf_from_html_css[_with_fonts]`. The handle-lifetime
+contract is documented in-place: builder handles are consumed by
+terminal methods; only one page handle may be outstanding at a time;
+`register_embedded_font` consumes the font handle; byte buffers from
+`_build` / `_to_bytes_encrypted` must be freed with `free_bytes`.
+
+C# (P/Invoke via [LibraryImport]), Go (cgo), and Node (N-API C++)
+all wrap this C FFI; Python (pyo3) and WASM (wasm-bindgen) wrap the
+Rust API directly without crossing the C boundary.
+
+#### Per-binding test suites — 70+ integration tests total
+
+Each binding ships a CJK round-trip test that is the #384 acceptance
+gate:
+
+| Binding | Tests | Framework |
+|---|---|---|
+| Python  | 17 | pytest |
+| WASM    |  9 | wasm_bindgen_test |
+| C FFI   | 11 | cargo test |
+| C#      | 11 | xUnit |
+| Go      | 11 | go test |
+| Node/TS | 10 | node --test |
+
+Every suite verifies: CJK round-trip (Cyrillic + Greek via
+`extract_text`), output-is-subsetted (PDF ≥10× smaller than the
+embedded face, locks in v0.3.38 #385 behaviour through each binding),
+handle-consumption semantics, one-page-at-a-time invariant, and
+AES-256 encryption (`/Encrypt /V 5`).
+
+See `BINDING_STYLE_GUIDE.md` for the naming conventions used across
+bindings (Python snake_case, C#/TS camelCase, Go CamelCase exported,
+WASM js_name camelCase).
+
+
 
 ### `pdf-oxide-wasm` now works in every target it advertises (#392)
 

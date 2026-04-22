@@ -366,6 +366,9 @@ int   pdf_page_builder_sticky_note_at(void* page, float x, float y, const char* 
 int   pdf_page_builder_watermark(void* page, const char* text, int* error_code);
 int   pdf_page_builder_watermark_confidential(void* page, int* error_code);
 int   pdf_page_builder_watermark_draft(void* page, int* error_code);
+int   pdf_page_builder_stamp(void* page, const char* type_name, int* error_code);
+int   pdf_page_builder_freetext(void* page, float x, float y, float w, float h,
+                                const char* text, int* error_code);
 
 /* PageBuilder — commit / drop */
 int   pdf_page_builder_done(void* page, int* error_code);

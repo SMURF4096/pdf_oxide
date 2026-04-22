@@ -204,6 +204,35 @@ namespace PdfOxide.Core
         }
 
         /// <summary>
+        /// Attach a standard stamp annotation at the cursor position
+        /// (default 150×50 pt box). <paramref name="typeName"/> matches
+        /// the PDF spec's standard stamps ("Approved", "NotApproved",
+        /// "Draft", "Confidential", "Final", "Experimental", "Expired",
+        /// "ForPublicRelease", "NotForPublicRelease", "AsIs", "Sold",
+        /// "Departmental", "ForComment", "TopSecret"); any other name
+        /// becomes a custom stamp.
+        /// </summary>
+        public PageBuilder Stamp(string typeName)
+        {
+            if (typeName == null) throw new ArgumentNullException(nameof(typeName));
+            NativeMethods.PdfPageBuilderStamp(Handle, typeName, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
+        /// <summary>
+        /// Place a free-flowing text annotation inside the rectangle
+        /// (x, y, w, h). Independent of the cursor flow.
+        /// </summary>
+        public PageBuilder FreeText(float x, float y, float w, float h, string text)
+        {
+            if (text == null) throw new ArgumentNullException(nameof(text));
+            NativeMethods.PdfPageBuilderFreetext(Handle, x, y, w, h, text, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
+        /// <summary>
         /// Commit the page's buffered operations back to the parent
         /// builder. Returns the parent for continued chaining. After
         /// <see cref="Done"/> this <see cref="PageBuilder"/> is invalid.

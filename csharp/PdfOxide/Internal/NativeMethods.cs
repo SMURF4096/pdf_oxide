@@ -6781,6 +6781,16 @@ namespace PdfOxide.Internal
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial int PdfPageBuilderWatermarkDraft(IntPtr page, out int errorCode);
 
+        /// <summary>Attach a standard stamp annotation at the cursor (150×50 default).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_stamp", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderStamp(IntPtr page, string typeName, out int errorCode);
+
+        /// <summary>Place a free-flowing text annotation inside a rectangle.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_freetext", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderFreetext(IntPtr page, float x, float y, float w, float h, string text, out int errorCode);
+
         /// <summary>Commit the page and CONSUME the page handle.</summary>
         [LibraryImport(LibName, EntryPoint = "pdf_page_builder_done", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
@@ -6819,6 +6829,14 @@ namespace PdfOxide.Internal
         [LibraryImport(LibName, EntryPoint = "pdf_from_html_css", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial IntPtr PdfFromHtmlCss(string html, string css, [In] byte[] fontBytes, nuint fontLen, out int errorCode);
+
+        /// <summary>Build a PDF from HTML+CSS with a multi-font cascade. Parallel arrays of length <paramref name="count"/>.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_from_html_css_with_fonts", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial IntPtr PdfFromHtmlCssWithFonts(
+            string html, string css,
+            byte** families, byte** fontBytes, nuint* fontLens,
+            nuint count, out int errorCode);
 
         #endregion
     }

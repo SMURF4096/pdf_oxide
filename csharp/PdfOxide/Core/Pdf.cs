@@ -149,6 +149,80 @@ namespace PdfOxide.Core
         }
 
         /// <summary>
+        /// Creates a PDF from HTML+CSS with a multi-font cascade. The first
+        /// entry of <paramref name="fonts"/> is the default used when a CSS
+        /// <c>font-family</c> doesn't match any registered family.
+        /// </summary>
+        /// <remarks>Closes #384 Phase 2 (multi-font HTML+CSS) for the C# binding.</remarks>
+        public static unsafe Pdf FromHtmlCssWithFonts(string html, string css,
+            System.Collections.Generic.IReadOnlyList<System.Collections.Generic.KeyValuePair<string, byte[]>> fonts)
+        {
+            if (html == null) throw new ArgumentNullException(nameof(html));
+            if (css == null) throw new ArgumentNullException(nameof(css));
+            if (fonts == null || fonts.Count == 0)
+                throw new ArgumentException("at least one font must be provided", nameof(fonts));
+
+            int n = fonts.Count;
+            // Pin every font's byte[] and every UTF-8-encoded name so the
+            // native call sees stable pointers for the duration of the
+            // FFI crossing.
+            var byteHandles = new System.Runtime.InteropServices.GCHandle[n];
+            var nameBuffers = new byte[n][];
+            var nameHandles = new System.Runtime.InteropServices.GCHandle[n];
+            var fontPointers = new IntPtr[n];
+            var namePointers = new IntPtr[n];
+            var fontLens = new nuint[n];
+            try
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    var kv = fonts[i];
+                    if (kv.Value == null || kv.Value.Length == 0)
+                        throw new ArgumentException($"fonts[{i}] has empty bytes", nameof(fonts));
+                    byteHandles[i] = System.Runtime.InteropServices.GCHandle.Alloc(kv.Value, System.Runtime.InteropServices.GCHandleType.Pinned);
+                    fontPointers[i] = byteHandles[i].AddrOfPinnedObject();
+                    fontLens[i] = (nuint)kv.Value.Length;
+
+                    // UTF-8 NUL-terminated name
+                    var utf8 = System.Text.Encoding.UTF8.GetBytes(kv.Key + "\0");
+                    nameBuffers[i] = utf8;
+                    nameHandles[i] = System.Runtime.InteropServices.GCHandle.Alloc(utf8, System.Runtime.InteropServices.GCHandleType.Pinned);
+                    namePointers[i] = nameHandles[i].AddrOfPinnedObject();
+                }
+                var fpHandle = System.Runtime.InteropServices.GCHandle.Alloc(fontPointers, System.Runtime.InteropServices.GCHandleType.Pinned);
+                var npHandle = System.Runtime.InteropServices.GCHandle.Alloc(namePointers, System.Runtime.InteropServices.GCHandleType.Pinned);
+                var flHandle = System.Runtime.InteropServices.GCHandle.Alloc(fontLens, System.Runtime.InteropServices.GCHandleType.Pinned);
+                try
+                {
+                    var ptr = NativeMethods.PdfFromHtmlCssWithFonts(
+                        html, css,
+                        (byte**)npHandle.AddrOfPinnedObject(),
+                        (byte**)fpHandle.AddrOfPinnedObject(),
+                        (nuint*)flHandle.AddrOfPinnedObject(),
+                        (nuint)n,
+                        out var errorCode);
+                    if (ptr == IntPtr.Zero)
+                        ExceptionMapper.ThrowIfError(errorCode);
+                    return new Pdf(new NativeHandle(ptr, p => NativeMethods.PdfFree(p)));
+                }
+                finally
+                {
+                    fpHandle.Free();
+                    npHandle.Free();
+                    flHandle.Free();
+                }
+            }
+            finally
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    if (byteHandles[i].IsAllocated) byteHandles[i].Free();
+                    if (nameHandles[i].IsAllocated) nameHandles[i].Free();
+                }
+            }
+        }
+
+        /// <summary>
         /// Creates a PDF from plain text content.
         /// </summary>
         /// <param name="text">The text content.</param>

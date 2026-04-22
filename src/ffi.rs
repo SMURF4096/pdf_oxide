@@ -5915,6 +5915,37 @@ enum FfiPageOp {
     Watermark(String),
     WatermarkConfidential,
     WatermarkDraft,
+    Stamp(String),
+    FreeText {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        text: String,
+    },
+}
+
+/// Parse a stamp-type name into the Rust `StampType` enum. Unknown names
+/// become `StampType::Custom`.
+fn ffi_parse_stamp_type(name: &str) -> crate::writer::StampType {
+    use crate::writer::StampType;
+    match name {
+        "Approved" => StampType::Approved,
+        "Experimental" => StampType::Experimental,
+        "NotApproved" => StampType::NotApproved,
+        "AsIs" => StampType::AsIs,
+        "Expired" => StampType::Expired,
+        "NotForPublicRelease" => StampType::NotForPublicRelease,
+        "Confidential" => StampType::Confidential,
+        "Final" => StampType::Final,
+        "Sold" => StampType::Sold,
+        "Departmental" => StampType::Departmental,
+        "ForComment" => StampType::ForComment,
+        "TopSecret" => StampType::TopSecret,
+        "Draft" => StampType::Draft,
+        "ForPublicRelease" => StampType::ForPublicRelease,
+        other => StampType::Custom(other.to_string()),
+    }
 }
 
 /// Page sub-handle. Holds a raw back-pointer to the parent; the parent
@@ -6489,6 +6520,51 @@ pub extern "C" fn pdf_page_builder_watermark_draft(
     push_page_op(handle, error_code, FfiPageOp::WatermarkDraft)
 }
 
+/// Attach a standard stamp annotation at the current cursor position
+/// (default 150×50 pt box). `type_name` matches the PDF spec's stamp
+/// names (Approved, NotApproved, Draft, Confidential, Final,
+/// Experimental, Expired, ForPublicRelease, NotForPublicRelease, AsIs,
+/// Sold, Departmental, ForComment, TopSecret) — anything else becomes
+/// a custom stamp with that text.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_stamp(
+    handle: *mut FfiPageBuilder,
+    type_name: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(name) = read_cstr_or_fail(type_name, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::Stamp(name))
+}
+
+/// Place a free-flowing text annotation inside the given rectangle.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_freetext(
+    handle: *mut FfiPageBuilder,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    text: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(text_s) = read_cstr_or_fail(text, error_code) else {
+        return -1;
+    };
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::FreeText {
+            x,
+            y,
+            w,
+            h,
+            text: text_s,
+        },
+    )
+}
+
 /// Commit this page's buffered operations to its parent builder and
 /// **consume** the page handle. After a successful call the handle is
 /// invalid; do not call `_free`.
@@ -6547,6 +6623,10 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
             FfiPageOp::Watermark(text) => rust_page.watermark(&text),
             FfiPageOp::WatermarkConfidential => rust_page.watermark_confidential(),
             FfiPageOp::WatermarkDraft => rust_page.watermark_draft(),
+            FfiPageOp::Stamp(name) => rust_page.stamp(ffi_parse_stamp_type(&name)),
+            FfiPageOp::FreeText { x, y, w, h, text } => {
+                rust_page.freetext(crate::geometry::Rect::new(x, y, w, h), &text)
+            },
         };
     }
     rust_page.done();
