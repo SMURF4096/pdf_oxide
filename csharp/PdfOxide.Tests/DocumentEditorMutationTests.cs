@@ -245,34 +245,77 @@ namespace PdfOxide.Tests
         // ---------------------------------------------------------------
         // Producer / CreationDate metadata round-trip
         // ---------------------------------------------------------------
-        // Producer / CreationDate wrappers surface the FFI entry points, but
-        // today the Rust side (`src/ffi.rs:532-586`) is a no-op stub — see
-        // follow-up task. Locking in that the wrappers don't throw; the
-        // real round-trip test belongs with the Rust-core fix.
+        // Producer / CreationDate now round-trip against the Rust core
+        // (task #70). Set → save → reopen → read back.
         [Fact]
-        public void Producer_Setter_DoesNotThrow()
+        public void Producer_RoundTrips_AfterSave()
         {
             var path = CreateTestPdf("# Meta");
+            var outPath = Path.Combine(Path.GetTempPath(), $"pdfoxide-prod-{Guid.NewGuid():N}.pdf");
             try
             {
-                using var editor = DocumentEditor.Open(path);
-                editor.Producer = "PdfOxide Unit-test";  // no-op today
-                _ = editor.Producer;
+                using (var editor = DocumentEditor.Open(path))
+                {
+                    editor.Producer = "PdfOxide Unit-test";
+                    editor.Save(outPath);
+                }
+
+                using var reopened = DocumentEditor.Open(outPath);
+                Assert.Equal("PdfOxide Unit-test", reopened.Producer);
             }
-            finally { File.Delete(path); }
+            finally
+            {
+                File.Delete(path);
+                if (File.Exists(outPath)) File.Delete(outPath);
+            }
         }
 
         [Fact]
-        public void CreationDate_Setter_DoesNotThrow()
+        public void Producer_Setter_PersistsToOutputBytes_Debug()
         {
             var path = CreateTestPdf("# Meta");
+            var outPath = Path.Combine(Path.GetTempPath(), $"pdfoxide-probe-{Guid.NewGuid():N}.pdf");
             try
             {
-                using var editor = DocumentEditor.Open(path);
-                editor.CreationDate = "D:20260421120000Z";  // no-op today
-                _ = editor.CreationDate;
+                using (var editor = DocumentEditor.Open(path))
+                {
+                    editor.Producer = "PROBE-STRING-X";
+                    Assert.True(editor.IsModified, "IsModified must be true after set_producer");
+                    editor.Save(outPath);
+                }
+                var saved = File.ReadAllBytes(outPath);
+                var ascii = System.Text.Encoding.ASCII.GetString(saved);
+                Assert.Contains("/Producer", ascii);
+                Assert.Contains("PROBE-STRING-X", ascii);
             }
-            finally { File.Delete(path); }
+            finally
+            {
+                File.Delete(path);
+                if (File.Exists(outPath)) File.Delete(outPath);
+            }
+        }
+
+        [Fact]
+        public void CreationDate_RoundTrips_AfterSave()
+        {
+            var path = CreateTestPdf("# Meta");
+            var outPath = Path.Combine(Path.GetTempPath(), $"pdfoxide-cd-{Guid.NewGuid():N}.pdf");
+            try
+            {
+                using (var editor = DocumentEditor.Open(path))
+                {
+                    editor.CreationDate = "D:20260421120000Z";
+                    editor.Save(outPath);
+                }
+
+                using var reopened = DocumentEditor.Open(outPath);
+                Assert.Equal("D:20260421120000Z", reopened.CreationDate);
+            }
+            finally
+            {
+                File.Delete(path);
+                if (File.Exists(outPath)) File.Delete(outPath);
+            }
         }
     }
 }

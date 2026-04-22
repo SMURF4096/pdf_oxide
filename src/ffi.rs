@@ -527,60 +527,103 @@ editor_set_string_field!(document_editor_set_author, set_author);
 editor_get_string_field!(document_editor_get_subject, subject);
 editor_set_string_field!(document_editor_set_subject, set_subject);
 
-// Producer - editor doesn't have a direct get_producer method, delegate through source
+/// Producer — reads from `/Info.Producer`. Returns a C string owned by
+/// the caller (must be freed with `free_string`); returns null if no
+/// producer is set.
 #[no_mangle]
 pub extern "C" fn document_editor_get_producer(
-    handle: *const DocumentEditor,
+    handle: *mut DocumentEditor,
     error_code: *mut i32,
 ) -> *mut c_char {
     if handle.is_null() {
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    // Producer is typically in document info dict - return empty for now
-    set_error(error_code, ERR_SUCCESS);
-    ptr::null_mut()
+    let editor = unsafe { &mut *handle };
+    match editor.producer() {
+        Ok(Some(s)) => {
+            set_error(error_code, ERR_SUCCESS);
+            to_c_string(&s)
+        },
+        Ok(None) => {
+            set_error(error_code, ERR_SUCCESS);
+            ptr::null_mut()
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            ptr::null_mut()
+        },
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn document_editor_set_producer(
     handle: *mut DocumentEditor,
-    _value: *const c_char,
+    value: *const c_char,
     error_code: *mut i32,
 ) -> i32 {
-    if handle.is_null() {
+    if handle.is_null() || value.is_null() {
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    // No direct set_producer in editor API
+    let s = match unsafe { CStr::from_ptr(value) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            set_error(error_code, ERR_INVALID_ARG);
+            return -1;
+        },
+    };
+    unsafe { &mut *handle }.set_producer(s);
     set_error(error_code, ERR_SUCCESS);
     0
 }
 
-// Creation date
+/// Creation date — reads from `/Info.CreationDate` as a raw PDF
+/// date string (e.g. `D:20260421120000Z`).
 #[no_mangle]
 pub extern "C" fn document_editor_get_creation_date(
-    handle: *const DocumentEditor,
+    handle: *mut DocumentEditor,
     error_code: *mut i32,
 ) -> *mut c_char {
     if handle.is_null() {
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    set_error(error_code, ERR_SUCCESS);
-    ptr::null_mut()
+    let editor = unsafe { &mut *handle };
+    match editor.creation_date() {
+        Ok(Some(s)) => {
+            set_error(error_code, ERR_SUCCESS);
+            to_c_string(&s)
+        },
+        Ok(None) => {
+            set_error(error_code, ERR_SUCCESS);
+            ptr::null_mut()
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            ptr::null_mut()
+        },
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn document_editor_set_creation_date(
     handle: *mut DocumentEditor,
-    _date_str: *const c_char,
+    date_str: *const c_char,
     error_code: *mut i32,
 ) -> i32 {
-    if handle.is_null() {
+    if handle.is_null() || date_str.is_null() {
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
+    let s = match unsafe { CStr::from_ptr(date_str) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            set_error(error_code, ERR_INVALID_ARG);
+            return -1;
+        },
+    };
+    unsafe { &mut *handle }.set_creation_date(s);
     set_error(error_code, ERR_SUCCESS);
     0
 }

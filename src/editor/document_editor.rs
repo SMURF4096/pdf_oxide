@@ -874,6 +874,43 @@ impl DocumentEditor {
         self.is_modified = true;
     }
 
+    /// Get the document producer (tool that produced the PDF).
+    pub fn producer(&mut self) -> Result<Option<String>> {
+        let info = self.get_info()?;
+        Ok(info.producer)
+    }
+
+    /// Set the document producer. Persists to `/Info.Producer` on save.
+    pub fn set_producer(&mut self, producer: impl Into<String>) {
+        let producer = producer.into();
+        if self.modified_info.is_none() {
+            self.modified_info = Some(self.get_info().unwrap_or_default());
+        }
+        if let Some(ref mut info) = self.modified_info {
+            info.producer = Some(producer);
+        }
+        self.is_modified = true;
+    }
+
+    /// Get the raw PDF creation-date string (e.g. `D:20260421120000Z`).
+    pub fn creation_date(&mut self) -> Result<Option<String>> {
+        let info = self.get_info()?;
+        Ok(info.creation_date)
+    }
+
+    /// Set the raw PDF creation-date string. Persists to
+    /// `/Info.CreationDate` on save.
+    pub fn set_creation_date(&mut self, date: impl Into<String>) {
+        let date = date.into();
+        if self.modified_info.is_none() {
+            self.modified_info = Some(self.get_info().unwrap_or_default());
+        }
+        if let Some(ref mut info) = self.modified_info {
+            info.creation_date = Some(date);
+        }
+        self.is_modified = true;
+    }
+
     // === Page operations ===
 
     /// Get the current page count (after modifications).
