@@ -60,11 +60,13 @@ namespace PdfOxide.Core
         }
 
         /// <summary>
-        /// Extract the signing certificate.
-        /// Currently unsupported — requires CMS parsing landing in Rust
-        /// core as a later slice of #72.
+        /// Extract the signing certificate from the embedded
+        /// PKCS#7/CMS SignedData blob. Parses the `/Contents` bytes
+        /// using the Rust-core CMS helper and returns a live
+        /// <see cref="Certificate"/> the caller owns and must dispose.
         /// </summary>
-        /// <exception cref="UnsupportedFeatureException">Always, until Rust-core CMS lands.</exception>
+        /// <exception cref="PdfException">The signature dictionary had no <c>/Contents</c> entry
+        /// or the bytes didn't parse as CMS SignedData.</exception>
         public Certificate GetCertificate()
         {
             ThrowIfDisposed();

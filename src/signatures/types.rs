@@ -337,6 +337,11 @@ pub struct SignatureInfo {
     pub valid_from: Option<String>,
     /// Certificate validity end
     pub valid_to: Option<String>,
+    /// Raw DER-encoded PKCS#7/CMS SignedData blob from `/Contents`,
+    /// retained so that later accessors (signer certificate, verify)
+    /// can parse it on demand. `None` when the signature dictionary
+    /// had no `/Contents` entry (blank signature field).
+    pub contents: Option<Vec<u8>>,
 }
 
 /// Result of signature verification.

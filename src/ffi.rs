@@ -2410,11 +2410,47 @@ pub extern "C" fn pdf_signature_get_signing_location(
 
 #[no_mangle]
 pub extern "C" fn pdf_signature_get_certificate(
-    _sig: *const std::ffi::c_void,
+    sig: *const std::ffi::c_void,
     error_code: *mut i32,
 ) -> *mut std::ffi::c_void {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+    #[cfg(feature = "signatures")]
+    {
+        if sig.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let info = unsafe { &*(sig as *const FfiSignatureInfo) };
+        let contents = match info.info.contents.as_ref() {
+            Some(c) => c,
+            None => {
+                set_error(error_code, ERR_INVALID_ARG);
+                return ptr::null_mut();
+            },
+        };
+        let cert_der = match crate::signatures::extract_signer_certificate_der(contents) {
+            Ok(d) => d,
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                return ptr::null_mut();
+            },
+        };
+        match crate::signatures::SigningCredentials::from_der(cert_der) {
+            Ok(creds) => {
+                set_error(error_code, ERR_SUCCESS);
+                Box::into_raw(Box::new(creds)) as *mut std::ffi::c_void
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = sig;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]

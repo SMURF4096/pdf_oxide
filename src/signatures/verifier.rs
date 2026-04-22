@@ -95,6 +95,13 @@ impl SignatureVerifier {
         // Check if signature covers whole document (ByteRange should be 4 elements)
         info.covers_whole_document = info.byte_range.len() == 4;
 
+        // Retain /Contents (the PKCS#7/CMS SignedData blob) so higher
+        // layers can parse the signer certificate / verify the
+        // signature without needing a second pass through the dict.
+        if let Some(Object::String(bytes)) = dict.get("Contents") {
+            info.contents = Some(bytes.clone());
+        }
+
         Ok(info)
     }
 

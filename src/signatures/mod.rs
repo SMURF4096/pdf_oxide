@@ -42,6 +42,8 @@
 //! Requires the `signatures` feature to be enabled.
 
 mod byterange;
+#[cfg(feature = "signatures")]
+mod cms;
 mod enumerate;
 mod pdf_date;
 mod signer;
@@ -53,6 +55,8 @@ mod types;
 mod verifier;
 
 pub use byterange::ByteRangeCalculator;
+#[cfg(feature = "signatures")]
+pub use cms::extract_signer_certificate_der;
 pub use enumerate::{count_signatures, enumerate_signatures};
 pub use pdf_date::parse_pdf_date_to_epoch;
 #[cfg(feature = "signatures")]
