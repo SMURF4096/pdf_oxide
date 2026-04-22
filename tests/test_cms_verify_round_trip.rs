@@ -12,8 +12,7 @@
 use pdf_oxide::signatures::{verify_signer, verify_signer_detached, SignerVerify};
 
 const VALID: &[u8] = include_bytes!("fixtures/signatures/rsa_sha256_round_trip.cms");
-const TAMPERED: &[u8] =
-    include_bytes!("fixtures/signatures/rsa_sha256_round_trip_tampered.cms");
+const TAMPERED: &[u8] = include_bytes!("fixtures/signatures/rsa_sha256_round_trip_tampered.cms");
 
 // Detached-signature pair: `DETACHED` is the CMS blob, `DETACHED_CONTENT`
 // is the raw bytes that were fed to `openssl cms -sign -binary`. A
@@ -77,9 +76,7 @@ fn tampered_cms_blob_is_invalid() {
     // (structural byte flipped) — both are acceptable here.
     match verify_signer(TAMPERED) {
         Ok(SignerVerify::Invalid) => {},
-        Ok(other) => panic!(
-            "tampered blob must not verify; got {other:?}"
-        ),
+        Ok(other) => panic!("tampered blob must not verify; got {other:?}"),
         Err(_) => {
             // DER parse error is also a legitimate rejection for a
             // blob whose flipped byte corrupted the ASN.1 framing.

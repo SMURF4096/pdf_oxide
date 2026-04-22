@@ -845,15 +845,8 @@ fn wasm_pdf_document_move_page_preserves_page_count() {
 
     // Move the first page to the end. No error = plumbing works.
     doc.move_page(0, 2).unwrap();
-    assert_eq!(
-        doc.page_count().unwrap(),
-        3,
-        "move_page must not change the page count",
-    );
+    assert_eq!(doc.page_count().unwrap(), 3, "move_page must not change the page count",);
 
     // Out-of-range move must surface as an Err, not panic.
-    assert!(
-        doc.move_page(99, 0).is_err(),
-        "out-of-range from_index should return Err",
-    );
+    assert!(doc.move_page(99, 0).is_err(), "out-of-range from_index should return Err",);
 }

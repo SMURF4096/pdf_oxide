@@ -458,6 +458,15 @@ jobs:
         working-directory: js
         run: npx tsc --noEmit
 
+      # Compile TypeScript to lib/ — publint / arethetypeswrong need
+      # the actual .js + .d.ts files that package.json's `main` /
+      # `types` / `exports` entries point at. `--noEmit` above only
+      # catches type errors, it doesn't write the output tree.
+      - name: TypeScript compile to lib/
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: js
+        run: npx tsc
+
       # Biome v2 replaces eslint + prettier with a single Rust-core tool.
       - name: Biome lint+format check
         if: matrix.os == 'ubuntu-latest'
@@ -513,8 +522,12 @@ jobs:
         with:
           key: csharp-${{ matrix.os }}
 
+      # C# binding surface exercises barcodes + rendering + signatures
+      # + the TSA HTTP client. Build the native lib with the features
+      # those tests assume so the FFI stubs don't fall through to
+      # UNSUPPORTED at runtime.
       - name: Build library (produces cdylib + rlib)
-        run: cargo build --release --lib
+        run: cargo build --release --lib --features barcodes,rendering,signatures,tsa-client,system-fonts
 
       - name: Build C# library
         working-directory: csharp/PdfOxide

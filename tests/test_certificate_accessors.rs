@@ -82,7 +82,10 @@ fn validity_returns_sensible_unix_timestamps() {
     let creds = SigningCredentials::from_der(test_certificate_der()).unwrap();
     let (not_before, not_after) = creds.validity().expect("validity");
     assert!(not_before > 0);
-    assert!(not_after > not_before, "not_after {not_after} must be > not_before {not_before}");
+    assert!(
+        not_after > not_before,
+        "not_after {not_after} must be > not_before {not_before}"
+    );
 }
 
 #[test]

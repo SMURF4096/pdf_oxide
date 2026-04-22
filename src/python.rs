@@ -149,8 +149,9 @@ impl PyPdfDocument {
     /// Mirrors Rust `signatures::enumerate_signatures` and the C#
     /// `PdfDocument.Signatures` surface.
     fn signatures(&mut self) -> PyResult<Vec<PySignature>> {
-        let list = crate::signatures::enumerate_signatures(&mut self.inner)
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to enumerate signatures: {}", e)))?;
+        let list = crate::signatures::enumerate_signatures(&mut self.inner).map_err(|e| {
+            PyRuntimeError::new_err(format!("Failed to enumerate signatures: {}", e))
+        })?;
         Ok(list.into_iter().map(|info| PySignature { info }).collect())
     }
 
@@ -361,15 +362,7 @@ impl PyPdfDocument {
         }
         #[cfg(not(feature = "rendering"))]
         {
-            let _ = (
-                page,
-                dpi,
-                format,
-                background,
-                transparent,
-                render_annotations,
-                jpeg_quality,
-            );
+            let _ = (page, dpi, format, background, transparent, render_annotations, jpeg_quality);
             Err(PyRuntimeError::new_err("Rendering feature not enabled."))
         }
     }
@@ -5087,15 +5080,7 @@ impl PyTsaClient {
         }
         #[cfg(not(feature = "tsa-client"))]
         {
-            let _ = (
-                url,
-                username,
-                password,
-                timeout_seconds,
-                hash_algorithm,
-                use_nonce,
-                cert_req,
-            );
+            let _ = (url, username, password, timeout_seconds, hash_algorithm, use_nonce, cert_req);
             Err(PyNotImplementedError::new_err(
                 "pdf_oxide was built without the `tsa-client` feature",
             ))
@@ -5306,12 +5291,10 @@ impl PySignature {
         match crate::signatures::verify_signer(contents) {
             Ok(crate::signatures::SignerVerify::Valid) => Ok(true),
             Ok(crate::signatures::SignerVerify::Invalid) => Ok(false),
-            Ok(crate::signatures::SignerVerify::Unknown) => {
-                Err(PyNotImplementedError::new_err(
-                    "Signature.verify(): signer uses RSA-PSS, ECDSA, an unknown \
+            Ok(crate::signatures::SignerVerify::Unknown) => Err(PyNotImplementedError::new_err(
+                "Signature.verify(): signer uses RSA-PSS, ECDSA, an unknown \
                      digest OID, or the CMS blob lacks signed_attrs",
-                ))
-            },
+            )),
             Err(e) => Err(PyValueError::new_err(format!(
                 "Signature.verify(): failed to parse /Contents as CMS: {e}"
             ))),
@@ -5357,9 +5340,7 @@ impl PySignature {
                 "Signature.verify_detached(): signer uses RSA-PSS, ECDSA, an \
                  unknown digest, or the CMS blob lacks signed_attrs / messageDigest",
             )),
-            Err(e) => Err(PyValueError::new_err(format!(
-                "Signature.verify_detached(): {e}"
-            ))),
+            Err(e) => Err(PyValueError::new_err(format!("Signature.verify_detached(): {e}"))),
         }
     }
 

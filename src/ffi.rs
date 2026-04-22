@@ -2719,7 +2719,11 @@ pub extern "C" fn pdf_certificate_is_valid(
         match creds.is_valid() {
             Ok(v) => {
                 set_error(error_code, ERR_SUCCESS);
-                if v { 1 } else { 0 }
+                if v {
+                    1
+                } else {
+                    0
+                }
             },
             Err(e) => {
                 set_error(error_code, classify_error(&e));
@@ -2749,9 +2753,7 @@ pub extern "C" fn pdf_certificate_free(handle: *mut std::ffi::c_void) {
     {
         if !handle.is_null() {
             unsafe {
-                drop(Box::from_raw(
-                    handle as *mut crate::signatures::SigningCredentials,
-                ));
+                drop(Box::from_raw(handle as *mut crate::signatures::SigningCredentials));
             }
         }
     }
@@ -3261,16 +3263,26 @@ pub extern "C" fn pdf_tsa_client_create(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let url_str = unsafe { CStr::from_ptr(url) }.to_string_lossy().into_owned();
+        let url_str = unsafe { CStr::from_ptr(url) }
+            .to_string_lossy()
+            .into_owned();
         let user_opt = if username.is_null() {
             None
         } else {
-            Some(unsafe { CStr::from_ptr(username) }.to_string_lossy().into_owned())
+            Some(
+                unsafe { CStr::from_ptr(username) }
+                    .to_string_lossy()
+                    .into_owned(),
+            )
         };
         let pw_opt = if password.is_null() {
             None
         } else {
-            Some(unsafe { CStr::from_ptr(password) }.to_string_lossy().into_owned())
+            Some(
+                unsafe { CStr::from_ptr(password) }
+                    .to_string_lossy()
+                    .into_owned(),
+            )
         };
         let algo = hash_algo_from_i32(hash_algo);
         let cfg = crate::signatures::TsaClientConfig {
@@ -3457,10 +3469,7 @@ pub extern "C" fn pdf_timestamp_get_token(
 }
 
 #[no_mangle]
-pub extern "C" fn pdf_timestamp_get_time(
-    ts: *const std::ffi::c_void,
-    error_code: *mut i32,
-) -> i64 {
+pub extern "C" fn pdf_timestamp_get_time(ts: *const std::ffi::c_void, error_code: *mut i32) -> i64 {
     #[cfg(feature = "signatures")]
     {
         if ts.is_null() {

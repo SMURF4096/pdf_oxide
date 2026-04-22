@@ -83,7 +83,8 @@ impl TsaClient {
         hash: &[u8],
         hash_algo: HashAlgorithm,
     ) -> Result<Timestamp> {
-        let req_bytes = encode_request(hash, hash_algo, self.config.use_nonce, self.config.cert_req)?;
+        let req_bytes =
+            encode_request(hash, hash_algo, self.config.use_nonce, self.config.cert_req)?;
         let resp_bytes = self.post(&req_bytes)?;
         let resp = TimeStampResp::from_der(&resp_bytes).map_err(|e| {
             Error::InvalidPdf(format!("TSA response is not a valid TimeStampResp: {e}"))
@@ -108,9 +109,9 @@ impl TsaClient {
         let token = resp.time_stamp_token.ok_or_else(|| {
             Error::InvalidPdf("TSA granted request but returned no timeStampToken".into())
         })?;
-        let token_bytes = token.to_der().map_err(|e| {
-            Error::InvalidPdf(format!("failed to re-encode TSA token: {e}"))
-        })?;
+        let token_bytes = token
+            .to_der()
+            .map_err(|e| Error::InvalidPdf(format!("failed to re-encode TSA token: {e}")))?;
         Timestamp::from_der(&token_bytes)
     }
 
@@ -130,8 +131,8 @@ impl TsaClient {
             .header("Accept", "application/timestamp-reply");
         if let (Some(u), Some(p)) = (&self.config.username, &self.config.password) {
             use base64::Engine as _;
-            let creds = base64::engine::general_purpose::STANDARD
-                .encode(format!("{u}:{p}").as_bytes());
+            let creds =
+                base64::engine::general_purpose::STANDARD.encode(format!("{u}:{p}").as_bytes());
             req = req.header("Authorization", &format!("Basic {creds}"));
         }
         let mut resp = req
@@ -167,7 +168,11 @@ fn encode_request(
     };
     let hashed_message = OctetString::new(hash)
         .map_err(|e| Error::InvalidPdf(format!("invalid digest bytes: {e}")))?;
-    let nonce = if use_nonce { Some(random_nonce()) } else { None };
+    let nonce = if use_nonce {
+        Some(random_nonce())
+    } else {
+        None
+    };
     let req = TimeStampReq {
         version: TspVersion::V1,
         message_imprint: MessageImprint {
@@ -213,10 +218,7 @@ mod tests {
         let bytes = encode_request(&hash, HashAlgorithm::Sha256, true, true).unwrap();
         let req = TimeStampReq::from_der(&bytes).unwrap();
         assert_eq!(req.version, TspVersion::V1);
-        assert_eq!(
-            req.message_imprint.hash_algorithm.oid,
-            der::oid::db::rfc5912::ID_SHA_256
-        );
+        assert_eq!(req.message_imprint.hash_algorithm.oid, der::oid::db::rfc5912::ID_SHA_256);
         assert_eq!(req.message_imprint.hashed_message.as_bytes(), hash);
         assert!(req.nonce.is_some());
         assert!(req.cert_req);
@@ -225,10 +227,7 @@ mod tests {
     #[test]
     fn encode_rejects_unknown_hash() {
         let err = encode_request(&[0; 32], HashAlgorithm::Unknown, false, false).unwrap_err();
-        assert!(
-            matches!(err, Error::InvalidPdf(_)),
-            "expected InvalidPdf, got {err:?}"
-        );
+        assert!(matches!(err, Error::InvalidPdf(_)), "expected InvalidPdf, got {err:?}");
     }
 
     #[test]

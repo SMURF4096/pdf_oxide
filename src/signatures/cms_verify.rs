@@ -74,17 +74,13 @@ pub enum SignerVerify {
 // id-messageDigest (RFC 5652 §11.2) — the signed attribute that
 // carries hash(content). Local to this module because no other
 // consumer looks at signed attributes by OID.
-const OID_MESSAGE_DIGEST: ObjectIdentifier =
-    ObjectIdentifier::new_unwrap("1.2.840.113549.1.9.4");
+const OID_MESSAGE_DIGEST: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.9.4");
 
 /// Find the certificate whose issuer+serial (or SKI) matches the
 /// `SignerInfo.sid`. PDF signatures usually embed exactly one cert and
 /// use IssuerAndSerialNumber; SubjectKeyIdentifier is rarer but
 /// supported for parity.
-fn find_signer_certificate<'a>(
-    sd: &'a SignedData,
-    signer: &SignerInfo,
-) -> Option<&'a Certificate> {
+fn find_signer_certificate<'a>(sd: &'a SignedData, signer: &SignerInfo) -> Option<&'a Certificate> {
     let certs = sd.certificates.as_ref()?;
     for choice in certs.0.iter() {
         let CertificateChoices::Certificate(cert) = choice else {
@@ -122,12 +118,12 @@ fn parse_signed_data(contents: &[u8]) -> Result<SignedData> {
     let ci = ContentInfo::from_der(contents).map_err(|e| {
         Error::InvalidPdf(format!("signature /Contents is not valid CMS ContentInfo: {e}"))
     })?;
-    let sd_bytes = ci.content.to_der().map_err(|e| {
-        Error::InvalidPdf(format!("failed to re-encode ContentInfo content: {e}"))
-    })?;
-    SignedData::from_der(&sd_bytes).map_err(|e| {
-        Error::InvalidPdf(format!("CMS content is not valid SignedData: {e}"))
-    })
+    let sd_bytes = ci
+        .content
+        .to_der()
+        .map_err(|e| Error::InvalidPdf(format!("failed to re-encode ContentInfo content: {e}")))?;
+    SignedData::from_der(&sd_bytes)
+        .map_err(|e| Error::InvalidPdf(format!("CMS content is not valid SignedData: {e}")))
 }
 
 /// Run the RSA-PKCS#1 v1.5 signer-attributes crypto check. Returns
@@ -152,9 +148,9 @@ fn run_signer_crypto(sd: &SignedData) -> Result<(SignerVerify, Option<ObjectIden
     let digest_oid = signer.digest_alg.oid;
     let Some(hash) = hash_with_oid(
         digest_oid,
-        &signed_attrs.to_der().map_err(|e| {
-            Error::InvalidPdf(format!("failed to re-encode signed_attrs: {e}"))
-        })?,
+        &signed_attrs
+            .to_der()
+            .map_err(|e| Error::InvalidPdf(format!("failed to re-encode signed_attrs: {e}")))?,
     ) else {
         return Ok((SignerVerify::Unknown, Some(digest_oid)));
     };
@@ -280,7 +276,11 @@ pub fn verify_signer_detached(contents: &[u8], content: &[u8]) -> Result<SignerV
     // Constant-time equality isn't strictly necessary for a non-secret
     // hash comparison, but it costs nothing to use it.
     if actual.len() == expected.len()
-        && actual.iter().zip(expected.iter()).fold(0u8, |acc, (a, b)| acc | (a ^ b)) == 0
+        && actual
+            .iter()
+            .zip(expected.iter())
+            .fold(0u8, |acc, (a, b)| acc | (a ^ b))
+            == 0
     {
         Ok(SignerVerify::Valid)
     } else {

@@ -205,7 +205,10 @@ impl WasmPdfDocument {
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
         let list = crate::signatures::enumerate_signatures(&mut doc)
             .map_err(|e| JsValue::from_str(&format!("Failed to enumerate signatures: {}", e)))?;
-        Ok(list.into_iter().map(|info| WasmSignature { info }).collect())
+        Ok(list
+            .into_iter()
+            .map(|info| WasmSignature { info })
+            .collect())
     }
 
     /// Get the PDF version as [major, minor].
@@ -1380,9 +1383,7 @@ impl WasmSignature {
     #[wasm_bindgen(js_name = "verify")]
     pub fn verify(&self) -> Result<bool, JsValue> {
         let Some(contents) = self.info.contents() else {
-            return Err(JsValue::from_str(
-                "Signature has no /Contents blob — nothing to verify",
-            ));
+            return Err(JsValue::from_str("Signature has no /Contents blob — nothing to verify"));
         };
         match crate::signatures::verify_signer(contents) {
             Ok(crate::signatures::SignerVerify::Valid) => Ok(true),
@@ -1412,9 +1413,7 @@ impl WasmSignature {
     #[wasm_bindgen(js_name = "verifyDetached")]
     pub fn verify_detached(&self, pdf_data: &[u8]) -> Result<bool, JsValue> {
         let Some(contents) = self.info.contents() else {
-            return Err(JsValue::from_str(
-                "Signature has no /Contents blob — nothing to verify",
-            ));
+            return Err(JsValue::from_str("Signature has no /Contents blob — nothing to verify"));
         };
         let br = self.info.byte_range();
         if br.len() != 4 {
@@ -1425,9 +1424,7 @@ impl WasmSignature {
         let byte_range: [i64; 4] = [br[0], br[1], br[2], br[3]];
         let signed_bytes =
             crate::signatures::ByteRangeCalculator::extract_signed_bytes(pdf_data, &byte_range)
-                .map_err(|e| {
-                    JsValue::from_str(&format!("Failed to extract signed bytes: {e}"))
-                })?;
+                .map_err(|e| JsValue::from_str(&format!("Failed to extract signed bytes: {e}")))?;
         match crate::signatures::verify_signer_detached(contents, &signed_bytes) {
             Ok(crate::signatures::SignerVerify::Valid) => Ok(true),
             Ok(crate::signatures::SignerVerify::Invalid) => Ok(false),
@@ -1435,9 +1432,7 @@ impl WasmSignature {
                 "Signature.verifyDetached(): signer uses RSA-PSS, ECDSA, an \
                  unknown digest, or the CMS blob lacks signed_attrs / messageDigest",
             )),
-            Err(e) => Err(JsValue::from_str(&format!(
-                "Signature.verifyDetached(): {e}"
-            ))),
+            Err(e) => Err(JsValue::from_str(&format!("Signature.verifyDetached(): {e}"))),
         }
     }
 }

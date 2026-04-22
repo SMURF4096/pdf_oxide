@@ -170,10 +170,7 @@ mod tests {
     #[test]
     fn timestamp_rejects_garbage() {
         let err = Timestamp::from_der(b"not a timestamp").unwrap_err();
-        assert!(
-            matches!(err, Error::InvalidPdf(_)),
-            "expected InvalidPdf, got {err:?}"
-        );
+        assert!(matches!(err, Error::InvalidPdf(_)), "expected InvalidPdf, got {err:?}");
     }
 
     #[test]

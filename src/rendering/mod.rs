@@ -131,9 +131,7 @@ pub fn render_page_region(
 
     let (crop_x_pt, crop_y_pt, crop_w_pt, crop_h_pt) = crop_rect_pt;
     if crop_w_pt <= 0.0 || crop_h_pt <= 0.0 {
-        return Err(crate::Error::InvalidPdf(format!(
-            "invalid crop rect: {crop_rect_pt:?}"
-        )));
+        return Err(crate::Error::InvalidPdf(format!("invalid crop rect: {crop_rect_pt:?}")));
     }
 
     let media = doc.get_page_media_box(page_num)?;
@@ -196,9 +194,7 @@ pub fn render_page_fit(
     options: &RenderOptions,
 ) -> Result<RenderedImage> {
     if fit_w_px == 0 || fit_h_px == 0 {
-        return Err(crate::Error::InvalidPdf(
-            "fit width/height must be positive".into(),
-        ));
+        return Err(crate::Error::InvalidPdf("fit width/height must be positive".into()));
     }
     let media = doc.get_page_media_box(page_num)?;
     let page_w_pt = (media.2 - media.0).max(1.0);

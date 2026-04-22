@@ -119,19 +119,13 @@ mod tests {
     #[test]
     fn positive_offset_converts_to_utc() {
         // 14:00 +02 = 12:00 UTC.
-        assert_eq!(
-            parse_pdf_date_to_epoch("D:20260421140000+02'00'"),
-            Some(APR21_NOON_UTC)
-        );
+        assert_eq!(parse_pdf_date_to_epoch("D:20260421140000+02'00'"), Some(APR21_NOON_UTC));
     }
 
     #[test]
     fn negative_offset_converts_to_utc() {
         // 08:00 -04 = 12:00 UTC.
-        assert_eq!(
-            parse_pdf_date_to_epoch("D:20260421080000-04'00'"),
-            Some(APR21_NOON_UTC)
-        );
+        assert_eq!(parse_pdf_date_to_epoch("D:20260421080000-04'00'"), Some(APR21_NOON_UTC));
     }
 
     #[test]

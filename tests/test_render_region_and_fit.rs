@@ -36,12 +36,7 @@ fn render_page_region_returns_clipped_png() {
 #[test]
 fn render_page_region_rejects_zero_rect() {
     let mut doc = setup();
-    let err = render_page_region(
-        &mut doc,
-        0,
-        (0.0, 0.0, 0.0, 0.0),
-        &RenderOptions::with_dpi(72),
-    );
+    let err = render_page_region(&mut doc, 0, (0.0, 0.0, 0.0, 0.0), &RenderOptions::with_dpi(72));
     assert!(err.is_err(), "zero-area rect should fail");
 }
 
@@ -58,10 +53,6 @@ fn render_page_fit_respects_box() {
 #[test]
 fn render_page_fit_rejects_zero_box() {
     let mut doc = setup();
-    assert!(
-        render_page_fit(&mut doc, 0, 0, 100, &RenderOptions::with_dpi(72)).is_err()
-    );
-    assert!(
-        render_page_fit(&mut doc, 0, 100, 0, &RenderOptions::with_dpi(72)).is_err()
-    );
+    assert!(render_page_fit(&mut doc, 0, 0, 100, &RenderOptions::with_dpi(72)).is_err());
+    assert!(render_page_fit(&mut doc, 0, 100, 0, &RenderOptions::with_dpi(72)).is_err());
 }

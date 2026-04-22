@@ -52,8 +52,7 @@ fn multiply_overlay_preserves_intermediate_shades() {
     let img = render_page(&mut doc, 0, &opts).expect("render page 0");
 
     let cursor = std::io::Cursor::new(&img.data);
-    let decoded =
-        image::load(cursor, image::ImageFormat::Png).expect("decode rendered PNG");
+    let decoded = image::load(cursor, image::ImageFormat::Png).expect("decode rendered PNG");
     let rgba = decoded.to_rgba8();
 
     // Scan the top 20 % of the page — on this fixture the overlay

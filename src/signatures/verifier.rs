@@ -247,7 +247,6 @@ impl Default for SignatureVerifier {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

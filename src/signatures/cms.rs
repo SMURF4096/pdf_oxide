@@ -31,12 +31,12 @@ pub fn extract_signer_certificate_der(contents: &[u8]) -> Result<Vec<u8>> {
         Error::InvalidPdf(format!("signature /Contents is not valid CMS ContentInfo: {e}"))
     })?;
 
-    let sd_bytes = ci.content.to_der().map_err(|e| {
-        Error::InvalidPdf(format!("failed to re-encode ContentInfo content: {e}"))
-    })?;
-    let sd = SignedData::from_der(&sd_bytes).map_err(|e| {
-        Error::InvalidPdf(format!("CMS content is not valid SignedData: {e}"))
-    })?;
+    let sd_bytes = ci
+        .content
+        .to_der()
+        .map_err(|e| Error::InvalidPdf(format!("failed to re-encode ContentInfo content: {e}")))?;
+    let sd = SignedData::from_der(&sd_bytes)
+        .map_err(|e| Error::InvalidPdf(format!("CMS content is not valid SignedData: {e}")))?;
 
     let certs = sd
         .certificates

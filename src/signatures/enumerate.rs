@@ -115,10 +115,7 @@ mod tests {
     fn sig_dict(signer: &str, reason: &str, when: &str) -> Object {
         let mut d = HashMap::new();
         d.insert("Type".to_string(), Object::Name("Sig".to_string()));
-        d.insert(
-            "SubFilter".to_string(),
-            Object::Name("adbe.pkcs7.detached".to_string()),
-        );
+        d.insert("SubFilter".to_string(), Object::Name("adbe.pkcs7.detached".to_string()));
         d.insert("Name".to_string(), Object::String(signer.as_bytes().to_vec()));
         d.insert("Reason".to_string(), Object::String(reason.as_bytes().to_vec()));
         d.insert("M".to_string(), Object::String(when.as_bytes().to_vec()));
