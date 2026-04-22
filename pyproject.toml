@@ -182,5 +182,29 @@ lint = { composite = [
     "ruff check . --fix",
     "ty check .",
 ] }
-# Generate .pyi from Rust (Rylai). Use: pdm run stub_gen
-stub_gen = "uvx rylai -o python/pdf_oxide/"
+# Generate .pyi from Rust (Rylai) and modernise the output so it
+# type-checks clean against basedpyright (#44). Use: `pdm run stub_gen`.
+stub_gen = { composite = [
+    "uvx rylai -o python/pdf_oxide/",
+    "python scripts/modernize_stubs.py python/pdf_oxide/pdf_oxide.pyi",
+] }
+
+# basedpyright — stricter pyright fork (SOTA 2026 gate).
+# The auto-generated pdf_oxide.pyi is produced by rylai upstream and
+# unavoidably types some pyo3 surfaces with `Any` (e.g.
+# context-manager __enter__/__exit__ objects). We silence that subset
+# of rules specifically for the generated stub — hand-written .py
+# code in this package still gets the default strictness.
+[tool.basedpyright]
+include = ["python/pdf_oxide"]
+# PEP-585 / PEP-604 modernisation is handled by scripts/modernize_stubs.py;
+# leave reportDeprecated at warn for whatever we forgot to rewrite.
+reportAny = "none"
+reportUnknownArgumentType = "none"
+reportUnknownMemberType = "none"
+reportUnknownParameterType = "none"
+reportUnknownVariableType = "none"
+reportMissingParameterType = "none"
+reportMissingTypeArgument = "warning"
+reportImplicitOverride = "none"
+reportUnannotatedClassAttribute = "none"

@@ -35,7 +35,6 @@ from __future__ import annotations
 import asyncio
 import functools
 from concurrent.futures import ThreadPoolExecutor
-from typing import Optional
 
 from .pdf_oxide import OfficeConverter, Pdf, PdfDocument
 
@@ -121,7 +120,7 @@ class AsyncPdfDocument:
     # -- Construction (hand-written) ----------------------------------------
 
     @staticmethod
-    async def open(path: str, password: Optional[str] = None) -> "AsyncPdfDocument":
+    async def open(path: str, password: str | None = None) -> "AsyncPdfDocument":
         """Open a PDF file.  The document is created on the background thread."""
         loop = asyncio.get_running_loop()
         inst = AsyncPdfDocument.__new__(AsyncPdfDocument)
@@ -134,7 +133,7 @@ class AsyncPdfDocument:
         return inst
 
     @staticmethod
-    async def from_bytes(data: bytes, password: Optional[str] = None) -> "AsyncPdfDocument":
+    async def from_bytes(data: bytes, password: str | None = None) -> "AsyncPdfDocument":
         """Open a PDF from bytes."""
         loop = asyncio.get_running_loop()
         inst = AsyncPdfDocument.__new__(AsyncPdfDocument)
