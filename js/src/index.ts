@@ -255,6 +255,26 @@ function wrapNativeClass(nativeClass: any, asyncMethods: string[] = []): any {
 // lifecycle wrapping the same FFI surface.
 // ---------------------------------------------------------------------------
 
+/**
+ * Options mirroring Rust's `RenderOptions` struct
+ * (see `src/rendering/page_renderer.rs:41`). Used by
+ * {@link PdfDocumentImpl.renderPageWithOptions}.
+ */
+export interface RenderOptions {
+  /** Resolution (default 150). */
+  dpi?: number;
+  /** Output format (default PNG). */
+  format?: 'png' | 'jpeg';
+  /** RGBA 0..=1 tuple (default opaque white). */
+  background?: [number, number, number, number];
+  /** Drop background fill entirely (overrides `background`). */
+  transparentBackground?: boolean;
+  /** Render annotation layer (default true). */
+  renderAnnotations?: boolean;
+  /** JPEG quality 1..=100 (default 85). */
+  jpegQuality?: number;
+}
+
 class PdfDocumentImpl {
   private _handle: any;
   private _closed = false;
@@ -406,6 +426,57 @@ class PdfDocumentImpl {
   ocrExtractText(pageIndex: number, engineHandle: any): any {
     this.ensureOpen();
     return native.ocrExtractText(this._handle, pageIndex, engineHandle);
+  }
+
+  /**
+   * Render a page with the full Rust `RenderOptions` surface
+   * (DPI, format, RGBA background, transparency, annotation toggle,
+   * JPEG quality). Closes #384 gap L. Returns the image bytes.
+   */
+  renderPageWithOptions(pageIndex: number, options: RenderOptions = {}): Uint8Array {
+    this.ensureOpen();
+    const dpi = options.dpi ?? 150;
+    if (dpi <= 0) throw new RangeError(`dpi must be > 0, got ${dpi}`);
+    const format = options.format === 'jpeg' ? 1 : 0;
+    const quality = options.jpegQuality ?? 85;
+    if (quality < 1 || quality > 100) {
+      throw new RangeError(`jpegQuality must be in 1..=100, got ${quality}`);
+    }
+    const bg = options.background ?? [1, 1, 1, 1];
+    const renderAnnotations = options.renderAnnotations === false ? 0 : 1;
+    const transparent = options.transparentBackground ? 1 : 0;
+
+    const imgHandle = native.renderPageWithOptions(
+      this._handle,
+      pageIndex,
+      dpi,
+      format,
+      bg[0],
+      bg[1],
+      bg[2],
+      bg[3],
+      transparent,
+      renderAnnotations,
+      quality
+    );
+    try {
+      const buf = native.pdfGetRenderedImageData(imgHandle);
+      return new Uint8Array(buf);
+    } finally {
+      if (native.freeRenderedImage) {
+        native.freeRenderedImage(imgHandle);
+      }
+    }
+  }
+
+  /**
+   * Estimate render time (milliseconds) for a page at a given DPI.
+   * Thin wrapper around the existing `estimateRenderTime` N-API
+   * export — exposed in TS for the first time as part of gap L.
+   */
+  estimateRenderTime(pageIndex: number, dpi = 150): number {
+    this.ensureOpen();
+    return native.estimateRenderTime(this._handle, pageIndex, dpi);
   }
 
   page(index: number): Page {

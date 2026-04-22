@@ -104,6 +104,13 @@ extern "C" {
   // Rendering Operations (real Rust FFI signatures)
   extern void* pdf_render_page(void* document, int32_t page_index, int32_t format, int* error_code);
   extern void* pdf_render_page_thumbnail(void* document, int32_t page_index, int32_t size, int32_t format, int* error_code);
+  // #384 gap L: full RenderOptions surface (dpi, bg, annotations, jpeg quality).
+  extern void* pdf_render_page_with_options(
+    void* document, int32_t page_index,
+    int32_t dpi, int32_t format,
+    float bg_r, float bg_g, float bg_b, float bg_a,
+    int32_t transparent_background, int32_t render_annotations, int32_t jpeg_quality,
+    int* error_code);
   extern int pdf_get_rendered_image_width(const void* image, int* error_code);
   extern int pdf_get_rendered_image_height(const void* image, int* error_code);
   extern void pdf_rendered_image_free(void* image);
@@ -832,6 +839,42 @@ Napi::Value RenderPage(const Napi::CallbackInfo& info) {
     throw Napi::Error::New(env, "Failed to render page: " + getErrorMessage(errorCode));
   }
 
+  return Napi::External<void>::New(env, image);
+}
+
+// #384 gap L: RenderPageWithOptions exposes the full Rust `RenderOptions`
+// surface (dpi, format, background RGBA, transparent background toggle,
+// render_annotations, jpeg_quality). TS wrapper in src/index.ts turns
+// the options object into these 11 positional args.
+Napi::Value RenderPageWithOptions(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 11) {
+    throw Napi::TypeError::New(
+      env,
+      "invalid arguments: (document, pageIndex, dpi, format, bgR, bgG, bgB, bgA, transparent, renderAnnotations, jpegQuality)");
+  }
+  void* document = info[0].As<Napi::External<void>>().Data();
+  int32_t pageIndex   = info[1].As<Napi::Number>().Int32Value();
+  int32_t dpi         = info[2].As<Napi::Number>().Int32Value();
+  int32_t format      = info[3].As<Napi::Number>().Int32Value();
+  float bgR           = info[4].As<Napi::Number>().FloatValue();
+  float bgG           = info[5].As<Napi::Number>().FloatValue();
+  float bgB           = info[6].As<Napi::Number>().FloatValue();
+  float bgA           = info[7].As<Napi::Number>().FloatValue();
+  int32_t transparent = info[8].As<Napi::Number>().Int32Value();
+  int32_t renderAnns  = info[9].As<Napi::Number>().Int32Value();
+  int32_t jpegQuality = info[10].As<Napi::Number>().Int32Value();
+
+  int errorCode = 0;
+  void* image = pdf_render_page_with_options(
+    document, pageIndex,
+    dpi, format,
+    bgR, bgG, bgB, bgA,
+    transparent, renderAnns, jpegQuality,
+    &errorCode);
+  if (errorCode != 0 || !image) {
+    throw Napi::Error::New(env, "renderPageWithOptions failed: " + getErrorMessage(errorCode));
+  }
   return Napi::External<void>::New(env, image);
 }
 
@@ -2922,6 +2965,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
 
   // Rendering Operations
   exports.Set("renderPage", Napi::Function::New(env, RenderPage));
+  exports.Set("renderPageWithOptions", Napi::Function::New(env, RenderPageWithOptions));
   exports.Set("renderThumbnail", Napi::Function::New(env, RenderThumbnail));
   exports.Set("freeRenderedImage", Napi::Function::New(env, FreeRenderedImage));
 
