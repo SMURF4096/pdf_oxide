@@ -2451,6 +2451,89 @@ pub extern "C" fn pdf_render_page(
     }
 }
 
+/// Render a page with the full RenderOptions surface exposed to C callers.
+///
+/// All four background channels are 0.0..=1.0; set `transparent_background`
+/// to 1 to drop the fill entirely (matches Rust's
+/// `RenderOptions { background: None, .. }`).
+///
+/// Mirrors the Python surface added in gap O and the C# RenderOptions class
+/// added in gap B. Rust implementation is the single source of truth.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "C" fn pdf_render_page_with_options(
+    doc: *mut PdfDocument,
+    page_index: i32,
+    dpi: i32,
+    format: i32,
+    bg_r: f32,
+    bg_g: f32,
+    bg_b: f32,
+    bg_a: f32,
+    transparent_background: i32,
+    render_annotations: i32,
+    jpeg_quality: i32,
+    error_code: *mut i32,
+) -> *mut FfiRenderedImage {
+    #[cfg(feature = "rendering")]
+    {
+        if doc.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        if dpi <= 0 || !(1..=100).contains(&jpeg_quality) {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let d = unsafe { &mut *doc };
+        let fmt = if format == 1 {
+            RenderImageFormat::Jpeg
+        } else {
+            RenderImageFormat::Png
+        };
+        let background = if transparent_background != 0 {
+            None
+        } else {
+            Some([bg_r, bg_g, bg_b, bg_a])
+        };
+        let opts = RustRenderOptions {
+            dpi: dpi as u32,
+            format: fmt,
+            background,
+            render_annotations: render_annotations != 0,
+            jpeg_quality: jpeg_quality as u8,
+        };
+        match rendering::render_page(d, page_index as usize, &opts) {
+            Ok(img) => {
+                set_error(error_code, ERR_SUCCESS);
+                Box::into_raw(Box::new(FfiRenderedImage { inner: img }))
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
+        }
+    }
+    #[cfg(not(feature = "rendering"))]
+    {
+        let _ = (
+            doc,
+            page_index,
+            dpi,
+            format,
+            bg_r,
+            bg_g,
+            bg_b,
+            bg_a,
+            transparent_background,
+            render_annotations,
+            jpeg_quality,
+        );
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn pdf_render_page_region(
     _doc: *mut std::ffi::c_void,

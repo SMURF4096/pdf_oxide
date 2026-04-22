@@ -1407,6 +1407,27 @@ namespace PdfOxide.Internal
             out int errorCode);
 
         /// <summary>
+        /// Full-option render — mirrors Rust `RenderOptions` surface.
+        /// Takes raw <see cref="IntPtr"/> to match the existing
+        /// <c>pdf_render_page</c> basic overload's handle convention.
+        /// </summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_render_page_with_options", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr PdfRenderPageWithOptions(
+            IntPtr docHandle,
+            int pageIndex,
+            int dpi,
+            int format,
+            float bgR,
+            float bgG,
+            float bgB,
+            float bgA,
+            int transparentBackground,
+            int renderAnnotations,
+            int jpegQuality,
+            out int errorCode);
+
+        /// <summary>
         /// Gets the width of a rendered image.
         /// </summary>
         /// <param name="imageHandle">The image handle.</param>

@@ -758,6 +758,49 @@ namespace PdfOxide.Core
             finally { NativeMethods.pdf_rendered_image_free(imgHandle); }
         }
 
+        /// <summary>
+        /// Renders a page with the full <see cref="RenderOptions"/> surface:
+        /// DPI, output format, background colour or transparency,
+        /// annotation toggle, and JPEG quality. Filed as #384 gap B after
+        /// a Reddit user flagged that the basic <see cref="RenderPage(int, int)"/>
+        /// only exposed the format knob.
+        /// </summary>
+        /// <param name="pageIndex">Page index, 0-based.</param>
+        /// <param name="options">Render options; see <see cref="RenderOptions"/>.</param>
+        /// <exception cref="ArgumentNullException">If <paramref name="options"/> is null.</exception>
+        public byte[] RenderPage(int pageIndex, RenderOptions options)
+        {
+            if (options == null) throw new ArgumentNullException(nameof(options));
+            options.Validate();
+            ThrowIfDisposed();
+
+            var imgHandle = NativeMethods.PdfRenderPageWithOptions(
+                _handle.Ptr,
+                pageIndex,
+                options.Dpi,
+                (int)options.Format,
+                options.Background.R,
+                options.Background.G,
+                options.Background.B,
+                options.Background.A,
+                options.TransparentBackground ? 1 : 0,
+                options.RenderAnnotations ? 1 : 0,
+                options.JpegQuality,
+                out var errorCode);
+            ExceptionMapper.ThrowIfError(errorCode);
+            if (imgHandle == IntPtr.Zero) return Array.Empty<byte>();
+            try
+            {
+                var data = NativeMethods.pdf_get_rendered_image_data(imgHandle, out var dataLen, out _);
+                if (data == IntPtr.Zero) return Array.Empty<byte>();
+                var bytes = new byte[dataLen];
+                System.Runtime.InteropServices.Marshal.Copy(data, bytes, 0, dataLen);
+                NativeMethods.FreeBytes(data, dataLen);
+                return bytes;
+            }
+            finally { NativeMethods.pdf_rendered_image_free(imgHandle); }
+        }
+
         /// <summary>Renders a page with zoom factor. Returns PNG bytes.</summary>
         public byte[] RenderPageZoom(int pageIndex, float zoom, int format = 0)
         {
