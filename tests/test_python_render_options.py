@@ -39,9 +39,7 @@ def test_render_jpeg_quality_produces_smaller_bytes(one_page_doc):
     low = one_page_doc.render_page(0, format="jpeg", jpeg_quality=20)
     high = one_page_doc.render_page(0, format="jpeg", jpeg_quality=95)
     assert _is_jpeg(low) and _is_jpeg(high)
-    assert len(low) <= len(high), (
-        "lower JPEG quality must not yield a larger file"
-    )
+    assert len(low) <= len(high), "lower JPEG quality must not yield a larger file"
 
 
 def test_render_high_dpi_produces_bigger_image(one_page_doc):
