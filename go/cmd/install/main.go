@@ -244,7 +244,7 @@ func downloadAndExtract(version, assetSuffix, targetDir string, verifyChecksum b
 // signature check.
 func httpGetLimited(url string) ([]byte, error) {
 	client := &http.Client{Timeout: httpTimeout}
-	resp, err := client.Get(url) //nolint:gosec // URL constructed from hard-coded base + validated version
+	resp, err := client.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("http get: %w", err)
 	}
@@ -348,7 +348,7 @@ func writeFileLimited(src io.Reader, path string, size int64) (retErr error) {
 	if size > maxExtractSize {
 		return fmt.Errorf("file too large: %d bytes", size)
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, filePerm) //nolint:gosec // path validated by caller
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, filePerm)
 	if err != nil {
 		return err
 	}
@@ -417,11 +417,11 @@ func writeCgoFlagsGo(outDir, installDir string) (string, error) {
 		return "", err
 	}
 	outPath := filepath.Join(outDir, "cgo_flags.go")
-	f, err := os.OpenFile(outPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, filePerm) //nolint:gosec // outDir provided by user
+	f, err := os.OpenFile(outPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, filePerm)
 	if err != nil {
 		return "", err
 	}
-	defer f.Close() //nolint:errcheck
+	defer f.Close()
 	if err := tmpl.Execute(f, data); err != nil {
 		return "", err
 	}
