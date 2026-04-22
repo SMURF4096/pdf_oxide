@@ -180,6 +180,34 @@ impl WasmPdfDocument {
             .map_err(|e| JsValue::from_str(&format!("Failed to get page count: {}", e)))
     }
 
+    /// Count existing PDF signatures (#72 slice 2). Returns 0 when
+    /// the document has no AcroForm or no signed signature fields.
+    #[cfg(feature = "signatures")]
+    #[wasm_bindgen(js_name = "signatureCount")]
+    pub fn signature_count(&mut self) -> Result<usize, JsValue> {
+        let mut doc = self
+            .inner
+            .lock()
+            .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
+        crate::signatures::count_signatures(&mut doc)
+            .map_err(|e| JsValue::from_str(&format!("Failed to count signatures: {}", e)))
+    }
+
+    /// Enumerate existing PDF signatures. Each entry is a
+    /// `WasmSignature` (inspection-only) mirroring the C# and Python
+    /// Signature surfaces.
+    #[cfg(feature = "signatures")]
+    #[wasm_bindgen(js_name = "signatures")]
+    pub fn signatures(&mut self) -> Result<Vec<WasmSignature>, JsValue> {
+        let mut doc = self
+            .inner
+            .lock()
+            .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
+        let list = crate::signatures::enumerate_signatures(&mut doc)
+            .map_err(|e| JsValue::from_str(&format!("Failed to enumerate signatures: {}", e)))?;
+        Ok(list.into_iter().map(|info| WasmSignature { info }).collect())
+    }
+
     /// Get the PDF version as [major, minor].
     #[wasm_bindgen(js_name = "version")]
     pub fn version(&self) -> Result<Vec<u8>, JsValue> {
@@ -1210,6 +1238,69 @@ impl WasmPdfDocument {
             .map_err(|e| JsValue::from_str(&format!("Failed to extract lines: {}", e)))?;
         serde_wasm_bindgen::to_value(&lines)
             .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))
+    }
+}
+
+/// A single existing PDF signature surfaced by
+/// `WasmPdfDocument.signatures()`. Inspection-only for now — the
+/// cryptographic `verify()` path throws until the Rust CMS slice
+/// of #72 lands.
+#[cfg(feature = "signatures")]
+#[wasm_bindgen]
+pub struct WasmSignature {
+    info: crate::signatures::SignatureInfo,
+}
+
+#[cfg(feature = "signatures")]
+#[wasm_bindgen]
+impl WasmSignature {
+    /// `/Name` entry from the signature dictionary, if present.
+    #[wasm_bindgen(getter, js_name = "signerName")]
+    pub fn signer_name(&self) -> Option<String> {
+        self.info.signer_name.clone()
+    }
+
+    /// `/Reason` entry from the signature dictionary, if present.
+    #[wasm_bindgen(getter)]
+    pub fn reason(&self) -> Option<String> {
+        self.info.reason.clone()
+    }
+
+    /// `/Location` entry from the signature dictionary, if present.
+    #[wasm_bindgen(getter)]
+    pub fn location(&self) -> Option<String> {
+        self.info.location.clone()
+    }
+
+    /// `/ContactInfo` entry from the signature dictionary, if present.
+    #[wasm_bindgen(getter, js_name = "contactInfo")]
+    pub fn contact_info(&self) -> Option<String> {
+        self.info.contact_info.clone()
+    }
+
+    /// Unix epoch (seconds). `None` if the `/M` entry is missing or
+    /// unparseable.
+    #[wasm_bindgen(getter, js_name = "signingTime")]
+    pub fn signing_time(&self) -> Option<i64> {
+        self.info
+            .signing_time
+            .as_deref()
+            .and_then(crate::signatures::parse_pdf_date_to_epoch)
+    }
+
+    /// True iff `/ByteRange` is a 4-element array covering the whole
+    /// document (i.e. the signature protects every byte of the file).
+    #[wasm_bindgen(getter, js_name = "coversWholeDocument")]
+    pub fn covers_whole_document(&self) -> bool {
+        self.info.covers_whole_document
+    }
+
+    /// Cryptographic verify — not yet implemented Rust-side.
+    #[wasm_bindgen(js_name = "verify")]
+    pub fn verify(&self) -> Result<bool, JsValue> {
+        Err(JsValue::from_str(
+            "Signature.verify() requires CMS/PKCS#7 verification (#72 slice 4, not yet landed)",
+        ))
     }
 }
 
