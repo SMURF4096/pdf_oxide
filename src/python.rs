@@ -5033,6 +5033,84 @@ impl PyExtractionProfile {
     }
 }
 
+/// RFC 3161 timestamp parsed from a DER TimeStampToken or bare
+/// TSTInfo. Mirrors the C# `Timestamp` class (#52 / #73).
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "Timestamp")]
+pub struct PyTimestamp {
+    inner: crate::signatures::Timestamp,
+}
+
+#[pymethods]
+impl PyTimestamp {
+    /// Parse a DER blob that may be either a full TimeStampToken
+    /// (CMS-wrapped) or the bare TSTInfo SEQUENCE.
+    #[staticmethod]
+    fn parse(data: &Bound<'_, PyBytes>) -> PyResult<Self> {
+        let bytes = data.as_bytes();
+        if bytes.is_empty() {
+            return Err(PyValueError::new_err("Timestamp data must not be empty"));
+        }
+        let inner = crate::signatures::Timestamp::from_der(bytes)
+            .map_err(|e| PyValueError::new_err(format!("Invalid timestamp: {e}")))?;
+        Ok(Self { inner })
+    }
+
+    /// Generation time as Unix epoch seconds.
+    #[getter]
+    fn time(&self) -> i64 {
+        self.inner.time()
+    }
+
+    /// Serial number as a hex string (no `0x` prefix).
+    #[getter]
+    fn serial(&self) -> String {
+        self.inner.serial()
+    }
+
+    /// TSA policy OID in dotted-decimal form.
+    #[getter]
+    fn policy_oid(&self) -> String {
+        self.inner.policy_oid()
+    }
+
+    /// TSA name from the token (may be empty if the TSA didn't
+    /// include its name).
+    #[getter]
+    fn tsa_name(&self) -> String {
+        self.inner.tsa_name()
+    }
+
+    /// Hash algorithm enum value (1=SHA1, 2=SHA256, 3=SHA384,
+    /// 4=SHA512, 0=unknown) — same contract as the FFI.
+    #[getter]
+    fn hash_algorithm(&self) -> i32 {
+        self.inner.hash_algorithm() as i32
+    }
+
+    /// Raw message-imprint hash bytes.
+    #[getter]
+    fn message_imprint(&self, py: Python) -> Py<PyBytes> {
+        PyBytes::new(py, self.inner.message_imprint_ref()).into()
+    }
+
+    /// Cryptographic verify — not yet implemented (Rust CMS slice
+    /// #76).
+    fn verify(&self) -> PyResult<bool> {
+        Err(PyNotImplementedError::new_err(
+            "Timestamp.verify() requires CMS signer verification (#76, not yet landed)",
+        ))
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Timestamp(time={}, serial={:?}, policy_oid={:?})",
+            self.inner.time(),
+            self.inner.serial(),
+            self.inner.policy_oid(),
+        )
+    }
+}
+
 /// A single existing PDF signature surfaced by
 /// `PdfDocument.signatures()`. Inspection-only for now — the
 /// cryptographic `verify()` path is not yet implemented Rust-side
@@ -5151,6 +5229,7 @@ fn pdf_oxide(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyPatternPresets>()?;
     m.add_class::<PyOfficeConverter>()?;
     m.add_class::<PySignature>()?;
+    m.add_class::<PyTimestamp>()?;
     m.add("VERSION", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

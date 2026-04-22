@@ -192,6 +192,7 @@ extern void pdf_rendered_image_free(void* handle);
 extern void pdf_renderer_free(void* handle);
 
 // TSA (Time Stamp Authority) FFI declarations
+extern void* pdf_timestamp_parse(const uint8_t* bytes, size_t len, int* error_code);
 extern void* pdf_tsa_client_create(const char* url, const char* username, const char* password, int32_t timeout, int32_t hash_algo, bool use_nonce, bool cert_req, int* error_code);
 extern void pdf_tsa_client_free(void* client);
 extern void* pdf_tsa_request_timestamp(const void* client, const uint8_t* data, size_t data_len, int* error_code);
@@ -3103,6 +3104,131 @@ func (s *Signature) Close() {
 	if s.handle != nil {
 		C.pdf_signature_free(s.handle)
 		s.handle = nil
+	}
+}
+
+// TimestampHashAlgorithm matches the Rust `HashAlgorithm` enum / FFI
+// contract: 1=SHA-1, 2=SHA-256, 3=SHA-384, 4=SHA-512, 0=Unknown.
+type TimestampHashAlgorithm int32
+
+const (
+	TimestampHashUnknown TimestampHashAlgorithm = 0
+	TimestampHashSha1    TimestampHashAlgorithm = 1
+	TimestampHashSha256  TimestampHashAlgorithm = 2
+	TimestampHashSha384  TimestampHashAlgorithm = 3
+	TimestampHashSha512  TimestampHashAlgorithm = 4
+)
+
+// Timestamp is an RFC 3161 timestamp parsed from a DER TimeStampToken
+// or a bare TSTInfo. Close() must be called to release the native
+// handle. Closes #73 / #52 on the Go side.
+type Timestamp struct {
+	handle unsafe.Pointer
+}
+
+// ParseTimestamp parses a DER-encoded RFC 3161 TimeStampToken (or a
+// bare TSTInfo SEQUENCE) into a Timestamp.
+func ParseTimestamp(data []byte) (*Timestamp, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("pdf_oxide: timestamp data is empty: %w", ErrEmptyContent)
+	}
+	var e C.int
+	h := C.pdf_timestamp_parse((*C.uint8_t)(unsafe.Pointer(&data[0])), C.size_t(len(data)), &e)
+	if e != 0 {
+		return nil, ffiError(e)
+	}
+	if h == nil {
+		return nil, fmt.Errorf("pdf_oxide: pdf_timestamp_parse returned null")
+	}
+	return &Timestamp{handle: h}, nil
+}
+
+// Time returns the generation time of the timestamp as a Unix epoch.
+func (t *Timestamp) Time() (int64, error) {
+	if t.handle == nil {
+		return 0, ErrDocumentClosed
+	}
+	var e C.int
+	ts := C.pdf_timestamp_get_time(t.handle, &e)
+	if e != 0 {
+		return 0, ffiError(e)
+	}
+	return int64(ts), nil
+}
+
+// Serial returns the serial number as a hex string (no 0x prefix).
+func (t *Timestamp) Serial() (string, error) {
+	return sigReadString(t.handle, func(h unsafe.Pointer, e *C.int) *C.char {
+		return C.pdf_timestamp_get_serial(h, e)
+	})
+}
+
+// PolicyOid returns the TSA policy OID in dotted-decimal form.
+func (t *Timestamp) PolicyOid() (string, error) {
+	return sigReadString(t.handle, func(h unsafe.Pointer, e *C.int) *C.char {
+		return C.pdf_timestamp_get_policy_oid(h, e)
+	})
+}
+
+// TsaName returns the TSA name declared in the TSTInfo, or "" if
+// absent.
+func (t *Timestamp) TsaName() (string, error) {
+	return sigReadString(t.handle, func(h unsafe.Pointer, e *C.int) *C.char {
+		return C.pdf_timestamp_get_tsa_name(h, e)
+	})
+}
+
+// HashAlgorithm returns the hash algorithm of the message imprint.
+func (t *Timestamp) HashAlgorithm() (TimestampHashAlgorithm, error) {
+	if t.handle == nil {
+		return TimestampHashUnknown, ErrDocumentClosed
+	}
+	var e C.int
+	code := C.pdf_timestamp_get_hash_algorithm(t.handle, &e)
+	if e != 0 {
+		return TimestampHashUnknown, ffiError(e)
+	}
+	return TimestampHashAlgorithm(int32(code)), nil
+}
+
+// MessageImprint returns the raw message-imprint hash bytes.
+func (t *Timestamp) MessageImprint() ([]byte, error) {
+	if t.handle == nil {
+		return nil, ErrDocumentClosed
+	}
+	var e C.int
+	var outLen C.size_t
+	p := C.pdf_timestamp_get_message_imprint(t.handle, &outLen, &e)
+	if e != 0 {
+		return nil, ffiError(e)
+	}
+	if p == nil || outLen == 0 {
+		return nil, nil
+	}
+	return C.GoBytes(unsafe.Pointer(p), C.int(outLen)), nil
+}
+
+// Verify cryptographically verifies the timestamp. Currently returns
+// ErrUnsupportedFeature until the Rust CMS signer verification slice
+// lands (#76).
+func (t *Timestamp) Verify() (bool, error) {
+	if t.handle == nil {
+		return false, ErrDocumentClosed
+	}
+	var e C.int
+	ok := C.pdf_timestamp_verify(t.handle, &e)
+	if e != 0 {
+		return false, ffiError(e)
+	}
+	return bool(ok), nil
+}
+
+// Close releases the native timestamp handle. Safe to call more than
+// once.
+func (t *Timestamp) Close() {
+	if t.handle != nil {
+		C.pdf_timestamp_free(t.handle)
+		t.handle = nil
 	}
 }
 

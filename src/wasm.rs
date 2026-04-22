@@ -1241,6 +1241,75 @@ impl WasmPdfDocument {
     }
 }
 
+/// RFC 3161 timestamp parsed from a DER TimeStampToken or bare
+/// TSTInfo (#52 / #73 — wasm slice).
+#[cfg(feature = "signatures")]
+#[wasm_bindgen]
+pub struct WasmTimestamp {
+    inner: crate::signatures::Timestamp,
+}
+
+#[cfg(feature = "signatures")]
+#[wasm_bindgen]
+impl WasmTimestamp {
+    /// Parse a DER blob that may be either a full TimeStampToken or
+    /// the bare TSTInfo SEQUENCE.
+    #[wasm_bindgen(js_name = "parse")]
+    pub fn parse(data: &[u8]) -> Result<WasmTimestamp, JsValue> {
+        if data.is_empty() {
+            return Err(JsValue::from_str("Timestamp data must not be empty"));
+        }
+        let inner = crate::signatures::Timestamp::from_der(data)
+            .map_err(|e| JsValue::from_str(&format!("Invalid timestamp: {e}")))?;
+        Ok(Self { inner })
+    }
+
+    /// Generation time as Unix epoch seconds.
+    #[wasm_bindgen(getter)]
+    pub fn time(&self) -> i64 {
+        self.inner.time()
+    }
+
+    /// Serial number as a hex string (no `0x` prefix).
+    #[wasm_bindgen(getter)]
+    pub fn serial(&self) -> String {
+        self.inner.serial()
+    }
+
+    /// TSA policy OID in dotted-decimal form.
+    #[wasm_bindgen(getter, js_name = "policyOid")]
+    pub fn policy_oid(&self) -> String {
+        self.inner.policy_oid()
+    }
+
+    /// TSA name from the token (may be empty).
+    #[wasm_bindgen(getter, js_name = "tsaName")]
+    pub fn tsa_name(&self) -> String {
+        self.inner.tsa_name()
+    }
+
+    /// Hash algorithm enum value (1=SHA1, 2=SHA256, 3=SHA384,
+    /// 4=SHA512, 0=unknown).
+    #[wasm_bindgen(getter, js_name = "hashAlgorithm")]
+    pub fn hash_algorithm(&self) -> i32 {
+        self.inner.hash_algorithm() as i32
+    }
+
+    /// Raw message-imprint hash bytes.
+    #[wasm_bindgen(getter, js_name = "messageImprint")]
+    pub fn message_imprint(&self) -> Vec<u8> {
+        self.inner.message_imprint()
+    }
+
+    /// Cryptographic verify — not yet implemented.
+    #[wasm_bindgen]
+    pub fn verify(&self) -> Result<bool, JsValue> {
+        Err(JsValue::from_str(
+            "Timestamp.verify() requires CMS signer verification (#76, not yet landed)",
+        ))
+    }
+}
+
 /// A single existing PDF signature surfaced by
 /// `WasmPdfDocument.signatures()`. Inspection-only for now — the
 /// cryptographic `verify()` path throws until the Rust CMS slice
