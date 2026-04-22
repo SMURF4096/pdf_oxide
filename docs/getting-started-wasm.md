@@ -11,9 +11,25 @@ npm install pdf-oxide-wasm
 ```
 
 ```javascript
+// Works everywhere — the package ships three builds and routes each
+// consumer to the right one through `package.json` conditional exports:
+//   Node.js           → nodejs/  (CommonJS; loads the .wasm via fs)
+//   Bundlers          → bundler/ (ESM; Vite / webpack / Rollup / esbuild
+//                                  resolve the .wasm import natively)
+//   Browsers / Deno   → web/     (ESM; loads the .wasm via fetch())
+//   Cloudflare Workers → web/
 const { WasmPdfDocument } = require("pdf-oxide-wasm");
 // or ESM:
 // import { WasmPdfDocument } from "pdf-oxide-wasm";
+```
+
+If your bundler's condition resolution is unusual (or you want to bypass
+it), you can import a specific build directly via a subpath:
+
+```javascript
+import { WasmPdfDocument } from "pdf-oxide-wasm/bundler";  // for bundlers
+import { WasmPdfDocument } from "pdf-oxide-wasm/web";       // for browsers
+import { WasmPdfDocument } from "pdf-oxide-wasm/nodejs";    // for Node
 ```
 
 ### Building from Source
@@ -21,39 +37,32 @@ const { WasmPdfDocument } = require("pdf-oxide-wasm");
 #### Prerequisites
 
 - Rust toolchain with `wasm32-unknown-unknown` target
-- `wasm-bindgen-cli` (must match the `wasm-bindgen` version in Cargo.toml)
+- `wasm-bindgen-cli` (must match the `wasm-bindgen` version in `Cargo.lock`)
 
 ```bash
 # Install the WASM target
 rustup target add wasm32-unknown-unknown
 
-# Install wasm-bindgen CLI (check Cargo.toml for the exact version)
-cargo install wasm-bindgen-cli --version 0.2.106
+# Install wasm-bindgen CLI (check Cargo.lock for the exact version)
+cargo install wasm-bindgen-cli --version 0.2.118 --locked
 ```
 
-### Build for Node.js
+### Build all three targets (what the release workflow does)
 
 ```bash
-# Build the WASM binary
 cargo build --lib --target wasm32-unknown-unknown --features wasm --release
 
-# Generate Node.js bindings
-wasm-bindgen --target nodejs --out-dir pkg \
-  target/wasm32-unknown-unknown/release/pdf_oxide.wasm
+for target in bundler nodejs web; do
+  wasm-bindgen --target "$target" --out-dir "pkg/$target/" \
+    target/wasm32-unknown-unknown/release/pdf_oxide.wasm
+done
 ```
 
-This produces four files in `pkg/`:
-- `pdf_oxide.js` — JS glue code (import this)
-- `pdf_oxide_bg.wasm` — compiled WASM binary
-- `pdf_oxide.d.ts` — TypeScript type definitions
-- `pdf_oxide_bg.wasm.d.ts` — WASM type definitions
-
-### Build for Browser
-
-```bash
-wasm-bindgen --target web --out-dir pkg \
-  target/wasm32-unknown-unknown/release/pdf_oxide.wasm
-```
+This produces `pkg/bundler/`, `pkg/nodejs/`, `pkg/web/`, each containing
+`pdf_oxide.js`, `pdf_oxide.d.ts`, `pdf_oxide_bg.wasm`, and
+`pdf_oxide_bg.wasm.d.ts`. The bundler target additionally emits
+`pdf_oxide_bg.js` (the glue is split out so bundlers can import the
+`.wasm` directly).
 
 ### Size-Optimized Build
 
@@ -70,7 +79,8 @@ cargo build --lib --target wasm32-unknown-unknown --features wasm \
 
 ```javascript
 import { readFileSync } from "fs";
-import { WasmPdfDocument, WasmPdf } from "./pkg/pdf_oxide.js";
+import { WasmPdfDocument, WasmPdf } from "pdf-oxide-wasm";
+// Or if you built locally: from "./pkg/nodejs/pdf_oxide.js"
 
 // Open a PDF file
 const bytes = new Uint8Array(readFileSync("document.pdf"));
@@ -88,11 +98,13 @@ console.log(text);
 doc.free();
 ```
 
-### Browser
+### Browser (vanilla, no bundler)
 
 ```html
 <script type="module">
-import init, { WasmPdfDocument, WasmPdf } from "./pkg/pdf_oxide.js";
+// Use the /web build explicitly when there's no bundler to pick the
+// `"browser"` export condition for you.
+import init, { WasmPdfDocument, WasmPdf } from "./pkg/web/pdf_oxide.js";
 
 await init();
 
@@ -107,6 +119,20 @@ doc.free();
 </script>
 ```
 
+### Browser with a bundler (Vite, webpack, Rollup, esbuild)
+
+```javascript
+// No init() call needed — the bundler resolves the `.wasm` via the
+// `import * as wasm from "./pdf_oxide_bg.wasm"` statement inside the
+// package. For Vite, use `vite-plugin-wasm`.
+import { WasmPdfDocument } from "pdf-oxide-wasm";
+
+const bytes = new Uint8Array(await file.arrayBuffer());
+const doc = new WasmPdfDocument(bytes);
+console.log(doc.extractText(0));
+doc.free();
+```
+
 ### Browser with File Input
 
 ```html
@@ -114,7 +140,7 @@ doc.free();
 <pre id="output"></pre>
 
 <script type="module">
-import init, { WasmPdfDocument } from "./pkg/pdf_oxide.js";
+import init, { WasmPdfDocument } from "./pkg/web/pdf_oxide.js";
 await init();
 
 document.getElementById("pdfInput").addEventListener("change", async (e) => {
@@ -139,7 +165,7 @@ document.getElementById("pdfInput").addEventListener("change", async (e) => {
 Create new PDFs from Markdown, HTML, or plain text using `WasmPdf`:
 
 ```javascript
-import { WasmPdf, WasmPdfDocument } from "./pkg/pdf_oxide.js";
+import { WasmPdf, WasmPdfDocument } from "./pkg/nodejs/pdf_oxide.js";
 
 // From Markdown
 const pdf = WasmPdf.fromMarkdown("# Hello World\n\nThis is a PDF.", "My Title", "Author");
@@ -490,7 +516,7 @@ using doc = new WasmPdfDocument(bytes);
 Type definitions are generated alongside the JS bindings. Import directly:
 
 ```typescript
-import { WasmPdfDocument, WasmPdf } from "./pkg/pdf_oxide.js";
+import { WasmPdfDocument, WasmPdf } from "./pkg/nodejs/pdf_oxide.js";
 
 const doc: WasmPdfDocument = new WasmPdfDocument(bytes);
 const text: string = doc.extractText(0);

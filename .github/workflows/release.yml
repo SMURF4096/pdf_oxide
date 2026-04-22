@@ -238,10 +238,31 @@ jobs:
           echo "Installing wasm-bindgen-cli@${WASM_BINDGEN_VERSION}"
           cargo install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION"
 
-      - name: Generate bindings
+      - name: Generate bindings for bundler, nodejs, and web targets
+        # Issue #392: the v0.3.37 artefact shipped a single `--target nodejs`
+        # build, which hard-codes `__dirname` and `require('fs')`. That
+        # crashes in every browser bundler (Vite, webpack, Rollup, esbuild)
+        # and every browser runtime even though the package metadata
+        # advertises browser support.
+        #
+        # Fix: ship all three wasm-bindgen targets side-by-side under
+        # `bundler/`, `nodejs/`, and `web/` subdirectories. The top-level
+        # package.json routes each consumer to the right one through
+        # `exports` conditions (see wasm-pkg/package.json).
+        #
+        # Nested per-directory package.json files pin the module format so
+        # Node unambiguously treats the ESM outputs (bundler/web, which
+        # wasm-bindgen emits as ESM) and the CJS output (nodejs, which
+        # wasm-bindgen emits as CommonJS) correctly regardless of the
+        # top-level `type` setting.
         run: |
-          wasm-bindgen --target nodejs --out-dir wasm-out/ \
-            target/wasm32-unknown-unknown/release/pdf_oxide.wasm
+          for target in bundler nodejs web; do
+            wasm-bindgen --target "$target" --out-dir "wasm-out/$target/" \
+              target/wasm32-unknown-unknown/release/pdf_oxide.wasm
+          done
+          echo '{"type":"module","sideEffects":false}'     > wasm-out/bundler/package.json
+          echo '{"type":"commonjs","sideEffects":false}'   > wasm-out/nodejs/package.json
+          echo '{"type":"module","sideEffects":false}'     > wasm-out/web/package.json
 
       - name: Copy package files
         run: |
