@@ -2227,21 +2227,71 @@ pub extern "C" fn pdf_document_sign(
 
 #[no_mangle]
 pub extern "C" fn pdf_document_get_signature_count(
-    _document_handle: *const std::ffi::c_void,
+    document_handle: *const std::ffi::c_void,
     error_code: *mut i32,
 ) -> i32 {
-    set_error(error_code, ERR_SUCCESS);
-    0
+    #[cfg(feature = "signatures")]
+    {
+        if document_handle.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return -1;
+        }
+        let doc = unsafe { &mut *(document_handle as *mut PdfDocument) };
+        match crate::signatures::count_signatures(doc) {
+            Ok(n) => {
+                set_error(error_code, ERR_SUCCESS);
+                n as i32
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                -1
+            },
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = document_handle;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        -1
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_document_get_signature(
-    _document_handle: *const std::ffi::c_void,
-    _index: i32,
+    document_handle: *const std::ffi::c_void,
+    index: i32,
     error_code: *mut i32,
 ) -> *mut std::ffi::c_void {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+    #[cfg(feature = "signatures")]
+    {
+        if document_handle.is_null() || index < 0 {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let doc = unsafe { &mut *(document_handle as *mut PdfDocument) };
+        match crate::signatures::enumerate_signatures(doc) {
+            Ok(list) => match list.into_iter().nth(index as usize) {
+                Some(info) => {
+                    set_error(error_code, ERR_SUCCESS);
+                    Box::into_raw(Box::new(FfiSignatureInfo { info })) as *mut std::ffi::c_void
+                },
+                None => {
+                    set_error(error_code, ERR_INVALID_ARG);
+                    ptr::null_mut()
+                },
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = (document_handle, index);
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
