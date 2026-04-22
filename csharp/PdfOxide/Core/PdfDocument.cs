@@ -237,6 +237,52 @@ namespace PdfOxide.Core
         }
 
         /// <summary>
+        /// Gets the number of existing digital signatures in this document.
+        /// Returns 0 for documents without an AcroForm or without
+        /// signed signature fields. Surfaces the Rust
+        /// <c>enumerate_signatures</c> walker (#72 slice 2).
+        /// </summary>
+        public int SignatureCount
+        {
+            get
+            {
+                ThrowIfDisposed();
+                var count = NativeMethods.pdf_document_get_signature_count(_handle, out int err);
+                ExceptionMapper.ThrowIfError(err);
+                return count;
+            }
+        }
+
+        /// <summary>
+        /// Enumerate every existing digital signature in the document.
+        /// Each <see cref="Signature"/> must be disposed by the caller;
+        /// the returned list is a snapshot, not live-linked to the
+        /// underlying PDF state.
+        /// </summary>
+        public System.Collections.Generic.IReadOnlyList<Signature> Signatures
+        {
+            get
+            {
+                ThrowIfDisposed();
+                var count = NativeMethods.pdf_document_get_signature_count(_handle, out int err);
+                ExceptionMapper.ThrowIfError(err);
+                var list = new System.Collections.Generic.List<Signature>(count);
+                for (int i = 0; i < count; i++)
+                {
+                    var sigHandle = NativeMethods.pdf_document_get_signature(_handle, i, out int e);
+                    ExceptionMapper.ThrowIfError(e);
+                    if (sigHandle.IsInvalid)
+                    {
+                        throw new PdfException(
+                            $"pdf_document_get_signature({i}) returned null with no error code");
+                    }
+                    list.Add(Signature.FromHandle(sigHandle));
+                }
+                return list;
+            }
+        }
+
+        /// <summary>
         /// Gets a value indicating whether the document has a structure tree (Tagged PDF).
         /// </summary>
         /// <value>True if the document has a structure tree, false otherwise.</value>

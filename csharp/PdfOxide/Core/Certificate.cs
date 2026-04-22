@@ -24,6 +24,8 @@ namespace PdfOxide.Core
             _handle = handle;
         }
 
+        internal static Certificate FromHandle(NativeHandle handle) => new(handle);
+
         /// <summary>
         /// Load a certificate from raw DER-encoded X.509 bytes. If the
         /// blob is a PKCS#12 (.p12/.pfx), <paramref name="password"/>
