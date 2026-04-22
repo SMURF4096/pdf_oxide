@@ -290,6 +290,10 @@ CLEANUP_ROADMAP.md
 WORD_BOUNDARY_ANALYSIS.md
 examples/test_pdf.rs
 
+# Session handoff notes (per-release scratchpads for the next engineer —
+# valuable while the work is fresh, not durable docs)
+docs/handoff/
+
 # Temporary working documents (NOT for public repo)
 COMPLETION_CHECKLIST.md
 DEBUG_FINDINGS.md
