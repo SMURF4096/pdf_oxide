@@ -720,6 +720,37 @@ impl DocumentBuilder {
         self
     }
 
+    /// Set document title (convenience passthrough to
+    /// `DocumentMetadata::title`).
+    pub fn title(mut self, title: impl Into<String>) -> Self {
+        self.metadata.title = Some(title.into());
+        self
+    }
+
+    /// Set document author.
+    pub fn author(mut self, author: impl Into<String>) -> Self {
+        self.metadata.author = Some(author.into());
+        self
+    }
+
+    /// Set document subject.
+    pub fn subject(mut self, subject: impl Into<String>) -> Self {
+        self.metadata.subject = Some(subject.into());
+        self
+    }
+
+    /// Set document keywords (comma-separated per PDF convention).
+    pub fn keywords(mut self, keywords: impl Into<String>) -> Self {
+        self.metadata.keywords = Some(keywords.into());
+        self
+    }
+
+    /// Set the creator application name.
+    pub fn creator(mut self, creator: impl Into<String>) -> Self {
+        self.metadata.creator = Some(creator.into());
+        self
+    }
+
     /// Set document metadata.
     pub fn metadata(mut self, metadata: DocumentMetadata) -> Self {
         self.metadata = metadata;

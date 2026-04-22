@@ -2240,6 +2240,48 @@ impl PyPdf {
         })
     }
 
+    /// Build a PDF by rendering `html` with `css` applied, embedding a
+    /// single font for the body text. The font must cover every
+    /// codepoint used by `html`, or unknown glyphs fall back to
+    /// `.notdef`. See `from_html_css_with_fonts` for a multi-font
+    /// cascade.
+    ///
+    /// Closes #384 Phase 2 (HTML+CSS pipeline) for Python.
+    #[staticmethod]
+    fn from_html_css(html: &str, css: &str, font_bytes: &Bound<'_, PyBytes>) -> PyResult<Self> {
+        let bytes = font_bytes.as_bytes().to_vec();
+        let pdf = crate::api::Pdf::from_html_css(html, css, bytes)
+            .map_err(|e| PyRuntimeError::new_err(format!("from_html_css failed: {e}")))?;
+        Ok(PyPdf {
+            bytes: pdf.into_bytes(),
+        })
+    }
+
+    /// Build a PDF from HTML+CSS with a multi-font cascade. `fonts` is
+    /// a list of `(family_name, font_bytes)` tuples; the first entry is
+    /// the default used whenever a CSS `font-family` doesn't match any
+    /// registered family.
+    #[staticmethod]
+    fn from_html_css_with_fonts(
+        html: &str,
+        css: &str,
+        fonts: Vec<(String, Bound<'_, PyBytes>)>,
+    ) -> PyResult<Self> {
+        if fonts.is_empty() {
+            return Err(PyValueError::new_err("at least one font must be provided"));
+        }
+        let font_vec: Vec<(String, Vec<u8>)> = fonts
+            .into_iter()
+            .map(|(name, b)| (name, b.as_bytes().to_vec()))
+            .collect();
+        let pdf = crate::api::Pdf::from_html_css_with_fonts(html, css, font_vec).map_err(|e| {
+            PyRuntimeError::new_err(format!("from_html_css_with_fonts failed: {e}"))
+        })?;
+        Ok(PyPdf {
+            bytes: pdf.into_bytes(),
+        })
+    }
+
     fn save(&self, path: &str) -> PyResult<()> {
         std::fs::write(path, &self.bytes).map_err(|e| PyIOError::new_err(e.to_string()))
     }
@@ -3793,6 +3835,494 @@ impl PyFooter {
     }
 }
 
+// =============================================================================
+// Write-side API: DocumentBuilder, FluentPageBuilder, EmbeddedFont (#384 Phase 1)
+// =============================================================================
+//
+// These three pyclasses expose the Rust write-side fluent API to Python.
+// Together they close the #382 gap for Python users: register an embedded
+// TTF, build a multi-page PDF with CJK / Cyrillic / Greek text, save to
+// bytes or file, with optional AES-256 encryption.
+//
+// Architectural note: the Rust `FluentPageBuilder<'a>` carries a mutable
+// borrow of `DocumentBuilder`, which pyo3 cannot represent across GIL
+// boundaries. `PyFluentPageBuilder` therefore **buffers** its operations
+// in a `Vec<PendingPageOp>` and applies them in one shot against a real
+// Rust `FluentPageBuilder` inside `done()`. This also gives Python users
+// a natural "build the page, then commit it" mental model.
+
+/// Buffered operations that `PyFluentPageBuilder` replays against the real
+/// Rust `FluentPageBuilder` inside `done()`. Each variant mirrors a method
+/// on the Rust builder so the Python fluent chain maps 1:1 onto the Rust
+/// fluent chain at commit time.
+enum PendingPageOp {
+    Font(String, f32),
+    At(f32, f32),
+    Text(String),
+    Heading(u8, String),
+    Paragraph(String),
+    Space(f32),
+    HorizontalRule,
+    LinkUrl(String),
+    LinkPage(usize),
+    LinkNamed(String),
+    Highlight(f32, f32, f32),
+    Underline(f32, f32, f32),
+    Strikeout(f32, f32, f32),
+    Squiggly(f32, f32, f32),
+    StickyNote(String),
+    StickyNoteAt(f32, f32, String),
+    Watermark(String),
+    WatermarkConfidential,
+    WatermarkDraft,
+}
+
+/// Python wrapper for an embedded TTF/OTF font usable by `DocumentBuilder`.
+///
+/// `EmbeddedFont` is a one-shot handle: once it is passed to
+/// `DocumentBuilder.register_embedded_font`, the underlying Rust
+/// `EmbeddedFont` is moved into the builder and this handle becomes
+/// empty. Registering the same handle twice raises `RuntimeError`.
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "EmbeddedFont")]
+pub struct PyEmbeddedFont {
+    pub(crate) inner: Option<crate::writer::EmbeddedFont>,
+}
+
+#[pymethods]
+impl PyEmbeddedFont {
+    /// Load an embedded TTF / OTF font from a file path. The PostScript
+    /// name baked into the font face is used as the default PDF font
+    /// name when registered without an override.
+    #[staticmethod]
+    fn from_file(path: &str) -> PyResult<Self> {
+        crate::writer::EmbeddedFont::from_file(path)
+            .map(|inner| Self { inner: Some(inner) })
+            .map_err(|e| PyIOError::new_err(format!("failed to load font: {e}")))
+    }
+
+    /// Load an embedded font from a Python `bytes` / `bytearray`. Pass
+    /// `name` to override the PostScript name the PDF will record.
+    #[staticmethod]
+    #[pyo3(signature = (data, name=None))]
+    fn from_bytes(data: &Bound<'_, PyBytes>, name: Option<String>) -> PyResult<Self> {
+        let bytes = data.as_bytes().to_vec();
+        crate::writer::EmbeddedFont::from_data(name, bytes)
+            .map(|inner| Self { inner: Some(inner) })
+            .map_err(|e| PyValueError::new_err(format!("failed to parse font: {e}")))
+    }
+
+    /// The font's PostScript name (or the override passed to
+    /// `from_bytes`). Empty string after the font has been consumed.
+    #[getter]
+    fn name(&self) -> &str {
+        self.inner.as_ref().map(|f| f.name.as_str()).unwrap_or("")
+    }
+
+    fn __repr__(&self) -> String {
+        match self.inner.as_ref() {
+            Some(f) => format!("EmbeddedFont('{}')", f.name),
+            None => "EmbeddedFont(<consumed>)".to_string(),
+        }
+    }
+}
+
+/// Python wrapper for `crate::writer::DocumentBuilder`, the high-level
+/// fluent PDF-creation API.
+///
+/// Methods mutate `self` in place and return `self` so that Python can
+/// use a fluent chain:
+///
+/// ```python
+/// pdf_bytes = (
+///     DocumentBuilder()
+///     .title("Hello")
+///     .register_embedded_font("DejaVu", EmbeddedFont.from_file("DejaVuSans.ttf"))
+///     .a4_page()
+///         .font("DejaVu", 12.0)
+///         .at(72.0, 720.0).text("Привет, мир!")
+///         .done()
+///     .build()
+/// )
+/// ```
+///
+/// `build()`, `save()`, `save_encrypted()`, `to_bytes_encrypted()`, and
+/// `save_with_encryption()` **consume** the builder — subsequent calls
+/// on the same instance raise `RuntimeError`.
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "DocumentBuilder")]
+pub struct PyDocumentBuilder {
+    pub(crate) inner: Option<crate::writer::DocumentBuilder>,
+}
+
+impl PyDocumentBuilder {
+    fn take_inner(&mut self, ctx: &str) -> PyResult<crate::writer::DocumentBuilder> {
+        self.inner.take().ok_or_else(|| {
+            PyRuntimeError::new_err(format!("DocumentBuilder already consumed ({ctx})"))
+        })
+    }
+
+    fn with_inner<F>(&mut self, ctx: &str, f: F) -> PyResult<()>
+    where
+        F: FnOnce(crate::writer::DocumentBuilder) -> crate::writer::DocumentBuilder,
+    {
+        let taken = self.take_inner(ctx)?;
+        self.inner = Some(f(taken));
+        Ok(())
+    }
+}
+
+#[pymethods]
+impl PyDocumentBuilder {
+    #[new]
+    fn new() -> Self {
+        Self {
+            inner: Some(crate::writer::DocumentBuilder::new()),
+        }
+    }
+
+    fn title<'a>(mut slf: PyRefMut<'a, Self>, title: String) -> PyResult<PyRefMut<'a, Self>> {
+        slf.with_inner("title", |b| b.title(title))?;
+        Ok(slf)
+    }
+
+    fn author<'a>(mut slf: PyRefMut<'a, Self>, author: String) -> PyResult<PyRefMut<'a, Self>> {
+        slf.with_inner("author", |b| b.author(author))?;
+        Ok(slf)
+    }
+
+    fn subject<'a>(mut slf: PyRefMut<'a, Self>, subject: String) -> PyResult<PyRefMut<'a, Self>> {
+        slf.with_inner("subject", |b| b.subject(subject))?;
+        Ok(slf)
+    }
+
+    fn keywords<'a>(mut slf: PyRefMut<'a, Self>, keywords: String) -> PyResult<PyRefMut<'a, Self>> {
+        slf.with_inner("keywords", |b| b.keywords(keywords))?;
+        Ok(slf)
+    }
+
+    fn creator<'a>(mut slf: PyRefMut<'a, Self>, creator: String) -> PyResult<PyRefMut<'a, Self>> {
+        slf.with_inner("creator", |b| b.creator(creator))?;
+        Ok(slf)
+    }
+
+    /// Register a TTF/OTF font the PDF pages can reference by name. The
+    /// `EmbeddedFont` handle is **consumed** — reusing it raises
+    /// `RuntimeError`.
+    fn register_embedded_font<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        name: String,
+        font: &Bound<'_, PyEmbeddedFont>,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        let embedded = font
+            .borrow_mut()
+            .inner
+            .take()
+            .ok_or_else(|| PyRuntimeError::new_err("EmbeddedFont already consumed"))?;
+        slf.with_inner("register_embedded_font", |b| b.register_embedded_font(name, embedded))?;
+        Ok(slf)
+    }
+
+    /// Start a new A4 page and return a `FluentPageBuilder`. Call
+    /// `.done()` on the returned builder to commit the page.
+    fn a4_page(slf_handle: Py<Self>) -> PyFluentPageBuilder {
+        PyFluentPageBuilder {
+            parent: slf_handle,
+            page_size: Some(crate::writer::PageSize::A4),
+            custom_width: 0.0,
+            custom_height: 0.0,
+            ops: Vec::new(),
+            done_called: false,
+        }
+    }
+
+    fn letter_page(slf_handle: Py<Self>) -> PyFluentPageBuilder {
+        PyFluentPageBuilder {
+            parent: slf_handle,
+            page_size: Some(crate::writer::PageSize::Letter),
+            custom_width: 0.0,
+            custom_height: 0.0,
+            ops: Vec::new(),
+            done_called: false,
+        }
+    }
+
+    /// Start a new page with custom dimensions in PDF points
+    /// (72 pt = 1 inch). Use for non-standard paper sizes.
+    fn page(slf_handle: Py<Self>, width: f32, height: f32) -> PyFluentPageBuilder {
+        PyFluentPageBuilder {
+            parent: slf_handle,
+            page_size: None,
+            custom_width: width,
+            custom_height: height,
+            ops: Vec::new(),
+            done_called: false,
+        }
+    }
+
+    /// Build the PDF and return it as `bytes`. **Consumes** the builder.
+    fn build<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
+        let inner = self.take_inner("build")?;
+        let bytes = inner
+            .build()
+            .map_err(|e| PyRuntimeError::new_err(format!("build failed: {e}")))?;
+        Ok(PyBytes::new(py, &bytes))
+    }
+
+    /// Build and save the PDF to `path`. **Consumes** the builder.
+    fn save(&mut self, path: &str) -> PyResult<()> {
+        let inner = self.take_inner("save")?;
+        inner
+            .save(path)
+            .map_err(|e| PyIOError::new_err(format!("save failed: {e}")))
+    }
+
+    /// Build and save the PDF with AES-256 encryption. Default grants
+    /// all permissions; pass a custom `EncryptionConfig` via
+    /// `save_with_encryption` for fine-grained control. **Consumes**
+    /// the builder.
+    fn save_encrypted(
+        &mut self,
+        path: &str,
+        user_password: &str,
+        owner_password: &str,
+    ) -> PyResult<()> {
+        let inner = self.take_inner("save_encrypted")?;
+        inner
+            .save_encrypted(path, user_password, owner_password)
+            .map_err(|e| PyIOError::new_err(format!("save_encrypted failed: {e}")))
+    }
+
+    /// Build and return the encrypted PDF as `bytes` using AES-256.
+    /// **Consumes** the builder.
+    fn to_bytes_encrypted<'py>(
+        &mut self,
+        py: Python<'py>,
+        user_password: &str,
+        owner_password: &str,
+    ) -> PyResult<Bound<'py, PyBytes>> {
+        let inner = self.take_inner("to_bytes_encrypted")?;
+        let bytes = inner
+            .to_bytes_encrypted(user_password, owner_password)
+            .map_err(|e| PyRuntimeError::new_err(format!("to_bytes_encrypted failed: {e}")))?;
+        Ok(PyBytes::new(py, &bytes))
+    }
+}
+
+/// Python wrapper that buffers page-level operations until `done()`.
+///
+/// See [`PyDocumentBuilder`] for the fluent pattern. This class holds a
+/// reference back to its parent `DocumentBuilder` and is single-use:
+/// once `done()` is called, subsequent method calls raise
+/// `RuntimeError`.
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "FluentPageBuilder")]
+pub struct PyFluentPageBuilder {
+    parent: Py<PyDocumentBuilder>,
+    page_size: Option<crate::writer::PageSize>,
+    custom_width: f32,
+    custom_height: f32,
+    ops: Vec<PendingPageOp>,
+    done_called: bool,
+}
+
+impl PyFluentPageBuilder {
+    fn push(&mut self, op: PendingPageOp) -> PyResult<()> {
+        if self.done_called {
+            return Err(PyRuntimeError::new_err("FluentPageBuilder.done() already called"));
+        }
+        self.ops.push(op);
+        Ok(())
+    }
+}
+
+#[pymethods]
+impl PyFluentPageBuilder {
+    fn font<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        name: String,
+        size: f32,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::Font(name, size))?;
+        Ok(slf)
+    }
+
+    fn at<'a>(mut slf: PyRefMut<'a, Self>, x: f32, y: f32) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::At(x, y))?;
+        Ok(slf)
+    }
+
+    fn text<'a>(mut slf: PyRefMut<'a, Self>, text: String) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::Text(text))?;
+        Ok(slf)
+    }
+
+    fn heading<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        level: u8,
+        text: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::Heading(level, text))?;
+        Ok(slf)
+    }
+
+    fn paragraph<'a>(mut slf: PyRefMut<'a, Self>, text: String) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::Paragraph(text))?;
+        Ok(slf)
+    }
+
+    fn space<'a>(mut slf: PyRefMut<'a, Self>, points: f32) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::Space(points))?;
+        Ok(slf)
+    }
+
+    fn horizontal_rule<'a>(mut slf: PyRefMut<'a, Self>) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::HorizontalRule)?;
+        Ok(slf)
+    }
+
+    // -----------------------------------------------------------------
+    // Annotation methods — operate on the *previous* text element just
+    // as in the Rust API. These cover #384 Phase 3 for the Python
+    // binding.
+    // -----------------------------------------------------------------
+
+    fn link_url<'a>(mut slf: PyRefMut<'a, Self>, url: String) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::LinkUrl(url))?;
+        Ok(slf)
+    }
+
+    fn link_page<'a>(mut slf: PyRefMut<'a, Self>, page: usize) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::LinkPage(page))?;
+        Ok(slf)
+    }
+
+    fn link_named<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        destination: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::LinkNamed(destination))?;
+        Ok(slf)
+    }
+
+    fn highlight<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        color: (f32, f32, f32),
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::Highlight(color.0, color.1, color.2))?;
+        Ok(slf)
+    }
+
+    fn underline<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        color: (f32, f32, f32),
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::Underline(color.0, color.1, color.2))?;
+        Ok(slf)
+    }
+
+    fn strikeout<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        color: (f32, f32, f32),
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::Strikeout(color.0, color.1, color.2))?;
+        Ok(slf)
+    }
+
+    fn squiggly<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        color: (f32, f32, f32),
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::Squiggly(color.0, color.1, color.2))?;
+        Ok(slf)
+    }
+
+    fn sticky_note<'a>(mut slf: PyRefMut<'a, Self>, text: String) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::StickyNote(text))?;
+        Ok(slf)
+    }
+
+    fn sticky_note_at<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        x: f32,
+        y: f32,
+        text: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::StickyNoteAt(x, y, text))?;
+        Ok(slf)
+    }
+
+    fn watermark<'a>(mut slf: PyRefMut<'a, Self>, text: String) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::Watermark(text))?;
+        Ok(slf)
+    }
+
+    fn watermark_confidential<'a>(mut slf: PyRefMut<'a, Self>) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::WatermarkConfidential)?;
+        Ok(slf)
+    }
+
+    fn watermark_draft<'a>(mut slf: PyRefMut<'a, Self>) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::WatermarkDraft)?;
+        Ok(slf)
+    }
+
+    /// Commit the page's buffered operations to the parent
+    /// `DocumentBuilder` and return the parent for further chaining.
+    /// After `done()`, this `FluentPageBuilder` is spent.
+    fn done(&mut self, py: Python) -> PyResult<Py<PyDocumentBuilder>> {
+        if self.done_called {
+            return Err(PyRuntimeError::new_err("FluentPageBuilder.done() already called"));
+        }
+        self.done_called = true;
+
+        let parent_handle = self.parent.clone_ref(py);
+        let mut parent_ref = parent_handle.borrow_mut(py);
+        let inner = parent_ref
+            .inner
+            .as_mut()
+            .ok_or_else(|| PyRuntimeError::new_err("DocumentBuilder already consumed"))?;
+
+        let page_size = self
+            .page_size
+            .unwrap_or(crate::writer::PageSize::Custom(self.custom_width, self.custom_height));
+
+        let mut page = inner.page(page_size);
+        for op in self.ops.drain(..) {
+            page = match op {
+                PendingPageOp::Font(name, size) => page.font(&name, size),
+                PendingPageOp::At(x, y) => page.at(x, y),
+                PendingPageOp::Text(text) => page.text(&text),
+                PendingPageOp::Heading(level, text) => page.heading(level, &text),
+                PendingPageOp::Paragraph(text) => page.paragraph(&text),
+                PendingPageOp::Space(points) => page.space(points),
+                PendingPageOp::HorizontalRule => page.horizontal_rule(),
+                PendingPageOp::LinkUrl(url) => page.link_url(&url),
+                PendingPageOp::LinkPage(p) => page.link_page(p),
+                PendingPageOp::LinkNamed(dest) => page.link_named(&dest),
+                PendingPageOp::Highlight(r, g, b) => page.highlight((r, g, b)),
+                PendingPageOp::Underline(r, g, b) => page.underline((r, g, b)),
+                PendingPageOp::Strikeout(r, g, b) => page.strikeout((r, g, b)),
+                PendingPageOp::Squiggly(r, g, b) => page.squiggly((r, g, b)),
+                PendingPageOp::StickyNote(text) => page.sticky_note(&text),
+                PendingPageOp::StickyNoteAt(x, y, text) => page.sticky_note_at(x, y, &text),
+                PendingPageOp::Watermark(text) => page.watermark(&text),
+                PendingPageOp::WatermarkConfidential => page.watermark_confidential(),
+                PendingPageOp::WatermarkDraft => page.watermark_draft(),
+            };
+        }
+        page.done();
+
+        drop(parent_ref);
+        Ok(parent_handle)
+    }
+}
+
+// =============================================================================
+// HTML+CSS pipeline (#384 Phase 2) — thin wrappers on PyPdf
+// =============================================================================
+//
+// `Pdf.from_html_css[_with_fonts]` exposes the v0.3.37 HTML+CSS → PDF
+// pipeline (issue #248) to Python. The Rust side is
+// `crate::api::Pdf::from_html_css` and `from_html_css_with_fonts`.
+
 #[pyclass(
     module = "pdf_oxide.pdf_oxide",
     name = "PageTemplate",
@@ -4138,6 +4668,10 @@ fn pdf_oxide(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyColor>()?;
     m.add_class::<PyBlendMode>()?;
     m.add_class::<PyExtGState>()?;
+    // #384 Phase 1 — write-side API (DocumentBuilder + embedded fonts)
+    m.add_class::<PyDocumentBuilder>()?;
+    m.add_class::<PyFluentPageBuilder>()?;
+    m.add_class::<PyEmbeddedFont>()?;
     m.add_class::<PyPageTemplate>()?;
     m.add_class::<PyArtifact>()?;
     m.add_class::<PyHeader>()?;
