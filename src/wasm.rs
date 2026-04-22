@@ -2662,6 +2662,33 @@ impl WasmPdfDocument {
         Ok(())
     }
 
+    /// Move a page within the document. Zero-based; `from_index` and
+    /// `to_index` refer to positions **before** the move, matching the
+    /// Python (`PyPdfDocument.move_page`) / Go (`DocumentEditor.MovePage`) /
+    /// C# contracts. Closes #384 WASM gap P.
+    #[wasm_bindgen(js_name = "movePage")]
+    pub fn move_page(&mut self, from_index: usize, to_index: usize) -> Result<(), JsValue> {
+        use crate::editor::EditableDocument;
+        let bytes = self.raw_bytes.to_vec();
+        let mut editor = crate::editor::DocumentEditor::from_bytes(bytes)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        editor
+            .move_page(from_index, to_index)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let new_bytes = editor
+            .save_to_bytes()
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let new_doc = crate::document::PdfDocument::from_bytes(new_bytes.clone())
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| JsValue::from_str("Lock failed"))?;
+        *inner = new_doc;
+        self.raw_bytes = Arc::new(new_bytes);
+        Ok(())
+    }
+
     /// Extract specific pages to a new PDF (returns bytes).
     #[wasm_bindgen(js_name = "extractPages")]
     pub fn extract_pages(&mut self, pages: Vec<usize>) -> Result<Vec<u8>, JsValue> {

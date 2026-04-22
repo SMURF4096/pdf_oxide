@@ -822,3 +822,38 @@ fn wasm_pdf_from_html_css_with_fonts_requires_non_empty() {
     let result = WasmPdf::from_html_css_with_fonts("<p>x</p>", "", Vec::new(), Vec::new());
     assert!(result.is_err(), "empty font list should be rejected");
 }
+
+// ----------------------------------------------------------------------
+// #384 gap P — WASM must expose move_page (completes DocumentEditor
+// mutation parity with Python/Go/C#/Node).
+// ----------------------------------------------------------------------
+
+#[wasm_bindgen_test]
+fn wasm_pdf_document_move_page_preserves_page_count() {
+    // Three-page PDF with distinct content per page so the reorder is observable.
+    let mut b = WasmDocumentBuilder::new();
+    for tag in &["alpha", "beta", "gamma"] {
+        let mut p = b.a4_page().unwrap();
+        p.at(72.0, 720.0).unwrap();
+        p.text(tag.to_string()).unwrap();
+        p.done(&mut b).unwrap();
+    }
+    let bytes = b.build().unwrap();
+
+    let mut doc = WasmPdfDocument::new(&bytes).unwrap();
+    assert_eq!(doc.page_count().unwrap(), 3);
+
+    // Move the first page to the end. No error = plumbing works.
+    doc.move_page(0, 2).unwrap();
+    assert_eq!(
+        doc.page_count().unwrap(),
+        3,
+        "move_page must not change the page count",
+    );
+
+    // Out-of-range move must surface as an Err, not panic.
+    assert!(
+        doc.move_page(99, 0).is_err(),
+        "out-of-range from_index should return Err",
+    );
+}
