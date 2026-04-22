@@ -7,10 +7,12 @@ namespace PdfOxide.Tests
 {
     /// <summary>
     /// Cross-binding mirror of <c>tests/test_signature_enumeration.rs</c>.
-    /// Closes #384 gap D / #51 — the inspection half. Verify() and
-    /// GetCertificate() throw UnsupportedFeatureException until later
-    /// slices of #72 land; tests pin that contract so it can't silently
-    /// regress.
+    /// Closes #384 gap D / #51 — the inspection half. GetCertificate()
+    /// and Verify() are now wired to the Rust-core CMS path; the
+    /// cryptographic round-trip for Verify()/VerifyDetached() is
+    /// covered by <c>tests/test_cms_verify_round_trip.rs</c> on the
+    /// Rust side and does not yet have a C# integration fixture
+    /// (a signed-PDF golden file is still to land as part of #77).
     /// </summary>
     public class SignatureTests
     {
