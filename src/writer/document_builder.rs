@@ -942,6 +942,85 @@ impl DocumentBuilder {
         std::fs::write(path, bytes)?;
         Ok(())
     }
+
+    /// Build and save the PDF with AES-256 encryption using the given
+    /// user and owner passwords. Grants all permissions — use
+    /// [`DocumentBuilder::save_with_encryption`] for a custom
+    /// [`crate::editor::EncryptionConfig`] (algorithm + permissions).
+    ///
+    /// Routes built bytes through the standard encryption pipeline
+    /// (`DocumentEditor::save_with_options`), so the resulting PDF is
+    /// byte-compatible with any PDF viewer that supports AES-256 (PDF
+    /// 2.0 / `/V 5 /R 6`).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use pdf_oxide::writer::{DocumentBuilder, PageSize};
+    ///
+    /// let mut builder = DocumentBuilder::new();
+    /// builder.page(PageSize::A4).at(72.0, 700.0).text("secret").done();
+    /// builder.save_encrypted("out.pdf", "user-pw", "owner-pw")?;
+    /// # Ok::<(), pdf_oxide::error::Error>(())
+    /// ```
+    pub fn save_encrypted(
+        self,
+        path: impl AsRef<Path>,
+        user_password: &str,
+        owner_password: &str,
+    ) -> Result<()> {
+        use crate::editor::{EncryptionAlgorithm, EncryptionConfig, Permissions};
+        let config = EncryptionConfig {
+            user_password: user_password.to_string(),
+            owner_password: owner_password.to_string(),
+            algorithm: EncryptionAlgorithm::Aes256,
+            permissions: Permissions::all(),
+        };
+        self.save_with_encryption(path, config)
+    }
+
+    /// Build and save the PDF with a custom encryption configuration.
+    ///
+    /// Use this when you need a specific algorithm (RC4-128, AES-128,
+    /// AES-256) or restricted permissions. For the common AES-256
+    /// all-permissions case, prefer [`DocumentBuilder::save_encrypted`].
+    pub fn save_with_encryption(
+        self,
+        path: impl AsRef<Path>,
+        config: crate::editor::EncryptionConfig,
+    ) -> Result<()> {
+        use crate::editor::{DocumentEditor, EditableDocument, SaveOptions};
+        let bytes = self.build()?;
+        let mut editor = DocumentEditor::from_bytes(bytes)?;
+        editor.save_with_options(path, SaveOptions::with_encryption(config))
+    }
+
+    /// Build and return the encrypted PDF as bytes. Mirrors
+    /// [`DocumentBuilder::save_encrypted`] but skips the filesystem —
+    /// useful for WASM / server pipelines that stream bytes back to a
+    /// caller.
+    pub fn to_bytes_encrypted(self, user_password: &str, owner_password: &str) -> Result<Vec<u8>> {
+        use crate::editor::{EncryptionAlgorithm, EncryptionConfig, Permissions};
+        let config = EncryptionConfig {
+            user_password: user_password.to_string(),
+            owner_password: owner_password.to_string(),
+            algorithm: EncryptionAlgorithm::Aes256,
+            permissions: Permissions::all(),
+        };
+        self.to_bytes_with_encryption(config)
+    }
+
+    /// Build and return the PDF as encrypted bytes, using a custom
+    /// configuration.
+    pub fn to_bytes_with_encryption(
+        self,
+        config: crate::editor::EncryptionConfig,
+    ) -> Result<Vec<u8>> {
+        use crate::editor::{DocumentEditor, SaveOptions};
+        let bytes = self.build()?;
+        let mut editor = DocumentEditor::from_bytes(bytes)?;
+        editor.save_to_bytes_with_options(SaveOptions::with_encryption(config))
+    }
 }
 
 impl Default for DocumentBuilder {
