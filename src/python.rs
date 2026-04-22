@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use pyo3::exceptions::{PyIOError, PyRuntimeError, PyValueError};
+use pyo3::exceptions::{PyIOError, PyNotImplementedError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 #[cfg(feature = "python")]
 use pyo3::types::PyBytes;
@@ -140,6 +140,24 @@ impl PyPdfDocument {
         self.inner
             .page_count()
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to get page count: {}", e)))
+    }
+
+    /// Enumerate existing PDF signatures. Returns a list of
+    /// `Signature` objects — empty list when the document has no
+    /// AcroForm or no signed signature fields.
+    ///
+    /// Mirrors Rust `signatures::enumerate_signatures` (#72 slice 2)
+    /// and the C# `PdfDocument.Signatures` surface.
+    fn signatures(&mut self) -> PyResult<Vec<PySignature>> {
+        let list = crate::signatures::enumerate_signatures(&mut self.inner)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to enumerate signatures: {}", e)))?;
+        Ok(list.into_iter().map(|info| PySignature { info }).collect())
+    }
+
+    /// Count existing PDF signatures without materialising them.
+    fn signature_count(&mut self) -> PyResult<usize> {
+        crate::signatures::count_signatures(&mut self.inner)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to count signatures: {}", e)))
     }
 
     /// Extract text from a page.
@@ -5015,6 +5033,73 @@ impl PyExtractionProfile {
     }
 }
 
+/// A single existing PDF signature surfaced by
+/// `PdfDocument.signatures()`. Inspection-only for now — the
+/// cryptographic `verify()` path is not yet implemented Rust-side
+/// (pending #72 later slices) and raises NotImplementedError.
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "Signature")]
+pub struct PySignature {
+    info: crate::signatures::SignatureInfo,
+}
+
+#[pymethods]
+impl PySignature {
+    /// `/Name` from the signature dictionary, or `None`.
+    #[getter]
+    fn signer_name(&self) -> Option<String> {
+        self.info.signer_name.clone()
+    }
+
+    /// `/Reason` from the signature dictionary, or `None`.
+    #[getter]
+    fn reason(&self) -> Option<String> {
+        self.info.reason.clone()
+    }
+
+    /// `/Location` from the signature dictionary, or `None`.
+    #[getter]
+    fn location(&self) -> Option<String> {
+        self.info.location.clone()
+    }
+
+    /// `/ContactInfo` from the signature dictionary, or `None`.
+    #[getter]
+    fn contact_info(&self) -> Option<String> {
+        self.info.contact_info.clone()
+    }
+
+    /// Signing time as Unix epoch seconds (parsed from the PDF date
+    /// string in `/M`), or `None` if the entry is missing or
+    /// unparseable.
+    #[getter]
+    fn signing_time(&self) -> Option<i64> {
+        self.info
+            .signing_time
+            .as_deref()
+            .and_then(crate::signatures::parse_pdf_date_to_epoch)
+    }
+
+    /// True iff `/ByteRange` covers the whole document (4-element array).
+    #[getter]
+    fn covers_whole_document(&self) -> bool {
+        self.info.covers_whole_document
+    }
+
+    /// Verify the signature cryptographically. Not yet implemented.
+    fn verify(&self) -> PyResult<bool> {
+        Err(PyNotImplementedError::new_err(
+            "Signature.verify() requires CMS/PKCS#7 verification (#72 slice 4, not yet landed)",
+        ))
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Signature(signer_name={:?}, reason={:?}, location={:?})",
+            self.info.signer_name, self.info.reason, self.info.location,
+        )
+    }
+}
+
 #[pymodule(gil_used = false)]
 fn pdf_oxide(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Bridge Rust `log` to Python `logging` (silent by default, user
@@ -5065,6 +5150,7 @@ fn pdf_oxide(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyLineJoin>()?;
     m.add_class::<PyPatternPresets>()?;
     m.add_class::<PyOfficeConverter>()?;
+    m.add_class::<PySignature>()?;
     m.add("VERSION", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }
