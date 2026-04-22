@@ -132,14 +132,15 @@ impl<'a> PageBuilder<'a> {
     /// [`PdfWriter::register_embedded_font`] first; the returned resource
     /// name is what `font_resource_name` should be (e.g. `"EF1"`).
     ///
-    /// Glyph IDs are looked up via the font's `cmap`, encoded as
-    /// big-endian Identity-H hex strings, and emitted as a `Tj` operand.
-    /// The font's internal subsetter tracks which glyphs + codepoints
-    /// are referenced so `/W` and the `ToUnicode` CMap built in
-    /// [`PdfWriter::finish`] are subset-accurate. The `FontFile2`
-    /// stream itself currently embeds the full face; switching it to
-    /// [`crate::fonts::subset_font_bytes`] output is a later follow-up
-    /// and requires GID remapping in already-emitted content streams.
+    /// Glyph IDs are looked up via the font's `cmap` and buffered into
+    /// a structured [`crate::writer::content_stream::ContentStreamOp::ShowEmbeddedText`]
+    /// op carrying the font resource name. Hex emission is deferred to
+    /// [`PdfWriter::finish`], which runs
+    /// [`crate::fonts::subset_font_bytes`] on each embedded font and
+    /// uses the resulting [`crate::fonts::GlyphRemapper`] to renumber
+    /// every original GID in the content stream into its subset-local
+    /// index — so `FontFile2`, `/W`, `ToUnicode`, and the content stream
+    /// all agree on the subset GID space.
     pub fn add_embedded_text(
         &mut self,
         text: &str,
@@ -153,12 +154,12 @@ impl<'a> PageBuilder<'a> {
         // is a silent no-op — missing-text is easier to debug than a
         // panic deep inside the writer, and HTML→PDF hits unknown fonts
         // often during early development.
-        let encoded_hex = self
+        let glyph_ids = self
             .writer
             .embedded_fonts
             .get_mut(font_resource_name)
             .map(|font| font.encode_string(text));
-        let Some(encoded_hex) = encoded_hex else {
+        let Some(glyph_ids) = glyph_ids else {
             return self;
         };
 
@@ -166,7 +167,7 @@ impl<'a> PageBuilder<'a> {
         page.content_builder
             .begin_text()
             .set_font(font_resource_name, font_size)
-            .hex_text(&encoded_hex, x, y);
+            .embedded_text(font_resource_name, glyph_ids, x, y);
         self
     }
 
@@ -204,13 +205,13 @@ impl<'a> PageBuilder<'a> {
         };
         // encode_shaped_run records (codepoint, glyph) pairs via the
         // shaper's cluster field so the ToUnicode CMap round-trips.
-        let encoded_hex = font.encode_shaped_run(&shaped, text);
+        let glyph_ids = font.encode_shaped_run(&shaped, text);
 
         let page = &mut self.writer.pages[self.page_index];
         page.content_builder
             .begin_text()
             .set_font(font_resource_name, font_size)
-            .hex_text(&encoded_hex, x, y);
+            .embedded_text(font_resource_name, glyph_ids, x, y);
         self
     }
 
@@ -1126,9 +1127,17 @@ impl PdfWriter {
         // the HashMap itself so output PDFs are byte-reproducible
         // regardless of HashMap randomisation. Drained because
         // `build_embedded_font_objects` takes `&mut EmbeddedFont`.
+        //
+        // Each font produces a `GlyphRemapper` (subset GID → new GID)
+        // that the content-stream builder needs at serialisation time
+        // to renumber every `ShowEmbeddedText` op into the subset's
+        // dense 0..N GID space. We collect them keyed by resource name
+        // (e.g. "EF1") and pass the whole map into every page's
+        // `build_with_remappers` below. FONT-3b.
         let mut embedded = std::mem::take(&mut self.embedded_fonts);
         let order = std::mem::take(&mut self.embedded_font_order);
         let mut embedded_object_ids: Vec<u32> = Vec::new();
+        let mut font_remappers: HashMap<String, crate::fonts::GlyphRemapper> = HashMap::new();
         for resource_name in order {
             let Some(mut font) = embedded.remove(&resource_name) else {
                 continue;
@@ -1142,15 +1151,16 @@ impl PdfWriter {
                     id
                 })
                 .collect();
-            let (ids, objects) =
+            let (ids, objects, remapper) =
                 super::font_pdf_objects::build_embedded_font_objects(&mut font, || {
                     allocated.remove(0)
-                });
+                })?;
             font_resources.insert(resource_name.clone(), ObjectSerializer::reference(ids.type0, 0));
             for (id, obj) in objects {
                 embedded_object_ids.push(id);
                 self.objects.insert(id, obj);
             }
+            font_remappers.insert(resource_name.clone(), remapper);
         }
 
         // Catalog object (object 1)
@@ -1261,8 +1271,12 @@ impl PdfWriter {
             let (page_id, content_id) = page_ids[i];
             let page_ref = ObjectRef::new(page_id, 0);
 
-            // Build content stream
-            let raw_content = page_data.content_builder.build()?;
+            // Build content stream, threading the per-font remappers
+            // through so every `ShowEmbeddedText` op is renumbered into
+            // the subset's dense GID space (FONT-3b).
+            let raw_content = page_data
+                .content_builder
+                .build_with_remappers(&font_remappers)?;
 
             // Optionally compress the content stream
             let (content_bytes, is_compressed) = if self.config.compress {

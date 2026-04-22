@@ -8,7 +8,9 @@ use crate::elements::{
     TableContent, TextContent,
 };
 use crate::error::Result;
+use crate::fonts::GlyphRemapper;
 use crate::layout::Color;
+use std::collections::HashMap;
 use std::io::Write;
 
 /// Operations that can be added to a content stream.
@@ -34,6 +36,20 @@ pub enum ContentStreamOp {
     ShowText(String),
     /// Show hex-encoded text (Tj) - for CIDFonts/Unicode
     ShowHexText(String),
+    /// Show text from a registered embedded font, carrying *original-face*
+    /// glyph IDs together with the font's PDF resource name (e.g. `"EF1"`).
+    ///
+    /// The concrete hex bytes emitted into the content stream are computed
+    /// at serialization time ([`ContentStreamBuilder::build_with_remappers`])
+    /// so that every GID can be remapped through the font's subset
+    /// [`GlyphRemapper`]. This is what makes FONT-3b — real font subsetting
+    /// with GID remapping in already-emitted content streams — possible.
+    ShowEmbeddedText {
+        /// PDF resource name of the embedded font (e.g. `"EF1"`).
+        font_name: String,
+        /// Original-face glyph IDs in logical text order.
+        glyph_ids: Vec<u16>,
+    },
     /// Show text with positioning (TJ)
     ShowTextArray(Vec<TextArrayItem>),
     /// Set character spacing (Tc)
@@ -335,19 +351,29 @@ impl ContentStreamBuilder {
         self
     }
 
-    /// Add text using an embedded font with Unicode support.
+    /// Add text from a registered embedded font at a position, deferring
+    /// hex encoding to serialization time so that subsetting can remap
+    /// GIDs into subset-local indices.
     ///
-    /// This is a convenience method that encodes the text and shows it.
-    /// The font should be registered and set before calling this.
-    pub fn unicode_text(
+    /// `font_name` is the PDF resource name of the font (e.g. `"EF1"`).
+    /// `glyph_ids` are *original-face* glyph IDs; the remapper paired
+    /// with the same resource name in
+    /// [`ContentStreamBuilder::build_with_remappers`] maps them to the
+    /// subset-local IDs actually emitted as hex.
+    pub fn embedded_text(
         &mut self,
-        font: &mut crate::writer::font_manager::EmbeddedFont,
-        text: &str,
+        font_name: &str,
+        glyph_ids: Vec<u16>,
         x: f32,
         y: f32,
     ) -> &mut Self {
-        let encoded = font.encode_string(text);
-        self.hex_text(&encoded, x, y)
+        self.begin_text();
+        self.op(ContentStreamOp::SetTextMatrix(1.0, 0.0, 0.0, 1.0, x, y));
+        self.op(ContentStreamOp::ShowEmbeddedText {
+            font_name: font_name.to_string(),
+            glyph_ids,
+        });
+        self
     }
 
     /// Set fill color.
@@ -1112,11 +1138,32 @@ impl ContentStreamBuilder {
     }
 
     /// Build the content stream to bytes.
+    ///
+    /// Any [`ContentStreamOp::ShowEmbeddedText`] ops are serialized as-is
+    /// with *original-face* GIDs. For correct subset-indexed output,
+    /// use [`ContentStreamBuilder::build_with_remappers`] instead — the
+    /// production writer pipeline ([`crate::writer::PdfWriter::finish`])
+    /// always goes through the remapper-aware path.
     pub fn build(&self) -> Result<Vec<u8>> {
+        self.build_with_remappers(&HashMap::new())
+    }
+
+    /// Build the content stream to bytes, remapping every embedded-font
+    /// glyph ID through its per-font [`GlyphRemapper`].
+    ///
+    /// `remappers` is keyed by the PDF resource name (e.g. `"EF1"`) used
+    /// in the matching [`ContentStreamOp::ShowEmbeddedText::font_name`].
+    /// Missing remappers fall back to emitting the original GID unchanged
+    /// — a defensive path; in practice `PdfWriter::finish` always
+    /// supplies a remapper for every embedded font it has registered.
+    pub fn build_with_remappers(
+        &self,
+        remappers: &HashMap<String, GlyphRemapper>,
+    ) -> Result<Vec<u8>> {
         let mut buf = Vec::new();
 
         for op in &self.operations {
-            self.write_op(&mut buf, op)?;
+            self.write_op(&mut buf, op, remappers)?;
             writeln!(buf)?;
         }
 
@@ -1124,7 +1171,12 @@ impl ContentStreamBuilder {
     }
 
     /// Write a single operation to the buffer.
-    fn write_op<W: Write>(&self, w: &mut W, op: &ContentStreamOp) -> std::io::Result<()> {
+    fn write_op<W: Write>(
+        &self,
+        w: &mut W,
+        op: &ContentStreamOp,
+        remappers: &HashMap<String, GlyphRemapper>,
+    ) -> std::io::Result<()> {
         match op {
             ContentStreamOp::SaveState => write!(w, "q"),
             ContentStreamOp::RestoreState => write!(w, "Q"),
@@ -1146,6 +1198,21 @@ impl ContentStreamBuilder {
             ContentStreamOp::ShowHexText(hex) => {
                 // Hex string already formatted as <XXXX...>
                 write!(w, "{} Tj", hex)
+            },
+            ContentStreamOp::ShowEmbeddedText {
+                font_name,
+                glyph_ids,
+            } => {
+                // Resolve original GIDs through the font's subset remapper.
+                // Missing remapper is a defensive fallback — production
+                // writer always supplies one.
+                let remapper = remappers.get(font_name);
+                write!(w, "<")?;
+                for &orig in glyph_ids {
+                    let emitted = remapper.and_then(|r| r.get(orig)).unwrap_or(orig);
+                    write!(w, "{:04X}", emitted)?;
+                }
+                write!(w, "> Tj")
             },
             ContentStreamOp::ShowTextArray(items) => {
                 write!(w, "[")?;

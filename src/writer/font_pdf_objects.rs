@@ -12,15 +12,22 @@
 //!
 //! All glyph indexing in the content stream is done through the Type 0 dict
 //! using Identity-H encoding, which is just "two bytes per glyph, big endian,
-//! no remapping". The ToUnicode CMap is what makes `extract_text` round-trip:
-//! without it, every PDF reader sees opaque glyph IDs.
+//! no remapping — the CID *is* the GID".
 //!
-//! v0.3.35 ships **full-font embedding** — the `subsetter` wrapper from
-//! `crate::fonts::subset_font_bytes` is wired separately (FONT-2) and feeds
-//! into this path in a follow-up commit (FONT-3b) once content streams can
-//! be GID-remapped. For now `EmbeddedFont::font_data()` (the original face
-//! bytes) goes straight into FontFile2.
+//! v0.3.38 ships **real font subsetting** (FONT-3b): `FontFile2` carries the
+//! output of [`crate::fonts::subset_font_bytes`] (only the glyphs actually
+//! used by this document, typically ~1% of a full CJK face), `/W` widths
+//! and the `ToUnicode` CMap are keyed by the subset's GIDs (compact 0..N),
+//! and the content stream's embedded-text ops are rewritten with the same
+//! subset GIDs at serialisation time by
+//! [`crate::writer::content_stream::ContentStreamBuilder::build_with_remappers`].
+//! The [`GlyphRemapper`] returned here is the single source of truth for
+//! that renumbering, threaded from the font-object emission phase of
+//! [`crate::writer::PdfWriter::finish`] into every page's content-stream
+//! serialisation.
 
+use crate::error::{Error, Result};
+use crate::fonts::GlyphRemapper;
 use crate::object::Object;
 use crate::writer::font_manager::EmbeddedFont;
 use crate::writer::object_serializer::ObjectSerializer;
@@ -45,18 +52,28 @@ pub struct EmbeddedFontIds {
     pub tounicode: u32,
 }
 
-/// Build the five PDF objects that embed `font`. The caller is responsible
-/// for inserting the returned `(id, Object)` pairs into the writer's object
-/// table and for emitting the Type 0 ref into the page `/Resources /Font`
-/// dictionary under `resource_name`.
+/// Build the five PDF objects that embed `font` as a **subset** (only the
+/// glyphs actually recorded via [`crate::fonts::FontSubsetter`] during
+/// content-stream emission).
+///
+/// The caller is responsible for inserting the returned `(id, Object)`
+/// pairs into the writer's object table and for emitting the Type 0 ref
+/// into the page `/Resources /Font` dictionary under `resource_name`.
 ///
 /// `id_alloc` is called once per object in dependency order
 /// (font_file → descriptor → cidfont → tounicode → type0) so callers using
 /// a monotonic ID counter end up with the natural traversal order.
+///
+/// Returns the [`GlyphRemapper`] produced by
+/// [`crate::fonts::subset_font_bytes`] alongside the object graph — the
+/// caller *must* keep this remapper and pass it to
+/// [`crate::writer::content_stream::ContentStreamBuilder::build_with_remappers`]
+/// for every page that references the font, or the hex GIDs emitted in the
+/// content stream will not match the subset face's glyph indices.
 pub fn build_embedded_font_objects(
     font: &mut EmbeddedFont,
     mut id_alloc: impl FnMut() -> u32,
-) -> (EmbeddedFontIds, Vec<(u32, Object)>) {
+) -> Result<(EmbeddedFontIds, Vec<(u32, Object)>, GlyphRemapper)> {
     let font_file_id = id_alloc();
     let descriptor_id = id_alloc();
     let cidfont_id = id_alloc();
@@ -76,18 +93,26 @@ pub fn build_embedded_font_objects(
     // Subset name like "ABCDEF+DejaVuSans". The 6-letter tag is generated
     // deterministically from the used-glyph set so the same content always
     // produces the same subset name (helps reproducible builds).
-    //
-    // PDF spec note: when the font is *not* actually subsetted (full-font
-    // embedding, which is what ships in v0.3.35 first cut), the subset
-    // tag is still permitted — it just signals "this could be a subset"
-    // to readers, no harm done. When real subsetting wires in (FONT-3b)
-    // the same tag continues to be valid.
     let base_font = font.subset_name().to_string();
 
-    // ── 1. FontFile2 stream — the actual TrueType bytes ──────────────────
-    // Full-font for v0.3.35 first cut. Length1 must equal the byte length
-    // of the embedded TTF per PDF spec §9.9.
-    let font_bytes = font.font_data().to_vec();
+    // ── 1. FontFile2 stream — subset TrueType bytes ──────────────────────
+    // Run the Typst `subsetter` over the original face, keeping only the
+    // glyphs this document actually references (plus GID 0 / .notdef,
+    // which `subset_font_bytes` always adds). The returned `GlyphRemapper`
+    // renumbers the kept glyphs to a dense 0..N range — we hand it back
+    // to the caller so the content stream, `/W`, and `ToUnicode` all see
+    // the same subset GIDs.
+    //
+    // If the font was registered but never used in any content stream,
+    // `used_glyphs()` is empty; `subset_font_bytes` still produces a
+    // valid (tiny) subset containing just .notdef. That keeps registered-
+    // but-unused fonts round-trip-safe at minimal cost.
+    //
+    // Length1 must equal the byte length of the embedded TTF per PDF
+    // spec §9.9.
+    let (font_bytes, remapper) =
+        crate::fonts::subset_font_bytes(font.font_data(), 0, font.used_glyphs())
+            .map_err(|e| Error::Font(format!("font subsetting failed: {e}")))?;
     let length1 = font_bytes.len() as i64;
     let mut ff_dict: HashMap<String, Object> = HashMap::new();
     ff_dict.insert("Length".to_string(), ObjectSerializer::integer(length1));
@@ -124,7 +149,7 @@ pub fn build_embedded_font_objects(
     // /CIDToGIDMap /Identity is the right call when the source font's GIDs
     // *are* the CIDs we expose, which is exactly what Identity-H encoding
     // gives us. The /W array carries glyph widths indexed by CID/GID.
-    let widths_str = font.generate_widths_array();
+    let widths_str = font.generate_widths_array(&remapper);
     let cid_system_info = ObjectSerializer::dict(vec![
         ("Registry", ObjectSerializer::string("Adobe")),
         ("Ordering", ObjectSerializer::string("Identity")),
@@ -151,7 +176,7 @@ pub fn build_embedded_font_objects(
     // round-trip path: PDF readers parse this CMap to recover source text
     // from glyph IDs, which is what every conformance check (and our own
     // extract_text) walks.
-    let cmap_bytes = font.generate_tounicode_cmap().into_bytes();
+    let cmap_bytes = font.generate_tounicode_cmap(&remapper).into_bytes();
     let mut cmap_dict: HashMap<String, Object> = HashMap::new();
     cmap_dict.insert("Length".to_string(), ObjectSerializer::integer(cmap_bytes.len() as i64));
     out.push((
@@ -176,7 +201,7 @@ pub fn build_embedded_font_objects(
     ]);
     out.push((type0_id, type0));
 
-    (ids, out)
+    Ok((ids, out, remapper))
 }
 
 /// Convert the pre-formatted widths string produced by
