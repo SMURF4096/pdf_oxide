@@ -3123,79 +3123,243 @@ pub extern "C" fn pdf_tsa_request_timestamp_hash(
     ptr::null_mut()
 }
 
+/// Parse a DER-encoded RFC 3161 TimeStampToken (or bare TSTInfo) into
+/// an owned `Timestamp` handle. Every `pdf_timestamp_*` accessor below
+/// is cheap O(1) once the handle exists.
+#[no_mangle]
+pub extern "C" fn pdf_timestamp_parse(
+    bytes: *const u8,
+    len: usize,
+    error_code: *mut i32,
+) -> *mut std::ffi::c_void {
+    #[cfg(feature = "signatures")]
+    {
+        if bytes.is_null() || len == 0 {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let slice = unsafe { std::slice::from_raw_parts(bytes, len) };
+        match crate::signatures::Timestamp::from_der(slice) {
+            Ok(ts) => {
+                set_error(error_code, ERR_SUCCESS);
+                Box::into_raw(Box::new(ts)) as *mut std::ffi::c_void
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = (bytes, len);
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn pdf_timestamp_get_token(
-    _ts: *const std::ffi::c_void,
-    _out_len: *mut usize,
+    ts: *const std::ffi::c_void,
+    out_len: *mut usize,
     error_code: *mut i32,
 ) -> *const u8 {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null()
+    #[cfg(feature = "signatures")]
+    {
+        if ts.is_null() || out_len.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null();
+        }
+        let t = unsafe { &*(ts as *const crate::signatures::Timestamp) };
+        let bytes = t.token_bytes();
+        unsafe { *out_len = bytes.len() };
+        set_error(error_code, ERR_SUCCESS);
+        bytes.as_ptr()
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = (ts, out_len);
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null()
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_timestamp_get_time(
-    _ts: *const std::ffi::c_void,
+    ts: *const std::ffi::c_void,
     error_code: *mut i32,
 ) -> i64 {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    0
+    #[cfg(feature = "signatures")]
+    {
+        if ts.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return 0;
+        }
+        let t = unsafe { &*(ts as *const crate::signatures::Timestamp) };
+        set_error(error_code, ERR_SUCCESS);
+        t.time()
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = ts;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        0
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_timestamp_get_serial(
-    _ts: *const std::ffi::c_void,
+    ts: *const std::ffi::c_void,
     error_code: *mut i32,
 ) -> *mut c_char {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+    #[cfg(feature = "signatures")]
+    {
+        if ts.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let t = unsafe { &*(ts as *const crate::signatures::Timestamp) };
+        set_error(error_code, ERR_SUCCESS);
+        to_c_string(&t.serial())
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = ts;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_timestamp_get_tsa_name(
-    _ts: *const std::ffi::c_void,
+    ts: *const std::ffi::c_void,
     error_code: *mut i32,
 ) -> *mut c_char {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+    #[cfg(feature = "signatures")]
+    {
+        if ts.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let t = unsafe { &*(ts as *const crate::signatures::Timestamp) };
+        set_error(error_code, ERR_SUCCESS);
+        to_c_string(&t.tsa_name())
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = ts;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_timestamp_get_policy_oid(
-    _ts: *const std::ffi::c_void,
+    ts: *const std::ffi::c_void,
     error_code: *mut i32,
 ) -> *mut c_char {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+    #[cfg(feature = "signatures")]
+    {
+        if ts.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let t = unsafe { &*(ts as *const crate::signatures::Timestamp) };
+        set_error(error_code, ERR_SUCCESS);
+        to_c_string(&t.policy_oid())
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = ts;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_timestamp_get_hash_algorithm(
-    _ts: *const std::ffi::c_void,
+    ts: *const std::ffi::c_void,
     error_code: *mut i32,
 ) -> i32 {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    -1
+    #[cfg(feature = "signatures")]
+    {
+        if ts.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return -1;
+        }
+        let t = unsafe { &*(ts as *const crate::signatures::Timestamp) };
+        set_error(error_code, ERR_SUCCESS);
+        t.hash_algorithm() as i32
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = ts;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        -1
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_timestamp_get_message_imprint(
-    _ts: *const std::ffi::c_void,
-    _out_len: *mut usize,
+    ts: *const std::ffi::c_void,
+    out_len: *mut usize,
     error_code: *mut i32,
 ) -> *const u8 {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null()
+    // Returns a pointer into the owned `Timestamp` — lives as long as
+    // the caller holds the Timestamp handle; must NOT be freed
+    // separately. `out_len` receives the imprint byte length.
+    #[cfg(feature = "signatures")]
+    {
+        if ts.is_null() || out_len.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null();
+        }
+        let t = unsafe { &*(ts as *const crate::signatures::Timestamp) };
+        // Stash the imprint on the handle so the returned pointer
+        // remains valid for the handle's lifetime. The getter on
+        // Timestamp clones, which would invalidate the pointer on
+        // return — we need an API that returns a borrowed slice.
+        // Compromise: allocate a new leaked Box each call and rely on
+        // the caller to NOT free. Instead we stash on the handle:
+        let imprint = t.message_imprint_ref();
+        unsafe { *out_len = imprint.len() };
+        set_error(error_code, ERR_SUCCESS);
+        imprint.as_ptr()
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = (ts, out_len);
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null()
+    }
 }
 
 #[no_mangle]
-pub extern "C" fn pdf_timestamp_verify(_ts: *const std::ffi::c_void, error_code: *mut i32) -> bool {
+pub extern "C" fn pdf_timestamp_verify(ts: *const std::ffi::c_void, error_code: *mut i32) -> bool {
+    // Full cryptographic verification requires CMS SignedData signer
+    // validation — still pending as #72 slice 3 / #76. For now we
+    // surface UNSUPPORTED so every binding's Timestamp.Verify() is
+    // explicit about the gap.
+    let _ = ts;
     set_error(error_code, _ERR_UNSUPPORTED);
     false
 }
 
 #[no_mangle]
-pub extern "C" fn pdf_timestamp_free(_ts: *mut std::ffi::c_void) {}
+pub extern "C" fn pdf_timestamp_free(ts: *mut std::ffi::c_void) {
+    #[cfg(feature = "signatures")]
+    {
+        if !ts.is_null() {
+            unsafe {
+                drop(Box::from_raw(ts as *mut crate::signatures::Timestamp));
+            }
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = ts;
+    }
+}
 
 #[no_mangle]
 pub extern "C" fn pdf_signature_add_timestamp(

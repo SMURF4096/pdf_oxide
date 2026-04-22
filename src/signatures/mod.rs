@@ -45,12 +45,16 @@ mod byterange;
 mod enumerate;
 mod pdf_date;
 mod signer;
+#[cfg(feature = "signatures")]
+mod timestamp;
 mod types;
 mod verifier;
 
 pub use byterange::ByteRangeCalculator;
 pub use enumerate::{count_signatures, enumerate_signatures};
 pub use pdf_date::parse_pdf_date_to_epoch;
+#[cfg(feature = "signatures")]
+pub use timestamp::{HashAlgorithm, Timestamp};
 pub use signer::PdfSigner;
 pub use types::{
     DigestAlgorithm, SignOptions, SignatureAppearance, SignatureInfo, SignatureSubFilter,
