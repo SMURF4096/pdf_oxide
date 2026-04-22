@@ -161,6 +161,13 @@ v0.3.30 — NativeAOT + LibraryImport migration (#333) + v0.3.30 shipping fixes
     <RuntimeHostConfigurationOption Include="System.Globalization.Invariant" Value="true" />
   </ItemGroup>
 
+  <!-- Expose internals to the test project so unit tests can exercise the
+       FFI error-code mapper and other Internal/ types without forcing them
+       public. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="PdfOxide.Tests" />
+  </ItemGroup>
+
   <!-- No framework-conditional package references needed: net8.0+ includes
        System.Collections.Immutable, Microsoft.Bcl.AsyncInterfaces (built in
        via BCL), and System.Text.Json out of the box. #333 dropped all
