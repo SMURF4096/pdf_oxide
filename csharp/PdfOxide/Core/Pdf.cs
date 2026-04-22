@@ -252,6 +252,54 @@ namespace PdfOxide.Core
         }
 
         /// <summary>
+        /// Creates a single-page PDF wrapping a raster image on disk.
+        /// Supported formats match the core <c>pdf_from_image</c> FFI
+        /// entry point (JPEG, PNG).
+        /// </summary>
+        /// <param name="path">Path to the image file.</param>
+        /// <returns>A new <see cref="Pdf"/>.</returns>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="path"/> is null.</exception>
+        /// <exception cref="PdfException">Thrown if the image cannot be read or converted.</exception>
+        public static Pdf FromImage(string path)
+        {
+            if (path == null)
+                throw new ArgumentNullException(nameof(path));
+
+            var handle = NativeMethods.PdfFromImage(path, out var errorCode);
+            if (handle.IsInvalid)
+            {
+                ExceptionMapper.ThrowIfError(errorCode);
+            }
+            return new Pdf(handle);
+        }
+
+        /// <summary>
+        /// Creates a single-page PDF wrapping a raster image already in
+        /// memory (JPEG or PNG bytes). Use this overload when the image
+        /// comes from a network response or a database blob and you want
+        /// to avoid a scratch file.
+        /// </summary>
+        /// <param name="data">Raw image bytes.</param>
+        /// <returns>A new <see cref="Pdf"/>.</returns>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="data"/> is null.</exception>
+        /// <exception cref="ArgumentException">Thrown if <paramref name="data"/> is empty.</exception>
+        /// <exception cref="PdfException">Thrown if the image is malformed or an unsupported format.</exception>
+        public static Pdf FromImageBytes(byte[] data)
+        {
+            if (data == null)
+                throw new ArgumentNullException(nameof(data));
+            if (data.Length == 0)
+                throw new ArgumentException("Image byte array must not be empty.", nameof(data));
+
+            var handle = NativeMethods.PdfFromImageBytes(data, data.Length, out var errorCode);
+            if (handle.IsInvalid)
+            {
+                ExceptionMapper.ThrowIfError(errorCode);
+            }
+            return new Pdf(handle);
+        }
+
+        /// <summary>
         /// Gets the number of pages in the PDF.
         /// </summary>
         /// <value>The page count.</value>

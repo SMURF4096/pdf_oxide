@@ -5488,14 +5488,17 @@ namespace PdfOxide.Internal
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial void pdf_oxide_char_list_free(IntPtr handle);
 
-        // PDF Creator
-        [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
+        // PDF Creator from image (JPEG / PNG → single-page PDF wrapper).
+        [LibraryImport(LibName, EntryPoint = "pdf_from_image", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-        public static partial IntPtr pdf_from_image([MarshalAs(UnmanagedType.LPUTF8Str)] string path, out int errorCode);
+        public static partial NativeHandle PdfFromImage(string path, out int errorCode);
 
-        [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
+        [LibraryImport(LibName, EntryPoint = "pdf_from_image_bytes", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-        public static partial IntPtr pdf_from_image_bytes(IntPtr data, int dataLen, out int errorCode);
+        public static partial NativeHandle PdfFromImageBytes(
+            [In] byte[] data,
+            int dataLen,
+            out int errorCode);
 
         [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
