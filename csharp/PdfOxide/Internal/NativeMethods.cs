@@ -6609,5 +6609,217 @@ namespace PdfOxide.Internal
         public static partial void pdf_oxide_image_list_free_ptr(IntPtr handle);
 
         #endregion
+
+        #region Write-side API (#384 Phase 1-3 — DocumentBuilder, fonts, HTML+CSS)
+
+        /// <summary>Load a TTF/OTF font from a file path. Returns an opaque handle or <see cref="IntPtr.Zero"/>.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_embedded_font_from_file", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr PdfEmbeddedFontFromFile(string path, out int errorCode);
+
+        /// <summary>Load a TTF/OTF font from raw bytes. <paramref name="name"/> may be null to use the PostScript name.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_embedded_font_from_bytes", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr PdfEmbeddedFontFromBytes([In] byte[] data, nuint len, string? name, out int errorCode);
+
+        /// <summary>Free an EmbeddedFont handle. No-op on null. Do not call after a successful <c>PdfDocumentBuilderRegisterEmbeddedFont</c>.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_embedded_font_free", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial void PdfEmbeddedFontFree(IntPtr handle);
+
+        /// <summary>Create a new DocumentBuilder.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_document_builder_create", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr PdfDocumentBuilderCreate(out int errorCode);
+
+        /// <summary>Free a DocumentBuilder handle. Safe to call after a terminal (<c>_build</c> / <c>_save</c> / etc.) consumed it.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_document_builder_free", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial void PdfDocumentBuilderFree(IntPtr handle);
+
+        /// <summary>Set document title.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_document_builder_set_title", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfDocumentBuilderSetTitle(IntPtr handle, string title, out int errorCode);
+
+        /// <summary>Set document author.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_document_builder_set_author", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfDocumentBuilderSetAuthor(IntPtr handle, string author, out int errorCode);
+
+        /// <summary>Set document subject.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_document_builder_set_subject", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfDocumentBuilderSetSubject(IntPtr handle, string subject, out int errorCode);
+
+        /// <summary>Set document keywords.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_document_builder_set_keywords", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfDocumentBuilderSetKeywords(IntPtr handle, string keywords, out int errorCode);
+
+        /// <summary>Set the creator application name.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_document_builder_set_creator", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfDocumentBuilderSetCreator(IntPtr handle, string creator, out int errorCode);
+
+        /// <summary>Register a TTF/OTF font. CONSUMES <paramref name="font"/> on success.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_document_builder_register_embedded_font", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfDocumentBuilderRegisterEmbeddedFont(IntPtr handle, string name, IntPtr font, out int errorCode);
+
+        /// <summary>Start a new A4 page. Returns a page sub-handle. Only one page may be open per builder.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_document_builder_a4_page", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr PdfDocumentBuilderA4Page(IntPtr handle, out int errorCode);
+
+        /// <summary>Start a new US Letter page.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_document_builder_letter_page", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr PdfDocumentBuilderLetterPage(IntPtr handle, out int errorCode);
+
+        /// <summary>Start a page with custom dimensions in PDF points.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_document_builder_page", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr PdfDocumentBuilderPage(IntPtr handle, float width, float height, out int errorCode);
+
+        // PageBuilder — content ops ---------------------------------------------
+
+        /// <summary>Set the font + size for subsequent text on the page.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_font", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderFont(IntPtr page, string name, float size, out int errorCode);
+
+        /// <summary>Move the cursor to absolute coordinates.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_at", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderAt(IntPtr page, float x, float y, out int errorCode);
+
+        /// <summary>Emit a line of text at the current cursor position.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_text", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderText(IntPtr page, string text, out int errorCode);
+
+        /// <summary>Emit a heading at the current cursor position.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_heading", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderHeading(IntPtr page, byte level, string text, out int errorCode);
+
+        /// <summary>Emit a paragraph with automatic line wrapping.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_paragraph", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderParagraph(IntPtr page, string text, out int errorCode);
+
+        /// <summary>Advance the cursor by the given number of points.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_space", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderSpace(IntPtr page, float points, out int errorCode);
+
+        /// <summary>Draw a horizontal rule across the page.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_horizontal_rule", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderHorizontalRule(IntPtr page, out int errorCode);
+
+        // PageBuilder — annotations (Phase 3) -----------------------------------
+
+        /// <summary>Attach a URL link to the previously-emitted text element.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_link_url", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderLinkUrl(IntPtr page, string url, out int errorCode);
+
+        /// <summary>Link the previous text to an internal page (zero-based).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_link_page", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderLinkPage(IntPtr page, nuint targetPage, out int errorCode);
+
+        /// <summary>Link the previous text to a named destination.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_link_named", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderLinkNamed(IntPtr page, string destination, out int errorCode);
+
+        /// <summary>Highlight the previous text (RGB channels 0–1).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_highlight", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderHighlight(IntPtr page, float r, float g, float b, out int errorCode);
+
+        /// <summary>Underline the previous text.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_underline", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderUnderline(IntPtr page, float r, float g, float b, out int errorCode);
+
+        /// <summary>Strikeout the previous text.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_strikeout", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderStrikeout(IntPtr page, float r, float g, float b, out int errorCode);
+
+        /// <summary>Squiggly-underline the previous text.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_squiggly", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderSquiggly(IntPtr page, float r, float g, float b, out int errorCode);
+
+        /// <summary>Attach a sticky-note annotation to the previous text.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_sticky_note", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderStickyNote(IntPtr page, string text, out int errorCode);
+
+        /// <summary>Place a sticky note at an absolute position on the page.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_sticky_note_at", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderStickyNoteAt(IntPtr page, float x, float y, string text, out int errorCode);
+
+        /// <summary>Apply a text watermark to the page.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_watermark", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderWatermark(IntPtr page, string text, out int errorCode);
+
+        /// <summary>Apply the standard "CONFIDENTIAL" diagonal watermark.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_watermark_confidential", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderWatermarkConfidential(IntPtr page, out int errorCode);
+
+        /// <summary>Apply the standard "DRAFT" diagonal watermark.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_watermark_draft", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderWatermarkDraft(IntPtr page, out int errorCode);
+
+        /// <summary>Commit the page and CONSUME the page handle.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_done", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderDone(IntPtr page, out int errorCode);
+
+        /// <summary>Drop an uncommitted page handle (error-recovery).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_free", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial void PdfPageBuilderFree(IntPtr page);
+
+        // DocumentBuilder — finalisation (each CONSUMES the handle) ------------
+
+        /// <summary>Build the PDF and return the bytes. CONSUMES the handle. Free the output with <see cref="FreeBytes"/>.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_document_builder_build", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr PdfDocumentBuilderBuild(IntPtr handle, out nuint outLen, out int errorCode);
+
+        /// <summary>Build and save the PDF to a file. CONSUMES the handle.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_document_builder_save", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfDocumentBuilderSave(IntPtr handle, string path, out int errorCode);
+
+        /// <summary>Build and save with AES-256 encryption. CONSUMES the handle.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_document_builder_save_encrypted", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfDocumentBuilderSaveEncrypted(IntPtr handle, string path, string userPassword, string ownerPassword, out int errorCode);
+
+        /// <summary>Build encrypted bytes. CONSUMES the handle.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_document_builder_to_bytes_encrypted", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr PdfDocumentBuilderToBytesEncrypted(IntPtr handle, string userPassword, string ownerPassword, out nuint outLen, out int errorCode);
+
+        // HTML+CSS pipeline (#384 Phase 2) --------------------------------------
+
+        /// <summary>Build a PDF by rendering HTML + CSS with a single embedded font.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_from_html_css", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr PdfFromHtmlCss(string html, string css, [In] byte[] fontBytes, nuint fontLen, out int errorCode);
+
+        #endregion
     }
 }

@@ -111,6 +111,44 @@ namespace PdfOxide.Core
         }
 
         /// <summary>
+        /// Creates a PDF by rendering HTML + CSS with a single embedded
+        /// font. The font must cover every codepoint used by
+        /// <paramref name="html"/>, or unknown glyphs fall back to
+        /// <c>.notdef</c>.
+        /// </summary>
+        /// <remarks>
+        /// Closes #384 Phase 2 (HTML+CSS pipeline) for the C# binding.
+        /// </remarks>
+        /// <param name="html">The HTML content.</param>
+        /// <param name="css">The CSS stylesheet applied to the HTML.</param>
+        /// <param name="fontBytes">TTF/OTF font bytes used for the body text.</param>
+        /// <returns>A new <see cref="Pdf"/> document.</returns>
+        /// <exception cref="ArgumentNullException">Any argument is null.</exception>
+        /// <exception cref="PdfException">Rendering fails.</exception>
+        /// <example>
+        /// <code>
+        /// byte[] font = File.ReadAllBytes("DejaVuSans.ttf");
+        /// using var pdf = Pdf.FromHtmlCss(
+        ///     "&lt;h1&gt;Hello&lt;/h1&gt;&lt;p&gt;World&lt;/p&gt;",
+        ///     "h1 { color: blue }",
+        ///     font);
+        /// pdf.Save("out.pdf");
+        /// </code>
+        /// </example>
+        public static Pdf FromHtmlCss(string html, string css, byte[] fontBytes)
+        {
+            if (html == null) throw new ArgumentNullException(nameof(html));
+            if (css == null) throw new ArgumentNullException(nameof(css));
+            if (fontBytes == null) throw new ArgumentNullException(nameof(fontBytes));
+            if (fontBytes.Length == 0) throw new ArgumentException("fontBytes is empty", nameof(fontBytes));
+
+            var ptr = NativeMethods.PdfFromHtmlCss(html, css, fontBytes, (nuint)fontBytes.Length, out var errorCode);
+            if (ptr == IntPtr.Zero)
+                ExceptionMapper.ThrowIfError(errorCode);
+            return new Pdf(new NativeHandle(ptr, p => NativeMethods.PdfFree(p)));
+        }
+
+        /// <summary>
         /// Creates a PDF from plain text content.
         /// </summary>
         /// <param name="text">The text content.</param>
