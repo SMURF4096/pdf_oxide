@@ -481,6 +481,11 @@ extern "C" {
                                             float x, float y, float w, float h,
                                             const char* caption, int* error_code);
 
+  extern int   pdf_page_builder_rect(void* page, float x, float y, float w, float h, int* error_code);
+  extern int   pdf_page_builder_filled_rect(void* page, float x, float y, float w, float h,
+                                            float r, float g, float b, int* error_code);
+  extern int   pdf_page_builder_line(void* page, float x1, float y1, float x2, float y2, int* error_code);
+
   extern int   pdf_page_builder_done(void* page, int* error_code);
   extern void  pdf_page_builder_free(void* page);
 
@@ -3134,6 +3139,9 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   extern Napi::Value PageBuilderComboBox(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderRadioGroup(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderPushButton(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderRect(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderFilledRect(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderLine(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderDone(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderFree(const Napi::CallbackInfo&);
   extern Napi::Value DocumentBuilderBuild(const Napi::CallbackInfo&);
@@ -3183,6 +3191,9 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("pageBuilderComboBox", Napi::Function::New(env, PageBuilderComboBox));
   exports.Set("pageBuilderRadioGroup", Napi::Function::New(env, PageBuilderRadioGroup));
   exports.Set("pageBuilderPushButton", Napi::Function::New(env, PageBuilderPushButton));
+  exports.Set("pageBuilderRect", Napi::Function::New(env, PageBuilderRect));
+  exports.Set("pageBuilderFilledRect", Napi::Function::New(env, PageBuilderFilledRect));
+  exports.Set("pageBuilderLine", Napi::Function::New(env, PageBuilderLine));
   exports.Set("pageBuilderDone", Napi::Function::New(env, PageBuilderDone));
   exports.Set("pageBuilderFree", Napi::Function::New(env, PageBuilderFree));
   exports.Set("documentBuilderBuild", Napi::Function::New(env, DocumentBuilderBuild));
@@ -3616,6 +3627,49 @@ Napi::Value PageBuilderPushButton(const Napi::CallbackInfo& info) {
   int errorCode = 0;
   pdf_page_builder_push_button(p, name.c_str(), x, y, w, h, caption.c_str(), &errorCode);
   throwOnError(env, errorCode, "PageBuilder.pushButton");
+  return env.Undefined();
+}
+
+// Low-level graphics primitives (#384 Phase 4 — PdfWriter exposure)
+Napi::Value PageBuilderRect(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  float x = static_cast<float>(requireNumber(info, 1, "x"));
+  float y = static_cast<float>(requireNumber(info, 2, "y"));
+  float w = static_cast<float>(requireNumber(info, 3, "w"));
+  float h = static_cast<float>(requireNumber(info, 4, "h"));
+  int errorCode = 0;
+  pdf_page_builder_rect(p, x, y, w, h, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.rect");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderFilledRect(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  float x = static_cast<float>(requireNumber(info, 1, "x"));
+  float y = static_cast<float>(requireNumber(info, 2, "y"));
+  float w = static_cast<float>(requireNumber(info, 3, "w"));
+  float h = static_cast<float>(requireNumber(info, 4, "h"));
+  float r = static_cast<float>(requireNumber(info, 5, "r"));
+  float g = static_cast<float>(requireNumber(info, 6, "g"));
+  float b = static_cast<float>(requireNumber(info, 7, "b"));
+  int errorCode = 0;
+  pdf_page_builder_filled_rect(p, x, y, w, h, r, g, b, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.filledRect");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderLine(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  float x1 = static_cast<float>(requireNumber(info, 1, "x1"));
+  float y1 = static_cast<float>(requireNumber(info, 2, "y1"));
+  float x2 = static_cast<float>(requireNumber(info, 3, "x2"));
+  float y2 = static_cast<float>(requireNumber(info, 4, "y2"));
+  int errorCode = 0;
+  pdf_page_builder_line(p, x1, y1, x2, y2, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.line");
   return env.Undefined();
 }
 

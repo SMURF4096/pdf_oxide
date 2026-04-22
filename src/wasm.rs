@@ -3127,6 +3127,9 @@ enum WasmPageOp {
         h: f32,
         caption: String,
     },
+    Rect(f32, f32, f32, f32),
+    FilledRect(f32, f32, f32, f32, f32, f32, f32),
+    Line(f32, f32, f32, f32),
 }
 
 /// Embedded TTF/OTF font usable by `WasmDocumentBuilder`. Single-use: once
@@ -3379,6 +3382,11 @@ impl WasmDocumentBuilder {
                     h,
                     caption,
                 } => rust_page.push_button(name, x, y, w, h, caption),
+                WasmPageOp::Rect(x, y, w, h) => rust_page.rect(x, y, w, h),
+                WasmPageOp::FilledRect(x, y, w, h, r, g, b) => {
+                    rust_page.filled_rect(x, y, w, h, r, g, b)
+                },
+                WasmPageOp::Line(x1, y1, x2, y2) => rust_page.line(x1, y1, x2, y2),
             };
         }
         rust_page.done();
@@ -3664,6 +3672,33 @@ impl WasmFluentPageBuilder {
             h,
             caption,
         })
+    }
+
+    /// Draw a stroked rectangle outline (1pt black).
+    #[wasm_bindgen(js_name = "rect")]
+    pub fn rect(&mut self, x: f32, y: f32, w: f32, h: f32) -> Result<(), JsValue> {
+        self.push(WasmPageOp::Rect(x, y, w, h))
+    }
+
+    /// Draw a filled rectangle. RGB channels in 0.0-1.0.
+    #[wasm_bindgen(js_name = "filledRect")]
+    pub fn filled_rect(
+        &mut self,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+    ) -> Result<(), JsValue> {
+        self.push(WasmPageOp::FilledRect(x, y, w, h, r, g, b))
+    }
+
+    /// Draw a line from (x1, y1) to (x2, y2) with 1pt black stroke.
+    #[wasm_bindgen(js_name = "line")]
+    pub fn line(&mut self, x1: f32, y1: f32, x2: f32, y2: f32) -> Result<(), JsValue> {
+        self.push(WasmPageOp::Line(x1, y1, x2, y2))
     }
 
     /// Convenience: commit this page's buffered ops to `builder`. Same

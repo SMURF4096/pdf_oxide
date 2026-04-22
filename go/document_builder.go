@@ -88,6 +88,10 @@ extern int   pdf_page_builder_radio_group(void* page, const char* name,
 extern int   pdf_page_builder_push_button(void* page, const char* name,
                                           float x, float y, float w, float h,
                                           const char* caption, int* error_code);
+extern int   pdf_page_builder_rect(void* page, float x, float y, float w, float h, int* error_code);
+extern int   pdf_page_builder_filled_rect(void* page, float x, float y, float w, float h,
+                                          float r, float g, float b, int* error_code);
+extern int   pdf_page_builder_line(void* page, float x1, float y1, float x2, float y2, int* error_code);
 
 extern int   pdf_page_builder_done(void* page, int* error_code);
 extern void  pdf_page_builder_free(void* page);
@@ -804,6 +808,28 @@ func (p *PageBuilder) PushButton(name string, x, y, w, h float32, caption string
 		defer C.free(unsafe.Pointer(cn))
 		defer C.free(unsafe.Pointer(cc))
 		return C.pdf_page_builder_push_button(hp, cn, C.float(x), C.float(y), C.float(w), C.float(h), cc, ec)
+	})
+}
+
+// Rect draws a stroked rectangle outline (1pt black). (#384 Phase 4)
+func (p *PageBuilder) Rect(x, y, w, h float32) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		return C.pdf_page_builder_rect(hp, C.float(x), C.float(y), C.float(w), C.float(h), ec)
+	})
+}
+
+// FilledRect draws a filled rectangle in RGB colour (channels 0-1). (#384 Phase 4)
+func (p *PageBuilder) FilledRect(x, y, w, h, r, g, b float32) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		return C.pdf_page_builder_filled_rect(hp, C.float(x), C.float(y), C.float(w), C.float(h),
+			C.float(r), C.float(g), C.float(b), ec)
+	})
+}
+
+// Line draws a straight line from (x1, y1) to (x2, y2). (#384 Phase 4)
+func (p *PageBuilder) Line(x1, y1, x2, y2 float32) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		return C.pdf_page_builder_line(hp, C.float(x1), C.float(y1), C.float(x2), C.float(y2), ec)
 	})
 }
 

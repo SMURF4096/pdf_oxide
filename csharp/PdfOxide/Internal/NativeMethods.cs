@@ -6831,6 +6831,21 @@ namespace PdfOxide.Internal
             IntPtr page, string name, float x, float y, float w, float h,
             string caption, out int errorCode);
 
+        /// <summary>Draw a stroked rectangle outline.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_rect", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderRect(IntPtr page, float x, float y, float w, float h, out int errorCode);
+
+        /// <summary>Draw a filled rectangle in RGB colour.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_filled_rect", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderFilledRect(IntPtr page, float x, float y, float w, float h, float r, float g, float b, out int errorCode);
+
+        /// <summary>Draw a line from (x1, y1) to (x2, y2).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_line", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderLine(IntPtr page, float x1, float y1, float x2, float y2, out int errorCode);
+
         /// <summary>Commit the page and CONSUME the page handle.</summary>
         [LibraryImport(LibName, EntryPoint = "pdf_page_builder_done", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]

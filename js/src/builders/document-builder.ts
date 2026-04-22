@@ -447,6 +447,26 @@ export class PageBuilder {
     return this;
   }
 
+  // --- Low-level graphics primitives (#384 Phase 4) ------------------
+
+  /** Draw a stroked rectangle outline (1pt black). */
+  rect(x: number, y: number, w: number, h: number): this {
+    native.pageBuilderRect(this.h(), x, y, w, h);
+    return this;
+  }
+
+  /** Draw a filled rectangle in RGB colour (channels 0–1). */
+  filledRect(x: number, y: number, w: number, h: number, r: number, g: number, b: number): this {
+    native.pageBuilderFilledRect(this.h(), x, y, w, h, r, g, b);
+    return this;
+  }
+
+  /** Draw a line from `(x1, y1)` to `(x2, y2)` with 1pt black stroke. */
+  line(x1: number, y1: number, x2: number, y2: number): this {
+    native.pageBuilderLine(this.h(), x1, y1, x2, y2);
+    return this;
+  }
+
   /**
    * Commit the page's buffered operations to the parent builder and
    * return the parent for chaining. After `done()` this PageBuilder is

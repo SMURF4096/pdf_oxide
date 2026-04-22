@@ -371,6 +371,32 @@ namespace PdfOxide.Core
             return this;
         }
 
+        // --- Low-level graphics primitives (#384 Phase 4 — PdfWriter exposure) ---
+
+        /// <summary>Draw a stroked rectangle outline (1pt black).</summary>
+        public PageBuilder Rect(float x, float y, float w, float h)
+        {
+            NativeMethods.PdfPageBuilderRect(Handle, x, y, w, h, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
+        /// <summary>Draw a filled rectangle in RGB colour (channels 0–1).</summary>
+        public PageBuilder FilledRect(float x, float y, float w, float h, float r, float g, float b)
+        {
+            NativeMethods.PdfPageBuilderFilledRect(Handle, x, y, w, h, r, g, b, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
+        /// <summary>Draw a line from (x1, y1) to (x2, y2) with 1pt black stroke.</summary>
+        public PageBuilder Line(float x1, float y1, float x2, float y2)
+        {
+            NativeMethods.PdfPageBuilderLine(Handle, x1, y1, x2, y2, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
         /// <summary>
         /// Commit the page's buffered operations back to the parent
         /// builder. Returns the parent for continued chaining. After

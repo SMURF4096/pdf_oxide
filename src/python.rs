@@ -3945,6 +3945,9 @@ enum PendingPageOp {
         h: f32,
         caption: String,
     },
+    Rect(f32, f32, f32, f32),
+    FilledRect(f32, f32, f32, f32, f32, f32, f32),
+    Line(f32, f32, f32, f32),
 }
 
 /// Python wrapper for an embedded TTF/OTF font usable by `DocumentBuilder`.
@@ -4473,6 +4476,45 @@ impl PyFluentPageBuilder {
         Ok(slf)
     }
 
+    /// Draw a stroked rectangle outline (1pt black).
+    fn rect<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::Rect(x, y, w, h))?;
+        Ok(slf)
+    }
+
+    /// Draw a filled rectangle. RGB channels in 0.0–1.0.
+    fn filled_rect<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::FilledRect(x, y, w, h, r, g, b))?;
+        Ok(slf)
+    }
+
+    /// Draw a line from (x1, y1) to (x2, y2) with 1pt black stroke.
+    fn line<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::Line(x1, y1, x2, y2))?;
+        Ok(slf)
+    }
+
     /// Commit the page's buffered operations to the parent
     /// `DocumentBuilder` and return the parent for further chaining.
     /// After `done()`, this `FluentPageBuilder` is spent.
@@ -4557,6 +4599,11 @@ impl PyFluentPageBuilder {
                     h,
                     caption,
                 } => page.push_button(name, x, y, w, h, caption),
+                PendingPageOp::Rect(x, y, w, h) => page.rect(x, y, w, h),
+                PendingPageOp::FilledRect(x, y, w, h, r, g, b) => {
+                    page.filled_rect(x, y, w, h, r, g, b)
+                },
+                PendingPageOp::Line(x1, y1, x2, y2) => page.line(x1, y1, x2, y2),
             };
         }
         page.done();

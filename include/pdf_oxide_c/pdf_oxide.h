@@ -408,6 +408,14 @@ int   pdf_page_builder_push_button(void* page, const char* name,
                                    const char* caption,
                                    int* error_code);
 
+/* Low-level graphics primitives (#384 Phase 4 — PdfWriter exposure) */
+int   pdf_page_builder_rect(void* page, float x, float y, float w, float h,
+                            int* error_code);
+int   pdf_page_builder_filled_rect(void* page, float x, float y, float w, float h,
+                                   float r, float g, float b, int* error_code);
+int   pdf_page_builder_line(void* page, float x1, float y1, float x2, float y2,
+                            int* error_code);
+
 /* PageBuilder — commit / drop */
 int   pdf_page_builder_done(void* page, int* error_code);
 void  pdf_page_builder_free(void* page);

@@ -752,6 +752,73 @@ impl<'a> FluentPageBuilder<'a> {
         self
     }
 
+    // ───────────────────────────────────────────────────────────────────
+    // Low-level graphics primitives (#384 Phase 4 — PdfWriter exposure)
+    //
+    // These emit `ContentElement::Path` directly, the same backing
+    // primitive DocumentBuilder already supports via `element()`. Kept
+    // as first-class fluent methods because "I want a rectangle" is
+    // common enough that forcing users through the lower-level
+    // `ContentElement::Path` builder is ergonomically bad across 6
+    // bindings.
+    // ───────────────────────────────────────────────────────────────────
+
+    /// Draw a stroked rectangle outline at `(x, y)` with size `w × h`
+    /// using the default 1pt black stroke. For a filled rectangle with
+    /// a custom colour, see [`Self::filled_rect`].
+    pub fn rect(self, x: f32, y: f32, w: f32, h: f32) -> Self {
+        use crate::elements::PathContent;
+        use crate::elements::PathOperation;
+        let mut path = PathContent::new(Rect::new(x, y, w, h));
+        path.operations.push(PathOperation::Rectangle(x, y, w, h));
+        path.stroke_color = Some(crate::layout::Color {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+        });
+        path.fill_color = None;
+        let page = &mut self.builder.pages[self.page_index];
+        page.elements.push(ContentElement::Path(path));
+        self
+    }
+
+    /// Draw a filled rectangle at `(x, y)` with size `w × h` in the
+    /// given RGB colour (channels in `0.0..=1.0`). No outline.
+    pub fn filled_rect(self, x: f32, y: f32, w: f32, h: f32, r: f32, g: f32, b: f32) -> Self {
+        use crate::elements::PathContent;
+        use crate::elements::PathOperation;
+        let mut path = PathContent::new(Rect::new(x, y, w, h));
+        path.operations.push(PathOperation::Rectangle(x, y, w, h));
+        path.fill_color = Some(crate::layout::Color { r, g, b });
+        path.stroke_color = None;
+        let page = &mut self.builder.pages[self.page_index];
+        page.elements.push(ContentElement::Path(path));
+        self
+    }
+
+    /// Draw a straight line from `(x1, y1)` to `(x2, y2)` with the
+    /// default 1pt black stroke.
+    pub fn line(self, x1: f32, y1: f32, x2: f32, y2: f32) -> Self {
+        use crate::elements::PathContent;
+        use crate::elements::PathOperation;
+        let min_x = x1.min(x2);
+        let min_y = y1.min(y2);
+        let w = (x2 - x1).abs().max(1.0);
+        let h = (y2 - y1).abs().max(1.0);
+        let mut path = PathContent::new(Rect::new(min_x, min_y, w, h));
+        path.operations.push(PathOperation::MoveTo(x1, y1));
+        path.operations.push(PathOperation::LineTo(x2, y2));
+        path.stroke_color = Some(crate::layout::Color {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+        });
+        path.fill_color = None;
+        let page = &mut self.builder.pages[self.page_index];
+        page.elements.push(ContentElement::Path(path));
+        self
+    }
+
     /// Finish building this page and return to the document builder.
     pub fn done(mut self) -> &'a mut DocumentBuilder {
         // Move pending annotations to page data

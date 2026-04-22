@@ -5961,6 +5961,9 @@ enum FfiPageOp {
         h: f32,
         caption: String,
     },
+    Rect(f32, f32, f32, f32),
+    FilledRect(f32, f32, f32, f32, f32, f32, f32),
+    Line(f32, f32, f32, f32),
 }
 
 /// Parse a stamp-type name into the Rust `StampType` enum. Unknown names
@@ -6843,6 +6846,50 @@ pub extern "C" fn pdf_page_builder_push_button(
     )
 }
 
+// ── Low-level graphics primitives (#384 Phase 4 — PdfWriter exposure) ─
+
+/// Draw a stroked rectangle outline (1pt black).
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_rect(
+    handle: *mut FfiPageBuilder,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::Rect(x, y, w, h))
+}
+
+/// Draw a filled rectangle in RGB colour (channels 0–1).
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_filled_rect(
+    handle: *mut FfiPageBuilder,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    r: f32,
+    g: f32,
+    b: f32,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::FilledRect(x, y, w, h, r, g, b))
+}
+
+/// Draw a line from `(x1, y1)` to `(x2, y2)` with 1pt black stroke.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_line(
+    handle: *mut FfiPageBuilder,
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::Line(x1, y1, x2, y2))
+}
+
 /// Commit this page's buffered operations to its parent builder and
 /// **consume** the page handle. After a successful call the handle is
 /// invalid; do not call `_free`.
@@ -6943,6 +6990,11 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
                 h,
                 caption,
             } => rust_page.push_button(name, x, y, w, h, caption),
+            FfiPageOp::Rect(x, y, w, h) => rust_page.rect(x, y, w, h),
+            FfiPageOp::FilledRect(x, y, w, h, r, g, b) => {
+                rust_page.filled_rect(x, y, w, h, r, g, b)
+            },
+            FfiPageOp::Line(x1, y1, x2, y2) => rust_page.line(x1, y1, x2, y2),
         };
     }
     rust_page.done();

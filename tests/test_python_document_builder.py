@@ -370,6 +370,31 @@ def test_form_field_all_five_widget_types():
     )
 
 
+def test_graphics_primitives():
+    """#384 Phase 4 — low-level graphics primitives (rect, filled_rect,
+    line) are reachable directly from DocumentBuilder without going
+    through the ContentElement::Path builder."""
+    bytes_ = (
+        pdf_oxide.DocumentBuilder()
+        .a4_page()
+        # A framing box + an inner filled box + a diagonal line.
+        .rect(50.0, 50.0, 500.0, 700.0)
+        .filled_rect(100.0, 100.0, 200.0, 100.0, 0.9, 0.9, 1.0)
+        .line(50.0, 400.0, 550.0, 400.0)
+        .at(72.0, 500.0)
+        .text("Graphics primitives demo")
+        .done()
+        .build()
+    )
+    # Sanity: output is a valid PDF, parses, and the text we added
+    # survives round-trip. The rect / line operators themselves aren't
+    # exposed by extract_text, but their presence is implicit in the
+    # PDF being valid and bigger than a text-only page.
+    assert bytes_.startswith(b"%PDF-")
+    doc = pdf_oxide.PdfDocument.from_bytes(bytes_)
+    assert "Graphics primitives demo" in doc.extract_text(0)
+
+
 def test_version_is_038_or_newer():
     """Sanity check that we're running against a build that has the
     #384 write-side API — if the binding was rebuilt from a pre-0.3.38
