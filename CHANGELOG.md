@@ -3,321 +3,103 @@
 All notable changes to PDFOxide are documented here.
 
 ## [0.3.38] - 2026-04-21
-> DocumentBuilder encryption (#386), real font subsetting on the write
-> path (#385 — FONT-3b), multi-target WASM packaging (#392), and **the
-> complete write-side API exposed across every language binding (#384
-> Phase 1-3)** — DocumentBuilder, embedded fonts, annotations, and the
-> HTML+CSS pipeline now reachable from Python, WASM, C#, Go, Node, and
-> TypeScript.
+> Write-side API across every language binding, real font subsetting, DocumentBuilder encryption, multi-target WASM packaging
 
-### Write-side API across every binding (#384)
+This release closes the "Rust-only write-side API" gap. `DocumentBuilder`,
+embedded fonts, the HTML+CSS pipeline, annotations, form-field creation,
+and low-level graphics primitives are now reachable from **Python, WASM,
+C#, Go, and Node/TypeScript** — the Rust implementation is the single
+source of truth and every binding is a thin translation layer.
 
-Before v0.3.38 the Rust DocumentBuilder / FluentPageBuilder /
-EmbeddedFont / HTML+CSS pipeline were unreachable from non-Rust
-consumers; every binding exposed only `Pdf::from_markdown/html/text` +
-`save` (~15% of the write-side surface). This was particularly acute
-for the CJK embedded-font workflow from #382 — the Rust fix landed in
-v0.3.37, but Python / WASM / C# / Go / Node users couldn't reach it.
+### Write-side API × every binding (#384)
 
-v0.3.38 closes the gap. Every binding now has the full fluent API for
-programmatic multi-page construction:
+Every binding now exposes the full `DocumentBuilder` fluent API:
 
 ```python
-# Python
-from pdf_oxide import DocumentBuilder, EmbeddedFont
+# Python — the same shape ships in WASM, C#, Go, and Node/TS
 font = EmbeddedFont.from_file("DejaVuSans.ttf")
-bytes_ = (DocumentBuilder()
-    .register_embedded_font("DejaVu", font)
-    .a4_page().font("DejaVu", 12).at(72, 720).text("Привет, мир!").done()
-    .build())
+(DocumentBuilder()
+  .register_embedded_font("DejaVu", font)
+  .a4_page()
+    .font("DejaVu", 12).at(72, 720).text("Привет, мир!")
+    .highlight((1.0, 1.0, 0.0))
+    .text_field("name", 150, 680, 200, 20, "Jane Doe")
+    .checkbox("subscribe", 72, 650, 15, 15, True)
+    .rect(50, 50, 500, 700)
+  .done()
+  .build())
 ```
 
-```typescript
-// Node / TypeScript
-import { DocumentBuilder, EmbeddedFont } from 'pdf-oxide';
-const font = EmbeddedFont.fromFile('DejaVuSans.ttf');
-const bytes = DocumentBuilder.create()
-    .registerEmbeddedFont('DejaVu', font)
-    .a4Page().font('DejaVu', 12).at(72, 720).text('Привет, мир!').done()
-    .build();
-```
+Surface shipped in all 6 bindings:
 
-```csharp
-// C#
-using var font = EmbeddedFont.FromFile("DejaVuSans.ttf");
-using var builder = DocumentBuilder.Create()
-    .RegisterEmbeddedFont("DejaVu", font);
-byte[] bytes = builder.A4Page()
-    .Font("DejaVu", 12).At(72, 720).Text("Привет, мир!")
-    .Done().Build();
-```
+- **DocumentBuilder** + **FluentPageBuilder** + **EmbeddedFont** —
+  multi-page construction with CJK / Cyrillic / Greek support (closes
+  **#382** cross-language).
+- **HTML+CSS pipeline** — `Pdf.from_html_css(...)` and
+  `from_html_css_with_fonts(...)` for multi-font cascades.
+- **15 annotation methods** — link (URL / page / named), highlight,
+  underline, strikeout, squiggly, sticky note, stamp (14 standard
+  types + custom), free text, watermark (custom / DRAFT /
+  CONFIDENTIAL).
+- **5 AcroForm widget types** — text_field, checkbox, combo_box,
+  radio_group, push_button.
+- **Graphics primitives** — `rect`, `filled_rect`, `line`.
+- **AES-256 encryption** — `save_encrypted` / `to_bytes_encrypted` on
+  every binding.
 
-```go
-// Go
-font, _ := EmbeddedFontFromFile("DejaVuSans.ttf")
-b, _ := NewDocumentBuilder()
-b.RegisterEmbeddedFont("DejaVu", font)
-page, _ := b.A4Page()
-page.Font("DejaVu", 12).At(72, 720).Text("Привет, мир!").Done()
-bytes, _ := b.Build()
-```
+Per-binding regression tests for every capability above; ~70 new
+integration tests pass across Python (20), C FFI (11), C# (11), Go
+(11), Node/TS (10), and WASM (9).
 
-```javascript
-// WASM (browser / Node / Workers / Deno — all via v0.3.38 #392 packaging)
-import { WasmDocumentBuilder, WasmEmbeddedFont } from 'pdf-oxide-wasm';
-const font = WasmEmbeddedFont.fromBytes(fontBytes);
-const b = new WasmDocumentBuilder();
-b.registerEmbeddedFont('DejaVu', font);
-const page = b.a4Page();
-page.font('DejaVu', 12); page.at(72, 720); page.text('Привет, мир!');
-page.done(b);
-const bytes = b.build();
-```
+### Real font subsetting on the write path (#385 — FONT-3b)
 
-#### Phase 1 — DocumentBuilder + embedded fonts (closes #382 for every language)
+Documents that embed a CJK face now ship a **subset**, not the full
+font. A PDF with 5 characters from `NotoSansCJKtc-Regular.otf`
+(~17 MB original) is typically under 100 KB. Content streams, `/W`
+widths, and `ToUnicode` CMap are all re-keyed onto the subset GID
+space; `extract_text` round-trips unchanged.
 
-Every binding has a `DocumentBuilder` class (plus `FluentPageBuilder` /
-`PageBuilder` and `EmbeddedFont`) with:
+*Breaking (v0.3.x semver-acceptable):* `EmbeddedFont::encode_string` /
+`encode_shaped_run` now return `Vec<u16>` instead of a hex `String`,
+and `build_embedded_font_objects` returns a `GlyphRemapper` that
+callers must pass to `ContentStreamBuilder::build_with_remappers`.
+Internal writer-library consumers only — no change to high-level APIs.
 
-* Metadata setters (`title`, `author`, `subject`, `keywords`, `creator`)
-* `register_embedded_font(name, font)` — TTF / OTF registration (consumes the font)
-* `a4_page()` / `letter_page()` / `page(w, h)` — page openers with a
-  "one page at a time" invariant; a second open before `done()` errors out
-* `build()` → bytes, `save(path)` → file, `save_encrypted` / `to_bytes_encrypted`
-  (AES-256, reuses the v0.3.38 #386 encryption path) — each CONSUMES
-  the builder handle
+### DocumentBuilder encryption (#386)
 
-#### Phase 2 — HTML+CSS pipeline
-
-`Pdf::from_html_css(html, css, font_bytes)` (and
-`from_html_css_with_fonts` where the binding supports it) is exposed
-on every binding, routing through the Rust v0.3.37 CSS pipeline
-(#248). Python and WASM also expose `from_html_css_with_fonts` for
-multi-font cascades.
-
-#### Phase 3 — annotations (13 per page)
-
-`PageBuilder` carries the full annotation surface that Rust's
-FluentPageBuilder exposes: `link_url`, `link_page`, `link_named`,
-`highlight`, `underline`, `strikeout`, `squiggly`, `sticky_note`,
-`sticky_note_at`, `watermark`, `watermark_confidential`, `watermark_draft`.
-Each attaches to the previous text element; they don't break
-`extract_text` round-tripping.
-
-#### New C FFI functions (~40)
-
-`src/ffi.rs` + `include/pdf_oxide_c/pdf_oxide.h` gain a
-`pdf_document_builder_*` / `pdf_page_builder_*` / `pdf_embedded_font_*`
-family plus `pdf_from_html_css[_with_fonts]`. The handle-lifetime
-contract is documented in-place: builder handles are consumed by
-terminal methods; only one page handle may be outstanding at a time;
-`register_embedded_font` consumes the font handle; byte buffers from
-`_build` / `_to_bytes_encrypted` must be freed with `free_bytes`.
-
-C# (P/Invoke via [LibraryImport]), Go (cgo), and Node (N-API C++)
-all wrap this C FFI; Python (pyo3) and WASM (wasm-bindgen) wrap the
-Rust API directly without crossing the C boundary.
-
-#### Per-binding test suites — 70+ integration tests total
-
-Each binding ships a CJK round-trip test that is the #384 acceptance
-gate:
-
-| Binding | Tests | Framework |
-|---|---|---|
-| Python  | 17 | pytest |
-| WASM    |  9 | wasm_bindgen_test |
-| C FFI   | 11 | cargo test |
-| C#      | 11 | xUnit |
-| Go      | 11 | go test |
-| Node/TS | 10 | node --test |
-
-Every suite verifies: CJK round-trip (Cyrillic + Greek via
-`extract_text`), output-is-subsetted (PDF ≥10× smaller than the
-embedded face, locks in v0.3.38 #385 behaviour through each binding),
-handle-consumption semantics, one-page-at-a-time invariant, and
-AES-256 encryption (`/Encrypt /V 5`).
-
-See `BINDING_STYLE_GUIDE.md` for the naming conventions used across
-bindings (Python snake_case, C#/TS camelCase, Go CamelCase exported,
-WASM js_name camelCase).
-
-#### Phase 4 — form-field creation (all 5 widget types)
-
-`FluentPageBuilder` gains a complete set of AcroForm widget-creation
-methods. Users can now produce fillable PDFs from every binding:
-
-| Widget | API shape |
-|---|---|
-| `text_field` | `(name, x, y, w, h, default_value?)` — single-line input |
-| `checkbox` | `(name, x, y, w, h, checked)` |
-| `combo_box` | `(name, x, y, w, h, options: string[], selected?)` — dropdown |
-| `radio_group` | `(name, buttons: [(value, x, y, w, h)...], selected?)` |
-| `push_button` | `(name, x, y, w, h, caption)` |
-
-Each widget flows through a new `PendingFormField` enum on the Rust
-side and is applied to the underlying `pdf_writer::PageBuilder` at
-`build()` time, landing in `/AcroForm` automatically.
-
-Binding idioms (summarised):
-
-* **Python / WASM** — `List[str]` / `string[]` for options; lists of
-  typed tuples for `radio_group` buttons.
-* **C FFI** — parallel-array marshalling (new helper
-  `read_cstring_array`); options/names/xs/ys/ws/hs passed as
-  `*const *const c_char` + `*const f32` with a `count`.
-* **C#** — GCHandle-pinned parallel arrays; typed
-  `IReadOnlyList<(string, float, float, float, float)>` for
-  `RadioGroup`.
-* **Go** — new `RadioButton{Value, X, Y, W, H}` struct for
-  idiomatic Go call sites.
-* **Node/TS** — `string[]` for `comboBox`,
-  `Array<[string, number, number, number, number]>` for
-  `radioGroup`.
-
-Low-level `PdfWriter` graphics primitives (direct `add_page` /
-`draw_rect` / `draw_line` outside of DocumentBuilder) remain
-intentionally deferred — nobody has asked for that surface yet, and
-DocumentBuilder's `element()` covers the advanced cases.
-
-#### Closing the ticket
-
-With Phase 1 + 2 + 3 + 4 all shipped, **#384 is complete**: the
-coverage matrix at the top of this entry that was mostly `❌` now
-reads `✅` for every cell the plan flagged. `#382` (CJK via
-DocumentBuilder) is now reachable from every binding, not just Rust.
-
-
-
-### `pdf-oxide-wasm` now works in every target it advertises (#392)
-
-v0.3.37 shipped a single `wasm-bindgen --target nodejs` build under the
-`pdf-oxide-wasm` npm package, which hard-codes `__dirname` and
-`require('fs')` into the JS glue. That crashes in every browser and
-every bundler-driven environment (Vite + SvelteKit was the reported
-case) even though the package metadata advertises browser + edge
-support. Reported by @arthurlassagne.
-
-v0.3.38 ships three builds side-by-side and routes each consumer to
-the right one through `package.json` conditional exports:
-
-| Environment                                   | Build      | Init pattern                              |
-|-----------------------------------------------|------------|-------------------------------------------|
-| Node.js (`require` or ESM `import`)           | `nodejs/`  | `require('fs')` — unchanged from v0.3.37  |
-| Bundler (Vite, webpack, Rollup, esbuild, Bun) | `bundler/` | `import * as wasm from "./*.wasm"`        |
-| Browser / Deno / Cloudflare Workers / Workerd | `web/`     | `fetch(new URL('*.wasm', import.meta.url))` |
-
-Subpath imports work too, if your tool does something unusual with
-conditional exports:
-
-```javascript
-import { WasmPdfDocument } from "pdf-oxide-wasm/bundler";
-import { WasmPdfDocument } from "pdf-oxide-wasm/web";
-import { WasmPdfDocument } from "pdf-oxide-wasm/nodejs";
-```
-
-No code changes on the Rust side — this is a pure packaging fix.
-Existing Node.js consumers see identical behaviour (Node resolves via
-the `"node"` condition to the same `nodejs/pdf_oxide.js` glue as before).
-
-
-
-### `DocumentBuilder` encryption (#386)
-
-`DocumentBuilder::save` — introduced in v0.3.37 for the CJK / CSS-free
-programmatic build path — now has a matching encryption surface:
+AES-256 encryption is now available on programmatically-built PDFs:
 
 ```rust
-use pdf_oxide::writer::{DocumentBuilder, PageSize};
-use pdf_oxide::editor::{EncryptionAlgorithm, EncryptionConfig, Permissions};
-
-let mut builder = DocumentBuilder::new();
-builder.page(PageSize::A4).at(72.0, 700.0).text("secret").done();
-
-// AES-256, full permissions (matches Pdf::save_encrypted):
-builder.save_encrypted("out.pdf", "user-pw", "owner-pw")?;
-
-// Or custom algorithm / permissions:
-let config = EncryptionConfig::new("u", "o")
-    .with_algorithm(EncryptionAlgorithm::Aes128)
-    .with_permissions(Permissions::read_only());
-builder.save_with_encryption("out.pdf", config)?;
-
-// Bytes variants for WASM / server pipelines:
-let bytes = builder.to_bytes_encrypted("u", "o")?;
+DocumentBuilder::new()
+    .a4_page().text("secret").done()
+    .save_encrypted("out.pdf", "user-pw", "owner-pw")?;
 ```
 
-Prior to v0.3.38, `Pdf::save_encrypted` only worked for PDFs opened
-via `DocumentEditor` — programmatically-constructed documents had no
-encryption path at all. `DocumentBuilder::save_encrypted` &c. route
-the built bytes through `DocumentEditor::from_bytes` and re-use the
-production `write_full_to_writer` pipeline, so the output is byte-
-compatible with everything that can read `Pdf::save_encrypted` output.
+Also: `save_with_encryption` (custom algorithm + permissions) and
+`to_bytes_encrypted` for in-memory output.
 
-### Real font subsetting on the DocumentBuilder path (#385, FONT-3b)
+### Multi-target WASM packaging (#392)
 
-**Documents that embed a large CJK face now ship a subset, not the
-full font.** Before v0.3.38, a PDF containing five CJK characters from
-`NotoSansCJKtc-Regular.otf` was ~17 MB — the output carried the whole
-original face. After v0.3.38 it's typically under 100 KB.
+`pdf-oxide-wasm` now ships three builds side-by-side and routes each
+consumer through `package.json` conditional exports:
 
-The Typst `subsetter` wrapper at `crate::fonts::subset_font_bytes` has
-existed since v0.3.35 and `FontSubsetter` has tracked used glyphs for
-just as long; what was missing was the **GID-remapping pass** that
-renumbers content-stream GIDs to match the subset face. This ships as
-FONT-3b:
+| Environment                                       | Build      |
+|---------------------------------------------------|------------|
+| Node.js                                           | `nodejs/`  |
+| Bundlers (Vite, webpack, Rollup, esbuild, Bun)    | `bundler/` |
+| Browsers / Deno / Cloudflare Workers              | `web/`     |
 
-- `ContentStreamBuilder` buffers embedded-font text as a structured
-  `ContentStreamOp::ShowEmbeddedText { font_name, glyph_ids }` op
-  carrying *original-face* GIDs plus the font's PDF resource name.
-- `PdfWriter::finish` runs `subset_font_bytes` once per registered
-  embedded font, collects the `GlyphRemapper`s keyed by resource
-  name, and passes the whole map into every page's
-  `ContentStreamBuilder::build_with_remappers`.
-- Hex glyph IDs emitted into the content stream are remapped to the
-  **subset** GID space. `/W` widths and the `ToUnicode` CMap are
-  keyed on the same subset GID space, so everything round-trips
-  through `extract_text` without regression.
+Fixes `ReferenceError: Can't find variable: __dirname` thrown in any
+browser bundler. Subpath imports (`pdf-oxide-wasm/web` etc.) are also
+available for manual routing.
 
-This is not a behaviour opt-in — every document built via
-`DocumentBuilder::register_embedded_font` is subset-embedded from
-v0.3.38 onward. Registered-but-unused fonts produce a minimal
-`.notdef`-only subset (handled by `subset_font_bytes`'s unconditional
-GID 0 inclusion), so referenced-but-empty resources stay structurally
-valid.
+### Thanks
 
-#### API breakage
-
-Both surfaces are `pub` re-exports; v0.3.x semver accepts minor breaks
-here. External crates pinning to these APIs need minor updates:
-
-- `EmbeddedFont::encode_string` and `EmbeddedFont::encode_shaped_run`
-  now return `Vec<u16>` (original-face glyph IDs) instead of a hex
-  `String`. The hex encoding happens at content-stream serialisation
-  time inside `ContentStreamBuilder::build_with_remappers` so the
-  subset remapper can be applied.
-- `EmbeddedFont::generate_widths_array(&GlyphRemapper)` and
-  `EmbeddedFont::generate_tounicode_cmap(&GlyphRemapper)` now require
-  the remapper returned by `build_embedded_font_objects` so the
-  emitted entries use subset GIDs.
-- `build_embedded_font_objects` now returns
-  `Result<(EmbeddedFontIds, Vec<(u32, Object)>, GlyphRemapper)>` — the
-  remapper **must** be kept and passed to
-  `ContentStreamBuilder::build_with_remappers` for every page that
-  references the font, or glyph hex in the content stream will not
-  match the subset font face.
-- `ContentStreamBuilder::build()` still works for content that doesn't
-  use embedded fonts; for embedded-font pages use
-  `ContentStreamBuilder::build_with_remappers(&map)` so the remappers
-  apply.
-- `EmbeddedFont::encode_shaped` (dead since v0.3.36) and
-  `ContentStreamBuilder::unicode_text` (stranded after the
-  `encode_string` signature change) are removed.
-
-Migration for typical writer-library consumers is a one-line change:
-`font.encode_string(text)` → `font.encode_string(text)` (same call,
-returned `Vec<u16>` can be passed straight into
-`builder.embedded_text(font_resource_name, gids, x, y)`).
+Reports and feature requests from
+[@sparkyandrew](https://github.com/sparkyandrew) (#382 CJK via
+`DocumentBuilder`, #385 subsetter), and
+[@arthurlassagne](https://github.com/arthurlassagne) (#392 browser
+build breakage). Both surfaced the gaps that drove this release.
 
 ## [0.3.37] - 2026-04-20
 > HTML + CSS → PDF (issue #248) — first credible pure-Rust pipeline
