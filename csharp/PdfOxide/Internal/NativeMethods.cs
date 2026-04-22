@@ -2117,6 +2117,34 @@ namespace PdfOxide.Internal
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial void pdf_barcode_free(IntPtr handle);
 
+        // #384 gap H: clean P/Invoke set for the public Core/Barcode.cs
+        // wrapper. Uses IntPtr handles (no SafeHandle) and EntryPoint
+        // overrides so these coexist with the existing barcode entries
+        // above that have divergent legacy signatures.
+        [LibraryImport(LibName, EntryPoint = "pdf_generate_barcode", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr PdfGenerateBarcode(string data, int format, int sizePx, out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_barcode_get_format", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfBarcodeGetFormat(IntPtr handle, out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_barcode_get_data", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr PdfBarcodeGetData(IntPtr handle, out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_barcode_get_confidence", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial float PdfBarcodeGetConfidence(IntPtr handle, out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_barcode_get_image_png", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr PdfBarcodeGetImagePng(IntPtr handle, int sizePx, out int outLen, out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_barcode_free", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial void PdfBarcodeFree(IntPtr handle);
+
         /// <summary>
         /// Frees a barcode image handle.
         /// </summary>
