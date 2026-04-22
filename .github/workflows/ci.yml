@@ -15,6 +15,11 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # Warnings-as-errors for every cargo invocation in this workflow.
+  # Clippy + rustdoc are already gated; this closes the gap for
+  # `cargo build` / `cargo test` / feature-powerset / FFI / CLI / MCP /
+  # maturin / node-gyp cdylib / C# cdylib builds.
+  RUSTFLAGS: "-D warnings"
 
 jobs:
   # Check formatting
@@ -470,7 +475,7 @@ jobs:
       - name: arethetypeswrong (types vs runtime)
         if: matrix.os == 'ubuntu-latest'
         working-directory: js
-        run: npx --yes @arethetypeswrong/cli --pack . --ignore-rules=cjs-resolves-to-esm || true
+        run: npx --yes @arethetypeswrong/cli --pack . --ignore-rules=cjs-resolves-to-esm
 
       # SOTA 2026: npm audit fails on high+ severity transitive vulns
       - name: npm audit (prod deps, high severity)

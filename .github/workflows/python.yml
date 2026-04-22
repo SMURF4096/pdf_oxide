@@ -155,8 +155,7 @@ jobs:
       - name: pip-audit (project deps)
         run: |
           uv pip install pip-audit
-          uv run pip-audit --disable-pip --strict || true
-        continue-on-error: true
+          uv run pip-audit --disable-pip --strict
 
   # Build Linux wheels (manylinux + musllinux, x86_64 + aarch64)
   # Uses PyO3/maturin-action, which handles cross-compilation via Docker + zig.
