@@ -265,32 +265,93 @@ impl PyPdfDocument {
     }
 
     /// Render a page to image bytes.
-    #[pyo3(signature = (page, dpi=None, format=None))]
+    ///
+    /// Parameters mirror Rust's `RenderOptions`
+    /// (src/rendering/page_renderer.rs):
+    /// - `dpi`: resolution (default 72 for Python-binding back-compat,
+    ///   150 at the Rust level).
+    /// - `format`: "png" (default) or "jpeg".
+    /// - `background`: RGBA tuple (0.0..=1.0); omit to keep the default
+    ///   white fill.
+    /// - `transparent`: if True, drop the background fill entirely
+    ///   (wins over `background`).
+    /// - `render_annotations`: toggle for annotation rendering.
+    /// - `jpeg_quality`: 1..=100, only applied when `format="jpeg"`.
+    #[pyo3(signature = (
+        page,
+        dpi=None,
+        format=None,
+        background=None,
+        transparent=false,
+        render_annotations=None,
+        jpeg_quality=None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
     fn render_page(
         &mut self,
         page: usize,
         dpi: Option<u32>,
         format: Option<&str>,
+        background: Option<(f32, f32, f32, f32)>,
+        transparent: bool,
+        render_annotations: Option<bool>,
+        jpeg_quality: Option<u8>,
     ) -> PyResult<Vec<u8>> {
         #[cfg(feature = "rendering")]
         {
+            use pyo3::exceptions::PyValueError;
+
+            let quality = match jpeg_quality {
+                Some(q) => {
+                    if !(1..=100).contains(&q) {
+                        return Err(PyValueError::new_err(format!(
+                            "jpeg_quality must be 1-100, got {q}",
+                        )));
+                    }
+                    q
+                },
+                None => 85,
+            };
+
             let mut options = crate::rendering::RenderOptions::with_dpi(dpi.unwrap_or(72));
             if let Some(fmt) = format {
                 match fmt.to_lowercase().as_str() {
                     "jpeg" | "jpg" => {
-                        options = options.as_jpeg(85);
+                        options = options.as_jpeg(quality);
                     },
-                    _ => {},
+                    "png" => { /* default */ },
+                    _ => {
+                        return Err(PyValueError::new_err(format!(
+                            "format must be 'png' or 'jpeg', got {fmt:?}",
+                        )))
+                    },
                 }
+            }
+            if let Some((r, g, b, a)) = background {
+                options.background = Some([r, g, b, a]);
+            }
+            if transparent {
+                options.background = None;
+            }
+            if let Some(flag) = render_annotations {
+                options.render_annotations = flag;
             }
 
             crate::rendering::render_page(&mut self.inner, page, &options)
                 .map(|img| img.data)
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to render page: {}", e)))
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to render page: {e}")))
         }
         #[cfg(not(feature = "rendering"))]
         {
-            let _ = (page, dpi, format);
+            let _ = (
+                page,
+                dpi,
+                format,
+                background,
+                transparent,
+                render_annotations,
+                jpeg_quality,
+            );
             Err(PyRuntimeError::new_err("Rendering feature not enabled."))
         }
     }
@@ -2013,11 +2074,34 @@ impl PyDocPage {
         )
     }
 
-    #[pyo3(signature = (dpi=None, format=None))]
-    fn render(&self, py: Python<'_>, dpi: Option<u32>, format: Option<&str>) -> PyResult<Vec<u8>> {
-        self.doc
-            .borrow_mut(py)
-            .render_page(self.page_index, dpi, format)
+    #[pyo3(signature = (
+        dpi=None,
+        format=None,
+        background=None,
+        transparent=false,
+        render_annotations=None,
+        jpeg_quality=None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn render(
+        &self,
+        py: Python<'_>,
+        dpi: Option<u32>,
+        format: Option<&str>,
+        background: Option<(f32, f32, f32, f32)>,
+        transparent: bool,
+        render_annotations: Option<bool>,
+        jpeg_quality: Option<u8>,
+    ) -> PyResult<Vec<u8>> {
+        self.doc.borrow_mut(py).render_page(
+            self.page_index,
+            dpi,
+            format,
+            background,
+            transparent,
+            render_annotations,
+            jpeg_quality,
+        )
     }
 
     #[pyo3(signature = (pattern, case_insensitive=false, literal=false, whole_word=false, max_results=100))]
