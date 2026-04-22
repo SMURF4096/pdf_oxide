@@ -142,6 +142,51 @@ See `BINDING_STYLE_GUIDE.md` for the naming conventions used across
 bindings (Python snake_case, C#/TS camelCase, Go CamelCase exported,
 WASM js_name camelCase).
 
+#### Phase 4 — form-field creation (all 5 widget types)
+
+`FluentPageBuilder` gains a complete set of AcroForm widget-creation
+methods. Users can now produce fillable PDFs from every binding:
+
+| Widget | API shape |
+|---|---|
+| `text_field` | `(name, x, y, w, h, default_value?)` — single-line input |
+| `checkbox` | `(name, x, y, w, h, checked)` |
+| `combo_box` | `(name, x, y, w, h, options: string[], selected?)` — dropdown |
+| `radio_group` | `(name, buttons: [(value, x, y, w, h)...], selected?)` |
+| `push_button` | `(name, x, y, w, h, caption)` |
+
+Each widget flows through a new `PendingFormField` enum on the Rust
+side and is applied to the underlying `pdf_writer::PageBuilder` at
+`build()` time, landing in `/AcroForm` automatically.
+
+Binding idioms (summarised):
+
+* **Python / WASM** — `List[str]` / `string[]` for options; lists of
+  typed tuples for `radio_group` buttons.
+* **C FFI** — parallel-array marshalling (new helper
+  `read_cstring_array`); options/names/xs/ys/ws/hs passed as
+  `*const *const c_char` + `*const f32` with a `count`.
+* **C#** — GCHandle-pinned parallel arrays; typed
+  `IReadOnlyList<(string, float, float, float, float)>` for
+  `RadioGroup`.
+* **Go** — new `RadioButton{Value, X, Y, W, H}` struct for
+  idiomatic Go call sites.
+* **Node/TS** — `string[]` for `comboBox`,
+  `Array<[string, number, number, number, number]>` for
+  `radioGroup`.
+
+Low-level `PdfWriter` graphics primitives (direct `add_page` /
+`draw_rect` / `draw_line` outside of DocumentBuilder) remain
+intentionally deferred — nobody has asked for that surface yet, and
+DocumentBuilder's `element()` covers the advanced cases.
+
+#### Closing the ticket
+
+With Phase 1 + 2 + 3 + 4 all shipped, **#384 is complete**: the
+coverage matrix at the top of this entry that was mostly `❌` now
+reads `✅` for every cell the plan flagged. `#382` (CJK via
+DocumentBuilder) is now reachable from every binding, not just Rust.
+
 
 
 ### `pdf-oxide-wasm` now works in every target it advertises (#392)
