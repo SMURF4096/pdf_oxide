@@ -14,6 +14,7 @@ import {
   PdfBuilder,
   SearchOptionsBuilder,
 } from './builders/index';
+import { DocumentEditor } from './document-editor';
 import {
   AccessibilityException,
   CertificateLoadFailed,
@@ -621,6 +622,8 @@ export {
   DigestAlgorithm,
   // Write-side fluent API (#384)
   DocumentBuilder,
+  // Editor mutation API (#384 gap K)
+  DocumentEditor,
   EditingManager,
   EmbeddedFont,
   EncryptionException,

@@ -24,7 +24,12 @@
  * ```
  */
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+// The package is ESM (`"type": "module"`); a bare `require()` at module
+// scope fails when Node loads this file as ESM. `createRequire` gives
+// us a CJS resolver that can load the native .node addon.
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 const native = require('../../build/Release/pdf_oxide.node');
 
 /**
