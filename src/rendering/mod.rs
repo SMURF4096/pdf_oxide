@@ -114,6 +114,109 @@ pub fn render_page(
     renderer.render_page(doc, page_num)
 }
 
+/// Render a rectangular region of a page. `crop_rect_pt` is in PDF
+/// user-space points (origin bottom-left of the page). The crop is
+/// applied to the fully-rendered image at the requested DPI.
+///
+/// Closes #384 gap L / #67 half #1.
+pub fn render_page_region(
+    doc: &mut crate::document::PdfDocument,
+    page_num: usize,
+    crop_rect_pt: (f32, f32, f32, f32),
+    options: &RenderOptions,
+) -> Result<RenderedImage> {
+    // Full-page render first — the crop is a post-process on the
+    // resulting raster. Wasteful if the crop is tiny, but matches
+    // the semantics of every PDF viewer and avoids a parallel
+    // clipped-raster code path in tiny-skia.
+    let full = render_page(doc, page_num, options)?;
+
+    let (crop_x_pt, crop_y_pt, crop_w_pt, crop_h_pt) = crop_rect_pt;
+    if crop_w_pt <= 0.0 || crop_h_pt <= 0.0 {
+        return Err(crate::Error::InvalidPdf(format!(
+            "invalid crop rect: {crop_rect_pt:?}"
+        )));
+    }
+
+    let media = doc.get_page_media_box(page_num)?;
+    let page_h_pt = media.3 - media.1;
+
+    // Points → pixels at the render DPI.
+    let scale = options.dpi as f32 / 72.0;
+    let crop_x_px = (crop_x_pt * scale).round().max(0.0) as u32;
+    // Image Y is top-left origin; PDF Y is bottom-left. Flip.
+    let top_y_pt = page_h_pt - (crop_y_pt + crop_h_pt);
+    let crop_y_px = (top_y_pt * scale).round().max(0.0) as u32;
+    let crop_w_px = (crop_w_pt * scale).round().max(1.0) as u32;
+    let crop_h_px = (crop_h_pt * scale).round().max(1.0) as u32;
+
+    // Decode, crop, re-encode using the `image` crate (already a dep).
+    let full_img = image::load_from_memory(&full.data)
+        .map_err(|e| crate::Error::InvalidPdf(format!("render output decode: {e}")))?;
+    let x = crop_x_px.min(full_img.width().saturating_sub(1));
+    let y = crop_y_px.min(full_img.height().saturating_sub(1));
+    let w = crop_w_px.min(full_img.width() - x);
+    let h = crop_h_px.min(full_img.height() - y);
+    let cropped = full_img.crop_imm(x, y, w, h);
+
+    let mut buf = Vec::new();
+    match options.format {
+        ImageFormat::Jpeg => {
+            use image::ImageEncoder;
+            let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
+                &mut buf,
+                options.jpeg_quality.clamp(1, 100),
+            );
+            encoder
+                .write_image(cropped.as_bytes(), w, h, cropped.color().into())
+                .map_err(|e| crate::Error::InvalidPdf(format!("jpeg encode: {e}")))?;
+        },
+        _ => {
+            use image::ImageEncoder;
+            let encoder = image::codecs::png::PngEncoder::new(&mut buf);
+            encoder
+                .write_image(cropped.as_bytes(), w, h, cropped.color().into())
+                .map_err(|e| crate::Error::InvalidPdf(format!("png encode: {e}")))?;
+        },
+    }
+    Ok(RenderedImage {
+        data: buf,
+        width: w,
+        height: h,
+        format: full.format,
+    })
+}
+
+/// Render a page to fit inside a target bounding box (in pixels),
+/// preserving aspect ratio. Picks the DPI that makes the larger of
+/// the two page dimensions match the smaller bounding-box side.
+///
+/// Closes #384 gap L / #67 half #2.
+pub fn render_page_fit(
+    doc: &mut crate::document::PdfDocument,
+    page_num: usize,
+    fit_w_px: u32,
+    fit_h_px: u32,
+    options: &RenderOptions,
+) -> Result<RenderedImage> {
+    if fit_w_px == 0 || fit_h_px == 0 {
+        return Err(crate::Error::InvalidPdf(
+            "fit width/height must be positive".into(),
+        ));
+    }
+    let media = doc.get_page_media_box(page_num)?;
+    let page_w_pt = (media.2 - media.0).max(1.0);
+    let page_h_pt = (media.3 - media.1).max(1.0);
+
+    let dpi_for_w = (fit_w_px as f32 * 72.0 / page_w_pt).floor().max(1.0) as u32;
+    let dpi_for_h = (fit_h_px as f32 * 72.0 / page_h_pt).floor().max(1.0) as u32;
+    let dpi = dpi_for_w.min(dpi_for_h);
+
+    let mut opts = options.clone();
+    opts.dpi = dpi;
+    render_page(doc, page_num, &opts)
+}
+
 /// Create a flattened PDF where each page is rendered as an image.
 ///
 /// This "burns in" all annotations, form fields, overlays, and text into

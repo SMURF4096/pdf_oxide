@@ -2577,19 +2577,58 @@ pub extern "C" fn pdf_render_page_with_options(
     }
 }
 
+/// Render a rectangular region of a page. `crop_*` are in PDF user-space
+/// points (origin bottom-left). Format: 0=PNG, 1=JPEG.
 #[no_mangle]
 pub extern "C" fn pdf_render_page_region(
-    _doc: *mut std::ffi::c_void,
-    _page_index: i32,
-    _crop_x: f32,
-    _crop_y: f32,
-    _crop_width: f32,
-    _crop_height: f32,
-    _format: i32,
+    doc: *mut PdfDocument,
+    page_index: i32,
+    crop_x: f32,
+    crop_y: f32,
+    crop_width: f32,
+    crop_height: f32,
+    format: i32,
     error_code: *mut i32,
-) -> *mut std::ffi::c_void {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+) -> *mut FfiRenderedImage {
+    #[cfg(feature = "rendering")]
+    {
+        if doc.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let d = unsafe { &mut *doc };
+        let fmt = if format == 1 {
+            RenderImageFormat::Jpeg
+        } else {
+            RenderImageFormat::Png
+        };
+        let opts = RustRenderOptions {
+            dpi: 150,
+            format: fmt,
+            ..Default::default()
+        };
+        match rendering::render_page_region(
+            d,
+            page_index as usize,
+            (crop_x, crop_y, crop_width, crop_height),
+            &opts,
+        ) {
+            Ok(img) => {
+                set_error(error_code, ERR_SUCCESS);
+                Box::into_raw(Box::new(FfiRenderedImage { inner: img }))
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
+        }
+    }
+    #[cfg(not(feature = "rendering"))]
+    {
+        let _ = (doc, page_index, crop_x, crop_y, crop_width, crop_height, format);
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
@@ -2637,17 +2676,50 @@ pub extern "C" fn pdf_render_page_zoom(
     }
 }
 
+/// Render a page to fit inside `w`×`h` pixels, preserving aspect ratio.
 #[no_mangle]
 pub extern "C" fn pdf_render_page_fit(
-    _doc: *mut std::ffi::c_void,
-    _page_index: i32,
-    _w: i32,
-    _h: i32,
-    _format: i32,
+    doc: *mut PdfDocument,
+    page_index: i32,
+    w: i32,
+    h: i32,
+    format: i32,
     error_code: *mut i32,
-) -> *mut std::ffi::c_void {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+) -> *mut FfiRenderedImage {
+    #[cfg(feature = "rendering")]
+    {
+        if doc.is_null() || w <= 0 || h <= 0 {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let d = unsafe { &mut *doc };
+        let fmt = if format == 1 {
+            RenderImageFormat::Jpeg
+        } else {
+            RenderImageFormat::Png
+        };
+        let opts = RustRenderOptions {
+            dpi: 150,
+            format: fmt,
+            ..Default::default()
+        };
+        match rendering::render_page_fit(d, page_index as usize, w as u32, h as u32, &opts) {
+            Ok(img) => {
+                set_error(error_code, ERR_SUCCESS);
+                Box::into_raw(Box::new(FfiRenderedImage { inner: img }))
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
+        }
+    }
+    #[cfg(not(feature = "rendering"))]
+    {
+        let _ = (doc, page_index, w, h, format);
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
