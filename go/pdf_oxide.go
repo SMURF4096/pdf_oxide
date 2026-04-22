@@ -183,6 +183,7 @@ extern void* pdf_render_page_region(void* document_handle, int32_t page_index, f
 extern void* pdf_render_page_zoom(void* document_handle, int32_t page_index, float zoom_level, int32_t format, int* error_code);
 extern void* pdf_render_page_fit(void* document_handle, int32_t page_index, int32_t fit_width, int32_t fit_height, int32_t format, int* error_code);
 extern void* pdf_render_page_thumbnail(void* document_handle, int32_t page_index, int32_t thumbnail_size, int32_t format, int* error_code);
+extern void* pdf_render_page_with_options(void* document_handle, int32_t page_index, int32_t dpi, int32_t format, float bg_r, float bg_g, float bg_b, float bg_a, int32_t transparent_background, int32_t render_annotations, int32_t jpeg_quality, int* error_code);
 extern int32_t pdf_get_rendered_image_width(const void* image_handle, int* error_code);
 extern int32_t pdf_get_rendered_image_height(const void* image_handle, int* error_code);
 extern void* pdf_get_rendered_image_data(const void* image_handle, int32_t* data_len, int* error_code);
@@ -2652,6 +2653,125 @@ type RenderedImage struct {
 	handle unsafe.Pointer
 	Width  int
 	Height int
+}
+
+// RenderFormat selects the output image format.
+type RenderFormat int32
+
+const (
+	// RenderFormatPng selects PNG output (supports transparency).
+	RenderFormatPng RenderFormat = 0
+	// RenderFormatJpeg selects JPEG output (honours JpegQuality).
+	RenderFormatJpeg RenderFormat = 1
+)
+
+// RenderOptions mirrors Rust's RenderOptions
+// (src/rendering/page_renderer.rs:41). Fields are individually
+// zero-safe: a zero-value RenderOptions{} renders at 150 DPI PNG with
+// an opaque white background, annotations on, JPEG quality 85 (same
+// defaults as Rust).
+type RenderOptions struct {
+	// Dpi is the resolution in dots per inch. 0 => default 150.
+	Dpi int
+	// Format selects PNG or JPEG. Zero = PNG.
+	Format RenderFormat
+	// Background is RGBA in [0.0, 1.0]. Zero value is the alpha-0
+	// transparent (unusual default); if all four channels are zero
+	// we substitute the Rust default of opaque white so Go callers
+	// get intuitive behaviour without having to fill the struct.
+	Background [4]float32
+	// TransparentBackground drops the background fill entirely.
+	// When true, overrides Background and matches Rust's
+	// `Option::None` on the background field.
+	TransparentBackground bool
+	// RenderAnnotations toggles the annotation layer. Zero value
+	// (false) maps to Rust's default of true.
+	RenderAnnotations bool
+	// JpegQuality is 1..=100. 0 => default 85. Only applies when
+	// Format is RenderFormatJpeg.
+	JpegQuality int
+	// renderAnnotationsSet is an internal sentinel letting callers
+	// set RenderAnnotations=false deliberately without having to
+	// pass the whole struct through a constructor.
+	renderAnnotationsSet bool
+}
+
+// WithAnnotationsOff returns a copy of opts with annotation rendering
+// disabled. Use this instead of setting RenderAnnotations=false
+// directly, otherwise a zero-value struct cannot be distinguished
+// from an unspecified field.
+func (opts RenderOptions) WithAnnotationsOff() RenderOptions {
+	opts.RenderAnnotations = false
+	opts.renderAnnotationsSet = true
+	return opts
+}
+
+// WithAnnotationsOn mirrors WithAnnotationsOff.
+func (opts RenderOptions) WithAnnotationsOn() RenderOptions {
+	opts.RenderAnnotations = true
+	opts.renderAnnotationsSet = true
+	return opts
+}
+
+// RenderPageWithOptions renders a page with the full RenderOptions
+// surface — DPI, format, background colour or transparency,
+// annotation toggle, and JPEG quality. Mirrors Python's expanded
+// `render_page` keywords (#384 gap O) and the C#
+// `RenderPage(int, RenderOptions)` overload (gap B). Closes gap M.
+//
+// Returns an error (wrapping ErrInvalidPath or equivalent) on bad
+// options, matching other Go FFI error paths.
+func (doc *PdfDocument) RenderPageWithOptions(pageIndex int, opts RenderOptions) (*RenderedImage, error) {
+	if err := doc.acquireRead(); err != nil {
+		return nil, err
+	}
+	defer doc.mu.RUnlock()
+
+	dpi := opts.Dpi
+	if dpi == 0 {
+		dpi = 150
+	}
+	jpegQuality := opts.JpegQuality
+	if jpegQuality == 0 {
+		jpegQuality = 85
+	}
+	// Apply "zero-value means Rust default (opaque white)" trick.
+	bg := opts.Background
+	if bg == [4]float32{0, 0, 0, 0} && !opts.TransparentBackground {
+		bg = [4]float32{1, 1, 1, 1}
+	}
+	renderAnnots := int32(1)
+	if opts.renderAnnotationsSet {
+		if !opts.RenderAnnotations {
+			renderAnnots = 0
+		}
+	}
+	transparent := int32(0)
+	if opts.TransparentBackground {
+		transparent = 1
+	}
+
+	var errorCode C.int
+	handle := C.pdf_render_page_with_options(
+		doc.handle,
+		C.int32_t(pageIndex),
+		C.int32_t(dpi),
+		C.int32_t(opts.Format),
+		C.float(bg[0]), C.float(bg[1]), C.float(bg[2]), C.float(bg[3]),
+		C.int32_t(transparent),
+		C.int32_t(renderAnnots),
+		C.int32_t(jpegQuality),
+		&errorCode,
+	)
+	if errorCode != 0 {
+		return nil, ffiError(errorCode)
+	}
+	if handle == nil {
+		return nil, ErrInternal
+	}
+	w := int(C.pdf_get_rendered_image_width(handle, &errorCode))
+	h := int(C.pdf_get_rendered_image_height(handle, &errorCode))
+	return &RenderedImage{handle: handle, Width: w, Height: h}, nil
 }
 
 // RenderPage renders a page to an image. format: 0=PNG, 1=JPEG
