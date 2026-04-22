@@ -81,7 +81,11 @@ export class EventManager extends EventEmitter {
   async emitEvent(event: DocumentEvent): Promise<boolean> {
     try {
       const handlers = this.eventListeners.get(event.eventType);
-      if (handlers) handlers.forEach((h) => h(event));
+      if (handlers) {
+        handlers.forEach((h) => {
+          h(event);
+        });
+      }
       return true;
     } catch (error) {
       this.emit('error', error);

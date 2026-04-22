@@ -380,7 +380,9 @@ export class ConfigurationManager extends EventEmitter {
       const keysToRemove = Array.from(this.config.entries())
         .filter(([_, item]) => item.level === level)
         .map(([key, _]) => key);
-      keysToRemove.forEach((k) => this.config.delete(k));
+      keysToRemove.forEach((k) => {
+        this.config.delete(k);
+      });
       return true;
     } catch (error) {
       this.emit('error', error);
@@ -439,7 +441,9 @@ export class ConfigurationManager extends EventEmitter {
 
   async mergeConfig(otherConfig: Record<string, any>): Promise<boolean> {
     try {
-      Object.entries(otherConfig).forEach(([key, value]) => this.setGlobalConfig(key, value));
+      Object.entries(otherConfig).forEach(([key, value]) => {
+        this.setGlobalConfig(key, value);
+      });
       return true;
     } catch (error) {
       this.emit('error', error);

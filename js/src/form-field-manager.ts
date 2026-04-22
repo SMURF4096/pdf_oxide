@@ -655,7 +655,9 @@ export class FormFieldManager extends EventEmitter {
   private clearCachePattern(pattern: string): void {
     const regex = new RegExp(pattern);
     const keysToDelete = Array.from(this.resultCache.keys()).filter((key) => regex.test(key));
-    keysToDelete.forEach((key) => this.resultCache.delete(key));
+    keysToDelete.forEach((key) => {
+      this.resultCache.delete(key);
+    });
   }
 }
 

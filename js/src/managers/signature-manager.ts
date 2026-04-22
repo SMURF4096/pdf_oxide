@@ -1981,7 +1981,9 @@ export class SignatureManager extends EventEmitter {
     const keysToDelete = Array.from(this.resultCache.keys()).filter((key) =>
       key.startsWith(prefix)
     );
-    keysToDelete.forEach((key) => this.resultCache.delete(key));
+    keysToDelete.forEach((key) => {
+      this.resultCache.delete(key);
+    });
   }
 }
 

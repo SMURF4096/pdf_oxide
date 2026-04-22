@@ -279,7 +279,9 @@ export abstract class BaseManager<T extends PdfDocumentHandle = PdfDocumentHandl
   protected invalidateCache(pattern?: string): void {
     if (pattern) {
       const keys = Array.from(this.cache.keys()).filter((k) => k.includes(pattern));
-      keys.forEach((k) => this.cache.delete(k));
+      keys.forEach((k) => {
+        this.cache.delete(k);
+      });
     } else {
       this.cache.clear();
     }

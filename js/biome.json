@@ -29,7 +29,7 @@
       "suspicious": {
         "noExplicitAny": "off",
         "noAssignInExpressions": "off",
-        "useIterableCallbackReturn": "off",
+        "useIterableCallbackReturn": "warn",
         "noImplicitAnyLet": "off",
         "noRedeclare": "off",
         "noUnsafeDeclarationMerging": "off"
