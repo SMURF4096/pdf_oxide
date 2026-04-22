@@ -2,18 +2,21 @@
 
 All notable changes to PDFOxide are documented here.
 
-## [0.3.38] - 2026-04-21
-> DocumentBuilder fluent API across every language binding, real font subsetting, DocumentBuilder encryption, multi-target WASM packaging
+## [0.3.38] - 2026-04-22
+> DocumentBuilder fluent API across every language binding, real font subsetting, DocumentBuilder encryption, multi-target WASM packaging, and the first cryptographic slice of PDF signature verification
 
 This release closes the "Rust-only `DocumentBuilder` gap": the fluent
 write-side builder, embedded fonts, the HTML+CSS pipeline, annotations,
 form-field creation, and low-level graphics primitives are now reachable
 from **Python, WASM, C#, Go, and Node/TypeScript** — the Rust
 implementation is the single source of truth and every binding is a
-thin translation layer.
+thin translation layer. On top of that it lands the first
+cryptographic signature-verification path (RSA-PKCS#1 v1.5) across
+every binding and a pdf.js-parity fix for scanned / bilevel pages
+rendered under a Multiply-blended overlay.
 
 > **Scope note.** "Write-side API" here refers specifically to the
-> `DocumentBuilder` surface listed below. Reader / editor / signature /
+> `DocumentBuilder` surface listed below. Reader / editor /
 > rendering-options parity across bindings is ongoing work; see the
 > post-release audit (`docs/api-coverage-audit.md` / issue tracker
 > `#384` follow-ups) for the full picture.
@@ -100,6 +103,52 @@ Fixes `ReferenceError: Can't find variable: __dirname` thrown in any
 browser bundler. Subpath imports (`pdf-oxide-wasm/web` etc.) are also
 available for manual routing.
 
+### Digital signature verification (#72, #73, #74, #75, #76, #77)
+
+First cryptographically-backed signature surface on the reader side.
+Every binding (`Signature.verify()` / `.verifyDetached()` / equivalents)
+now runs the RFC 5652 §5.4 signer-attributes check against the
+embedded certificate and the §11.2 `messageDigest` check against the
+caller's document bytes:
+
+```python
+for sig in doc.signatures():
+    print(sig.signer_name, "→", sig.verify())            # signer-attrs only
+    print("detached ok =", sig.verify_detached(pdf_bytes))  # + content hash
+```
+
+- **RSA-PKCS#1 v1.5** over SHA-1 / SHA-256 / SHA-384 / SHA-512 — the
+  padding used by effectively every signed PDF in the wild — returns
+  `Valid` / `Invalid`.
+- **RSA-PSS** and **ECDSA** surface as `Unknown` /
+  `UnsupportedFeatureException` for now; callers that need those can
+  still read the signer certificate via `Signature.GetCertificate()`
+  and drive their own check.
+- `SignatureVerifier::verify` (Rust) also stamps the verification
+  result with trust-root lookup, expiry window, and signer DN pulled
+  from the embedded certificate.
+
+Supporting surface shipped alongside:
+
+- `Certificate` — DER inspection (subject, issuer, serial, validity,
+  `is_valid`) via `x509-parser` — **C FFI, C#, Node** (#71 / #76).
+- `Signature` — enumerate + inspect + `.GetCertificate()` —
+  **Python, WASM, C FFI, C#, Go, Node** (#51 / #72 / #76).
+- `Timestamp` — RFC 3161 `TSTInfo` parsing (time, serial, policy,
+  TSA name, hash algorithm, message imprint) — **Python, WASM, C FFI,
+  C#, Go** (#52 / #73).
+- `TsaClient` — RFC 3161 HTTP POST with nonce + HTTP Basic auth,
+  behind a new `tsa-client` Cargo feature — **Python, C FFI, C#, Go**
+  (#57 / #74). Intentionally not wired on WASM (ureq is wasm-
+  incompatible).
+- `DocumentEditor::set_producer` / `set_creation_date` — metadata
+  writers (#70).
+- `render_page_region` / `render_page_fit` — clipped / fitted
+  rendering surface (#67).
+- Bicubic image filtering (#75 — pdf.js#19978 parity) — scanned /
+  bilevel pages with a Multiply-blended overlay no longer collapse
+  their grayscale range on downscale.
+
 ### Thanks
 
 Reports and feature requests from
@@ -107,6 +156,11 @@ Reports and feature requests from
 `DocumentBuilder`, #385 subsetter), and
 [@arthurlassagne](https://github.com/arthurlassagne) (#392 browser
 build breakage). Both surfaced the gaps that drove this release.
+
+Signature work (#51 / #52 / #57 / #67 / #70 / #71 / #72 / #73 / #74 /
+#75 / #76 / #77) closes the internally-filed #384 cross-binding
+audit gaps for the read side; no external reporter attribution on
+those tickets.
 
 ## [0.3.37] - 2026-04-20
 > HTML + CSS → PDF (issue #248) — first credible pure-Rust pipeline
