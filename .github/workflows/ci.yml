@@ -346,18 +346,24 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: rustup target add x86_64-pc-windows-gnu
 
+      # The Go test suite exercises rendering + signatures + barcodes
+      # + the TSA HTTP client via the FFI, so the native lib has to be
+      # built with matching features — default `icc`-only would make
+      # the stubs fall through to UNSUPPORTED at runtime.
       - name: Build library (cdylib + rlib + staticlib)
         shell: bash
+        env:
+          PDF_OXIDE_FEATURES: "barcodes,rendering,signatures,tsa-client,system-fonts"
         run: |
           case "${{ matrix.os }}" in
             windows-latest)
-              cargo build --release --lib --target x86_64-pc-windows-gnu
+              cargo build --release --lib --features "$PDF_OXIDE_FEATURES" --target x86_64-pc-windows-gnu
               ;;
             macos-latest)
-              cargo build --release --lib --target aarch64-apple-darwin
+              cargo build --release --lib --features "$PDF_OXIDE_FEATURES" --target aarch64-apple-darwin
               ;;
             *)
-              cargo build --release --lib
+              cargo build --release --lib --features "$PDF_OXIDE_FEATURES"
               ;;
           esac
 
@@ -382,12 +388,16 @@ jobs:
             exit 1
           fi
 
-      # golangci-lint v2 — single meta-linter replacing staticcheck / ineffassign / …
+      # golangci-lint v2 — single meta-linter replacing staticcheck /
+      # ineffassign / etc. Use the @v7 action because our
+      # `go/.golangci.yml` is the v2 schema; the @v6 action still
+      # defaults to pulling golangci-lint 1.x which rejects
+      # `linters.default` / `formatters`.
       - name: golangci-lint
         if: matrix.os == 'ubuntu-latest'
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
-          version: latest
+          version: v2.0.2
           working-directory: go
           args: --build-tags pdf_oxide_dev --timeout 5m
 

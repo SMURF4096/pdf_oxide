@@ -14,8 +14,8 @@
  * output that in-tree tests run against.
  */
 
-import { arch, platform } from 'node:os';
 import { createRequire } from 'node:module';
+import { arch, platform } from 'node:os';
 
 const require = createRequire(import.meta.url);
 
@@ -41,14 +41,12 @@ function getPrebuildPath(): string {
   const cpu = arch();
   const osPaths = PLATFORMS[os];
   if (!osPaths) {
-    throw new Error(
-      `Unsupported platform: ${os}. Supported: ${Object.keys(PLATFORMS).join(', ')}`,
-    );
+    throw new Error(`Unsupported platform: ${os}. Supported: ${Object.keys(PLATFORMS).join(', ')}`);
   }
   const prebuildPath = osPaths[cpu];
   if (!prebuildPath) {
     throw new Error(
-      `Unsupported architecture: ${cpu} for ${os}. Supported: ${Object.keys(osPaths).join(', ')}`,
+      `Unsupported architecture: ${cpu} for ${os}. Supported: ${Object.keys(osPaths).join(', ')}`
     );
   }
   return prebuildPath;

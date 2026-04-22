@@ -7,8 +7,20 @@ version = 2
 unmaintained = "none"
 # Threshold for crates that have been yanked from their source registry
 yanked = "deny"
-# Ignore certain advisories (use sparingly)
-ignore = []
+# Ignore certain advisories (use sparingly).
+ignore = [
+    # RUSTSEC-2023-0071 — Marvin Attack on RustCrypto's `rsa 0.9.x`.
+    # Timing side-channel in the private-key decrypt/sign path.
+    # pdf_oxide uses `rsa` only for signature *verification*
+    # (public-key modexp against the signer's embedded cert), which
+    # the advisory does not implicate. Signing is still a stub
+    # (`src/signatures/signer.rs::create_pkcs7_signature`), so no
+    # private-key operation happens at runtime yet. Drop this ignore
+    # the moment a patched `rsa` release ships (RustCrypto are
+    # migrating to a fully constant-time implementation); re-audit
+    # when the #208 signing half lands.
+    "RUSTSEC-2023-0071",
+]
 
 [licenses]
 version = 2
@@ -35,6 +47,17 @@ allow = [
     "ISC",
     "CC0-1.0",
     "BSL-1.0",
+    # Apache-2.0 with an LLVM linking-exception clause. The exception
+    # is strictly more permissive than plain Apache-2.0 (it waives the
+    # notice requirement for object-code / binary redistribution);
+    # doesn't affect our MIT OR Apache-2.0 downstream story. Pulled in
+    # transitively via `target-lexicon` → `pyo3-build-config` → `pyo3`.
+    "Apache-2.0 WITH LLVM-exception",
+    # University of Illinois / NCSA Open Source License — permissive,
+    # OSI-approved, FSF Free/Libre. Functionally equivalent to a
+    # BSD-3-Clause + disclaimer. Pulled in transitively via
+    # `libfuzzer-sys` → `rav1e` → `ravif` → `image 0.25.10`.
+    "NCSA",
 ]
 
 [bans]
