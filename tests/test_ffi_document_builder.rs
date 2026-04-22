@@ -1,0 +1,351 @@
+//! C-FFI integration tests for the write-side API (#384 Phase 1+2+3).
+//!
+//! These tests call the raw `pdf_*` FFI functions the way a C / C# / Go /
+//! Node wrapper does — opaque handles, error-code out-params, explicit
+//! frees, string marshalling through `CString`. They validate the
+//! handle-lifetime contract documented in
+//! `include/pdf_oxide_c/pdf_oxide.h` and in `src/ffi.rs`, and are the
+//! acceptance gate for downstream bindings landing on top of this FFI.
+
+#![allow(clippy::missing_safety_doc)]
+#![allow(unused_unsafe)]
+// The FFI functions here are `pub extern "C" fn` and pyo3 / wasm-bindgen
+// signatures that don't strictly require `unsafe` at call sites today,
+// but we keep the `unsafe {}` markers in the tests to make it obvious to
+// maintainers that these are raw-pointer FFI calls that downstream C /
+// C# / Go / Node bindings will use in the same ("unsafe") context.
+
+use std::ffi::CString;
+use std::path::Path;
+use std::ptr;
+
+use pdf_oxide::ffi::*;
+
+const DEJAVU_PATH: &str = "tests/fixtures/fonts/DejaVuSans.ttf";
+
+fn cstring(s: &str) -> CString {
+    CString::new(s).unwrap()
+}
+
+/// Minimal happy-path: create a builder, emit one A4 page with literal
+/// text, build to bytes, confirm the output parses as a PDF, free the
+/// byte buffer.
+#[test]
+fn ffi_document_builder_minimal_ascii() {
+    let mut ec: i32 = -1;
+    let builder = unsafe { pdf_document_builder_create(&mut ec) };
+    assert_eq!(ec, 0, "create returned error");
+    assert!(!builder.is_null());
+
+    // Open page
+    let page = unsafe { pdf_document_builder_a4_page(builder, &mut ec) };
+    assert_eq!(ec, 0);
+    assert!(!page.is_null());
+
+    // Emit text
+    let text = cstring("Hello from FFI");
+    assert_eq!(unsafe { pdf_page_builder_at(page, 72.0, 720.0, &mut ec) }, 0);
+    assert_eq!(ec, 0);
+    assert_eq!(unsafe { pdf_page_builder_text(page, text.as_ptr(), &mut ec) }, 0);
+    assert_eq!(ec, 0);
+
+    // Commit
+    assert_eq!(unsafe { pdf_page_builder_done(page, &mut ec) }, 0);
+    assert_eq!(ec, 0);
+
+    // Build
+    let mut out_len: usize = 0;
+    let bytes_ptr = unsafe { pdf_document_builder_build(builder, &mut out_len, &mut ec) };
+    assert_eq!(ec, 0);
+    assert!(!bytes_ptr.is_null());
+    assert!(out_len > 256);
+
+    // Byte buffer must start with %PDF-
+    let slice = unsafe { std::slice::from_raw_parts(bytes_ptr, out_len) };
+    assert!(slice.starts_with(b"%PDF-"));
+
+    // Buffer is owned by the caller; we free it with free_bytes.
+    unsafe { free_bytes(bytes_ptr) };
+    // Builder was consumed by _build — no _free needed, but calling it on
+    // the now-invalid handle should be a no-op since the Box-from-raw is
+    // already gone. Actually, _build only `consume_builder`s the inner —
+    // the wrapper Box is still alive. Free it.
+    unsafe { pdf_document_builder_free(builder) };
+}
+
+#[test]
+fn ffi_document_builder_embedded_font_cjk_round_trip() {
+    let mut ec: i32 = -1;
+    let font_path = cstring(DEJAVU_PATH);
+    let font = unsafe { pdf_embedded_font_from_file(font_path.as_ptr(), &mut ec) };
+    assert_eq!(ec, 0);
+    assert!(!font.is_null());
+
+    let builder = unsafe { pdf_document_builder_create(&mut ec) };
+    assert!(!builder.is_null());
+
+    // Register consumes `font`.
+    let font_name = cstring("DejaVu");
+    let rc = unsafe {
+        pdf_document_builder_register_embedded_font(builder, font_name.as_ptr(), font, &mut ec)
+    };
+    assert_eq!(rc, 0);
+    assert_eq!(ec, 0);
+    // Do NOT pdf_embedded_font_free(font) — it's consumed.
+
+    let page = unsafe { pdf_document_builder_a4_page(builder, &mut ec) };
+    assert!(!page.is_null());
+    let fname = cstring("DejaVu");
+    assert_eq!(unsafe { pdf_page_builder_font(page, fname.as_ptr(), 12.0, &mut ec) }, 0);
+    assert_eq!(unsafe { pdf_page_builder_at(page, 72.0, 720.0, &mut ec) }, 0);
+    let cyrillic = cstring("Привет, мир!");
+    assert_eq!(unsafe { pdf_page_builder_text(page, cyrillic.as_ptr(), &mut ec) }, 0);
+    assert_eq!(unsafe { pdf_page_builder_at(page, 72.0, 700.0, &mut ec) }, 0);
+    let greek = cstring("Καλημέρα κόσμε");
+    assert_eq!(unsafe { pdf_page_builder_text(page, greek.as_ptr(), &mut ec) }, 0);
+    assert_eq!(unsafe { pdf_page_builder_done(page, &mut ec) }, 0);
+
+    let mut out_len: usize = 0;
+    let bytes_ptr = unsafe { pdf_document_builder_build(builder, &mut out_len, &mut ec) };
+    assert_eq!(ec, 0);
+    assert!(!bytes_ptr.is_null());
+    let bytes = unsafe { std::slice::from_raw_parts(bytes_ptr, out_len) }.to_vec();
+    unsafe { free_bytes(bytes_ptr) };
+    unsafe { pdf_document_builder_free(builder) };
+
+    // Round-trip via the public (non-FFI) API since the FFI PdfDocument
+    // call chain is validated elsewhere.
+    let mut doc = pdf_oxide::PdfDocument::from_bytes(bytes).expect("parse output");
+    let text = doc.extract_text(0).expect("extract");
+    assert!(text.contains("Привет, мир!"), "Cyrillic missing: {text:?}");
+    assert!(text.contains("Καλημέρα κόσμε"), "Greek missing: {text:?}");
+}
+
+#[test]
+fn ffi_document_builder_output_is_subsetted() {
+    let mut ec = 0;
+    let font_path = cstring(DEJAVU_PATH);
+    let font = unsafe { pdf_embedded_font_from_file(font_path.as_ptr(), &mut ec) };
+    assert!(!font.is_null());
+    let builder = unsafe { pdf_document_builder_create(&mut ec) };
+    let font_name = cstring("DejaVu");
+    unsafe {
+        pdf_document_builder_register_embedded_font(builder, font_name.as_ptr(), font, &mut ec)
+    };
+    let page = unsafe { pdf_document_builder_a4_page(builder, &mut ec) };
+    let fname = cstring("DejaVu");
+    unsafe { pdf_page_builder_font(page, fname.as_ptr(), 12.0, &mut ec) };
+    unsafe { pdf_page_builder_at(page, 72.0, 700.0, &mut ec) };
+    let text = cstring("Hello world");
+    unsafe { pdf_page_builder_text(page, text.as_ptr(), &mut ec) };
+    unsafe { pdf_page_builder_done(page, &mut ec) };
+
+    let mut out_len = 0usize;
+    let bytes_ptr = unsafe { pdf_document_builder_build(builder, &mut out_len, &mut ec) };
+    let face_size = std::fs::metadata(DEJAVU_PATH).unwrap().len() as usize;
+    assert!(
+        out_len * 10 < face_size,
+        "expected FFI-built PDF ({out_len} bytes) to be >= 10× smaller than the face ({face_size} bytes)"
+    );
+    unsafe { free_bytes(bytes_ptr) };
+    unsafe { pdf_document_builder_free(builder) };
+}
+
+#[test]
+fn ffi_double_open_page_rejected() {
+    let mut ec = 0;
+    let builder = unsafe { pdf_document_builder_create(&mut ec) };
+    let page1 = unsafe { pdf_document_builder_a4_page(builder, &mut ec) };
+    assert!(!page1.is_null());
+
+    // Second open-page before done should error.
+    let mut ec2 = 0;
+    let page2 = unsafe { pdf_document_builder_a4_page(builder, &mut ec2) };
+    assert!(page2.is_null());
+    assert_eq!(ec2, 1); // ERR_INVALID_ARG
+
+    // Clean up: drop page1 without committing, then free builder.
+    unsafe { pdf_page_builder_free(page1) };
+    unsafe { pdf_document_builder_free(builder) };
+}
+
+#[test]
+fn ffi_double_build_fails() {
+    let mut ec = 0;
+    let builder = unsafe { pdf_document_builder_create(&mut ec) };
+    let page = unsafe { pdf_document_builder_a4_page(builder, &mut ec) };
+    unsafe { pdf_page_builder_at(page, 72.0, 720.0, &mut ec) };
+    let text = cstring("x");
+    unsafe { pdf_page_builder_text(page, text.as_ptr(), &mut ec) };
+    unsafe { pdf_page_builder_done(page, &mut ec) };
+
+    let mut out_len = 0usize;
+    let bytes1 = unsafe { pdf_document_builder_build(builder, &mut out_len, &mut ec) };
+    assert!(!bytes1.is_null());
+    unsafe { free_bytes(bytes1) };
+
+    // Second build must fail — builder was consumed.
+    let mut ec2 = 0;
+    let bytes2 = unsafe { pdf_document_builder_build(builder, &mut out_len, &mut ec2) };
+    assert!(bytes2.is_null());
+    assert_eq!(ec2, 1);
+
+    unsafe { pdf_document_builder_free(builder) };
+}
+
+#[test]
+fn ffi_save_encrypted_has_encrypt_dict() {
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    let tmp_path = tmp.path().to_path_buf();
+
+    let mut ec = 0;
+    let builder = unsafe { pdf_document_builder_create(&mut ec) };
+    let page = unsafe { pdf_document_builder_a4_page(builder, &mut ec) };
+    unsafe { pdf_page_builder_at(page, 72.0, 720.0, &mut ec) };
+    let t = cstring("confidential");
+    unsafe { pdf_page_builder_text(page, t.as_ptr(), &mut ec) };
+    unsafe { pdf_page_builder_done(page, &mut ec) };
+
+    let path_c = cstring(tmp_path.to_str().unwrap());
+    let user = cstring("userpw");
+    let owner = cstring("ownerpw");
+    let rc = unsafe {
+        pdf_document_builder_save_encrypted(
+            builder,
+            path_c.as_ptr(),
+            user.as_ptr(),
+            owner.as_ptr(),
+            &mut ec,
+        )
+    };
+    assert_eq!(rc, 0);
+    assert_eq!(ec, 0);
+
+    let raw = std::fs::read(&tmp_path).unwrap();
+    let s = String::from_utf8_lossy(&raw);
+    assert!(s.contains("/Encrypt"), "encrypted PDF missing /Encrypt");
+    assert!(s.contains("/V 5"), "expected /V 5 (AES-256) marker");
+
+    unsafe { pdf_document_builder_free(builder) };
+}
+
+#[test]
+fn ffi_embedded_font_from_bytes_with_name_override() {
+    let data = std::fs::read(DEJAVU_PATH).unwrap();
+    let mut ec = 0;
+    let name = cstring("CustomDejaVu");
+    let font =
+        unsafe { pdf_embedded_font_from_bytes(data.as_ptr(), data.len(), name.as_ptr(), &mut ec) };
+    assert_eq!(ec, 0);
+    assert!(!font.is_null());
+    unsafe { pdf_embedded_font_free(font) };
+
+    // Also test NULL name (use PS name).
+    let font2 =
+        unsafe { pdf_embedded_font_from_bytes(data.as_ptr(), data.len(), ptr::null(), &mut ec) };
+    assert_eq!(ec, 0);
+    assert!(!font2.is_null());
+    unsafe { pdf_embedded_font_free(font2) };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 — HTML+CSS pipeline through the C FFI
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ffi_pdf_from_html_css_single_font() {
+    let font_bytes = std::fs::read(DEJAVU_PATH).unwrap();
+    let mut ec = 0;
+    let html = cstring("<h1>Hello</h1><p>World</p>");
+    let css = cstring("h1 { color: blue; font-size: 24pt }");
+
+    let pdf_handle = unsafe {
+        pdf_from_html_css(
+            html.as_ptr(),
+            css.as_ptr(),
+            font_bytes.as_ptr(),
+            font_bytes.len(),
+            &mut ec,
+        )
+    };
+    assert_eq!(ec, 0);
+    assert!(!pdf_handle.is_null());
+
+    // Serialize via the existing pdf_save_to_bytes path.
+    let mut data_len = 0i32;
+    let bytes_ptr = unsafe { pdf_save_to_bytes(pdf_handle, &mut data_len, &mut ec) };
+    assert!(!bytes_ptr.is_null());
+    assert!(data_len > 0);
+    let bytes = unsafe { std::slice::from_raw_parts(bytes_ptr, data_len as usize) }.to_vec();
+    unsafe { free_bytes(bytes_ptr) };
+    unsafe { pdf_free(pdf_handle) };
+
+    assert!(bytes.starts_with(b"%PDF-"));
+
+    // Round-trip the literal words through extract_text.
+    let mut doc = pdf_oxide::PdfDocument::from_bytes(bytes).expect("parse");
+    let text = doc.extract_text(0).expect("extract");
+    assert!(text.contains("Hello"));
+    assert!(text.contains("World"));
+}
+
+#[test]
+fn ffi_pdf_from_html_css_with_fonts_parallel_arrays() {
+    let font_bytes = std::fs::read(DEJAVU_PATH).unwrap();
+
+    // Single-entry cascade.
+    let name_c = cstring("Body");
+    let families: [*const std::os::raw::c_char; 1] = [name_c.as_ptr()];
+    let font_ptrs: [*const u8; 1] = [font_bytes.as_ptr()];
+    let font_lens: [usize; 1] = [font_bytes.len()];
+
+    let mut ec = 0;
+    let html = cstring("<p>cascade works</p>");
+    let css = cstring("p { font-size: 14pt }");
+    let pdf_handle = unsafe {
+        pdf_from_html_css_with_fonts(
+            html.as_ptr(),
+            css.as_ptr(),
+            families.as_ptr(),
+            font_ptrs.as_ptr(),
+            font_lens.as_ptr(),
+            1,
+            &mut ec,
+        )
+    };
+    assert_eq!(ec, 0);
+    assert!(!pdf_handle.is_null());
+    unsafe { pdf_free(pdf_handle) };
+}
+
+#[test]
+fn ffi_pdf_from_html_css_with_fonts_rejects_empty_count() {
+    let mut ec = 0;
+    let html = cstring("<p>x</p>");
+    let css = cstring("");
+    let handle = unsafe {
+        pdf_from_html_css_with_fonts(
+            html.as_ptr(),
+            css.as_ptr(),
+            ptr::null(),
+            ptr::null(),
+            ptr::null(),
+            0,
+            &mut ec,
+        )
+    };
+    assert!(handle.is_null());
+    assert_eq!(ec, 1);
+}
+
+// ---------------------------------------------------------------------------
+// Sanity
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ffi_fixture_font_exists() {
+    assert!(
+        Path::new(DEJAVU_PATH).exists(),
+        "DejaVuSans.ttf fixture missing — regenerate tests/fixtures/fonts/"
+    );
+}

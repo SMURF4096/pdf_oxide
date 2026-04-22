@@ -5846,3 +5846,956 @@ pub extern "C" fn pdf_ocr_extract_text(
         ptr::null_mut()
     }
 }
+
+// =============================================================================
+// Write-side API: EmbeddedFont / DocumentBuilder / PageBuilder (#384 Phase 1)
+// =============================================================================
+//
+// C-FFI mirror of the pyo3 / wasm-bindgen exposure, with FFI-appropriate
+// idioms: opaque handles, out-parameter error codes, explicit free
+// functions, no fluent chaining (each method returns an int status, not
+// a handle, so C / C# / Go / Node wrappers rebuild fluency above this).
+//
+// **Handle-lifetime contract** — read carefully before wrapping this FFI:
+//
+//   1. `pdf_document_builder_create` returns a builder handle. The
+//      caller owns it until one of
+//        * `pdf_document_builder_free`
+//        * `pdf_document_builder_save` / `_save_encrypted`
+//        * `pdf_document_builder_build` / `_to_bytes_encrypted`
+//      Each terminal method **consumes** the handle — subsequent use
+//      is undefined behaviour.
+//
+//   2. `pdf_document_builder_a4_page` / `_letter_page` / `_page`
+//      returns a page handle. While any page handle is outstanding,
+//      its parent builder's open-page slot is held; a second
+//      `pdf_document_builder_*_page` call on the same builder before
+//      the prior `pdf_page_builder_done` returns `ERR_INVALID_ARG (1)`.
+//
+//   3. `pdf_page_builder_done` commits the buffered operations and
+//      clears the parent's open-page slot. The page handle becomes
+//      invalid. `pdf_page_builder_free` drops without committing
+//      (error recovery only).
+//
+//   4. `pdf_document_builder_register_embedded_font` **consumes** the
+//      `font` handle. Caller must NOT call `pdf_embedded_font_free`
+//      afterward.
+//
+//   5. Byte buffers returned from `_build` / `_to_bytes_encrypted`
+//      must be freed with `free_bytes`.
+
+const _ERR_FONT: i32 = 9; // reserved for future fine-grained font errors
+
+/// FFI wrapper around [`crate::writer::DocumentBuilder`] that adds a
+/// reentrancy guard around the open-page slot.
+pub struct FfiDocumentBuilder {
+    inner: Option<crate::writer::DocumentBuilder>,
+    open_page: bool,
+}
+
+/// Buffered page operations that are replayed against a real Rust
+/// `FluentPageBuilder` on `pdf_page_builder_done`.
+enum FfiPageOp {
+    Font(String, f32),
+    At(f32, f32),
+    Text(String),
+    Heading(u8, String),
+    Paragraph(String),
+    Space(f32),
+    HorizontalRule,
+    LinkUrl(String),
+    LinkPage(usize),
+    LinkNamed(String),
+    Highlight(f32, f32, f32),
+    Underline(f32, f32, f32),
+    Strikeout(f32, f32, f32),
+    Squiggly(f32, f32, f32),
+    StickyNote(String),
+    StickyNoteAt(f32, f32, String),
+    Watermark(String),
+    WatermarkConfidential,
+    WatermarkDraft,
+}
+
+/// Page sub-handle. Holds a raw back-pointer to the parent; the parent
+/// must outlive this handle (enforced by the one-page-at-a-time
+/// invariant documented above).
+pub struct FfiPageBuilder {
+    parent: *mut FfiDocumentBuilder,
+    page_size: Option<crate::writer::PageSize>,
+    custom_width: f32,
+    custom_height: f32,
+    ops: Vec<FfiPageOp>,
+    done_called: bool,
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// EmbeddedFont
+// ───────────────────────────────────────────────────────────────────────────
+
+/// Load a TTF / OTF font from a file path. Returns an opaque handle or
+/// NULL on error.
+#[no_mangle]
+pub extern "C" fn pdf_embedded_font_from_file(
+    path: *const c_char,
+    error_code: *mut i32,
+) -> *mut crate::writer::EmbeddedFont {
+    if path.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return ptr::null_mut();
+    }
+    let path_str = match unsafe { CStr::from_ptr(path) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        },
+    };
+    match crate::writer::EmbeddedFont::from_file(path_str) {
+        Ok(font) => {
+            set_error(error_code, ERR_SUCCESS);
+            Box::into_raw(Box::new(font))
+        },
+        Err(_) => {
+            set_error(error_code, ERR_IO);
+            ptr::null_mut()
+        },
+    }
+}
+
+/// Load a font from a byte buffer. `name` may be NULL to use the
+/// PostScript name from the font face.
+#[no_mangle]
+pub extern "C" fn pdf_embedded_font_from_bytes(
+    data: *const u8,
+    len: usize,
+    name: *const c_char,
+    error_code: *mut i32,
+) -> *mut crate::writer::EmbeddedFont {
+    if data.is_null() || len == 0 {
+        set_error(error_code, ERR_INVALID_ARG);
+        return ptr::null_mut();
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(data, len) }.to_vec();
+    let name_opt = if name.is_null() {
+        None
+    } else {
+        match unsafe { CStr::from_ptr(name) }.to_str() {
+            Ok(s) => Some(s.to_string()),
+            Err(_) => {
+                set_error(error_code, ERR_INVALID_ARG);
+                return ptr::null_mut();
+            },
+        }
+    };
+    match crate::writer::EmbeddedFont::from_data(name_opt, bytes) {
+        Ok(font) => {
+            set_error(error_code, ERR_SUCCESS);
+            Box::into_raw(Box::new(font))
+        },
+        Err(_) => {
+            set_error(error_code, ERR_PARSE);
+            ptr::null_mut()
+        },
+    }
+}
+
+/// Free an `EmbeddedFont` handle. No-op on NULL. Do not call after
+/// a successful `pdf_document_builder_register_embedded_font` —
+/// the builder has taken ownership.
+#[no_mangle]
+pub extern "C" fn pdf_embedded_font_free(handle: *mut crate::writer::EmbeddedFont) {
+    if !handle.is_null() {
+        unsafe {
+            drop(Box::from_raw(handle));
+        }
+    }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// DocumentBuilder
+// ───────────────────────────────────────────────────────────────────────────
+
+/// Create a new `DocumentBuilder`. Never fails but keeps the
+/// error_code signature for uniformity.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_create(error_code: *mut i32) -> *mut FfiDocumentBuilder {
+    set_error(error_code, ERR_SUCCESS);
+    Box::into_raw(Box::new(FfiDocumentBuilder {
+        inner: Some(crate::writer::DocumentBuilder::new()),
+        open_page: false,
+    }))
+}
+
+/// Free a `DocumentBuilder` handle without building. Safe to call on
+/// an already-consumed handle — it'll just drop the (empty) wrapper.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_free(handle: *mut FfiDocumentBuilder) {
+    if !handle.is_null() {
+        unsafe {
+            drop(Box::from_raw(handle));
+        }
+    }
+}
+
+fn ffi_builder_mut<'a>(
+    handle: *mut FfiDocumentBuilder,
+    error_code: *mut i32,
+) -> Option<&'a mut FfiDocumentBuilder> {
+    if handle.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return None;
+    }
+    let wrapper = unsafe { &mut *handle };
+    if wrapper.inner.is_none() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return None;
+    }
+    Some(wrapper)
+}
+
+fn ffi_builder_apply<F>(handle: *mut FfiDocumentBuilder, error_code: *mut i32, f: F) -> i32
+where
+    F: FnOnce(crate::writer::DocumentBuilder) -> crate::writer::DocumentBuilder,
+{
+    let Some(wrapper) = ffi_builder_mut(handle, error_code) else {
+        return -1;
+    };
+    if wrapper.open_page {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let taken = wrapper.inner.take().unwrap();
+    wrapper.inner = Some(f(taken));
+    set_error(error_code, ERR_SUCCESS);
+    0
+}
+
+fn read_cstr_or_fail(ptr: *const c_char, error_code: *mut i32) -> Option<String> {
+    if ptr.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return None;
+    }
+    match unsafe { CStr::from_ptr(ptr) }.to_str() {
+        Ok(s) => Some(s.to_string()),
+        Err(_) => {
+            set_error(error_code, ERR_INVALID_ARG);
+            None
+        },
+    }
+}
+
+/// Set the document title. Returns 0 on success, -1 on error.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_set_title(
+    handle: *mut FfiDocumentBuilder,
+    title: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(title) = read_cstr_or_fail(title, error_code) else {
+        return -1;
+    };
+    ffi_builder_apply(handle, error_code, |b| b.title(title))
+}
+
+/// Set the document author. Returns 0 on success, -1 on error.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_set_author(
+    handle: *mut FfiDocumentBuilder,
+    author: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(author) = read_cstr_or_fail(author, error_code) else {
+        return -1;
+    };
+    ffi_builder_apply(handle, error_code, |b| b.author(author))
+}
+
+/// Set the document subject.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_set_subject(
+    handle: *mut FfiDocumentBuilder,
+    subject: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(subject) = read_cstr_or_fail(subject, error_code) else {
+        return -1;
+    };
+    ffi_builder_apply(handle, error_code, |b| b.subject(subject))
+}
+
+/// Set the document keywords (comma-separated).
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_set_keywords(
+    handle: *mut FfiDocumentBuilder,
+    keywords: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(keywords) = read_cstr_or_fail(keywords, error_code) else {
+        return -1;
+    };
+    ffi_builder_apply(handle, error_code, |b| b.keywords(keywords))
+}
+
+/// Set the creator application name.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_set_creator(
+    handle: *mut FfiDocumentBuilder,
+    creator: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(creator) = read_cstr_or_fail(creator, error_code) else {
+        return -1;
+    };
+    ffi_builder_apply(handle, error_code, |b| b.creator(creator))
+}
+
+/// Register a TTF / OTF font. **Consumes** the `font` handle — on
+/// success, callers must not call `pdf_embedded_font_free` on it.
+/// On error the font handle is NOT consumed and remains valid.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_register_embedded_font(
+    handle: *mut FfiDocumentBuilder,
+    name: *const c_char,
+    font: *mut crate::writer::EmbeddedFont,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(name_s) = read_cstr_or_fail(name, error_code) else {
+        return -1;
+    };
+    if font.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    // Validate builder without consuming the font.
+    let Some(wrapper) = ffi_builder_mut(handle, error_code) else {
+        return -1;
+    };
+    if wrapper.open_page {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    // All validation passed — take ownership of the font.
+    let font_owned = unsafe { Box::from_raw(font) };
+    let taken = wrapper.inner.take().unwrap();
+    wrapper.inner = Some(taken.register_embedded_font(name_s, *font_owned));
+    set_error(error_code, ERR_SUCCESS);
+    0
+}
+
+fn open_page(
+    handle: *mut FfiDocumentBuilder,
+    page_size: Option<crate::writer::PageSize>,
+    width: f32,
+    height: f32,
+    error_code: *mut i32,
+) -> *mut FfiPageBuilder {
+    let Some(wrapper) = ffi_builder_mut(handle, error_code) else {
+        return ptr::null_mut();
+    };
+    if wrapper.open_page {
+        set_error(error_code, ERR_INVALID_ARG);
+        return ptr::null_mut();
+    }
+    wrapper.open_page = true;
+    set_error(error_code, ERR_SUCCESS);
+    Box::into_raw(Box::new(FfiPageBuilder {
+        parent: handle,
+        page_size,
+        custom_width: width,
+        custom_height: height,
+        ops: Vec::new(),
+        done_called: false,
+    }))
+}
+
+/// Start an A4 page. Only one page at a time may be open per builder —
+/// a second call while a page handle is outstanding returns NULL with
+/// `ERR_INVALID_ARG`.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_a4_page(
+    handle: *mut FfiDocumentBuilder,
+    error_code: *mut i32,
+) -> *mut FfiPageBuilder {
+    open_page(handle, Some(crate::writer::PageSize::A4), 0.0, 0.0, error_code)
+}
+
+/// Start a US Letter page.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_letter_page(
+    handle: *mut FfiDocumentBuilder,
+    error_code: *mut i32,
+) -> *mut FfiPageBuilder {
+    open_page(handle, Some(crate::writer::PageSize::Letter), 0.0, 0.0, error_code)
+}
+
+/// Start a page with custom dimensions in PDF points (72 pt = 1 inch).
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_page(
+    handle: *mut FfiDocumentBuilder,
+    width: f32,
+    height: f32,
+    error_code: *mut i32,
+) -> *mut FfiPageBuilder {
+    open_page(handle, None, width, height, error_code)
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// PageBuilder operations
+// ───────────────────────────────────────────────────────────────────────────
+
+fn push_page_op(handle: *mut FfiPageBuilder, error_code: *mut i32, op: FfiPageOp) -> i32 {
+    if handle.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let page = unsafe { &mut *handle };
+    if page.done_called {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    page.ops.push(op);
+    set_error(error_code, ERR_SUCCESS);
+    0
+}
+
+/// Set the font + size for subsequent text on this page.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_font(
+    handle: *mut FfiPageBuilder,
+    name: *const c_char,
+    size: f32,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(name_s) = read_cstr_or_fail(name, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::Font(name_s, size))
+}
+
+/// Move the cursor to absolute coordinates (in PDF points, from lower-left).
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_at(
+    handle: *mut FfiPageBuilder,
+    x: f32,
+    y: f32,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::At(x, y))
+}
+
+/// Emit a line of text at the current cursor position, then advance
+/// the cursor down by one line-height.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_text(
+    handle: *mut FfiPageBuilder,
+    text: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(text_s) = read_cstr_or_fail(text, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::Text(text_s))
+}
+
+/// Emit a heading with the given level (1–6) and text.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_heading(
+    handle: *mut FfiPageBuilder,
+    level: u8,
+    text: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(text_s) = read_cstr_or_fail(text, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::Heading(level, text_s))
+}
+
+/// Emit a paragraph with automatic line wrapping.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_paragraph(
+    handle: *mut FfiPageBuilder,
+    text: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(text_s) = read_cstr_or_fail(text, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::Paragraph(text_s))
+}
+
+/// Advance the cursor down by `points`.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_space(
+    handle: *mut FfiPageBuilder,
+    points: f32,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::Space(points))
+}
+
+/// Draw a horizontal rule across the page.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_horizontal_rule(
+    handle: *mut FfiPageBuilder,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::HorizontalRule)
+}
+
+// ── Annotations (#384 Phase 3, direct-method variant) ─────────────────────
+
+/// Attach a URL link to the previously-emitted text element.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_link_url(
+    handle: *mut FfiPageBuilder,
+    url: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(url_s) = read_cstr_or_fail(url, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::LinkUrl(url_s))
+}
+
+/// Link the previous text to an internal page index (zero-based).
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_link_page(
+    handle: *mut FfiPageBuilder,
+    page: usize,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::LinkPage(page))
+}
+
+/// Link the previous text to a named destination.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_link_named(
+    handle: *mut FfiPageBuilder,
+    destination: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(dest_s) = read_cstr_or_fail(destination, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::LinkNamed(dest_s))
+}
+
+/// Highlight the previous text with an RGB colour (channels in 0.0–1.0).
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_highlight(
+    handle: *mut FfiPageBuilder,
+    r: f32,
+    g: f32,
+    b: f32,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::Highlight(r, g, b))
+}
+
+/// Underline the previous text.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_underline(
+    handle: *mut FfiPageBuilder,
+    r: f32,
+    g: f32,
+    b: f32,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::Underline(r, g, b))
+}
+
+/// Strikeout the previous text.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_strikeout(
+    handle: *mut FfiPageBuilder,
+    r: f32,
+    g: f32,
+    b: f32,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::Strikeout(r, g, b))
+}
+
+/// Squiggly-underline the previous text.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_squiggly(
+    handle: *mut FfiPageBuilder,
+    r: f32,
+    g: f32,
+    b: f32,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::Squiggly(r, g, b))
+}
+
+/// Attach a sticky-note annotation to the previous text.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_sticky_note(
+    handle: *mut FfiPageBuilder,
+    text: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(text_s) = read_cstr_or_fail(text, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::StickyNote(text_s))
+}
+
+/// Place a free-standing sticky note at an absolute position on the page.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_sticky_note_at(
+    handle: *mut FfiPageBuilder,
+    x: f32,
+    y: f32,
+    text: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(text_s) = read_cstr_or_fail(text, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::StickyNoteAt(x, y, text_s))
+}
+
+/// Apply a text watermark to the entire page.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_watermark(
+    handle: *mut FfiPageBuilder,
+    text: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(text_s) = read_cstr_or_fail(text, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::Watermark(text_s))
+}
+
+/// Apply the standard "CONFIDENTIAL" diagonal watermark.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_watermark_confidential(
+    handle: *mut FfiPageBuilder,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::WatermarkConfidential)
+}
+
+/// Apply the standard "DRAFT" diagonal watermark.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_watermark_draft(
+    handle: *mut FfiPageBuilder,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::WatermarkDraft)
+}
+
+/// Commit this page's buffered operations to its parent builder and
+/// **consume** the page handle. After a successful call the handle is
+/// invalid; do not call `_free`.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code: *mut i32) -> i32 {
+    if handle.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    // Take ownership of the page handle.
+    let mut page = unsafe { Box::from_raw(handle) };
+    if page.done_called {
+        set_error(error_code, ERR_INVALID_ARG);
+        // Re-leak so later `_free` is still safe.
+        Box::leak(page);
+        return -1;
+    }
+    page.done_called = true;
+
+    // Access parent — SAFETY: one-page-at-a-time invariant means no
+    // other FfiPageBuilder references this parent, and the caller has
+    // promised not to free the parent while this page is outstanding.
+    if page.parent.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let parent = unsafe { &mut *page.parent };
+    let Some(builder) = parent.inner.as_mut() else {
+        set_error(error_code, ERR_INVALID_ARG);
+        parent.open_page = false;
+        return -1;
+    };
+
+    let page_size = page
+        .page_size
+        .unwrap_or(crate::writer::PageSize::Custom(page.custom_width, page.custom_height));
+    let mut rust_page = builder.page(page_size);
+    for op in page.ops.drain(..) {
+        rust_page = match op {
+            FfiPageOp::Font(name, size) => rust_page.font(&name, size),
+            FfiPageOp::At(x, y) => rust_page.at(x, y),
+            FfiPageOp::Text(text) => rust_page.text(&text),
+            FfiPageOp::Heading(level, text) => rust_page.heading(level, &text),
+            FfiPageOp::Paragraph(text) => rust_page.paragraph(&text),
+            FfiPageOp::Space(points) => rust_page.space(points),
+            FfiPageOp::HorizontalRule => rust_page.horizontal_rule(),
+            FfiPageOp::LinkUrl(url) => rust_page.link_url(&url),
+            FfiPageOp::LinkPage(p) => rust_page.link_page(p),
+            FfiPageOp::LinkNamed(dest) => rust_page.link_named(&dest),
+            FfiPageOp::Highlight(r, g, b) => rust_page.highlight((r, g, b)),
+            FfiPageOp::Underline(r, g, b) => rust_page.underline((r, g, b)),
+            FfiPageOp::Strikeout(r, g, b) => rust_page.strikeout((r, g, b)),
+            FfiPageOp::Squiggly(r, g, b) => rust_page.squiggly((r, g, b)),
+            FfiPageOp::StickyNote(text) => rust_page.sticky_note(&text),
+            FfiPageOp::StickyNoteAt(x, y, text) => rust_page.sticky_note_at(x, y, &text),
+            FfiPageOp::Watermark(text) => rust_page.watermark(&text),
+            FfiPageOp::WatermarkConfidential => rust_page.watermark_confidential(),
+            FfiPageOp::WatermarkDraft => rust_page.watermark_draft(),
+        };
+    }
+    rust_page.done();
+    parent.open_page = false;
+    // page box drops here, releasing the buffered ops (already drained).
+    set_error(error_code, ERR_SUCCESS);
+    0
+}
+
+/// Drop an uncommitted page handle (error-recovery path). Does NOT
+/// apply the buffered operations. If the parent builder is still
+/// alive, also clears the open-page slot so the next `_page` call
+/// succeeds.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_free(handle: *mut FfiPageBuilder) {
+    if !handle.is_null() {
+        unsafe {
+            let page = Box::from_raw(handle);
+            if !page.parent.is_null() && !page.done_called {
+                (*page.parent).open_page = false;
+            }
+        }
+    }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Finalisation
+// ───────────────────────────────────────────────────────────────────────────
+
+fn consume_builder(
+    handle: *mut FfiDocumentBuilder,
+    error_code: *mut i32,
+) -> Option<crate::writer::DocumentBuilder> {
+    let wrapper = ffi_builder_mut(handle, error_code)?;
+    if wrapper.open_page {
+        set_error(error_code, ERR_INVALID_ARG);
+        return None;
+    }
+    wrapper.inner.take()
+}
+
+fn bytes_to_ffi(bytes: Vec<u8>, out_len: *mut usize, error_code: *mut i32) -> *mut u8 {
+    if out_len.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return ptr::null_mut();
+    }
+    unsafe {
+        *out_len = bytes.len();
+    }
+    set_error(error_code, ERR_SUCCESS);
+    let boxed = bytes.into_boxed_slice();
+    Box::into_raw(boxed) as *mut u8
+}
+
+/// Build the PDF and return the bytes. **Consumes** the builder —
+/// caller must not call `_free` after a successful call. Returns NULL
+/// on error. Output buffer must be freed with `free_bytes`.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_build(
+    handle: *mut FfiDocumentBuilder,
+    out_len: *mut usize,
+    error_code: *mut i32,
+) -> *mut u8 {
+    let Some(builder) = consume_builder(handle, error_code) else {
+        return ptr::null_mut();
+    };
+    match builder.build() {
+        Ok(bytes) => bytes_to_ffi(bytes, out_len, error_code),
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            ptr::null_mut()
+        },
+    }
+}
+
+/// Build and save the PDF to `path`. **Consumes** the builder.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_save(
+    handle: *mut FfiDocumentBuilder,
+    path: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(path_s) = read_cstr_or_fail(path, error_code) else {
+        return -1;
+    };
+    let Some(builder) = consume_builder(handle, error_code) else {
+        return -1;
+    };
+    match builder.save(&path_s) {
+        Ok(()) => {
+            set_error(error_code, ERR_SUCCESS);
+            0
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            -1
+        },
+    }
+}
+
+/// Build and save with AES-256 encryption. **Consumes** the builder.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_save_encrypted(
+    handle: *mut FfiDocumentBuilder,
+    path: *const c_char,
+    user_password: *const c_char,
+    owner_password: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(path_s) = read_cstr_or_fail(path, error_code) else {
+        return -1;
+    };
+    let Some(user_pw) = read_cstr_or_fail(user_password, error_code) else {
+        return -1;
+    };
+    let Some(owner_pw) = read_cstr_or_fail(owner_password, error_code) else {
+        return -1;
+    };
+    let Some(builder) = consume_builder(handle, error_code) else {
+        return -1;
+    };
+    match builder.save_encrypted(&path_s, &user_pw, &owner_pw) {
+        Ok(()) => {
+            set_error(error_code, ERR_SUCCESS);
+            0
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            -1
+        },
+    }
+}
+
+/// Build encrypted bytes. **Consumes** the builder. Output buffer must
+/// be freed with `free_bytes`.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_to_bytes_encrypted(
+    handle: *mut FfiDocumentBuilder,
+    user_password: *const c_char,
+    owner_password: *const c_char,
+    out_len: *mut usize,
+    error_code: *mut i32,
+) -> *mut u8 {
+    let Some(user_pw) = read_cstr_or_fail(user_password, error_code) else {
+        return ptr::null_mut();
+    };
+    let Some(owner_pw) = read_cstr_or_fail(owner_password, error_code) else {
+        return ptr::null_mut();
+    };
+    let Some(builder) = consume_builder(handle, error_code) else {
+        return ptr::null_mut();
+    };
+    match builder.to_bytes_encrypted(&user_pw, &owner_pw) {
+        Ok(bytes) => bytes_to_ffi(bytes, out_len, error_code),
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            ptr::null_mut()
+        },
+    }
+}
+
+// =============================================================================
+// HTML+CSS pipeline (#384 Phase 2)
+// =============================================================================
+
+/// Build a PDF from HTML + CSS + a single embedded font. Returns a
+/// `Pdf` handle (usable with `pdf_save` / `pdf_save_to_bytes`) or NULL
+/// on error.
+#[no_mangle]
+pub extern "C" fn pdf_from_html_css(
+    html: *const c_char,
+    css: *const c_char,
+    font_bytes: *const u8,
+    font_len: usize,
+    error_code: *mut i32,
+) -> *mut Pdf {
+    let Some(html_s) = read_cstr_or_fail(html, error_code) else {
+        return ptr::null_mut();
+    };
+    let Some(css_s) = read_cstr_or_fail(css, error_code) else {
+        return ptr::null_mut();
+    };
+    if font_bytes.is_null() || font_len == 0 {
+        set_error(error_code, ERR_INVALID_ARG);
+        return ptr::null_mut();
+    }
+    let font_vec = unsafe { std::slice::from_raw_parts(font_bytes, font_len) }.to_vec();
+    match Pdf::from_html_css(&html_s, &css_s, font_vec) {
+        Ok(pdf) => {
+            set_error(error_code, ERR_SUCCESS);
+            Box::into_raw(Box::new(pdf))
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            ptr::null_mut()
+        },
+    }
+}
+
+/// Build a PDF from HTML+CSS with a multi-font cascade. `families`,
+/// `font_bytes`, and `font_lens` are parallel arrays of length `count`.
+/// Caller-owned; the FFI copies the bytes.
+#[no_mangle]
+pub extern "C" fn pdf_from_html_css_with_fonts(
+    html: *const c_char,
+    css: *const c_char,
+    families: *const *const c_char,
+    font_bytes: *const *const u8,
+    font_lens: *const usize,
+    count: usize,
+    error_code: *mut i32,
+) -> *mut Pdf {
+    let Some(html_s) = read_cstr_or_fail(html, error_code) else {
+        return ptr::null_mut();
+    };
+    let Some(css_s) = read_cstr_or_fail(css, error_code) else {
+        return ptr::null_mut();
+    };
+    if count == 0 || families.is_null() || font_bytes.is_null() || font_lens.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return ptr::null_mut();
+    }
+    let mut fonts: Vec<(String, Vec<u8>)> = Vec::with_capacity(count);
+    for i in 0..count {
+        let name_ptr = unsafe { *families.add(i) };
+        let bytes_ptr = unsafe { *font_bytes.add(i) };
+        let bytes_len = unsafe { *font_lens.add(i) };
+        if name_ptr.is_null() || bytes_ptr.is_null() || bytes_len == 0 {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let name = match unsafe { CStr::from_ptr(name_ptr) }.to_str() {
+            Ok(s) => s.to_string(),
+            Err(_) => {
+                set_error(error_code, ERR_INVALID_ARG);
+                return ptr::null_mut();
+            },
+        };
+        let bytes = unsafe { std::slice::from_raw_parts(bytes_ptr, bytes_len) }.to_vec();
+        fonts.push((name, bytes));
+    }
+    match Pdf::from_html_css_with_fonts(&html_s, &css_s, fonts) {
+        Ok(pdf) => {
+            set_error(error_code, ERR_SUCCESS);
+            Box::into_raw(Box::new(pdf))
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            ptr::null_mut()
+        },
+    }
+}

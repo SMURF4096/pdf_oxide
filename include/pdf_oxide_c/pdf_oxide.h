@@ -283,6 +283,120 @@ void  pdf_oxide_set_log_level(int level);
 /** Get current log level (0-5). */
 int   pdf_oxide_get_log_level(void);
 
+/* ─── Write-side API (#384) ─────────────────────────────────────────────── *
+ *
+ * DocumentBuilder + PageBuilder + EmbeddedFont mirror the Rust fluent
+ * builder. Each method returns 0 on success, -1 on error (error_code
+ * out-param carries the specific code).
+ *
+ * Handle-lifetime contract:
+ *
+ *  1. `pdf_document_builder_create` returns a handle. The handle is
+ *     valid until exactly one of
+ *        pdf_document_builder_free
+ *        pdf_document_builder_save / _save_encrypted
+ *        pdf_document_builder_build / _to_bytes_encrypted
+ *     has been called — those methods CONSUME the handle. Subsequent
+ *     use is undefined.
+ *
+ *  2. `pdf_document_builder_a4_page` / `_letter_page` / `_page` returns
+ *     a page sub-handle. Only ONE page handle may be outstanding per
+ *     builder; a second call before the prior `pdf_page_builder_done`
+ *     returns NULL with error_code = 1 (invalid arg).
+ *
+ *  3. `pdf_page_builder_done` commits the page and invalidates the
+ *     page handle. `pdf_page_builder_free` is for error-recovery only
+ *     (drop without committing).
+ *
+ *  4. `pdf_document_builder_register_embedded_font` CONSUMES the font
+ *     handle on success. Do not call `pdf_embedded_font_free` after.
+ *
+ *  5. Byte buffers returned from `_build` and `_to_bytes_encrypted`
+ *     must be freed with `free_bytes`.
+ */
+
+/* EmbeddedFont */
+void* pdf_embedded_font_from_file(const char* path, int* error_code);
+void* pdf_embedded_font_from_bytes(const uint8_t* data, size_t len,
+                                   const char* name /* nullable */,
+                                   int* error_code);
+void  pdf_embedded_font_free(void* handle);
+
+/* DocumentBuilder — lifecycle */
+void* pdf_document_builder_create(int* error_code);
+void  pdf_document_builder_free(void* handle);
+
+/* DocumentBuilder — metadata */
+int   pdf_document_builder_set_title(void* handle, const char* title, int* error_code);
+int   pdf_document_builder_set_author(void* handle, const char* author, int* error_code);
+int   pdf_document_builder_set_subject(void* handle, const char* subject, int* error_code);
+int   pdf_document_builder_set_keywords(void* handle, const char* keywords, int* error_code);
+int   pdf_document_builder_set_creator(void* handle, const char* creator, int* error_code);
+
+/* DocumentBuilder — font registration (CONSUMES font on success) */
+int   pdf_document_builder_register_embedded_font(void* handle, const char* name,
+                                                  void* font, int* error_code);
+
+/* DocumentBuilder — open page */
+void* pdf_document_builder_a4_page(void* handle, int* error_code);
+void* pdf_document_builder_letter_page(void* handle, int* error_code);
+void* pdf_document_builder_page(void* handle, float width, float height, int* error_code);
+
+/* PageBuilder — content */
+int   pdf_page_builder_font(void* page, const char* name, float size, int* error_code);
+int   pdf_page_builder_at(void* page, float x, float y, int* error_code);
+int   pdf_page_builder_text(void* page, const char* text, int* error_code);
+int   pdf_page_builder_heading(void* page, unsigned char level, const char* text,
+                               int* error_code);
+int   pdf_page_builder_paragraph(void* page, const char* text, int* error_code);
+int   pdf_page_builder_space(void* page, float points, int* error_code);
+int   pdf_page_builder_horizontal_rule(void* page, int* error_code);
+
+/* PageBuilder — annotations (attach to previous text element) */
+int   pdf_page_builder_link_url(void* page, const char* url, int* error_code);
+int   pdf_page_builder_link_page(void* page, size_t target_page, int* error_code);
+int   pdf_page_builder_link_named(void* page, const char* destination, int* error_code);
+int   pdf_page_builder_highlight(void* page, float r, float g, float b, int* error_code);
+int   pdf_page_builder_underline(void* page, float r, float g, float b, int* error_code);
+int   pdf_page_builder_strikeout(void* page, float r, float g, float b, int* error_code);
+int   pdf_page_builder_squiggly(void* page, float r, float g, float b, int* error_code);
+int   pdf_page_builder_sticky_note(void* page, const char* text, int* error_code);
+int   pdf_page_builder_sticky_note_at(void* page, float x, float y, const char* text,
+                                      int* error_code);
+int   pdf_page_builder_watermark(void* page, const char* text, int* error_code);
+int   pdf_page_builder_watermark_confidential(void* page, int* error_code);
+int   pdf_page_builder_watermark_draft(void* page, int* error_code);
+
+/* PageBuilder — commit / drop */
+int   pdf_page_builder_done(void* page, int* error_code);
+void  pdf_page_builder_free(void* page);
+
+/* DocumentBuilder — finalisation (ALL CONSUME the handle on success) */
+uint8_t* pdf_document_builder_build(void* handle, size_t* out_len, int* error_code);
+int      pdf_document_builder_save(void* handle, const char* path, int* error_code);
+int      pdf_document_builder_save_encrypted(void* handle, const char* path,
+                                             const char* user_password,
+                                             const char* owner_password,
+                                             int* error_code);
+uint8_t* pdf_document_builder_to_bytes_encrypted(void* handle,
+                                                 const char* user_password,
+                                                 const char* owner_password,
+                                                 size_t* out_len,
+                                                 int* error_code);
+
+/* HTML+CSS pipeline (#384 Phase 2) */
+void* pdf_from_html_css(const char* html, const char* css,
+                        const uint8_t* font_bytes, size_t font_len,
+                        int* error_code);
+/* Multi-font cascade — `families`, `font_bytes`, and `font_lens` are
+ * parallel arrays of length `count`. The FFI copies the bytes. */
+void* pdf_from_html_css_with_fonts(const char* html, const char* css,
+                                   const char* const* families,
+                                   const uint8_t* const* font_bytes,
+                                   const size_t* font_lens,
+                                   size_t count,
+                                   int* error_code);
+
 #ifdef __cplusplus
 }
 #endif
