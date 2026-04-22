@@ -42,11 +42,13 @@
 //! Requires the `signatures` feature to be enabled.
 
 mod byterange;
+mod pdf_date;
 mod signer;
 mod types;
 mod verifier;
 
 pub use byterange::ByteRangeCalculator;
+pub use pdf_date::parse_pdf_date_to_epoch;
 pub use signer::PdfSigner;
 pub use types::{
     DigestAlgorithm, SignOptions, SignatureAppearance, SignatureInfo, SignatureSubFilter,

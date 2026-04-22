@@ -2296,8 +2296,13 @@ pub extern "C" fn pdf_signature_get_signing_time(
             set_error(error_code, ERR_INVALID_ARG);
             return 0;
         }
+        let info = unsafe { &*sig };
         set_error(error_code, ERR_SUCCESS);
-        0 // signing_time is a String, not epoch — returning 0 for now
+        info.info
+            .signing_time
+            .as_deref()
+            .and_then(crate::signatures::parse_pdf_date_to_epoch)
+            .unwrap_or(0)
     }
     #[cfg(not(feature = "signatures"))]
     {
