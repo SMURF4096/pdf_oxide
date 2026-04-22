@@ -5,17 +5,7 @@
 
 import assert from 'node:assert';
 import { describe, it } from 'node:test';
-import {
-  AcroForm,
-  DocumentInfo,
-  EmbeddedFile,
-  FormField,
-  PageLabel,
-  Pdf,
-  PdfBuilder,
-  PdfDocument,
-  XMPMetadata,
-} from '../index.js';
+import { AcroForm, EmbeddedFile, PageLabel, Pdf, XMPMetadata } from '../index.js';
 
 describe('Phase 4 Part 2 Integration: Pdf Class with Forms and Metadata', () => {
   describe('Pdf + Metadata Integration', () => {

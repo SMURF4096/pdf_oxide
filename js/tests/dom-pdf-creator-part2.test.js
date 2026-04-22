@@ -5,22 +5,7 @@
 
 import assert from 'node:assert';
 import { describe, it } from 'node:test';
-import {
-  AcroForm,
-  ButtonField,
-  CheckboxField,
-  DocumentInfo,
-  EmbeddedFile,
-  FormField,
-  ListField,
-  PageLabel,
-  Pdf,
-  PdfBuilder,
-  RadioButtonField,
-  SignatureField,
-  TextFormField,
-  XMPMetadata,
-} from '../index.js';
+import { AcroForm, DocumentInfo, EmbeddedFile, PageLabel, XMPMetadata } from '../index.js';
 
 describe('Phase 4 Part 2: Forms, Metadata, and Advanced Features', () => {
   describe('AcroForm - Traditional PDF Forms', () => {

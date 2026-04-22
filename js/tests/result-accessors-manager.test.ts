@@ -7,13 +7,7 @@
  * - Annotation properties (6 functions)
  */
 
-import {
-  type AnnotationProperties,
-  type FontProperties,
-  type ImageProperties,
-  ResultAccessorsManager,
-  type SearchResultProperties,
-} from '../src/result-accessors-manager';
+import { ResultAccessorsManager } from '../src/result-accessors-manager';
 
 describe('ResultAccessorsManager', () => {
   let manager: ResultAccessorsManager;

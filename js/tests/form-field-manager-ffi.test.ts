@@ -8,12 +8,7 @@
  * - Statistics and batch operations (3 functions)
  */
 
-import {
-  FieldVisibility,
-  type FormField,
-  FormFieldManager,
-  FormFieldType,
-} from '../src/form-field-manager';
+import { FieldVisibility, FormFieldManager, FormFieldType } from '../src/form-field-manager';
 
 describe('FormFieldManager FFI-based Methods', () => {
   let manager: FormFieldManager;

@@ -63,7 +63,6 @@ import {
   SearchStream,
   SecurityManager,
 } from './managers/index';
-import { addPdfDocumentProperties, addPdfPageProperties, addPdfProperties } from './properties';
 import type { Table } from './types/common.js';
 import type { WorkerResult, WorkerTask } from './workers/index';
 import { WorkerPool, workerPool } from './workers/index';

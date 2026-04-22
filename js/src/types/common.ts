@@ -16,15 +16,6 @@ export interface Table {
   cells: (string | null)[][];
 }
 
-import type {
-  Annotation,
-  DocumentInfo,
-  EmbeddedFile,
-  Metadata,
-  SearchOptions,
-  SearchResult,
-} from './native-bindings';
-
 // Re-export commonly used native types
 export type {
   Annotation,

@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  FieldValidationType,
   FieldVisibility,
   FormFieldManager,
   FormFieldState,

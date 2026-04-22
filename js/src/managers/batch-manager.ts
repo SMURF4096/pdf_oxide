@@ -40,7 +40,6 @@
  */
 
 import os from 'os';
-import type { PdfErrorDetails } from '../types/common';
 
 /**
  * Represents a document to be processed in a batch

@@ -58,7 +58,7 @@
         "noUnusedVariables": "off",
         "noUnusedFunctionParameters": "off",
         "noUnusedPrivateClassMembers": "off",
-        "noUnusedImports": "off",
+        "noUnusedImports": "warn",
         "useParseIntRadix": "off"
       },
       "performance": {

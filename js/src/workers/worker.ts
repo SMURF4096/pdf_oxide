@@ -3,7 +3,7 @@
  * Handles off-main-thread PDF processing tasks
  */
 
-import { parentPort, workerData } from 'worker_threads';
+import { parentPort } from 'worker_threads';
 import type { WorkerResult, WorkerTask } from './pool.js';
 
 // Types for operations - will be available at runtime via the PdfDocument

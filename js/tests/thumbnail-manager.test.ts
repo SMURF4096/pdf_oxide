@@ -1,13 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { PdfDocument } from '../src/pdf-document';
-import {
-  type ThumbnailConfig,
-  ThumbnailInfo,
-  ThumbnailManager,
-  ThumbnailSize,
-} from '../src/thumbnail-manager';
+import { type ThumbnailConfig, ThumbnailManager, ThumbnailSize } from '../src/thumbnail-manager';
 
 describe('ThumbnailManager', () => {
   let mockDocument: PdfDocument;

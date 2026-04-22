@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { PdfDocument } from '../src/pdf-document';
 import {
   type CertificateInfo,
