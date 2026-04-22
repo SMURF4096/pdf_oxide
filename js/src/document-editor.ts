@@ -22,13 +22,14 @@
  * }
  * ```
  */
-// Load the native addon directly — going through `./index.js` would
-// create an ESM require cycle (index.js imports us back). Mirrors the
-// `createRequire` pattern used in `builders/document-builder.ts`.
-import { createRequire } from 'node:module';
+// Load the native addon via the shared prebuild-aware loader.
+// Importing `./index.js` would create an ESM cycle (index.js imports
+// us back), so we go through `./native.js` — same resolver, no cycle,
+// resolves against `prebuilds/<triple>/pdf_oxide.node` in the
+// published package.
+import { loadNative } from './native.js';
 
-const require = createRequire(import.meta.url);
-const native = require('../build/Release/pdf_oxide.node');
+const native = loadNative();
 
 /**
  * Page rotation angles valid for {@link DocumentEditor.setPageRotation}.
@@ -141,7 +142,6 @@ export class DocumentEditor {
 
   /**
    * Append every page of another PDF to the end of this document.
-   * Answers Reddit user u/Raccoon12's direct question (2026-04-21).
    */
   mergeFrom(sourcePath: string): void {
     this._throwIfClosed();

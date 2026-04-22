@@ -292,13 +292,18 @@ int   pdf_oxide_get_log_level(void);
  *
  * Handle-lifetime contract:
  *
- *  1. `pdf_document_builder_create` returns a handle. The handle is
- *     valid until exactly one of
- *        pdf_document_builder_free
- *        pdf_document_builder_save / _save_encrypted
- *        pdf_document_builder_build / _to_bytes_encrypted
- *     has been called — those methods CONSUME the handle. Subsequent
- *     use is undefined.
+ *  1. `pdf_document_builder_create` returns a handle. The finalisation
+ *     methods below consume the *builder state* but leave the handle
+ *     itself allocated (a zombie wrapper). Callers MUST still call
+ *     `pdf_document_builder_free` to release it:
+ *        pdf_document_builder_build        → call `_free` after
+ *        pdf_document_builder_save         → call `_free` after
+ *        pdf_document_builder_save_encrypted → call `_free` after
+ *        pdf_document_builder_to_bytes_encrypted → call `_free` after
+ *     A second finalisation on the same handle (double-build, etc.)
+ *     is invalid; it returns NULL / -1 with errno = invalid-arg.
+ *     Calling `pdf_document_builder_free` on an already-finalised
+ *     handle is the normal teardown path and is always safe.
  *
  *  2. `pdf_document_builder_a4_page` / `_letter_page` / `_page` returns
  *     a page sub-handle. Only ONE page handle may be outstanding per
@@ -421,7 +426,11 @@ int   pdf_page_builder_line(void* page, float x1, float y1, float x2, float y2,
 int   pdf_page_builder_done(void* page, int* error_code);
 void  pdf_page_builder_free(void* page);
 
-/* DocumentBuilder — finalisation (ALL CONSUME the handle on success) */
+/* DocumentBuilder — finalisation. Each consumes the builder *state*
+ * but leaves the handle wrapper allocated; callers must still call
+ * `pdf_document_builder_free` to release it (see handle-lifetime
+ * contract above). Calling any of these twice on the same handle
+ * returns an error. */
 uint8_t* pdf_document_builder_build(void* handle, size_t* out_len, int* error_code);
 int      pdf_document_builder_save(void* handle, const char* path, int* error_code);
 int      pdf_document_builder_save_encrypted(void* handle, const char* path,

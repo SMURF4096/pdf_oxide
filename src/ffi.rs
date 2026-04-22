@@ -7881,9 +7881,10 @@ fn bytes_to_ffi(bytes: Vec<u8>, out_len: *mut usize, error_code: *mut i32) -> *m
     Box::into_raw(boxed) as *mut u8
 }
 
-/// Build the PDF and return the bytes. **Consumes** the builder —
-/// caller must not call `_free` after a successful call. Returns NULL
-/// on error. Output buffer must be freed with `free_bytes`.
+/// Build the PDF and return the bytes. Consumes the builder *state*
+/// — the handle wrapper is still allocated and MUST be released with
+/// `pdf_document_builder_free`. Returns NULL on error. Output buffer
+/// must be freed with `free_bytes`.
 #[no_mangle]
 pub extern "C" fn pdf_document_builder_build(
     handle: *mut FfiDocumentBuilder,
@@ -7902,7 +7903,8 @@ pub extern "C" fn pdf_document_builder_build(
     }
 }
 
-/// Build and save the PDF to `path`. **Consumes** the builder.
+/// Build and save the PDF to `path`. Consumes the builder state;
+/// caller must still call `pdf_document_builder_free`.
 #[no_mangle]
 pub extern "C" fn pdf_document_builder_save(
     handle: *mut FfiDocumentBuilder,
@@ -7927,7 +7929,8 @@ pub extern "C" fn pdf_document_builder_save(
     }
 }
 
-/// Build and save with AES-256 encryption. **Consumes** the builder.
+/// Build and save with AES-256 encryption. Consumes the builder
+/// state; caller must still call `pdf_document_builder_free`.
 #[no_mangle]
 pub extern "C" fn pdf_document_builder_save_encrypted(
     handle: *mut FfiDocumentBuilder,
@@ -7960,8 +7963,9 @@ pub extern "C" fn pdf_document_builder_save_encrypted(
     }
 }
 
-/// Build encrypted bytes. **Consumes** the builder. Output buffer must
-/// be freed with `free_bytes`.
+/// Build encrypted bytes. Consumes the builder state; caller must
+/// still call `pdf_document_builder_free`. Output buffer must be
+/// freed with `free_bytes`.
 #[no_mangle]
 pub extern "C" fn pdf_document_builder_to_bytes_encrypted(
     handle: *mut FfiDocumentBuilder,

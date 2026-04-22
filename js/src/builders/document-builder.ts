@@ -24,13 +24,12 @@
  * ```
  */
 
-// The package is ESM (`"type": "module"`); a bare `require()` at module
-// scope fails when Node loads this file as ESM. `createRequire` gives
-// us a CJS resolver that can load the native .node addon.
-import { createRequire } from 'node:module';
+// Load the addon via the shared prebuild-aware loader — resolves
+// against `prebuilds/<triple>/pdf_oxide.node` in the published
+// package and the in-tree `build/Release/` output in dev mode.
+import { loadNative } from '../native.js';
 
-const require = createRequire(import.meta.url);
-const native = require('../../build/Release/pdf_oxide.node');
+const native = loadNative();
 
 /**
  * TTF/OTF font handle registerable with {@link DocumentBuilder}. Single-use:

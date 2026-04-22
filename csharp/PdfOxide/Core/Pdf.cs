@@ -190,8 +190,8 @@ namespace PdfOxide.Core
                 {
                     var ptr = NativeMethods.PdfFromHtmlCssWithFonts(
                         html, css,
-                        (byte**)npHandle.AddrOfPinnedObject(),
-                        (byte**)fpHandle.AddrOfPinnedObject(),
+                        (IntPtr*)npHandle.AddrOfPinnedObject(),
+                        (IntPtr*)fpHandle.AddrOfPinnedObject(),
                         (nuint*)flHandle.AddrOfPinnedObject(),
                         (nuint)n,
                         out var errorCode);

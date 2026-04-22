@@ -7058,11 +7058,17 @@ namespace PdfOxide.Internal
         public static partial IntPtr PdfFromHtmlCss(string html, string css, [In] byte[] fontBytes, nuint fontLen, out int errorCode);
 
         /// <summary>Build a PDF from HTML+CSS with a multi-font cascade. Parallel arrays of length <paramref name="count"/>.</summary>
+        // Arrays of pointers cross the boundary as `IntPtr*` rather
+        // than `byte**` so the managed-side pinning of `IntPtr[]`
+        // doesn't have to reinterpret element type. ABI is identical
+        // on every supported platform (`sizeof(IntPtr) ==
+        // sizeof(void*)`); the change just lets the caller skip the
+        // pointer-type cast.
         [LibraryImport(LibName, EntryPoint = "pdf_from_html_css_with_fonts", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static unsafe partial IntPtr PdfFromHtmlCssWithFonts(
             string html, string css,
-            byte** families, byte** fontBytes, nuint* fontLens,
+            IntPtr* families, IntPtr* fontBytes, nuint* fontLens,
             nuint count, out int errorCode);
 
         #endregion
