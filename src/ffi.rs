@@ -2301,8 +2301,8 @@ pub extern "C" fn pdf_document_get_signature(
 /// - `1`  — Valid: signer held the private key matching the embedded
 ///           certificate. Callers still need to verify the
 ///           `messageDigest` attribute against their document content
-///           hash for a full detached-signature claim; see
-///           `pdf_signature_verify_detached` once it lands (#77).
+///           hash for a full detached-signature claim — use
+///           `pdf_signature_verify_detached` which runs both checks.
 /// - `0`  — Invalid: CMS parsed but the RSA check failed (tampered
 ///           attributes or wrong key).
 /// - `-1` — Unknown or not supported: PSS / ECDSA / unrecognised
@@ -2346,6 +2346,88 @@ pub extern "C" fn pdf_signature_verify(
     #[cfg(not(feature = "signatures"))]
     {
         let _ = signature_handle;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        -1
+    }
+}
+
+/// Verify a PDF signature end-to-end: run the signer-attributes crypto
+/// check and the RFC 5652 §11.2 `messageDigest` attribute check against
+/// the caller-provided document bytes. `pdf_data` must be the full PDF
+/// file — the signature handle's stored `/ByteRange` is used to extract
+/// the segments that were actually signed.
+///
+/// Returns:
+/// - `1`  — Valid: both the RSA-PKCS#1 v1.5 check and the messageDigest
+///           check passed. The signer is authentic and the document has
+///           not been tampered with since signing.
+/// - `0`  — Invalid: either the signer check or the messageDigest check
+///           failed. Callers can't distinguish "wrong signer" from
+///           "document tampered after signing" from this code alone.
+/// - `-1` — Unknown or not supported: signer uses PSS / ECDSA / unknown
+///           digest, blob lacks `signed_attrs` / `messageDigest`,
+///           `/ByteRange` is malformed, or the feature is not compiled.
+#[no_mangle]
+pub extern "C" fn pdf_signature_verify_detached(
+    signature_handle: *const std::ffi::c_void,
+    pdf_data: *const u8,
+    pdf_len: usize,
+    error_code: *mut i32,
+) -> i32 {
+    #[cfg(feature = "signatures")]
+    {
+        if signature_handle.is_null() || pdf_data.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return -1;
+        }
+        let ffi = unsafe { &*(signature_handle as *const FfiSignatureInfo) };
+        let Some(contents) = ffi.info.contents.as_ref() else {
+            set_error(error_code, _ERR_UNSUPPORTED);
+            return -1;
+        };
+        if ffi.info.byte_range.len() != 4 {
+            set_error(error_code, ERR_INVALID_ARG);
+            return -1;
+        }
+        let byte_range: [i64; 4] = [
+            ffi.info.byte_range[0],
+            ffi.info.byte_range[1],
+            ffi.info.byte_range[2],
+            ffi.info.byte_range[3],
+        ];
+        let pdf_slice = unsafe { std::slice::from_raw_parts(pdf_data, pdf_len) };
+        let signed_bytes = match crate::signatures::ByteRangeCalculator::extract_signed_bytes(
+            pdf_slice,
+            &byte_range,
+        ) {
+            Ok(b) => b,
+            Err(_) => {
+                set_error(error_code, ERR_INVALID_ARG);
+                return -1;
+            },
+        };
+        match crate::signatures::verify_signer_detached(contents, &signed_bytes) {
+            Ok(crate::signatures::SignerVerify::Valid) => {
+                set_error(error_code, ERR_SUCCESS);
+                1
+            },
+            Ok(crate::signatures::SignerVerify::Invalid) => {
+                set_error(error_code, ERR_SUCCESS);
+                0
+            },
+            Ok(crate::signatures::SignerVerify::Unknown) => {
+                set_error(error_code, _ERR_UNSUPPORTED);
+                -1
+            },
+            Err(_) => {
+                set_error(error_code, ERR_INVALID_ARG);
+                -1
+            },
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = (signature_handle, pdf_data, pdf_len);
         set_error(error_code, _ERR_UNSUPPORTED);
         -1
     }

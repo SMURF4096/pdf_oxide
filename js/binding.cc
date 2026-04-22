@@ -145,6 +145,7 @@ extern "C" {
   extern char* pdf_signature_get_signing_reason(const void* signature, int* error_code);
   extern char* pdf_signature_get_signing_location(const void* signature, int* error_code);
   extern int pdf_signature_verify(const void* signature, int* error_code);
+  extern int pdf_signature_verify_detached(const void* signature, const unsigned char* pdf_data, size_t pdf_len, int* error_code);
   extern int pdf_document_verify_all_signatures(const void* document, int* error_code);
   extern void* pdf_signature_get_certificate(const void* signature, int* error_code);
   extern void pdf_certificate_free(void* cert);
@@ -1148,6 +1149,40 @@ Napi::Value SignatureVerify(const Napi::CallbackInfo& info) {
 
   if (errorCode != 0) {
     throw Napi::Error::New(env, "Signature verification failed: " + getErrorMessage(errorCode));
+  }
+
+  return Napi::Number::New(env, result);
+}
+
+Napi::Value SignatureVerifyDetached(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (info.Length() < 2 || !info[0].IsExternal()) {
+    throw Napi::TypeError::New(env,
+      "expected (signature: external, pdfData: Buffer | Uint8Array)");
+  }
+
+  void* signature = info[0].As<Napi::External<void>>().Data();
+  const uint8_t* data;
+  size_t length;
+  if (info[1].IsBuffer()) {
+    auto buf = info[1].As<Napi::Buffer<uint8_t>>();
+    data = buf.Data();
+    length = buf.Length();
+  } else if (info[1].IsTypedArray()) {
+    auto arr = info[1].As<Napi::Uint8Array>();
+    data = arr.Data();
+    length = arr.ByteLength();
+  } else {
+    throw Napi::TypeError::New(env, "pdfData must be a Buffer or Uint8Array");
+  }
+
+  int errorCode = 0;
+  int result = pdf_signature_verify_detached(signature, data, length, &errorCode);
+
+  if (errorCode != 0) {
+    throw Napi::Error::New(env,
+      "Signature detached verification failed: " + getErrorMessage(errorCode));
   }
 
   return Napi::Number::New(env, result);
@@ -2985,6 +3020,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("getSignatureCount", Napi::Function::New(env, GetSignatureCount));
   exports.Set("getSignatureInfo", Napi::Function::New(env, GetSignatureInfo));
   exports.Set("verifyAllSignatures", Napi::Function::New(env, VerifyAllSignatures));
+  exports.Set("signatureVerify", Napi::Function::New(env, SignatureVerify));
+  exports.Set("signatureVerifyDetached", Napi::Function::New(env, SignatureVerifyDetached));
 
   // Detailed Annotation Accessors
   exports.Set("getAnnotationsDetailed", Napi::Function::New(env, GetAnnotationsDetailed));

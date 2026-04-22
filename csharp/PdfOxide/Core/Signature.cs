@@ -115,6 +115,49 @@ namespace PdfOxide.Core
             return result == 1;
         }
 
+        /// <summary>
+        /// End-to-end detached-signature verification: runs the
+        /// signer-attributes RSA-PKCS#1 v1.5 crypto check AND the
+        /// RFC 5652 §11.2 <c>messageDigest</c> attribute check against
+        /// the bytes this signature protects (pulled out of
+        /// <paramref name="pdfData"/> using the signature's
+        /// <c>/ByteRange</c>).
+        ///
+        /// <para>
+        /// <c>pdfData</c> must be the full PDF file. A <c>true</c>
+        /// result means the signer is authentic AND the document
+        /// bytes under the signature's ByteRange have not been
+        /// altered since signing. A <c>false</c> result means either
+        /// the signer check failed (wrong key / tampered attributes)
+        /// or the document bytes were modified.
+        /// </para>
+        /// </summary>
+        /// <param name="pdfData">The full PDF file bytes.</param>
+        /// <returns><c>true</c> if both checks succeeded, <c>false</c>
+        /// if either failed.</returns>
+        /// <exception cref="UnsupportedFeatureException">Signer uses
+        /// RSA-PSS, ECDSA, an unknown digest, or the CMS blob lacks
+        /// <c>signed_attrs</c>/<c>messageDigest</c>.</exception>
+        public bool VerifyDetached(ReadOnlySpan<byte> pdfData)
+        {
+            ThrowIfDisposed();
+            int result;
+            int err;
+            unsafe
+            {
+                fixed (byte* pdfPtr = pdfData)
+                {
+                    result = NativeMethods.pdf_signature_verify_detached(
+                        _handle,
+                        pdfPtr,
+                        (nuint)pdfData.Length,
+                        out err);
+                }
+            }
+            ExceptionMapper.ThrowIfError(err);
+            return result == 1;
+        }
+
         /// <inheritdoc />
         public void Dispose()
         {

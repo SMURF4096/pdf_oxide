@@ -1395,6 +1395,54 @@ impl WasmSignature {
             ))),
         }
     }
+
+    /// End-to-end detached-signature verification. Runs both the
+    /// signer-attributes RSA-PKCS#1 v1.5 crypto check AND the RFC 5652
+    /// §11.2 `messageDigest` check against the segment of `pdfData`
+    /// this signature covers (extracted via `/ByteRange`).
+    ///
+    /// `pdfData` must be the full PDF file. A `true` result proves
+    /// both the signer is authentic and that the document's byte-range
+    /// content has not been altered since signing. `false` means one
+    /// of the two checks failed (wrong key or tampered content).
+    ///
+    /// Throws for RSA-PSS, ECDSA, unknown digest OIDs, or CMS blobs
+    /// missing `signed_attrs` / `messageDigest`.
+    #[wasm_bindgen(js_name = "verifyDetached")]
+    pub fn verify_detached(&self, pdf_data: &[u8]) -> Result<bool, JsValue> {
+        let Some(contents) = self.info.contents.as_ref() else {
+            return Err(JsValue::from_str(
+                "Signature has no /Contents blob — nothing to verify",
+            ));
+        };
+        if self.info.byte_range.len() != 4 {
+            return Err(JsValue::from_str(
+                "Signature has no /ByteRange — cannot extract signed bytes",
+            ));
+        }
+        let byte_range: [i64; 4] = [
+            self.info.byte_range[0],
+            self.info.byte_range[1],
+            self.info.byte_range[2],
+            self.info.byte_range[3],
+        ];
+        let signed_bytes =
+            crate::signatures::ByteRangeCalculator::extract_signed_bytes(pdf_data, &byte_range)
+                .map_err(|e| {
+                    JsValue::from_str(&format!("Failed to extract signed bytes: {e}"))
+                })?;
+        match crate::signatures::verify_signer_detached(contents, &signed_bytes) {
+            Ok(crate::signatures::SignerVerify::Valid) => Ok(true),
+            Ok(crate::signatures::SignerVerify::Invalid) => Ok(false),
+            Ok(crate::signatures::SignerVerify::Unknown) => Err(JsValue::from_str(
+                "Signature.verifyDetached(): signer uses RSA-PSS, ECDSA, an \
+                 unknown digest, or the CMS blob lacks signed_attrs / messageDigest",
+            )),
+            Err(e) => Err(JsValue::from_str(&format!(
+                "Signature.verifyDetached(): {e}"
+            ))),
+        }
+    }
 }
 
 /// A focused view of a PDF page region for scoped extraction (v0.3.14).

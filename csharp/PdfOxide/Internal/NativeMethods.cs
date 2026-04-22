@@ -5762,6 +5762,14 @@ namespace PdfOxide.Internal
 
         [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial int pdf_signature_verify_detached(
+            NativeHandle signature,
+            byte* pdfData,
+            nuint pdfLen,
+            out int errorCode);
+
+        [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial IntPtr pdf_signature_get_signing_reason(NativeHandle signatureHandle, out int errorCode);
 
         [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]

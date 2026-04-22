@@ -161,6 +161,7 @@ extern int pdf_document_sign(void* document_handle, const void* certificate_hand
 extern int32_t pdf_document_get_signature_count(const void* document_handle, int* error_code);
 extern void* pdf_document_get_signature(const void* document_handle, int32_t index, int* error_code);
 extern int pdf_signature_verify(const void* signature_handle, int* error_code);
+extern int pdf_signature_verify_detached(const void* signature_handle, const unsigned char* pdf_data, uintptr_t pdf_len, int* error_code);
 extern int pdf_document_verify_all_signatures(const void* document_handle, int* error_code);
 extern char* pdf_signature_get_signer_name(const void* signature_handle, int* error_code);
 extern int64_t pdf_signature_get_signing_time(const void* signature_handle, int* error_code);
@@ -3105,6 +3106,40 @@ func (s *Signature) Verify() (bool, error) {
 	}
 	var e C.int
 	r := C.pdf_signature_verify(s.handle, &e)
+	if e != 0 {
+		return false, ffiError(e)
+	}
+	return r == 1, nil
+}
+
+// VerifyDetached runs both the signer-attributes RSA-PKCS#1 v1.5
+// crypto check AND the RFC 5652 §11.2 messageDigest attribute check
+// against the portion of pdfData that this signature covers (extracted
+// via the signature's /ByteRange).
+//
+// pdfData must be the full PDF file. A true result proves the signer
+// is authentic AND the document bytes under the ByteRange have not
+// been altered since signing. A false result means either the signer
+// check failed (wrong key / tampered attributes) or the content was
+// modified.
+//
+// Returns ErrUnsupportedFeature for RSA-PSS, ECDSA, unknown digest
+// OIDs, or CMS blobs missing signed_attrs / messageDigest.
+func (s *Signature) VerifyDetached(pdfData []byte) (bool, error) {
+	if s.handle == nil {
+		return false, ErrDocumentClosed
+	}
+	var e C.int
+	var dataPtr *C.uchar
+	if len(pdfData) > 0 {
+		dataPtr = (*C.uchar)(unsafe.Pointer(&pdfData[0]))
+	}
+	r := C.pdf_signature_verify_detached(
+		s.handle,
+		dataPtr,
+		C.uintptr_t(len(pdfData)),
+		&e,
+	)
 	if e != 0 {
 		return false, ffiError(e)
 	}

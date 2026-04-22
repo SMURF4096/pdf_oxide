@@ -5322,6 +5322,55 @@ impl PySignature {
         }
     }
 
+    /// End-to-end detached-signature verification. Runs the
+    /// signer-attributes RSA-PKCS#1 v1.5 crypto check AND the RFC 5652
+    /// §11.2 messageDigest attribute check against the portion of
+    /// `pdf_data` this signature covers (extracted via the
+    /// signature's /ByteRange).
+    ///
+    /// `pdf_data` must be the full PDF file. A True result proves
+    /// both that the signer is authentic and that the document bytes
+    /// under the signature's ByteRange have not been altered since
+    /// signing. A False result means either the signer check failed
+    /// or the content was modified after signing.
+    ///
+    /// Raises NotImplementedError for RSA-PSS / ECDSA / unknown
+    /// digest / missing signed_attrs / missing messageDigest.
+    fn verify_detached(&self, pdf_data: &[u8]) -> PyResult<bool> {
+        let Some(contents) = self.info.contents.as_ref() else {
+            return Err(PyNotImplementedError::new_err(
+                "Signature has no /Contents blob — nothing to verify",
+            ));
+        };
+        if self.info.byte_range.len() != 4 {
+            return Err(PyValueError::new_err(
+                "Signature has no /ByteRange — cannot extract signed bytes",
+            ));
+        }
+        let byte_range: [i64; 4] = [
+            self.info.byte_range[0],
+            self.info.byte_range[1],
+            self.info.byte_range[2],
+            self.info.byte_range[3],
+        ];
+        let signed_bytes =
+            crate::signatures::ByteRangeCalculator::extract_signed_bytes(pdf_data, &byte_range)
+                .map_err(|e| {
+                    PyValueError::new_err(format!("Failed to extract signed bytes: {e}"))
+                })?;
+        match crate::signatures::verify_signer_detached(contents, &signed_bytes) {
+            Ok(crate::signatures::SignerVerify::Valid) => Ok(true),
+            Ok(crate::signatures::SignerVerify::Invalid) => Ok(false),
+            Ok(crate::signatures::SignerVerify::Unknown) => Err(PyNotImplementedError::new_err(
+                "Signature.verify_detached(): signer uses RSA-PSS, ECDSA, an \
+                 unknown digest, or the CMS blob lacks signed_attrs / messageDigest",
+            )),
+            Err(e) => Err(PyValueError::new_err(format!(
+                "Signature.verify_detached(): {e}"
+            ))),
+        }
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "Signature(signer_name={:?}, reason={:?}, location={:?})",
