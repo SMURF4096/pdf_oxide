@@ -42,6 +42,9 @@ import {
   MetadataBuilder,
   AnnotationBuilder,
   SearchOptionsBuilder,
+  DocumentBuilder,
+  PageBuilder,
+  EmbeddedFont,
 } from './builders/index';
 import {
   OutlineManager,
@@ -511,6 +514,10 @@ export {
   MetadataBuilder,
   AnnotationBuilder,
   SearchOptionsBuilder,
+  // Write-side fluent API (#384)
+  DocumentBuilder,
+  PageBuilder,
+  EmbeddedFont,
 
   // Managers (Phase 1-3: Core)
   OutlineManager,

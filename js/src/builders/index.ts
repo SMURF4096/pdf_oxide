@@ -10,3 +10,4 @@ export * from './conversion-options-builder';
 export * from './metadata-builder';
 export * from './annotation-builder';
 export * from './search-options-builder';
+export * from './document-builder';

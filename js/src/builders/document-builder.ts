@@ -1,0 +1,416 @@
+/**
+ * Fluent document builder — the programmatic multi-page construction API
+ * exposed through the C FFI (#384 Phase 1-3).
+ *
+ * Mirrors the Python / WASM / C# / Go equivalents. The same handle-lifetime
+ * contract applies: terminal methods (`build`, `save`, `saveEncrypted`,
+ * `toBytesEncrypted`) CONSUME the builder, and only one `PageBuilder` may
+ * be open at a time.
+ *
+ * @example
+ * ```typescript
+ * import { DocumentBuilder, EmbeddedFont } from 'pdf-oxide';
+ *
+ * const font = EmbeddedFont.fromFile('DejaVuSans.ttf');
+ * const builder = DocumentBuilder.create()
+ *   .title('Hello')
+ *   .registerEmbeddedFont('DejaVu', font);   // consumes `font`
+ * builder.a4Page()
+ *   .font('DejaVu', 12)
+ *   .at(72, 720).text('Привет, мир!')
+ *   .at(72, 700).text('Καλημέρα κόσμε')
+ *   .done();
+ * const bytes = builder.build();            // consumes the builder
+ * ```
+ */
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+const native = require('../../build/Release/pdf_oxide.node');
+
+/**
+ * TTF/OTF font handle registerable with {@link DocumentBuilder}. Single-use:
+ * after `registerEmbeddedFont` the native handle is moved into the builder
+ * and this object becomes disposed.
+ */
+export class EmbeddedFont {
+  private _handle: unknown;
+  private _consumed = false;
+
+  private constructor(handle: unknown) {
+    this._handle = handle;
+  }
+
+  /** Load a TTF / OTF font from disk. */
+  static fromFile(path: string): EmbeddedFont {
+    return new EmbeddedFont(native.embeddedFontFromFile(path));
+  }
+
+  /** Load a font from a byte buffer; pass `name` to override the PostScript name. */
+  static fromBytes(data: Uint8Array | Buffer, name?: string): EmbeddedFont {
+    return new EmbeddedFont(native.embeddedFontFromBytes(data, name));
+  }
+
+  /** @internal — used by {@link DocumentBuilder.registerEmbeddedFont} */
+  get handle(): unknown {
+    if (this._consumed) {
+      throw new Error('EmbeddedFont already consumed');
+    }
+    return this._handle;
+  }
+
+  /** @internal — called by the builder after the FFI transfers ownership. */
+  markConsumed(): void {
+    this._consumed = true;
+    this._handle = null;
+  }
+
+  /** Release the native font handle if it hasn't been consumed. */
+  close(): void {
+    if (!this._consumed && this._handle != null) {
+      native.embeddedFontFree(this._handle);
+      this._consumed = true;
+      this._handle = null;
+    }
+  }
+
+  /** Symbol.dispose support for `using` declarations. */
+  [Symbol.dispose](): void {
+    this.close();
+  }
+}
+
+/**
+ * Fluent top-level API for multi-page PDF construction.
+ * Use {@link DocumentBuilder.create} to start a new builder.
+ */
+export class DocumentBuilder {
+  private _handle: unknown;
+  private _consumed = false;
+  private _openPage: PageBuilder | null = null;
+
+  private constructor(handle: unknown) {
+    this._handle = handle;
+  }
+
+  /** Create a fresh empty builder. */
+  static create(): DocumentBuilder {
+    return new DocumentBuilder(native.documentBuilderCreate());
+  }
+
+  /** @internal — used by PageBuilder.done */
+  clearOpenPage(): void {
+    this._openPage = null;
+  }
+
+  private checkUsable(): unknown {
+    if (this._consumed || this._handle == null) {
+      throw new Error('DocumentBuilder has been consumed');
+    }
+    if (this._openPage != null) {
+      throw new Error('A PageBuilder is already open; call done() first.');
+    }
+    return this._handle;
+  }
+
+  /** Set the document title. */
+  title(title: string): this {
+    native.documentBuilderSetTitle(this.checkUsable(), title);
+    return this;
+  }
+
+  /** Set the document author. */
+  author(author: string): this {
+    native.documentBuilderSetAuthor(this.checkUsable(), author);
+    return this;
+  }
+
+  /** Set the document subject. */
+  subject(subject: string): this {
+    native.documentBuilderSetSubject(this.checkUsable(), subject);
+    return this;
+  }
+
+  /** Set the document keywords (comma-separated per PDF convention). */
+  keywords(keywords: string): this {
+    native.documentBuilderSetKeywords(this.checkUsable(), keywords);
+    return this;
+  }
+
+  /** Set the creator application name. */
+  creator(creator: string): this {
+    native.documentBuilderSetCreator(this.checkUsable(), creator);
+    return this;
+  }
+
+  /**
+   * Register a TTF / OTF font under `name`. CONSUMES `font` on success —
+   * do not call `close()` on the font afterwards.
+   */
+  registerEmbeddedFont(name: string, font: EmbeddedFont): this {
+    const builderHandle = this.checkUsable();
+    // font.handle getter throws if already consumed, so validation is done.
+    native.documentBuilderRegisterEmbeddedFont(builderHandle, name, font.handle);
+    font.markConsumed();
+    return this;
+  }
+
+  /** Start a new A4 page. Only one page may be outstanding per builder. */
+  a4Page(): PageBuilder {
+    const h = this.checkUsable();
+    const pageHandle = native.documentBuilderA4Page(h);
+    this._openPage = new PageBuilder(this, pageHandle);
+    return this._openPage;
+  }
+
+  /** Start a new US Letter page. */
+  letterPage(): PageBuilder {
+    const h = this.checkUsable();
+    const pageHandle = native.documentBuilderLetterPage(h);
+    this._openPage = new PageBuilder(this, pageHandle);
+    return this._openPage;
+  }
+
+  /** Start a page with custom dimensions in PDF points (72 pt = 1 inch). */
+  page(width: number, height: number): PageBuilder {
+    const h = this.checkUsable();
+    const pageHandle = native.documentBuilderPage(h, width, height);
+    this._openPage = new PageBuilder(this, pageHandle);
+    return this._openPage;
+  }
+
+  private consumeHandle(): unknown {
+    const h = this.checkUsable();
+    this._consumed = true;
+    this._handle = null;
+    return h;
+  }
+
+  /** Build the PDF and return the bytes. CONSUMES the builder. */
+  build(): Buffer {
+    const h = this.consumeHandle();
+    try {
+      return native.documentBuilderBuild(h);
+    } finally {
+      native.documentBuilderFree(h);
+    }
+  }
+
+  /** Save the PDF to a file. CONSUMES the builder. */
+  save(path: string): void {
+    const h = this.consumeHandle();
+    try {
+      native.documentBuilderSave(h, path);
+    } finally {
+      native.documentBuilderFree(h);
+    }
+  }
+
+  /** Save the PDF with AES-256 encryption. CONSUMES the builder. */
+  saveEncrypted(path: string, userPassword: string, ownerPassword: string): void {
+    const h = this.consumeHandle();
+    try {
+      native.documentBuilderSaveEncrypted(h, path, userPassword, ownerPassword);
+    } finally {
+      native.documentBuilderFree(h);
+    }
+  }
+
+  /** Return the PDF as encrypted bytes (AES-256). CONSUMES the builder. */
+  toBytesEncrypted(userPassword: string, ownerPassword: string): Buffer {
+    const h = this.consumeHandle();
+    try {
+      return native.documentBuilderToBytesEncrypted(h, userPassword, ownerPassword);
+    } finally {
+      native.documentBuilderFree(h);
+    }
+  }
+
+  /** Release native resources if the builder wasn't consumed. */
+  close(): void {
+    if (!this._consumed && this._handle != null) {
+      native.documentBuilderFree(this._handle);
+      this._consumed = true;
+      this._handle = null;
+    }
+  }
+
+  /** Symbol.dispose support for `using` declarations. */
+  [Symbol.dispose](): void {
+    this.close();
+  }
+}
+
+/**
+ * Fluent per-page builder returned by `DocumentBuilder.a4Page` etc.
+ * Single-use — `done()` commits the page and invalidates this builder.
+ */
+export class PageBuilder {
+  private _parent: DocumentBuilder;
+  private _handle: unknown;
+  private _done = false;
+
+  /** @internal — constructed by DocumentBuilder */
+  constructor(parent: DocumentBuilder, handle: unknown) {
+    this._parent = parent;
+    this._handle = handle;
+  }
+
+  private h(): unknown {
+    if (this._done || this._handle == null) {
+      throw new Error('PageBuilder already committed');
+    }
+    return this._handle;
+  }
+
+  // --- content --------------------------------------------------------
+
+  /** Set font + size for subsequent text. */
+  font(name: string, size: number): this {
+    native.pageBuilderFont(this.h(), name, size);
+    return this;
+  }
+
+  /** Move the cursor to absolute coordinates. */
+  at(x: number, y: number): this {
+    native.pageBuilderAt(this.h(), x, y);
+    return this;
+  }
+
+  /** Emit a line of text at the current cursor position. */
+  text(text: string): this {
+    native.pageBuilderText(this.h(), text);
+    return this;
+  }
+
+  /** Emit a heading (level 1-6). */
+  heading(level: number, text: string): this {
+    native.pageBuilderHeading(this.h(), level, text);
+    return this;
+  }
+
+  /** Emit a paragraph with automatic line wrapping. */
+  paragraph(text: string): this {
+    native.pageBuilderParagraph(this.h(), text);
+    return this;
+  }
+
+  /** Advance the cursor by the given number of points. */
+  space(points: number): this {
+    native.pageBuilderSpace(this.h(), points);
+    return this;
+  }
+
+  /** Draw a horizontal rule across the page. */
+  horizontalRule(): this {
+    native.pageBuilderHorizontalRule(this.h());
+    return this;
+  }
+
+  // --- annotations (Phase 3) -----------------------------------------
+
+  /** Attach a URL link to the previous text element. */
+  linkUrl(url: string): this {
+    native.pageBuilderLinkUrl(this.h(), url);
+    return this;
+  }
+
+  /** Link the previous text to an internal page (0-based). */
+  linkPage(pageIndex: number): this {
+    native.pageBuilderLinkPage(this.h(), pageIndex);
+    return this;
+  }
+
+  /** Link the previous text to a named destination. */
+  linkNamed(destination: string): this {
+    native.pageBuilderLinkNamed(this.h(), destination);
+    return this;
+  }
+
+  /** Highlight the previous text with an RGB colour (channels 0-1). */
+  highlight(r: number, g: number, b: number): this {
+    native.pageBuilderHighlight(this.h(), r, g, b);
+    return this;
+  }
+
+  /** Underline the previous text. */
+  underline(r: number, g: number, b: number): this {
+    native.pageBuilderUnderline(this.h(), r, g, b);
+    return this;
+  }
+
+  /** Strike through the previous text. */
+  strikeout(r: number, g: number, b: number): this {
+    native.pageBuilderStrikeout(this.h(), r, g, b);
+    return this;
+  }
+
+  /** Squiggly-underline the previous text. */
+  squiggly(r: number, g: number, b: number): this {
+    native.pageBuilderSquiggly(this.h(), r, g, b);
+    return this;
+  }
+
+  /** Attach a sticky-note annotation to the previous text. */
+  stickyNote(text: string): this {
+    native.pageBuilderStickyNote(this.h(), text);
+    return this;
+  }
+
+  /** Place a sticky-note at an absolute position. */
+  stickyNoteAt(x: number, y: number, text: string): this {
+    native.pageBuilderStickyNoteAt(this.h(), x, y, text);
+    return this;
+  }
+
+  /** Apply a text watermark to the page. */
+  watermark(text: string): this {
+    native.pageBuilderWatermark(this.h(), text);
+    return this;
+  }
+
+  /** Apply the standard "CONFIDENTIAL" diagonal watermark. */
+  watermarkConfidential(): this {
+    native.pageBuilderWatermarkConfidential(this.h());
+    return this;
+  }
+
+  /** Apply the standard "DRAFT" diagonal watermark. */
+  watermarkDraft(): this {
+    native.pageBuilderWatermarkDraft(this.h());
+    return this;
+  }
+
+  /**
+   * Commit the page's buffered operations to the parent builder and
+   * return the parent for chaining. After `done()` this PageBuilder is
+   * invalid.
+   */
+  done(): DocumentBuilder {
+    if (this._done) {
+      throw new Error('PageBuilder already committed');
+    }
+    native.pageBuilderDone(this._handle);
+    this._done = true;
+    this._handle = null;
+    this._parent.clearOpenPage();
+    return this._parent;
+  }
+
+  /**
+   * Drop an uncommitted page. Use only for error recovery — the parent's
+   * open-page slot is released so the next `a4Page()` etc. succeeds.
+   */
+  close(): void {
+    if (!this._done && this._handle != null) {
+      native.pageBuilderFree(this._handle);
+      this._parent.clearOpenPage();
+      this._done = true;
+      this._handle = null;
+    }
+  }
+
+  /** Symbol.dispose support for `using`. */
+  [Symbol.dispose](): void {
+    this.close();
+  }
+}
