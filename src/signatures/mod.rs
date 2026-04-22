@@ -47,6 +47,8 @@ mod pdf_date;
 mod signer;
 #[cfg(feature = "signatures")]
 mod timestamp;
+#[cfg(all(feature = "signatures", feature = "tsa-client"))]
+mod tsa_client;
 mod types;
 mod verifier;
 
@@ -55,6 +57,8 @@ pub use enumerate::{count_signatures, enumerate_signatures};
 pub use pdf_date::parse_pdf_date_to_epoch;
 #[cfg(feature = "signatures")]
 pub use timestamp::{HashAlgorithm, Timestamp};
+#[cfg(all(feature = "signatures", feature = "tsa-client"))]
+pub use tsa_client::{TsaClient, TsaClientConfig};
 pub use signer::PdfSigner;
 pub use types::{
     DigestAlgorithm, SignOptions, SignatureAppearance, SignatureInfo, SignatureSubFilter,

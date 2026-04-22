@@ -3084,43 +3084,153 @@ pub extern "C" fn pdf_renderer_free(_handle: *mut std::ffi::c_void) {}
 
 #[no_mangle]
 pub extern "C" fn pdf_tsa_client_create(
-    _url: *const c_char,
-    _username: *const c_char,
-    _password: *const c_char,
-    _timeout: i32,
-    _hash_algo: i32,
-    _use_nonce: bool,
-    _cert_req: bool,
+    url: *const c_char,
+    username: *const c_char,
+    password: *const c_char,
+    timeout: i32,
+    hash_algo: i32,
+    use_nonce: bool,
+    cert_req: bool,
     error_code: *mut i32,
 ) -> *mut std::ffi::c_void {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+    #[cfg(feature = "tsa-client")]
+    {
+        if url.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let url_str = unsafe { CStr::from_ptr(url) }.to_string_lossy().into_owned();
+        let user_opt = if username.is_null() {
+            None
+        } else {
+            Some(unsafe { CStr::from_ptr(username) }.to_string_lossy().into_owned())
+        };
+        let pw_opt = if password.is_null() {
+            None
+        } else {
+            Some(unsafe { CStr::from_ptr(password) }.to_string_lossy().into_owned())
+        };
+        let algo = hash_algo_from_i32(hash_algo);
+        let cfg = crate::signatures::TsaClientConfig {
+            url: url_str,
+            username: user_opt,
+            password: pw_opt,
+            timeout: if timeout > 0 {
+                std::time::Duration::from_secs(timeout as u64)
+            } else {
+                std::time::Duration::from_secs(30)
+            },
+            hash_algorithm: algo,
+            use_nonce,
+            cert_req,
+        };
+        let client = crate::signatures::TsaClient::new(cfg);
+        set_error(error_code, ERR_SUCCESS);
+        Box::into_raw(Box::new(client)) as *mut std::ffi::c_void
+    }
+    #[cfg(not(feature = "tsa-client"))]
+    {
+        let _ = (url, username, password, timeout, hash_algo, use_nonce, cert_req);
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
-pub extern "C" fn pdf_tsa_client_free(_client: *mut std::ffi::c_void) {}
+pub extern "C" fn pdf_tsa_client_free(client: *mut std::ffi::c_void) {
+    #[cfg(feature = "tsa-client")]
+    {
+        if !client.is_null() {
+            unsafe {
+                drop(Box::from_raw(client as *mut crate::signatures::TsaClient));
+            }
+        }
+    }
+    #[cfg(not(feature = "tsa-client"))]
+    {
+        let _ = client;
+    }
+}
 
 #[no_mangle]
 pub extern "C" fn pdf_tsa_request_timestamp(
-    _client: *const std::ffi::c_void,
-    _data: *const u8,
-    _data_len: usize,
+    client: *const std::ffi::c_void,
+    data: *const u8,
+    data_len: usize,
     error_code: *mut i32,
 ) -> *mut std::ffi::c_void {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+    #[cfg(feature = "tsa-client")]
+    {
+        if client.is_null() || data.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let c = unsafe { &*(client as *const crate::signatures::TsaClient) };
+        let slice = unsafe { std::slice::from_raw_parts(data, data_len) };
+        match c.request_timestamp(slice) {
+            Ok(ts) => {
+                set_error(error_code, ERR_SUCCESS);
+                Box::into_raw(Box::new(ts)) as *mut std::ffi::c_void
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
+        }
+    }
+    #[cfg(not(feature = "tsa-client"))]
+    {
+        let _ = (client, data, data_len);
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_tsa_request_timestamp_hash(
-    _client: *const std::ffi::c_void,
-    _hash: *const u8,
-    _hash_len: usize,
-    _hash_algo: i32,
+    client: *const std::ffi::c_void,
+    hash: *const u8,
+    hash_len: usize,
+    hash_algo: i32,
     error_code: *mut i32,
 ) -> *mut std::ffi::c_void {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+    #[cfg(feature = "tsa-client")]
+    {
+        if client.is_null() || hash.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let c = unsafe { &*(client as *const crate::signatures::TsaClient) };
+        let slice = unsafe { std::slice::from_raw_parts(hash, hash_len) };
+        let algo = hash_algo_from_i32(hash_algo);
+        match c.request_timestamp_hash(slice, algo) {
+            Ok(ts) => {
+                set_error(error_code, ERR_SUCCESS);
+                Box::into_raw(Box::new(ts)) as *mut std::ffi::c_void
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
+        }
+    }
+    #[cfg(not(feature = "tsa-client"))]
+    {
+        let _ = (client, hash, hash_len, hash_algo);
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
+}
+
+#[cfg(feature = "tsa-client")]
+fn hash_algo_from_i32(code: i32) -> crate::signatures::HashAlgorithm {
+    match code {
+        1 => crate::signatures::HashAlgorithm::Sha1,
+        2 => crate::signatures::HashAlgorithm::Sha256,
+        3 => crate::signatures::HashAlgorithm::Sha384,
+        4 => crate::signatures::HashAlgorithm::Sha512,
+        _ => crate::signatures::HashAlgorithm::Sha256,
+    }
 }
 
 /// Parse a DER-encoded RFC 3161 TimeStampToken (or bare TSTInfo) into
