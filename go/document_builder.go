@@ -65,6 +65,14 @@ extern int   pdf_page_builder_stamp(void* page, const char* type_name, int* erro
 extern int   pdf_page_builder_freetext(void* page, float x, float y, float w, float h,
                                        const char* text, int* error_code);
 
+// Form fields (#384 Phase 4)
+extern int   pdf_page_builder_text_field(void* page, const char* name,
+                                         float x, float y, float w, float h,
+                                         const char* default_value, int* error_code);
+extern int   pdf_page_builder_checkbox(void* page, const char* name,
+                                       float x, float y, float w, float h,
+                                       int checked, int* error_code);
+
 extern int   pdf_page_builder_done(void* page, int* error_code);
 extern void  pdf_page_builder_free(void* page);
 
@@ -662,6 +670,34 @@ func (p *PageBuilder) FreeText(x, y, w, h float32, text string) *PageBuilder {
 		cs := C.CString(text)
 		defer C.free(unsafe.Pointer(cs))
 		return C.pdf_page_builder_freetext(hp, C.float(x), C.float(y), C.float(w), C.float(h), cs, ec)
+	})
+}
+
+// TextField adds a single-line text form field at (x, y, w, h).
+// Pass defaultValue="" for a blank field. (#384 Phase 4)
+func (p *PageBuilder) TextField(name string, x, y, w, h float32, defaultValue string) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		cn := C.CString(name)
+		defer C.free(unsafe.Pointer(cn))
+		var cd *C.char
+		if defaultValue != "" {
+			cd = C.CString(defaultValue)
+			defer C.free(unsafe.Pointer(cd))
+		}
+		return C.pdf_page_builder_text_field(hp, cn, C.float(x), C.float(y), C.float(w), C.float(h), cd, ec)
+	})
+}
+
+// Checkbox adds a checkbox form field at (x, y, w, h). (#384 Phase 4)
+func (p *PageBuilder) Checkbox(name string, x, y, w, h float32, checked bool) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		cn := C.CString(name)
+		defer C.free(unsafe.Pointer(cn))
+		var c C.int
+		if checked {
+			c = 1
+		}
+		return C.pdf_page_builder_checkbox(hp, cn, C.float(x), C.float(y), C.float(w), C.float(h), c, ec)
 	})
 }
 

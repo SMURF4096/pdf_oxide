@@ -3907,6 +3907,22 @@ enum PendingPageOp {
         h: f32,
         text: String,
     },
+    TextField {
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        default_value: Option<String>,
+    },
+    Checkbox {
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        checked: bool,
+    },
 }
 
 /// Python wrapper for an embedded TTF/OTF font usable by `DocumentBuilder`.
@@ -4322,6 +4338,52 @@ impl PyFluentPageBuilder {
         Ok(slf)
     }
 
+    /// Add a single-line text form field at the given rectangle.
+    /// `default_value` is the initial text; pass `None` or an empty
+    /// string for a blank field. (#384 Phase 4 — form-field creation)
+    #[pyo3(signature = (name, x, y, w, h, default_value=None))]
+    fn text_field<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        default_value: Option<String>,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::TextField {
+            name,
+            x,
+            y,
+            w,
+            h,
+            default_value,
+        })?;
+        Ok(slf)
+    }
+
+    /// Add a checkbox form field at the given rectangle. `checked`
+    /// sets the initial state. (#384 Phase 4)
+    fn checkbox<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        checked: bool,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::Checkbox {
+            name,
+            x,
+            y,
+            w,
+            h,
+            checked,
+        })?;
+        Ok(slf)
+    }
+
     /// Commit the page's buffered operations to the parent
     /// `DocumentBuilder` and return the parent for further chaining.
     /// After `done()`, this `FluentPageBuilder` is spent.
@@ -4368,6 +4430,22 @@ impl PyFluentPageBuilder {
                 PendingPageOp::FreeText { x, y, w, h, text } => {
                     page.freetext(crate::geometry::Rect::new(x, y, w, h), &text)
                 },
+                PendingPageOp::TextField {
+                    name,
+                    x,
+                    y,
+                    w,
+                    h,
+                    default_value,
+                } => page.text_field(name, x, y, w, h, default_value),
+                PendingPageOp::Checkbox {
+                    name,
+                    x,
+                    y,
+                    w,
+                    h,
+                    checked,
+                } => page.checkbox(name, x, y, w, h, checked),
             };
         }
         page.done();

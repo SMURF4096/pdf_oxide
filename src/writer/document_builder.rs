@@ -634,6 +634,52 @@ impl<'a> FluentPageBuilder<'a> {
         self
     }
 
+    /// Add a single-line text form field to the page. `name` is the
+    /// unique field identifier used for form submission;
+    /// `default_value` is the initial text shown in the field (pass
+    /// `None` or an empty string for a blank field).
+    ///
+    /// (#384 Phase 4 — form-field creation)
+    pub fn text_field(
+        self,
+        name: impl Into<String>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        default_value: Option<String>,
+    ) -> Self {
+        let page = &mut self.builder.pages[self.page_index];
+        page.form_fields.push(PendingFormField::TextField {
+            name: name.into(),
+            rect: Rect::new(x, y, w, h),
+            default_value,
+        });
+        self
+    }
+
+    /// Add a checkbox form field to the page. `checked` sets whether
+    /// the box is initially ticked.
+    ///
+    /// (#384 Phase 4 — form-field creation)
+    pub fn checkbox(
+        self,
+        name: impl Into<String>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        checked: bool,
+    ) -> Self {
+        let page = &mut self.builder.pages[self.page_index];
+        page.form_fields.push(PendingFormField::Checkbox {
+            name: name.into(),
+            rect: Rect::new(x, y, w, h),
+            checked,
+        });
+        self
+    }
+
     /// Finish building this page and return to the document builder.
     pub fn done(mut self) -> &'a mut DocumentBuilder {
         // Move pending annotations to page data
@@ -643,12 +689,31 @@ impl<'a> FluentPageBuilder<'a> {
     }
 }
 
+/// Buffered form-field widget added by `FluentPageBuilder::text_field`
+/// etc. Applied to the underlying `pdf_writer::PageBuilder` inside
+/// `DocumentBuilder::build`. (#384 Phase 4)
+enum PendingFormField {
+    /// A simple single-line text field.
+    TextField {
+        name: String,
+        rect: Rect,
+        default_value: Option<String>,
+    },
+    /// A checkbox, initially checked or not.
+    Checkbox {
+        name: String,
+        rect: Rect,
+        checked: bool,
+    },
+}
+
 /// Internal page data for DocumentBuilder.
 struct PageData {
     width: f32,
     height: f32,
     elements: Vec<ContentElement>,
     annotations: Vec<Annotation>,
+    form_fields: Vec<PendingFormField>,
 }
 
 /// High-level document builder with fluent API.
@@ -772,6 +837,7 @@ impl DocumentBuilder {
             height,
             elements: Vec::new(),
             annotations: Vec::new(),
+            form_fields: Vec::new(),
         });
         FluentPageBuilder {
             builder: self,
@@ -959,6 +1025,38 @@ impl DocumentBuilder {
             // 3. Add annotations
             for annotation in &page_data.annotations {
                 page.add_annotation(annotation.clone());
+            }
+
+            // 4. Emit form-field widgets (#384 Phase 4). Each pending
+            //    entry translates into the appropriate
+            //    `pdf_writer::PageBuilder::add_*` call so the field
+            //    lands in /AcroForm at finalize time.
+            for field in &page_data.form_fields {
+                use super::form_fields::{CheckboxWidget, TextFieldWidget};
+                match field {
+                    PendingFormField::TextField {
+                        name,
+                        rect,
+                        default_value,
+                    } => {
+                        let widget = TextFieldWidget::new(name.clone(), *rect);
+                        let widget = if let Some(default) = default_value {
+                            widget.with_default_value(default.clone())
+                        } else {
+                            widget
+                        };
+                        page.add_text_field(widget);
+                    },
+                    PendingFormField::Checkbox {
+                        name,
+                        rect,
+                        checked,
+                    } => {
+                        let widget = CheckboxWidget::new(name.clone(), *rect);
+                        let widget = if *checked { widget.checked() } else { widget };
+                        page.add_checkbox(widget);
+                    },
+                }
             }
 
             page.finish();

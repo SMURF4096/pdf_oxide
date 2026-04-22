@@ -398,6 +398,27 @@ export class PageBuilder {
     return this;
   }
 
+  // --- Form-field widgets (#384 Phase 4) -----------------------------
+
+  /**
+   * Add a single-line text form field at the rectangle (x, y, w, h).
+   * `name` is the unique field identifier used for form submission;
+   * `defaultValue` is the initial text (pass undefined for blank).
+   */
+  textField(name: string, x: number, y: number, w: number, h: number, defaultValue?: string): this {
+    native.pageBuilderTextField(this.h(), name, x, y, w, h, defaultValue);
+    return this;
+  }
+
+  /**
+   * Add a checkbox form field at the rectangle (x, y, w, h).
+   * `checked` sets the initial state.
+   */
+  checkbox(name: string, x: number, y: number, w: number, h: number, checked: boolean = false): this {
+    native.pageBuilderCheckbox(this.h(), name, x, y, w, h, checked);
+    return this;
+  }
+
   /**
    * Commit the page's buffered operations to the parent builder and
    * return the parent for chaining. After `done()` this PageBuilder is

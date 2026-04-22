@@ -6791,6 +6791,22 @@ namespace PdfOxide.Internal
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial int PdfPageBuilderFreetext(IntPtr page, float x, float y, float w, float h, string text, out int errorCode);
 
+        // Form fields (#384 Phase 4)
+
+        /// <summary>Add a single-line text form field widget.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_text_field", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderTextField(
+            IntPtr page, string name, float x, float y, float w, float h,
+            string? defaultValue, out int errorCode);
+
+        /// <summary>Add a checkbox form field widget.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_checkbox", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderCheckbox(
+            IntPtr page, string name, float x, float y, float w, float h,
+            [MarshalAs(UnmanagedType.I4)] bool checkedState, out int errorCode);
+
         /// <summary>Commit the page and CONSUME the page handle.</summary>
         [LibraryImport(LibName, EntryPoint = "pdf_page_builder_done", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]

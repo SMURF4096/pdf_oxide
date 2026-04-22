@@ -232,6 +232,35 @@ namespace PdfOxide.Core
             return this;
         }
 
+        // --- Form-field widgets (#384 Phase 4) ------------------------------
+
+        /// <summary>
+        /// Add a single-line text form field widget at the rectangle
+        /// (x, y, w, h). <paramref name="name"/> is the unique field
+        /// identifier used for form submission;
+        /// <paramref name="defaultValue"/> is the initial text (pass
+        /// null or empty for a blank field).
+        /// </summary>
+        public PageBuilder TextField(string name, float x, float y, float w, float h, string? defaultValue = null)
+        {
+            if (name == null) throw new ArgumentNullException(nameof(name));
+            NativeMethods.PdfPageBuilderTextField(Handle, name, x, y, w, h, defaultValue, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
+        /// <summary>
+        /// Add a checkbox form field widget. <paramref name="checked"/>
+        /// sets the initial state.
+        /// </summary>
+        public PageBuilder Checkbox(string name, float x, float y, float w, float h, bool @checked = false)
+        {
+            if (name == null) throw new ArgumentNullException(nameof(name));
+            NativeMethods.PdfPageBuilderCheckbox(Handle, name, x, y, w, h, @checked, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
         /// <summary>
         /// Commit the page's buffered operations back to the parent
         /// builder. Returns the parent for continued chaining. After

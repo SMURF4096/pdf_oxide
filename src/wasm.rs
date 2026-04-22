@@ -3089,6 +3089,22 @@ enum WasmPageOp {
         h: f32,
         text: String,
     },
+    TextField {
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        default_value: Option<String>,
+    },
+    Checkbox {
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        checked: bool,
+    },
 }
 
 /// Embedded TTF/OTF font usable by `WasmDocumentBuilder`. Single-use: once
@@ -3303,6 +3319,22 @@ impl WasmDocumentBuilder {
                 WasmPageOp::FreeText { x, y, w, h, text } => {
                     rust_page.freetext(crate::geometry::Rect::new(x, y, w, h), &text)
                 },
+                WasmPageOp::TextField {
+                    name,
+                    x,
+                    y,
+                    w,
+                    h,
+                    default_value,
+                } => rust_page.text_field(name, x, y, w, h, default_value),
+                WasmPageOp::Checkbox {
+                    name,
+                    x,
+                    y,
+                    w,
+                    h,
+                    checked,
+                } => rust_page.checkbox(name, x, y, w, h, checked),
             };
         }
         rust_page.done();
@@ -3468,6 +3500,46 @@ impl WasmFluentPageBuilder {
         text: String,
     ) -> Result<(), JsValue> {
         self.push(WasmPageOp::FreeText { x, y, w, h, text })
+    }
+
+    #[wasm_bindgen(js_name = "textField")]
+    pub fn text_field(
+        &mut self,
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        default_value: Option<String>,
+    ) -> Result<(), JsValue> {
+        self.push(WasmPageOp::TextField {
+            name,
+            x,
+            y,
+            w,
+            h,
+            default_value,
+        })
+    }
+
+    #[wasm_bindgen(js_name = "checkbox")]
+    pub fn checkbox(
+        &mut self,
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        checked: bool,
+    ) -> Result<(), JsValue> {
+        self.push(WasmPageOp::Checkbox {
+            name,
+            x,
+            y,
+            w,
+            h,
+            checked,
+        })
     }
 
     /// Convenience: commit this page's buffered ops to `builder`. Same

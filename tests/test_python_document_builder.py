@@ -300,6 +300,33 @@ def test_pdf_from_html_css_with_fonts_rejects_empty_font_list():
 # ---------------------------------------------------------------------------
 
 
+def test_form_field_creation():
+    """#384 Phase 4 — DocumentBuilder can now create form-field widgets
+    (text fields + checkboxes) directly on a page. The resulting PDF
+    exposes an /AcroForm entry and the widgets round-trip through the
+    read-side form-field API."""
+    bytes_ = (
+        pdf_oxide.DocumentBuilder()
+        .a4_page()
+        .at(72.0, 720.0)
+        .text("Fill out the form:")
+        .text_field("name", 150.0, 720.0, 200.0, 20.0, "default name")
+        .text_field("email", 150.0, 690.0, 200.0, 20.0)
+        .checkbox("subscribe", 72.0, 650.0, 15.0, 15.0, True)
+        .checkbox("remember", 72.0, 620.0, 15.0, 15.0, False)
+        .done()
+        .build()
+    )
+    assert b"/AcroForm" in bytes_
+    # Verify via the existing form-field read API
+    doc = pdf_oxide.PdfDocument.from_bytes(bytes_)
+    fields = doc.get_form_fields()
+    names = {f.name for f in fields}
+    assert {"name", "email", "subscribe", "remember"} <= names, (
+        f"expected all 4 field names in output; got {names}"
+    )
+
+
 def test_version_is_038_or_newer():
     """Sanity check that we're running against a build that has the
     #384 write-side API — if the binding was rebuilt from a pre-0.3.38

@@ -5923,6 +5923,22 @@ enum FfiPageOp {
         h: f32,
         text: String,
     },
+    TextField {
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        default_value: Option<String>,
+    },
+    Checkbox {
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        checked: bool,
+    },
 }
 
 /// Parse a stamp-type name into the Rust `StampType` enum. Unknown names
@@ -6565,6 +6581,78 @@ pub extern "C" fn pdf_page_builder_freetext(
     )
 }
 
+// ── Form-field widget creation (#384 Phase 4) ──────────────────────────
+
+/// Add a single-line text form field. `default_value` may be NULL for
+/// a blank field; the initial value otherwise.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_text_field(
+    handle: *mut FfiPageBuilder,
+    name: *const c_char,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    default_value: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(name_s) = read_cstr_or_fail(name, error_code) else {
+        return -1;
+    };
+    let default_s = if default_value.is_null() {
+        None
+    } else {
+        match unsafe { CStr::from_ptr(default_value) }.to_str() {
+            Ok(s) => Some(s.to_string()),
+            Err(_) => {
+                set_error(error_code, ERR_INVALID_ARG);
+                return -1;
+            },
+        }
+    };
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::TextField {
+            name: name_s,
+            x,
+            y,
+            w,
+            h,
+            default_value: default_s,
+        },
+    )
+}
+
+/// Add a checkbox form field. `checked` is non-zero for initially-ticked.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_checkbox(
+    handle: *mut FfiPageBuilder,
+    name: *const c_char,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    checked: i32,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(name_s) = read_cstr_or_fail(name, error_code) else {
+        return -1;
+    };
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::Checkbox {
+            name: name_s,
+            x,
+            y,
+            w,
+            h,
+            checked: checked != 0,
+        },
+    )
+}
+
 /// Commit this page's buffered operations to its parent builder and
 /// **consume** the page handle. After a successful call the handle is
 /// invalid; do not call `_free`.
@@ -6627,6 +6715,22 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
             FfiPageOp::FreeText { x, y, w, h, text } => {
                 rust_page.freetext(crate::geometry::Rect::new(x, y, w, h), &text)
             },
+            FfiPageOp::TextField {
+                name,
+                x,
+                y,
+                w,
+                h,
+                default_value,
+            } => rust_page.text_field(name, x, y, w, h, default_value),
+            FfiPageOp::Checkbox {
+                name,
+                x,
+                y,
+                w,
+                h,
+                checked,
+            } => rust_page.checkbox(name, x, y, w, h, checked),
         };
     }
     rust_page.done();

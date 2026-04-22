@@ -370,6 +370,18 @@ int   pdf_page_builder_stamp(void* page, const char* type_name, int* error_code)
 int   pdf_page_builder_freetext(void* page, float x, float y, float w, float h,
                                 const char* text, int* error_code);
 
+/* Form-field widget creation (#384 Phase 4). Each method adds a widget
+ * to the page's /AcroForm entry at finalize time. `default_value` may
+ * be NULL for a blank field. */
+int   pdf_page_builder_text_field(void* page, const char* name,
+                                  float x, float y, float w, float h,
+                                  const char* default_value /* nullable */,
+                                  int* error_code);
+int   pdf_page_builder_checkbox(void* page, const char* name,
+                                float x, float y, float w, float h,
+                                int checked,
+                                int* error_code);
+
 /* PageBuilder — commit / drop */
 int   pdf_page_builder_done(void* page, int* error_code);
 void  pdf_page_builder_free(void* page);

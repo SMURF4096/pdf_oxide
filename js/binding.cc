@@ -458,6 +458,13 @@ extern "C" {
   extern int   pdf_page_builder_freetext(void* page, float x, float y, float w, float h,
                                          const char* text, int* error_code);
 
+  extern int   pdf_page_builder_text_field(void* page, const char* name,
+                                           float x, float y, float w, float h,
+                                           const char* default_value, int* error_code);
+  extern int   pdf_page_builder_checkbox(void* page, const char* name,
+                                         float x, float y, float w, float h,
+                                         int checked, int* error_code);
+
   extern int   pdf_page_builder_done(void* page, int* error_code);
   extern void  pdf_page_builder_free(void* page);
 
@@ -3106,6 +3113,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   extern Napi::Value PageBuilderWatermarkDraft(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderStamp(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderFreetext(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderTextField(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderCheckbox(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderDone(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderFree(const Napi::CallbackInfo&);
   extern Napi::Value DocumentBuilderBuild(const Napi::CallbackInfo&);
@@ -3150,6 +3159,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("pageBuilderWatermarkDraft", Napi::Function::New(env, PageBuilderWatermarkDraft));
   exports.Set("pageBuilderStamp", Napi::Function::New(env, PageBuilderStamp));
   exports.Set("pageBuilderFreetext", Napi::Function::New(env, PageBuilderFreetext));
+  exports.Set("pageBuilderTextField", Napi::Function::New(env, PageBuilderTextField));
+  exports.Set("pageBuilderCheckbox", Napi::Function::New(env, PageBuilderCheckbox));
   exports.Set("pageBuilderDone", Napi::Function::New(env, PageBuilderDone));
   exports.Set("pageBuilderFree", Napi::Function::New(env, PageBuilderFree));
   exports.Set("documentBuilderBuild", Napi::Function::New(env, DocumentBuilderBuild));
@@ -3459,6 +3470,42 @@ Napi::Value PageBuilderFreetext(const Napi::CallbackInfo& info) {
   int errorCode = 0;
   pdf_page_builder_freetext(p, x, y, w, h, text.c_str(), &errorCode);
   throwOnError(env, errorCode, "PageBuilder.freeText");
+  return env.Undefined();
+}
+
+// Form fields (#384 Phase 4)
+Napi::Value PageBuilderTextField(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  std::string name = requireString(info, 1, "name");
+  float x = static_cast<float>(requireNumber(info, 2, "x"));
+  float y = static_cast<float>(requireNumber(info, 3, "y"));
+  float w = static_cast<float>(requireNumber(info, 4, "w"));
+  float h = static_cast<float>(requireNumber(info, 5, "h"));
+  const char* defaultValue = nullptr;
+  std::string defaultStorage;
+  if (info.Length() >= 7 && info[6].IsString()) {
+    defaultStorage = info[6].As<Napi::String>().Utf8Value();
+    defaultValue = defaultStorage.c_str();
+  }
+  int errorCode = 0;
+  pdf_page_builder_text_field(p, name.c_str(), x, y, w, h, defaultValue, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.textField");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderCheckbox(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  std::string name = requireString(info, 1, "name");
+  float x = static_cast<float>(requireNumber(info, 2, "x"));
+  float y = static_cast<float>(requireNumber(info, 3, "y"));
+  float w = static_cast<float>(requireNumber(info, 4, "w"));
+  float h = static_cast<float>(requireNumber(info, 5, "h"));
+  bool checked = info.Length() >= 7 && info[6].IsBoolean() && info[6].As<Napi::Boolean>().Value();
+  int errorCode = 0;
+  pdf_page_builder_checkbox(p, name.c_str(), x, y, w, h, checked ? 1 : 0, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.checkbox");
   return env.Undefined();
 }
 
