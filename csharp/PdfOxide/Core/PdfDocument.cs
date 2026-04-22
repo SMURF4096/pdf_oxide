@@ -237,7 +237,7 @@ namespace PdfOxide.Core
         /// Gets the number of existing digital signatures in this document.
         /// Returns 0 for documents without an AcroForm or without
         /// signed signature fields. Surfaces the Rust
-        /// <c>enumerate_signatures</c> walker (#72 slice 2).
+        /// <c>enumerate_signatures</c> walker.
         /// </summary>
         public int SignatureCount
         {
@@ -804,9 +804,9 @@ namespace PdfOxide.Core
         /// <summary>
         /// Renders a page with the full <see cref="RenderOptions"/> surface:
         /// DPI, output format, background colour or transparency,
-        /// annotation toggle, and JPEG quality. Filed as #384 gap B after
-        /// a Reddit user flagged that the basic <see cref="RenderPage(int, int)"/>
-        /// only exposed the format knob.
+        /// annotation toggle, and JPEG quality. The simpler
+        /// <see cref="RenderPage(int, int)"/> overload only exposes the
+        /// format knob.
         /// </summary>
         /// <param name="pageIndex">Page index, 0-based.</param>
         /// <param name="options">Render options; see <see cref="RenderOptions"/>.</param>

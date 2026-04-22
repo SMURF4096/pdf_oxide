@@ -104,7 +104,7 @@ extern "C" {
   // Rendering Operations (real Rust FFI signatures)
   extern void* pdf_render_page(void* document, int32_t page_index, int32_t format, int* error_code);
   extern void* pdf_render_page_thumbnail(void* document, int32_t page_index, int32_t size, int32_t format, int* error_code);
-  // #384 gap L: full RenderOptions surface (dpi, bg, annotations, jpeg quality).
+  // Full RenderOptions surface (dpi, bg, annotations, jpeg quality).
   extern void* pdf_render_page_with_options(
     void* document, int32_t page_index,
     int32_t dpi, int32_t format,
@@ -418,9 +418,8 @@ extern "C" {
   extern void free_string(char* ptr);
   extern void free_bytes(uint8_t* bytes);
 
-  // Write-side API (#384 Phase 1-3) — DocumentBuilder, PageBuilder,
-  // EmbeddedFont, HTML+CSS. See include/pdf_oxide_c/pdf_oxide.h for
-  // the handle-lifetime contract.
+  // Write-side API: DocumentBuilder, PageBuilder, EmbeddedFont, HTML+CSS.
+  // See include/pdf_oxide_c/pdf_oxide.h for the handle-lifetime contract.
   extern void* pdf_embedded_font_from_file(const char* path, int* error_code);
   extern void* pdf_embedded_font_from_bytes(const uint8_t* data, size_t len,
                                             const char* name, int* error_code);
@@ -843,8 +842,8 @@ Napi::Value RenderPage(const Napi::CallbackInfo& info) {
   return Napi::External<void>::New(env, image);
 }
 
-// #384 gap L: RenderPageWithOptions exposes the full Rust `RenderOptions`
-// surface (dpi, format, background RGBA, transparent background toggle,
+// RenderPageWithOptions exposes the full Rust `RenderOptions` surface
+// (dpi, format, background RGBA, transparent background toggle,
 // render_annotations, jpeg_quality). TS wrapper in src/index.ts turns
 // the options object into these 11 positional args.
 Napi::Value RenderPageWithOptions(const Napi::CallbackInfo& info) {
@@ -3178,7 +3177,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("hasXFA", Napi::Function::New(env, HasXFA));
 
   // ==========================================================================
-  // Write-side API (#384) — see end of file for function definitions
+  // Write-side API — see end of file for function definitions
   // ==========================================================================
   extern Napi::Value EmbeddedFontFromFile(const Napi::CallbackInfo&);
   extern Napi::Value EmbeddedFontFromBytes(const Napi::CallbackInfo&);
@@ -3289,7 +3288,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
 }
 
 // ============================================================================
-// Write-side API implementations (#384 Phase 1-3)
+// Write-side API implementations
 // ============================================================================
 
 namespace {
@@ -3587,7 +3586,7 @@ Napi::Value PageBuilderFreetext(const Napi::CallbackInfo& info) {
   return env.Undefined();
 }
 
-// Form fields (#384 Phase 4)
+// Form fields
 Napi::Value PageBuilderTextField(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   void* p = externPtr(info, 0, "page");
@@ -3711,7 +3710,7 @@ Napi::Value PageBuilderPushButton(const Napi::CallbackInfo& info) {
   return env.Undefined();
 }
 
-// Low-level graphics primitives (#384 Phase 4 — PdfWriter exposure)
+// Low-level graphics primitives (PdfWriter exposure)
 Napi::Value PageBuilderRect(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   void* p = externPtr(info, 0, "page");

@@ -7,9 +7,8 @@ using Xunit;
 namespace PdfOxide.Tests
 {
     /// <summary>
-    /// TDD for the Certificate public class (#384 gap G, unblocked by
-    /// Rust-core task #71). Matches the Rust-level coverage in
-    /// `tests/test_certificate_accessors.rs`.
+    /// Tests for the Certificate public class. Matches the Rust-level
+    /// coverage in <c>tests/test_certificate_accessors.rs</c>.
     /// </summary>
     public class CertificateTests
     {

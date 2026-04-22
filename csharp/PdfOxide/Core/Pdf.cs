@@ -114,9 +114,6 @@ namespace PdfOxide.Core
         /// <paramref name="html"/>, or unknown glyphs fall back to
         /// <c>.notdef</c>.
         /// </summary>
-        /// <remarks>
-        /// Closes #384 Phase 2 (HTML+CSS pipeline) for the C# binding.
-        /// </remarks>
         /// <param name="html">The HTML content.</param>
         /// <param name="css">The CSS stylesheet applied to the HTML.</param>
         /// <param name="fontBytes">TTF/OTF font bytes used for the body text.</param>
@@ -151,7 +148,6 @@ namespace PdfOxide.Core
         /// entry of <paramref name="fonts"/> is the default used when a CSS
         /// <c>font-family</c> doesn't match any registered family.
         /// </summary>
-        /// <remarks>Closes #384 Phase 2 (multi-font HTML+CSS) for the C# binding.</remarks>
         public static unsafe Pdf FromHtmlCssWithFonts(string html, string css,
             System.Collections.Generic.IReadOnlyList<System.Collections.Generic.KeyValuePair<string, byte[]>> fonts)
         {

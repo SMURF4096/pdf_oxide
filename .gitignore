@@ -204,7 +204,7 @@ node_modules/
 
 # Node native addons — always built in CI, never committed to git.
 # The js/npm/<triple>/*.node files are populated by the build-nodejs
-# job in release.yml and live only in build artifacts (#335).
+# job in release.yml and live only in build artifacts.
 *.node
 
 # Build artifacts

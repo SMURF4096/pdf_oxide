@@ -43,7 +43,6 @@ namespace PdfOxide.Core
     /// hashes the input bytes and POSTs the request; the returned
     /// <see cref="Timestamp"/> is ready for inspection via the same
     /// accessors that parse a PDF-embedded timestamp.
-    /// Closes #384 gap J / #57.
     /// </summary>
     public sealed class TsaClient : IDisposable
     {

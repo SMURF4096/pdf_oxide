@@ -6,7 +6,7 @@ using Xunit;
 namespace PdfOxide.Tests
 {
     /// <summary>
-    /// Tests for <see cref="OcrEngine"/> — #384 gap F.
+    /// Tests for <see cref="OcrEngine"/>.
     ///
     /// OCR requires the native library to be built with the `ocr`
     /// feature + real ONNX models on disk. We can't ship the ~80 MB

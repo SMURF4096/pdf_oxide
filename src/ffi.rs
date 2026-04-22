@@ -2188,7 +2188,7 @@ pub extern "C" fn pdf_certificate_load_from_bytes(
         // Try PKCS#12 first (has a private key + cert chain). If that
         // fails — today `from_pkcs12` is still stubbed — fall back to
         // raw DER parsing so Certificate accessors work even without
-        // PKCS#12 support in Rust core. Closes #71 gap.
+        // PKCS#12 support in Rust core.
         if let Ok(creds) = crate::signatures::SigningCredentials::from_pkcs12(data, pwd) {
             set_error(error_code, ERR_SUCCESS);
             return Box::into_raw(Box::new(creds)) as *mut std::ffi::c_void;
@@ -3609,9 +3609,9 @@ pub extern "C" fn pdf_timestamp_get_message_imprint(
 #[no_mangle]
 pub extern "C" fn pdf_timestamp_verify(ts: *const std::ffi::c_void, error_code: *mut i32) -> bool {
     // Full cryptographic verification requires CMS SignedData signer
-    // validation — still pending as #72 slice 3 / #76. For now we
-    // surface UNSUPPORTED so every binding's Timestamp.Verify() is
-    // explicit about the gap.
+    // validation, which is not yet implemented in Rust core. Surface
+    // UNSUPPORTED so every binding's Timestamp.Verify() is explicit
+    // about the gap.
     let _ = ts;
     set_error(error_code, _ERR_UNSUPPORTED);
     false
@@ -6671,7 +6671,7 @@ pub extern "C" fn pdf_ocr_extract_text(
 }
 
 // =============================================================================
-// Write-side API: EmbeddedFont / DocumentBuilder / PageBuilder (#384 Phase 1)
+// Write-side API: EmbeddedFont / DocumentBuilder / PageBuilder
 // =============================================================================
 //
 // C-FFI mirror of the pyo3 / wasm-bindgen exposure, with FFI-appropriate
@@ -7239,7 +7239,7 @@ pub extern "C" fn pdf_page_builder_horizontal_rule(
     push_page_op(handle, error_code, FfiPageOp::HorizontalRule)
 }
 
-// ── Annotations (#384 Phase 3, direct-method variant) ─────────────────────
+// ── Annotations (direct-method variant) ───────────────────────────────────
 
 /// Attach a URL link to the previously-emitted text element.
 #[no_mangle]
@@ -7429,7 +7429,7 @@ pub extern "C" fn pdf_page_builder_freetext(
     )
 }
 
-// ── Form-field widget creation (#384 Phase 4) ──────────────────────────
+// ── Form-field widget creation ─────────────────────────────────────────
 
 /// Add a single-line text form field. `default_value` may be NULL for
 /// a blank field; the initial value otherwise.
@@ -7669,7 +7669,7 @@ pub extern "C" fn pdf_page_builder_push_button(
     )
 }
 
-// ── Low-level graphics primitives (#384 Phase 4 — PdfWriter exposure) ─
+// ── Low-level graphics primitives (PdfWriter exposure) ────────────────
 
 /// Draw a stroked rectangle outline (1pt black).
 #[no_mangle]
@@ -7980,7 +7980,7 @@ pub extern "C" fn pdf_document_builder_to_bytes_encrypted(
 }
 
 // =============================================================================
-// HTML+CSS pipeline (#384 Phase 2)
+// HTML+CSS pipeline
 // =============================================================================
 
 /// Build a PDF from HTML + CSS + a single embedded font. Returns a

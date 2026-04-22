@@ -638,8 +638,6 @@ impl<'a> FluentPageBuilder<'a> {
     /// unique field identifier used for form submission;
     /// `default_value` is the initial text shown in the field (pass
     /// `None` or an empty string for a blank field).
-    ///
-    /// (#384 Phase 4 — form-field creation)
     pub fn text_field(
         self,
         name: impl Into<String>,
@@ -660,8 +658,6 @@ impl<'a> FluentPageBuilder<'a> {
 
     /// Add a checkbox form field to the page. `checked` sets whether
     /// the box is initially ticked.
-    ///
-    /// (#384 Phase 4 — form-field creation)
     pub fn checkbox(
         self,
         name: impl Into<String>,
@@ -684,8 +680,6 @@ impl<'a> FluentPageBuilder<'a> {
     /// a user-visible string that also serves as the submitted value.
     /// `selected` picks the initial choice by value; pass `None` to
     /// leave the field blank.
-    ///
-    /// (#384 Phase 4)
     pub fn combo_box(
         self,
         name: impl Into<String>,
@@ -710,8 +704,6 @@ impl<'a> FluentPageBuilder<'a> {
     /// `(export_value, x, y, w, h)` tuple describing one option's
     /// submitted value and its visible bounding rectangle. `selected`
     /// picks the initial choice by export value.
-    ///
-    /// (#384 Phase 4)
     pub fn radio_group(
         self,
         name: impl Into<String>,
@@ -732,8 +724,6 @@ impl<'a> FluentPageBuilder<'a> {
     }
 
     /// Add a clickable push button with a visible caption.
-    ///
-    /// (#384 Phase 4)
     pub fn push_button(
         self,
         name: impl Into<String>,
@@ -753,7 +743,7 @@ impl<'a> FluentPageBuilder<'a> {
     }
 
     // ───────────────────────────────────────────────────────────────────
-    // Low-level graphics primitives (#384 Phase 4 — PdfWriter exposure)
+    // Low-level graphics primitives (PdfWriter exposure)
     //
     // These emit `ContentElement::Path` directly, the same backing
     // primitive DocumentBuilder already supports via `element()`. Kept
@@ -830,7 +820,7 @@ impl<'a> FluentPageBuilder<'a> {
 
 /// Buffered form-field widget added by `FluentPageBuilder::text_field`
 /// etc. Applied to the underlying `pdf_writer::PageBuilder` inside
-/// `DocumentBuilder::build`. (#384 Phase 4)
+/// `DocumentBuilder::build`.
 enum PendingFormField {
     /// A simple single-line text field.
     TextField {
@@ -1188,10 +1178,9 @@ impl DocumentBuilder {
                 page.add_annotation(annotation.clone());
             }
 
-            // 4. Emit form-field widgets (#384 Phase 4). Each pending
-            //    entry translates into the appropriate
-            //    `pdf_writer::PageBuilder::add_*` call so the field
-            //    lands in /AcroForm at finalize time.
+            // 4. Emit form-field widgets. Each pending entry translates
+            //    into the appropriate `pdf_writer::PageBuilder::add_*`
+            //    call so the field lands in /AcroForm at finalize time.
             for field in &page_data.form_fields {
                 use super::form_fields::{CheckboxWidget, TextFieldWidget};
                 match field {

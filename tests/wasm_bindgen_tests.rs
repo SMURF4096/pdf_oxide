@@ -675,7 +675,7 @@ fn test_xmp_metadata_null_or_object() {
 }
 
 // ============================================================================
-// Write-side API (#384) — WasmDocumentBuilder + WasmEmbeddedFont round-trip
+// Write-side API — WasmDocumentBuilder + WasmEmbeddedFont round-trip
 // ============================================================================
 //
 // Ports the Python reference test (tests/test_python_document_builder.py)
@@ -824,8 +824,8 @@ fn wasm_pdf_from_html_css_with_fonts_requires_non_empty() {
 }
 
 // ----------------------------------------------------------------------
-// #384 gap P — WASM must expose move_page (completes DocumentEditor
-// mutation parity with Python/Go/C#/Node).
+// WASM move_page — DocumentEditor mutation parity with
+// Python / Go / C# / Node.
 // ----------------------------------------------------------------------
 
 #[wasm_bindgen_test]

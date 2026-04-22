@@ -197,7 +197,7 @@ defer editor.Close()
 // Apply several metadata fields in one call
 _ = editor.ApplyMetadata(pdfoxide.Metadata{
     Title:  "Quarterly Report",
-    Author: "Finance Team",
+    Author: "Example Author",
 })
 
 // Page operations

@@ -127,8 +127,8 @@ impl StreamDecoder for FlateDecoder {
             },
             Err(e) => {
                 // Partial recovery: return only if output *looks like* a
-                // plausible stream (#364). The pre-fix behaviour accepted
-                // any non-empty buffer, which let strategies 2 and 3 return
+                // plausible stream. The pre-fix behaviour accepted any
+                // non-empty buffer, which let strategies 2 and 3 return
                 // misaligned-deflate garbage (`P\xffj!}` × 16 on
                 // nougat_026.pdf pages 1/2/5) that the text extractor then
                 // emitted as zero bytes of output.

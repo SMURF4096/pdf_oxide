@@ -7,9 +7,8 @@ namespace PdfOxide.Tests
 {
     /// <summary>
     /// Tests for <see cref="PdfDocument.RenderPage(int, RenderOptions)"/>,
-    /// the full RenderOptions surface that Reddit user u/gevorgter was
-    /// blocked on (2026-04-21: "I can't figure out how i specify Rendering
-    /// options"). Closes #384 gap B at the C# layer; mirrors Python gap O.
+    /// the full RenderOptions surface (DPI, background, annotations, JPEG
+    /// quality) for the C# layer. Mirrors the Python surface.
     /// </summary>
     public class RenderOptionsTests
     {

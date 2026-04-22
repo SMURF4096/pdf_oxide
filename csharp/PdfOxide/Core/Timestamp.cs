@@ -27,10 +27,11 @@ namespace PdfOxide.Core
 
     /// <summary>
     /// An RFC 3161 timestamp — parsed from a DER TimeStampToken (the
-    /// CMS-wrapped response from a TSA) or a bare TSTInfo. Closes
-    /// #384 gap E / #52 on the inspection side. <see cref="Verify"/>
-    /// surfaces as <see cref="UnsupportedFeatureException"/> until the
-    /// Rust CMS slice lands (#72 slice 3 / #76).
+    /// CMS-wrapped response from a TSA) or a bare TSTInfo. The
+    /// inspection surface (issuer, serial, accuracy, digests) is
+    /// implemented; <see cref="Verify"/> surfaces as
+    /// <see cref="UnsupportedFeatureException"/> until the Rust CMS
+    /// signature-verification path lands.
     /// </summary>
     public sealed class Timestamp : IDisposable
     {

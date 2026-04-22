@@ -74,9 +74,6 @@ namespace PdfOxide.Core
     /// <summary>
     /// Static helpers that run Rust-core PDF/A, PDF/X, and PDF/UA
     /// validation against an opened <see cref="PdfDocument"/>.
-    ///
-    /// Filed as #384 gap I in the cross-binding audit — the Rust FFI
-    /// shipped long before v0.3.38 but no public C# class surfaced it.
     /// </summary>
     public static class PdfValidator
     {

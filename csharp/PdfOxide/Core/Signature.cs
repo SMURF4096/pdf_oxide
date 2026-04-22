@@ -8,13 +8,12 @@ namespace PdfOxide.Core
     /// A single existing digital signature on a PDF document, obtained
     /// via <see cref="PdfDocument.Signatures"/>.
     ///
-    /// Closes #384 audit gap D (#51). <see cref="Verify"/> now runs the
-    /// Rust-core RSA-PKCS#1 v1.5 signer-attribute crypto check for
-    /// SHA-1/256/384/512 signers; RSA-PSS and ECDSA still surface as
+    /// <see cref="Verify"/> runs the Rust-core RSA-PKCS#1 v1.5
+    /// signer-attribute crypto check for SHA-1/256/384/512 signers;
+    /// RSA-PSS and ECDSA still surface as
     /// <see cref="UnsupportedFeatureException"/> until their verifiers
     /// land. The <c>messageDigest</c> attribute vs document-bytes
-    /// check is a follow-up slice of #77 and is not yet performed on
-    /// this path.
+    /// check is not yet performed on this path.
     /// </summary>
     public sealed class Signature : IDisposable
     {

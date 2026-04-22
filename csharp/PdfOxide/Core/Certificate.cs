@@ -6,13 +6,10 @@ namespace PdfOxide.Core
 {
     /// <summary>
     /// Inspection-only X.509 certificate loaded from raw DER bytes.
-    /// Closes #384 audit gap G.
     ///
-    /// Rust-core task #71 makes the DER path fully functional against
-    /// the `signatures` feature; PKCS#12 (certificate + private key)
-    /// remains a Rust-core stub, so Load() currently only accepts raw
-    /// DER-encoded X.509 bytes. Full PKCS#12 support will follow when
-    /// tasks #72/#73/#74 land.
+    /// The DER path is functional against the <c>signatures</c> feature.
+    /// PKCS#12 (certificate + private key) is not yet supported, so
+    /// Load() currently only accepts raw DER-encoded X.509 bytes.
     /// </summary>
     public sealed class Certificate : IDisposable
     {

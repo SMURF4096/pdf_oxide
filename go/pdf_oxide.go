@@ -2718,8 +2718,8 @@ func (opts RenderOptions) WithAnnotationsOn() RenderOptions {
 // RenderPageWithOptions renders a page with the full RenderOptions
 // surface — DPI, format, background colour or transparency,
 // annotation toggle, and JPEG quality. Mirrors Python's expanded
-// `render_page` keywords (#384 gap O) and the C#
-// `RenderPage(int, RenderOptions)` overload (gap B). Closes gap M.
+// `render_page` keywords and the C#
+// `RenderPage(int, RenderOptions)` overload.
 //
 // Returns an error (wrapping ErrInvalidPath or equivalent) on bad
 // options, matching other Go FFI error paths.
@@ -2991,16 +2991,15 @@ func (sig *SignatureInfo) Close() {
 // Signature is a live handle to an existing PDF digital signature
 // returned by PdfDocument.Signatures. Close() must be called to
 // release the underlying native handle. Cryptographic Verify()
-// surfaces as ErrUnsupportedFeature until the Rust CMS slice lands
-// (#72 slice 4).
+// surfaces as ErrUnsupportedFeature until the Rust CMS
+// signature-verification path lands.
 type Signature struct {
 	handle unsafe.Pointer
 }
 
 // SignatureCount returns the number of existing digital signatures in
 // the document. Returns 0 when the PDF has no AcroForm or no signed
-// signature fields (not an error). Closes #384 gap D / #51 on the Go
-// side.
+// signature fields (not an error).
 func (doc *PdfDocument) SignatureCount() (int, error) {
 	if err := doc.acquireRead(); err != nil {
 		return 0, err
@@ -3169,7 +3168,7 @@ const (
 
 // Timestamp is an RFC 3161 timestamp parsed from a DER TimeStampToken
 // or a bare TSTInfo. Close() must be called to release the native
-// handle. Closes #73 / #52 on the Go side.
+// handle.
 type Timestamp struct {
 	handle unsafe.Pointer
 }
@@ -3257,8 +3256,8 @@ func (t *Timestamp) MessageImprint() ([]byte, error) {
 }
 
 // Verify cryptographically verifies the timestamp. Currently returns
-// ErrUnsupportedFeature until the Rust CMS signer verification slice
-// lands (#76).
+// ErrUnsupportedFeature until the Rust CMS signer verification path
+// lands.
 func (t *Timestamp) Verify() (bool, error) {
 	if t.handle == nil {
 		return false, ErrDocumentClosed
@@ -3303,7 +3302,7 @@ func NewTsaClientOptions(url string) TsaClientOptions {
 	}
 }
 
-// TsaClient is an RFC 3161 TSA HTTP client. Closes #57 / #74 Go side.
+// TsaClient is an RFC 3161 TSA HTTP client.
 // Only linked when pdf_oxide was built with the `tsa-client` Rust-core
 // feature; otherwise the FFI entry returns ErrUnsupportedFeature.
 type TsaClient struct {

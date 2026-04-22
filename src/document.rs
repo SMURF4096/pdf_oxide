@@ -1034,7 +1034,7 @@ impl PdfDocument {
                 self.object_cache.lock_or_recover().clear();
                 log::debug!(
                     "authenticate(): object cache cleared after successful authentication \
-                     to force re-decryption of any pre-auth cached objects (#323)"
+                     to force re-decryption of any pre-auth cached objects"
                 );
             }
         }

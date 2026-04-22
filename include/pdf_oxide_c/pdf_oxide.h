@@ -284,7 +284,7 @@ void  pdf_oxide_set_log_level(int level);
 /** Get current log level (0-5). */
 int   pdf_oxide_get_log_level(void);
 
-/* ─── Write-side API (#384) ─────────────────────────────────────────────── *
+/* ─── Write-side API ─────────────────────────────────────────────────────── *
  *
  * DocumentBuilder + PageBuilder + EmbeddedFont mirror the Rust fluent
  * builder. Each method returns 0 on success, -1 on error (error_code
@@ -371,9 +371,9 @@ int   pdf_page_builder_stamp(void* page, const char* type_name, int* error_code)
 int   pdf_page_builder_freetext(void* page, float x, float y, float w, float h,
                                 const char* text, int* error_code);
 
-/* Form-field widget creation (#384 Phase 4). Each method adds a widget
- * to the page's /AcroForm entry at finalize time. `default_value` may
- * be NULL for a blank field. */
+/* Form-field widget creation. Each method adds a widget to the page's
+ * /AcroForm entry at finalize time. `default_value` may be NULL for a
+ * blank field. */
 int   pdf_page_builder_text_field(void* page, const char* name,
                                   float x, float y, float w, float h,
                                   const char* default_value /* nullable */,
@@ -409,7 +409,7 @@ int   pdf_page_builder_push_button(void* page, const char* name,
                                    const char* caption,
                                    int* error_code);
 
-/* Low-level graphics primitives (#384 Phase 4 — PdfWriter exposure) */
+/* Low-level graphics primitives (PdfWriter exposure) */
 int   pdf_page_builder_rect(void* page, float x, float y, float w, float h,
                             int* error_code);
 int   pdf_page_builder_filled_rect(void* page, float x, float y, float w, float h,
@@ -434,7 +434,7 @@ uint8_t* pdf_document_builder_to_bytes_encrypted(void* handle,
                                                  size_t* out_len,
                                                  int* error_code);
 
-/* HTML+CSS pipeline (#384 Phase 2) */
+/* HTML+CSS pipeline */
 void* pdf_from_html_css(const char* html, const char* css,
                         const uint8_t* font_bytes, size_t font_len,
                         int* error_code);

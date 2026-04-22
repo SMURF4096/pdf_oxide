@@ -146,8 +146,8 @@ impl PyPdfDocument {
     /// `Signature` objects — empty list when the document has no
     /// AcroForm or no signed signature fields.
     ///
-    /// Mirrors Rust `signatures::enumerate_signatures` (#72 slice 2)
-    /// and the C# `PdfDocument.Signatures` surface.
+    /// Mirrors Rust `signatures::enumerate_signatures` and the C#
+    /// `PdfDocument.Signatures` surface.
     fn signatures(&mut self) -> PyResult<Vec<PySignature>> {
         let list = crate::signatures::enumerate_signatures(&mut self.inner)
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to enumerate signatures: {}", e)))?;
@@ -2347,8 +2347,6 @@ impl PyPdf {
     /// codepoint used by `html`, or unknown glyphs fall back to
     /// `.notdef`. See `from_html_css_with_fonts` for a multi-font
     /// cascade.
-    ///
-    /// Closes #384 Phase 2 (HTML+CSS pipeline) for Python.
     #[staticmethod]
     fn from_html_css(html: &str, css: &str, font_bytes: &Bound<'_, PyBytes>) -> PyResult<Self> {
         let bytes = font_bytes.as_bytes().to_vec();
@@ -3962,13 +3960,12 @@ fn parse_stamp_type(name: &str) -> crate::writer::StampType {
 }
 
 // =============================================================================
-// Write-side API: DocumentBuilder, FluentPageBuilder, EmbeddedFont (#384 Phase 1)
+// Write-side API: DocumentBuilder, FluentPageBuilder, EmbeddedFont
 // =============================================================================
 //
-// These three pyclasses expose the Rust write-side fluent API to Python.
-// Together they close the #382 gap for Python users: register an embedded
-// TTF, build a multi-page PDF with CJK / Cyrillic / Greek text, save to
-// bytes or file, with optional AES-256 encryption.
+// These three pyclasses expose the Rust write-side fluent API to Python:
+// register an embedded TTF, build a multi-page PDF with CJK / Cyrillic /
+// Greek text, save to bytes or file, with optional AES-256 encryption.
 //
 // Architectural note: the Rust `FluentPageBuilder<'a>` carries a mutable
 // borrow of `DocumentBuilder`, which pyo3 cannot represent across GIL
@@ -4355,8 +4352,7 @@ impl PyFluentPageBuilder {
 
     // -----------------------------------------------------------------
     // Annotation methods — operate on the *previous* text element just
-    // as in the Rust API. These cover #384 Phase 3 for the Python
-    // binding.
+    // as in the Rust API.
     // -----------------------------------------------------------------
 
     fn link_url<'a>(mut slf: PyRefMut<'a, Self>, url: String) -> PyResult<PyRefMut<'a, Self>> {
@@ -4467,7 +4463,7 @@ impl PyFluentPageBuilder {
 
     /// Add a single-line text form field at the given rectangle.
     /// `default_value` is the initial text; pass `None` or an empty
-    /// string for a blank field. (#384 Phase 4 — form-field creation)
+    /// string for a blank field.
     #[pyo3(signature = (name, x, y, w, h, default_value=None))]
     fn text_field<'a>(
         mut slf: PyRefMut<'a, Self>,
@@ -4490,7 +4486,7 @@ impl PyFluentPageBuilder {
     }
 
     /// Add a checkbox form field at the given rectangle. `checked`
-    /// sets the initial state. (#384 Phase 4)
+    /// sets the initial state.
     fn checkbox<'a>(
         mut slf: PyRefMut<'a, Self>,
         name: String,
@@ -4514,7 +4510,6 @@ impl PyFluentPageBuilder {
     /// Add a dropdown combo-box form field. `options` are the user-
     /// visible choices (also the submitted values); `selected` picks
     /// the initial value (or pass `None` to leave blank).
-    /// (#384 Phase 4)
     #[pyo3(signature = (name, x, y, w, h, options, selected=None))]
     fn combo_box<'a>(
         mut slf: PyRefMut<'a, Self>,
@@ -4540,7 +4535,7 @@ impl PyFluentPageBuilder {
 
     /// Add a radio-button group. `buttons` is a list of
     /// `(export_value, x, y, w, h)` tuples, one per option. `selected`
-    /// picks the initial value. (#384 Phase 4)
+    /// picks the initial value.
     #[pyo3(signature = (name, buttons, selected=None))]
     fn radio_group<'a>(
         mut slf: PyRefMut<'a, Self>,
@@ -4557,7 +4552,6 @@ impl PyFluentPageBuilder {
     }
 
     /// Add a clickable push button with a visible caption.
-    /// (#384 Phase 4)
     fn push_button<'a>(
         mut slf: PyRefMut<'a, Self>,
         name: String,
@@ -4716,12 +4710,12 @@ impl PyFluentPageBuilder {
 }
 
 // =============================================================================
-// HTML+CSS pipeline (#384 Phase 2) — thin wrappers on PyPdf
+// HTML+CSS pipeline — thin wrappers on PyPdf
 // =============================================================================
 //
-// `Pdf.from_html_css[_with_fonts]` exposes the v0.3.37 HTML+CSS → PDF
-// pipeline (issue #248) to Python. The Rust side is
-// `crate::api::Pdf::from_html_css` and `from_html_css_with_fonts`.
+// `Pdf.from_html_css[_with_fonts]` exposes the HTML+CSS → PDF pipeline
+// to Python. The Rust side is `crate::api::Pdf::from_html_css` and
+// `from_html_css_with_fonts`.
 
 #[pyclass(
     module = "pdf_oxide.pdf_oxide",
@@ -5410,7 +5404,7 @@ fn pdf_oxide(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyColor>()?;
     m.add_class::<PyBlendMode>()?;
     m.add_class::<PyExtGState>()?;
-    // #384 Phase 1 — write-side API (DocumentBuilder + embedded fonts)
+    // Write-side API (DocumentBuilder + embedded fonts)
     m.add_class::<PyDocumentBuilder>()?;
     m.add_class::<PyFluentPageBuilder>()?;
     m.add_class::<PyEmbeddedFont>()?;

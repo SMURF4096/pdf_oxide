@@ -330,11 +330,8 @@ namespace PdfOxide.Core
         }
 
         // ================================================================
-        // Mutations — closes #384 gap A.
-        // Reddit user u/Raccoon12 (2026-04-21) explicitly flagged MergeFrom.
-        // All 12 methods below have long-standing `document_editor_*`
-        // P/Invoke declarations in NativeMethods.cs; this surface was the
-        // missing glue that made them reachable from C#.
+        // Mutations. All 12 methods below are thin wrappers over the
+        // `document_editor_*` P/Invoke declarations in NativeMethods.cs.
         // ================================================================
 
         /// <summary>

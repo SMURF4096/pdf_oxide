@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <!-- Target Frameworks (#333): LibraryImport source generator requires
+    <!-- Target Frameworks: LibraryImport source generator requires
          net7.0+, and all of netstandard2.1 / net5.0 / net6.0 are out of
          Microsoft support. Ship the two current LTS runtimes only —
          net8.0 is supported through Nov 2026, net10.0 through Nov 2028. -->
@@ -9,7 +9,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
 
-    <!-- NativeAOT + trimming compatibility (#333). LibraryImport replaces
+    <!-- NativeAOT + trimming compatibility. LibraryImport replaces
          the runtime IL stub that DllImport generated, so all P/Invoke
          declarations are AOT-safe. Flag the assembly so the trim/AOT
          analyzers surface any regressions the generator can't catch. -->

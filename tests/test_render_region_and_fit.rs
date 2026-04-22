@@ -1,5 +1,5 @@
-//! Closes #67 — exercise the previously-stub
-//! `rendering::render_page_region` + `render_page_fit` entry points.
+//! Exercise the `rendering::render_page_region` and
+//! `rendering::render_page_fit` entry points.
 #![cfg(feature = "rendering")]
 
 use pdf_oxide::api::Pdf;

@@ -2117,10 +2117,10 @@ namespace PdfOxide.Internal
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial void pdf_barcode_free(IntPtr handle);
 
-        // #384 gap H: clean P/Invoke set for the public Core/Barcode.cs
-        // wrapper. Uses IntPtr handles (no SafeHandle) and EntryPoint
-        // overrides so these coexist with the existing barcode entries
-        // above that have divergent legacy signatures.
+        // Clean P/Invoke set for the public Core/Barcode.cs wrapper. Uses
+        // IntPtr handles (no SafeHandle) and EntryPoint overrides so these
+        // coexist with the existing barcode entries above that have
+        // divergent legacy signatures.
         [LibraryImport(LibName, EntryPoint = "pdf_generate_barcode", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial IntPtr PdfGenerateBarcode(string data, int format, int sizePx, out int errorCode);
@@ -2145,9 +2145,9 @@ namespace PdfOxide.Internal
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial void PdfBarcodeFree(IntPtr handle);
 
-        // #384 gap I: PdfValidator wrappers (Pascal-case, consistent
-        // IntPtr handles). EntryPoint overrides let these coexist with
-        // the divergent legacy declarations earlier in the file.
+        // PdfValidator wrappers (Pascal-case, consistent IntPtr handles).
+        // EntryPoint overrides let these coexist with the divergent legacy
+        // declarations earlier in the file.
         [LibraryImport(LibName, EntryPoint = "pdf_validate_pdf_a_level", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial IntPtr PdfValidatePdfALevel(IntPtr document, int level, out int errorCode);
@@ -2227,10 +2227,9 @@ namespace PdfOxide.Internal
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial void PdfPdfUaResultsFree(IntPtr results);
 
-        // #384 gap F: OCR wrappers that take an IntPtr document handle
-        // (Core/OcrEngine.cs uses IntPtr throughout). Parallel entries
-        // above use NativeHandle and can't be called from the IntPtr
-        // code path directly.
+        // OCR wrappers that take an IntPtr document handle (Core/OcrEngine.cs
+        // uses IntPtr throughout). Parallel entries above use NativeHandle
+        // and can't be called from the IntPtr code path directly.
         [LibraryImport(LibName, EntryPoint = "pdf_ocr_page_needs_ocr", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         [return: MarshalAs(UnmanagedType.I1)]
@@ -6783,7 +6782,7 @@ namespace PdfOxide.Internal
 
         #endregion
 
-        #region Write-side API (#384 Phase 1-3 — DocumentBuilder, fonts, HTML+CSS)
+        #region Write-side API (DocumentBuilder, fonts, HTML+CSS)
 
         /// <summary>Load a TTF/OTF font from a file path. Returns an opaque handle or <see cref="IntPtr.Zero"/>.</summary>
         [LibraryImport(LibName, EntryPoint = "pdf_embedded_font_from_file", StringMarshalling = StringMarshalling.Utf8)]
@@ -6964,7 +6963,7 @@ namespace PdfOxide.Internal
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial int PdfPageBuilderFreetext(IntPtr page, float x, float y, float w, float h, string text, out int errorCode);
 
-        // Form fields (#384 Phase 4)
+        // Form fields
 
         /// <summary>Add a single-line text form field widget.</summary>
         [LibraryImport(LibName, EntryPoint = "pdf_page_builder_text_field", StringMarshalling = StringMarshalling.Utf8)]
@@ -7051,7 +7050,7 @@ namespace PdfOxide.Internal
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial IntPtr PdfDocumentBuilderToBytesEncrypted(IntPtr handle, string userPassword, string ownerPassword, out nuint outLen, out int errorCode);
 
-        // HTML+CSS pipeline (#384 Phase 2) --------------------------------------
+        // HTML+CSS pipeline -----------------------------------------------------
 
         /// <summary>Build a PDF by rendering HTML + CSS with a single embedded font.</summary>
         [LibraryImport(LibName, EntryPoint = "pdf_from_html_css", StringMarshalling = StringMarshalling.Utf8)]

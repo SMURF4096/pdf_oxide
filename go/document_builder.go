@@ -1,7 +1,7 @@
 package pdfoxide
 
-// Write-side API (#384 Phase 1-3) — DocumentBuilder, PageBuilder,
-// EmbeddedFont, plus HTML+CSS pipeline wrappers.
+// Write-side API: DocumentBuilder, PageBuilder, EmbeddedFont, plus
+// HTML+CSS pipeline wrappers.
 //
 // Handle-lifetime contract (mirrors the C FFI documented in
 // include/pdf_oxide_c/pdf_oxide.h):
@@ -65,7 +65,7 @@ extern int   pdf_page_builder_stamp(void* page, const char* type_name, int* erro
 extern int   pdf_page_builder_freetext(void* page, float x, float y, float w, float h,
                                        const char* text, int* error_code);
 
-// Form fields (#384 Phase 4)
+// Form fields
 extern int   pdf_page_builder_text_field(void* page, const char* name,
                                          float x, float y, float w, float h,
                                          const char* default_value, int* error_code);
@@ -694,7 +694,7 @@ func (p *PageBuilder) FreeText(x, y, w, h float32, text string) *PageBuilder {
 }
 
 // TextField adds a single-line text form field at (x, y, w, h).
-// Pass defaultValue="" for a blank field. (#384 Phase 4)
+// Pass defaultValue="" for a blank field.
 func (p *PageBuilder) TextField(name string, x, y, w, h float32, defaultValue string) *PageBuilder {
 	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
 		cn := C.CString(name)
@@ -708,7 +708,7 @@ func (p *PageBuilder) TextField(name string, x, y, w, h float32, defaultValue st
 	})
 }
 
-// Checkbox adds a checkbox form field at (x, y, w, h). (#384 Phase 4)
+// Checkbox adds a checkbox form field at (x, y, w, h).
 func (p *PageBuilder) Checkbox(name string, x, y, w, h float32, checked bool) *PageBuilder {
 	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
 		cn := C.CString(name)
@@ -722,7 +722,7 @@ func (p *PageBuilder) Checkbox(name string, x, y, w, h float32, checked bool) *P
 }
 
 // ComboBox adds a dropdown combo-box form field. Pass selected="" for no
-// initial selection. (#384 Phase 4)
+// initial selection.
 func (p *PageBuilder) ComboBox(name string, x, y, w, h float32, options []string, selected string) *PageBuilder {
 	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
 		cn := C.CString(name)
@@ -758,7 +758,6 @@ type RadioButton struct {
 
 // RadioGroup adds a radio-button group. Each entry of buttons is one
 // option with its own rect. Pass selected="" for no initial selection.
-// (#384 Phase 4)
 func (p *PageBuilder) RadioGroup(name string, buttons []RadioButton, selected string) *PageBuilder {
 	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
 		cn := C.CString(name)
@@ -800,7 +799,7 @@ func (p *PageBuilder) RadioGroup(name string, buttons []RadioButton, selected st
 	})
 }
 
-// PushButton adds a clickable push button with a visible caption. (#384 Phase 4)
+// PushButton adds a clickable push button with a visible caption.
 func (p *PageBuilder) PushButton(name string, x, y, w, h float32, caption string) *PageBuilder {
 	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
 		cn := C.CString(name)
@@ -811,14 +810,14 @@ func (p *PageBuilder) PushButton(name string, x, y, w, h float32, caption string
 	})
 }
 
-// Rect draws a stroked rectangle outline (1pt black). (#384 Phase 4)
+// Rect draws a stroked rectangle outline (1pt black).
 func (p *PageBuilder) Rect(x, y, w, h float32) *PageBuilder {
 	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
 		return C.pdf_page_builder_rect(hp, C.float(x), C.float(y), C.float(w), C.float(h), ec)
 	})
 }
 
-// FilledRect draws a filled rectangle in RGB colour (channels 0-1). (#384 Phase 4)
+// FilledRect draws a filled rectangle in RGB colour (channels 0-1).
 func (p *PageBuilder) FilledRect(x, y, w, h, r, g, b float32) *PageBuilder {
 	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
 		return C.pdf_page_builder_filled_rect(hp, C.float(x), C.float(y), C.float(w), C.float(h),
@@ -826,7 +825,7 @@ func (p *PageBuilder) FilledRect(x, y, w, h, r, g, b float32) *PageBuilder {
 	})
 }
 
-// Line draws a straight line from (x1, y1) to (x2, y2). (#384 Phase 4)
+// Line draws a straight line from (x1, y1) to (x2, y2).
 func (p *PageBuilder) Line(x1, y1, x2, y2 float32) *PageBuilder {
 	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
 		return C.pdf_page_builder_line(hp, C.float(x1), C.float(y1), C.float(x2), C.float(y2), ec)
@@ -880,13 +879,12 @@ func (p *PageBuilder) Close() error {
 }
 
 // -----------------------------------------------------------------------------
-// HTML+CSS pipeline (#384 Phase 2)
+// HTML+CSS pipeline
 // -----------------------------------------------------------------------------
 
 // FromHTMLCSS builds a PDF by rendering html with css applied, embedding
 // fontBytes as the body font. Returns a *PdfCreator matching what
 // FromMarkdown / FromHtml produce — same Save / SaveToBytes methods.
-// Closes #384 Phase 2 for the Go binding.
 func FromHTMLCSS(html, css string, fontBytes []byte) (*PdfCreator, error) {
 	if len(fontBytes) == 0 {
 		return nil, fmt.Errorf("pdf_oxide: FromHTMLCSS: fontBytes is empty")
@@ -918,8 +916,7 @@ type FontEntry struct {
 
 // FromHTMLCSSWithFonts builds a PDF from HTML+CSS with a multi-font
 // cascade. The first entry is the default used when a CSS
-// `font-family` doesn't match any registered family. Closes #384
-// Phase 2 (multi-font) for Go.
+// `font-family` doesn't match any registered family.
 func FromHTMLCSSWithFonts(html, css string, fonts []FontEntry) (*PdfCreator, error) {
 	if len(fonts) == 0 {
 		return nil, fmt.Errorf("pdf_oxide: FromHTMLCSSWithFonts: fonts is empty")

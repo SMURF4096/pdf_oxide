@@ -36,7 +36,7 @@ fn issue_395_renders_page_0_without_error() {
 
     let opts = RenderOptions::with_dpi(72);
     let img = rendering::render_page(&mut doc, 0, &opts)
-        .expect("render_page must not return Err for u/gevorgter's PDF (#395)");
+        .expect("render_page must not return Err for the regression fixture");
 
     assert!(img.data.len() > 128, "rendered image should be non-trivial");
     assert!(img.width > 0 && img.height > 0);

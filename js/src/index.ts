@@ -430,7 +430,7 @@ class PdfDocumentImpl {
   /**
    * Render a page with the full Rust `RenderOptions` surface
    * (DPI, format, RGBA background, transparency, annotation toggle,
-   * JPEG quality). Closes #384 gap L. Returns the image bytes.
+   * JPEG quality). Returns the image bytes.
    */
   renderPageWithOptions(pageIndex: number, options: RenderOptions = {}): Uint8Array {
     this.ensureOpen();
@@ -690,9 +690,9 @@ export {
   createMetadataStream,
   createSearchStream,
   DigestAlgorithm,
-  // Write-side fluent API (#384)
+  // Write-side fluent API
   DocumentBuilder,
-  // Editor mutation API (#384 gap K)
+  // Editor mutation API
   DocumentEditor,
   EditingManager,
   EmbeddedFont,

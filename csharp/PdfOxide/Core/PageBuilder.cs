@@ -231,7 +231,7 @@ namespace PdfOxide.Core
             return this;
         }
 
-        // --- Form-field widgets (#384 Phase 4) ------------------------------
+        // --- Form-field widgets ---------------------------------------------
 
         /// <summary>
         /// Add a single-line text form field widget at the rectangle
@@ -370,7 +370,7 @@ namespace PdfOxide.Core
             return this;
         }
 
-        // --- Low-level graphics primitives (#384 Phase 4 — PdfWriter exposure) ---
+        // --- Low-level graphics primitives (PdfWriter exposure) -------------
 
         /// <summary>Draw a stroked rectangle outline (1pt black).</summary>
         public PageBuilder Rect(float x, float y, float w, float h)

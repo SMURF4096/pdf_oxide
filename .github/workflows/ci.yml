@@ -244,7 +244,7 @@ jobs:
       - name: Clippy WASM
         run: cargo clippy --target wasm32-unknown-unknown --no-default-features --features wasm --lib -- -D warnings
 
-      # SOTA 2026: validate the produced module using wasm-tools
+      # Validate the produced module using wasm-tools.
       - name: Install wasm-tools
         uses: taiki-e/install-action@v2
         with:
@@ -253,7 +253,7 @@ jobs:
       - name: wasm-tools validate (dev build)
         run: wasm-tools validate target/wasm32-unknown-unknown/debug/pdf_oxide.wasm
 
-      # SOTA 2026: release build + wasm-opt -Oz --converge shrinks the bundle before we ship it
+      # Release build + wasm-opt -Oz --converge shrinks the bundle before we ship it.
       - name: Install binaryen (wasm-opt)
         run: |
           set -eux
@@ -341,8 +341,7 @@ jobs:
       # Windows uses a GNU Rust target so the resulting `libpdf_oxide.a`
       # is MinGW-compatible with the gcc linker that Go's CGo invokes by
       # default. The MSVC target produces `pdf_oxide.lib` (COFF) which
-      # MinGW ld can't read, matching the release.yml cross-compile row
-      # (#334).
+      # MinGW ld can't read, matching the release.yml cross-compile row.
       - name: Windows — add GNU Rust target
         if: matrix.os == 'windows-latest'
         run: rustup target add x86_64-pc-windows-gnu
@@ -383,7 +382,7 @@ jobs:
             exit 1
           fi
 
-      # SOTA 2026: golangci-lint v2 (single meta-linter replacing many)
+      # golangci-lint v2 — single meta-linter replacing staticcheck / ineffassign / …
       - name: golangci-lint
         if: matrix.os == 'ubuntu-latest'
         uses: golangci/golangci-lint-action@v6
@@ -392,7 +391,7 @@ jobs:
           working-directory: go
           args: --build-tags pdf_oxide_dev --timeout 5m
 
-      # SOTA 2026: govulncheck — module-level vulnerability scanner
+      # govulncheck — module-level vulnerability scanner.
       - name: govulncheck
         if: matrix.os == 'ubuntu-latest'
         working-directory: go
@@ -400,7 +399,7 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck -tags pdf_oxide_dev ./...
 
-      # SOTA 2026: race detector catches data races that survive linting
+      # Race detector catches data races that survive linting.
       - name: Go test -race
         working-directory: go
         run: go test -race -count=1 -p 1 -tags pdf_oxide_dev ./...
@@ -459,25 +458,25 @@ jobs:
         working-directory: js
         run: npx tsc --noEmit
 
-      # SOTA 2026: Biome v2 replaces eslint+prettier (one tool, Rust-core, ~10× faster)
+      # Biome v2 replaces eslint + prettier with a single Rust-core tool.
       - name: Biome lint+format check
         if: matrix.os == 'ubuntu-latest'
         working-directory: js
         run: npx --yes @biomejs/biome@latest ci .
 
-      # SOTA 2026: publint — validates package.json so the published tarball works in every module system
+      # publint — validates package.json so the published tarball works in every module system.
       - name: publint
         if: matrix.os == 'ubuntu-latest'
         working-directory: js
         run: npx --yes publint
 
-      # SOTA 2026: @arethetypeswrong/cli — checks that types resolve for every exports condition
+      # @arethetypeswrong/cli — checks that types resolve for every exports condition.
       - name: arethetypeswrong (types vs runtime)
         if: matrix.os == 'ubuntu-latest'
         working-directory: js
         run: npx --yes @arethetypeswrong/cli --pack . --ignore-rules=cjs-resolves-to-esm
 
-      # SOTA 2026: npm audit fails on high+ severity transitive vulns
+      # npm audit fails on high+ severity transitive vulns.
       - name: npm audit (prod deps, high severity)
         if: matrix.os == 'ubuntu-latest'
         working-directory: js
@@ -525,7 +524,7 @@ jobs:
         working-directory: csharp/PdfOxide.Tests
         run: dotnet build -c Release -p:TreatWarningsAsErrors=true
 
-      # SOTA 2026: dotnet format verifies whitespace + style conformance without mutating files
+      # dotnet format verifies whitespace + style conformance without mutating files.
       - name: dotnet format --verify-no-changes
         if: matrix.os == 'ubuntu-latest'
         working-directory: csharp
@@ -536,7 +535,7 @@ jobs:
         working-directory: csharp
         run: dotnet format PdfOxide.Tests/PdfOxide.Tests.csproj --verify-no-changes --severity warn
 
-      # SOTA 2026: dotnet list package --vulnerable surfaces known CVE in transitive NuGet deps
+      # dotnet list package --vulnerable surfaces known CVEs in transitive NuGet deps.
       - name: dotnet list package --vulnerable (PdfOxide)
         if: matrix.os == 'ubuntu-latest'
         working-directory: csharp/PdfOxide

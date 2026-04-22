@@ -117,8 +117,6 @@ pub fn render_page(
 /// Render a rectangular region of a page. `crop_rect_pt` is in PDF
 /// user-space points (origin bottom-left of the page). The crop is
 /// applied to the fully-rendered image at the requested DPI.
-///
-/// Closes #384 gap L / #67 half #1.
 pub fn render_page_region(
     doc: &mut crate::document::PdfDocument,
     page_num: usize,
@@ -190,8 +188,6 @@ pub fn render_page_region(
 /// Render a page to fit inside a target bounding box (in pixels),
 /// preserving aspect ratio. Picks the DPI that makes the larger of
 /// the two page dimensions match the smaller bounding-box side.
-///
-/// Closes #384 gap L / #67 half #2.
 pub fn render_page_fit(
     doc: &mut crate::document::PdfDocument,
     page_num: usize,

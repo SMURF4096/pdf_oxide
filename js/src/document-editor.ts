@@ -1,7 +1,7 @@
 /**
  * DocumentEditor — thin TS wrapper around the N-API `editor*` exports
  * in `binding.cc`. Mirrors the C# `DocumentEditor` / Go
- * `DocumentEditor` surface (#384 gap K).
+ * `DocumentEditor` surface.
  *
  * Every mutation is a synchronous call into the Rust core; the same
  * handle is carried until {@link DocumentEditor.close}. Throws plain
@@ -99,8 +99,8 @@ export class DocumentEditor {
   setProducer(producer: string): void {
     this._throwIfClosed();
     // NOTE: today this is a no-op in Rust core (src/ffi.rs:532-586).
-    // See task #70 for the core fix; the wrapper is in place so the
-    // API surface matches Python / C# / Go.
+    // The wrapper is in place so the API surface matches
+    // Python / C# / Go.
     if (native.editorSetProducer) {
       native.editorSetProducer(this._handle, producer);
     }

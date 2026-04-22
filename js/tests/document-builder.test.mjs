@@ -1,4 +1,4 @@
-// Integration tests for the #384 Phase 1-3 Node/N-API write-side API.
+// Integration tests for the Node/N-API write-side API.
 //
 // Imports the native addon directly (same way the compiled TS wrapper does)
 // so the test doesn't depend on `npm run build:ts` having run. Covers:
@@ -51,7 +51,7 @@ function tmp(ext = '.pdf') {
   return join(dir, `out${ext}`);
 }
 
-describe('DocumentBuilder native bindings (#384)', () => {
+describe('DocumentBuilder native bindings', () => {
   it('minimal ASCII produces a valid PDF', () => {
     const b = native.documentBuilderCreate();
     const p = native.documentBuilderA4Page(b);

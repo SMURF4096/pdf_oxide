@@ -1,18 +1,16 @@
-"""Integration tests for the Python write-side API (#384 Phase 1 & 2).
+"""Integration tests for the Python write-side API.
 
-Before v0.3.38 the Python binding exposed only ``Pdf.from_markdown`` /
-``from_html`` / ``from_text`` — roughly 15% of the Rust write-side
-surface. v0.3.38 adds:
+Covers two surfaces:
 
-* ``DocumentBuilder`` + ``FluentPageBuilder`` + ``EmbeddedFont`` (Phase 1)
-  — the fluent API for programmatic multi-page construction, with
-  embedded TTF/OTF support that closes #382 on the Python side.
+* ``DocumentBuilder`` + ``FluentPageBuilder`` + ``EmbeddedFont`` — the
+  fluent API for programmatic multi-page construction, with embedded
+  TTF/OTF support.
 
-* ``Pdf.from_html_css`` / ``from_html_css_with_fonts`` (Phase 2) — the
-  HTML+CSS pipeline (#248) that was previously only reachable from Rust.
+* ``Pdf.from_html_css`` / ``from_html_css_with_fonts`` — the HTML+CSS
+  pipeline that was previously only reachable from Rust.
 
-These tests exercise both phases end-to-end using the DejaVuSans fixture
-that already ships at ``tests/fixtures/fonts/DejaVuSans.ttf``.
+These tests exercise both surfaces end-to-end using the DejaVuSans
+fixture that already ships at ``tests/fixtures/fonts/DejaVuSans.ttf``.
 
 To run locally:
 
@@ -93,8 +91,8 @@ def test_document_builder_cjk_round_trip(tmp_path):
 
 def test_document_builder_output_is_subsetted():
     """Register a ~760 KB font, emit one short line; the resulting PDF
-    must be dramatically smaller than the face, proving the v0.3.38
-    subsetter (#385) is wired through the Python path too."""
+    must be dramatically smaller than the face, proving the font
+    subsetter is wired through the Python path."""
     font = pdf_oxide.EmbeddedFont.from_file(str(FIXTURE_FONT))
     pdf_bytes = (
         pdf_oxide.DocumentBuilder()
@@ -294,10 +292,10 @@ def test_pdf_from_html_css_with_fonts_rejects_empty_font_list():
 
 
 def test_form_field_creation():
-    """#384 Phase 4 — DocumentBuilder can now create form-field widgets
-    (text fields + checkboxes) directly on a page. The resulting PDF
-    exposes an /AcroForm entry and the widgets round-trip through the
-    read-side form-field API."""
+    """DocumentBuilder creates form-field widgets (text fields +
+    checkboxes) directly on a page. The resulting PDF exposes an
+    /AcroForm entry and the widgets round-trip through the read-side
+    form-field API."""
     bytes_ = (
         pdf_oxide.DocumentBuilder()
         .a4_page()
@@ -321,9 +319,9 @@ def test_form_field_creation():
 
 
 def test_form_field_all_five_widget_types():
-    """#384 Phase 4 — every widget type the plan listed (text_field,
-    checkbox, combo_box, radio_group, push_button) is now reachable
-    from Python and produces a correct /AcroForm entry."""
+    """Every widget type (text_field, checkbox, combo_box, radio_group,
+    push_button) is reachable from Python and produces a correct
+    /AcroForm entry."""
     bytes_ = (
         pdf_oxide.DocumentBuilder()
         .a4_page()
@@ -362,9 +360,9 @@ def test_form_field_all_five_widget_types():
 
 
 def test_graphics_primitives():
-    """#384 Phase 4 — low-level graphics primitives (rect, filled_rect,
-    line) are reachable directly from DocumentBuilder without going
-    through the ContentElement::Path builder."""
+    """Low-level graphics primitives (rect, filled_rect, line) are
+    reachable directly from DocumentBuilder without going through the
+    ContentElement::Path builder."""
     bytes_ = (
         pdf_oxide.DocumentBuilder()
         .a4_page()

@@ -1,6 +1,6 @@
 /**
  * Fluent document builder — the programmatic multi-page construction API
- * exposed through the C FFI (#384 Phase 1-3).
+ * exposed through the C FFI.
  *
  * Mirrors the Python / WASM / C# / Go equivalents. The same handle-lifetime
  * contract applies: terminal methods (`build`, `save`, `saveEncrypted`,
@@ -403,7 +403,7 @@ export class PageBuilder {
     return this;
   }
 
-  // --- Form-field widgets (#384 Phase 4) -----------------------------
+  // --- Form-field widgets --------------------------------------------
 
   /**
    * Add a single-line text form field at the rectangle (x, y, w, h).
@@ -468,7 +468,7 @@ export class PageBuilder {
     return this;
   }
 
-  // --- Low-level graphics primitives (#384 Phase 4) ------------------
+  // --- Low-level graphics primitives ---------------------------------
 
   /** Draw a stroked rectangle outline (1pt black). */
   rect(x: number, y: number, w: number, h: number): this {

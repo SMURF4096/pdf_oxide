@@ -3,8 +3,8 @@
 
 rylai emits Python 3.8-era typing (``t.Optional``, ``t.Tuple`` etc.) which
 basedpyright flags as ``reportDeprecated`` on every site — ~140 noise
-warnings for our stub today (#44). This script rewrites those to PEP-604
-native generics so the stub type-checks clean.
+warnings for our stub. This script rewrites those to PEP-604 native
+generics so the stub type-checks clean.
 
 Idempotent: running it twice on the same file is a no-op.
 

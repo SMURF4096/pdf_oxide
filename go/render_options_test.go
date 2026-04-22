@@ -9,11 +9,10 @@ import (
 	"testing"
 )
 
-// Regression target: PDF Oxide issue #384 gap M —
-// Go's RenderPage only took a `format int` argument (mirror of the C#
-// bug Reddit user u/gevorgter reported on 2026-04-21). Expose the
-// Rust `RenderOptions` surface on Go so callers can pick DPI,
-// background, annotations, and JPEG quality.
+// Regression target: Go's RenderPage only took a `format int` argument,
+// so callers could not pick DPI, background, annotations, or JPEG
+// quality. These tests exercise the full Rust `RenderOptions` surface
+// exposed via RenderPageWithOptions.
 
 func pngMagic(b []byte) bool {
 	return len(b) >= 8 && b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47

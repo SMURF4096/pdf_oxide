@@ -1,6 +1,6 @@
 package pdfoxide
 
-// Integration tests for the Go write-side API (#384 Phase 1-3). Mirrors the
+// Integration tests for the Go write-side API. Mirrors the
 // Python / C# / Rust-FFI test suites. Each test is self-contained; the
 // DejaVuSans fixture ships at tests/fixtures/fonts/DejaVuSans.ttf relative
 // to the repo root.

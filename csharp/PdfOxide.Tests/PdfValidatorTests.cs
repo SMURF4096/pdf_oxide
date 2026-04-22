@@ -7,7 +7,7 @@ using Xunit;
 namespace PdfOxide.Tests
 {
     /// <summary>
-    /// Tests for <see cref="PdfValidator"/> — #384 gap I.
+    /// Tests for <see cref="PdfValidator"/>.
     /// Smoke-level only: confirms the validator returns a non-null
     /// result and that compliance / error lists are populated in a
     /// sane way for plain markdown-generated PDFs (which are

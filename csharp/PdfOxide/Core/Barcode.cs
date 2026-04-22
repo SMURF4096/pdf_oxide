@@ -28,10 +28,6 @@ namespace PdfOxide.Core
     /// <summary>
     /// A generated 1D/2D barcode image. Wraps the FFI `FfiBarcodeImage`
     /// handle — call {@link Dispose} (or use `using`) to free it.
-    ///
-    /// Filed as #384 gap H in the cross-binding audit: the Rust FFI
-    /// entry points have shipped since before v0.3.38 but no public C#
-    /// class surfaced them.
     /// </summary>
     public sealed class Barcode : IDisposable
     {

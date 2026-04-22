@@ -129,11 +129,11 @@ jobs:
         run: |
           uvx rylai -o python/pdf_oxide/
           # Modernise rylai's pre-PEP-585 typing so basedpyright is
-          # clean — closes #44 (the deprecated-typing noise wasn't a
-          # rylai-upstream blocker after all, just needed post-processing).
+          # clean — the deprecated-typing noise is fixable via
+          # post-processing, not upstream.
           python scripts/modernize_stubs.py python/pdf_oxide/pdf_oxide.pyi
 
-      # SOTA 2026: ruff runs without --fix in CI (CI verifies; developers auto-fix locally)
+      # ruff runs without --fix in CI (CI verifies; developers auto-fix locally).
       - name: Ruff lint
         run: uv run ruff check . --output-format=github
 
@@ -144,14 +144,14 @@ jobs:
       - name: Run ty check
         run: uv run ty check .
 
-      # SOTA 2026: basedpyright — stricter fork of pyright, catches issues ty doesn't.
+      # basedpyright — stricter fork of pyright that catches issues ty misses.
       # Hard gate now that #44 is closed (0 errors, 0 warnings on a clean tree).
       - name: basedpyright (type check)
         run: |
           uv pip install basedpyright
           uv run basedpyright python/pdf_oxide
 
-      # SOTA 2026: pip-audit scans Python deps + the built wheel for known CVE
+      # pip-audit scans Python deps + the built wheel for known CVEs.
       - name: pip-audit (project deps)
         run: |
           uv pip install pip-audit
@@ -262,7 +262,7 @@ jobs:
           name: sdist
           path: dist/*.tar.gz
 
-  # Publish to PyPI on release using Trusted Publishing (SOTA 2026: OIDC, no stored tokens)
+  # Publish to PyPI on release using Trusted Publishing (OIDC — no stored tokens).
   # Setup: add this repo as a trusted publisher on PyPI for the pdf_oxide project.
   # See https://docs.pypi.org/trusted-publishers/
   publish:

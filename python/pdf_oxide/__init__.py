@@ -55,7 +55,7 @@ from .pdf_oxide import (
     BlendMode,
     # Advanced Graphics
     Color,
-    # Write-side fluent API (#384)
+    # Write-side fluent API
     DocumentBuilder,
     EmbeddedFont,
     ExtGState,
@@ -93,7 +93,7 @@ __all__ = [
     "AsyncPdf",
     "AsyncOfficeConverter",
     "VERSION",
-    # Write-side fluent API (#384)
+    # Write-side fluent API
     "DocumentBuilder",
     "FluentPageBuilder",
     "EmbeddedFont",

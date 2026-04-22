@@ -7,10 +7,10 @@ using Xunit;
 namespace PdfOxide.Tests
 {
     /// <summary>
-    /// TDD for the 12 DocumentEditor mutation methods surfaced in the public
-    /// C# API as part of closing #384 gap A. Each method has an existing
-    /// P/Invoke in <c>NativeMethods.cs</c> (<c>document_editor_*</c>); these
-    /// tests lock down the public wrappers + argument validation.
+    /// Tests for the 12 DocumentEditor mutation methods surfaced in the public
+    /// C# API. Each method has an existing P/Invoke in <c>NativeMethods.cs</c>
+    /// (<c>document_editor_*</c>); these tests lock down the public wrappers
+    /// and argument validation.
     ///
     /// Cross-link: Reddit user u/Raccoon12 (2026-04-21) explicitly asked
     /// "When is DocumentEditor::merge_from going to get added to the .NET
@@ -245,8 +245,8 @@ namespace PdfOxide.Tests
         // ---------------------------------------------------------------
         // Producer / CreationDate metadata round-trip
         // ---------------------------------------------------------------
-        // Producer / CreationDate now round-trip against the Rust core
-        // (task #70). Set → save → reopen → read back.
+        // Producer / CreationDate round-trip against the Rust core.
+        // Set → save → reopen → read back.
         [Fact]
         public void Producer_RoundTrips_AfterSave()
         {

@@ -183,13 +183,13 @@ lint = { composite = [
     "ty check .",
 ] }
 # Generate .pyi from Rust (Rylai) and modernise the output so it
-# type-checks clean against basedpyright (#44). Use: `pdm run stub_gen`.
+# type-checks clean against basedpyright. Use: `pdm run stub_gen`.
 stub_gen = { composite = [
     "uvx rylai -o python/pdf_oxide/",
     "python scripts/modernize_stubs.py python/pdf_oxide/pdf_oxide.pyi",
 ] }
 
-# basedpyright — stricter pyright fork (SOTA 2026 gate).
+# basedpyright — stricter pyright fork. CI-enforced (see .github/workflows/python.yml).
 # The auto-generated pdf_oxide.pyi is produced by rylai upstream and
 # unavoidably types some pyo3 surfaces with `Any` (e.g.
 # context-manager __enter__/__exit__ objects). We silence that subset

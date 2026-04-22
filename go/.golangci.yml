@@ -1,4 +1,4 @@
-# golangci-lint v2 configuration for the pdf_oxide Go bindings (SOTA 2026)
+# golangci-lint v2 configuration for the pdf_oxide Go bindings.
 # Upgraded from v1 — v2 uses `version: "2"` + new `linters.default` / `linters.settings`
 # / `linters.exclusions` schema. Run: `golangci-lint run --build-tags pdf_oxide_dev ./...`
 

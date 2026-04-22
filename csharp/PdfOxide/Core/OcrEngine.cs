@@ -5,7 +5,7 @@ using PdfOxide.Internal;
 namespace PdfOxide.Core
 {
     /// <summary>
-    /// OCR engine backed by PaddleOCR ONNX models. Closes #384 gap F.
+    /// OCR engine backed by PaddleOCR ONNX models.
     ///
     /// The native library must be built with the <c>ocr</c> feature on
     /// for this type to succeed — otherwise every method surfaces

@@ -6,9 +6,8 @@ using Xunit;
 namespace PdfOxide.Tests
 {
     /// <summary>
-    /// Tests for the <see cref="Barcode"/> class — #384 gap H.
-    /// Rust FFI at <c>src/ffi.rs:1974</c> has shipped since well before
-    /// v0.3.38; this surface is the first public C# exposure.
+    /// Tests for the <see cref="Barcode"/> class — the C# exposure of
+    /// the barcode Rust FFI at <c>src/ffi.rs:1974</c>.
     /// </summary>
     public class BarcodeTests
     {

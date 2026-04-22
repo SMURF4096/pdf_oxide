@@ -44,6 +44,10 @@ pub(super) fn hash_with_oid(oid: ObjectIdentifier, msg: &[u8]) -> Option<Vec<u8>
 /// Hash `data` using a [`HashAlgorithm`] variant. `Unknown` falls back
 /// to SHA-256 so the TSA client still produces a deterministic imprint
 /// rather than panicking — mirrors the pre-refactor behaviour.
+///
+/// Used by the TSA client path; gated on the same feature so that
+/// builds without `tsa-client` don't emit a dead-code warning.
+#[cfg(feature = "tsa-client")]
 pub(super) fn hash_with_algorithm(algo: HashAlgorithm, data: &[u8]) -> Vec<u8> {
     match algo {
         HashAlgorithm::Sha1 => Sha1::digest(data).to_vec(),
@@ -71,6 +75,10 @@ pub(super) fn hash_algorithm_from_oid(oid: ObjectIdentifier) -> HashAlgorithm {
 /// Map a [`HashAlgorithm`] back to its DER-level OID. Returns `None`
 /// for `Unknown` — the caller is expected to reject rather than pick
 /// a default.
+///
+/// Used by the TSA client path; gated on the same feature so that
+/// builds without `tsa-client` don't emit a dead-code warning.
+#[cfg(feature = "tsa-client")]
 pub(super) fn oid_for_algorithm(algo: HashAlgorithm) -> Option<ObjectIdentifier> {
     match algo {
         HashAlgorithm::Sha1 => Some(ID_SHA_1),

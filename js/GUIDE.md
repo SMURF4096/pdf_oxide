@@ -207,7 +207,7 @@ import { PdfBuilder } from 'pdf_oxide';
 
 const pdf = PdfBuilder.create()
   .title('Annual Report 2024')
-  .author('Finance Team')
+  .author('Example Author')
   .subject('Financial Summary')
   .keywords(['finance', 'annual', 'report'])
   .addKeyword('2024')

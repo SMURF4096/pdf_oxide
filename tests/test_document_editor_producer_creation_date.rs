@@ -1,11 +1,9 @@
-//! Regression / completion test for #384 task #70:
-//! `DocumentEditor::set_producer` + `set_creation_date` round-trips.
+//! Regression test: `DocumentEditor::set_producer` and
+//! `set_creation_date` round-trip through save + reopen.
 //!
-//! Before this landed, the FFI entries at `src/ffi.rs:532-586`
-//! returned ERR_SUCCESS but did nothing. The C# binding surfaced
-//! them in commit ecab0a00 with a note that the setter was a no-op
-//! pending this Rust-core fix. Round-trip is the signal the fix is
-//! real.
+//! The FFI entries at `src/ffi.rs:532-586` previously returned
+//! ERR_SUCCESS but did nothing. Round-trip is the signal that the
+//! setters actually persist into the saved PDF.
 
 use pdf_oxide::api::Pdf;
 use pdf_oxide::editor::DocumentEditor;

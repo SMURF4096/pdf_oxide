@@ -125,9 +125,9 @@ impl SigningCredentials {
     /// Load credentials from a raw DER-encoded X.509 certificate. No
     /// private key is attached — the resulting value is only useful
     /// for inspection (subject / issuer / serial / validity / is_valid)
-    /// and not for signing. Closes #71 — the signing-path dep chain
-    /// (PKCS#12 parsing) is still upstream, but every binding can now
-    /// surface Certificate metadata by feeding the raw cert DER.
+    /// and not for signing. The signing-path dep chain (PKCS#12 parsing)
+    /// is still upstream, but every binding can surface Certificate
+    /// metadata by feeding the raw cert DER.
     #[cfg(feature = "signatures")]
     pub fn from_der(cert_der: Vec<u8>) -> Result<Self> {
         use x509_parser::prelude::*;

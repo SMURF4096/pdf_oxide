@@ -139,7 +139,7 @@ fn indexed_lab_mid_gray_yields_srgb_mid_gray() {
         assert!(
             diff <= 3,
             "Lab(50,0,0) channel {label}: expected ~{expected}, got {v} (Δ={diff}). \
-             #337 Phase 1 — Lab→XYZ→sRGB conversion missing."
+             Lab→XYZ→sRGB conversion missing."
         );
     }
 }

@@ -1,7 +1,5 @@
-// TDD for #384 gap L: renderPageWithOptions + estimateRenderTime TS
-// wrappers over the new pdf_render_page_with_options N-API export.
-// Reddit user u/gevorgter (2026-04-21) was blocked on C# rendering
-// options; this mirrors the fix at the JS layer.
+// Tests for renderPageWithOptions + estimateRenderTime TS wrappers
+// over the pdf_render_page_with_options N-API export.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';

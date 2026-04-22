@@ -1,8 +1,5 @@
-// TDD test for the DocumentEditor TS wrapper added in #384 gap K.
-// Reddit user u/Raccoon12 specifically asked for MergeFrom in .NET on
-// 2026-04-21; the TS binding shipped on the same day because binding.cc
-// already exported every one of these operations — only the JS surface
-// was missing.
+// Tests for the DocumentEditor TS wrapper. binding.cc already exports
+// every editor operation; these cover the JS-side surface.
 
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';

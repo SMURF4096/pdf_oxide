@@ -167,7 +167,7 @@ const pngBytes = doc.extractImageBytes(0);
 
 ```javascript
 doc.setTitle("Quarterly Report");
-doc.setAuthor("Finance Team");
+doc.setAuthor("Example Author");
 doc.setPageRotation(0, 90);
 doc.cropMargins(36, 36, 36, 36);
 doc.eraseRegion(0, 50, 50, 200, 100);

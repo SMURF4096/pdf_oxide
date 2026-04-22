@@ -180,8 +180,8 @@ impl WasmPdfDocument {
             .map_err(|e| JsValue::from_str(&format!("Failed to get page count: {}", e)))
     }
 
-    /// Count existing PDF signatures (#72 slice 2). Returns 0 when
-    /// the document has no AcroForm or no signed signature fields.
+    /// Count existing PDF signatures. Returns 0 when the document has
+    /// no AcroForm or no signed signature fields.
     #[cfg(feature = "signatures")]
     #[wasm_bindgen(js_name = "signatureCount")]
     pub fn signature_count(&mut self) -> Result<usize, JsValue> {
@@ -2893,7 +2893,7 @@ impl WasmPdfDocument {
     /// Move a page within the document. Zero-based; `from_index` and
     /// `to_index` refer to positions **before** the move, matching the
     /// Python (`PyPdfDocument.move_page`) / Go (`DocumentEditor.MovePage`) /
-    /// C# contracts. Closes #384 WASM gap P.
+    /// C# contracts.
     #[wasm_bindgen(js_name = "movePage")]
     pub fn move_page(&mut self, from_index: usize, to_index: usize) -> Result<(), JsValue> {
         use crate::editor::EditableDocument;
@@ -3151,8 +3151,6 @@ impl WasmPdf {
     /// body text. The font must cover every codepoint used by `html` or
     /// unknown glyphs fall back to `.notdef`. See
     /// [`Self::from_html_css_with_fonts`] for a multi-font cascade.
-    ///
-    /// Closes #384 Phase 2 (HTML+CSS pipeline) for the WASM binding.
     #[wasm_bindgen(js_name = "fromHtmlCss")]
     pub fn from_html_css(html: &str, css: &str, font_bytes: &[u8]) -> Result<WasmPdf, JsValue> {
         let pdf = crate::api::Pdf::from_html_css(html, css, font_bytes.to_vec())
@@ -3277,7 +3275,7 @@ fn outline_to_json(items: &[crate::outline::OutlineItem]) -> Vec<serde_json::Val
 }
 
 // ============================================================================
-// Write-side API: DocumentBuilder / FluentPageBuilder / EmbeddedFont (#384)
+// Write-side API: DocumentBuilder / FluentPageBuilder / EmbeddedFont
 // ============================================================================
 
 /// Parse a stamp-type name into the Rust `StampType` enum. Unknown names
@@ -3849,7 +3847,7 @@ impl WasmFluentPageBuilder {
         })
     }
 
-    /// Add a dropdown combo-box. (#384 Phase 4)
+    /// Add a dropdown combo-box.
     #[wasm_bindgen(js_name = "comboBox")]
     pub fn combo_box(
         &mut self,
@@ -3875,7 +3873,6 @@ impl WasmFluentPageBuilder {
     /// Add a radio-button group. `values`, `xs`, `ys`, `ws`, `hs` are
     /// parallel arrays of length N describing each option's export
     /// value and rectangle. `selected` picks the initial value.
-    /// (#384 Phase 4)
     #[wasm_bindgen(js_name = "radioGroup")]
     pub fn radio_group(
         &mut self,
@@ -3908,7 +3905,7 @@ impl WasmFluentPageBuilder {
         })
     }
 
-    /// Add a clickable push button with a visible caption. (#384 Phase 4)
+    /// Add a clickable push button with a visible caption.
     #[wasm_bindgen(js_name = "pushButton")]
     pub fn push_button(
         &mut self,

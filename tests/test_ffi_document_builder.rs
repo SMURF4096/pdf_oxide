@@ -1,4 +1,4 @@
-//! C-FFI integration tests for the write-side API (#384 Phase 1+2+3).
+//! C-FFI integration tests for the write-side API.
 //!
 //! These tests call the raw `pdf_*` FFI functions the way a C / C# / Go /
 //! Node wrapper does — opaque handles, error-code out-params, explicit

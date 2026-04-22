@@ -8,7 +8,7 @@ using Xunit;
 namespace PdfOxide.Tests
 {
     /// <summary>
-    /// Integration tests for the #384 Phase 1-3 C# write-side API:
+    /// Integration tests for the C# write-side API:
     /// <see cref="DocumentBuilder"/>, <see cref="PageBuilder"/>,
     /// <see cref="EmbeddedFont"/>, plus HTML+CSS hooks.
     /// </summary>
