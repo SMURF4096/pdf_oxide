@@ -2294,13 +2294,61 @@ pub extern "C" fn pdf_document_get_signature(
     }
 }
 
+/// Run the signer-attributes crypto check (RSA-PKCS#1 v1.5 over
+/// `signed_attrs`) on the CMS blob carried by a signature handle.
+///
+/// Returns:
+/// - `1`  — Valid: signer held the private key matching the embedded
+///           certificate. Callers still need to verify the
+///           `messageDigest` attribute against their document content
+///           hash for a full detached-signature claim; see
+///           `pdf_signature_verify_detached` once it lands (#77).
+/// - `0`  — Invalid: CMS parsed but the RSA check failed (tampered
+///           attributes or wrong key).
+/// - `-1` — Unknown or not supported: PSS / ECDSA / unrecognised
+///           digest OID / missing signed_attrs / structurally
+///           unparseable / feature not compiled.
 #[no_mangle]
 pub extern "C" fn pdf_signature_verify(
-    _signature_handle: *const std::ffi::c_void,
+    signature_handle: *const std::ffi::c_void,
     error_code: *mut i32,
 ) -> i32 {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    -1
+    #[cfg(feature = "signatures")]
+    {
+        if signature_handle.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return -1;
+        }
+        let ffi = unsafe { &*(signature_handle as *const FfiSignatureInfo) };
+        let Some(contents) = ffi.info.contents.as_ref() else {
+            set_error(error_code, _ERR_UNSUPPORTED);
+            return -1;
+        };
+        match crate::signatures::verify_signer(contents) {
+            Ok(crate::signatures::SignerVerify::Valid) => {
+                set_error(error_code, ERR_SUCCESS);
+                1
+            },
+            Ok(crate::signatures::SignerVerify::Invalid) => {
+                set_error(error_code, ERR_SUCCESS);
+                0
+            },
+            Ok(crate::signatures::SignerVerify::Unknown) => {
+                set_error(error_code, _ERR_UNSUPPORTED);
+                -1
+            },
+            Err(_) => {
+                set_error(error_code, ERR_INVALID_ARG);
+                -1
+            },
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = signature_handle;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        -1
+    }
 }
 
 #[no_mangle]

@@ -1364,12 +1364,36 @@ impl WasmSignature {
         self.info.covers_whole_document
     }
 
-    /// Cryptographic verify — not yet implemented Rust-side.
+    /// Run the RFC 5652 §5.4 signer-attributes crypto check. Today
+    /// this covers RSA-PKCS#1 v1.5 over SHA-1/256/384/512 — the
+    /// padding used by essentially every PDF signature.
+    ///
+    /// A `true` return proves the signer held the private key matching
+    /// the embedded certificate and that the signed-attribute bundle
+    /// is authentic. It does **not** yet verify the `messageDigest`
+    /// attribute against the document's byte-range content hash —
+    /// that content-integrity slice of #77 is still to land.
+    ///
+    /// Throws for RSA-PSS, ECDSA, unknown digest OIDs, or signatures
+    /// without signed_attrs.
     #[wasm_bindgen(js_name = "verify")]
     pub fn verify(&self) -> Result<bool, JsValue> {
-        Err(JsValue::from_str(
-            "Signature.verify() requires CMS/PKCS#7 verification (#72 slice 4, not yet landed)",
-        ))
+        let Some(contents) = self.info.contents.as_ref() else {
+            return Err(JsValue::from_str(
+                "Signature has no /Contents blob — nothing to verify",
+            ));
+        };
+        match crate::signatures::verify_signer(contents) {
+            Ok(crate::signatures::SignerVerify::Valid) => Ok(true),
+            Ok(crate::signatures::SignerVerify::Invalid) => Ok(false),
+            Ok(crate::signatures::SignerVerify::Unknown) => Err(JsValue::from_str(
+                "Signature.verify(): signer uses RSA-PSS, ECDSA, an unknown \
+                 digest OID, or the CMS blob lacks signed_attrs",
+            )),
+            Err(e) => Err(JsValue::from_str(&format!(
+                "Signature.verify(): failed to parse /Contents as CMS: {e}"
+            ))),
+        }
     }
 }
 

@@ -3084,8 +3084,21 @@ func (s *Signature) SigningTime() (int64, error) {
 	return int64(t), nil
 }
 
-// Verify cryptographically verifies the signature. Currently returns
-// ErrUnsupportedFeature until the Rust CMS slice lands (#72 slice 4).
+// Verify runs the RFC 5652 §5.4 signer-attributes RSA-PKCS#1 v1.5
+// crypto check against the certificate embedded in the signature's
+// CMS blob. Today it covers SHA-1 / SHA-256 / SHA-384 / SHA-512 —
+// the padding used by essentially every PDF signature in the wild.
+//
+// A true return proves the signer held the private key matching the
+// embedded certificate and that the signed-attribute bundle is
+// authentic. It does NOT yet verify the messageDigest attribute
+// against the document's byte-range content hash — that content-
+// integrity slice of #77 is still to land, so callers that care
+// about document tampering should additionally compare
+// messageDigest against their own content hash.
+//
+// Returns ErrUnsupportedFeature for RSA-PSS, ECDSA, unknown digest
+// OIDs, or CMS blobs missing signed_attrs.
 func (s *Signature) Verify() (bool, error) {
 	if s.handle == nil {
 		return false, ErrDocumentClosed

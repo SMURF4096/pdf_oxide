@@ -6,13 +6,15 @@ namespace PdfOxide.Core
 {
     /// <summary>
     /// A single existing digital signature on a PDF document, obtained
-    /// via <see cref="PdfDocument.Signatures"/>. Inspection-only for
-    /// now — <see cref="Verify"/> currently surfaces the not-yet-landed
-    /// CMS verification path as <see cref="UnsupportedFeatureException"/>.
+    /// via <see cref="PdfDocument.Signatures"/>.
     ///
-    /// Closes #384 audit gap D (#51) — the instance-level accessors and
-    /// document enumeration. Cryptographic verification and certificate
-    /// retrieval will arrive as later slices of #72.
+    /// Closes #384 audit gap D (#51). <see cref="Verify"/> now runs the
+    /// Rust-core RSA-PKCS#1 v1.5 signer-attribute crypto check for
+    /// SHA-1/256/384/512 signers; RSA-PSS and ECDSA still surface as
+    /// <see cref="UnsupportedFeatureException"/> until their verifiers
+    /// land. The <c>messageDigest</c> attribute vs document-bytes
+    /// check is a follow-up slice of #77 and is not yet performed on
+    /// this path.
     /// </summary>
     public sealed class Signature : IDisposable
     {
@@ -80,11 +82,31 @@ namespace PdfOxide.Core
         }
 
         /// <summary>
-        /// Cryptographically verify the signature.
-        /// Currently unsupported — requires the full PKCS#7 verification
-        /// path landing as a later slice of #72.
+        /// Run the RFC 5652 §5.4 signer-attributes crypto check against
+        /// the embedded signer certificate and return whether it
+        /// succeeded. Today this covers RSA-PKCS#1 v1.5 over SHA-1 /
+        /// SHA-256 / SHA-384 / SHA-512 — the padding used by
+        /// ~every PDF signature in the wild.
+        ///
+        /// <para>
+        /// A <c>true</c> result proves the signer held the private key
+        /// matching the embedded certificate and that the signed-attribute
+        /// bundle has not been tampered with. It does <b>not</b> yet
+        /// verify the <c>messageDigest</c> attribute against the raw
+        /// byte-range content of the PDF — that content-integrity
+        /// check is a follow-up slice of #77 and needs the document
+        /// bytes plumbed through the FFI. Until it lands, callers who
+        /// care about tampering of the document itself should also
+        /// compare the messageDigest attribute against their own
+        /// content hash.
+        /// </para>
         /// </summary>
-        /// <exception cref="UnsupportedFeatureException">Always, until Rust-core verify lands.</exception>
+        /// <returns><c>true</c> if the RSA-PKCS#1 v1.5 check succeeded;
+        /// <c>false</c> if it failed (wrong key or tampered attributes).</returns>
+        /// <exception cref="UnsupportedFeatureException">The signer
+        /// uses RSA-PSS, ECDSA, an unknown digest OID, or the CMS
+        /// structure lacks the signed attributes required for
+        /// verification.</exception>
         public bool Verify()
         {
             ThrowIfDisposed();
