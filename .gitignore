@@ -177,6 +177,12 @@ logs/
 .env.local
 .env.*.local
 
+# Secrets — keys and certs generated for local fixtures must never be committed
+*.pem
+*.key
+*.p12
+*.pfx
+
 # Docker
 .dockerignore
 
