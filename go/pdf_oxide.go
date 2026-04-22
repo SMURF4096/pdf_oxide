@@ -2986,6 +2986,142 @@ func (sig *SignatureInfo) Close() {
 	}
 }
 
+// Signature is a live handle to an existing PDF digital signature
+// returned by PdfDocument.Signatures. Close() must be called to
+// release the underlying native handle. Cryptographic Verify()
+// surfaces as ErrUnsupportedFeature until the Rust CMS slice lands
+// (#72 slice 4).
+type Signature struct {
+	handle unsafe.Pointer
+}
+
+// SignatureCount returns the number of existing digital signatures in
+// the document. Returns 0 when the PDF has no AcroForm or no signed
+// signature fields (not an error). Closes #384 gap D / #51 on the Go
+// side.
+func (doc *PdfDocument) SignatureCount() (int, error) {
+	if err := doc.acquireRead(); err != nil {
+		return 0, err
+	}
+	defer doc.mu.RUnlock()
+	var errorCode C.int
+	n := C.pdf_document_get_signature_count(doc.handle, &errorCode)
+	if errorCode != 0 {
+		return 0, ffiError(errorCode)
+	}
+	return int(n), nil
+}
+
+// Signatures returns a snapshot of every signature currently on the
+// document. Each Signature must be Close()d by the caller.
+func (doc *PdfDocument) Signatures() ([]*Signature, error) {
+	if err := doc.acquireRead(); err != nil {
+		return nil, err
+	}
+	defer doc.mu.RUnlock()
+	var errorCode C.int
+	n := C.pdf_document_get_signature_count(doc.handle, &errorCode)
+	if errorCode != 0 {
+		return nil, ffiError(errorCode)
+	}
+	out := make([]*Signature, 0, n)
+	for i := C.int32_t(0); i < n; i++ {
+		var e C.int
+		h := C.pdf_document_get_signature(doc.handle, i, &e)
+		if e != 0 {
+			for _, s := range out {
+				s.Close()
+			}
+			return nil, ffiError(e)
+		}
+		if h == nil {
+			for _, s := range out {
+				s.Close()
+			}
+			return nil, fmt.Errorf("pdf_oxide: pdf_document_get_signature(%d) returned null", i)
+		}
+		out = append(out, &Signature{handle: h})
+	}
+	return out, nil
+}
+
+// SignerName returns the /Name entry on the signature dictionary, or
+// an empty string if absent.
+func (s *Signature) SignerName() (string, error) {
+	return sigReadString(s.handle, func(h unsafe.Pointer, e *C.int) *C.char {
+		return C.pdf_signature_get_signer_name(h, e)
+	})
+}
+
+// Reason returns the /Reason entry on the signature dictionary, or an
+// empty string if absent.
+func (s *Signature) Reason() (string, error) {
+	return sigReadString(s.handle, func(h unsafe.Pointer, e *C.int) *C.char {
+		return C.pdf_signature_get_signing_reason(h, e)
+	})
+}
+
+// Location returns the /Location entry on the signature dictionary, or
+// an empty string if absent.
+func (s *Signature) Location() (string, error) {
+	return sigReadString(s.handle, func(h unsafe.Pointer, e *C.int) *C.char {
+		return C.pdf_signature_get_signing_location(h, e)
+	})
+}
+
+// SigningTime returns the signing time parsed from the /M entry as a
+// Unix epoch. Returns 0 when the /M entry is absent or unparseable.
+func (s *Signature) SigningTime() (int64, error) {
+	if s.handle == nil {
+		return 0, ErrDocumentClosed
+	}
+	var e C.int
+	t := C.pdf_signature_get_signing_time(s.handle, &e)
+	if e != 0 {
+		return 0, ffiError(e)
+	}
+	return int64(t), nil
+}
+
+// Verify cryptographically verifies the signature. Currently returns
+// ErrUnsupportedFeature until the Rust CMS slice lands (#72 slice 4).
+func (s *Signature) Verify() (bool, error) {
+	if s.handle == nil {
+		return false, ErrDocumentClosed
+	}
+	var e C.int
+	r := C.pdf_signature_verify(s.handle, &e)
+	if e != 0 {
+		return false, ffiError(e)
+	}
+	return r == 1, nil
+}
+
+// Close releases the underlying native signature handle. Safe to call
+// more than once.
+func (s *Signature) Close() {
+	if s.handle != nil {
+		C.pdf_signature_free(s.handle)
+		s.handle = nil
+	}
+}
+
+func sigReadString(h unsafe.Pointer, fn func(unsafe.Pointer, *C.int) *C.char) (string, error) {
+	if h == nil {
+		return "", ErrDocumentClosed
+	}
+	var e C.int
+	p := fn(h, &e)
+	if e != 0 {
+		return "", ffiError(e)
+	}
+	if p == nil {
+		return "", nil
+	}
+	defer C.free_string(p)
+	return C.GoString(p), nil
+}
+
 // ================================================================
 // io.Reader support
 // ================================================================
