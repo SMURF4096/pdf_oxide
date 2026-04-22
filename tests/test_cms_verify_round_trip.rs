@@ -9,11 +9,19 @@
 
 #![cfg(feature = "signatures")]
 
-use pdf_oxide::signatures::{verify_signer, SignerVerify};
+use pdf_oxide::signatures::{verify_signer, verify_signer_detached, SignerVerify};
 
 const VALID: &[u8] = include_bytes!("fixtures/signatures/rsa_sha256_round_trip.cms");
 const TAMPERED: &[u8] =
     include_bytes!("fixtures/signatures/rsa_sha256_round_trip_tampered.cms");
+
+// Detached-signature pair: `DETACHED` is the CMS blob, `DETACHED_CONTENT`
+// is the raw bytes that were fed to `openssl cms -sign -binary`. A
+// messageDigest signed attribute inside the blob binds to
+// `sha256(DETACHED_CONTENT)`.
+const DETACHED: &[u8] = include_bytes!("fixtures/signatures/rsa_sha256_detached.cms");
+const DETACHED_CONTENT: &[u8] =
+    include_bytes!("fixtures/signatures/rsa_sha256_detached_content.bin");
 
 #[test]
 fn rsa_sha256_round_trip_is_valid() {
@@ -23,6 +31,40 @@ fn rsa_sha256_round_trip_is_valid() {
         SignerVerify::Valid,
         "openssl cms -sign RSA/SHA-256 blob must verify against its embedded cert"
     );
+}
+
+#[test]
+fn detached_signature_verifies_with_matching_content() {
+    let result = verify_signer_detached(DETACHED, DETACHED_CONTENT).expect("parse detached");
+    assert_eq!(
+        result,
+        SignerVerify::Valid,
+        "detached RSA/SHA-256 blob must verify when given the exact signed content"
+    );
+}
+
+#[test]
+fn detached_signature_is_invalid_with_wrong_content() {
+    // Flip a single byte of the content — messageDigest must mismatch
+    // even though the signer-attribute crypto path still passes.
+    let mut tampered = DETACHED_CONTENT.to_vec();
+    tampered[0] ^= 0x01;
+    let result = verify_signer_detached(DETACHED, &tampered).expect("parse detached");
+    assert_eq!(
+        result,
+        SignerVerify::Invalid,
+        "wrong content must flip the verdict to Invalid via messageDigest mismatch"
+    );
+}
+
+#[test]
+fn detached_signature_verify_signer_alone_still_valid() {
+    // The signer-attributes crypto path doesn't depend on the detached
+    // content — it only proves authenticity of the attribute bundle.
+    // So plain `verify_signer` must still report Valid on the detached
+    // blob regardless of what the caller thinks the content is.
+    let result = verify_signer(DETACHED).expect("parse detached");
+    assert_eq!(result, SignerVerify::Valid);
 }
 
 #[test]

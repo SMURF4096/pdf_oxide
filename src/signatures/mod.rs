@@ -60,7 +60,7 @@ pub use byterange::ByteRangeCalculator;
 #[cfg(feature = "signatures")]
 pub use cms::extract_signer_certificate_der;
 #[cfg(feature = "signatures")]
-pub use cms_verify::{verify_signer, SignerVerify};
+pub use cms_verify::{verify_signer, verify_signer_detached, SignerVerify};
 pub use enumerate::{count_signatures, enumerate_signatures};
 pub use pdf_date::parse_pdf_date_to_epoch;
 #[cfg(feature = "signatures")]
