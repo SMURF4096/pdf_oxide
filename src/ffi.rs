@@ -2185,7 +2185,15 @@ pub extern "C" fn pdf_certificate_load_from_bytes(
         } else {
             unsafe { CStr::from_ptr(password) }.to_str().unwrap_or("")
         };
-        match crate::signatures::SigningCredentials::from_pkcs12(data, pwd) {
+        // Try PKCS#12 first (has a private key + cert chain). If that
+        // fails — today `from_pkcs12` is still stubbed — fall back to
+        // raw DER parsing so Certificate accessors work even without
+        // PKCS#12 support in Rust core. Closes #71 gap.
+        if let Ok(creds) = crate::signatures::SigningCredentials::from_pkcs12(data, pwd) {
+            set_error(error_code, ERR_SUCCESS);
+            return Box::into_raw(Box::new(creds)) as *mut std::ffi::c_void;
+        }
+        match crate::signatures::SigningCredentials::from_der(data.to_vec()) {
             Ok(creds) => {
                 set_error(error_code, ERR_SUCCESS);
                 Box::into_raw(Box::new(creds)) as *mut std::ffi::c_void
@@ -2198,6 +2206,7 @@ pub extern "C" fn pdf_certificate_load_from_bytes(
     }
     #[cfg(not(feature = "signatures"))]
     {
+        let _ = (cert_bytes, cert_len, password);
         set_error(error_code, _ERR_UNSUPPORTED);
         ptr::null_mut()
     }
@@ -2355,48 +2364,158 @@ pub extern "C" fn pdf_signature_get_certificate(
 
 #[no_mangle]
 pub extern "C" fn pdf_certificate_get_subject(
-    _cert: *const std::ffi::c_void,
+    cert: *const std::ffi::c_void,
     error_code: *mut i32,
 ) -> *mut c_char {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+    #[cfg(feature = "signatures")]
+    {
+        if cert.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let creds = unsafe { &*(cert as *const crate::signatures::SigningCredentials) };
+        match creds.subject() {
+            Ok(s) => {
+                set_error(error_code, ERR_SUCCESS);
+                to_c_string(&s)
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = cert;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_certificate_get_issuer(
-    _cert: *const std::ffi::c_void,
+    cert: *const std::ffi::c_void,
     error_code: *mut i32,
 ) -> *mut c_char {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+    #[cfg(feature = "signatures")]
+    {
+        if cert.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let creds = unsafe { &*(cert as *const crate::signatures::SigningCredentials) };
+        match creds.issuer() {
+            Ok(s) => {
+                set_error(error_code, ERR_SUCCESS);
+                to_c_string(&s)
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = cert;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_certificate_get_serial(
-    _cert: *const std::ffi::c_void,
+    cert: *const std::ffi::c_void,
     error_code: *mut i32,
 ) -> *mut c_char {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+    #[cfg(feature = "signatures")]
+    {
+        if cert.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let creds = unsafe { &*(cert as *const crate::signatures::SigningCredentials) };
+        match creds.serial() {
+            Ok(s) => {
+                set_error(error_code, ERR_SUCCESS);
+                to_c_string(&s)
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = cert;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_certificate_get_validity(
-    _cert: *const std::ffi::c_void,
-    _not_before: *mut i64,
-    _not_after: *mut i64,
+    cert: *const std::ffi::c_void,
+    not_before: *mut i64,
+    not_after: *mut i64,
     error_code: *mut i32,
 ) {
-    set_error(error_code, _ERR_UNSUPPORTED);
+    #[cfg(feature = "signatures")]
+    {
+        if cert.is_null() || not_before.is_null() || not_after.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return;
+        }
+        let creds = unsafe { &*(cert as *const crate::signatures::SigningCredentials) };
+        match creds.validity() {
+            Ok((nb, na)) => {
+                unsafe {
+                    *not_before = nb;
+                    *not_after = na;
+                }
+                set_error(error_code, ERR_SUCCESS);
+            },
+            Err(e) => set_error(error_code, classify_error(&e)),
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = (cert, not_before, not_after);
+        set_error(error_code, _ERR_UNSUPPORTED);
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_certificate_is_valid(
-    _cert: *const std::ffi::c_void,
+    cert: *const std::ffi::c_void,
     error_code: *mut i32,
 ) -> i32 {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    0
+    #[cfg(feature = "signatures")]
+    {
+        if cert.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return 0;
+        }
+        let creds = unsafe { &*(cert as *const crate::signatures::SigningCredentials) };
+        match creds.is_valid() {
+            Ok(v) => {
+                set_error(error_code, ERR_SUCCESS);
+                if v { 1 } else { 0 }
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                0
+            },
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = cert;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        0
+    }
 }
 
 #[no_mangle]
@@ -2408,7 +2527,22 @@ pub extern "C" fn pdf_signature_free(handle: *mut FfiSignatureInfo) {
     }
 }
 #[no_mangle]
-pub extern "C" fn pdf_certificate_free(_handle: *mut std::ffi::c_void) {}
+pub extern "C" fn pdf_certificate_free(handle: *mut std::ffi::c_void) {
+    #[cfg(feature = "signatures")]
+    {
+        if !handle.is_null() {
+            unsafe {
+                drop(Box::from_raw(
+                    handle as *mut crate::signatures::SigningCredentials,
+                ));
+            }
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = handle;
+    }
+}
 
 // ─── Rendering ──────────────────────────────────────────────────────────────
 

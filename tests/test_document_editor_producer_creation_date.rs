@@ -8,7 +8,7 @@
 //! real.
 
 use pdf_oxide::api::Pdf;
-use pdf_oxide::editor::{DocumentEditor, EditableDocument};
+use pdf_oxide::editor::DocumentEditor;
 
 fn make_doc() -> Vec<u8> {
     Pdf::from_text("hello").unwrap().into_bytes()
