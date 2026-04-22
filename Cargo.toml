@@ -2,6 +2,41 @@
 members = [".", "pdf_oxide_mcp", "pdf_oxide_cli"]
 exclude = ["js"]
 
+# cargo-shear exemptions: these optional deps are referenced from `[features]`
+# via `dep:X` and only link when their feature is on. cargo-shear reports them
+# as "unused" because the default feature set doesn't activate them.
+[workspace.metadata.cargo-shear]
+ignored = [
+    # Digital signatures stack (gated on `signatures` feature)
+    "cms",
+    "der",
+    "pkcs1",
+    "pkcs8",
+    "rsa",
+    "signature",
+    "spki",
+    "x509-parser",
+    # ML / table detection / OCR (gated on `ml`, `table-ml`, `ocr` features)
+    "imageproc",
+    "linfa",
+    "linfa-clustering",
+    "pdfium-render",
+    "tokenizers",
+    "tract-onnx",
+    # WASM-only runtime deps (gated on `wasm` feature)
+    "getrandom",
+    "getrandom_02",
+    "web-sys",
+]
+ignored-paths = [
+    # Runnable examples — not declared as [[example]] targets because they use
+    # `cargo run --manifest-path examples/rust/.../Cargo.toml` pattern.
+    "examples/rust/*/main.rs",
+    # Placeholder modules kept disabled for future work (see src/pipeline/mod.rs)
+    "src/pipeline/input_parsers/mod.rs",
+    "src/structure/builder.rs",
+]
+
 # Clippy lint configuration shared by every workspace member and every target
 # (lib, bin, test, example, bench). Keeps the allow-list in a single place so
 # new bin targets don't need their own #![allow] attributes. Mirrors the stance
@@ -65,7 +100,7 @@ workspace = true
 thiserror = "2.0"
 log = "0.4"
 env_logger = "0.11"
-chrono = "0.4"  # Timestamp generation for benchmark results
+chrono = "0.4"      # Timestamp generation for benchmark results
 
 # Parsing
 nom = "8.0"
@@ -74,27 +109,32 @@ lazy_static = "1.4"
 
 # Data structures
 bytes = "1.5"
-indexmap = "2.2"
-memchr = "2"     # SIMD-accelerated byte/substring search for content stream scanning
-byteorder = "1.5"  # For binary parsing (TrueType cmap tables)
-bitflags = "2"     # For form field flags
-smallvec = "1.13"  # Stack-allocated small vectors for content stream operands (#165)
+memchr = "2"      # SIMD-accelerated byte/substring search for content stream scanning
+byteorder = "1.5" # For binary parsing (TrueType cmap tables)
+bitflags = "2"    # For form field flags
+smallvec = "1.13" # Stack-allocated small vectors for content stream operands (#165)
 
 # Compression/Decompression
 flate2 = { version = "1.1", default-features = false, features = ["zlib-rs"] }
-weezl = "0.1"  # LZW compression
-brotli = "8"  # Brotli compression (PDF 2.0, ISO 32000-2:2020)
+weezl = "0.1"                                                                  # LZW compression
+brotli = "8"                                                                   # Brotli compression (PDF 2.0, ISO 32000-2:2020)
 
 # Font parsing
-ttf-parser = "0.25"  # TrueType font parser for embedded font cmap tables
-subsetter = "0.2"    # Binary TrueType/OpenType subsetting (Typst's; MIT/Apache). Used by writer-side
-                     # EmbeddedFont to shrink embedded fonts to only the glyphs actually used.
-taffy = { version = "0.10", default-features = false, features = ["std", "taffy_tree", "block_layout", "flexbox", "grid"] }
-unicode-linebreak = "0.1"  # UAX #14 line-break opportunities for the inline formatter (LAYOUT-3)
-                     # Block/flex/grid layout (Dioxus; MIT, no MPL). Used by Phase LAYOUT to position
-                     # box tree nodes; inline formatting is ours (Phase LAYOUT inline_formatting module).
-phf = { version = "0.13", features = ["macros"] }  # Perfect hash maps for Adobe Glyph List
-encoding_rs = "0.8"  # Shift-JIS, EUC-JP, and other CJK encodings for predefined CMaps
+ttf-parser = "0.25" # TrueType font parser for embedded font cmap tables
+subsetter = "0.2"   # Binary TrueType/OpenType subsetting (Typst's; MIT/Apache). Used by writer-side
+# EmbeddedFont to shrink embedded fonts to only the glyphs actually used.
+taffy = { version = "0.10", default-features = false, features = [
+    "std",
+    "taffy_tree",
+    "block_layout",
+    "flexbox",
+    "grid",
+] }
+unicode-linebreak = "0.1" # UAX #14 line-break opportunities for the inline formatter (LAYOUT-3)
+# Block/flex/grid layout (Dioxus; MIT, no MPL). Used by Phase LAYOUT to position
+# box tree nodes; inline formatting is ours (Phase LAYOUT inline_formatting module).
+phf = { version = "0.13", features = ["macros"] } # Perfect hash maps for Adobe Glyph List
+encoding_rs = "0.8"                               # Shift-JIS, EUC-JP, and other CJK encodings for predefined CMaps
 
 # Unicode bidirectional algorithm (UAX #9) — used by both the HTML+CSS
 # inline formatter (Phase LAYOUT-3) and the markdown converter's RTL
@@ -103,28 +143,27 @@ unicode-bidi = { version = "0.3", default-features = false }
 
 # Image processing
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "tiff"] }
-jpeg-decoder = "0.3"  # Direct decoder access for CMYK JPEGs (Adobe inversion handling)
-base64 = "0.22"  # For embedding images as data URIs
-tiff = "0.11"  # TIFF support including CCITT decompression
-fax = "0.2"   # CCITT Group 3/4 decompression for scanned PDFs (more lenient with malformed EOFB)
+jpeg-decoder = "0.3"                                                                       # Direct decoder access for CMYK JPEGs (Adobe inversion handling)
+base64 = "0.22"                                                                            # For embedding images as data URIs
+fax = "0.2"                                                                                # CCITT Group 3/4 decompression for scanned PDFs (more lenient with malformed EOFB)
 
 # Encryption support
-aes = "0.9"          # AES encryption for PDF 1.6+
-cbc = "0.2"          # CBC mode for AES
-md-5 = "0.11"        # MD5 for key derivation
-sha2 = "0.11"        # SHA-256 for newer encryption
-stringprep = "0.1"   # SASLprep for Unicode PDF passwords (R>=5)
+aes = "0.9"        # AES encryption for PDF 1.6+
+cbc = "0.2"        # CBC mode for AES
+md-5 = "0.11"      # MD5 for key derivation
+sha2 = "0.11"      # SHA-256 for newer encryption
+stringprep = "0.1" # SASLprep for Unicode PDF passwords (R>=5)
 
 # Digital signatures (optional)
-x509-parser = { version = "0.18", optional = true }  # X.509 certificate parsing
-cms = { version = "0.2", optional = true }            # CMS/PKCS#7 signatures
-rsa = { version = "0.9", optional = true }            # RSA signing
-der = { version = "0.8", optional = true }            # DER encoding
-spki = { version = "0.8", optional = true }           # SubjectPublicKeyInfo
-pkcs1 = { version = "0.7", optional = true }          # PKCS#1 RSA format
-pkcs8 = { version = "0.10", optional = true }         # PKCS#8 private keys
-signature = { version = "2.2", optional = true }      # Signature traits
-sha1 = { version = "0.11", optional = true }          # SHA-1 for legacy signatures
+x509-parser = { version = "0.18", optional = true } # X.509 certificate parsing
+cms = { version = "0.2", optional = true }          # CMS/PKCS#7 signatures
+rsa = { version = "0.9", optional = true }          # RSA signing
+der = { version = "0.8", optional = true }          # DER encoding
+spki = { version = "0.8", optional = true }         # SubjectPublicKeyInfo
+pkcs1 = { version = "0.7", optional = true }        # PKCS#1 RSA format
+pkcs8 = { version = "0.10", optional = true }       # PKCS#8 private keys
+signature = { version = "2.2", optional = true }    # Signature traits
+sha1 = { version = "0.11", optional = true }        # SHA-1 for legacy signatures
 
 # Parallel extraction
 rayon = { version = "1.12", optional = true }
@@ -192,8 +231,6 @@ zip = { version = "8.5", optional = true, default-features = false, features = [
 
 [dev-dependencies]
 criterion = "0.8"
-proptest = "1.10"
-regex = "1.12"
 tempfile = "3.27"
 crc32fast = "1.3"
 wasm-bindgen-test = "0.3"
@@ -212,7 +249,16 @@ logging = []
 icc = ["dep:qcms"]
 
 # Python bindings (v0.1.0)
-python = ["pyo3", "pyo3-log", "rendering", "parallel", "logging", "signatures", "barcodes", "office"]
+python = [
+    "pyo3",
+    "pyo3-log",
+    "rendering",
+    "parallel",
+    "logging",
+    "signatures",
+    "barcodes",
+    "office",
+]
 
 # The following features are planned for v1.0 and are not yet production-ready.
 # We define them here to avoid check-cfg warnings, but their dependencies are commented out.
@@ -220,7 +266,20 @@ ml = ["dep:tract-onnx", "dep:ndarray", "dep:linfa", "dep:linfa-clustering", "dep
 table-ml = ["ml", "dep:pdfium-render"]
 ocr = ["dep:ort", "dep:imageproc", "dep:ndarray"]
 gpu = ["dep:ort", "ml"]
-wasm = ["dep:wasm-bindgen", "dep:web-sys", "dep:js-sys", "dep:console_error_panic_hook", "dep:console_log", "dep:getrandom", "dep:getrandom_02", "dep:serde-wasm-bindgen", "logging", "signatures", "barcodes", "office"]
+wasm = [
+    "dep:wasm-bindgen",
+    "dep:web-sys",
+    "dep:js-sys",
+    "dep:console_error_panic_hook",
+    "dep:console_log",
+    "dep:getrandom",
+    "dep:getrandom_02",
+    "dep:serde-wasm-bindgen",
+    "logging",
+    "signatures",
+    "barcodes",
+    "office",
+]
 wasm-ml = ["wasm", "ml"]
 
 # Debug feature for span merging analysis
@@ -236,7 +295,17 @@ rendering = ["dep:tiny-skia", "system-fonts"]
 system-fonts = ["dep:fontdb", "dep:rustybuzz"]
 
 # Digital signatures (create and verify PDF signatures)
-signatures = ["dep:x509-parser", "dep:cms", "dep:rsa", "dep:der", "dep:spki", "dep:pkcs1", "dep:pkcs8", "dep:signature", "dep:sha1"]
+signatures = [
+    "dep:x509-parser",
+    "dep:cms",
+    "dep:rsa",
+    "dep:der",
+    "dep:spki",
+    "dep:pkcs1",
+    "dep:pkcs8",
+    "dep:signature",
+    "dep:sha1",
+]
 
 # Barcode/QR code generation
 barcodes = ["dep:qrcode", "dep:barcoders"]

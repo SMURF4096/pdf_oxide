@@ -15,6 +15,12 @@ categories = ["command-line-utilities", "text-processing"]
 name = "pdf-oxide"
 path = "src/main.rs"
 
+# src/lib.rs exists only so the CLI can share modules between bin and unit tests.
+# It has no user-facing API and no doctests, so disable doctest collection to
+# keep cargo-shear + cargo doc noise-free.
+[lib]
+doctest = false
+
 [lints]
 workspace = true
 
@@ -23,7 +29,6 @@ pdf_oxide = { version = "0.3.33", path = "..", features = ["rendering", "logging
 clap = { version = "4", features = ["derive"] }
 is-terminal = "0.4"
 serde_json = "1.0"
-serde = { version = "1.0", features = ["derive"] }
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/pdf_oxide-{ target }-{ version }.tar.gz"
@@ -55,6 +60,4 @@ copyright = "2025-2026, Yury Fedoseev"
 depends = "$auto"
 section = "utility"
 priority = "optional"
-assets = [
-    ["target/release/pdf-oxide", "usr/bin/", "755"],
-]
+assets = [["target/release/pdf-oxide", "usr/bin/", "755"]]
