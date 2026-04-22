@@ -125,11 +125,14 @@ namespace PdfOxide.Core
         /// <summary>
         /// Opens a PDF document from a stream.
         /// </summary>
+        /// <remarks>
+        /// If the PDF is already in memory as a <see cref="byte"/>[] or
+        /// <see cref="ReadOnlySpan{T}"/>, prefer the dedicated overloads —
+        /// they skip the intermediate <see cref="MemoryStream"/> copy this
+        /// overload has to make to produce a contiguous buffer for the FFI.
+        /// </remarks>
         /// <param name="stream">The stream containing PDF data.</param>
         /// <returns>An opened PdfDocument.</returns>
-        /// <exception cref="ArgumentNullException">Thrown if <paramref name="stream"/> is null.</exception>
-        /// <exception cref="PdfIoException">Thrown if the stream cannot be read.</exception>
-        /// <exception cref="PdfParseException">Thrown if the PDF is invalid.</exception>
         public static PdfDocument Open(Stream stream)
         {
             if (stream == null)
@@ -142,12 +145,62 @@ namespace PdfOxide.Core
                 data = ms.ToArray();
             }
 
+            return Open(data);
+        }
+
+        /// <summary>
+        /// Opens a PDF document from a byte array.
+        /// </summary>
+        /// <remarks>
+        /// Forwards <paramref name="data"/> directly to the FFI without the
+        /// <see cref="MemoryStream"/> copy the <see cref="Open(Stream)"/>
+        /// overload has to make.
+        /// </remarks>
+        /// <param name="data">The PDF bytes. Must be non-null and non-empty.</param>
+        /// <returns>An opened PdfDocument.</returns>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="data"/> is null.</exception>
+        /// <exception cref="ArgumentException">Thrown if <paramref name="data"/> is empty.</exception>
+        public static PdfDocument Open(byte[] data)
+        {
+            if (data == null)
+                throw new ArgumentNullException(nameof(data));
+            if (data.Length == 0)
+                throw new ArgumentException("PDF byte array must not be empty.", nameof(data));
+
             var handle = NativeMethods.PdfDocumentOpenFromBytes(data, data.Length, out var errorCode);
             if (handle.IsInvalid)
             {
                 ExceptionMapper.ThrowIfError(errorCode);
             }
+            return new PdfDocument(handle);
+        }
 
+        /// <summary>
+        /// Opens a PDF document from a <see cref="ReadOnlySpan{T}"/> of bytes.
+        /// </summary>
+        /// <remarks>
+        /// Zero-copy entry point: LibraryImport pins the span while the FFI
+        /// call is in flight, so no managed-array allocation or
+        /// <see cref="MemoryStream"/> hop is involved. Use when the PDF is
+        /// already materialised in an un-pinned buffer you don't want to
+        /// duplicate.
+        /// </remarks>
+        /// <param name="data">The PDF bytes. Must be non-empty.</param>
+        /// <returns>An opened PdfDocument.</returns>
+        /// <exception cref="ArgumentException">Thrown if <paramref name="data"/> is empty.</exception>
+        public static PdfDocument Open(ReadOnlySpan<byte> data)
+        {
+            if (data.IsEmpty)
+                throw new ArgumentException("PDF byte span must not be empty.", nameof(data));
+
+            var handle = NativeMethods.PdfDocumentOpenFromBytesRef(
+                ref System.Runtime.InteropServices.MemoryMarshal.GetReference(data),
+                data.Length,
+                out var errorCode);
+            if (handle.IsInvalid)
+            {
+                ExceptionMapper.ThrowIfError(errorCode);
+            }
             return new PdfDocument(handle);
         }
 

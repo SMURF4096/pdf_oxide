@@ -44,6 +44,20 @@ namespace PdfOxide.Internal
             out int errorCode);
 
         /// <summary>
+        /// Zero-copy overload of <c>pdf_document_open_from_bytes</c> that accepts a
+        /// pinned-byte reference instead of a managed array. Used by
+        /// <see cref="PdfOxide.Core.PdfDocument.Open(System.ReadOnlySpan{byte})"/>
+        /// to forward a <see cref="System.ReadOnlySpan{T}"/> without the
+        /// <see cref="System.IO.MemoryStream"/> hop the Stream overload takes.
+        /// </summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_document_open_from_bytes", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial NativeHandle PdfDocumentOpenFromBytesRef(
+            ref byte data,
+            int length,
+            out int errorCode);
+
+        /// <summary>
         /// Frees a PdfDocument handle.
         /// </summary>
         /// <param name="handle">The handle to free.</param>
