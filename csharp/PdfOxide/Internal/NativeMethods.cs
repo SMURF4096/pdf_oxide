@@ -2145,6 +2145,88 @@ namespace PdfOxide.Internal
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial void PdfBarcodeFree(IntPtr handle);
 
+        // #384 gap I: PdfValidator wrappers (Pascal-case, consistent
+        // IntPtr handles). EntryPoint overrides let these coexist with
+        // the divergent legacy declarations earlier in the file.
+        [LibraryImport(LibName, EntryPoint = "pdf_validate_pdf_a_level", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr PdfValidatePdfALevel(IntPtr document, int level, out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_pdf_a_is_compliant", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static partial bool PdfPdfAIsCompliant(IntPtr results, out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_pdf_a_error_count", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPdfAErrorCount(IntPtr results);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_pdf_a_warning_count", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPdfAWarningCount(IntPtr results);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_pdf_a_get_error", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr PdfPdfAGetError(IntPtr results, int index, out int errorCode);
+
+        // NOTE: Rust core exposes pdf_pdf_a_warning_count but no
+        // pdf_pdf_a_get_warning today — PDF/A messages only surface as
+        // errors. We read the count for parity and leave the list empty.
+
+        [LibraryImport(LibName, EntryPoint = "pdf_pdf_a_results_free", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial void PdfPdfAResultsFree(IntPtr results);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_validate_pdf_x_level", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr PdfValidatePdfXLevel(IntPtr document, int level, out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_pdf_x_is_compliant", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static partial bool PdfPdfXIsCompliant(IntPtr results, out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_pdf_x_error_count", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPdfXErrorCount(IntPtr results);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_pdf_x_get_error", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr PdfPdfXGetError(IntPtr results, int index, out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_pdf_x_results_free", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial void PdfPdfXResultsFree(IntPtr results);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_validate_pdf_ua", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr PdfValidatePdfUa(IntPtr document, int level, out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_pdf_ua_is_accessible", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static partial bool PdfPdfUaIsAccessible(IntPtr results, out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_pdf_ua_error_count", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPdfUaErrorCount(IntPtr results);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_pdf_ua_warning_count", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPdfUaWarningCount(IntPtr results);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_pdf_ua_get_error", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr PdfPdfUaGetError(IntPtr results, int index, out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_pdf_ua_get_warning", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr PdfPdfUaGetWarning(IntPtr results, int index, out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_pdf_ua_results_free", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial void PdfPdfUaResultsFree(IntPtr results);
+
         /// <summary>
         /// Frees a barcode image handle.
         /// </summary>
