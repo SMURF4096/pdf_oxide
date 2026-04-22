@@ -5107,6 +5107,10 @@ namespace PdfOxide.Internal
 
         [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr pdf_timestamp_parse(IntPtr bytes, UIntPtr len, out int errorCode);
+
+        [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial IntPtr pdf_timestamp_get_token(IntPtr timestampHandle, out UIntPtr outLen, out int errorCode);
 
         [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
