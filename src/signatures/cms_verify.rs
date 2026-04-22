@@ -23,21 +23,26 @@
 
 #![cfg(feature = "signatures")]
 
+use super::crypto::{
+    digest_info_prefix, hash_with_oid, is_rsa_pkcs1v15_sig_oid, OID_RSA_ENCRYPTION,
+};
 use crate::error::{Error, Result};
 use cms::cert::x509::Certificate;
 use cms::cert::CertificateChoices;
 use cms::content_info::ContentInfo;
 use cms::signed_data::{SignedData, SignerIdentifier, SignerInfo};
 use der::asn1::OctetString;
-use der::oid::db::rfc5912::{ID_SHA_1, ID_SHA_256, ID_SHA_384, ID_SHA_512};
 use der::oid::ObjectIdentifier;
 use der::{Decode, Encode};
 use rsa::pkcs8::DecodePublicKey;
 use rsa::{Pkcs1v15Sign, RsaPublicKey};
-use sha1::Sha1;
-use sha2::{Digest, Sha256, Sha384, Sha512};
 
 /// Outcome of a `verify_signer*` call.
+///
+/// Marked `#[must_use]` because silently dropping the verdict would
+/// hide both `Invalid` (tampering / wrong key) and `Unknown` (algo
+/// not supported yet) — either of which callers need to react to.
+#[must_use]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SignerVerify {
     /// Every check we ran succeeded:
@@ -64,84 +69,11 @@ pub enum SignerVerify {
     Unknown,
 }
 
-// PKCS#1 v1.5 `DigestInfo` prefixes (RFC 8017 §9.2 "EMSA-PKCS1-v1_5").
-// Each is the DER encoding of `DigestInfo { digestAlgorithm, OCTET STRING }`
-// with an empty OCTET STRING; the hash bytes are appended at the end.
-const DIGEST_INFO_SHA1: &[u8] = &[
-    0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e, 0x03, 0x02, 0x1a, 0x05, 0x00, 0x04, 0x14,
-];
-const DIGEST_INFO_SHA256: &[u8] = &[
-    0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01,
-    0x05, 0x00, 0x04, 0x20,
-];
-const DIGEST_INFO_SHA384: &[u8] = &[
-    0x30, 0x41, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x02,
-    0x05, 0x00, 0x04, 0x30,
-];
-const DIGEST_INFO_SHA512: &[u8] = &[
-    0x30, 0x51, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03,
-    0x05, 0x00, 0x04, 0x40,
-];
-
-// rsaEncryption OID (1.2.840.113549.1.1.1) — the key-type OID that
-// appears in a certificate's SubjectPublicKeyInfo. Distinct from the
-// signatureAlgorithm OID on the SignerInfo, which names the padding +
-// hash (e.g. sha256WithRSAEncryption, 1.2.840.113549.1.1.11).
-const OID_RSA_ENCRYPTION: ObjectIdentifier =
-    ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.1");
-
-// PKCS#1 v1.5 signature OIDs — a cert signed with any of these uses
-// RSA + PKCS#1 v1.5 padding and the indicated hash. The hash is also
-// redundantly named by `signer.digest_alg`, so we drive off that and
-// only use this set to recognise "this is an RSA-PKCS1v15 signer".
-const OID_SHA1_RSA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.5");
-const OID_SHA256_RSA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
-const OID_SHA384_RSA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.12");
-const OID_SHA512_RSA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.13");
-// rsaEncryption also shows up as a signatureAlgorithm in some PDFs —
-// treated as "use the digest from digest_alg".
-const OID_RSA_SIG_GENERIC: ObjectIdentifier = OID_RSA_ENCRYPTION;
-
 // id-messageDigest (RFC 5652 §11.2) — the signed attribute that
-// carries hash(content).
+// carries hash(content). Local to this module because no other
+// consumer looks at signed attributes by OID.
 const OID_MESSAGE_DIGEST: ObjectIdentifier =
     ObjectIdentifier::new_unwrap("1.2.840.113549.1.9.4");
-
-fn digest_info_prefix(oid: ObjectIdentifier) -> Option<&'static [u8]> {
-    if oid == ID_SHA_1 {
-        Some(DIGEST_INFO_SHA1)
-    } else if oid == ID_SHA_256 {
-        Some(DIGEST_INFO_SHA256)
-    } else if oid == ID_SHA_384 {
-        Some(DIGEST_INFO_SHA384)
-    } else if oid == ID_SHA_512 {
-        Some(DIGEST_INFO_SHA512)
-    } else {
-        None
-    }
-}
-
-fn hash_with_oid(oid: ObjectIdentifier, msg: &[u8]) -> Option<Vec<u8>> {
-    if oid == ID_SHA_1 {
-        Some(Sha1::digest(msg).to_vec())
-    } else if oid == ID_SHA_256 {
-        Some(Sha256::digest(msg).to_vec())
-    } else if oid == ID_SHA_384 {
-        Some(Sha384::digest(msg).to_vec())
-    } else if oid == ID_SHA_512 {
-        Some(Sha512::digest(msg).to_vec())
-    } else {
-        None
-    }
-}
-
-fn is_rsa_pkcs1v15_sig_oid(oid: ObjectIdentifier) -> bool {
-    oid == OID_SHA1_RSA
-        || oid == OID_SHA256_RSA
-        || oid == OID_SHA384_RSA
-        || oid == OID_SHA512_RSA
-        || oid == OID_RSA_SIG_GENERIC
-}
 
 /// Find the certificate whose issuer+serial (or SKI) matches the
 /// `SignerInfo.sid`. PDF signatures usually embed exactly one cert and

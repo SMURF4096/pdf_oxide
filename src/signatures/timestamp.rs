@@ -15,7 +15,6 @@
 use crate::error::{Error, Result};
 use cms::cert::x509::ext::pkix::name::GeneralName;
 use cms::signed_data::SignedData;
-use der::oid::db::rfc5912::{ID_SHA_1, ID_SHA_256, ID_SHA_384, ID_SHA_512};
 use der::{Decode, Encode};
 use x509_tsp::TstInfo;
 
@@ -100,18 +99,7 @@ impl Timestamp {
 
     /// Hash algorithm of the message imprint.
     pub fn hash_algorithm(&self) -> HashAlgorithm {
-        let oid = self.tst.message_imprint.hash_algorithm.oid;
-        if oid == ID_SHA_256 {
-            HashAlgorithm::Sha256
-        } else if oid == ID_SHA_384 {
-            HashAlgorithm::Sha384
-        } else if oid == ID_SHA_512 {
-            HashAlgorithm::Sha512
-        } else if oid == ID_SHA_1 {
-            HashAlgorithm::Sha1
-        } else {
-            HashAlgorithm::Unknown
-        }
+        super::crypto::hash_algorithm_from_oid(self.tst.message_imprint.hash_algorithm.oid)
     }
 
     /// The raw message-imprint hash bytes (cloned).

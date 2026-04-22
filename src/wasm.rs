@@ -1378,7 +1378,7 @@ impl WasmSignature {
     /// without signed_attrs.
     #[wasm_bindgen(js_name = "verify")]
     pub fn verify(&self) -> Result<bool, JsValue> {
-        let Some(contents) = self.info.contents.as_ref() else {
+        let Some(contents) = self.info.contents() else {
             return Err(JsValue::from_str(
                 "Signature has no /Contents blob — nothing to verify",
             ));
@@ -1410,22 +1410,18 @@ impl WasmSignature {
     /// missing `signed_attrs` / `messageDigest`.
     #[wasm_bindgen(js_name = "verifyDetached")]
     pub fn verify_detached(&self, pdf_data: &[u8]) -> Result<bool, JsValue> {
-        let Some(contents) = self.info.contents.as_ref() else {
+        let Some(contents) = self.info.contents() else {
             return Err(JsValue::from_str(
                 "Signature has no /Contents blob — nothing to verify",
             ));
         };
-        if self.info.byte_range.len() != 4 {
+        let br = self.info.byte_range();
+        if br.len() != 4 {
             return Err(JsValue::from_str(
                 "Signature has no /ByteRange — cannot extract signed bytes",
             ));
         }
-        let byte_range: [i64; 4] = [
-            self.info.byte_range[0],
-            self.info.byte_range[1],
-            self.info.byte_range[2],
-            self.info.byte_range[3],
-        ];
+        let byte_range: [i64; 4] = [br[0], br[1], br[2], br[3]];
         let signed_bytes =
             crate::signatures::ByteRangeCalculator::extract_signed_bytes(pdf_data, &byte_range)
                 .map_err(|e| {

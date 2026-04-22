@@ -2320,7 +2320,7 @@ pub extern "C" fn pdf_signature_verify(
             return -1;
         }
         let ffi = unsafe { &*(signature_handle as *const FfiSignatureInfo) };
-        let Some(contents) = ffi.info.contents.as_ref() else {
+        let Some(contents) = ffi.info.contents() else {
             set_error(error_code, _ERR_UNSUPPORTED);
             return -1;
         };
@@ -2381,20 +2381,16 @@ pub extern "C" fn pdf_signature_verify_detached(
             return -1;
         }
         let ffi = unsafe { &*(signature_handle as *const FfiSignatureInfo) };
-        let Some(contents) = ffi.info.contents.as_ref() else {
+        let Some(contents) = ffi.info.contents() else {
             set_error(error_code, _ERR_UNSUPPORTED);
             return -1;
         };
-        if ffi.info.byte_range.len() != 4 {
+        let br = ffi.info.byte_range();
+        if br.len() != 4 {
             set_error(error_code, ERR_INVALID_ARG);
             return -1;
         }
-        let byte_range: [i64; 4] = [
-            ffi.info.byte_range[0],
-            ffi.info.byte_range[1],
-            ffi.info.byte_range[2],
-            ffi.info.byte_range[3],
-        ];
+        let byte_range: [i64; 4] = [br[0], br[1], br[2], br[3]];
         let pdf_slice = unsafe { std::slice::from_raw_parts(pdf_data, pdf_len) };
         let signed_bytes = match crate::signatures::ByteRangeCalculator::extract_signed_bytes(
             pdf_slice,

@@ -341,7 +341,30 @@ pub struct SignatureInfo {
     /// retained so that later accessors (signer certificate, verify)
     /// can parse it on demand. `None` when the signature dictionary
     /// had no `/Contents` entry (blank signature field).
+    ///
+    /// Prefer [`SignatureInfo::contents`] (the accessor) over touching
+    /// this field directly — the field layout is not a stable part of
+    /// the public API.
     pub contents: Option<Vec<u8>>,
+}
+
+impl SignatureInfo {
+    /// Borrowed view of the raw PKCS#7/CMS SignedData blob from the
+    /// signature dictionary's `/Contents` entry. Returns `None` when
+    /// the dictionary had no `/Contents`.
+    ///
+    /// This is the FFI-stable way to get at the signed bytes — use it
+    /// instead of reaching for the `contents` field, whose backing
+    /// storage may change.
+    pub fn contents(&self) -> Option<&[u8]> {
+        self.contents.as_deref()
+    }
+
+    /// Borrowed view of the signature's `/ByteRange` array. Empty when
+    /// the signature is a blank field.
+    pub fn byte_range(&self) -> &[i64] {
+        &self.byte_range
+    }
 }
 
 /// Result of signature verification.

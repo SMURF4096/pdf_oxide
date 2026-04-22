@@ -7,9 +7,6 @@ use super::types::{SignatureInfo, SignatureSubFilter, VerificationResult, Verifi
 use crate::error::{Error, Result};
 use crate::object::Object;
 
-#[cfg(feature = "signatures")]
-use sha2::{Digest, Sha256};
-
 /// Verifier for PDF digital signatures.
 pub struct SignatureVerifier {
     /// Trusted root certificates (DER-encoded)
@@ -105,9 +102,17 @@ impl SignatureVerifier {
         Ok(info)
     }
 
-    /// Verify a signature.
+    /// Verify a signature end-to-end.
     ///
-    /// This performs full cryptographic verification of the signature.
+    /// Runs the RSA-PKCS#1 v1.5 signer-attributes check and the
+    /// `messageDigest` content-integrity check (via
+    /// [`crate::signatures::verify_signer_detached`]), then enriches
+    /// the result with certificate trust, expiration, and DN metadata
+    /// extracted from the embedded signer certificate.
+    ///
+    /// Digest algorithm is driven by the CMS blob's `signer.digest_alg`
+    /// (SHA-1 / SHA-256 / SHA-384 / SHA-512), so PDFs that don't use
+    /// SHA-256 — still common with PAdES — are covered.
     #[cfg(feature = "signatures")]
     pub fn verify(
         &self,
@@ -120,7 +125,6 @@ impl SignatureVerifier {
             ..VerificationResult::default()
         };
 
-        // Validate ByteRange
         if result.signature_info.byte_range.len() != 4 {
             result.status = VerificationStatus::Invalid;
             result
@@ -136,7 +140,6 @@ impl SignatureVerifier {
             result.signature_info.byte_range[3],
         ];
 
-        // Validate ByteRange covers entire document
         if let Err(e) = ByteRangeCalculator::validate_byte_range(&byte_range, pdf_data.len()) {
             result.status = VerificationStatus::Invalid;
             result.document_modified = true;
@@ -146,62 +149,77 @@ impl SignatureVerifier {
             return Ok(result);
         }
 
-        // Extract signed bytes
         let signed_bytes = ByteRangeCalculator::extract_signed_bytes(pdf_data, &byte_range)?;
 
-        // Compute digest of signed bytes
-        let computed_digest = {
-            let mut hasher = Sha256::new();
-            hasher.update(&signed_bytes);
-            hasher.finalize().to_vec()
-        };
-
-        // Verify the PKCS#7 signature
-        // This would use the cms crate to parse and verify the signature
-        let verification_result = self.verify_pkcs7(contents, &computed_digest);
-
-        match verification_result {
-            Ok(cert_info) => {
+        match super::cms_verify::verify_signer_detached(contents, &signed_bytes) {
+            Ok(super::cms_verify::SignerVerify::Valid) => {
                 result.status = VerificationStatus::Valid;
-                result.signature_info.certificate_cn = Some(cert_info.common_name);
-                result.signature_info.certificate_issuer = Some(cert_info.issuer);
-
-                // Check certificate trust
-                result.certificate_trusted = self.is_certificate_trusted(&cert_info.cert_der);
-                if !result.certificate_trusted {
-                    result.status = VerificationStatus::Unknown;
-                    result
-                        .messages
-                        .push("Certificate is not trusted".to_string());
-                }
-
-                // Check certificate expiration
-                result.certificate_expired = cert_info.is_expired;
-                if result.certificate_expired {
-                    result.status = VerificationStatus::ValidWithWarnings;
-                    result.messages.push("Certificate has expired".to_string());
-                }
+                self.enrich_with_cert_metadata(contents, &mut result);
+            },
+            Ok(super::cms_verify::SignerVerify::Invalid) => {
+                result.status = VerificationStatus::Invalid;
+                result.messages.push(
+                    "Signature verification failed: signer crypto or messageDigest did not \
+                     match (wrong key or tampered content)"
+                        .to_string(),
+                );
+            },
+            Ok(super::cms_verify::SignerVerify::Unknown) => {
+                result.status = VerificationStatus::Unknown;
+                result.messages.push(
+                    "Signature could not be verified: signer uses an algorithm the verifier \
+                     does not yet support (RSA-PSS / ECDSA) or the CMS blob lacks signed \
+                     attributes"
+                        .to_string(),
+                );
             },
             Err(e) => {
                 result.status = VerificationStatus::Invalid;
                 result
                     .messages
-                    .push(format!("Signature verification failed: {}", e));
+                    .push(format!("Signature verification failed: {e}"));
             },
         }
 
         Ok(result)
     }
 
-    /// Verify a PKCS#7 signature structure.
+    /// Extract signer-cert metadata (CN, issuer, trust flag, expiry) from
+    /// the CMS blob and stamp it into the result. Non-fatal: a cert that
+    /// can't be parsed just leaves the fields at default and does not
+    /// demote a `Valid` verdict.
     #[cfg(feature = "signatures")]
-    fn verify_pkcs7(&self, _pkcs7_data: &[u8], _expected_digest: &[u8]) -> Result<CertificateInfo> {
-        // TODO: Implement PKCS#7 verification using:
-        // - cms::signed_data::SignedData::from_der()
-        // - x509_parser for certificate parsing
-        // - rsa for RSA signature verification
+    fn enrich_with_cert_metadata(&self, contents: &[u8], result: &mut VerificationResult) {
+        let Ok(cert_der) = super::cms::extract_signer_certificate_der(contents) else {
+            return;
+        };
+        use x509_parser::prelude::*;
+        let Ok((_, cert)) = X509Certificate::from_der(&cert_der) else {
+            return;
+        };
 
-        Err(Error::InvalidPdf("Full PKCS#7 verification not yet implemented".to_string()))
+        result.signature_info.certificate_cn = Some(cert.subject().to_string());
+        result.signature_info.certificate_issuer = Some(cert.issuer().to_string());
+
+        result.certificate_trusted = self.is_certificate_trusted(&cert_der);
+        if !result.certificate_trusted {
+            result.status = VerificationStatus::Unknown;
+            result
+                .messages
+                .push("Certificate is not trusted".to_string());
+        }
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let na = cert.validity().not_after.timestamp();
+        let nb = cert.validity().not_before.timestamp();
+        result.certificate_expired = now > na || now < nb;
+        if result.certificate_expired && result.status == VerificationStatus::Valid {
+            result.status = VerificationStatus::ValidWithWarnings;
+            result.messages.push("Certificate has expired".to_string());
+        }
     }
 
     /// Check if a certificate is in the trusted roots.
@@ -229,14 +247,6 @@ impl Default for SignatureVerifier {
     }
 }
 
-/// Certificate information extracted during verification.
-#[cfg(feature = "signatures")]
-struct CertificateInfo {
-    common_name: String,
-    issuer: String,
-    cert_der: Vec<u8>,
-    is_expired: bool,
-}
 
 #[cfg(test)]
 mod tests {

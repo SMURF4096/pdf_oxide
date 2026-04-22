@@ -46,6 +46,8 @@ mod byterange;
 mod cms;
 #[cfg(feature = "signatures")]
 mod cms_verify;
+#[cfg(feature = "signatures")]
+mod crypto;
 mod enumerate;
 mod pdf_date;
 mod signer;

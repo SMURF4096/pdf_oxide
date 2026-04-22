@@ -17,10 +17,7 @@ use crate::signatures::timestamp::HashAlgorithm;
 use crate::signatures::Timestamp;
 use cms::cert::x509::spki::AlgorithmIdentifier;
 use der::asn1::OctetString;
-use der::oid::db::rfc5912::{ID_SHA_1, ID_SHA_256, ID_SHA_384, ID_SHA_512};
 use der::{Any, Decode, Encode};
-use sha1::{Digest as _, Sha1};
-use sha2::{Sha256, Sha384, Sha512};
 use std::time::Duration;
 use x509_tsp::{MessageImprint, TimeStampReq, TimeStampResp, TspVersion};
 
@@ -118,13 +115,7 @@ impl TsaClient {
     }
 
     fn digest(&self, data: &[u8]) -> Vec<u8> {
-        match self.config.hash_algorithm {
-            HashAlgorithm::Sha1 => Sha1::digest(data).to_vec(),
-            HashAlgorithm::Sha256 => Sha256::digest(data).to_vec(),
-            HashAlgorithm::Sha384 => Sha384::digest(data).to_vec(),
-            HashAlgorithm::Sha512 => Sha512::digest(data).to_vec(),
-            HashAlgorithm::Unknown => Sha256::digest(data).to_vec(),
-        }
+        super::crypto::hash_with_algorithm(self.config.hash_algorithm, data)
     }
 
     fn post(&self, body: &[u8]) -> Result<Vec<u8>> {
@@ -162,12 +153,9 @@ fn encode_request(
     use_nonce: bool,
     cert_req: bool,
 ) -> Result<Vec<u8>> {
-    let oid = match hash_algo {
-        HashAlgorithm::Sha1 => ID_SHA_1,
-        HashAlgorithm::Sha256 => ID_SHA_256,
-        HashAlgorithm::Sha384 => ID_SHA_384,
-        HashAlgorithm::Sha512 => ID_SHA_512,
-        HashAlgorithm::Unknown => {
+    let oid = match super::crypto::oid_for_algorithm(hash_algo) {
+        Some(o) => o,
+        None => {
             return Err(Error::InvalidPdf(
                 "cannot encode TimeStampReq with Unknown hash algorithm".into(),
             ));
@@ -225,7 +213,10 @@ mod tests {
         let bytes = encode_request(&hash, HashAlgorithm::Sha256, true, true).unwrap();
         let req = TimeStampReq::from_der(&bytes).unwrap();
         assert_eq!(req.version, TspVersion::V1);
-        assert_eq!(req.message_imprint.hash_algorithm.oid, ID_SHA_256);
+        assert_eq!(
+            req.message_imprint.hash_algorithm.oid,
+            der::oid::db::rfc5912::ID_SHA_256
+        );
         assert_eq!(req.message_imprint.hashed_message.as_bytes(), hash);
         assert!(req.nonce.is_some());
         assert!(req.cert_req);
