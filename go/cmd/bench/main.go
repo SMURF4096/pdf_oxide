@@ -1,7 +1,10 @@
+//go:build cgo
+
 // Cross-language benchmark — Go binding.
 //
 // Emits NDJSON matching the Rust baseline (bench/rust_bench.rs) so results
-// can be aggregated and compared.
+// can be aggregated and compared. Cgo-only: uses SearchAll and other
+// surfaces that are not ported to the purego backend.
 //
 // Run with:
 //

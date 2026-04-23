@@ -1,6 +1,6 @@
 # PDF Oxide for Go — The Fastest PDF Toolkit for Go
 
-The fastest Go PDF library for text extraction, image extraction, and markdown conversion. Powered by a pure-Rust core, exposed to Go through CGo. 0.8ms mean per document, 5× faster than PyMuPDF, 15× faster than pypdf. 100% pass rate on 3,830 real-world PDFs. MIT / Apache-2.0 licensed.
+The fastest Go PDF library for text extraction, image extraction, and markdown conversion. Powered by a pure-Rust core, exposed to Go through CGo **or** a pure-Go [purego](https://github.com/ebitengine/purego) backend (CGO_ENABLED=0). 0.8ms mean per document, 5× faster than PyMuPDF, 15× faster than pypdf. 100% pass rate on 3,830 real-world PDFs. MIT / Apache-2.0 licensed.
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/yfedoseev/pdf_oxide/go.svg)](https://pkg.go.dev/github.com/yfedoseev/pdf_oxide/go)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](https://opensource.org/licenses)
@@ -9,22 +9,46 @@ The fastest Go PDF library for text extraction, image extraction, and markdown c
 
 ## Quick Start
 
+### Option A — CGo (default, maximum API coverage)
+
 ```bash
 go get github.com/yfedoseev/pdf_oxide/go
 
-# One-time per machine: download the native FFI library
-# Use @latest to always get the newest release:
+# One-time per machine: download the native FFI staticlib.
+# Use @latest for the newest release; or pin to a specific version:
 go run github.com/yfedoseev/pdf_oxide/go/cmd/install@latest
-# Or pin to a specific version:
-go run github.com/yfedoseev/pdf_oxide/go/cmd/install@v0.3.38
+# go run github.com/yfedoseev/pdf_oxide/go/cmd/install@v0.3.38
 
-# Installer prints the CGO_* env vars to export — e.g.:
-export CGO_CFLAGS="-I$HOME/.pdf_oxide/v0.3.38/include"
-export CGO_LDFLAGS="$HOME/.pdf_oxide/v0.3.38/lib/linux_amd64/libpdf_oxide.a \
+# Installer prints the CGO_* env vars to export. Linux example:
+export CGO_CFLAGS="-I$HOME/.cache/pdf_oxide/v0.3.38/include"
+export CGO_LDFLAGS="$HOME/.cache/pdf_oxide/v0.3.38/lib/linux_amd64/libpdf_oxide.a \
   -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
 ```
 
-> **Why `go run ...install`?** Since v0.3.31 the native Rust staticlib is
+The default install directory follows `os.UserCacheDir()`:
+`~/.cache/pdf_oxide/` on Linux, `~/Library/Caches/pdf_oxide/` on macOS,
+`%LocalAppData%\pdf_oxide\` on Windows. Override with `-dir`.
+
+### Option B — purego (CGO_ENABLED=0, pure-Go toolchain)
+
+If you can't use CGo (cross-compiling, Alpine/musl, plain `go build`
+without a C compiler), use the purego backend. It `dlopen`s the shared
+library at runtime — no build-time C linkage.
+
+```bash
+go get github.com/yfedoseev/pdf_oxide/go
+
+# Download the shared library instead of the staticlib:
+go run github.com/yfedoseev/pdf_oxide/go/cmd/install@latest -shared
+
+# Installer prints:
+export CGO_ENABLED=0
+export PDF_OXIDE_LIB_PATH=$HOME/.cache/pdf_oxide/v0.3.38/lib/linux_amd64/libpdf_oxide.so
+```
+
+The purego backend currently covers the read-side document API: text/Markdown/HTML/plain-text extraction (per page and all pages), fonts, annotations, page elements, search, page dimensions, and logging. Editor, write-side builder, barcodes, signatures, TSA, rendering, and OCR remain CGo-only for now — using them under `CGO_ENABLED=0` yields a compile-time error.
+
+> **Why `go run ...install`?** Since v0.3.31 the native Rust lib is
 > fetched from GitHub Release assets on demand instead of being committed to
 > git (previously ~310 MB per release). See `go/lib/README.md` for details
 > including the `//go:generate` and `-tags pdf_oxide_dev` flows.
@@ -59,7 +83,8 @@ func main() {
 - **Permissive license** — MIT / Apache-2.0 — use freely in commercial and closed-source projects
 - **Pure Rust core** — Memory-safe, panic-free, no C dependencies beyond CGo glue
 - **Idiomatic Go** — Sentinel errors with `errors.Is`, `defer doc.Close()`, slices instead of opaque iterators, thread-safe concurrent reads
-- **No Rust toolchain required** — Pre-built native libraries for Linux, macOS, and Windows (x64, plus Linux/macOS ARM64) are fetched from GitHub Releases by a one-line installer. CGo is required (`CGO_ENABLED=1`, the default).
+- **No Rust toolchain required** — Pre-built native libraries for Linux, macOS, and Windows (x64, plus Linux/macOS ARM64) are fetched from GitHub Releases by a one-line installer.
+- **Optional CGo** — Default build uses CGo for the full API. A pure-Go backend via [purego](https://github.com/ebitengine/purego) is available for `CGO_ENABLED=0` builds; it covers the read-side document API.
 
 ## Performance
 
@@ -82,7 +107,7 @@ Benchmarked on 3,830 PDFs from three independent public test suites (veraPDF, Mo
 go get github.com/yfedoseev/pdf_oxide/go
 ```
 
-Pre-built native libraries for Linux (x64, ARM64), macOS (x64, Apple Silicon), and Windows (x64, ARM64) ship with the module under `lib/<os>_<arch>/`. CGo is required (`CGO_ENABLED=1`, the default). No Rust toolchain is needed to consume the library.
+Pre-built native libraries for Linux (x64, ARM64), macOS (x64, Apple Silicon), and Windows (x64, ARM64) are downloaded on demand by `go run github.com/yfedoseev/pdf_oxide/go/cmd/install@latest`. Two backends are available: CGo (default, full API) and purego (`CGO_ENABLED=0`, read-side API — pass `-shared` to the installer). No Rust toolchain is needed to consume either. See the [Quick Start](#quick-start) section above for both flows.
 
 ## API Tour
 

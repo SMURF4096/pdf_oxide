@@ -1,3 +1,5 @@
+//go:build cgo
+
 package pdfoxide
 
 // Write-side API: DocumentBuilder, PageBuilder, EmbeddedFont, plus

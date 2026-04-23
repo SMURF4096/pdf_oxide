@@ -16,16 +16,57 @@ go run github.com/yfedoseev/pdf_oxide/go/cmd/install@v0.3.38
 
 The installer detects `GOOS`/`GOARCH`, downloads the matching asset from
 `https://github.com/yfedoseev/pdf_oxide/releases/download/v0.3.38/…`, and
-extracts `libpdf_oxide.a` + `pdf_oxide.h` into `~/.pdf_oxide/v0.3.38/`.
+extracts `libpdf_oxide.a` + `pdf_oxide.h` into `os.UserCacheDir()/pdf_oxide/v0.3.38/`
+— that is:
 
-It then prints the `CGO_CFLAGS` / `CGO_LDFLAGS` you need to export:
+| OS       | Default path                                |
+| -------- | ------------------------------------------- |
+| Linux    | `~/.cache/pdf_oxide/v0.3.38/`               |
+| macOS    | `~/Library/Caches/pdf_oxide/v0.3.38/`       |
+| Windows  | `%LocalAppData%\pdf_oxide\v0.3.38\`         |
+
+Override with `-dir <path>`. (Earlier releases used `~/.pdf_oxide/` on
+all platforms; v0.3.38 switched to `os.UserCacheDir()` to follow the
+per-platform convention Go's own toolchain uses for `GOCACHE`.)
+
+It then prints the `CGO_CFLAGS` / `CGO_LDFLAGS` you need to export (Linux example):
 
 ```
-export CGO_CFLAGS="-I$HOME/.pdf_oxide/v0.3.38/include"
-export CGO_LDFLAGS="$HOME/.pdf_oxide/v0.3.38/lib/linux_amd64/libpdf_oxide.a -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
+export CGO_CFLAGS="-I$HOME/.cache/pdf_oxide/v0.3.38/include"
+export CGO_LDFLAGS="$HOME/.cache/pdf_oxide/v0.3.38/lib/linux_amd64/libpdf_oxide.a -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
 ```
 
 After that, `go build` / `go test` work normally.
+
+## purego (CGO_ENABLED=0) — shared library instead of staticlib
+
+v0.3.38 also ships a pure-Go backend using
+[ebitengine/purego](https://github.com/ebitengine/purego). It `dlopen`s the
+native library at runtime — no C toolchain at build time. Use the installer's
+`-shared` flag to fetch the `.so`/`.dylib`/`.dll` variant:
+
+```bash
+go run github.com/yfedoseev/pdf_oxide/go/cmd/install@latest -shared
+```
+
+The installer prints:
+
+```
+export CGO_ENABLED=0
+export PDF_OXIDE_LIB_PATH=$HOME/.cache/pdf_oxide/v0.3.38/lib/linux_amd64/libpdf_oxide.so
+```
+
+Build selection is automatic: Go's built-in `cgo` build constraint is set
+whenever `CGO_ENABLED=1`, so the CGo backend (`//go:build cgo`) is picked
+by default and the purego backend (`//go:build !cgo`) is picked when
+`CGO_ENABLED=0`. No custom tags required.
+
+Coverage note: the purego backend currently implements the read-side
+document API (text/Markdown/HTML/plain-text per page and all pages,
+fonts, annotations, page elements, search, page dimensions, logging).
+Editor, write-side builder, barcodes, signatures, TSA, rendering, OCR,
+and forms remain CGo-only — using them under `CGO_ENABLED=0` yields a
+compile error.
 
 ## Alternative: `go generate`
 

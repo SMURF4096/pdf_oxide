@@ -1,3 +1,5 @@
+//go:build cgo
+
 package pdfoxide
 
 // Linking configuration — v0.3.31 onwards.
@@ -393,7 +395,6 @@ import "C"
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -408,106 +409,11 @@ type PdfDocument struct {
 	closed bool
 }
 
-// Sentinel errors for errors.Is comparisons. Every failure path in this
-// package reports one of these wrapped in an *Error for FFI errors, or
-// returns the sentinel directly for non-FFI failures.
-var (
-	// ErrInvalidPath indicates the path argument was invalid. FFI code 1.
-	ErrInvalidPath = errors.New("pdf_oxide: invalid path")
-	// ErrDocumentNotFound indicates the document could not be opened. FFI code 2.
-	ErrDocumentNotFound = errors.New("pdf_oxide: document not found")
-	// ErrInvalidFormat indicates the PDF could not be parsed. FFI code 3.
-	ErrInvalidFormat = errors.New("pdf_oxide: invalid PDF format")
-	// ErrExtractionFailed indicates extraction failed. FFI code 4.
-	ErrExtractionFailed = errors.New("pdf_oxide: extraction failed")
-	// ErrParseError indicates a parse failure. FFI code 5.
-	ErrParseError = errors.New("pdf_oxide: parse error")
-	// ErrInvalidPageIndex indicates an out-of-range page index. FFI code 6.
-	ErrInvalidPageIndex = errors.New("pdf_oxide: invalid page index")
-	// ErrSearchFailed indicates a search operation failed. FFI code 7.
-	ErrSearchFailed = errors.New("pdf_oxide: search failed")
-	// ErrInternal indicates an internal/unknown error. FFI code 8.
-	ErrInternal = errors.New("pdf_oxide: internal error")
-
-	// ErrDocumentClosed indicates the document has been closed.
-	ErrDocumentClosed = errors.New("pdf_oxide: document is closed")
-	// ErrEditorClosed indicates the editor has been closed.
-	ErrEditorClosed = errors.New("pdf_oxide: editor is closed")
-	// ErrCreatorClosed indicates the PDF creator has been closed.
-	ErrCreatorClosed = errors.New("pdf_oxide: creator is closed")
-	// ErrIndexOutOfBounds indicates an out-of-range index.
-	ErrIndexOutOfBounds = errors.New("pdf_oxide: index out of bounds")
-	// ErrEmptyContent indicates required content was empty.
-	ErrEmptyContent = errors.New("pdf_oxide: content must not be empty")
-)
-
-// Error is a structured PDF error that carries an FFI error code alongside a
-// canonical sentinel. It implements Unwrap so errors.Is works with the exported
-// Err* sentinels, and Is so two *Error values with the same Code compare equal.
-type Error struct {
-	Code     int
-	Message  string
-	sentinel error
-}
-
-// Error returns a human-readable description of the error.
-func (e *Error) Error() string {
-	if e.Message == "" {
-		return fmt.Sprintf("pdf_oxide: error %d", e.Code)
-	}
-	return fmt.Sprintf("pdf_oxide: %s (code %d)", e.Message, e.Code)
-}
-
-// Unwrap returns the canonical sentinel so errors.Is(err, ErrInvalidPath) works.
-func (e *Error) Unwrap() error { return e.sentinel }
-
-// Is reports whether target is the same canonical sentinel, or another *Error
-// carrying the same Code.
-func (e *Error) Is(target error) bool {
-	if e.sentinel != nil && target == e.sentinel {
-		return true
-	}
-	var other *Error
-	if errors.As(target, &other) {
-		return e.Code == other.Code
-	}
-	return false
-}
-
-// ffiError wraps an FFI error code into a fully populated *Error. It is the
-// canonical constructor for every error returned from the FFI boundary.
+// ffiError wraps a C.int FFI error code into a fully populated *Error. It is
+// the canonical cgo-backend constructor for every error returned from the FFI
+// boundary. Sentinels, Error struct, and sentinelForCode live in types.go.
 func ffiError(errorCode C.int) error {
-	code := int(errorCode)
-	sentinel := sentinelForCode(code)
-	return &Error{
-		Code:     code,
-		Message:  sentinel.Error(),
-		sentinel: sentinel,
-	}
-}
-
-// sentinelForCode returns the canonical sentinel for an FFI error code.
-func sentinelForCode(code int) error {
-	switch code {
-	case 1:
-		return ErrInvalidPath
-	case 2:
-		return ErrDocumentNotFound
-	case 3:
-		return ErrInvalidFormat
-	case 4:
-		return ErrExtractionFailed
-	case 5:
-		return ErrParseError
-	case 6:
-		return ErrInvalidPageIndex
-	case 7:
-		return ErrSearchFailed
-	case 8:
-		return ErrInternal
-	default:
-		return ErrInternal
-	}
+	return ffiErrorFromInt(int(errorCode))
 }
 
 // Open opens a PDF document from file path
@@ -1254,17 +1160,8 @@ func (pdf *PdfCreator) Close() {
 	pdf.closed = true
 }
 
-// SearchResult represents a single search result in a PDF. JSON tags match
-// the `pdf_oxide_search_results_to_json` Rust FFI schema so the Go layer does
-// not need any per-field FFI calls.
-type SearchResult struct {
-	Text   string  `json:"text"`
-	Page   int     `json:"page"`
-	X      float32 `json:"x"`
-	Y      float32 `json:"y"`
-	Width  float32 `json:"width"`
-	Height float32 `json:"height"`
-}
+// SearchResult, Font, Annotation, Element structs live in types.go so
+// both the cgo and purego backends share them.
 
 // SearchPage searches for text on a specific page and returns all matches.
 // All marshaling logic lives on the Rust side in `pdf_oxide_search_results_to_json`;
@@ -1330,17 +1227,6 @@ func decodeSearchResults(handle unsafe.Pointer) ([]SearchResult, error) {
 		return nil, fmt.Errorf("pdf_oxide: failed to decode search results: %w", err)
 	}
 	return results, nil
-}
-
-// Font represents a font embedded in or used by a PDF page. JSON tags match
-// the `pdf_oxide_fonts_to_json` Rust FFI schema.
-type Font struct {
-	Name       string  `json:"name"`
-	Type       string  `json:"type"`
-	Encoding   string  `json:"encoding"`
-	IsEmbedded bool    `json:"isEmbedded"`
-	IsSubset   bool    `json:"isSubset"`
-	Size       float32 `json:"size"`
 }
 
 // Fonts returns all fonts used or embedded in the given page. Marshaling is
@@ -1472,31 +1358,6 @@ func readImageAt(handle unsafe.Pointer, index C.int32_t) (Image, error) {
 	}, nil
 }
 
-// Annotation represents a single annotation on a PDF page with all its
-// metadata already materialized. JSON tags match the
-// `pdf_oxide_annotations_to_json` Rust FFI schema so the Go layer makes
-// exactly one FFI call per page.
-type Annotation struct {
-	Type             string  `json:"type"`
-	Subtype          string  `json:"subtype"`
-	Content          string  `json:"content"`
-	X                float32 `json:"x"`
-	Y                float32 `json:"y"`
-	Width            float32 `json:"width"`
-	Height           float32 `json:"height"`
-	Author           string  `json:"author"`
-	BorderWidth      float32 `json:"borderWidth"`
-	Color            uint32  `json:"color"`
-	CreationDate     int64   `json:"creationDate"`
-	ModificationDate int64   `json:"modificationDate"`
-	LinkURI          string  `json:"linkURI"`
-	TextIconName     string  `json:"textIconName"`
-	IsHidden         bool    `json:"isHidden"`
-	IsPrintable      bool    `json:"isPrintable"`
-	IsReadOnly       bool    `json:"isReadOnly"`
-	IsMarkedDeleted  bool    `json:"isMarkedDeleted"`
-}
-
 // Annotations returns all annotations on the given page with full details.
 // Marshaling is done entirely on the Rust side via `pdf_oxide_annotations_to_json`.
 func (doc *PdfDocument) Annotations(pageIndex int) ([]Annotation, error) {
@@ -1614,17 +1475,6 @@ func (doc *PdfDocument) PageInfo(pageIndex int) (*PageInfo, error) {
 		BleedBox: Rect{X: float32(blbX), Y: float32(blbY), Width: float32(blbW), Height: float32(blbH)},
 		TrimBox:  Rect{X: float32(tbX), Y: float32(tbY), Width: float32(tbW), Height: float32(tbH)},
 	}, nil
-}
-
-// Element represents a content element on a page (a text span with position).
-// JSON tags match the `pdf_oxide_elements_to_json` Rust FFI schema.
-type Element struct {
-	Type   string  `json:"type"`
-	Text   string  `json:"text"`
-	X      float32 `json:"x"`
-	Y      float32 `json:"y"`
-	Width  float32 `json:"width"`
-	Height float32 `json:"height"`
 }
 
 // PageElements returns all text-span elements on the given page. Marshaling
@@ -3421,26 +3271,9 @@ func OpenReader(r io.Reader) (*PdfDocument, error) {
 }
 
 // ================================================================
-// Logging
+// Logging — LogLevel type and constants live in types.go (tag-free)
+// so both backends share them.
 // ================================================================
-
-// LogLevel represents the log verbosity level.
-type LogLevel int
-
-const (
-	// LogOff disables all logging.
-	LogOff LogLevel = 0
-	// LogError enables error messages only.
-	LogError LogLevel = 1
-	// LogWarn enables warnings and errors.
-	LogWarn LogLevel = 2
-	// LogInfo enables informational messages.
-	LogInfo LogLevel = 3
-	// LogDebug enables debug messages.
-	LogDebug LogLevel = 4
-	// LogTrace enables verbose trace messages.
-	LogTrace LogLevel = 5
-)
 
 // SetLogLevel sets the global log level for the pdf_oxide library.
 // Use the LogLevel constants (LogOff, LogError, LogWarn, LogInfo, LogDebug, LogTrace).

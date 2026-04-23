@@ -1,3 +1,5 @@
+//go:build cgo
+
 package pdfoxide
 
 // Integration tests for the Go write-side API. Mirrors the

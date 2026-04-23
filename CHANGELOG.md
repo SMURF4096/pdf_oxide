@@ -151,6 +151,34 @@ Supporting surface shipped alongside:
 Signing (as opposed to verification) is not covered by this release;
 #208 remains open for the signing half.
 
+### Go binding — purego backend + cache-dir install
+
+Go users can now build with `CGO_ENABLED=0` via a second backend that
+uses [ebitengine/purego](https://github.com/ebitengine/purego) to
+`dlopen` `libpdf_oxide.{so,dylib,dll}` at runtime — no C toolchain
+required. Backend selection is automatic via Go's built-in `cgo` tag
+(`//go:build cgo` → full CGo API, `//go:build !cgo` → purego).
+
+The purego backend covers the read-side `PdfDocument` surface — open
+(path / bytes / password), page count, version, text / Markdown / HTML
+/ plain-text extraction, fonts, annotations, page elements, search,
+page dimensions, logging — plus `PdfCreator.FromMarkdown` for test
+fixtures. Editor, `DocumentBuilder`, barcode, signature, TSA,
+rendering, OCR, and forms stay CGo-only; using them under `!cgo` is a
+compile-time error. Full parity is tracked for a follow-up.
+
+Installer:
+
+- **New `-shared` flag** fetches the cdylib instead of the staticlib
+  and prints `CGO_ENABLED=0` + `PDF_OXIDE_LIB_PATH=…` to export.
+- **Install dir moved to `os.UserCacheDir()`** — `~/.cache/pdf_oxide`
+  on Linux, `~/Library/Caches/pdf_oxide` on macOS,
+  `%LocalAppData%\pdf_oxide` on Windows. Matches Go's own `GOCACHE`
+  convention; existing installs re-fetch once into the new path.
+
+Release assets now include `pdf_oxide-go-ffi-shared-<platform>.tar.gz`
+for every Tier-1 platform alongside the existing staticlib archives.
+
 ### Bug fixes
 
 - **#395** — `PdfOxide.Exceptions.SignatureException: '[8500]

@@ -536,4 +536,4 @@ go func() { _, _ = doc.SearchAll("keyword", false) }()
 
 Go Bindings: match the Rust core version.
 Go Version: 1.21+ required.
-CGo required (`CGO_ENABLED=1`, the default).
+Backends: CGo (default, full API) or purego (`CGO_ENABLED=0`, read-side API).
