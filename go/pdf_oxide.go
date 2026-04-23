@@ -403,7 +403,13 @@ import (
 )
 
 // PdfDocument represents an open PDF document.
-// It is safe for concurrent use by multiple goroutines.
+//
+// A *PdfDocument is safe to share across goroutines. The internal lock
+// serializes every method call (including reads) because the underlying
+// native PDF parser is not reentrant — concurrent native-side reads could
+// return spurious parse errors. The previous RWMutex design was
+// downgraded to an exclusive lock after TestConcurrentReads flaked with
+// "parse error (code 5)" under `go test -race`.
 type PdfDocument struct {
 	mu     sync.RWMutex
 	handle unsafe.Pointer
@@ -452,12 +458,14 @@ func (doc *PdfDocument) Close() error {
 	return nil
 }
 
-// acquireRead locks for reading and checks the document is open.
-// Caller must call doc.mu.RUnlock() when done.
+// acquireRead takes the exclusive lock and checks the document is open.
+// (Name kept for the read-side API surface, but semantically an exclusive
+// lock — see PdfDocument doc comment for why.) Caller must call
+// doc.mu.Unlock() when done.
 func (doc *PdfDocument) acquireRead() error {
-	doc.mu.RLock()
+	doc.mu.Lock()
 	if doc.closed {
-		doc.mu.RUnlock()
+		doc.mu.Unlock()
 		return ErrDocumentClosed
 	}
 	return nil
@@ -468,7 +476,7 @@ func (doc *PdfDocument) PageCount() (int, error) {
 	if err := doc.acquireRead(); err != nil {
 		return 0, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	var errorCode C.int
 	count := C.pdf_document_get_page_count(doc.handle, &errorCode)
@@ -486,7 +494,7 @@ func (doc *PdfDocument) Version() (major, minor uint8, err error) {
 	if err := doc.acquireRead(); err != nil {
 		return 0, 0, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var cmajor, cminor C.uint8_t
 	C.pdf_document_get_version(doc.handle, &cmajor, &cminor)
 	return uint8(cmajor), uint8(cminor), nil
@@ -499,7 +507,7 @@ func (doc *PdfDocument) HasStructureTree() (bool, error) {
 	if err := doc.acquireRead(); err != nil {
 		return false, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	return bool(C.pdf_document_has_structure_tree(doc.handle)), nil
 }
 
@@ -508,7 +516,7 @@ func (doc *PdfDocument) ExtractText(pageIndex int) (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	if pageIndex < 0 {
 		return "", ErrInvalidPageIndex
@@ -536,7 +544,7 @@ func (doc *PdfDocument) ToMarkdown(pageIndex int) (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	var errorCode C.int
 	cMarkdown := C.pdf_document_to_markdown(doc.handle, C.int32_t(pageIndex), &errorCode)
@@ -556,7 +564,7 @@ func (doc *PdfDocument) ToHtml(pageIndex int) (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	var errorCode C.int
 	cHtml := C.pdf_document_to_html(doc.handle, C.int32_t(pageIndex), &errorCode)
@@ -576,7 +584,7 @@ func (doc *PdfDocument) ToPlainText(pageIndex int) (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	var errorCode C.int
 	cText := C.pdf_document_to_plain_text(doc.handle, C.int32_t(pageIndex), &errorCode)
@@ -596,7 +604,7 @@ func (doc *PdfDocument) ToMarkdownAll() (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	var errorCode C.int
 	cMarkdown := C.pdf_document_to_markdown_all(doc.handle, &errorCode)
@@ -613,8 +621,8 @@ func (doc *PdfDocument) ToMarkdownAll() (string, error) {
 
 // IsClosed returns whether the document is closed
 func (doc *PdfDocument) IsClosed() bool {
-	doc.mu.RLock()
-	defer doc.mu.RUnlock()
+	doc.mu.Lock()
+	defer doc.mu.Unlock()
 	return doc.closed
 }
 
@@ -627,13 +635,13 @@ type DocumentEditor struct {
 	closed bool
 }
 
-// acquireRead takes the editor's read lock and verifies the editor is not
-// closed. On success the caller MUST defer editor.mu.RUnlock(). On failure
-// the lock is released automatically and an error is returned.
+// acquireRead takes the editor's exclusive lock and verifies the editor
+// is not closed. On success the caller MUST defer editor.mu.Unlock(). On
+// failure the lock is released automatically and an error is returned.
 func (editor *DocumentEditor) acquireRead() error {
-	editor.mu.RLock()
+	editor.mu.Lock()
 	if editor.closed {
-		editor.mu.RUnlock()
+		editor.mu.Unlock()
 		return ErrEditorClosed
 	}
 	return nil
@@ -689,7 +697,7 @@ func (editor *DocumentEditor) IsModified() (bool, error) {
 	if err := editor.acquireRead(); err != nil {
 		return false, err
 	}
-	defer editor.mu.RUnlock()
+	defer editor.mu.Unlock()
 	return bool(C.document_editor_is_modified(editor.handle)), nil
 }
 
@@ -698,7 +706,7 @@ func (editor *DocumentEditor) SourcePath() (string, error) {
 	if err := editor.acquireRead(); err != nil {
 		return "", err
 	}
-	defer editor.mu.RUnlock()
+	defer editor.mu.Unlock()
 
 	var errorCode C.int
 	cPath := C.document_editor_get_source_path(editor.handle, &errorCode)
@@ -718,7 +726,7 @@ func (editor *DocumentEditor) Version() (major, minor uint8, err error) {
 	if err := editor.acquireRead(); err != nil {
 		return 0, 0, err
 	}
-	defer editor.mu.RUnlock()
+	defer editor.mu.Unlock()
 	var cmajor, cminor C.uint8_t
 	C.document_editor_get_version(editor.handle, &cmajor, &cminor)
 	return uint8(cmajor), uint8(cminor), nil
@@ -729,7 +737,7 @@ func (editor *DocumentEditor) PageCount() (int, error) {
 	if err := editor.acquireRead(); err != nil {
 		return 0, err
 	}
-	defer editor.mu.RUnlock()
+	defer editor.mu.Unlock()
 
 	var errorCode C.int
 	count := C.document_editor_get_page_count(editor.handle, &errorCode)
@@ -746,7 +754,7 @@ func (editor *DocumentEditor) Title() (string, error) {
 	if err := editor.acquireRead(); err != nil {
 		return "", err
 	}
-	defer editor.mu.RUnlock()
+	defer editor.mu.Unlock()
 
 	var errorCode C.int
 	cTitle := C.document_editor_get_title(editor.handle, &errorCode)
@@ -789,7 +797,7 @@ func (editor *DocumentEditor) Author() (string, error) {
 	if err := editor.acquireRead(); err != nil {
 		return "", err
 	}
-	defer editor.mu.RUnlock()
+	defer editor.mu.Unlock()
 
 	var errorCode C.int
 	cAuthor := C.document_editor_get_author(editor.handle, &errorCode)
@@ -832,7 +840,7 @@ func (editor *DocumentEditor) Subject() (string, error) {
 	if err := editor.acquireRead(); err != nil {
 		return "", err
 	}
-	defer editor.mu.RUnlock()
+	defer editor.mu.Unlock()
 
 	var errorCode C.int
 	cSubject := C.document_editor_get_subject(editor.handle, &errorCode)
@@ -875,7 +883,7 @@ func (editor *DocumentEditor) Producer() (string, error) {
 	if err := editor.acquireRead(); err != nil {
 		return "", err
 	}
-	defer editor.mu.RUnlock()
+	defer editor.mu.Unlock()
 
 	var errorCode C.int
 	cProducer := C.document_editor_get_producer(editor.handle, &errorCode)
@@ -918,7 +926,7 @@ func (editor *DocumentEditor) CreationDate() (string, error) {
 	if err := editor.acquireRead(); err != nil {
 		return "", err
 	}
-	defer editor.mu.RUnlock()
+	defer editor.mu.Unlock()
 
 	var errorCode C.int
 	cDate := C.document_editor_get_creation_date(editor.handle, &errorCode)
@@ -1171,7 +1179,7 @@ func (doc *PdfDocument) SearchPage(pageIndex int, searchTerm string, caseSensiti
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	cSearchTerm := C.CString(searchTerm)
 	defer C.free(unsafe.Pointer(cSearchTerm))
@@ -1194,7 +1202,7 @@ func (doc *PdfDocument) SearchAll(searchTerm string, caseSensitive bool) ([]Sear
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	cSearchTerm := C.CString(searchTerm)
 	defer C.free(unsafe.Pointer(cSearchTerm))
@@ -1237,7 +1245,7 @@ func (doc *PdfDocument) Fonts(pageIndex int) ([]Font, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	var errorCode C.int
 	handle := C.pdf_document_get_embedded_fonts(doc.handle, C.int32_t(pageIndex), &errorCode)
@@ -1281,7 +1289,7 @@ func (doc *PdfDocument) Images(pageIndex int) ([]Image, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	var errorCode C.int
 	handle := C.pdf_document_get_embedded_images(doc.handle, C.int32_t(pageIndex), &errorCode)
@@ -1365,7 +1373,7 @@ func (doc *PdfDocument) Annotations(pageIndex int) ([]Annotation, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	var errorCode C.int
 	handle := C.pdf_document_get_page_annotations(doc.handle, C.int32_t(pageIndex), &errorCode)
@@ -1419,7 +1427,7 @@ func (doc *PdfDocument) PageInfo(pageIndex int) (*PageInfo, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	var errorCode C.int
 
@@ -1484,7 +1492,7 @@ func (doc *PdfDocument) PageElements(pageIndex int) ([]Element, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	var errorCode C.int
 	handle := C.pdf_page_get_elements(doc.handle, C.int32_t(pageIndex), &errorCode)
@@ -1593,7 +1601,7 @@ func (doc *PdfDocument) IsEncrypted() bool {
 	if err := doc.acquireRead(); err != nil {
 		return false
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	return bool(C.pdf_document_is_encrypted(doc.handle))
 }
 
@@ -1602,7 +1610,7 @@ func (doc *PdfDocument) Authenticate(password string) (bool, error) {
 	if err := doc.acquireRead(); err != nil {
 		return false, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	cPwd := C.CString(password)
 	defer C.free(unsafe.Pointer(cPwd))
 	var errorCode C.int
@@ -1618,7 +1626,7 @@ func (doc *PdfDocument) ExtractAllText() (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	cText := C.pdf_document_extract_all_text(doc.handle, &errorCode)
 	if errorCode != 0 {
@@ -1634,7 +1642,7 @@ func (doc *PdfDocument) ToHtmlAll() (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	cText := C.pdf_document_to_html_all(doc.handle, &errorCode)
 	if errorCode != 0 {
@@ -1650,7 +1658,7 @@ func (doc *PdfDocument) ToPlainTextAll() (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	cText := C.pdf_document_to_plain_text_all(doc.handle, &errorCode)
 	if errorCode != 0 {
@@ -1675,7 +1683,7 @@ func (doc *PdfDocument) ExtractWords(pageIndex int) ([]Word, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	handle := C.pdf_document_extract_words(doc.handle, C.int32_t(pageIndex), &errorCode)
 	if errorCode != 0 {
@@ -1715,7 +1723,7 @@ func (doc *PdfDocument) ExtractTextLines(pageIndex int) ([]TextLine, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	handle := C.pdf_document_extract_text_lines(doc.handle, C.int32_t(pageIndex), &errorCode)
 	if errorCode != 0 {
@@ -1752,7 +1760,7 @@ func (doc *PdfDocument) ExtractTables(pageIndex int) ([]Table, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	handle := C.pdf_document_extract_tables(doc.handle, C.int32_t(pageIndex), &errorCode)
 	if errorCode != 0 {
@@ -1789,7 +1797,7 @@ func (doc *PdfDocument) ExtractTextInRect(pageIndex int, x, y, w, h float32) (st
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	cText := C.pdf_document_extract_text_in_rect(doc.handle, C.int32_t(pageIndex), C.float(x), C.float(y), C.float(w), C.float(h), &errorCode)
 	if errorCode != 0 {
@@ -1814,7 +1822,7 @@ func (doc *PdfDocument) FormFields() ([]FormField, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	handle := C.pdf_document_get_form_fields(doc.handle, &errorCode)
 	if errorCode != 0 {
@@ -1850,7 +1858,7 @@ func (doc *PdfDocument) HasXfa() bool {
 	if err := doc.acquireRead(); err != nil {
 		return false
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	return bool(C.pdf_document_has_xfa(doc.handle))
 }
 
@@ -1897,7 +1905,7 @@ func (doc *PdfDocument) NeedsOcr(pageIndex int) (bool, error) {
 	if err := doc.acquireRead(); err != nil {
 		return false, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	result := bool(C.pdf_ocr_page_needs_ocr(doc.handle, C.int32_t(pageIndex), &errorCode))
 	if errorCode != 0 {
@@ -1912,7 +1920,7 @@ func (doc *PdfDocument) ExtractTextWithOcr(pageIndex int, engine *OcrEngine) (st
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var enginePtr unsafe.Pointer
 	if engine != nil {
 		enginePtr = engine.handle
@@ -1935,7 +1943,7 @@ func (doc *PdfDocument) RemoveHeaders(threshold float32) (int, error) {
 	if err := doc.acquireRead(); err != nil {
 		return 0, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	n := C.pdf_document_remove_headers(doc.handle, C.float(threshold), &errorCode)
 	if errorCode != 0 {
@@ -1949,7 +1957,7 @@ func (doc *PdfDocument) RemoveFooters(threshold float32) (int, error) {
 	if err := doc.acquireRead(); err != nil {
 		return 0, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	n := C.pdf_document_remove_footers(doc.handle, C.float(threshold), &errorCode)
 	if errorCode != 0 {
@@ -1963,7 +1971,7 @@ func (doc *PdfDocument) RemoveArtifacts(threshold float32) (int, error) {
 	if err := doc.acquireRead(); err != nil {
 		return 0, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	n := C.pdf_document_remove_artifacts(doc.handle, C.float(threshold), &errorCode)
 	if errorCode != 0 {
@@ -1977,7 +1985,7 @@ func (doc *PdfDocument) ExportFormData(format int) ([]byte, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	var outLen C.size_t
 	data := C.pdf_document_export_form_data_to_bytes(doc.handle, C.int32_t(format), &outLen, &errorCode)
@@ -2027,7 +2035,7 @@ func (editor *DocumentEditor) PageRotation(pageIndex int) (int, error) {
 	if err := editor.acquireRead(); err != nil {
 		return 0, err
 	}
-	defer editor.mu.RUnlock()
+	defer editor.mu.Unlock()
 	var errorCode C.int
 	r := C.document_editor_get_page_rotation(editor.handle, C.int32_t(pageIndex), &errorCode)
 	if errorCode != 0 {
@@ -2154,7 +2162,7 @@ func (doc *PdfDocument) ValidatePdfA(level int) (*PdfAResult, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	results := C.pdf_validate_pdf_a_level(doc.handle, C.int32_t(level), &errorCode)
 	if errorCode != 0 {
@@ -2195,7 +2203,7 @@ func (doc *PdfDocument) ValidatePdfUa() (bool, []string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return false, nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	results := C.pdf_validate_pdf_ua(doc.handle, C.int32_t(1), &errorCode)
 	if errorCode != 0 {
@@ -2228,7 +2236,7 @@ func (doc *PdfDocument) ExtractChars(pageIndex int) ([]Char, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	handle := C.pdf_document_extract_chars(doc.handle, C.int32_t(pageIndex), &errorCode)
 	if errorCode != 0 {
@@ -2266,7 +2274,7 @@ func (doc *PdfDocument) ExtractPaths(pageIndex int) ([]Path, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	handle := C.pdf_document_extract_paths(doc.handle, C.int32_t(pageIndex), &errorCode)
 	if errorCode != 0 {
@@ -2294,7 +2302,7 @@ func (doc *PdfDocument) PageLabels() (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	cText := C.pdf_document_get_page_labels(doc.handle, &errorCode)
 	if errorCode != 0 {
@@ -2310,7 +2318,7 @@ func (doc *PdfDocument) XmpMetadata() (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	cText := C.pdf_document_get_xmp_metadata(doc.handle, &errorCode)
 	if errorCode != 0 {
@@ -2326,7 +2334,7 @@ func (doc *PdfDocument) Outline() (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	cText := C.pdf_document_get_outline(doc.handle, &errorCode)
 	if errorCode != 0 {
@@ -2378,7 +2386,7 @@ func (doc *PdfDocument) ValidatePdfX(level int) (bool, []string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return false, nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	results := C.pdf_validate_pdf_x_level(doc.handle, C.int32_t(level), &errorCode)
 	if errorCode != 0 {
@@ -2416,7 +2424,7 @@ func (doc *PdfDocument) ExtractWordsInRect(pageIndex int, x, y, w, h float32) ([
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	handle := C.pdf_document_extract_words_in_rect(doc.handle, C.int32_t(pageIndex), C.float(x), C.float(y), C.float(w), C.float(h), &errorCode)
 	if errorCode != 0 {
@@ -2441,7 +2449,7 @@ func (doc *PdfDocument) ExtractImagesInRect(pageIndex int, x, y, w, h float32) (
 	if err := doc.acquireRead(); err != nil {
 		return 0, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	handle := C.pdf_document_extract_images_in_rect(doc.handle, C.int32_t(pageIndex), C.float(x), C.float(y), C.float(w), C.float(h), &errorCode)
 	if errorCode != 0 {
@@ -2579,7 +2587,7 @@ func (doc *PdfDocument) RenderPageWithOptions(pageIndex int, opts RenderOptions)
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	dpi := opts.Dpi
 	if dpi == 0 {
@@ -2633,7 +2641,7 @@ func (doc *PdfDocument) RenderPage(pageIndex int, format int) (*RenderedImage, e
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	handle := C.pdf_render_page(doc.handle, C.int32_t(pageIndex), C.int32_t(format), &errorCode)
 	if errorCode != 0 {
@@ -2652,7 +2660,7 @@ func (doc *PdfDocument) RenderPageZoom(pageIndex int, zoom float32, format int) 
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	handle := C.pdf_render_page_zoom(doc.handle, C.int32_t(pageIndex), C.float(zoom), C.int32_t(format), &errorCode)
 	if errorCode != 0 {
@@ -2671,7 +2679,7 @@ func (doc *PdfDocument) RenderThumbnail(pageIndex int, size int, format int) (*R
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	handle := C.pdf_render_page_thumbnail(doc.handle, C.int32_t(pageIndex), C.int32_t(size), C.int32_t(format), &errorCode)
 	if errorCode != 0 {
@@ -2929,7 +2937,7 @@ func (doc *PdfDocument) SignatureCount() (int, error) {
 	if err := doc.acquireRead(); err != nil {
 		return 0, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	n := C.pdf_document_get_signature_count(doc.handle, &errorCode)
 	if errorCode != 0 {
@@ -2944,7 +2952,7 @@ func (doc *PdfDocument) Signatures() ([]*Signature, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	n := C.pdf_document_get_signature_count(doc.handle, &errorCode)
 	if errorCode != 0 {

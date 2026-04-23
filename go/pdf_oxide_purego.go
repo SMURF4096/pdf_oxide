@@ -279,9 +279,9 @@ type PdfDocument struct {
 }
 
 func (doc *PdfDocument) acquireRead() error {
-	doc.mu.RLock()
+	doc.mu.Lock()
 	if doc.closed {
-		doc.mu.RUnlock()
+		doc.mu.Unlock()
 		return ErrDocumentClosed
 	}
 	return nil
@@ -352,8 +352,8 @@ func (doc *PdfDocument) Close() error {
 
 // IsClosed returns whether the document is closed.
 func (doc *PdfDocument) IsClosed() bool {
-	doc.mu.RLock()
-	defer doc.mu.RUnlock()
+	doc.mu.Lock()
+	defer doc.mu.Unlock()
 	return doc.closed
 }
 
@@ -362,7 +362,7 @@ func (doc *PdfDocument) PageCount() (int, error) {
 	if err := doc.acquireRead(); err != nil {
 		return 0, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var ec int32
 	n := ffiPdfDocumentGetPageCount(doc.handle, &ec)
 	if ec != 0 {
@@ -376,7 +376,7 @@ func (doc *PdfDocument) Version() (uint8, uint8, error) {
 	if err := doc.acquireRead(); err != nil {
 		return 0, 0, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var major, minor uint8
 	ffiPdfDocumentGetVersion(doc.handle, &major, &minor)
 	return major, minor, nil
@@ -387,7 +387,7 @@ func (doc *PdfDocument) HasStructureTree() (bool, error) {
 	if err := doc.acquireRead(); err != nil {
 		return false, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	return ffiPdfDocumentHasStructureTree(doc.handle), nil
 }
 
@@ -396,7 +396,7 @@ func (doc *PdfDocument) IsEncrypted() (bool, error) {
 	if err := doc.acquireRead(); err != nil {
 		return false, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	return ffiPdfDocumentIsEncrypted(doc.handle), nil
 }
 
@@ -420,7 +420,7 @@ func (doc *PdfDocument) ExtractText(pageIndex int) (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var ec int32
 	p := ffiPdfDocumentExtractText(doc.handle, int32(pageIndex), &ec)
 	if ec != 0 {
@@ -434,7 +434,7 @@ func (doc *PdfDocument) ExtractAllText() (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var ec int32
 	p := ffiPdfDocumentExtractAllText(doc.handle, &ec)
 	if ec != 0 {
@@ -448,7 +448,7 @@ func (doc *PdfDocument) ToMarkdown(pageIndex int) (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var ec int32
 	p := ffiPdfDocumentToMarkdown(doc.handle, int32(pageIndex), &ec)
 	if ec != 0 {
@@ -462,7 +462,7 @@ func (doc *PdfDocument) ToHtml(pageIndex int) (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var ec int32
 	p := ffiPdfDocumentToHtml(doc.handle, int32(pageIndex), &ec)
 	if ec != 0 {
@@ -476,7 +476,7 @@ func (doc *PdfDocument) ToPlainText(pageIndex int) (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var ec int32
 	p := ffiPdfDocumentToPlainText(doc.handle, int32(pageIndex), &ec)
 	if ec != 0 {
@@ -490,7 +490,7 @@ func (doc *PdfDocument) ToMarkdownAll() (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var ec int32
 	p := ffiPdfDocumentToMarkdownAll(doc.handle, &ec)
 	if ec != 0 {
@@ -504,7 +504,7 @@ func (doc *PdfDocument) ToHtmlAll() (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var ec int32
 	p := ffiPdfDocumentToHtmlAll(doc.handle, &ec)
 	if ec != 0 {
@@ -518,7 +518,7 @@ func (doc *PdfDocument) ToPlainTextAll() (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var ec int32
 	p := ffiPdfDocumentToPlainTextAll(doc.handle, &ec)
 	if ec != 0 {
@@ -710,7 +710,7 @@ func (doc *PdfDocument) Fonts(pageIndex int) ([]Font, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var ec int32
 	h := ffiPdfDocumentGetEmbeddedFonts(doc.handle, int32(pageIndex), &ec)
 	if ec != 0 {
@@ -735,7 +735,7 @@ func (doc *PdfDocument) Annotations(pageIndex int) ([]Annotation, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var ec int32
 	h := ffiPdfDocumentGetPageAnnotations(doc.handle, int32(pageIndex), &ec)
 	if ec != 0 {
@@ -761,7 +761,7 @@ func (doc *PdfDocument) PageElements(pageIndex int) ([]Element, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var ec int32
 	h := ffiPdfPageGetElements(doc.handle, int32(pageIndex), &ec)
 	if ec != 0 {
@@ -786,7 +786,7 @@ func (doc *PdfDocument) SearchPage(pageIndex int, term string, caseSensitive boo
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var ec int32
 	h := ffiPdfDocumentSearchPage(doc.handle, int32(pageIndex), term, caseSensitive, &ec)
 	if ec != 0 {
@@ -811,7 +811,7 @@ func (doc *PdfDocument) SearchAll(term string, caseSensitive bool) ([]SearchResu
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var ec int32
 	h := ffiPdfDocumentSearchAll(doc.handle, term, caseSensitive, &ec)
 	if ec != 0 {
@@ -838,7 +838,7 @@ func (doc *PdfDocument) PageWidth(pageIndex int) (float32, error) {
 	if err := doc.acquireRead(); err != nil {
 		return 0, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var ec int32
 	w := ffiPdfPageGetWidth(doc.handle, int32(pageIndex), &ec)
 	if ec != 0 {
@@ -852,7 +852,7 @@ func (doc *PdfDocument) PageHeight(pageIndex int) (float32, error) {
 	if err := doc.acquireRead(); err != nil {
 		return 0, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var ec int32
 	h := ffiPdfPageGetHeight(doc.handle, int32(pageIndex), &ec)
 	if ec != 0 {
@@ -866,7 +866,7 @@ func (doc *PdfDocument) PageRotation(pageIndex int) (int, error) {
 	if err := doc.acquireRead(); err != nil {
 		return 0, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var ec int32
 	r := ffiPdfPageGetRotation(doc.handle, int32(pageIndex), &ec)
 	if ec != 0 {
