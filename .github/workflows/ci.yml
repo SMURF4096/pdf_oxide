@@ -331,7 +331,10 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.22'
+          # Use latest stable Go. go.mod's `go 1.21` directive keeps us
+          # compatible with older consumers; CI picks the newest toolchain
+          # available (>=1.25 required by govulncheck v1.3+).
+          go-version: 'stable'
 
       - name: Cache
         uses: Swatinem/rust-cache@v2
@@ -402,14 +405,11 @@ jobs:
           args: --build-tags pdf_oxide_dev --timeout 5m
 
       # govulncheck — module-level vulnerability scanner.
-      # Pinned to v1.2.0 because v1.3.0+ requires Go 1.25+; CI builds on
-      # Go 1.22 to match go.mod's 1.21 floor with a conservative cushion.
-      # Bump this pin whenever the runner's Go version is bumped.
       - name: govulncheck
         if: matrix.os == 'ubuntu-latest'
         working-directory: go
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@v1.2.0
+          go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck -tags pdf_oxide_dev ./...
 
       # Race detector catches data races that survive linting.
