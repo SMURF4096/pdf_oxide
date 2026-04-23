@@ -402,11 +402,14 @@ jobs:
           args: --build-tags pdf_oxide_dev --timeout 5m
 
       # govulncheck — module-level vulnerability scanner.
+      # Pinned to v1.2.0 because v1.3.0+ requires Go 1.25+; CI builds on
+      # Go 1.22 to match go.mod's 1.21 floor with a conservative cushion.
+      # Bump this pin whenever the runner's Go version is bumped.
       - name: govulncheck
         if: matrix.os == 'ubuntu-latest'
         working-directory: go
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.2.0
           govulncheck -tags pdf_oxide_dev ./...
 
       # Race detector catches data races that survive linting.
