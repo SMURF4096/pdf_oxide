@@ -150,6 +150,15 @@ Supporting surface shipped alongside:
 Signing (as opposed to verification) is not covered by this release;
 #208 remains open for the signing half.
 
+### Binding parity follow-ups
+
+Five thin-wrapper commits closed the last coverage holes in this
+release's signature surface — Python/Go/WASM `Certificate` inspect,
+Node `Timestamp` parse+verify, Node `TsaClient` HTTP. Every capability
+in the Supporting Surface list above is now the language-idiomatic
+shape across all six non-Rust bindings (modulo the principled
+WASM-TsaClient omission).
+
 ### Go binding — purego backend + cache-dir install
 
 Go users can now build with `CGO_ENABLED=0` via a second backend that
