@@ -185,7 +185,7 @@ int   pdf_document_sign(void* document_handle, const void* certificate_handle, c
 int32_t pdf_document_get_signature_count(const void* document_handle, int* error_code);
 void* pdf_document_get_signature(const void* document_handle, int32_t index, int* error_code);
 int   pdf_signature_verify(const void* signature_handle, int* error_code);
-int   pdf_signature_verify_detached(const void* signature_handle, const uint8_t* pdf_data, uintptr_t pdf_len, int* error_code);
+int   pdf_signature_verify_detached(const void* signature_handle, const uint8_t* pdf_data, size_t pdf_len, int* error_code);
 int   pdf_document_verify_all_signatures(const void* document_handle, int* error_code);
 char* pdf_signature_get_signer_name(const void* signature_handle, int* error_code);
 int64_t pdf_signature_get_signing_time(const void* signature_handle, int* error_code);

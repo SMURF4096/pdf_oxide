@@ -60,7 +60,7 @@ namespace PdfOxide.Core
         {
             if (Dpi <= 0)
                 throw new ArgumentException($"Dpi must be > 0, got {Dpi}", nameof(Dpi));
-            if (JpegQuality is < 1 or > 100)
+            if (Format == RenderImageFormat.Jpeg && (JpegQuality is < 1 or > 100))
                 throw new ArgumentException(
                     $"JpegQuality must be in 1..=100, got {JpegQuality}", nameof(JpegQuality));
         }

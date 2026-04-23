@@ -30,6 +30,7 @@ package pdfoxide
 /*
 #include <stdlib.h>
 #include <stdint.h>
+#include <stddef.h>
 #include <stdbool.h>
 
 extern void* pdf_document_open(const char* path, int* error_code);
@@ -161,7 +162,7 @@ extern int pdf_document_sign(void* document_handle, const void* certificate_hand
 extern int32_t pdf_document_get_signature_count(const void* document_handle, int* error_code);
 extern void* pdf_document_get_signature(const void* document_handle, int32_t index, int* error_code);
 extern int pdf_signature_verify(const void* signature_handle, int* error_code);
-extern int pdf_signature_verify_detached(const void* signature_handle, const unsigned char* pdf_data, uintptr_t pdf_len, int* error_code);
+extern int pdf_signature_verify_detached(const void* signature_handle, const unsigned char* pdf_data, size_t pdf_len, int* error_code);
 extern int pdf_document_verify_all_signatures(const void* document_handle, int* error_code);
 extern char* pdf_signature_get_signer_name(const void* signature_handle, int* error_code);
 extern int64_t pdf_signature_get_signing_time(const void* signature_handle, int* error_code);
@@ -3134,7 +3135,7 @@ func (s *Signature) VerifyDetached(pdfData []byte) (bool, error) {
 	r := C.pdf_signature_verify_detached(
 		s.handle,
 		dataPtr,
-		C.uintptr_t(len(pdfData)),
+		C.size_t(len(pdfData)),
 		&e,
 	)
 	if e != 0 {

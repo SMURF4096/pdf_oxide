@@ -144,7 +144,10 @@ namespace PdfOxide.Core
             var rc = NativeMethods.PdfDocumentBuilderRegisterEmbeddedFont(
                 Handle, name, font.Handle, out var ec);
             if (rc != 0)
+            {
                 ExceptionMapper.ThrowIfError(ec);
+                throw new PdfException("Native font registration failed without providing an error code.");
+            }
             font.MarkConsumed();  // FFI took ownership on success
             return this;
         }

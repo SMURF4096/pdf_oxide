@@ -102,7 +102,9 @@ namespace PdfOxide.Tests
                         .Done();
                     builder.SaveEncrypted(path, "userpw", "ownerpw");
                 }
-                var raw = File.ReadAllText(path);
+                // PDFs are binary; decode as ASCII to scan for markers
+                // without corrupting non-ASCII bytes via UTF-8 coercion.
+                var raw = System.Text.Encoding.ASCII.GetString(File.ReadAllBytes(path));
                 Assert.Contains("/Encrypt", raw);
                 Assert.Contains("/V 5", raw);
             }

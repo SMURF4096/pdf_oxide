@@ -115,7 +115,9 @@ export class DocumentEditor {
   setCreationDate(date: string): void {
     this._throwIfClosed();
     // Same Rust-core stub note as setProducer.
-    native.editorSetCreationDate(this._handle, date);
+    if (native.editorSetCreationDate) {
+      native.editorSetCreationDate(this._handle, date);
+    }
   }
 
   // ----- page mutations ---------------------------------------------
