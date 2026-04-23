@@ -98,7 +98,7 @@ func TestCertificate_Serial_IsHex(t *testing.T) {
 	// every char is hex-digit-or-separator. The Rust side formats serial
 	// as colon-separated upper-hex, but we don't want to lock the format.
 	for _, c := range strings.ReplaceAll(strings.ToLower(serial), ":", "") {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			t.Errorf("Serial %q contains non-hex character %q", serial, c)
 			break
 		}

@@ -3089,6 +3089,8 @@ func (s *Signature) Close() {
 // contract: 1=SHA-1, 2=SHA-256, 3=SHA-384, 4=SHA-512, 0=Unknown.
 type TimestampHashAlgorithm int32
 
+// TimestampHashAlgorithm constants mirror the Rust `HashAlgorithm` enum /
+// FFI contract. Use these when creating or inspecting a Timestamp.
 const (
 	TimestampHashUnknown TimestampHashAlgorithm = 0
 	TimestampHashSha1    TimestampHashAlgorithm = 1
