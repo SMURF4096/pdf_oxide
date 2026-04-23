@@ -2,7 +2,7 @@
 
 All notable changes to PDFOxide are documented here.
 
-## [0.3.38] - 2026-04-22
+## [0.3.38] - 2026-04-23
 > DocumentBuilder fluent API across every language binding, real font subsetting, DocumentBuilder encryption, multi-target WASM packaging, and the first cryptographic slice of PDF signature verification
 
 This release closes the "Rust-only `DocumentBuilder` gap": the fluent

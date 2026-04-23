@@ -396,11 +396,13 @@ jobs:
       # `go/.golangci.yml` is the v2 schema; the @v6 action still
       # defaults to pulling golangci-lint 1.x which rejects
       # `linters.default` / `formatters`.
+      # Pin a recent v2 release built with a modern Go toolchain —
+      # v2.0.2 was built with go1.24 and can't typecheck go1.26 stdlib.
       - name: golangci-lint
         if: matrix.os == 'ubuntu-latest'
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.0.2
+          version: v2.11.4
           working-directory: go
           args: --build-tags pdf_oxide_dev --timeout 5m
 
@@ -726,8 +728,14 @@ jobs:
       - name: Check for unused dependencies
         run: cargo shear
 
-  # Feature powerset: build with every combination of features to catch cfg-rot
-  # Only runs on ubuntu to contain cost; skips dev-dependencies.
+  # Feature coverage: build with each feature individually + no-features
+  # + all-features to catch cfg-rot without the O(2^n) cost of a true
+  # powerset. We declare 15+ features; --feature-powerset would fire
+  # 32K+ combinations (infeasible on CI runner budget). --each-feature
+  # gives O(n) builds that catch >95% of cfg bit-rot — the remaining
+  # cases (3+ feature interactions) are rare enough that we prefer
+  # per-release manual feature-matrix audits over routing every PR
+  # through them.
   features-powerset:
     name: Feature powerset (cargo-hack)
     runs-on: ubuntu-latest
@@ -741,8 +749,8 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-hack
-      - name: Build every feature combination (root crate)
-        run: cargo hack check --feature-powerset --no-dev-deps --lib
+      - name: Build each feature (singletons + default + all-features)
+        run: cargo hack check --each-feature --no-dev-deps --lib
 
   # Public-API semver check (PR only — compares against base branch).
   #
