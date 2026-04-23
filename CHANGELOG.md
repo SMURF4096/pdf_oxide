@@ -131,15 +131,14 @@ for sig in doc.signatures():
 Supporting surface shipped alongside:
 
 - `Certificate` — DER inspection (subject, issuer, serial, validity,
-  `is_valid`) via `x509-parser` — **C FFI, C#, Node**.
+  `is_valid`) via `x509-parser` — **every binding**.
 - `Signature` — enumerate + inspect + `.GetCertificate()` —
-  **Python, WASM, C FFI, C#, Go, Node**.
+  **every binding**.
 - `Timestamp` — RFC 3161 `TSTInfo` parsing (time, serial, policy,
-  TSA name, hash algorithm, message imprint) — **Python, WASM, C FFI,
-  C#, Go**.
+  TSA name, hash algorithm, message imprint) — **every binding**.
 - `TsaClient` — RFC 3161 HTTP POST with nonce + HTTP Basic auth,
-  behind a new `tsa-client` Cargo feature — **Python, C FFI, C#, Go**.
-  Intentionally not wired on WASM (ureq is wasm-incompatible).
+  behind a new `tsa-client` Cargo feature — **every binding except
+  WASM**. Intentionally not wired on WASM (ureq is wasm-incompatible).
 - `DocumentEditor::set_producer` / `set_creation_date` — metadata
   writers.
 - `render_page_region` / `render_page_fit` — clipped / fitted
