@@ -5217,8 +5217,14 @@ impl PyCertificate {
     }
 
     fn __repr__(&self) -> String {
-        let subject = self.creds.subject().unwrap_or_else(|_| "<unreadable>".into());
-        let serial = self.creds.serial().unwrap_or_else(|_| "<unreadable>".into());
+        let subject = self
+            .creds
+            .subject()
+            .unwrap_or_else(|_| "<unreadable>".into());
+        let serial = self
+            .creds
+            .serial()
+            .unwrap_or_else(|_| "<unreadable>".into());
         format!("Certificate(subject={subject:?}, serial={serial:?})")
     }
 }

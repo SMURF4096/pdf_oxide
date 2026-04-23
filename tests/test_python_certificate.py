@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+
 pdf_oxide = pytest.importorskip(
     "pdf_oxide.pdf_oxide", reason="pdf_oxide native module not importable"
 )
