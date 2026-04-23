@@ -398,6 +398,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 	"unsafe"
 )
 
@@ -2821,6 +2822,79 @@ func (cert *Certificate) Close() {
 		C.pdf_certificate_free(cert.handle)
 		cert.handle = nil
 	}
+}
+
+// certReadString is the shared body for Subject / Issuer / Serial — each FFI
+// call returns a `*C.char` that must be copied to Go memory and freed.
+func (cert *Certificate) certReadString(fn func(unsafe.Pointer, *C.int) *C.char) (string, error) {
+	if cert.handle == nil {
+		return "", ErrInternal
+	}
+	var errorCode C.int
+	cStr := fn(cert.handle, &errorCode)
+	if errorCode != 0 {
+		return "", ffiError(errorCode)
+	}
+	if cStr == nil {
+		return "", nil
+	}
+	defer C.free_string(cStr)
+	return C.GoString(cStr), nil
+}
+
+// Subject returns the certificate's subject distinguished name (e.g.
+// "CN=Example Corp, O=Example, C=US"). Returns an error if the certificate
+// has been closed or the native call fails.
+func (cert *Certificate) Subject() (string, error) {
+	return cert.certReadString(func(h unsafe.Pointer, ec *C.int) *C.char {
+		return C.pdf_certificate_get_subject(h, ec)
+	})
+}
+
+// Issuer returns the issuer distinguished name — the DN of the CA that
+// signed this certificate (self-signed certs have Issuer == Subject).
+func (cert *Certificate) Issuer() (string, error) {
+	return cert.certReadString(func(h unsafe.Pointer, ec *C.int) *C.char {
+		return C.pdf_certificate_get_issuer(h, ec)
+	})
+}
+
+// Serial returns the certificate's serial number as a hex-encoded string.
+func (cert *Certificate) Serial() (string, error) {
+	return cert.certReadString(func(h unsafe.Pointer, ec *C.int) *C.char {
+		return C.pdf_certificate_get_serial(h, ec)
+	})
+}
+
+// Validity returns the certificate's notBefore and notAfter times as Unix
+// epoch seconds, wrapped in time.Time. Callers comparing against time.Now()
+// get "is this cert currently time-valid" — IsValid() does that check.
+func (cert *Certificate) Validity() (notBefore, notAfter time.Time, err error) {
+	if cert.handle == nil {
+		return time.Time{}, time.Time{}, ErrInternal
+	}
+	var nb, na C.int64_t
+	var errorCode C.int
+	C.pdf_certificate_get_validity(cert.handle, &nb, &na, &errorCode)
+	if errorCode != 0 {
+		return time.Time{}, time.Time{}, ffiError(errorCode)
+	}
+	return time.Unix(int64(nb), 0).UTC(), time.Unix(int64(na), 0).UTC(), nil
+}
+
+// IsValid reports whether the certificate is currently within its validity
+// window (notBefore ≤ now ≤ notAfter). It does NOT verify the signature
+// chain, trust-root, or revocation — this is a time-window check only.
+func (cert *Certificate) IsValid() (bool, error) {
+	if cert.handle == nil {
+		return false, ErrInternal
+	}
+	var errorCode C.int
+	rc := C.pdf_certificate_is_valid(cert.handle, &errorCode)
+	if errorCode != 0 {
+		return false, ffiError(errorCode)
+	}
+	return rc != 0, nil
 }
 
 // SignatureInfo holds extracted signature information
