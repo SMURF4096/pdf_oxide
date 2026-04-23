@@ -527,60 +527,103 @@ editor_set_string_field!(document_editor_set_author, set_author);
 editor_get_string_field!(document_editor_get_subject, subject);
 editor_set_string_field!(document_editor_set_subject, set_subject);
 
-// Producer - editor doesn't have a direct get_producer method, delegate through source
+/// Producer — reads from `/Info.Producer`. Returns a C string owned by
+/// the caller (must be freed with `free_string`); returns null if no
+/// producer is set.
 #[no_mangle]
 pub extern "C" fn document_editor_get_producer(
-    handle: *const DocumentEditor,
+    handle: *mut DocumentEditor,
     error_code: *mut i32,
 ) -> *mut c_char {
     if handle.is_null() {
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    // Producer is typically in document info dict - return empty for now
-    set_error(error_code, ERR_SUCCESS);
-    ptr::null_mut()
+    let editor = unsafe { &mut *handle };
+    match editor.producer() {
+        Ok(Some(s)) => {
+            set_error(error_code, ERR_SUCCESS);
+            to_c_string(&s)
+        },
+        Ok(None) => {
+            set_error(error_code, ERR_SUCCESS);
+            ptr::null_mut()
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            ptr::null_mut()
+        },
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn document_editor_set_producer(
     handle: *mut DocumentEditor,
-    _value: *const c_char,
+    value: *const c_char,
     error_code: *mut i32,
 ) -> i32 {
-    if handle.is_null() {
+    if handle.is_null() || value.is_null() {
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    // No direct set_producer in editor API
+    let s = match unsafe { CStr::from_ptr(value) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            set_error(error_code, ERR_INVALID_ARG);
+            return -1;
+        },
+    };
+    unsafe { &mut *handle }.set_producer(s);
     set_error(error_code, ERR_SUCCESS);
     0
 }
 
-// Creation date
+/// Creation date — reads from `/Info.CreationDate` as a raw PDF
+/// date string (e.g. `D:20260421120000Z`).
 #[no_mangle]
 pub extern "C" fn document_editor_get_creation_date(
-    handle: *const DocumentEditor,
+    handle: *mut DocumentEditor,
     error_code: *mut i32,
 ) -> *mut c_char {
     if handle.is_null() {
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    set_error(error_code, ERR_SUCCESS);
-    ptr::null_mut()
+    let editor = unsafe { &mut *handle };
+    match editor.creation_date() {
+        Ok(Some(s)) => {
+            set_error(error_code, ERR_SUCCESS);
+            to_c_string(&s)
+        },
+        Ok(None) => {
+            set_error(error_code, ERR_SUCCESS);
+            ptr::null_mut()
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            ptr::null_mut()
+        },
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn document_editor_set_creation_date(
     handle: *mut DocumentEditor,
-    _date_str: *const c_char,
+    date_str: *const c_char,
     error_code: *mut i32,
 ) -> i32 {
-    if handle.is_null() {
+    if handle.is_null() || date_str.is_null() {
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
+    let s = match unsafe { CStr::from_ptr(date_str) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            set_error(error_code, ERR_INVALID_ARG);
+            return -1;
+        },
+    };
+    unsafe { &mut *handle }.set_creation_date(s);
     set_error(error_code, ERR_SUCCESS);
     0
 }
@@ -2142,7 +2185,15 @@ pub extern "C" fn pdf_certificate_load_from_bytes(
         } else {
             unsafe { CStr::from_ptr(password) }.to_str().unwrap_or("")
         };
-        match crate::signatures::SigningCredentials::from_pkcs12(data, pwd) {
+        // Try PKCS#12 first (has a private key + cert chain). If that
+        // fails — today `from_pkcs12` is still stubbed — fall back to
+        // raw DER parsing so Certificate accessors work even without
+        // PKCS#12 support in Rust core.
+        if let Ok(creds) = crate::signatures::SigningCredentials::from_pkcs12(data, pwd) {
+            set_error(error_code, ERR_SUCCESS);
+            return Box::into_raw(Box::new(creds)) as *mut std::ffi::c_void;
+        }
+        match crate::signatures::SigningCredentials::from_der(data.to_vec()) {
             Ok(creds) => {
                 set_error(error_code, ERR_SUCCESS);
                 Box::into_raw(Box::new(creds)) as *mut std::ffi::c_void
@@ -2155,6 +2206,7 @@ pub extern "C" fn pdf_certificate_load_from_bytes(
     }
     #[cfg(not(feature = "signatures"))]
     {
+        let _ = (cert_bytes, cert_len, password);
         set_error(error_code, _ERR_UNSUPPORTED);
         ptr::null_mut()
     }
@@ -2175,30 +2227,206 @@ pub extern "C" fn pdf_document_sign(
 
 #[no_mangle]
 pub extern "C" fn pdf_document_get_signature_count(
-    _document_handle: *const std::ffi::c_void,
+    document_handle: *const std::ffi::c_void,
     error_code: *mut i32,
 ) -> i32 {
-    set_error(error_code, ERR_SUCCESS);
-    0
+    #[cfg(feature = "signatures")]
+    {
+        if document_handle.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return -1;
+        }
+        let doc = unsafe { &mut *(document_handle as *mut PdfDocument) };
+        match crate::signatures::count_signatures(doc) {
+            Ok(n) => {
+                set_error(error_code, ERR_SUCCESS);
+                n as i32
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                -1
+            },
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = document_handle;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        -1
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_document_get_signature(
-    _document_handle: *const std::ffi::c_void,
-    _index: i32,
+    document_handle: *const std::ffi::c_void,
+    index: i32,
     error_code: *mut i32,
 ) -> *mut std::ffi::c_void {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+    #[cfg(feature = "signatures")]
+    {
+        if document_handle.is_null() || index < 0 {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let doc = unsafe { &mut *(document_handle as *mut PdfDocument) };
+        match crate::signatures::enumerate_signatures(doc) {
+            Ok(list) => match list.into_iter().nth(index as usize) {
+                Some(info) => {
+                    set_error(error_code, ERR_SUCCESS);
+                    Box::into_raw(Box::new(FfiSignatureInfo { info })) as *mut std::ffi::c_void
+                },
+                None => {
+                    set_error(error_code, ERR_INVALID_ARG);
+                    ptr::null_mut()
+                },
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = (document_handle, index);
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
+/// Run the signer-attributes crypto check (RSA-PKCS#1 v1.5 over
+/// `signed_attrs`) on the CMS blob carried by a signature handle.
+///
+/// Returns:
+/// - `1`  — Valid: signer held the private key matching the embedded
+///           certificate. Callers still need to verify the
+///           `messageDigest` attribute against their document content
+///           hash for a full detached-signature claim — use
+///           `pdf_signature_verify_detached` which runs both checks.
+/// - `0`  — Invalid: CMS parsed but the RSA check failed (tampered
+///           attributes or wrong key).
+/// - `-1` — Unknown or not supported: PSS / ECDSA / unrecognised
+///           digest OID / missing signed_attrs / structurally
+///           unparseable / feature not compiled.
 #[no_mangle]
 pub extern "C" fn pdf_signature_verify(
-    _signature_handle: *const std::ffi::c_void,
+    signature_handle: *const std::ffi::c_void,
     error_code: *mut i32,
 ) -> i32 {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    -1
+    #[cfg(feature = "signatures")]
+    {
+        if signature_handle.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return -1;
+        }
+        let ffi = unsafe { &*(signature_handle as *const FfiSignatureInfo) };
+        let Some(contents) = ffi.info.contents() else {
+            set_error(error_code, _ERR_UNSUPPORTED);
+            return -1;
+        };
+        match crate::signatures::verify_signer(contents) {
+            Ok(crate::signatures::SignerVerify::Valid) => {
+                set_error(error_code, ERR_SUCCESS);
+                1
+            },
+            Ok(crate::signatures::SignerVerify::Invalid) => {
+                set_error(error_code, ERR_SUCCESS);
+                0
+            },
+            Ok(crate::signatures::SignerVerify::Unknown) => {
+                set_error(error_code, _ERR_UNSUPPORTED);
+                -1
+            },
+            Err(_) => {
+                set_error(error_code, ERR_INVALID_ARG);
+                -1
+            },
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = signature_handle;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        -1
+    }
+}
+
+/// Verify a PDF signature end-to-end: run the signer-attributes crypto
+/// check and the RFC 5652 §11.2 `messageDigest` attribute check against
+/// the caller-provided document bytes. `pdf_data` must be the full PDF
+/// file — the signature handle's stored `/ByteRange` is used to extract
+/// the segments that were actually signed.
+///
+/// Returns:
+/// - `1`  — Valid: both the RSA-PKCS#1 v1.5 check and the messageDigest
+///           check passed. The signer is authentic and the document has
+///           not been tampered with since signing.
+/// - `0`  — Invalid: either the signer check or the messageDigest check
+///           failed. Callers can't distinguish "wrong signer" from
+///           "document tampered after signing" from this code alone.
+/// - `-1` — Unknown or not supported: signer uses PSS / ECDSA / unknown
+///           digest, blob lacks `signed_attrs` / `messageDigest`,
+///           `/ByteRange` is malformed, or the feature is not compiled.
+#[no_mangle]
+pub extern "C" fn pdf_signature_verify_detached(
+    signature_handle: *const std::ffi::c_void,
+    pdf_data: *const u8,
+    pdf_len: usize,
+    error_code: *mut i32,
+) -> i32 {
+    #[cfg(feature = "signatures")]
+    {
+        if signature_handle.is_null() || pdf_data.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return -1;
+        }
+        let ffi = unsafe { &*(signature_handle as *const FfiSignatureInfo) };
+        let Some(contents) = ffi.info.contents() else {
+            set_error(error_code, _ERR_UNSUPPORTED);
+            return -1;
+        };
+        let br = ffi.info.byte_range();
+        if br.len() != 4 {
+            set_error(error_code, ERR_INVALID_ARG);
+            return -1;
+        }
+        let byte_range: [i64; 4] = [br[0], br[1], br[2], br[3]];
+        let pdf_slice = unsafe { std::slice::from_raw_parts(pdf_data, pdf_len) };
+        let signed_bytes = match crate::signatures::ByteRangeCalculator::extract_signed_bytes(
+            pdf_slice,
+            &byte_range,
+        ) {
+            Ok(b) => b,
+            Err(_) => {
+                set_error(error_code, ERR_INVALID_ARG);
+                return -1;
+            },
+        };
+        match crate::signatures::verify_signer_detached(contents, &signed_bytes) {
+            Ok(crate::signatures::SignerVerify::Valid) => {
+                set_error(error_code, ERR_SUCCESS);
+                1
+            },
+            Ok(crate::signatures::SignerVerify::Invalid) => {
+                set_error(error_code, ERR_SUCCESS);
+                0
+            },
+            Ok(crate::signatures::SignerVerify::Unknown) => {
+                set_error(error_code, _ERR_UNSUPPORTED);
+                -1
+            },
+            Err(_) => {
+                set_error(error_code, ERR_INVALID_ARG);
+                -1
+            },
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = (signature_handle, pdf_data, pdf_len);
+        set_error(error_code, _ERR_UNSUPPORTED);
+        -1
+    }
 }
 
 #[no_mangle]
@@ -2244,8 +2472,13 @@ pub extern "C" fn pdf_signature_get_signing_time(
             set_error(error_code, ERR_INVALID_ARG);
             return 0;
         }
+        let info = unsafe { &*sig };
         set_error(error_code, ERR_SUCCESS);
-        0 // signing_time is a String, not epoch — returning 0 for now
+        info.info
+            .signing_time
+            .as_deref()
+            .and_then(crate::signatures::parse_pdf_date_to_epoch)
+            .unwrap_or(0)
     }
     #[cfg(not(feature = "signatures"))]
     {
@@ -2303,57 +2536,207 @@ pub extern "C" fn pdf_signature_get_signing_location(
 
 #[no_mangle]
 pub extern "C" fn pdf_signature_get_certificate(
-    _sig: *const std::ffi::c_void,
+    sig: *const std::ffi::c_void,
     error_code: *mut i32,
 ) -> *mut std::ffi::c_void {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+    #[cfg(feature = "signatures")]
+    {
+        if sig.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let info = unsafe { &*(sig as *const FfiSignatureInfo) };
+        let contents = match info.info.contents.as_ref() {
+            Some(c) => c,
+            None => {
+                set_error(error_code, ERR_INVALID_ARG);
+                return ptr::null_mut();
+            },
+        };
+        let cert_der = match crate::signatures::extract_signer_certificate_der(contents) {
+            Ok(d) => d,
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                return ptr::null_mut();
+            },
+        };
+        match crate::signatures::SigningCredentials::from_der(cert_der) {
+            Ok(creds) => {
+                set_error(error_code, ERR_SUCCESS);
+                Box::into_raw(Box::new(creds)) as *mut std::ffi::c_void
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = sig;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_certificate_get_subject(
-    _cert: *const std::ffi::c_void,
+    cert: *const std::ffi::c_void,
     error_code: *mut i32,
 ) -> *mut c_char {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+    #[cfg(feature = "signatures")]
+    {
+        if cert.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let creds = unsafe { &*(cert as *const crate::signatures::SigningCredentials) };
+        match creds.subject() {
+            Ok(s) => {
+                set_error(error_code, ERR_SUCCESS);
+                to_c_string(&s)
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = cert;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_certificate_get_issuer(
-    _cert: *const std::ffi::c_void,
+    cert: *const std::ffi::c_void,
     error_code: *mut i32,
 ) -> *mut c_char {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+    #[cfg(feature = "signatures")]
+    {
+        if cert.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let creds = unsafe { &*(cert as *const crate::signatures::SigningCredentials) };
+        match creds.issuer() {
+            Ok(s) => {
+                set_error(error_code, ERR_SUCCESS);
+                to_c_string(&s)
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = cert;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_certificate_get_serial(
-    _cert: *const std::ffi::c_void,
+    cert: *const std::ffi::c_void,
     error_code: *mut i32,
 ) -> *mut c_char {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+    #[cfg(feature = "signatures")]
+    {
+        if cert.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let creds = unsafe { &*(cert as *const crate::signatures::SigningCredentials) };
+        match creds.serial() {
+            Ok(s) => {
+                set_error(error_code, ERR_SUCCESS);
+                to_c_string(&s)
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = cert;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_certificate_get_validity(
-    _cert: *const std::ffi::c_void,
-    _not_before: *mut i64,
-    _not_after: *mut i64,
+    cert: *const std::ffi::c_void,
+    not_before: *mut i64,
+    not_after: *mut i64,
     error_code: *mut i32,
 ) {
-    set_error(error_code, _ERR_UNSUPPORTED);
+    #[cfg(feature = "signatures")]
+    {
+        if cert.is_null() || not_before.is_null() || not_after.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return;
+        }
+        let creds = unsafe { &*(cert as *const crate::signatures::SigningCredentials) };
+        match creds.validity() {
+            Ok((nb, na)) => {
+                unsafe {
+                    *not_before = nb;
+                    *not_after = na;
+                }
+                set_error(error_code, ERR_SUCCESS);
+            },
+            Err(e) => set_error(error_code, classify_error(&e)),
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = (cert, not_before, not_after);
+        set_error(error_code, _ERR_UNSUPPORTED);
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_certificate_is_valid(
-    _cert: *const std::ffi::c_void,
+    cert: *const std::ffi::c_void,
     error_code: *mut i32,
 ) -> i32 {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    0
+    #[cfg(feature = "signatures")]
+    {
+        if cert.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return 0;
+        }
+        let creds = unsafe { &*(cert as *const crate::signatures::SigningCredentials) };
+        match creds.is_valid() {
+            Ok(v) => {
+                set_error(error_code, ERR_SUCCESS);
+                if v {
+                    1
+                } else {
+                    0
+                }
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                0
+            },
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = cert;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        0
+    }
 }
 
 #[no_mangle]
@@ -2365,7 +2748,20 @@ pub extern "C" fn pdf_signature_free(handle: *mut FfiSignatureInfo) {
     }
 }
 #[no_mangle]
-pub extern "C" fn pdf_certificate_free(_handle: *mut std::ffi::c_void) {}
+pub extern "C" fn pdf_certificate_free(handle: *mut std::ffi::c_void) {
+    #[cfg(feature = "signatures")]
+    {
+        if !handle.is_null() {
+            unsafe {
+                drop(Box::from_raw(handle as *mut crate::signatures::SigningCredentials));
+            }
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = handle;
+    }
+}
 
 // ─── Rendering ──────────────────────────────────────────────────────────────
 
@@ -2451,19 +2847,141 @@ pub extern "C" fn pdf_render_page(
     }
 }
 
+/// Render a page with the full RenderOptions surface exposed to C callers.
+///
+/// All four background channels are 0.0..=1.0; set `transparent_background`
+/// to 1 to drop the fill entirely (matches Rust's
+/// `RenderOptions { background: None, .. }`).
+///
+/// Mirrors the Python surface added in gap O and the C# RenderOptions class
+/// added in gap B. Rust implementation is the single source of truth.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "C" fn pdf_render_page_with_options(
+    doc: *mut PdfDocument,
+    page_index: i32,
+    dpi: i32,
+    format: i32,
+    bg_r: f32,
+    bg_g: f32,
+    bg_b: f32,
+    bg_a: f32,
+    transparent_background: i32,
+    render_annotations: i32,
+    jpeg_quality: i32,
+    error_code: *mut i32,
+) -> *mut FfiRenderedImage {
+    #[cfg(feature = "rendering")]
+    {
+        if doc.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        if dpi <= 0 || !(1..=100).contains(&jpeg_quality) {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let d = unsafe { &mut *doc };
+        let fmt = if format == 1 {
+            RenderImageFormat::Jpeg
+        } else {
+            RenderImageFormat::Png
+        };
+        let background = if transparent_background != 0 {
+            None
+        } else {
+            Some([bg_r, bg_g, bg_b, bg_a])
+        };
+        let opts = RustRenderOptions {
+            dpi: dpi as u32,
+            format: fmt,
+            background,
+            render_annotations: render_annotations != 0,
+            jpeg_quality: jpeg_quality as u8,
+        };
+        match rendering::render_page(d, page_index as usize, &opts) {
+            Ok(img) => {
+                set_error(error_code, ERR_SUCCESS);
+                Box::into_raw(Box::new(FfiRenderedImage { inner: img }))
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
+        }
+    }
+    #[cfg(not(feature = "rendering"))]
+    {
+        let _ = (
+            doc,
+            page_index,
+            dpi,
+            format,
+            bg_r,
+            bg_g,
+            bg_b,
+            bg_a,
+            transparent_background,
+            render_annotations,
+            jpeg_quality,
+        );
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
+}
+
+/// Render a rectangular region of a page. `crop_*` are in PDF user-space
+/// points (origin bottom-left). Format: 0=PNG, 1=JPEG.
 #[no_mangle]
 pub extern "C" fn pdf_render_page_region(
-    _doc: *mut std::ffi::c_void,
-    _page_index: i32,
-    _crop_x: f32,
-    _crop_y: f32,
-    _crop_width: f32,
-    _crop_height: f32,
-    _format: i32,
+    doc: *mut PdfDocument,
+    page_index: i32,
+    crop_x: f32,
+    crop_y: f32,
+    crop_width: f32,
+    crop_height: f32,
+    format: i32,
     error_code: *mut i32,
-) -> *mut std::ffi::c_void {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+) -> *mut FfiRenderedImage {
+    #[cfg(feature = "rendering")]
+    {
+        if doc.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let d = unsafe { &mut *doc };
+        let fmt = if format == 1 {
+            RenderImageFormat::Jpeg
+        } else {
+            RenderImageFormat::Png
+        };
+        let opts = RustRenderOptions {
+            dpi: 150,
+            format: fmt,
+            ..Default::default()
+        };
+        match rendering::render_page_region(
+            d,
+            page_index as usize,
+            (crop_x, crop_y, crop_width, crop_height),
+            &opts,
+        ) {
+            Ok(img) => {
+                set_error(error_code, ERR_SUCCESS);
+                Box::into_raw(Box::new(FfiRenderedImage { inner: img }))
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
+        }
+    }
+    #[cfg(not(feature = "rendering"))]
+    {
+        let _ = (doc, page_index, crop_x, crop_y, crop_width, crop_height, format);
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
@@ -2511,17 +3029,50 @@ pub extern "C" fn pdf_render_page_zoom(
     }
 }
 
+/// Render a page to fit inside `w`×`h` pixels, preserving aspect ratio.
 #[no_mangle]
 pub extern "C" fn pdf_render_page_fit(
-    _doc: *mut std::ffi::c_void,
-    _page_index: i32,
-    _w: i32,
-    _h: i32,
-    _format: i32,
+    doc: *mut PdfDocument,
+    page_index: i32,
+    w: i32,
+    h: i32,
+    format: i32,
     error_code: *mut i32,
-) -> *mut std::ffi::c_void {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+) -> *mut FfiRenderedImage {
+    #[cfg(feature = "rendering")]
+    {
+        if doc.is_null() || w <= 0 || h <= 0 {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let d = unsafe { &mut *doc };
+        let fmt = if format == 1 {
+            RenderImageFormat::Jpeg
+        } else {
+            RenderImageFormat::Png
+        };
+        let opts = RustRenderOptions {
+            dpi: 150,
+            format: fmt,
+            ..Default::default()
+        };
+        match rendering::render_page_fit(d, page_index as usize, w as u32, h as u32, &opts) {
+            Ok(img) => {
+                set_error(error_code, ERR_SUCCESS);
+                Box::into_raw(Box::new(FfiRenderedImage { inner: img }))
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
+        }
+    }
+    #[cfg(not(feature = "rendering"))]
+    {
+        let _ = (doc, page_index, w, h, format);
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
@@ -2697,118 +3248,399 @@ pub extern "C" fn pdf_renderer_free(_handle: *mut std::ffi::c_void) {}
 
 #[no_mangle]
 pub extern "C" fn pdf_tsa_client_create(
-    _url: *const c_char,
-    _username: *const c_char,
-    _password: *const c_char,
-    _timeout: i32,
-    _hash_algo: i32,
-    _use_nonce: bool,
-    _cert_req: bool,
+    url: *const c_char,
+    username: *const c_char,
+    password: *const c_char,
+    timeout: i32,
+    hash_algo: i32,
+    use_nonce: bool,
+    cert_req: bool,
     error_code: *mut i32,
 ) -> *mut std::ffi::c_void {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+    #[cfg(feature = "tsa-client")]
+    {
+        if url.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let url_str = unsafe { CStr::from_ptr(url) }
+            .to_string_lossy()
+            .into_owned();
+        let user_opt = if username.is_null() {
+            None
+        } else {
+            Some(
+                unsafe { CStr::from_ptr(username) }
+                    .to_string_lossy()
+                    .into_owned(),
+            )
+        };
+        let pw_opt = if password.is_null() {
+            None
+        } else {
+            Some(
+                unsafe { CStr::from_ptr(password) }
+                    .to_string_lossy()
+                    .into_owned(),
+            )
+        };
+        let algo = hash_algo_from_i32(hash_algo);
+        let cfg = crate::signatures::TsaClientConfig {
+            url: url_str,
+            username: user_opt,
+            password: pw_opt,
+            timeout: if timeout > 0 {
+                std::time::Duration::from_secs(timeout as u64)
+            } else {
+                std::time::Duration::from_secs(30)
+            },
+            hash_algorithm: algo,
+            use_nonce,
+            cert_req,
+        };
+        let client = crate::signatures::TsaClient::new(cfg);
+        set_error(error_code, ERR_SUCCESS);
+        Box::into_raw(Box::new(client)) as *mut std::ffi::c_void
+    }
+    #[cfg(not(feature = "tsa-client"))]
+    {
+        let _ = (url, username, password, timeout, hash_algo, use_nonce, cert_req);
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
-pub extern "C" fn pdf_tsa_client_free(_client: *mut std::ffi::c_void) {}
+pub extern "C" fn pdf_tsa_client_free(client: *mut std::ffi::c_void) {
+    #[cfg(feature = "tsa-client")]
+    {
+        if !client.is_null() {
+            unsafe {
+                drop(Box::from_raw(client as *mut crate::signatures::TsaClient));
+            }
+        }
+    }
+    #[cfg(not(feature = "tsa-client"))]
+    {
+        let _ = client;
+    }
+}
 
 #[no_mangle]
 pub extern "C" fn pdf_tsa_request_timestamp(
-    _client: *const std::ffi::c_void,
-    _data: *const u8,
-    _data_len: usize,
+    client: *const std::ffi::c_void,
+    data: *const u8,
+    data_len: usize,
     error_code: *mut i32,
 ) -> *mut std::ffi::c_void {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+    #[cfg(feature = "tsa-client")]
+    {
+        if client.is_null() || data.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let c = unsafe { &*(client as *const crate::signatures::TsaClient) };
+        let slice = unsafe { std::slice::from_raw_parts(data, data_len) };
+        match c.request_timestamp(slice) {
+            Ok(ts) => {
+                set_error(error_code, ERR_SUCCESS);
+                Box::into_raw(Box::new(ts)) as *mut std::ffi::c_void
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
+        }
+    }
+    #[cfg(not(feature = "tsa-client"))]
+    {
+        let _ = (client, data, data_len);
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_tsa_request_timestamp_hash(
-    _client: *const std::ffi::c_void,
-    _hash: *const u8,
-    _hash_len: usize,
-    _hash_algo: i32,
+    client: *const std::ffi::c_void,
+    hash: *const u8,
+    hash_len: usize,
+    hash_algo: i32,
     error_code: *mut i32,
 ) -> *mut std::ffi::c_void {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+    #[cfg(feature = "tsa-client")]
+    {
+        if client.is_null() || hash.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let c = unsafe { &*(client as *const crate::signatures::TsaClient) };
+        let slice = unsafe { std::slice::from_raw_parts(hash, hash_len) };
+        let algo = hash_algo_from_i32(hash_algo);
+        match c.request_timestamp_hash(slice, algo) {
+            Ok(ts) => {
+                set_error(error_code, ERR_SUCCESS);
+                Box::into_raw(Box::new(ts)) as *mut std::ffi::c_void
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
+        }
+    }
+    #[cfg(not(feature = "tsa-client"))]
+    {
+        let _ = (client, hash, hash_len, hash_algo);
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
+}
+
+#[cfg(feature = "tsa-client")]
+fn hash_algo_from_i32(code: i32) -> crate::signatures::HashAlgorithm {
+    match code {
+        1 => crate::signatures::HashAlgorithm::Sha1,
+        2 => crate::signatures::HashAlgorithm::Sha256,
+        3 => crate::signatures::HashAlgorithm::Sha384,
+        4 => crate::signatures::HashAlgorithm::Sha512,
+        _ => crate::signatures::HashAlgorithm::Sha256,
+    }
+}
+
+/// Parse a DER-encoded RFC 3161 TimeStampToken (or bare TSTInfo) into
+/// an owned `Timestamp` handle. Every `pdf_timestamp_*` accessor below
+/// is cheap O(1) once the handle exists.
+#[no_mangle]
+pub extern "C" fn pdf_timestamp_parse(
+    bytes: *const u8,
+    len: usize,
+    error_code: *mut i32,
+) -> *mut std::ffi::c_void {
+    #[cfg(feature = "signatures")]
+    {
+        if bytes.is_null() || len == 0 {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let slice = unsafe { std::slice::from_raw_parts(bytes, len) };
+        match crate::signatures::Timestamp::from_der(slice) {
+            Ok(ts) => {
+                set_error(error_code, ERR_SUCCESS);
+                Box::into_raw(Box::new(ts)) as *mut std::ffi::c_void
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = (bytes, len);
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_timestamp_get_token(
-    _ts: *const std::ffi::c_void,
-    _out_len: *mut usize,
+    ts: *const std::ffi::c_void,
+    out_len: *mut usize,
     error_code: *mut i32,
 ) -> *const u8 {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null()
+    #[cfg(feature = "signatures")]
+    {
+        if ts.is_null() || out_len.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null();
+        }
+        let t = unsafe { &*(ts as *const crate::signatures::Timestamp) };
+        let bytes = t.token_bytes();
+        unsafe { *out_len = bytes.len() };
+        set_error(error_code, ERR_SUCCESS);
+        bytes.as_ptr()
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = (ts, out_len);
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null()
+    }
 }
 
 #[no_mangle]
-pub extern "C" fn pdf_timestamp_get_time(
-    _ts: *const std::ffi::c_void,
-    error_code: *mut i32,
-) -> i64 {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    0
+pub extern "C" fn pdf_timestamp_get_time(ts: *const std::ffi::c_void, error_code: *mut i32) -> i64 {
+    #[cfg(feature = "signatures")]
+    {
+        if ts.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return 0;
+        }
+        let t = unsafe { &*(ts as *const crate::signatures::Timestamp) };
+        set_error(error_code, ERR_SUCCESS);
+        t.time()
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = ts;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        0
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_timestamp_get_serial(
-    _ts: *const std::ffi::c_void,
+    ts: *const std::ffi::c_void,
     error_code: *mut i32,
 ) -> *mut c_char {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+    #[cfg(feature = "signatures")]
+    {
+        if ts.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let t = unsafe { &*(ts as *const crate::signatures::Timestamp) };
+        set_error(error_code, ERR_SUCCESS);
+        to_c_string(&t.serial())
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = ts;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_timestamp_get_tsa_name(
-    _ts: *const std::ffi::c_void,
+    ts: *const std::ffi::c_void,
     error_code: *mut i32,
 ) -> *mut c_char {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+    #[cfg(feature = "signatures")]
+    {
+        if ts.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let t = unsafe { &*(ts as *const crate::signatures::Timestamp) };
+        set_error(error_code, ERR_SUCCESS);
+        to_c_string(&t.tsa_name())
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = ts;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_timestamp_get_policy_oid(
-    _ts: *const std::ffi::c_void,
+    ts: *const std::ffi::c_void,
     error_code: *mut i32,
 ) -> *mut c_char {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+    #[cfg(feature = "signatures")]
+    {
+        if ts.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let t = unsafe { &*(ts as *const crate::signatures::Timestamp) };
+        set_error(error_code, ERR_SUCCESS);
+        to_c_string(&t.policy_oid())
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = ts;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_timestamp_get_hash_algorithm(
-    _ts: *const std::ffi::c_void,
+    ts: *const std::ffi::c_void,
     error_code: *mut i32,
 ) -> i32 {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    -1
+    #[cfg(feature = "signatures")]
+    {
+        if ts.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return -1;
+        }
+        let t = unsafe { &*(ts as *const crate::signatures::Timestamp) };
+        set_error(error_code, ERR_SUCCESS);
+        t.hash_algorithm() as i32
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = ts;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        -1
+    }
 }
 
 #[no_mangle]
 pub extern "C" fn pdf_timestamp_get_message_imprint(
-    _ts: *const std::ffi::c_void,
-    _out_len: *mut usize,
+    ts: *const std::ffi::c_void,
+    out_len: *mut usize,
     error_code: *mut i32,
 ) -> *const u8 {
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null()
+    // Returns a pointer into the owned `Timestamp` — lives as long as
+    // the caller holds the Timestamp handle; must NOT be freed
+    // separately. `out_len` receives the imprint byte length.
+    #[cfg(feature = "signatures")]
+    {
+        if ts.is_null() || out_len.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null();
+        }
+        let t = unsafe { &*(ts as *const crate::signatures::Timestamp) };
+        // Stash the imprint on the handle so the returned pointer
+        // remains valid for the handle's lifetime. The getter on
+        // Timestamp clones, which would invalidate the pointer on
+        // return — we need an API that returns a borrowed slice.
+        // Compromise: allocate a new leaked Box each call and rely on
+        // the caller to NOT free. Instead we stash on the handle:
+        let imprint = t.message_imprint_ref();
+        unsafe { *out_len = imprint.len() };
+        set_error(error_code, ERR_SUCCESS);
+        imprint.as_ptr()
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = (ts, out_len);
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null()
+    }
 }
 
 #[no_mangle]
-pub extern "C" fn pdf_timestamp_verify(_ts: *const std::ffi::c_void, error_code: *mut i32) -> bool {
+pub extern "C" fn pdf_timestamp_verify(ts: *const std::ffi::c_void, error_code: *mut i32) -> bool {
+    // Full cryptographic verification requires CMS SignedData signer
+    // validation, which is not yet implemented in Rust core. Surface
+    // UNSUPPORTED so every binding's Timestamp.Verify() is explicit
+    // about the gap.
+    let _ = ts;
     set_error(error_code, _ERR_UNSUPPORTED);
     false
 }
 
 #[no_mangle]
-pub extern "C" fn pdf_timestamp_free(_ts: *mut std::ffi::c_void) {}
+pub extern "C" fn pdf_timestamp_free(ts: *mut std::ffi::c_void) {
+    #[cfg(feature = "signatures")]
+    {
+        if !ts.is_null() {
+            unsafe {
+                drop(Box::from_raw(ts as *mut crate::signatures::Timestamp));
+            }
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = ts;
+    }
+}
 
 #[no_mangle]
 pub extern "C" fn pdf_signature_add_timestamp(
@@ -5690,7 +6522,7 @@ pub extern "C" fn pdf_oxide_search_results_to_json(
 // ─── OCR ────────────────────────────────────────────────────────────────────
 
 /// Create an OCR engine from model/dictionary file paths.
-/// Returns an opaque handle (Box<OcrEngine>) that must be freed with
+/// Returns an opaque handle (`Box<OcrEngine>`) that must be freed with
 /// `pdf_ocr_engine_free`. On failure returns null and sets `error_code`.
 #[no_mangle]
 pub extern "C" fn pdf_ocr_engine_create(
@@ -5844,5 +6676,1410 @@ pub extern "C" fn pdf_ocr_extract_text(
         let _ = (doc, page_index, engine);
         set_error(error_code, _ERR_UNSUPPORTED);
         ptr::null_mut()
+    }
+}
+
+// =============================================================================
+// Write-side API: EmbeddedFont / DocumentBuilder / PageBuilder
+// =============================================================================
+//
+// C-FFI mirror of the pyo3 / wasm-bindgen exposure, with FFI-appropriate
+// idioms: opaque handles, out-parameter error codes, explicit free
+// functions, no fluent chaining (each method returns an int status, not
+// a handle, so C / C# / Go / Node wrappers rebuild fluency above this).
+//
+// **Handle-lifetime contract** — read carefully before wrapping this FFI:
+//
+//   1. `pdf_document_builder_create` returns a builder handle. The
+//      caller owns it until one of
+//        * `pdf_document_builder_free`
+//        * `pdf_document_builder_save` / `_save_encrypted`
+//        * `pdf_document_builder_build` / `_to_bytes_encrypted`
+//      Each terminal method **consumes** the handle — subsequent use
+//      is undefined behaviour.
+//
+//   2. `pdf_document_builder_a4_page` / `_letter_page` / `_page`
+//      returns a page handle. While any page handle is outstanding,
+//      its parent builder's open-page slot is held; a second
+//      `pdf_document_builder_*_page` call on the same builder before
+//      the prior `pdf_page_builder_done` returns `ERR_INVALID_ARG (1)`.
+//
+//   3. `pdf_page_builder_done` commits the buffered operations and
+//      clears the parent's open-page slot. The page handle becomes
+//      invalid. `pdf_page_builder_free` drops without committing
+//      (error recovery only).
+//
+//   4. `pdf_document_builder_register_embedded_font` **consumes** the
+//      `font` handle. Caller must NOT call `pdf_embedded_font_free`
+//      afterward.
+//
+//   5. Byte buffers returned from `_build` / `_to_bytes_encrypted`
+//      must be freed with `free_bytes`.
+
+const _ERR_FONT: i32 = 9; // reserved for future fine-grained font errors
+
+/// FFI wrapper around [`crate::writer::DocumentBuilder`] that adds a
+/// reentrancy guard around the open-page slot.
+pub struct FfiDocumentBuilder {
+    inner: Option<crate::writer::DocumentBuilder>,
+    open_page: bool,
+}
+
+/// Buffered page operations that are replayed against a real Rust
+/// `FluentPageBuilder` on `pdf_page_builder_done`.
+enum FfiPageOp {
+    Font(String, f32),
+    At(f32, f32),
+    Text(String),
+    Heading(u8, String),
+    Paragraph(String),
+    Space(f32),
+    HorizontalRule,
+    LinkUrl(String),
+    LinkPage(usize),
+    LinkNamed(String),
+    Highlight(f32, f32, f32),
+    Underline(f32, f32, f32),
+    Strikeout(f32, f32, f32),
+    Squiggly(f32, f32, f32),
+    StickyNote(String),
+    StickyNoteAt(f32, f32, String),
+    Watermark(String),
+    WatermarkConfidential,
+    WatermarkDraft,
+    Stamp(String),
+    FreeText {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        text: String,
+    },
+    TextField {
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        default_value: Option<String>,
+    },
+    Checkbox {
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        checked: bool,
+    },
+    ComboBox {
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        options: Vec<String>,
+        selected: Option<String>,
+    },
+    RadioGroup {
+        name: String,
+        buttons: Vec<(String, f32, f32, f32, f32)>,
+        selected: Option<String>,
+    },
+    PushButton {
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        caption: String,
+    },
+    Rect(f32, f32, f32, f32),
+    FilledRect(f32, f32, f32, f32, f32, f32, f32),
+    Line(f32, f32, f32, f32),
+}
+
+/// Parse a stamp-type name into the Rust `StampType` enum. Unknown names
+/// become `StampType::Custom`.
+fn ffi_parse_stamp_type(name: &str) -> crate::writer::StampType {
+    use crate::writer::StampType;
+    match name {
+        "Approved" => StampType::Approved,
+        "Experimental" => StampType::Experimental,
+        "NotApproved" => StampType::NotApproved,
+        "AsIs" => StampType::AsIs,
+        "Expired" => StampType::Expired,
+        "NotForPublicRelease" => StampType::NotForPublicRelease,
+        "Confidential" => StampType::Confidential,
+        "Final" => StampType::Final,
+        "Sold" => StampType::Sold,
+        "Departmental" => StampType::Departmental,
+        "ForComment" => StampType::ForComment,
+        "TopSecret" => StampType::TopSecret,
+        "Draft" => StampType::Draft,
+        "ForPublicRelease" => StampType::ForPublicRelease,
+        other => StampType::Custom(other.to_string()),
+    }
+}
+
+/// Page sub-handle. Holds a raw back-pointer to the parent; the parent
+/// must outlive this handle (enforced by the one-page-at-a-time
+/// invariant documented above).
+pub struct FfiPageBuilder {
+    parent: *mut FfiDocumentBuilder,
+    page_size: Option<crate::writer::PageSize>,
+    custom_width: f32,
+    custom_height: f32,
+    ops: Vec<FfiPageOp>,
+    done_called: bool,
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// EmbeddedFont
+// ───────────────────────────────────────────────────────────────────────────
+
+/// Load a TTF / OTF font from a file path. Returns an opaque handle or
+/// NULL on error.
+#[no_mangle]
+pub extern "C" fn pdf_embedded_font_from_file(
+    path: *const c_char,
+    error_code: *mut i32,
+) -> *mut crate::writer::EmbeddedFont {
+    if path.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return ptr::null_mut();
+    }
+    let path_str = match unsafe { CStr::from_ptr(path) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        },
+    };
+    match crate::writer::EmbeddedFont::from_file(path_str) {
+        Ok(font) => {
+            set_error(error_code, ERR_SUCCESS);
+            Box::into_raw(Box::new(font))
+        },
+        Err(_) => {
+            set_error(error_code, ERR_IO);
+            ptr::null_mut()
+        },
+    }
+}
+
+/// Load a font from a byte buffer. `name` may be NULL to use the
+/// PostScript name from the font face.
+#[no_mangle]
+pub extern "C" fn pdf_embedded_font_from_bytes(
+    data: *const u8,
+    len: usize,
+    name: *const c_char,
+    error_code: *mut i32,
+) -> *mut crate::writer::EmbeddedFont {
+    if data.is_null() || len == 0 {
+        set_error(error_code, ERR_INVALID_ARG);
+        return ptr::null_mut();
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(data, len) }.to_vec();
+    let name_opt = if name.is_null() {
+        None
+    } else {
+        match unsafe { CStr::from_ptr(name) }.to_str() {
+            Ok(s) => Some(s.to_string()),
+            Err(_) => {
+                set_error(error_code, ERR_INVALID_ARG);
+                return ptr::null_mut();
+            },
+        }
+    };
+    match crate::writer::EmbeddedFont::from_data(name_opt, bytes) {
+        Ok(font) => {
+            set_error(error_code, ERR_SUCCESS);
+            Box::into_raw(Box::new(font))
+        },
+        Err(_) => {
+            set_error(error_code, ERR_PARSE);
+            ptr::null_mut()
+        },
+    }
+}
+
+/// Free an `EmbeddedFont` handle. No-op on NULL. Do not call after
+/// a successful `pdf_document_builder_register_embedded_font` —
+/// the builder has taken ownership.
+#[no_mangle]
+pub extern "C" fn pdf_embedded_font_free(handle: *mut crate::writer::EmbeddedFont) {
+    if !handle.is_null() {
+        unsafe {
+            drop(Box::from_raw(handle));
+        }
+    }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// DocumentBuilder
+// ───────────────────────────────────────────────────────────────────────────
+
+/// Create a new `DocumentBuilder`. Never fails but keeps the
+/// error_code signature for uniformity.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_create(error_code: *mut i32) -> *mut FfiDocumentBuilder {
+    set_error(error_code, ERR_SUCCESS);
+    Box::into_raw(Box::new(FfiDocumentBuilder {
+        inner: Some(crate::writer::DocumentBuilder::new()),
+        open_page: false,
+    }))
+}
+
+/// Free a `DocumentBuilder` handle without building. Safe to call on
+/// an already-consumed handle — it'll just drop the (empty) wrapper.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_free(handle: *mut FfiDocumentBuilder) {
+    if !handle.is_null() {
+        unsafe {
+            drop(Box::from_raw(handle));
+        }
+    }
+}
+
+fn ffi_builder_mut<'a>(
+    handle: *mut FfiDocumentBuilder,
+    error_code: *mut i32,
+) -> Option<&'a mut FfiDocumentBuilder> {
+    if handle.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return None;
+    }
+    let wrapper = unsafe { &mut *handle };
+    if wrapper.inner.is_none() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return None;
+    }
+    Some(wrapper)
+}
+
+fn ffi_builder_apply<F>(handle: *mut FfiDocumentBuilder, error_code: *mut i32, f: F) -> i32
+where
+    F: FnOnce(crate::writer::DocumentBuilder) -> crate::writer::DocumentBuilder,
+{
+    let Some(wrapper) = ffi_builder_mut(handle, error_code) else {
+        return -1;
+    };
+    if wrapper.open_page {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let taken = wrapper.inner.take().unwrap();
+    wrapper.inner = Some(f(taken));
+    set_error(error_code, ERR_SUCCESS);
+    0
+}
+
+fn read_cstr_or_fail(ptr: *const c_char, error_code: *mut i32) -> Option<String> {
+    if ptr.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return None;
+    }
+    match unsafe { CStr::from_ptr(ptr) }.to_str() {
+        Ok(s) => Some(s.to_string()),
+        Err(_) => {
+            set_error(error_code, ERR_INVALID_ARG);
+            None
+        },
+    }
+}
+
+/// Set the document title. Returns 0 on success, -1 on error.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_set_title(
+    handle: *mut FfiDocumentBuilder,
+    title: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(title) = read_cstr_or_fail(title, error_code) else {
+        return -1;
+    };
+    ffi_builder_apply(handle, error_code, |b| b.title(title))
+}
+
+/// Set the document author. Returns 0 on success, -1 on error.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_set_author(
+    handle: *mut FfiDocumentBuilder,
+    author: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(author) = read_cstr_or_fail(author, error_code) else {
+        return -1;
+    };
+    ffi_builder_apply(handle, error_code, |b| b.author(author))
+}
+
+/// Set the document subject.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_set_subject(
+    handle: *mut FfiDocumentBuilder,
+    subject: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(subject) = read_cstr_or_fail(subject, error_code) else {
+        return -1;
+    };
+    ffi_builder_apply(handle, error_code, |b| b.subject(subject))
+}
+
+/// Set the document keywords (comma-separated).
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_set_keywords(
+    handle: *mut FfiDocumentBuilder,
+    keywords: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(keywords) = read_cstr_or_fail(keywords, error_code) else {
+        return -1;
+    };
+    ffi_builder_apply(handle, error_code, |b| b.keywords(keywords))
+}
+
+/// Set the creator application name.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_set_creator(
+    handle: *mut FfiDocumentBuilder,
+    creator: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(creator) = read_cstr_or_fail(creator, error_code) else {
+        return -1;
+    };
+    ffi_builder_apply(handle, error_code, |b| b.creator(creator))
+}
+
+/// Register a TTF / OTF font. **Consumes** the `font` handle — on
+/// success, callers must not call `pdf_embedded_font_free` on it.
+/// On error the font handle is NOT consumed and remains valid.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_register_embedded_font(
+    handle: *mut FfiDocumentBuilder,
+    name: *const c_char,
+    font: *mut crate::writer::EmbeddedFont,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(name_s) = read_cstr_or_fail(name, error_code) else {
+        return -1;
+    };
+    if font.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    // Validate builder without consuming the font.
+    let Some(wrapper) = ffi_builder_mut(handle, error_code) else {
+        return -1;
+    };
+    if wrapper.open_page {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    // All validation passed — take ownership of the font.
+    let font_owned = unsafe { Box::from_raw(font) };
+    let taken = wrapper.inner.take().unwrap();
+    wrapper.inner = Some(taken.register_embedded_font(name_s, *font_owned));
+    set_error(error_code, ERR_SUCCESS);
+    0
+}
+
+fn open_page(
+    handle: *mut FfiDocumentBuilder,
+    page_size: Option<crate::writer::PageSize>,
+    width: f32,
+    height: f32,
+    error_code: *mut i32,
+) -> *mut FfiPageBuilder {
+    let Some(wrapper) = ffi_builder_mut(handle, error_code) else {
+        return ptr::null_mut();
+    };
+    if wrapper.open_page {
+        set_error(error_code, ERR_INVALID_ARG);
+        return ptr::null_mut();
+    }
+    wrapper.open_page = true;
+    set_error(error_code, ERR_SUCCESS);
+    Box::into_raw(Box::new(FfiPageBuilder {
+        parent: handle,
+        page_size,
+        custom_width: width,
+        custom_height: height,
+        ops: Vec::new(),
+        done_called: false,
+    }))
+}
+
+/// Start an A4 page. Only one page at a time may be open per builder —
+/// a second call while a page handle is outstanding returns NULL with
+/// `ERR_INVALID_ARG`.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_a4_page(
+    handle: *mut FfiDocumentBuilder,
+    error_code: *mut i32,
+) -> *mut FfiPageBuilder {
+    open_page(handle, Some(crate::writer::PageSize::A4), 0.0, 0.0, error_code)
+}
+
+/// Start a US Letter page.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_letter_page(
+    handle: *mut FfiDocumentBuilder,
+    error_code: *mut i32,
+) -> *mut FfiPageBuilder {
+    open_page(handle, Some(crate::writer::PageSize::Letter), 0.0, 0.0, error_code)
+}
+
+/// Start a page with custom dimensions in PDF points (72 pt = 1 inch).
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_page(
+    handle: *mut FfiDocumentBuilder,
+    width: f32,
+    height: f32,
+    error_code: *mut i32,
+) -> *mut FfiPageBuilder {
+    open_page(handle, None, width, height, error_code)
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// PageBuilder operations
+// ───────────────────────────────────────────────────────────────────────────
+
+fn push_page_op(handle: *mut FfiPageBuilder, error_code: *mut i32, op: FfiPageOp) -> i32 {
+    if handle.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let page = unsafe { &mut *handle };
+    if page.done_called {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    page.ops.push(op);
+    set_error(error_code, ERR_SUCCESS);
+    0
+}
+
+/// Set the font + size for subsequent text on this page.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_font(
+    handle: *mut FfiPageBuilder,
+    name: *const c_char,
+    size: f32,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(name_s) = read_cstr_or_fail(name, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::Font(name_s, size))
+}
+
+/// Move the cursor to absolute coordinates (in PDF points, from lower-left).
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_at(
+    handle: *mut FfiPageBuilder,
+    x: f32,
+    y: f32,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::At(x, y))
+}
+
+/// Emit a line of text at the current cursor position, then advance
+/// the cursor down by one line-height.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_text(
+    handle: *mut FfiPageBuilder,
+    text: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(text_s) = read_cstr_or_fail(text, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::Text(text_s))
+}
+
+/// Emit a heading with the given level (1–6) and text.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_heading(
+    handle: *mut FfiPageBuilder,
+    level: u8,
+    text: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(text_s) = read_cstr_or_fail(text, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::Heading(level, text_s))
+}
+
+/// Emit a paragraph with automatic line wrapping.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_paragraph(
+    handle: *mut FfiPageBuilder,
+    text: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(text_s) = read_cstr_or_fail(text, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::Paragraph(text_s))
+}
+
+/// Advance the cursor down by `points`.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_space(
+    handle: *mut FfiPageBuilder,
+    points: f32,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::Space(points))
+}
+
+/// Draw a horizontal rule across the page.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_horizontal_rule(
+    handle: *mut FfiPageBuilder,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::HorizontalRule)
+}
+
+// ── Annotations (direct-method variant) ───────────────────────────────────
+
+/// Attach a URL link to the previously-emitted text element.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_link_url(
+    handle: *mut FfiPageBuilder,
+    url: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(url_s) = read_cstr_or_fail(url, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::LinkUrl(url_s))
+}
+
+/// Link the previous text to an internal page index (zero-based).
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_link_page(
+    handle: *mut FfiPageBuilder,
+    page: usize,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::LinkPage(page))
+}
+
+/// Link the previous text to a named destination.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_link_named(
+    handle: *mut FfiPageBuilder,
+    destination: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(dest_s) = read_cstr_or_fail(destination, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::LinkNamed(dest_s))
+}
+
+/// Highlight the previous text with an RGB colour (channels in 0.0–1.0).
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_highlight(
+    handle: *mut FfiPageBuilder,
+    r: f32,
+    g: f32,
+    b: f32,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::Highlight(r, g, b))
+}
+
+/// Underline the previous text.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_underline(
+    handle: *mut FfiPageBuilder,
+    r: f32,
+    g: f32,
+    b: f32,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::Underline(r, g, b))
+}
+
+/// Strikeout the previous text.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_strikeout(
+    handle: *mut FfiPageBuilder,
+    r: f32,
+    g: f32,
+    b: f32,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::Strikeout(r, g, b))
+}
+
+/// Squiggly-underline the previous text.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_squiggly(
+    handle: *mut FfiPageBuilder,
+    r: f32,
+    g: f32,
+    b: f32,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::Squiggly(r, g, b))
+}
+
+/// Attach a sticky-note annotation to the previous text.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_sticky_note(
+    handle: *mut FfiPageBuilder,
+    text: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(text_s) = read_cstr_or_fail(text, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::StickyNote(text_s))
+}
+
+/// Place a free-standing sticky note at an absolute position on the page.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_sticky_note_at(
+    handle: *mut FfiPageBuilder,
+    x: f32,
+    y: f32,
+    text: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(text_s) = read_cstr_or_fail(text, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::StickyNoteAt(x, y, text_s))
+}
+
+/// Apply a text watermark to the entire page.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_watermark(
+    handle: *mut FfiPageBuilder,
+    text: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(text_s) = read_cstr_or_fail(text, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::Watermark(text_s))
+}
+
+/// Apply the standard "CONFIDENTIAL" diagonal watermark.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_watermark_confidential(
+    handle: *mut FfiPageBuilder,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::WatermarkConfidential)
+}
+
+/// Apply the standard "DRAFT" diagonal watermark.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_watermark_draft(
+    handle: *mut FfiPageBuilder,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::WatermarkDraft)
+}
+
+/// Attach a standard stamp annotation at the current cursor position
+/// (default 150×50 pt box). `type_name` matches the PDF spec's stamp
+/// names (Approved, NotApproved, Draft, Confidential, Final,
+/// Experimental, Expired, ForPublicRelease, NotForPublicRelease, AsIs,
+/// Sold, Departmental, ForComment, TopSecret) — anything else becomes
+/// a custom stamp with that text.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_stamp(
+    handle: *mut FfiPageBuilder,
+    type_name: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(name) = read_cstr_or_fail(type_name, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::Stamp(name))
+}
+
+/// Place a free-flowing text annotation inside the given rectangle.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_freetext(
+    handle: *mut FfiPageBuilder,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    text: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(text_s) = read_cstr_or_fail(text, error_code) else {
+        return -1;
+    };
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::FreeText {
+            x,
+            y,
+            w,
+            h,
+            text: text_s,
+        },
+    )
+}
+
+// ── Form-field widget creation ─────────────────────────────────────────
+
+/// Add a single-line text form field. `default_value` may be NULL for
+/// a blank field; the initial value otherwise.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_text_field(
+    handle: *mut FfiPageBuilder,
+    name: *const c_char,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    default_value: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(name_s) = read_cstr_or_fail(name, error_code) else {
+        return -1;
+    };
+    let default_s = if default_value.is_null() {
+        None
+    } else {
+        match unsafe { CStr::from_ptr(default_value) }.to_str() {
+            Ok(s) => Some(s.to_string()),
+            Err(_) => {
+                set_error(error_code, ERR_INVALID_ARG);
+                return -1;
+            },
+        }
+    };
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::TextField {
+            name: name_s,
+            x,
+            y,
+            w,
+            h,
+            default_value: default_s,
+        },
+    )
+}
+
+/// Add a checkbox form field. `checked` is non-zero for initially-ticked.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_checkbox(
+    handle: *mut FfiPageBuilder,
+    name: *const c_char,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    checked: i32,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(name_s) = read_cstr_or_fail(name, error_code) else {
+        return -1;
+    };
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::Checkbox {
+            name: name_s,
+            x,
+            y,
+            w,
+            h,
+            checked: checked != 0,
+        },
+    )
+}
+
+/// Helper — collect a C string array into a `Vec<String>`.
+unsafe fn read_cstring_array(
+    array: *const *const c_char,
+    count: usize,
+    error_code: *mut i32,
+) -> Option<Vec<String>> {
+    if array.is_null() || count == 0 {
+        set_error(error_code, ERR_INVALID_ARG);
+        return None;
+    }
+    let mut out = Vec::with_capacity(count);
+    for i in 0..count {
+        let ptr = unsafe { *array.add(i) };
+        if ptr.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return None;
+        }
+        match unsafe { CStr::from_ptr(ptr) }.to_str() {
+            Ok(s) => out.push(s.to_string()),
+            Err(_) => {
+                set_error(error_code, ERR_INVALID_ARG);
+                return None;
+            },
+        }
+    }
+    Some(out)
+}
+
+/// Add a dropdown combo-box with a fixed list of string options.
+/// `options` is an array of C-strings of length `options_count`.
+/// `selected` may be NULL for no initial selection.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_combo_box(
+    handle: *mut FfiPageBuilder,
+    name: *const c_char,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    options: *const *const c_char,
+    options_count: usize,
+    selected: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(name_s) = read_cstr_or_fail(name, error_code) else {
+        return -1;
+    };
+    let Some(opts) = (unsafe { read_cstring_array(options, options_count, error_code) }) else {
+        return -1;
+    };
+    let selected_s = if selected.is_null() {
+        None
+    } else {
+        match unsafe { CStr::from_ptr(selected) }.to_str() {
+            Ok(s) => Some(s.to_string()),
+            Err(_) => {
+                set_error(error_code, ERR_INVALID_ARG);
+                return -1;
+            },
+        }
+    };
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::ComboBox {
+            name: name_s,
+            x,
+            y,
+            w,
+            h,
+            options: opts,
+            selected: selected_s,
+        },
+    )
+}
+
+/// Add a radio-button group. `values` / `xs` / `ys` / `ws` / `hs` are
+/// parallel arrays of length `count` describing each button's export
+/// value and rect. `selected` may be NULL.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_radio_group(
+    handle: *mut FfiPageBuilder,
+    name: *const c_char,
+    values: *const *const c_char,
+    xs: *const f32,
+    ys: *const f32,
+    ws: *const f32,
+    hs: *const f32,
+    count: usize,
+    selected: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(name_s) = read_cstr_or_fail(name, error_code) else {
+        return -1;
+    };
+    if count == 0 || xs.is_null() || ys.is_null() || ws.is_null() || hs.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let Some(vs) = (unsafe { read_cstring_array(values, count, error_code) }) else {
+        return -1;
+    };
+    let xs_slice = unsafe { std::slice::from_raw_parts(xs, count) };
+    let ys_slice = unsafe { std::slice::from_raw_parts(ys, count) };
+    let ws_slice = unsafe { std::slice::from_raw_parts(ws, count) };
+    let hs_slice = unsafe { std::slice::from_raw_parts(hs, count) };
+    let buttons: Vec<(String, f32, f32, f32, f32)> = vs
+        .into_iter()
+        .zip(xs_slice.iter().copied())
+        .zip(ys_slice.iter().copied())
+        .zip(ws_slice.iter().copied())
+        .zip(hs_slice.iter().copied())
+        .map(|((((v, x), y), w), h)| (v, x, y, w, h))
+        .collect();
+    let selected_s = if selected.is_null() {
+        None
+    } else {
+        match unsafe { CStr::from_ptr(selected) }.to_str() {
+            Ok(s) => Some(s.to_string()),
+            Err(_) => {
+                set_error(error_code, ERR_INVALID_ARG);
+                return -1;
+            },
+        }
+    };
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::RadioGroup {
+            name: name_s,
+            buttons,
+            selected: selected_s,
+        },
+    )
+}
+
+/// Add a clickable push button with a visible caption.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_push_button(
+    handle: *mut FfiPageBuilder,
+    name: *const c_char,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    caption: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(name_s) = read_cstr_or_fail(name, error_code) else {
+        return -1;
+    };
+    let Some(caption_s) = read_cstr_or_fail(caption, error_code) else {
+        return -1;
+    };
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::PushButton {
+            name: name_s,
+            x,
+            y,
+            w,
+            h,
+            caption: caption_s,
+        },
+    )
+}
+
+// ── Low-level graphics primitives (PdfWriter exposure) ────────────────
+
+/// Draw a stroked rectangle outline (1pt black).
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_rect(
+    handle: *mut FfiPageBuilder,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::Rect(x, y, w, h))
+}
+
+/// Draw a filled rectangle in RGB colour (channels 0–1).
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_filled_rect(
+    handle: *mut FfiPageBuilder,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    r: f32,
+    g: f32,
+    b: f32,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::FilledRect(x, y, w, h, r, g, b))
+}
+
+/// Draw a line from `(x1, y1)` to `(x2, y2)` with 1pt black stroke.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_line(
+    handle: *mut FfiPageBuilder,
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::Line(x1, y1, x2, y2))
+}
+
+/// Commit this page's buffered operations to its parent builder and
+/// **consume** the page handle. After a successful call the handle is
+/// invalid; do not call `_free`.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code: *mut i32) -> i32 {
+    if handle.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    // Take ownership of the page handle.
+    let mut page = unsafe { Box::from_raw(handle) };
+    if page.done_called {
+        set_error(error_code, ERR_INVALID_ARG);
+        // Re-leak so later `_free` is still safe.
+        Box::leak(page);
+        return -1;
+    }
+    page.done_called = true;
+
+    // Access parent — SAFETY: one-page-at-a-time invariant means no
+    // other FfiPageBuilder references this parent, and the caller has
+    // promised not to free the parent while this page is outstanding.
+    if page.parent.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let parent = unsafe { &mut *page.parent };
+    let Some(builder) = parent.inner.as_mut() else {
+        set_error(error_code, ERR_INVALID_ARG);
+        parent.open_page = false;
+        return -1;
+    };
+
+    let page_size = page
+        .page_size
+        .unwrap_or(crate::writer::PageSize::Custom(page.custom_width, page.custom_height));
+    let mut rust_page = builder.page(page_size);
+    for op in page.ops.drain(..) {
+        rust_page = match op {
+            FfiPageOp::Font(name, size) => rust_page.font(&name, size),
+            FfiPageOp::At(x, y) => rust_page.at(x, y),
+            FfiPageOp::Text(text) => rust_page.text(&text),
+            FfiPageOp::Heading(level, text) => rust_page.heading(level, &text),
+            FfiPageOp::Paragraph(text) => rust_page.paragraph(&text),
+            FfiPageOp::Space(points) => rust_page.space(points),
+            FfiPageOp::HorizontalRule => rust_page.horizontal_rule(),
+            FfiPageOp::LinkUrl(url) => rust_page.link_url(&url),
+            FfiPageOp::LinkPage(p) => rust_page.link_page(p),
+            FfiPageOp::LinkNamed(dest) => rust_page.link_named(&dest),
+            FfiPageOp::Highlight(r, g, b) => rust_page.highlight((r, g, b)),
+            FfiPageOp::Underline(r, g, b) => rust_page.underline((r, g, b)),
+            FfiPageOp::Strikeout(r, g, b) => rust_page.strikeout((r, g, b)),
+            FfiPageOp::Squiggly(r, g, b) => rust_page.squiggly((r, g, b)),
+            FfiPageOp::StickyNote(text) => rust_page.sticky_note(&text),
+            FfiPageOp::StickyNoteAt(x, y, text) => rust_page.sticky_note_at(x, y, &text),
+            FfiPageOp::Watermark(text) => rust_page.watermark(&text),
+            FfiPageOp::WatermarkConfidential => rust_page.watermark_confidential(),
+            FfiPageOp::WatermarkDraft => rust_page.watermark_draft(),
+            FfiPageOp::Stamp(name) => rust_page.stamp(ffi_parse_stamp_type(&name)),
+            FfiPageOp::FreeText { x, y, w, h, text } => {
+                rust_page.freetext(crate::geometry::Rect::new(x, y, w, h), &text)
+            },
+            FfiPageOp::TextField {
+                name,
+                x,
+                y,
+                w,
+                h,
+                default_value,
+            } => rust_page.text_field(name, x, y, w, h, default_value),
+            FfiPageOp::Checkbox {
+                name,
+                x,
+                y,
+                w,
+                h,
+                checked,
+            } => rust_page.checkbox(name, x, y, w, h, checked),
+            FfiPageOp::ComboBox {
+                name,
+                x,
+                y,
+                w,
+                h,
+                options,
+                selected,
+            } => rust_page.combo_box(name, x, y, w, h, options, selected),
+            FfiPageOp::RadioGroup {
+                name,
+                buttons,
+                selected,
+            } => rust_page.radio_group(name, buttons, selected),
+            FfiPageOp::PushButton {
+                name,
+                x,
+                y,
+                w,
+                h,
+                caption,
+            } => rust_page.push_button(name, x, y, w, h, caption),
+            FfiPageOp::Rect(x, y, w, h) => rust_page.rect(x, y, w, h),
+            FfiPageOp::FilledRect(x, y, w, h, r, g, b) => {
+                rust_page.filled_rect(x, y, w, h, r, g, b)
+            },
+            FfiPageOp::Line(x1, y1, x2, y2) => rust_page.line(x1, y1, x2, y2),
+        };
+    }
+    rust_page.done();
+    parent.open_page = false;
+    // page box drops here, releasing the buffered ops (already drained).
+    set_error(error_code, ERR_SUCCESS);
+    0
+}
+
+/// Drop an uncommitted page handle (error-recovery path). Does NOT
+/// apply the buffered operations. If the parent builder is still
+/// alive, also clears the open-page slot so the next `_page` call
+/// succeeds.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_free(handle: *mut FfiPageBuilder) {
+    if !handle.is_null() {
+        unsafe {
+            let page = Box::from_raw(handle);
+            if !page.parent.is_null() && !page.done_called {
+                (*page.parent).open_page = false;
+            }
+        }
+    }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Finalisation
+// ───────────────────────────────────────────────────────────────────────────
+
+fn consume_builder(
+    handle: *mut FfiDocumentBuilder,
+    error_code: *mut i32,
+) -> Option<crate::writer::DocumentBuilder> {
+    let wrapper = ffi_builder_mut(handle, error_code)?;
+    if wrapper.open_page {
+        set_error(error_code, ERR_INVALID_ARG);
+        return None;
+    }
+    wrapper.inner.take()
+}
+
+fn bytes_to_ffi(bytes: Vec<u8>, out_len: *mut usize, error_code: *mut i32) -> *mut u8 {
+    if out_len.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return ptr::null_mut();
+    }
+    unsafe {
+        *out_len = bytes.len();
+    }
+    set_error(error_code, ERR_SUCCESS);
+    let boxed = bytes.into_boxed_slice();
+    Box::into_raw(boxed) as *mut u8
+}
+
+/// Build the PDF and return the bytes. Consumes the builder *state*
+/// — the handle wrapper is still allocated and MUST be released with
+/// `pdf_document_builder_free`. Returns NULL on error. Output buffer
+/// must be freed with `free_bytes`.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_build(
+    handle: *mut FfiDocumentBuilder,
+    out_len: *mut usize,
+    error_code: *mut i32,
+) -> *mut u8 {
+    let Some(builder) = consume_builder(handle, error_code) else {
+        return ptr::null_mut();
+    };
+    match builder.build() {
+        Ok(bytes) => bytes_to_ffi(bytes, out_len, error_code),
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            ptr::null_mut()
+        },
+    }
+}
+
+/// Build and save the PDF to `path`. Consumes the builder state;
+/// caller must still call `pdf_document_builder_free`.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_save(
+    handle: *mut FfiDocumentBuilder,
+    path: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(path_s) = read_cstr_or_fail(path, error_code) else {
+        return -1;
+    };
+    let Some(builder) = consume_builder(handle, error_code) else {
+        return -1;
+    };
+    match builder.save(&path_s) {
+        Ok(()) => {
+            set_error(error_code, ERR_SUCCESS);
+            0
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            -1
+        },
+    }
+}
+
+/// Build and save with AES-256 encryption. Consumes the builder
+/// state; caller must still call `pdf_document_builder_free`.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_save_encrypted(
+    handle: *mut FfiDocumentBuilder,
+    path: *const c_char,
+    user_password: *const c_char,
+    owner_password: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(path_s) = read_cstr_or_fail(path, error_code) else {
+        return -1;
+    };
+    let Some(user_pw) = read_cstr_or_fail(user_password, error_code) else {
+        return -1;
+    };
+    let Some(owner_pw) = read_cstr_or_fail(owner_password, error_code) else {
+        return -1;
+    };
+    let Some(builder) = consume_builder(handle, error_code) else {
+        return -1;
+    };
+    match builder.save_encrypted(&path_s, &user_pw, &owner_pw) {
+        Ok(()) => {
+            set_error(error_code, ERR_SUCCESS);
+            0
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            -1
+        },
+    }
+}
+
+/// Build encrypted bytes. Consumes the builder state; caller must
+/// still call `pdf_document_builder_free`. Output buffer must be
+/// freed with `free_bytes`.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_to_bytes_encrypted(
+    handle: *mut FfiDocumentBuilder,
+    user_password: *const c_char,
+    owner_password: *const c_char,
+    out_len: *mut usize,
+    error_code: *mut i32,
+) -> *mut u8 {
+    let Some(user_pw) = read_cstr_or_fail(user_password, error_code) else {
+        return ptr::null_mut();
+    };
+    let Some(owner_pw) = read_cstr_or_fail(owner_password, error_code) else {
+        return ptr::null_mut();
+    };
+    let Some(builder) = consume_builder(handle, error_code) else {
+        return ptr::null_mut();
+    };
+    match builder.to_bytes_encrypted(&user_pw, &owner_pw) {
+        Ok(bytes) => bytes_to_ffi(bytes, out_len, error_code),
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            ptr::null_mut()
+        },
+    }
+}
+
+// =============================================================================
+// HTML+CSS pipeline
+// =============================================================================
+
+/// Build a PDF from HTML + CSS + a single embedded font. Returns a
+/// `Pdf` handle (usable with `pdf_save` / `pdf_save_to_bytes`) or NULL
+/// on error.
+#[no_mangle]
+pub extern "C" fn pdf_from_html_css(
+    html: *const c_char,
+    css: *const c_char,
+    font_bytes: *const u8,
+    font_len: usize,
+    error_code: *mut i32,
+) -> *mut Pdf {
+    let Some(html_s) = read_cstr_or_fail(html, error_code) else {
+        return ptr::null_mut();
+    };
+    let Some(css_s) = read_cstr_or_fail(css, error_code) else {
+        return ptr::null_mut();
+    };
+    if font_bytes.is_null() || font_len == 0 {
+        set_error(error_code, ERR_INVALID_ARG);
+        return ptr::null_mut();
+    }
+    let font_vec = unsafe { std::slice::from_raw_parts(font_bytes, font_len) }.to_vec();
+    match Pdf::from_html_css(&html_s, &css_s, font_vec) {
+        Ok(pdf) => {
+            set_error(error_code, ERR_SUCCESS);
+            Box::into_raw(Box::new(pdf))
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            ptr::null_mut()
+        },
+    }
+}
+
+/// Build a PDF from HTML+CSS with a multi-font cascade. `families`,
+/// `font_bytes`, and `font_lens` are parallel arrays of length `count`.
+/// Caller-owned; the FFI copies the bytes.
+#[no_mangle]
+pub extern "C" fn pdf_from_html_css_with_fonts(
+    html: *const c_char,
+    css: *const c_char,
+    families: *const *const c_char,
+    font_bytes: *const *const u8,
+    font_lens: *const usize,
+    count: usize,
+    error_code: *mut i32,
+) -> *mut Pdf {
+    let Some(html_s) = read_cstr_or_fail(html, error_code) else {
+        return ptr::null_mut();
+    };
+    let Some(css_s) = read_cstr_or_fail(css, error_code) else {
+        return ptr::null_mut();
+    };
+    if count == 0 || families.is_null() || font_bytes.is_null() || font_lens.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return ptr::null_mut();
+    }
+    let mut fonts: Vec<(String, Vec<u8>)> = Vec::with_capacity(count);
+    for i in 0..count {
+        let name_ptr = unsafe { *families.add(i) };
+        let bytes_ptr = unsafe { *font_bytes.add(i) };
+        let bytes_len = unsafe { *font_lens.add(i) };
+        if name_ptr.is_null() || bytes_ptr.is_null() || bytes_len == 0 {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let name = match unsafe { CStr::from_ptr(name_ptr) }.to_str() {
+            Ok(s) => s.to_string(),
+            Err(_) => {
+                set_error(error_code, ERR_INVALID_ARG);
+                return ptr::null_mut();
+            },
+        };
+        let bytes = unsafe { std::slice::from_raw_parts(bytes_ptr, bytes_len) }.to_vec();
+        fonts.push((name, bytes));
+    }
+    match Pdf::from_html_css_with_fonts(&html_s, &css_s, fonts) {
+        Ok(pdf) => {
+            set_error(error_code, ERR_SUCCESS);
+            Box::into_raw(Box::new(pdf))
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            ptr::null_mut()
+        },
     }
 }

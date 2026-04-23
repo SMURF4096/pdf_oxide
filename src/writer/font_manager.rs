@@ -958,45 +958,27 @@ impl EmbeddedFont {
         }
     }
 
-    /// Encode a string for use in PDF content stream (Identity-H encoding).
+    /// Encode a string into a sequence of original-face glyph IDs for
+    /// later emission into a PDF content stream.
     ///
-    /// Returns a hex string like "<00410042>" where each 4-digit hex is a glyph ID.
-    pub fn encode_string(&mut self, text: &str) -> String {
+    /// Each char is looked up in the font's cmap; unknown chars fall
+    /// back to GID 0 (`.notdef`). The returned `Vec<u16>` is in logical
+    /// text order and is passed verbatim to
+    /// [`crate::writer::content_stream::ContentStreamBuilder::embedded_text`],
+    /// which defers hex stringification until serialization time so
+    /// the subset [`GlyphRemapper`](crate::fonts::GlyphRemapper) can
+    /// renumber the GIDs into their subset-local indices.
+    pub fn encode_string(&mut self, text: &str) -> Vec<u16> {
         self.use_string(text);
-        // Build the hex string directly to avoid borrow issues
-        let mut hex = String::with_capacity(text.len() * 4 + 2);
-        hex.push('<');
-        for ch in text.chars() {
-            let glyph_id = self.glyph_id(ch as u32).unwrap_or(0);
-            hex.push_str(&format!("{:04X}", glyph_id));
-        }
-        hex.push('>');
-        hex
+        text.chars()
+            .map(|ch| self.glyph_id(ch as u32).unwrap_or(0))
+            .collect()
     }
 
-    /// Encode a sequence of pre-shaped glyph IDs as an Identity-H hex
-    /// string, registering each glyph with the subsetter.
-    ///
-    /// Records only glyph IDs — the produced ToUnicode CMap will be
-    /// missing entries for every run passed through here, so
-    /// `extract_text` cannot round-trip shaped text emitted this way.
-    /// Prefer [`Self::encode_shaped_run`] which preserves the shaper's
-    /// cluster → codepoint mapping.
-    pub fn encode_shaped(&mut self, glyph_ids: &[u16]) -> String {
-        let mut hex = String::with_capacity(glyph_ids.len() * 4 + 2);
-        hex.push('<');
-        for &gid in glyph_ids {
-            self.subsetter.use_glyph(gid);
-            hex.push_str(&format!("{gid:04X}"));
-        }
-        hex.push('>');
-        hex
-    }
-
-    /// Encode a [`crate::writer::font_shaping::ShapedRun`] as an
-    /// Identity-H hex string AND register each glyph with the subsetter
-    /// under its source codepoint so the resulting PDF's ToUnicode CMap
-    /// round-trips the text via `extract_text`.
+    /// Encode a [`crate::writer::font_shaping::ShapedRun`] as a sequence
+    /// of original-face glyph IDs AND register each glyph with the
+    /// subsetter under its source codepoint so the resulting PDF's
+    /// ToUnicode CMap round-trips the text via `extract_text`.
     ///
     /// The shaper preserves `cluster` (a byte index into the source
     /// string) on every glyph. For simple scripts (CJK, Cyrillic, Greek,
@@ -1005,14 +987,16 @@ impl EmbeddedFont {
     /// record the *first* codepoint of the cluster — close enough to
     /// recover the leading char on extract; exact multi-char ToUnicode
     /// is a later refinement.
+    ///
+    /// Returned GIDs are original-face IDs; see [`Self::encode_string`]
+    /// for why serialization is deferred.
     #[cfg(feature = "system-fonts")]
     pub fn encode_shaped_run(
         &mut self,
         shaped: &crate::writer::font_shaping::ShapedRun,
         source_text: &str,
-    ) -> String {
-        let mut hex = String::with_capacity(shaped.glyphs.len() * 4 + 2);
-        hex.push('<');
+    ) -> Vec<u16> {
+        let mut glyph_ids = Vec::with_capacity(shaped.glyphs.len());
         for g in &shaped.glyphs {
             // Some glyphs (e.g. notdef fallbacks) may map to an empty
             // cluster or off the end of the string — fall back to
@@ -1026,10 +1010,9 @@ impl EmbeddedFont {
             } else {
                 self.subsetter.use_glyph(g.glyph_id);
             }
-            hex.push_str(&format!("{:04X}", g.glyph_id));
+            glyph_ids.push(g.glyph_id);
         }
-        hex.push('>');
-        hex
+        glyph_ids
     }
 
     /// Get the subset font name (generates tag if needed).
@@ -1045,6 +1028,14 @@ impl EmbeddedFont {
         &self.font_data
     }
 
+    /// Get the set of original-face glyph IDs this font has recorded as
+    /// used during content-stream emission. The set is fed to
+    /// [`crate::fonts::subset_font_bytes`] at finalize time to build the
+    /// subset FontFile2 stream and the paired [`crate::fonts::GlyphRemapper`].
+    pub fn used_glyphs(&self) -> &std::collections::BTreeSet<u16> {
+        self.subsetter.used_glyphs()
+    }
+
     /// Get subset statistics.
     pub fn subset_stats(&self) -> (usize, usize) {
         (self.subsetter.char_count(), self.subsetter.glyph_count())
@@ -1055,23 +1046,45 @@ impl EmbeddedFont {
         !self.subsetter.is_empty()
     }
 
-    /// Generate the CID widths array for the W entry.
-    pub fn generate_widths_array(&self) -> String {
+    /// Generate the CID widths array for the `/W` entry, keyed by
+    /// *subset-local* GIDs produced by `remapper`.
+    ///
+    /// Widths themselves are fetched via [`Self::glyph_width`] which
+    /// still reads from the original face's `glyph_widths` HashMap
+    /// (original-GID keyed — unchanged by subsetting). The emission
+    /// key, however, is the remapper-translated subset GID so that
+    /// `/W` aligns with the `CIDFontType2` glyph indices in the
+    /// subset font face and the GIDs emitted in the content stream.
+    ///
+    /// Because the remapper compacts kept glyphs to `0..N` roughly in
+    /// original-GID order, consecutive original GIDs almost always
+    /// produce consecutive subset GIDs — but not always, so we re-sort
+    /// by subset GID before run-length grouping.
+    pub fn generate_widths_array(&self, remapper: &crate::fonts::GlyphRemapper) -> String {
+        // Collect (subset_gid, width) pairs, then group by consecutive
+        // subset_gid for compact `/W` emission.
+        let mut pairs: Vec<(u16, u16)> = self
+            .subsetter
+            .used_glyphs()
+            .iter()
+            .map(|&orig| {
+                let subset_gid = remapper.get(orig).unwrap_or(0);
+                (subset_gid, self.glyph_width(orig))
+            })
+            .collect();
+        pairs.sort_by_key(|&(gid, _)| gid);
+        pairs.dedup_by_key(|&mut (gid, _)| gid);
+
         let mut result = String::from("[");
-
-        // Get used glyphs sorted
-        let used_glyphs = self.subsetter.used_glyphs();
-        let glyphs: Vec<_> = used_glyphs.iter().copied().collect();
-
         let mut i = 0;
-        while i < glyphs.len() {
-            let start = glyphs[i];
-            let mut widths = vec![self.glyph_width(start)];
+        while i < pairs.len() {
+            let start = pairs[i].0;
+            let mut widths = vec![pairs[i].1];
 
-            // Find consecutive glyphs
-            while i + 1 < glyphs.len() && glyphs[i + 1] == glyphs[i] + 1 {
+            // Find consecutive subset GIDs
+            while i + 1 < pairs.len() && pairs[i + 1].0 == pairs[i].0 + 1 {
                 i += 1;
-                widths.push(self.glyph_width(glyphs[i]));
+                widths.push(pairs[i].1);
             }
 
             result.push_str(&format!("{} [", start));
@@ -1090,8 +1103,14 @@ impl EmbeddedFont {
         result
     }
 
-    /// Generate the ToUnicode CMap for text extraction.
-    pub fn generate_tounicode_cmap(&self) -> String {
+    /// Generate the ToUnicode CMap for text extraction, keyed by
+    /// *subset-local* GIDs produced by `remapper`.
+    ///
+    /// `used_chars` tracks (codepoint, original-GID) pairs. We remap
+    /// the GID key at emission time so that CMap `bfchar` entries and
+    /// the content stream hex both reference the same subset GID
+    /// space — a precondition for `extract_text` round-tripping.
+    pub fn generate_tounicode_cmap(&self, remapper: &crate::fonts::GlyphRemapper) -> String {
         let used_chars = self.subsetter.used_chars();
 
         let mut cmap = String::new();
@@ -1111,10 +1130,12 @@ impl EmbeddedFont {
         cmap.push_str("<0000> <FFFF>\n");
         cmap.push_str("endcodespacerange\n");
 
-        // Build GID -> Unicode mappings
+        // Build subset-GID -> Unicode mappings. A codepoint's original
+        // GID is always in `used_glyphs`, so `remapper.get(orig)`
+        // always succeeds; `.unwrap_or(0)` is defensive.
         let mut mappings: Vec<(u16, u32)> = used_chars
             .iter()
-            .map(|(&unicode, &gid)| (gid, unicode))
+            .map(|(&unicode, &orig_gid)| (remapper.get(orig_gid).unwrap_or(0), unicode))
             .collect();
         mappings.sort_by_key(|&(gid, _)| gid);
 

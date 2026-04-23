@@ -105,7 +105,9 @@ export class RenderOptions {
     };
 
     if (!presets[quality]) {
-      throw new Error(`Invalid quality: ${quality}. Must be one of: ${Object.keys(presets).join(', ')}`);
+      throw new Error(
+        `Invalid quality: ${quality}. Must be one of: ${Object.keys(presets).join(', ')}`
+      );
     }
 
     return new RenderOptions(presets[quality]);
@@ -588,9 +590,9 @@ export class RenderingManager {
     }
 
     const resolutions: Record<string, number> = {
-      draft: 72,   // Screen resolution
+      draft: 72, // Screen resolution
       normal: 150, // Moderate quality
-      high: 300,   // High quality / print
+      high: 300, // High quality / print
     };
 
     return resolutions[quality]!;
@@ -777,12 +779,7 @@ export class RenderingManager {
     try {
       // Try native rendering method
       if (typeof this._document.renderPage === 'function') {
-        const buffer = this._document.renderPage(
-          pageIndex,
-          opts.dpi,
-          opts.format,
-          opts.quality
-        );
+        const buffer = this._document.renderPage(pageIndex, opts.dpi, opts.format, opts.quality);
         return Promise.resolve(buffer);
       }
     } catch (error) {

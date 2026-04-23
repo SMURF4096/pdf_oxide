@@ -87,7 +87,7 @@ export interface PageRange {
 export interface OptimizationOptions {
   readonly level?: OptimizationLevel;
   readonly compressImages?: boolean;
-  readonly imageQuality?: number;  // 1-100
+  readonly imageQuality?: number; // 1-100
   readonly imageCompression?: ImageCompressionType;
   readonly downsampleImages?: boolean;
   readonly maxImageDpi?: number;
@@ -112,7 +112,7 @@ export interface CompressionOptions {
   readonly compressStreams?: boolean;
   readonly compressObjects?: boolean;
   readonly algorithm?: 'flate' | 'lzw' | 'none';
-  readonly level?: number;  // 1-9
+  readonly level?: number; // 1-9
 }
 
 /**
@@ -474,11 +474,7 @@ export class DocumentUtilityManager extends EventEmitter {
   /**
    * Scales pages
    */
-  async scalePages(
-    pageRange: PageRange | 'all',
-    scaleX: number,
-    scaleY: number
-  ): Promise<number> {
+  async scalePages(pageRange: PageRange | 'all', scaleX: number, scaleY: number): Promise<number> {
     try {
       const range = pageRange === 'all' ? null : pageRange;
       const result = await this.document?.scalePages?.(range, scaleX, scaleY);
@@ -601,24 +597,26 @@ export class DocumentUtilityManager extends EventEmitter {
     try {
       const stats = await this.document?.getDocumentStatistics?.();
 
-      return stats ?? {
-        pageCount: await this.getPageCount(),
-        fileSize: await this.getFileSize(),
-        objectCount: 0,
-        streamCount: 0,
-        imageCount: 0,
-        fontCount: 0,
-        annotationCount: 0,
-        bookmarkCount: 0,
-        embeddedFileCount: 0,
-        formFieldCount: 0,
-        signatureCount: 0,
-        hasJavaScript: false,
-        hasXfa: false,
-        isLinearized: false,
-        isEncrypted: false,
-        pdfVersion: '1.7',
-      };
+      return (
+        stats ?? {
+          pageCount: await this.getPageCount(),
+          fileSize: await this.getFileSize(),
+          objectCount: 0,
+          streamCount: 0,
+          imageCount: 0,
+          fontCount: 0,
+          annotationCount: 0,
+          bookmarkCount: 0,
+          embeddedFileCount: 0,
+          formFieldCount: 0,
+          signatureCount: 0,
+          hasJavaScript: false,
+          hasXfa: false,
+          isLinearized: false,
+          isEncrypted: false,
+          pdfVersion: '1.7',
+        }
+      );
     } catch (error) {
       this.emit('error', error);
       return null;
@@ -643,7 +641,7 @@ export class DocumentUtilityManager extends EventEmitter {
    */
   async getPageCount(): Promise<number> {
     try {
-      return await this.document?.getPageCount?.() ?? 0;
+      return (await this.document?.getPageCount?.()) ?? 0;
     } catch (error) {
       this.emit('error', error);
       return 0;
@@ -655,7 +653,7 @@ export class DocumentUtilityManager extends EventEmitter {
    */
   async getFileSize(): Promise<number> {
     try {
-      return await this.document?.getFileSize?.() ?? 0;
+      return (await this.document?.getFileSize?.()) ?? 0;
     } catch (error) {
       this.emit('error', error);
       return 0;
@@ -667,7 +665,7 @@ export class DocumentUtilityManager extends EventEmitter {
    */
   async isLinearized(): Promise<boolean> {
     try {
-      return await this.document?.isLinearized?.() ?? false;
+      return (await this.document?.isLinearized?.()) ?? false;
     } catch (error) {
       this.emit('error', error);
       return false;
@@ -796,7 +794,7 @@ export class DocumentUtilityManager extends EventEmitter {
    */
   async saveToBytes(): Promise<Buffer | null> {
     try {
-      return await this.document?.saveToBytes?.() ?? null;
+      return (await this.document?.saveToBytes?.()) ?? null;
     } catch (error) {
       this.emit('error', error);
       return null;

@@ -46,8 +46,7 @@ namespace PdfOxide.Internal
         {
             get
             {
-                if (IsInvalid || IsClosed)
-                    throw new ObjectDisposedException(nameof(NativeHandle));
+                ObjectDisposedException.ThrowIf(IsInvalid || IsClosed, this);
                 return handle;
             }
         }

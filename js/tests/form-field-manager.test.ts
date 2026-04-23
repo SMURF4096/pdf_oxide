@@ -1,12 +1,11 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  FormFieldManager,
-  FormFieldType,
   FieldVisibility,
+  FormFieldManager,
   FormFieldState,
-  FieldValidationType,
+  FormFieldType,
 } from '../src/form-field-manager';
-import { PdfDocument } from '../src/pdf-document';
+import type { PdfDocument } from '../src/pdf-document';
 
 describe('FormFieldManager', () => {
   let mockDocument: PdfDocument;
@@ -67,10 +66,15 @@ describe('FormFieldManager', () => {
 
   describe('Create Field', () => {
     it('should create field with default config', async () => {
-      const result = await manager.createField(0, {
-        fieldType: FormFieldType.TEXT,
-        fieldName: 'username',
-      }, 50, 100);
+      const result = await manager.createField(
+        0,
+        {
+          fieldType: FormFieldType.TEXT,
+          fieldName: 'username',
+        },
+        50,
+        100
+      );
 
       expect(result).toBeDefined();
       expect(result.fieldName).toBe('username');
@@ -79,12 +83,19 @@ describe('FormFieldManager', () => {
     });
 
     it('should create field with custom config', async () => {
-      const result = await manager.createField(0, {
-        fieldType: FormFieldType.CHECKBOX,
-        fieldName: 'agree',
-        fieldValue: 'on',
-        state: FormFieldState.REQUIRED,
-      }, 50, 100, 30, 20);
+      const result = await manager.createField(
+        0,
+        {
+          fieldType: FormFieldType.CHECKBOX,
+          fieldName: 'agree',
+          fieldValue: 'on',
+          state: FormFieldState.REQUIRED,
+        },
+        50,
+        100,
+        30,
+        20
+      );
 
       expect(result.fieldType).toBe(FormFieldType.CHECKBOX);
       expect(result.currentValue).toBe('on');
@@ -95,47 +106,75 @@ describe('FormFieldManager', () => {
 
     it('should reject invalid page index', async () => {
       await expect(
-        manager.createField(10, {
-          fieldType: FormFieldType.TEXT,
-          fieldName: 'test',
-        }, 50, 100)
+        manager.createField(
+          10,
+          {
+            fieldType: FormFieldType.TEXT,
+            fieldName: 'test',
+          },
+          50,
+          100
+        )
       ).rejects.toThrow();
     });
 
     it('should reject invalid width', async () => {
       await expect(
-        manager.createField(0, {
-          fieldType: FormFieldType.TEXT,
-          fieldName: 'test',
-        }, 50, 100, 5)
+        manager.createField(
+          0,
+          {
+            fieldType: FormFieldType.TEXT,
+            fieldName: 'test',
+          },
+          50,
+          100,
+          5
+        )
       ).rejects.toThrow();
     });
 
     it('should reject invalid height', async () => {
       await expect(
-        manager.createField(0, {
-          fieldType: FormFieldType.TEXT,
-          fieldName: 'test',
-        }, 50, 100, 100, 2000)
+        manager.createField(
+          0,
+          {
+            fieldType: FormFieldType.TEXT,
+            fieldName: 'test',
+          },
+          50,
+          100,
+          100,
+          2000
+        )
       ).rejects.toThrow();
     });
 
     it('should reject negative position', async () => {
       await expect(
-        manager.createField(0, {
-          fieldType: FormFieldType.TEXT,
-          fieldName: 'test',
-        }, -10, 100)
+        manager.createField(
+          0,
+          {
+            fieldType: FormFieldType.TEXT,
+            fieldName: 'test',
+          },
+          -10,
+          100
+        )
       ).rejects.toThrow();
     });
   });
 
   describe('Set Field Value', () => {
     it('should set field value successfully', async () => {
-      await manager.createField(0, {
-        fieldType: FormFieldType.TEXT,
-        fieldName: 'email',
-      }, 50, 100);
+      await manager.createField(
+        0,
+        {
+          fieldType: FormFieldType.TEXT,
+          fieldName: 'email',
+        },
+        50,
+        100
+      );
 
       const result = await manager.setFieldValue('email', 'test@example.com');
       expect(result).toBe(true);
@@ -146,37 +185,48 @@ describe('FormFieldManager', () => {
     });
 
     it('should reject readonly field', async () => {
-      await manager.createField(0, {
-        fieldType: FormFieldType.TEXT,
-        fieldName: 'readonly',
-        state: FormFieldState.READONLY,
-      }, 50, 100);
+      await manager.createField(
+        0,
+        {
+          fieldType: FormFieldType.TEXT,
+          fieldName: 'readonly',
+          state: FormFieldState.READONLY,
+        },
+        50,
+        100
+      );
 
-      await expect(
-        manager.setFieldValue('readonly', 'new_value')
-      ).rejects.toThrow();
+      await expect(manager.setFieldValue('readonly', 'new_value')).rejects.toThrow();
     });
 
     it('should reject disabled field', async () => {
-      await manager.createField(0, {
-        fieldType: FormFieldType.TEXT,
-        fieldName: 'disabled',
-        state: FormFieldState.DISABLED,
-      }, 50, 100);
+      await manager.createField(
+        0,
+        {
+          fieldType: FormFieldType.TEXT,
+          fieldName: 'disabled',
+          state: FormFieldState.DISABLED,
+        },
+        50,
+        100
+      );
 
-      await expect(
-        manager.setFieldValue('disabled', 'new_value')
-      ).rejects.toThrow();
+      await expect(manager.setFieldValue('disabled', 'new_value')).rejects.toThrow();
     });
   });
 
   describe('Get Field Value', () => {
     it('should get field value after set', async () => {
-      await manager.createField(0, {
-        fieldType: FormFieldType.TEXT,
-        fieldName: 'name',
-        fieldValue: 'John',
-      }, 50, 100);
+      await manager.createField(
+        0,
+        {
+          fieldType: FormFieldType.TEXT,
+          fieldName: 'name',
+          fieldValue: 'John',
+        },
+        50,
+        100
+      );
 
       const value = await manager.getFieldValue('name');
       expect(value).toBe('John');
@@ -187,10 +237,15 @@ describe('FormFieldManager', () => {
     });
 
     it('should return undefined for unset field', async () => {
-      await manager.createField(0, {
-        fieldType: FormFieldType.TEXT,
-        fieldName: 'optional',
-      }, 50, 100);
+      await manager.createField(
+        0,
+        {
+          fieldType: FormFieldType.TEXT,
+          fieldName: 'optional',
+        },
+        50,
+        100
+      );
 
       const value = await manager.getFieldValue('optional');
       expect(value).toBeUndefined();
@@ -199,10 +254,17 @@ describe('FormFieldManager', () => {
 
   describe('Get Field Info', () => {
     it('should get field information', async () => {
-      const created = await manager.createField(0, {
-        fieldType: FormFieldType.TEXT,
-        fieldName: 'address',
-      }, 50, 100, 200, 30);
+      const created = await manager.createField(
+        0,
+        {
+          fieldType: FormFieldType.TEXT,
+          fieldName: 'address',
+        },
+        50,
+        100,
+        200,
+        30
+      );
 
       const info = await manager.getFieldInfo('address');
       expect(info.fieldName).toBe('address');
@@ -222,14 +284,24 @@ describe('FormFieldManager', () => {
     });
 
     it('should return multiple fields', async () => {
-      await manager.createField(0, {
-        fieldType: FormFieldType.TEXT,
-        fieldName: 'first_name',
-      }, 50, 100);
-      await manager.createField(0, {
-        fieldType: FormFieldType.TEXT,
-        fieldName: 'last_name',
-      }, 50, 130);
+      await manager.createField(
+        0,
+        {
+          fieldType: FormFieldType.TEXT,
+          fieldName: 'first_name',
+        },
+        50,
+        100
+      );
+      await manager.createField(
+        0,
+        {
+          fieldType: FormFieldType.TEXT,
+          fieldName: 'last_name',
+        },
+        50,
+        130
+      );
 
       const fields = await manager.getAllFields();
       expect(fields).toHaveLength(2);
@@ -238,14 +310,24 @@ describe('FormFieldManager', () => {
 
   describe('Get Page Fields', () => {
     it('should return fields on specific page', async () => {
-      await manager.createField(0, {
-        fieldType: FormFieldType.TEXT,
-        fieldName: 'page0_field',
-      }, 50, 100);
-      await manager.createField(1, {
-        fieldType: FormFieldType.TEXT,
-        fieldName: 'page1_field',
-      }, 50, 100);
+      await manager.createField(
+        0,
+        {
+          fieldType: FormFieldType.TEXT,
+          fieldName: 'page0_field',
+        },
+        50,
+        100
+      );
+      await manager.createField(
+        1,
+        {
+          fieldType: FormFieldType.TEXT,
+          fieldName: 'page1_field',
+        },
+        50,
+        100
+      );
 
       const page0Fields = await manager.getPageFields(0);
       expect(page0Fields).toHaveLength(1);
@@ -259,10 +341,15 @@ describe('FormFieldManager', () => {
 
   describe('Update Field Config', () => {
     it('should update field configuration', async () => {
-      await manager.createField(0, {
-        fieldType: FormFieldType.TEXT,
-        fieldName: 'field1',
-      }, 50, 100);
+      await manager.createField(
+        0,
+        {
+          fieldType: FormFieldType.TEXT,
+          fieldName: 'field1',
+        },
+        50,
+        100
+      );
 
       const updated = await manager.updateFieldConfig('field1', {
         fieldType: FormFieldType.TEXT,
@@ -287,10 +374,15 @@ describe('FormFieldManager', () => {
 
   describe('Delete Field', () => {
     it('should delete field', async () => {
-      await manager.createField(0, {
-        fieldType: FormFieldType.TEXT,
-        fieldName: 'temp_field',
-      }, 50, 100);
+      await manager.createField(
+        0,
+        {
+          fieldType: FormFieldType.TEXT,
+          fieldName: 'temp_field',
+        },
+        50,
+        100
+      );
 
       const result = await manager.deleteField('temp_field');
       expect(result).toBe(true);
@@ -334,14 +426,24 @@ describe('FormFieldManager', () => {
     });
 
     it('should batch set values', async () => {
-      await manager.createField(0, {
-        fieldType: FormFieldType.TEXT,
-        fieldName: 'name',
-      }, 50, 100);
-      await manager.createField(0, {
-        fieldType: FormFieldType.TEXT,
-        fieldName: 'email',
-      }, 50, 130);
+      await manager.createField(
+        0,
+        {
+          fieldType: FormFieldType.TEXT,
+          fieldName: 'name',
+        },
+        50,
+        100
+      );
+      await manager.createField(
+        0,
+        {
+          fieldType: FormFieldType.TEXT,
+          fieldName: 'email',
+        },
+        50,
+        130
+      );
 
       const values = new Map([
         ['name', 'John Doe'],
@@ -353,16 +455,26 @@ describe('FormFieldManager', () => {
     });
 
     it('should get batch values', async () => {
-      await manager.createField(0, {
-        fieldType: FormFieldType.TEXT,
-        fieldName: 'name',
-        fieldValue: 'John',
-      }, 50, 100);
-      await manager.createField(0, {
-        fieldType: FormFieldType.TEXT,
-        fieldName: 'city',
-        fieldValue: 'NYC',
-      }, 50, 130);
+      await manager.createField(
+        0,
+        {
+          fieldType: FormFieldType.TEXT,
+          fieldName: 'name',
+          fieldValue: 'John',
+        },
+        50,
+        100
+      );
+      await manager.createField(
+        0,
+        {
+          fieldType: FormFieldType.TEXT,
+          fieldName: 'city',
+          fieldValue: 'NYC',
+        },
+        50,
+        130
+      );
 
       const values = await manager.getBatchValues(['name', 'city']);
 
@@ -381,16 +493,26 @@ describe('FormFieldManager', () => {
     });
 
     it('should track field statistics', async () => {
-      await manager.createField(0, {
-        fieldType: FormFieldType.TEXT,
-        fieldName: 'field1',
-        state: FormFieldState.REQUIRED,
-      }, 50, 100);
-      await manager.createField(0, {
-        fieldType: FormFieldType.CHECKBOX,
-        fieldName: 'field2',
-        state: FormFieldState.READONLY,
-      }, 50, 130);
+      await manager.createField(
+        0,
+        {
+          fieldType: FormFieldType.TEXT,
+          fieldName: 'field1',
+          state: FormFieldState.REQUIRED,
+        },
+        50,
+        100
+      );
+      await manager.createField(
+        0,
+        {
+          fieldType: FormFieldType.CHECKBOX,
+          fieldName: 'field2',
+          state: FormFieldState.READONLY,
+        },
+        50,
+        130
+      );
 
       const stats = manager.getFormStatistics();
 
@@ -404,10 +526,15 @@ describe('FormFieldManager', () => {
 
   describe('Cache Management', () => {
     it('should clear cache', async () => {
-      await manager.createField(0, {
-        fieldType: FormFieldType.TEXT,
-        fieldName: 'field1',
-      }, 50, 100);
+      await manager.createField(
+        0,
+        {
+          fieldType: FormFieldType.TEXT,
+          fieldName: 'field1',
+        },
+        50,
+        100
+      );
 
       let fields = await manager.getAllFields();
       expect(fields).toHaveLength(1);
@@ -419,10 +546,15 @@ describe('FormFieldManager', () => {
     });
 
     it('should clear via clearFieldCache', async () => {
-      await manager.createField(0, {
-        fieldType: FormFieldType.TEXT,
-        fieldName: 'field1',
-      }, 50, 100);
+      await manager.createField(
+        0,
+        {
+          fieldType: FormFieldType.TEXT,
+          fieldName: 'field1',
+        },
+        50,
+        100
+      );
 
       manager.clearFieldCache();
 

@@ -185,6 +185,7 @@ int   pdf_document_sign(void* document_handle, const void* certificate_handle, c
 int32_t pdf_document_get_signature_count(const void* document_handle, int* error_code);
 void* pdf_document_get_signature(const void* document_handle, int32_t index, int* error_code);
 int   pdf_signature_verify(const void* signature_handle, int* error_code);
+int   pdf_signature_verify_detached(const void* signature_handle, const uint8_t* pdf_data, size_t pdf_len, int* error_code);
 int   pdf_document_verify_all_signatures(const void* document_handle, int* error_code);
 char* pdf_signature_get_signer_name(const void* signature_handle, int* error_code);
 int64_t pdf_signature_get_signing_time(const void* signature_handle, int* error_code);
@@ -282,6 +283,182 @@ void  FreeBytes(void* ptr);
 void  pdf_oxide_set_log_level(int level);
 /** Get current log level (0-5). */
 int   pdf_oxide_get_log_level(void);
+
+/* ─── Write-side API ─────────────────────────────────────────────────────── *
+ *
+ * DocumentBuilder + PageBuilder + EmbeddedFont mirror the Rust fluent
+ * builder. Error conventions depend on the return type:
+ *   - `int`-returning methods: 0 on success, -1 on error.
+ *   - Pointer-returning methods (`void*` handles, `uint8_t*` byte buffers):
+ *     a valid pointer on success, NULL on error.
+ *   - `void`-returning methods: no return-side failure channel (free fns).
+ * In every case the `error_code` out-param carries the specific code.
+ *
+ * Handle-lifetime contract:
+ *
+ *  1. `pdf_document_builder_create` returns a handle. The finalisation
+ *     methods below consume the *builder state* but leave the handle
+ *     itself allocated (a zombie wrapper). Callers MUST still call
+ *     `pdf_document_builder_free` to release it:
+ *        pdf_document_builder_build        → call `_free` after
+ *        pdf_document_builder_save         → call `_free` after
+ *        pdf_document_builder_save_encrypted → call `_free` after
+ *        pdf_document_builder_to_bytes_encrypted → call `_free` after
+ *     A second finalisation on the same handle (double-build, etc.)
+ *     is invalid; it returns NULL / -1 with errno = invalid-arg.
+ *     Calling `pdf_document_builder_free` on an already-finalised
+ *     handle is the normal teardown path and is always safe.
+ *
+ *  2. `pdf_document_builder_a4_page` / `_letter_page` / `_page` returns
+ *     a page sub-handle. Only ONE page handle may be outstanding per
+ *     builder; a second call before the prior `pdf_page_builder_done`
+ *     returns NULL with error_code = 1 (invalid arg).
+ *
+ *  3. `pdf_page_builder_done` commits the page and invalidates the
+ *     page handle. `pdf_page_builder_free` is for error-recovery only
+ *     (drop without committing).
+ *
+ *  4. `pdf_document_builder_register_embedded_font` CONSUMES the font
+ *     handle on success. Do not call `pdf_embedded_font_free` after.
+ *
+ *  5. Byte buffers returned from `_build` and `_to_bytes_encrypted`
+ *     must be freed with `free_bytes`.
+ */
+
+/* EmbeddedFont */
+void* pdf_embedded_font_from_file(const char* path, int* error_code);
+void* pdf_embedded_font_from_bytes(const uint8_t* data, size_t len,
+                                   const char* name /* nullable */,
+                                   int* error_code);
+void  pdf_embedded_font_free(void* handle);
+
+/* DocumentBuilder — lifecycle */
+void* pdf_document_builder_create(int* error_code);
+void  pdf_document_builder_free(void* handle);
+
+/* DocumentBuilder — metadata */
+int   pdf_document_builder_set_title(void* handle, const char* title, int* error_code);
+int   pdf_document_builder_set_author(void* handle, const char* author, int* error_code);
+int   pdf_document_builder_set_subject(void* handle, const char* subject, int* error_code);
+int   pdf_document_builder_set_keywords(void* handle, const char* keywords, int* error_code);
+int   pdf_document_builder_set_creator(void* handle, const char* creator, int* error_code);
+
+/* DocumentBuilder — font registration (CONSUMES font on success) */
+int   pdf_document_builder_register_embedded_font(void* handle, const char* name,
+                                                  void* font, int* error_code);
+
+/* DocumentBuilder — open page */
+void* pdf_document_builder_a4_page(void* handle, int* error_code);
+void* pdf_document_builder_letter_page(void* handle, int* error_code);
+void* pdf_document_builder_page(void* handle, float width, float height, int* error_code);
+
+/* PageBuilder — content */
+int   pdf_page_builder_font(void* page, const char* name, float size, int* error_code);
+int   pdf_page_builder_at(void* page, float x, float y, int* error_code);
+int   pdf_page_builder_text(void* page, const char* text, int* error_code);
+int   pdf_page_builder_heading(void* page, unsigned char level, const char* text,
+                               int* error_code);
+int   pdf_page_builder_paragraph(void* page, const char* text, int* error_code);
+int   pdf_page_builder_space(void* page, float points, int* error_code);
+int   pdf_page_builder_horizontal_rule(void* page, int* error_code);
+
+/* PageBuilder — annotations (attach to previous text element) */
+int   pdf_page_builder_link_url(void* page, const char* url, int* error_code);
+int   pdf_page_builder_link_page(void* page, size_t target_page, int* error_code);
+int   pdf_page_builder_link_named(void* page, const char* destination, int* error_code);
+int   pdf_page_builder_highlight(void* page, float r, float g, float b, int* error_code);
+int   pdf_page_builder_underline(void* page, float r, float g, float b, int* error_code);
+int   pdf_page_builder_strikeout(void* page, float r, float g, float b, int* error_code);
+int   pdf_page_builder_squiggly(void* page, float r, float g, float b, int* error_code);
+int   pdf_page_builder_sticky_note(void* page, const char* text, int* error_code);
+int   pdf_page_builder_sticky_note_at(void* page, float x, float y, const char* text,
+                                      int* error_code);
+int   pdf_page_builder_watermark(void* page, const char* text, int* error_code);
+int   pdf_page_builder_watermark_confidential(void* page, int* error_code);
+int   pdf_page_builder_watermark_draft(void* page, int* error_code);
+int   pdf_page_builder_stamp(void* page, const char* type_name, int* error_code);
+int   pdf_page_builder_freetext(void* page, float x, float y, float w, float h,
+                                const char* text, int* error_code);
+
+/* Form-field widget creation. Each method adds a widget to the page's
+ * /AcroForm entry at finalize time. `default_value` may be NULL for a
+ * blank field. */
+int   pdf_page_builder_text_field(void* page, const char* name,
+                                  float x, float y, float w, float h,
+                                  const char* default_value /* nullable */,
+                                  int* error_code);
+int   pdf_page_builder_checkbox(void* page, const char* name,
+                                float x, float y, float w, float h,
+                                int checked,
+                                int* error_code);
+
+/* Dropdown combo-box with a fixed list of string options.
+ * `options` is an array of `options_count` C-strings.
+ * `selected` may be NULL for no initial selection. */
+int   pdf_page_builder_combo_box(void* page, const char* name,
+                                 float x, float y, float w, float h,
+                                 const char* const* options,
+                                 size_t options_count,
+                                 const char* selected /* nullable */,
+                                 int* error_code);
+
+/* Radio-button group. `values`, `xs`, `ys`, `ws`, `hs` are parallel
+ * arrays of length `count`. `selected` may be NULL. */
+int   pdf_page_builder_radio_group(void* page, const char* name,
+                                   const char* const* values,
+                                   const float* xs, const float* ys,
+                                   const float* ws, const float* hs,
+                                   size_t count,
+                                   const char* selected /* nullable */,
+                                   int* error_code);
+
+/* Clickable push button with a visible caption. */
+int   pdf_page_builder_push_button(void* page, const char* name,
+                                   float x, float y, float w, float h,
+                                   const char* caption,
+                                   int* error_code);
+
+/* Low-level graphics primitives (PdfWriter exposure) */
+int   pdf_page_builder_rect(void* page, float x, float y, float w, float h,
+                            int* error_code);
+int   pdf_page_builder_filled_rect(void* page, float x, float y, float w, float h,
+                                   float r, float g, float b, int* error_code);
+int   pdf_page_builder_line(void* page, float x1, float y1, float x2, float y2,
+                            int* error_code);
+
+/* PageBuilder — commit / drop */
+int   pdf_page_builder_done(void* page, int* error_code);
+void  pdf_page_builder_free(void* page);
+
+/* DocumentBuilder — finalisation. Each consumes the builder *state*
+ * but leaves the handle wrapper allocated; callers must still call
+ * `pdf_document_builder_free` to release it (see handle-lifetime
+ * contract above). Calling any of these twice on the same handle
+ * returns an error. */
+uint8_t* pdf_document_builder_build(void* handle, size_t* out_len, int* error_code);
+int      pdf_document_builder_save(void* handle, const char* path, int* error_code);
+int      pdf_document_builder_save_encrypted(void* handle, const char* path,
+                                             const char* user_password,
+                                             const char* owner_password,
+                                             int* error_code);
+uint8_t* pdf_document_builder_to_bytes_encrypted(void* handle,
+                                                 const char* user_password,
+                                                 const char* owner_password,
+                                                 size_t* out_len,
+                                                 int* error_code);
+
+/* HTML+CSS pipeline */
+void* pdf_from_html_css(const char* html, const char* css,
+                        const uint8_t* font_bytes, size_t font_len,
+                        int* error_code);
+/* Multi-font cascade — `families`, `font_bytes`, and `font_lens` are
+ * parallel arrays of length `count`. The FFI copies the bytes. */
+void* pdf_from_html_css_with_fonts(const char* html, const char* css,
+                                   const char* const* families,
+                                   const uint8_t* const* font_bytes,
+                                   const size_t* font_lens,
+                                   size_t count,
+                                   int* error_code);
 
 #ifdef __cplusplus
 }

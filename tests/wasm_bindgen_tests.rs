@@ -13,7 +13,7 @@ use wasm_bindgen_test::*;
 
 use pdf_oxide::api::{Pdf, PdfBuilder};
 use pdf_oxide::geometry::Rect;
-use pdf_oxide::wasm::{WasmPdf, WasmPdfDocument};
+use pdf_oxide::wasm::{WasmDocumentBuilder, WasmEmbeddedFont, WasmPdf, WasmPdfDocument};
 use pdf_oxide::writer::{CheckboxWidget, ComboBoxWidget, PdfWriter, TextFieldWidget};
 
 wasm_bindgen_test_configure!(run_in_browser);
@@ -672,4 +672,181 @@ fn test_xmp_metadata_null_or_object() {
         result.is_null() || result.is_object(),
         "xmpMetadata should return null or an object"
     );
+}
+
+// ============================================================================
+// Write-side API — WasmDocumentBuilder + WasmEmbeddedFont round-trip
+// ============================================================================
+//
+// Ports the Python reference test (tests/test_python_document_builder.py)
+// to the WASM binding. Confirms the fluent API compiles down correctly,
+// that CJK-adjacent scripts (Cyrillic + Greek) round-trip through
+// `extract_text`, and that the subset_font_bytes pipeline (v0.3.38 #385)
+// is wired through the WASM path (PDF size << original face size).
+
+/// DejaVuSans TTF fixture bytes — covers Latin + Cyrillic + Greek, small
+/// enough (~760 KB) to include in the wasm test binary without blowing
+/// out the bundle size excessively.
+const DEJAVU_TTF: &[u8] = include_bytes!("fixtures/fonts/DejaVuSans.ttf");
+
+#[wasm_bindgen_test]
+fn document_builder_minimal_ascii() {
+    let mut b = WasmDocumentBuilder::new();
+    b.title("Hello".to_string()).unwrap();
+    let mut p = b.a4_page().unwrap();
+    p.at(72.0, 720.0).unwrap();
+    p.text("Hello, world.".to_string()).unwrap();
+    p.done(&mut b).unwrap();
+    let bytes = b.build().unwrap();
+    assert!(bytes.starts_with(b"%PDF-"));
+    assert!(bytes.len() > 256);
+}
+
+#[wasm_bindgen_test]
+fn document_builder_cjk_round_trip() {
+    let mut font = WasmEmbeddedFont::from_bytes(DEJAVU_TTF, None).unwrap();
+    let mut b = WasmDocumentBuilder::new();
+    b.register_embedded_font("DejaVu".to_string(), &mut font)
+        .unwrap();
+    let mut p = b.a4_page().unwrap();
+    p.font("DejaVu".to_string(), 12.0).unwrap();
+    p.at(72.0, 720.0).unwrap();
+    p.text("Привет, мир!".to_string()).unwrap();
+    p.at(72.0, 700.0).unwrap();
+    p.text("Καλημέρα κόσμε".to_string()).unwrap();
+    p.done(&mut b).unwrap();
+
+    let pdf_bytes = b.build().unwrap();
+    let doc = WasmPdfDocument::new(&pdf_bytes).unwrap();
+    let text = doc.extract_text(0).unwrap();
+    assert!(text.contains("Привет, мир!"), "Cyrillic round-trip failed: {text:?}");
+    assert!(text.contains("Καλημέρα κόσμε"), "Greek round-trip failed: {text:?}");
+}
+
+#[wasm_bindgen_test]
+fn document_builder_output_is_subsetted() {
+    let mut font = WasmEmbeddedFont::from_bytes(DEJAVU_TTF, None).unwrap();
+    let mut b = WasmDocumentBuilder::new();
+    b.register_embedded_font("DejaVu".to_string(), &mut font)
+        .unwrap();
+    let mut p = b.a4_page().unwrap();
+    p.font("DejaVu".to_string(), 12.0).unwrap();
+    p.at(72.0, 700.0).unwrap();
+    p.text("Hello world".to_string()).unwrap();
+    p.done(&mut b).unwrap();
+    let bytes = b.build().unwrap();
+
+    // v0.3.38 #385 wires real font subsetting; PDF must be much smaller
+    // than the embedded face (~760 KB).
+    assert!(
+        bytes.len() * 10 < DEJAVU_TTF.len(),
+        "expected PDF ({} bytes) to be >= 10× smaller than the face ({} bytes)",
+        bytes.len(),
+        DEJAVU_TTF.len(),
+    );
+}
+
+#[wasm_bindgen_test]
+fn document_builder_to_bytes_encrypted() {
+    let mut b = WasmDocumentBuilder::new();
+    let mut p = b.a4_page().unwrap();
+    p.at(72.0, 720.0).unwrap();
+    p.text("secret".to_string()).unwrap();
+    p.done(&mut b).unwrap();
+    let bytes = b.to_bytes_encrypted("userpw", "ownerpw").unwrap();
+    // Locate /Encrypt + /V 5 markers (AES-256).
+    let pdf_str = String::from_utf8_lossy(&bytes);
+    assert!(pdf_str.contains("/Encrypt"), "encrypted PDF missing /Encrypt dict");
+    assert!(pdf_str.contains("/V 5"), "expected /V 5 (AES-256) marker");
+}
+
+#[wasm_bindgen_test]
+fn document_builder_consumed_after_build() {
+    let mut b = WasmDocumentBuilder::new();
+    let mut p = b.a4_page().unwrap();
+    p.at(72.0, 720.0).unwrap();
+    p.text("x".to_string()).unwrap();
+    p.done(&mut b).unwrap();
+    let _ = b.build().unwrap();
+    // Second build should fail — builder is consumed.
+    assert!(b.build().is_err(), "second build should return Err");
+}
+
+#[wasm_bindgen_test]
+fn fluent_page_done_is_single_use() {
+    let mut b = WasmDocumentBuilder::new();
+    let mut p = b.a4_page().unwrap();
+    p.text("a".to_string()).unwrap();
+    p.done(&mut b).unwrap();
+    // Second done on the same page should error.
+    assert!(p.done(&mut b).is_err(), "double done should return Err");
+}
+
+#[wasm_bindgen_test]
+fn embedded_font_consumed_after_register() {
+    let mut font = WasmEmbeddedFont::from_bytes(DEJAVU_TTF, None).unwrap();
+    let mut b = WasmDocumentBuilder::new();
+    b.register_embedded_font("DejaVu1".to_string(), &mut font)
+        .unwrap();
+    assert_eq!(font.name(), "", "font handle should be empty after consumption");
+    // Second register using the already-consumed handle should error.
+    assert!(
+        b.register_embedded_font("DejaVu2".to_string(), &mut font)
+            .is_err(),
+        "re-registering a consumed font should return Err",
+    );
+}
+
+// ----------------------------------------------------------------------
+// Phase 2 — HTML+CSS pipeline on WasmPdf
+// ----------------------------------------------------------------------
+
+#[wasm_bindgen_test]
+fn wasm_pdf_from_html_css() {
+    let pdf = WasmPdf::from_html_css(
+        "<h1>Hello</h1><p>World</p>",
+        "h1 { color: blue; font-size: 24pt }",
+        DEJAVU_TTF,
+    )
+    .unwrap();
+    let bytes = pdf.to_bytes();
+    assert!(bytes.starts_with(b"%PDF-"));
+    let doc = WasmPdfDocument::new(&bytes).unwrap();
+    let text = doc.extract_text(0).unwrap();
+    assert!(text.contains("Hello"));
+    assert!(text.contains("World"));
+}
+
+#[wasm_bindgen_test]
+fn wasm_pdf_from_html_css_with_fonts_requires_non_empty() {
+    let result = WasmPdf::from_html_css_with_fonts("<p>x</p>", "", Vec::new(), Vec::new());
+    assert!(result.is_err(), "empty font list should be rejected");
+}
+
+// ----------------------------------------------------------------------
+// WASM move_page — DocumentEditor mutation parity with
+// Python / Go / C# / Node.
+// ----------------------------------------------------------------------
+
+#[wasm_bindgen_test]
+fn wasm_pdf_document_move_page_preserves_page_count() {
+    // Three-page PDF with distinct content per page so the reorder is observable.
+    let mut b = WasmDocumentBuilder::new();
+    for tag in &["alpha", "beta", "gamma"] {
+        let mut p = b.a4_page().unwrap();
+        p.at(72.0, 720.0).unwrap();
+        p.text(tag.to_string()).unwrap();
+        p.done(&mut b).unwrap();
+    }
+    let bytes = b.build().unwrap();
+
+    let mut doc = WasmPdfDocument::new(&bytes).unwrap();
+    assert_eq!(doc.page_count().unwrap(), 3);
+
+    // Move the first page to the end. No error = plumbing works.
+    doc.move_page(0, 2).unwrap();
+    assert_eq!(doc.page_count().unwrap(), 3, "move_page must not change the page count",);
+
+    // Out-of-range move must surface as an Err, not panic.
+    assert!(doc.move_page(99, 0).is_err(), "out-of-range from_index should return Err",);
 }

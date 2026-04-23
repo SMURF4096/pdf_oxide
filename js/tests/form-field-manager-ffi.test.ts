@@ -8,12 +8,7 @@
  * - Statistics and batch operations (3 functions)
  */
 
-import {
-  FormFieldManager,
-  FormFieldType,
-  FieldVisibility,
-  type FormField,
-} from '../src/form-field-manager';
+import { FieldVisibility, FormFieldManager, FormFieldType } from '../src/form-field-manager';
 
 describe('FormFieldManager FFI-based Methods', () => {
   let manager: FormFieldManager;
@@ -381,18 +376,12 @@ describe('FormFieldManager FFI-based Methods', () => {
 
   describe('Method Coverage', () => {
     test('should have 31 public methods', () => {
-      const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(manager))
-        .filter((prop) => {
-          const descriptor = Object.getOwnPropertyDescriptor(
-            Object.getPrototypeOf(manager),
-            prop
-          );
-          return (
-            typeof descriptor?.value === 'function' &&
-            !prop.startsWith('_') &&
-            prop !== 'constructor'
-          );
-        });
+      const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(manager)).filter((prop) => {
+        const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(manager), prop);
+        return (
+          typeof descriptor?.value === 'function' && !prop.startsWith('_') && prop !== 'constructor'
+        );
+      });
 
       expect(methods.length).toBeGreaterThanOrEqual(31);
     });

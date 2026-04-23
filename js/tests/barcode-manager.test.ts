@@ -1,12 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import {
-  BarcodeManager,
-  BarcodeFormat,
-  BarcodeErrorCorrection,
-} from '../src/barcode-manager';
-import { PdfDocument } from '../src/pdf-document';
 import * as fs from 'fs';
 import * as path from 'path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { BarcodeErrorCorrection, BarcodeFormat, BarcodeManager } from '../src/barcode-manager';
+import type { PdfDocument } from '../src/pdf-document';
 
 describe('BarcodeManager', () => {
   let mockDocument: PdfDocument;
@@ -166,9 +162,7 @@ describe('BarcodeManager', () => {
     });
 
     it('should reject negative position', async () => {
-      await expect(
-        manager.embedBarcode(0, 'test', undefined, -10.0)
-      ).rejects.toThrow();
+      await expect(manager.embedBarcode(0, 'test', undefined, -10.0)).rejects.toThrow();
     });
   });
 
@@ -211,12 +205,12 @@ describe('BarcodeManager', () => {
       await manager.generateBarcode('test');
 
       let stats = manager.getBarcodeStatistics();
-      expect((stats.total_cached_barcodes as number)).toBeGreaterThan(0);
+      expect(stats.total_cached_barcodes as number).toBeGreaterThan(0);
 
       manager.clearBarcodeCache();
 
       stats = manager.getBarcodeStatistics();
-      expect((stats.total_cached_barcodes as number)).toBe(0);
+      expect(stats.total_cached_barcodes as number).toBe(0);
     });
 
     it('should clear cache', async () => {
@@ -224,7 +218,7 @@ describe('BarcodeManager', () => {
       manager.clearCache();
 
       const stats = manager.getBarcodeStatistics();
-      expect((stats.total_cached_barcodes as number)).toBe(0);
+      expect(stats.total_cached_barcodes as number).toBe(0);
     });
   });
 });

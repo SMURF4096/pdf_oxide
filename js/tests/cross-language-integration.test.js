@@ -107,8 +107,11 @@ describe('Cross-Language Integration Tests', () => {
 
       if (manager.extractPageRange) {
         const results = manager.extractPageRange(0, batchSize);
-        assert.strictEqual(results.length, batchSize,
-          `Batch extraction should return ${batchSize} results`);
+        assert.strictEqual(
+          results.length,
+          batchSize,
+          `Batch extraction should return ${batchSize} results`
+        );
       }
     });
 
@@ -155,8 +158,7 @@ describe('Cross-Language Integration Tests', () => {
       const cacheInfo = manager.getCacheStatistics?.();
       if (cacheInfo && manager.extractAsMarkdown) {
         // Should have at least 2 entries (text and markdown)
-        assert(cacheInfo.cacheSize >= 2,
-          'Different formats should have separate cache entries');
+        assert(cacheInfo.cacheSize >= 2, 'Different formats should have separate cache entries');
       }
     });
 
@@ -385,10 +387,7 @@ describe('Cross-Language Integration Tests', () => {
         const stats2 = manager.getCacheStatistics?.();
 
         if (stats1 && stats2) {
-          assert(
-            stats2.cacheHitCount > stats1.cacheHitCount,
-            'Annotation count should be cached'
-          );
+          assert(stats2.cacheHitCount > stats1.cacheHitCount, 'Annotation count should be cached');
         }
       }
     });
@@ -408,7 +407,10 @@ describe('Cross-Language Integration Tests', () => {
 
         const stats = manager.getCacheStatistics?.();
         if (stats) {
-          assert(stats.cacheSize >= 2, 'Different annotation types should have separate cache entries');
+          assert(
+            stats.cacheSize >= 2,
+            'Different annotation types should have separate cache entries'
+          );
         }
       }
     });
@@ -482,8 +484,10 @@ describe('Cross-Language Integration Tests', () => {
       const durationMs = Number(endTime - startTime) / 1_000_000;
 
       // Cached calls should complete 1000 iterations in under 100ms
-      assert(durationMs < 100,
-        `1000 cached extractions should complete in < 100ms (took ${durationMs.toFixed(2)}ms)`);
+      assert(
+        durationMs < 100,
+        `1000 cached extractions should complete in < 100ms (took ${durationMs.toFixed(2)}ms)`
+      );
     });
 
     test('High hit rate for repeated operations', () => {
@@ -503,9 +507,11 @@ describe('Cross-Language Integration Tests', () => {
 
       const stats = extractionManager.getCacheStatistics?.();
       if (stats) {
-        const hitRate = stats.hitRate ?? ((stats.cacheHitCount / stats.totalRequests) * 100);
-        assert(hitRate >= 80,
-          `Hit rate should be 80%+ for ${iterations} repeated calls (got ${hitRate.toFixed(1)}%)`);
+        const hitRate = stats.hitRate ?? (stats.cacheHitCount / stats.totalRequests) * 100;
+        assert(
+          hitRate >= 80,
+          `Hit rate should be 80%+ for ${iterations} repeated calls (got ${hitRate.toFixed(1)}%)`
+        );
       }
     });
 
@@ -531,8 +537,10 @@ describe('Cross-Language Integration Tests', () => {
         const secondBatchCacheHits = (stats4.cacheHitCount ?? 0) - (stats3.cacheHitCount ?? 0);
 
         // Second batch should primarily hit cache (at least most pages)
-        assert(secondBatchCacheHits > 0 || firstBatchCacheMisses > 0,
-          'Batch extraction efficiency should be evident from cache statistics');
+        assert(
+          secondBatchCacheHits > 0 || firstBatchCacheMisses > 0,
+          'Batch extraction efficiency should be evident from cache statistics'
+        );
       }
     });
   });
@@ -677,8 +685,10 @@ describe('Cross-Language Integration Tests', () => {
       const stats2 = manager.getCacheStatistics?.();
 
       if (stats1 && stats2) {
-        assert(stats2.cacheHitCount > stats1.cacheHitCount,
-          'Cache should persist across different operation types');
+        assert(
+          stats2.cacheHitCount > stats1.cacheHitCount,
+          'Cache should persist across different operation types'
+        );
       }
 
       document.dispose?.();

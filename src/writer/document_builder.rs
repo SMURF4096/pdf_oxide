@@ -634,6 +634,181 @@ impl<'a> FluentPageBuilder<'a> {
         self
     }
 
+    /// Add a single-line text form field to the page. `name` is the
+    /// unique field identifier used for form submission;
+    /// `default_value` is the initial text shown in the field (pass
+    /// `None` or an empty string for a blank field).
+    pub fn text_field(
+        self,
+        name: impl Into<String>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        default_value: Option<String>,
+    ) -> Self {
+        let page = &mut self.builder.pages[self.page_index];
+        page.form_fields.push(PendingFormField::TextField {
+            name: name.into(),
+            rect: Rect::new(x, y, w, h),
+            default_value,
+        });
+        self
+    }
+
+    /// Add a checkbox form field to the page. `checked` sets whether
+    /// the box is initially ticked.
+    pub fn checkbox(
+        self,
+        name: impl Into<String>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        checked: bool,
+    ) -> Self {
+        let page = &mut self.builder.pages[self.page_index];
+        page.form_fields.push(PendingFormField::Checkbox {
+            name: name.into(),
+            rect: Rect::new(x, y, w, h),
+            checked,
+        });
+        self
+    }
+
+    /// Add a dropdown combo-box form field. Each entry of `options` is
+    /// a user-visible string that also serves as the submitted value.
+    /// `selected` picks the initial choice by value; pass `None` to
+    /// leave the field blank.
+    pub fn combo_box(
+        self,
+        name: impl Into<String>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        options: Vec<String>,
+        selected: Option<String>,
+    ) -> Self {
+        let page = &mut self.builder.pages[self.page_index];
+        page.form_fields.push(PendingFormField::ComboBox {
+            name: name.into(),
+            rect: Rect::new(x, y, w, h),
+            options,
+            selected,
+        });
+        self
+    }
+
+    /// Add a radio-button group. Each entry of `buttons` is an
+    /// `(export_value, x, y, w, h)` tuple describing one option's
+    /// submitted value and its visible bounding rectangle. `selected`
+    /// picks the initial choice by export value.
+    pub fn radio_group(
+        self,
+        name: impl Into<String>,
+        buttons: Vec<(String, f32, f32, f32, f32)>,
+        selected: Option<String>,
+    ) -> Self {
+        let page = &mut self.builder.pages[self.page_index];
+        let buttons = buttons
+            .into_iter()
+            .map(|(v, x, y, w, h)| (v, Rect::new(x, y, w, h)))
+            .collect();
+        page.form_fields.push(PendingFormField::RadioGroup {
+            name: name.into(),
+            buttons,
+            selected,
+        });
+        self
+    }
+
+    /// Add a clickable push button with a visible caption.
+    pub fn push_button(
+        self,
+        name: impl Into<String>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        caption: impl Into<String>,
+    ) -> Self {
+        let page = &mut self.builder.pages[self.page_index];
+        page.form_fields.push(PendingFormField::PushButton {
+            name: name.into(),
+            rect: Rect::new(x, y, w, h),
+            caption: caption.into(),
+        });
+        self
+    }
+
+    // ───────────────────────────────────────────────────────────────────
+    // Low-level graphics primitives (PdfWriter exposure)
+    //
+    // These emit `ContentElement::Path` directly, the same backing
+    // primitive DocumentBuilder already supports via `element()`. Kept
+    // as first-class fluent methods because "I want a rectangle" is
+    // common enough that forcing users through the lower-level
+    // `ContentElement::Path` builder is ergonomically bad across 6
+    // bindings.
+    // ───────────────────────────────────────────────────────────────────
+
+    /// Draw a stroked rectangle outline at `(x, y)` with size `w × h`
+    /// using the default 1pt black stroke. For a filled rectangle with
+    /// a custom colour, see [`Self::filled_rect`].
+    pub fn rect(self, x: f32, y: f32, w: f32, h: f32) -> Self {
+        use crate::elements::PathContent;
+        use crate::elements::PathOperation;
+        let mut path = PathContent::new(Rect::new(x, y, w, h));
+        path.operations.push(PathOperation::Rectangle(x, y, w, h));
+        path.stroke_color = Some(crate::layout::Color {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+        });
+        path.fill_color = None;
+        let page = &mut self.builder.pages[self.page_index];
+        page.elements.push(ContentElement::Path(path));
+        self
+    }
+
+    /// Draw a filled rectangle at `(x, y)` with size `w × h` in the
+    /// given RGB colour (channels in `0.0..=1.0`). No outline.
+    pub fn filled_rect(self, x: f32, y: f32, w: f32, h: f32, r: f32, g: f32, b: f32) -> Self {
+        use crate::elements::PathContent;
+        use crate::elements::PathOperation;
+        let mut path = PathContent::new(Rect::new(x, y, w, h));
+        path.operations.push(PathOperation::Rectangle(x, y, w, h));
+        path.fill_color = Some(crate::layout::Color { r, g, b });
+        path.stroke_color = None;
+        let page = &mut self.builder.pages[self.page_index];
+        page.elements.push(ContentElement::Path(path));
+        self
+    }
+
+    /// Draw a straight line from `(x1, y1)` to `(x2, y2)` with the
+    /// default 1pt black stroke.
+    pub fn line(self, x1: f32, y1: f32, x2: f32, y2: f32) -> Self {
+        use crate::elements::PathContent;
+        use crate::elements::PathOperation;
+        let min_x = x1.min(x2);
+        let min_y = y1.min(y2);
+        let w = (x2 - x1).abs().max(1.0);
+        let h = (y2 - y1).abs().max(1.0);
+        let mut path = PathContent::new(Rect::new(min_x, min_y, w, h));
+        path.operations.push(PathOperation::MoveTo(x1, y1));
+        path.operations.push(PathOperation::LineTo(x2, y2));
+        path.stroke_color = Some(crate::layout::Color {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+        });
+        path.fill_color = None;
+        let page = &mut self.builder.pages[self.page_index];
+        page.elements.push(ContentElement::Path(path));
+        self
+    }
+
     /// Finish building this page and return to the document builder.
     pub fn done(mut self) -> &'a mut DocumentBuilder {
         // Move pending annotations to page data
@@ -643,12 +818,53 @@ impl<'a> FluentPageBuilder<'a> {
     }
 }
 
+/// Buffered form-field widget added by `FluentPageBuilder::text_field`
+/// etc. Applied to the underlying `pdf_writer::PageBuilder` inside
+/// `DocumentBuilder::build`.
+enum PendingFormField {
+    /// A simple single-line text field.
+    TextField {
+        name: String,
+        rect: Rect,
+        default_value: Option<String>,
+    },
+    /// A checkbox, initially checked or not.
+    Checkbox {
+        name: String,
+        rect: Rect,
+        checked: bool,
+    },
+    /// A dropdown combo-box with a fixed list of string options and an
+    /// optional initial selection.
+    ComboBox {
+        name: String,
+        rect: Rect,
+        options: Vec<String>,
+        selected: Option<String>,
+    },
+    /// A radio-button group. Each entry in `buttons` has an export
+    /// value (the PDF form's submitted value if that button is chosen)
+    /// and its own rect.
+    RadioGroup {
+        name: String,
+        buttons: Vec<(String, Rect)>,
+        selected: Option<String>,
+    },
+    /// A clickable push button with a visible caption.
+    PushButton {
+        name: String,
+        rect: Rect,
+        caption: String,
+    },
+}
+
 /// Internal page data for DocumentBuilder.
 struct PageData {
     width: f32,
     height: f32,
     elements: Vec<ContentElement>,
     annotations: Vec<Annotation>,
+    form_fields: Vec<PendingFormField>,
 }
 
 /// High-level document builder with fluent API.
@@ -720,6 +936,37 @@ impl DocumentBuilder {
         self
     }
 
+    /// Set document title (convenience passthrough to
+    /// `DocumentMetadata::title`).
+    pub fn title(mut self, title: impl Into<String>) -> Self {
+        self.metadata.title = Some(title.into());
+        self
+    }
+
+    /// Set document author.
+    pub fn author(mut self, author: impl Into<String>) -> Self {
+        self.metadata.author = Some(author.into());
+        self
+    }
+
+    /// Set document subject.
+    pub fn subject(mut self, subject: impl Into<String>) -> Self {
+        self.metadata.subject = Some(subject.into());
+        self
+    }
+
+    /// Set document keywords (comma-separated per PDF convention).
+    pub fn keywords(mut self, keywords: impl Into<String>) -> Self {
+        self.metadata.keywords = Some(keywords.into());
+        self
+    }
+
+    /// Set the creator application name.
+    pub fn creator(mut self, creator: impl Into<String>) -> Self {
+        self.metadata.creator = Some(creator.into());
+        self
+    }
+
     /// Set document metadata.
     pub fn metadata(mut self, metadata: DocumentMetadata) -> Self {
         self.metadata = metadata;
@@ -741,6 +988,7 @@ impl DocumentBuilder {
             height,
             elements: Vec::new(),
             annotations: Vec::new(),
+            form_fields: Vec::new(),
         });
         FluentPageBuilder {
             builder: self,
@@ -930,6 +1178,80 @@ impl DocumentBuilder {
                 page.add_annotation(annotation.clone());
             }
 
+            // 4. Emit form-field widgets. Each pending entry translates
+            //    into the appropriate `pdf_writer::PageBuilder::add_*`
+            //    call so the field lands in /AcroForm at finalize time.
+            for field in &page_data.form_fields {
+                use super::form_fields::{CheckboxWidget, TextFieldWidget};
+                match field {
+                    PendingFormField::TextField {
+                        name,
+                        rect,
+                        default_value,
+                    } => {
+                        let widget = TextFieldWidget::new(name.clone(), *rect);
+                        let widget = if let Some(default) = default_value {
+                            widget.with_default_value(default.clone())
+                        } else {
+                            widget
+                        };
+                        page.add_text_field(widget);
+                    },
+                    PendingFormField::Checkbox {
+                        name,
+                        rect,
+                        checked,
+                    } => {
+                        let widget = CheckboxWidget::new(name.clone(), *rect);
+                        let widget = if *checked { widget.checked() } else { widget };
+                        page.add_checkbox(widget);
+                    },
+                    PendingFormField::ComboBox {
+                        name,
+                        rect,
+                        options,
+                        selected,
+                    } => {
+                        use super::form_fields::ComboBoxWidget;
+                        let widget =
+                            ComboBoxWidget::new(name.clone(), *rect).with_options(options.clone());
+                        let widget = if let Some(v) = selected {
+                            widget.with_value(v.clone())
+                        } else {
+                            widget
+                        };
+                        page.add_combo_box(widget);
+                    },
+                    PendingFormField::RadioGroup {
+                        name,
+                        buttons,
+                        selected,
+                    } => {
+                        use super::form_fields::RadioButtonGroup;
+                        let mut group = RadioButtonGroup::new(name.clone());
+                        for (value, rect) in buttons {
+                            group = group.add_button(value.clone(), *rect, value.clone());
+                        }
+                        let group = if let Some(v) = selected {
+                            group.selected(v.clone())
+                        } else {
+                            group
+                        };
+                        page.add_radio_group(group);
+                    },
+                    PendingFormField::PushButton {
+                        name,
+                        rect,
+                        caption,
+                    } => {
+                        use super::form_fields::PushButtonWidget;
+                        let widget = PushButtonWidget::new(name.clone(), *rect)
+                            .with_caption(caption.clone());
+                        page.add_push_button(widget);
+                    },
+                }
+            }
+
             page.finish();
         }
 
@@ -941,6 +1263,85 @@ impl DocumentBuilder {
         let bytes = self.build()?;
         std::fs::write(path, bytes)?;
         Ok(())
+    }
+
+    /// Build and save the PDF with AES-256 encryption using the given
+    /// user and owner passwords. Grants all permissions — use
+    /// [`DocumentBuilder::save_with_encryption`] for a custom
+    /// [`crate::editor::EncryptionConfig`] (algorithm + permissions).
+    ///
+    /// Routes built bytes through the standard encryption pipeline
+    /// (`DocumentEditor::save_with_options`), so the resulting PDF is
+    /// byte-compatible with any PDF viewer that supports AES-256 (PDF
+    /// 2.0 / `/V 5 /R 6`).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use pdf_oxide::writer::{DocumentBuilder, PageSize};
+    ///
+    /// let mut builder = DocumentBuilder::new();
+    /// builder.page(PageSize::A4).at(72.0, 700.0).text("secret").done();
+    /// builder.save_encrypted("out.pdf", "user-pw", "owner-pw")?;
+    /// # Ok::<(), pdf_oxide::error::Error>(())
+    /// ```
+    pub fn save_encrypted(
+        self,
+        path: impl AsRef<Path>,
+        user_password: &str,
+        owner_password: &str,
+    ) -> Result<()> {
+        use crate::editor::{EncryptionAlgorithm, EncryptionConfig, Permissions};
+        let config = EncryptionConfig {
+            user_password: user_password.to_string(),
+            owner_password: owner_password.to_string(),
+            algorithm: EncryptionAlgorithm::Aes256,
+            permissions: Permissions::all(),
+        };
+        self.save_with_encryption(path, config)
+    }
+
+    /// Build and save the PDF with a custom encryption configuration.
+    ///
+    /// Use this when you need a specific algorithm (RC4-128, AES-128,
+    /// AES-256) or restricted permissions. For the common AES-256
+    /// all-permissions case, prefer [`DocumentBuilder::save_encrypted`].
+    pub fn save_with_encryption(
+        self,
+        path: impl AsRef<Path>,
+        config: crate::editor::EncryptionConfig,
+    ) -> Result<()> {
+        use crate::editor::{DocumentEditor, EditableDocument, SaveOptions};
+        let bytes = self.build()?;
+        let mut editor = DocumentEditor::from_bytes(bytes)?;
+        editor.save_with_options(path, SaveOptions::with_encryption(config))
+    }
+
+    /// Build and return the encrypted PDF as bytes. Mirrors
+    /// [`DocumentBuilder::save_encrypted`] but skips the filesystem —
+    /// useful for WASM / server pipelines that stream bytes back to a
+    /// caller.
+    pub fn to_bytes_encrypted(self, user_password: &str, owner_password: &str) -> Result<Vec<u8>> {
+        use crate::editor::{EncryptionAlgorithm, EncryptionConfig, Permissions};
+        let config = EncryptionConfig {
+            user_password: user_password.to_string(),
+            owner_password: owner_password.to_string(),
+            algorithm: EncryptionAlgorithm::Aes256,
+            permissions: Permissions::all(),
+        };
+        self.to_bytes_with_encryption(config)
+    }
+
+    /// Build and return the PDF as encrypted bytes, using a custom
+    /// configuration.
+    pub fn to_bytes_with_encryption(
+        self,
+        config: crate::editor::EncryptionConfig,
+    ) -> Result<Vec<u8>> {
+        use crate::editor::{DocumentEditor, SaveOptions};
+        let bytes = self.build()?;
+        let mut editor = DocumentEditor::from_bytes(bytes)?;
+        editor.save_to_bytes_with_options(SaveOptions::with_encryption(config))
     }
 }
 

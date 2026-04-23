@@ -225,8 +225,8 @@ export class PageManager {
       };
     }
 
-    const widths = pages.map(p => p.width);
-    const heights = pages.map(p => p.height);
+    const widths = pages.map((p) => p.width);
+    const heights = pages.map((p) => p.height);
 
     const minWidth = Math.min(...widths);
     const maxWidth = Math.max(...widths);
@@ -263,9 +263,9 @@ export class PageManager {
     maxHeight: number
   ): PageInfo[] {
     const pages = this.getAllPageInfo();
-    return pages.filter(p =>
-      p.width >= minWidth && p.width <= maxWidth &&
-      p.height >= minHeight && p.height <= maxHeight
+    return pages.filter(
+      (p) =>
+        p.width >= minWidth && p.width <= maxWidth && p.height >= minHeight && p.height <= maxHeight
     );
   }
 
@@ -275,7 +275,7 @@ export class PageManager {
    */
   getLandscapePages(): PageInfo[] {
     const pages = this.getAllPageInfo();
-    return pages.filter(p => p.width > p.height);
+    return pages.filter((p) => p.width > p.height);
   }
 
   /**
@@ -284,6 +284,6 @@ export class PageManager {
    */
   getPortraitPages(): PageInfo[] {
     const pages = this.getAllPageInfo();
-    return pages.filter(p => p.height > p.width);
+    return pages.filter((p) => p.height > p.width);
   }
 }

@@ -10,11 +10,11 @@
  * 3. AnnotationManager: Annotation caching, statistics caching
  */
 
-import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert';
+import { beforeEach, describe, it } from 'node:test';
+import { AnnotationManager } from '../lib/managers/AnnotationManager.js';
 import { ExtractionManager } from '../lib/managers/ExtractionManager.js';
 import { SearchManager } from '../lib/managers/SearchManager.js';
-import { AnnotationManager } from '../lib/managers/AnnotationManager.js';
 
 /**
  * Mock PDF document for testing
@@ -338,10 +338,7 @@ describe('Performance Optimization Tests - Phase 1', () => {
     it('should throw on invalid batch indices', () => {
       const manager = new ExtractionManager(mockDoc);
 
-      assert.throws(
-        () => manager.extractTextBatch([0, 100]),
-        /Invalid page index/
-      );
+      assert.throws(() => manager.extractTextBatch([0, 100]), /Invalid page index/);
     });
 
     it('should throw on non-array batch parameter', () => {
@@ -359,7 +356,7 @@ describe('Performance Optimization Tests - Phase 1', () => {
 
       assert.ok(Array.isArray(results));
       assert.strictEqual(results.length, 5);
-      results.forEach(text => {
+      results.forEach((text) => {
         assert.ok(typeof text === 'string');
       });
     });
@@ -369,28 +366,19 @@ describe('Performance Optimization Tests - Phase 1', () => {
     it('should handle extraction errors gracefully', () => {
       const manager = new ExtractionManager(mockDoc);
 
-      assert.throws(
-        () => manager.extractText(100),
-        /Page index.*out of range/
-      );
+      assert.throws(() => manager.extractText(100), /Page index.*out of range/);
     });
 
     it('should handle search errors gracefully', () => {
       const manager = new SearchManager(mockDoc);
 
-      assert.throws(
-        () => manager.search('', 0),
-        /Search text must be a non-empty string/
-      );
+      assert.throws(() => manager.search('', 0), /Search text must be a non-empty string/);
     });
 
     it('should handle annotation manager errors gracefully', () => {
       const invalidPage = null;
 
-      assert.throws(
-        () => new AnnotationManager(invalidPage),
-        /Page is required/
-      );
+      assert.throws(() => new AnnotationManager(invalidPage), /Page is required/);
     });
   });
 
@@ -455,7 +443,7 @@ describe('Performance Optimization Tests - Phase 1', () => {
 
       // All tasks should be completed
       assert.strictEqual(phase1Tasks.length, 5);
-      phase1Tasks.forEach(task => {
+      phase1Tasks.forEach((task) => {
         assert.ok(typeof task === 'string');
         assert.ok(task.length > 0);
       });

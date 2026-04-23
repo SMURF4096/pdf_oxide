@@ -1,17 +1,4 @@
-/**
- * Tests for HybridMLManager - ML-powered PDF analysis
- */
-
-import { PdfDocument } from '../src';
-import {
-  HybridMLManager,
-  PageComplexity,
-  ContentType,
-  PageAnalysisResult,
-  ExtractionStrategy,
-  TableRegion,
-  ColumnRegion,
-} from '../src/hybrid-ml-manager';
+import { HybridMLManager, type PageAnalysisResult, PageComplexity } from '../src/hybrid-ml-manager';
 
 describe('HybridMLManager', () => {
   let doc: any; // PdfDocument

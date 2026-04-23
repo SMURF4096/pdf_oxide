@@ -134,9 +134,7 @@ export class OutlineManager {
     const outlines = this.getOutlines();
     const fragment = titleFragment.toLowerCase();
 
-    return outlines.filter((item) =>
-      item.title && item.title.toLowerCase().includes(fragment)
-    );
+    return outlines.filter((item) => item.title && item.title.toLowerCase().includes(fragment));
   }
 
   /**

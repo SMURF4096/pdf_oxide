@@ -21,16 +21,18 @@ def main():
         if fields:
             print(f"\n--- Form Fields (page {page + 1}) ---")
             for f in fields:
-                print(f'  Name: {f.name!r:<20} Type: {f.type:<12} '
-                      f'Value: {f.value!r:<16} Required: {f.required}')
+                print(
+                    f"  Name: {f.name!r:<20} Type: {f.type:<12} "
+                    f"Value: {f.value!r:<16} Required: {f.required}"
+                )
 
         # Annotations
         annotations = doc.get_annotations(page)
         if annotations:
             print(f"\n--- Annotations (page {page + 1}) ---")
             for a in annotations:
-                print(f'  Type: {a.type:<14} Page: {page + 1}   '
-                      f'Contents: "{a.contents or ""}"')
+                print(f'  Type: {a.type:<14} Page: {page + 1}   Contents: "{a.contents or ""}"')
+
 
 if __name__ == "__main__":
     main()

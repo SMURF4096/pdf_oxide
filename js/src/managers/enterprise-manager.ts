@@ -154,7 +154,7 @@ export class EnterpriseManager extends EventEmitter {
     prefix: string,
     startNumber: number,
     numDigits: number,
-    position: BatesPosition,
+    position: BatesPosition
   ): Promise<void> {
     if (!this.native?.pdf_bates_apply) {
       throw new PdfException('9900', 'Native enterprise not available: pdf_bates_apply not found');
@@ -167,7 +167,7 @@ export class EnterpriseManager extends EventEmitter {
       startNumber,
       numDigits,
       position,
-      errorCode,
+      errorCode
     );
     const code = errorCode.readInt32LE(0);
 
@@ -201,10 +201,13 @@ export class EnterpriseManager extends EventEmitter {
     fontSize: number,
     margin: number,
     startPage: number,
-    endPage: number,
+    endPage: number
   ): Promise<void> {
     if (!this.native?.pdf_bates_apply_advanced) {
-      throw new PdfException('9900', 'Native enterprise not available: pdf_bates_apply_advanced not found');
+      throw new PdfException(
+        '9900',
+        'Native enterprise not available: pdf_bates_apply_advanced not found'
+      );
     }
 
     const errorCode = Buffer.alloc(4);
@@ -219,7 +222,7 @@ export class EnterpriseManager extends EventEmitter {
       margin,
       startPage,
       endPage,
-      errorCode,
+      errorCode
     );
     const code = errorCode.readInt32LE(0);
 
@@ -248,10 +251,13 @@ export class EnterpriseManager extends EventEmitter {
     docA: any,
     pageA: number,
     docB: any,
-    pageB: number,
+    pageB: number
   ): Promise<PageComparisonResult> {
     if (!this.native?.pdf_compare_pages) {
-      throw new PdfException('9900', 'Native enterprise not available: pdf_compare_pages not found');
+      throw new PdfException(
+        '9900',
+        'Native enterprise not available: pdf_compare_pages not found'
+      );
     }
 
     const errorCode = Buffer.alloc(4);
@@ -260,7 +266,7 @@ export class EnterpriseManager extends EventEmitter {
       pageA,
       docB._handle ?? docB,
       pageB,
-      errorCode,
+      errorCode
     );
     const code = errorCode.readInt32LE(0);
 
@@ -302,19 +308,19 @@ export class EnterpriseManager extends EventEmitter {
    * @returns Document-level comparison result
    * @throws PdfException if the comparison fails
    */
-  async compareDocuments(
-    docA: any,
-    docB: any,
-  ): Promise<DocumentComparisonResult> {
+  async compareDocuments(docA: any, docB: any): Promise<DocumentComparisonResult> {
     if (!this.native?.pdf_compare_documents) {
-      throw new PdfException('9900', 'Native enterprise not available: pdf_compare_documents not found');
+      throw new PdfException(
+        '9900',
+        'Native enterprise not available: pdf_compare_documents not found'
+      );
     }
 
     const errorCode = Buffer.alloc(4);
     const resultPtr = this.native.pdf_compare_documents(
       docA._handle ?? docA,
       docB._handle ?? docB,
-      errorCode,
+      errorCode
     );
     const code = errorCode.readInt32LE(0);
 
@@ -336,7 +342,10 @@ export class EnterpriseManager extends EventEmitter {
         };
       }
 
-      this.emit('documents-compared', { similarity: result.similarity, totalDifferences: result.totalDifferences });
+      this.emit('documents-compared', {
+        similarity: result.similarity,
+        totalDifferences: result.totalDifferences,
+      });
       return result;
     } finally {
       if (this.native.pdf_document_comparison_free && typeof resultPtr !== 'string') {
@@ -362,7 +371,7 @@ export class EnterpriseManager extends EventEmitter {
     text: string,
     align: StampAlignment,
     size: number,
-    margin: number,
+    margin: number
   ): Promise<void> {
     if (!this.native?.pdf_stamp_header) {
       throw new PdfException('9900', 'Native enterprise not available: pdf_stamp_header not found');
@@ -375,7 +384,7 @@ export class EnterpriseManager extends EventEmitter {
       align,
       size,
       margin,
-      errorCode,
+      errorCode
     );
     const code = errorCode.readInt32LE(0);
 
@@ -399,7 +408,7 @@ export class EnterpriseManager extends EventEmitter {
     text: string,
     align: StampAlignment,
     size: number,
-    margin: number,
+    margin: number
   ): Promise<void> {
     if (!this.native?.pdf_stamp_footer) {
       throw new PdfException('9900', 'Native enterprise not available: pdf_stamp_footer not found');
@@ -412,7 +421,7 @@ export class EnterpriseManager extends EventEmitter {
       align,
       size,
       margin,
-      errorCode,
+      errorCode
     );
     const code = errorCode.readInt32LE(0);
 
@@ -438,10 +447,13 @@ export class EnterpriseManager extends EventEmitter {
     footerText: string,
     align: StampAlignment,
     size: number,
-    margin: number,
+    margin: number
   ): Promise<void> {
     if (!this.native?.pdf_stamp_header_footer) {
-      throw new PdfException('9900', 'Native enterprise not available: pdf_stamp_header_footer not found');
+      throw new PdfException(
+        '9900',
+        'Native enterprise not available: pdf_stamp_header_footer not found'
+      );
     }
 
     const errorCode = Buffer.alloc(4);
@@ -452,7 +464,7 @@ export class EnterpriseManager extends EventEmitter {
       align,
       size,
       margin,
-      errorCode,
+      errorCode
     );
     const code = errorCode.readInt32LE(0);
 

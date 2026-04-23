@@ -22,10 +22,12 @@ def main():
     print(f"\n--- Words (page {page + 1}) ---")
     for w in words[:20]:
         quoted = '"' + w["text"] + '"'
-        print(f'{quoted:<20} '
-              f'x={w["x0"]:<7.1f} y={w["y0"]:<7.1f} '
-              f'x1={w["x1"]:<7.1f} y1={w["y1"]:<7.1f} '
-              f'font={w["fontname"]}  size={w["size"]:.1f}')
+        print(
+            f"{quoted:<20} "
+            f"x={w['x0']:<7.1f} y={w['y0']:<7.1f} "
+            f"x1={w['x1']:<7.1f} y1={w['y1']:<7.1f} "
+            f"font={w['fontname']}  size={w['size']:.1f}"
+        )
     if len(words) > 20:
         print(f"... ({len(words) - 20} more words)")
 
@@ -40,6 +42,7 @@ def main():
         for r, row in enumerate(table[:5]):
             cells = "  ".join(f'[{r},{c}] "{v}"' for c, v in enumerate(row[:6]))
             print(f"  {cells}")
+
 
 if __name__ == "__main__":
     main()

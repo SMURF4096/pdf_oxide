@@ -89,7 +89,7 @@ fn check_limit(output: &[u8], limit: u64) -> Result<()> {
 /// FlateDecode filter implementation.
 ///
 /// Decompresses data using the zlib/deflate algorithm. The decompression cap
-/// defaults to [`DEFAULT_MAX_DECOMPRESSED_BYTES`] and can be overridden with
+/// defaults to `DEFAULT_MAX_DECOMPRESSED_BYTES` and can be overridden with
 /// [`FlateDecoder::with_limit`].
 pub struct FlateDecoder {
     /// Maximum number of decompressed bytes accepted per stream.
@@ -127,8 +127,8 @@ impl StreamDecoder for FlateDecoder {
             },
             Err(e) => {
                 // Partial recovery: return only if output *looks like* a
-                // plausible stream (#364). The pre-fix behaviour accepted
-                // any non-empty buffer, which let strategies 2 and 3 return
+                // plausible stream. The pre-fix behaviour accepted any
+                // non-empty buffer, which let strategies 2 and 3 return
                 // misaligned-deflate garbage (`P\xffj!}` × 16 on
                 // nougat_026.pdf pages 1/2/5) that the text extractor then
                 // emitted as zero bytes of output.

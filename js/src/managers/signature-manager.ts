@@ -338,7 +338,9 @@ export class SignatureManager extends EventEmitter {
       try {
         const signaturesJson = this.native.get_signatures() ?? [];
         signatures = signaturesJson.length > 0 ? JSON.parse(signaturesJson[0] || '[]') : [];
-      } catch { signatures = []; }
+      } catch {
+        signatures = [];
+      }
     }
     this.setCached(cacheKey, signatures);
     this.emit('signaturesRetrieved', { count: signatures.length });
@@ -353,7 +355,9 @@ export class SignatureManager extends EventEmitter {
       try {
         const fieldsJson = this.native.get_signature_fields() ?? [];
         fields = fieldsJson.length > 0 ? JSON.parse(fieldsJson[0] || '[]') : [];
-      } catch { fields = []; }
+      } catch {
+        fields = [];
+      }
     }
     this.setCached(cacheKey, fields);
     return fields;
@@ -364,7 +368,11 @@ export class SignatureManager extends EventEmitter {
     if (this.resultCache.has(cacheKey)) return this.resultCache.get(cacheKey);
     let result: SignatureValidationResult = { isValid: true, signatures: [], issues: [] };
     if (this.native?.verify_signatures) {
-      try { result = JSON.parse(this.native.verify_signatures()); } catch { /* defaults */ }
+      try {
+        result = JSON.parse(this.native.verify_signatures());
+      } catch {
+        /* defaults */
+      }
     }
     this.setCached(cacheKey, result);
     this.emit('signaturesVerified', { isValid: result.isValid, issueCount: result.issues.length });
@@ -376,7 +384,11 @@ export class SignatureManager extends EventEmitter {
     if (this.resultCache.has(cacheKey)) return this.resultCache.get(cacheKey);
     let result: SignatureValidationResult = { isValid: true, signatures: [], issues: [] };
     if (this.native?.verify_signature) {
-      try { result = JSON.parse(this.native.verify_signature(signatureName)); } catch { /* defaults */ }
+      try {
+        result = JSON.parse(this.native.verify_signature(signatureName));
+      } catch {
+        /* defaults */
+      }
     }
     this.setCached(cacheKey, result);
     return result;
@@ -406,46 +418,86 @@ export class SignatureManager extends EventEmitter {
   // Certificate Loading (from SignatureCreationManager)
   // ===========================================================================
 
-  async loadCertificateFromFile(filePath: string, password?: string, format?: CertificateFormat): Promise<LoadedCertificate | null> {
+  async loadCertificateFromFile(
+    filePath: string,
+    password?: string,
+    format?: CertificateFormat
+  ): Promise<LoadedCertificate | null> {
     try {
       const certData = await fs.readFile(filePath);
       return this.loadCertificateFromBytes(certData, password, format);
-    } catch (error) { this.emit('error', error); return null; }
+    } catch (error) {
+      this.emit('error', error);
+      return null;
+    }
   }
 
-  async loadCertificateFromBytes(certData: Buffer, password?: string, format?: CertificateFormat): Promise<LoadedCertificate | null> {
+  async loadCertificateFromBytes(
+    certData: Buffer,
+    password?: string,
+    format?: CertificateFormat
+  ): Promise<LoadedCertificate | null> {
     try {
       const certId = `cert_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       const nativeResult = await this.document?.loadCertificate?.(certData, password, format);
       const info: CertificateInfo = nativeResult?.info ?? {
-        subject: nativeResult?.subject ?? 'Unknown', issuer: nativeResult?.issuer ?? 'Unknown',
-        serialNumber: nativeResult?.serialNumber ?? '', validFrom: new Date(nativeResult?.validFrom ?? Date.now()),
+        subject: nativeResult?.subject ?? 'Unknown',
+        issuer: nativeResult?.issuer ?? 'Unknown',
+        serialNumber: nativeResult?.serialNumber ?? '',
+        validFrom: new Date(nativeResult?.validFrom ?? Date.now()),
         validTo: new Date(nativeResult?.validTo ?? Date.now() + 365 * 24 * 60 * 60 * 1000),
-        isValid: nativeResult?.isValid ?? false, isSelfSigned: nativeResult?.isSelfSigned ?? false,
+        isValid: nativeResult?.isValid ?? false,
+        isSelfSigned: nativeResult?.isSelfSigned ?? false,
       };
-      const loadedCert: LoadedCertificate = { certificateId: certId, info, hasPrivateKey: nativeResult?.hasPrivateKey ?? true, chain: nativeResult?.chain };
+      const loadedCert: LoadedCertificate = {
+        certificateId: certId,
+        info,
+        hasPrivateKey: nativeResult?.hasPrivateKey ?? true,
+        chain: nativeResult?.chain,
+      };
       this.loadedCertificates.set(certId, loadedCert);
       this.emit('certificate-loaded', { certificateId: certId, subject: info.subject });
       return loadedCert;
-    } catch (error) { this.emit('error', error); return null; }
+    } catch (error) {
+      this.emit('error', error);
+      return null;
+    }
   }
 
-  async loadCertificateFromPem(certificatePem: string, privateKeyPem?: string, privateKeyPassword?: string): Promise<LoadedCertificate | null> {
+  async loadCertificateFromPem(
+    certificatePem: string,
+    privateKeyPem?: string,
+    privateKeyPassword?: string
+  ): Promise<LoadedCertificate | null> {
     try {
       const certId = `cert_pem_${Date.now()}`;
-      const nativeResult = await this.document?.loadCertificateFromPem?.(certificatePem, privateKeyPem, privateKeyPassword);
+      const nativeResult = await this.document?.loadCertificateFromPem?.(
+        certificatePem,
+        privateKeyPem,
+        privateKeyPassword
+      );
       if (!nativeResult) throw new Error('Failed to load PEM certificate');
       const info: CertificateInfo = {
-        subject: nativeResult.subject ?? 'Unknown', issuer: nativeResult.issuer ?? 'Unknown',
-        serialNumber: nativeResult.serialNumber ?? '', validFrom: new Date(nativeResult.validFrom ?? Date.now()),
+        subject: nativeResult.subject ?? 'Unknown',
+        issuer: nativeResult.issuer ?? 'Unknown',
+        serialNumber: nativeResult.serialNumber ?? '',
+        validFrom: new Date(nativeResult.validFrom ?? Date.now()),
         validTo: new Date(nativeResult.validTo ?? Date.now() + 365 * 24 * 60 * 60 * 1000),
-        isValid: nativeResult.isValid ?? false, isSelfSigned: nativeResult.isSelfSigned ?? false,
+        isValid: nativeResult.isValid ?? false,
+        isSelfSigned: nativeResult.isSelfSigned ?? false,
       };
-      const loadedCert: LoadedCertificate = { certificateId: certId, info, hasPrivateKey: !!privateKeyPem };
+      const loadedCert: LoadedCertificate = {
+        certificateId: certId,
+        info,
+        hasPrivateKey: !!privateKeyPem,
+      };
       this.loadedCertificates.set(certId, loadedCert);
       this.emit('certificate-loaded', { certificateId: certId, subject: info.subject });
       return loadedCert;
-    } catch (error) { this.emit('error', error); return null; }
+    } catch (error) {
+      this.emit('error', error);
+      return null;
+    }
   }
 
   async getCertificateInfo(certificateId: string): Promise<CertificateInfo | null> {
@@ -457,19 +509,34 @@ export class SignatureManager extends EventEmitter {
       const cert = this.loadedCertificates.get(certificateId);
       if (!cert) return null;
       if (cert.chain) return cert.chain;
-      return await this.document?.getCertificateChain?.(certificateId) ?? null;
-    } catch (error) { this.emit('error', error); return null; }
+      return (await this.document?.getCertificateChain?.(certificateId)) ?? null;
+    } catch (error) {
+      this.emit('error', error);
+      return null;
+    }
   }
 
-  async validateCertificate(certificateId: string): Promise<{ valid: boolean; errors: string[]; warnings: string[] }> {
+  async validateCertificate(
+    certificateId: string
+  ): Promise<{ valid: boolean; errors: string[]; warnings: string[] }> {
     try {
       const cert = this.loadedCertificates.get(certificateId);
       if (!cert) return { valid: false, errors: ['Certificate not found'], warnings: [] };
       const result = await this.document?.validateCertificate?.(certificateId);
-      return result ?? { valid: cert.info.isValid, errors: cert.info.isValid ? [] : ['Certificate validation failed'], warnings: [] };
+      return (
+        result ?? {
+          valid: cert.info.isValid,
+          errors: cert.info.isValid ? [] : ['Certificate validation failed'],
+          warnings: [],
+        }
+      );
     } catch (error) {
       this.emit('error', error);
-      return { valid: false, errors: [error instanceof Error ? error.message : 'Unknown error'], warnings: [] };
+      return {
+        valid: false,
+        errors: [error instanceof Error ? error.message : 'Unknown error'],
+        warnings: [],
+      };
     }
   }
 
@@ -489,14 +556,30 @@ export class SignatureManager extends EventEmitter {
 
   async addSignatureField(config: SignatureFieldConfig): Promise<boolean> {
     try {
-      const result = await this.document?.addSignatureField?.(config.fieldName, config.pageIndex, config.x, config.y, config.width, config.height, { appearance: config.appearance, tooltip: config.tooltip, isRequired: config.isRequired, isReadOnly: config.isReadOnly });
+      const result = await this.document?.addSignatureField?.(
+        config.fieldName,
+        config.pageIndex,
+        config.x,
+        config.y,
+        config.width,
+        config.height,
+        {
+          appearance: config.appearance,
+          tooltip: config.tooltip,
+          isRequired: config.isRequired,
+          isReadOnly: config.isReadOnly,
+        }
+      );
       if (result !== false) {
         this.createdFields.set(config.fieldName, config);
         this.clearCachePattern('signatures:');
         this.emit('field-added', { fieldName: config.fieldName });
       }
       return result !== false;
-    } catch (error) { this.emit('error', error); return false; }
+    } catch (error) {
+      this.emit('error', error);
+      return false;
+    }
   }
 
   async removeSignatureField(fieldName: string): Promise<boolean> {
@@ -508,39 +591,64 @@ export class SignatureManager extends EventEmitter {
         this.emit('field-removed', { fieldName });
       }
       return !!result;
-    } catch (error) { this.emit('error', error); return false; }
+    } catch (error) {
+      this.emit('error', error);
+      return false;
+    }
   }
 
   async getSignatureFieldNames(): Promise<string[]> {
-    try { return await this.document?.getSignatureFields?.() ?? []; }
-    catch (error) { this.emit('error', error); return []; }
+    try {
+      return (await this.document?.getSignatureFields?.()) ?? [];
+    } catch (error) {
+      this.emit('error', error);
+      return [];
+    }
   }
 
   async hasSignatureField(fieldName: string): Promise<boolean> {
-    try { const fields = await this.getSignatureFieldNames(); return fields.includes(fieldName); }
-    catch (error) { this.emit('error', error); return false; }
+    try {
+      const fields = await this.getSignatureFieldNames();
+      return fields.includes(fieldName);
+    } catch (error) {
+      this.emit('error', error);
+      return false;
+    }
   }
 
-  async updateSignatureFieldAppearance(fieldName: string, appearance: SignatureAppearance): Promise<boolean> {
+  async updateSignatureFieldAppearance(
+    fieldName: string,
+    appearance: SignatureAppearance
+  ): Promise<boolean> {
     try {
       const result = await this.document?.updateSignatureFieldAppearance?.(fieldName, appearance);
       this.emit('appearance-updated', { fieldName });
       return !!result;
-    } catch (error) { this.emit('error', error); return false; }
+    } catch (error) {
+      this.emit('error', error);
+      return false;
+    }
   }
 
   // ===========================================================================
   // Document Signing (from SignatureCreationManager)
   // ===========================================================================
 
-  async signDocument(fieldName: string, certificate: LoadedCertificate | string, options?: SigningOptions): Promise<SigningResult> {
+  async signDocument(
+    fieldName: string,
+    certificate: LoadedCertificate | string,
+    options?: SigningOptions
+  ): Promise<SigningResult> {
     try {
       const certId = typeof certificate === 'string' ? certificate : certificate.certificateId;
       const cert = this.loadedCertificates.get(certId);
       if (!cert) return { success: false, error: 'Certificate not found' };
-      if (!cert.hasPrivateKey) return { success: false, error: 'Certificate does not have private key' };
+      if (!cert.hasPrivateKey)
+        return { success: false, error: 'Certificate does not have private key' };
       const nativeResult = await this.document?.signDocument?.(fieldName, certId, {
-        reason: options?.reason, location: options?.location, contactInfo: options?.contactInfo,
+        reason: options?.reason,
+        location: options?.location,
+        contactInfo: options?.contactInfo,
         signatureType: options?.signatureType ?? SignatureType.APPROVAL,
         certificationPermission: options?.certificationPermission,
         algorithm: options?.algorithm ?? SignatureAlgorithm.RSA_SHA256,
@@ -550,56 +658,117 @@ export class SignatureManager extends EventEmitter {
       const signingTime = new Date();
       let timestampTime: Date | undefined;
       if (options?.embedTimestamp && options?.timestampServerUrl) {
-        const tsResult = await this.embedTimestamp(fieldName, { serverUrl: options.timestampServerUrl, hashAlgorithm: options.digestAlgorithm });
+        const tsResult = await this.embedTimestamp(fieldName, {
+          serverUrl: options.timestampServerUrl,
+          hashAlgorithm: options.digestAlgorithm,
+        });
         if (tsResult.status === TimestampStatus.SUCCESS) timestampTime = tsResult.timestamp;
       }
-      if (options?.enableLtv) await this.enableLtvForSignature(fieldName, { ocspResponderUrl: options.ocspResponderUrl, crlDistributionPoints: options.crlDistributionPoints });
+      if (options?.enableLtv)
+        await this.enableLtvForSignature(fieldName, {
+          ocspResponderUrl: options.ocspResponderUrl,
+          crlDistributionPoints: options.crlDistributionPoints,
+        });
       const signatureId = `sig_${fieldName}_${Date.now()}`;
       this.clearCachePattern('signatures:');
       this.emit('document-signed', { signatureId, fieldName, signingTime, timestampTime });
-      return { success: true, signatureId, signingTime, timestampTime, warnings: nativeResult?.warnings };
+      return {
+        success: true,
+        signatureId,
+        signingTime,
+        timestampTime,
+        warnings: nativeResult?.warnings,
+      };
     } catch (error) {
       this.emit('error', error);
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
   }
 
-  async certifyDocument(fieldName: string, certificate: LoadedCertificate | string, permission: CertificationPermission, options?: Omit<SigningOptions, 'signatureType' | 'certificationPermission'>): Promise<SigningResult> {
-    return this.signDocument(fieldName, certificate, { ...options, signatureType: SignatureType.CERTIFICATION, certificationPermission: permission });
+  async certifyDocument(
+    fieldName: string,
+    certificate: LoadedCertificate | string,
+    permission: CertificationPermission,
+    options?: Omit<SigningOptions, 'signatureType' | 'certificationPermission'>
+  ): Promise<SigningResult> {
+    return this.signDocument(fieldName, certificate, {
+      ...options,
+      signatureType: SignatureType.CERTIFICATION,
+      certificationPermission: permission,
+    });
   }
 
-  async signInvisibly(certificate: LoadedCertificate | string, options?: Omit<SigningOptions, 'appearance'>): Promise<SigningResult> {
+  async signInvisibly(
+    certificate: LoadedCertificate | string,
+    options?: Omit<SigningOptions, 'appearance'>
+  ): Promise<SigningResult> {
     try {
       const fieldName = `InvisibleSig_${Date.now()}`;
       await this.addSignatureField({ fieldName, pageIndex: 0, x: 0, y: 0, width: 0, height: 0 });
       return this.signDocument(fieldName, certificate, options);
-    } catch (error) { this.emit('error', error); return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }; }
+    } catch (error) {
+      this.emit('error', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
   }
 
-  async counterSign(certificate: LoadedCertificate | string, options?: SigningOptions): Promise<SigningResult> {
+  async counterSign(
+    certificate: LoadedCertificate | string,
+    options?: SigningOptions
+  ): Promise<SigningResult> {
     try {
       const fieldName = `CounterSig_${Date.now()}`;
-      await this.addSignatureField({ fieldName, pageIndex: 0, x: 100, y: 100, width: 200, height: 50, appearance: options?.appearance });
+      await this.addSignatureField({
+        fieldName,
+        pageIndex: 0,
+        x: 100,
+        y: 100,
+        width: 200,
+        height: 50,
+        appearance: options?.appearance,
+      });
       return this.signDocument(fieldName, certificate, options);
-    } catch (error) { this.emit('error', error); return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }; }
+    } catch (error) {
+      this.emit('error', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
   }
 
-  async signMultipleFields(signings: Array<{ fieldName: string; certificate: LoadedCertificate | string; options?: SigningOptions }>): Promise<SigningResult[]> {
+  async signMultipleFields(
+    signings: Array<{
+      fieldName: string;
+      certificate: LoadedCertificate | string;
+      options?: SigningOptions;
+    }>
+  ): Promise<SigningResult[]> {
     const results: SigningResult[] = [];
     for (const signing of signings) {
-      const result = await this.signDocument(signing.fieldName, signing.certificate, signing.options);
+      const result = await this.signDocument(
+        signing.fieldName,
+        signing.certificate,
+        signing.options
+      );
       results.push(result);
       if (!result.success) break;
     }
     return results;
   }
 
-  async prepareForExternalSigning(fieldName: string, options?: { estimatedSize?: number; digestAlgorithm?: DigestAlgorithm }): Promise<{ hash: Buffer; byteRange: [number, number, number, number] } | null> {
+  async prepareForExternalSigning(
+    fieldName: string,
+    options?: { estimatedSize?: number; digestAlgorithm?: DigestAlgorithm }
+  ): Promise<{ hash: Buffer; byteRange: [number, number, number, number] } | null> {
     try {
-      const result = await this.document?.prepareForExternalSigning?.(fieldName, { estimatedSize: options?.estimatedSize ?? 8192, digestAlgorithm: options?.digestAlgorithm ?? DigestAlgorithm.SHA256 });
+      const result = await this.document?.prepareForExternalSigning?.(fieldName, {
+        estimatedSize: options?.estimatedSize ?? 8192,
+        digestAlgorithm: options?.digestAlgorithm ?? DigestAlgorithm.SHA256,
+      });
       this.emit('prepared-for-external-signing', { fieldName });
       return result ?? null;
-    } catch (error) { this.emit('error', error); return null; }
+    } catch (error) {
+      this.emit('error', error);
+      return null;
+    }
   }
 
   // ===========================================================================
@@ -608,13 +777,36 @@ export class SignatureManager extends EventEmitter {
 
   async embedTimestamp(fieldName: string, config: TimestampConfig): Promise<TimestampResult> {
     try {
-      const result = await this.document?.embedTimestamp?.(fieldName, { serverUrl: config.serverUrl, username: config.username, password: config.password, hashAlgorithm: config.hashAlgorithm ?? DigestAlgorithm.SHA256, timeout: config.timeout ?? 30000, policy: config.policy, nonce: config.nonce ?? true, certReq: config.certReq ?? true });
+      const result = await this.document?.embedTimestamp?.(fieldName, {
+        serverUrl: config.serverUrl,
+        username: config.username,
+        password: config.password,
+        hashAlgorithm: config.hashAlgorithm ?? DigestAlgorithm.SHA256,
+        timeout: config.timeout ?? 30000,
+        policy: config.policy,
+        nonce: config.nonce ?? true,
+        certReq: config.certReq ?? true,
+      });
       if (result?.success) {
         this.emit('timestamp-embedded', { fieldName, timestamp: result.timestamp });
-        return { status: TimestampStatus.SUCCESS, timestamp: new Date(result.timestamp), serialNumber: result.serialNumber, tsaName: result.tsaName };
+        return {
+          status: TimestampStatus.SUCCESS,
+          timestamp: new Date(result.timestamp),
+          serialNumber: result.serialNumber,
+          tsaName: result.tsaName,
+        };
       }
-      return { status: TimestampStatus.FAILED, error: result?.error ?? 'Timestamp embedding failed' };
-    } catch (error) { this.emit('error', error); return { status: TimestampStatus.FAILED, error: error instanceof Error ? error.message : 'Unknown error' }; }
+      return {
+        status: TimestampStatus.FAILED,
+        error: result?.error ?? 'Timestamp embedding failed',
+      };
+    } catch (error) {
+      this.emit('error', error);
+      return {
+        status: TimestampStatus.FAILED,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
   }
 
   async addDocumentTimestamp(config: TimestampConfig): Promise<TimestampResult> {
@@ -624,54 +816,115 @@ export class SignatureManager extends EventEmitter {
       const result = await this.document?.addDocumentTimestamp?.(fieldName, config);
       if (result?.success) {
         this.emit('document-timestamp-added', { timestamp: result.timestamp });
-        return { status: TimestampStatus.SUCCESS, timestamp: new Date(result.timestamp), serialNumber: result.serialNumber, tsaName: result.tsaName };
+        return {
+          status: TimestampStatus.SUCCESS,
+          timestamp: new Date(result.timestamp),
+          serialNumber: result.serialNumber,
+          tsaName: result.tsaName,
+        };
       }
-      return { status: TimestampStatus.FAILED, error: result?.error ?? 'Document timestamp failed' };
-    } catch (error) { this.emit('error', error); return { status: TimestampStatus.FAILED, error: error instanceof Error ? error.message : 'Unknown error' }; }
+      return {
+        status: TimestampStatus.FAILED,
+        error: result?.error ?? 'Document timestamp failed',
+      };
+    } catch (error) {
+      this.emit('error', error);
+      return {
+        status: TimestampStatus.FAILED,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
   }
 
-  async validateTimestamp(fieldName: string): Promise<{ valid: boolean; timestamp?: Date; errors: string[] }> {
-    try { return await this.document?.validateTimestamp?.(fieldName) ?? { valid: false, errors: ['Timestamp validation not available'] }; }
-    catch (error) { this.emit('error', error); return { valid: false, errors: [error instanceof Error ? error.message : 'Unknown error'] }; }
+  async validateTimestamp(
+    fieldName: string
+  ): Promise<{ valid: boolean; timestamp?: Date; errors: string[] }> {
+    try {
+      return (
+        (await this.document?.validateTimestamp?.(fieldName)) ?? {
+          valid: false,
+          errors: ['Timestamp validation not available'],
+        }
+      );
+    } catch (error) {
+      this.emit('error', error);
+      return { valid: false, errors: [error instanceof Error ? error.message : 'Unknown error'] };
+    }
   }
 
-  async getTimestampInfo(fieldName: string): Promise<{ timestamp?: Date; tsaName?: string; serialNumber?: string; policy?: string } | null> {
-    try { return await this.document?.getTimestampInfo?.(fieldName) ?? null; }
-    catch (error) { this.emit('error', error); return null; }
+  async getTimestampInfo(fieldName: string): Promise<{
+    timestamp?: Date;
+    tsaName?: string;
+    serialNumber?: string;
+    policy?: string;
+  } | null> {
+    try {
+      return (await this.document?.getTimestampInfo?.(fieldName)) ?? null;
+    } catch (error) {
+      this.emit('error', error);
+      return null;
+    }
   }
 
   // ===========================================================================
   // LTV Operations (from SignatureCreationManager)
   // ===========================================================================
 
-  async enableLtvForSignature(fieldName: string, options?: { ocspResponderUrl?: string; crlDistributionPoints?: readonly string[] }): Promise<boolean> {
+  async enableLtvForSignature(
+    fieldName: string,
+    options?: { ocspResponderUrl?: string; crlDistributionPoints?: readonly string[] }
+  ): Promise<boolean> {
     try {
-      const result = await this.document?.enableLtvForSignature?.(fieldName, { ocspResponderUrl: options?.ocspResponderUrl, crlDistributionPoints: options?.crlDistributionPoints });
+      const result = await this.document?.enableLtvForSignature?.(fieldName, {
+        ocspResponderUrl: options?.ocspResponderUrl,
+        crlDistributionPoints: options?.crlDistributionPoints,
+      });
       if (result) this.emit('ltv-enabled', { fieldName });
       return !!result;
-    } catch (error) { this.emit('error', error); return false; }
+    } catch (error) {
+      this.emit('error', error);
+      return false;
+    }
   }
 
-  async enableLtvForAllSignatures(options?: { ocspResponderUrl?: string; crlDistributionPoints?: readonly string[] }): Promise<number> {
+  async enableLtvForAllSignatures(options?: {
+    ocspResponderUrl?: string;
+    crlDistributionPoints?: readonly string[];
+  }): Promise<number> {
     try {
       const fields = await this.getSignatureFieldNames();
       let count = 0;
-      for (const field of fields) { if (await this.enableLtvForSignature(field, options)) count++; }
+      for (const field of fields) {
+        if (await this.enableLtvForSignature(field, options)) count++;
+      }
       return count;
-    } catch (error) { this.emit('error', error); return 0; }
+    } catch (error) {
+      this.emit('error', error);
+      return 0;
+    }
   }
 
-  async addValidationInfo(fieldName: string, info: { ocspResponse?: Buffer; crl?: Buffer; certificates?: readonly Buffer[] }): Promise<boolean> {
+  async addValidationInfo(
+    fieldName: string,
+    info: { ocspResponse?: Buffer; crl?: Buffer; certificates?: readonly Buffer[] }
+  ): Promise<boolean> {
     try {
       const result = await this.document?.addValidationInfo?.(fieldName, info);
       if (result) this.emit('validation-info-added', { fieldName });
       return !!result;
-    } catch (error) { this.emit('error', error); return false; }
+    } catch (error) {
+      this.emit('error', error);
+      return false;
+    }
   }
 
   async hasLtvEnabled(fieldName: string): Promise<boolean> {
-    try { return await this.document?.hasLtvEnabled?.(fieldName) ?? false; }
-    catch (error) { this.emit('error', error); return false; }
+    try {
+      return (await this.document?.hasLtvEnabled?.(fieldName)) ?? false;
+    } catch (error) {
+      this.emit('error', error);
+      return false;
+    }
   }
 
   // ===========================================================================
@@ -679,56 +932,100 @@ export class SignatureManager extends EventEmitter {
   // ===========================================================================
 
   async getSignerName(index: number): Promise<string> {
-    try { return (await this.document?.getSignerName?.(index)) || ''; } catch { return ''; }
+    try {
+      return (await this.document?.getSignerName?.(index)) || '';
+    } catch {
+      return '';
+    }
   }
 
   async getSigningTime(index: number): Promise<number> {
-    try { return (await this.document?.getSigningTime?.(index)) || 0; } catch { return 0; }
+    try {
+      return (await this.document?.getSigningTime?.(index)) || 0;
+    } catch {
+      return 0;
+    }
   }
 
   async getSigningReason(index: number): Promise<string | null> {
-    try { return (await this.document?.getSigningReason?.(index)) || null; } catch { return null; }
+    try {
+      return (await this.document?.getSigningReason?.(index)) || null;
+    } catch {
+      return null;
+    }
   }
 
   async getSigningLocation(index: number): Promise<string | null> {
-    try { return (await this.document?.getSigningLocation?.(index)) || null; } catch { return null; }
+    try {
+      return (await this.document?.getSigningLocation?.(index)) || null;
+    } catch {
+      return null;
+    }
   }
 
   async getCertificateSubject(index: number): Promise<string> {
-    try { return (await this.document?.getCertificateSubject?.(index)) || ''; } catch { return ''; }
+    try {
+      return (await this.document?.getCertificateSubject?.(index)) || '';
+    } catch {
+      return '';
+    }
   }
 
   async getCertificateIssuer(index: number): Promise<string> {
-    try { return (await this.document?.getCertificateIssuer?.(index)) || ''; } catch { return ''; }
+    try {
+      return (await this.document?.getCertificateIssuer?.(index)) || '';
+    } catch {
+      return '';
+    }
   }
 
   async getCertificateSerial(index: number): Promise<string> {
-    try { return (await this.document?.getCertificateSerial?.(index)) || ''; } catch { return ''; }
+    try {
+      return (await this.document?.getCertificateSerial?.(index)) || '';
+    } catch {
+      return '';
+    }
   }
 
   async getCertificateValidity(index: number): Promise<[number, number]> {
-    try { return (await this.document?.getCertificateValidity?.(index)) || [0, 0]; } catch { return [0, 0]; }
+    try {
+      return (await this.document?.getCertificateValidity?.(index)) || [0, 0];
+    } catch {
+      return [0, 0];
+    }
   }
 
   async getSignatureDetails(index: number): Promise<Signature | null> {
     try {
       const [notBefore, notAfter] = await this.getCertificateValidity(index);
       const certificate: Certificate = {
-        subject: await this.getCertificateSubject(index), issuer: await this.getCertificateIssuer(index),
-        serial: await this.getCertificateSerial(index), notBefore, notAfter,
+        subject: await this.getCertificateSubject(index),
+        issuer: await this.getCertificateIssuer(index),
+        serial: await this.getCertificateSerial(index),
+        notBefore,
+        notAfter,
         isValid: await this.isCertificateValidByIndex(index),
       };
       return {
-        signerName: await this.getSignerName(index), signingTime: await this.getSigningTime(index),
+        signerName: await this.getSignerName(index),
+        signingTime: await this.getSigningTime(index),
         reason: (await this.getSigningReason(index)) || undefined,
         location: (await this.getSigningLocation(index)) || undefined,
-        certificate, isValid: true,
+        certificate,
+        isValid: true,
       };
-    } catch (error) { this.emit('error', error); return null; }
+    } catch (error) {
+      this.emit('error', error);
+      return null;
+    }
   }
 
   async isCertificateValidByIndex(index: number): Promise<boolean> {
-    try { return (await this.document?.isCertificateValid?.(index)) || false; } catch { return false; }
+    try {
+      return (await this.document?.isCertificateValid?.(index)) || false;
+    } catch {
+      return false;
+    }
   }
 
   // ===========================================================================
@@ -754,7 +1051,9 @@ export class SignatureManager extends EventEmitter {
    */
   async loadCredentialsPkcs12(filePath: string, password: string): Promise<SigningCredentials> {
     if (!this.native?.pdf_credentials_from_pkcs12) {
-      throw new SignatureException('Native signing not available: pdf_credentials_from_pkcs12 not found');
+      throw new SignatureException(
+        'Native signing not available: pdf_credentials_from_pkcs12 not found'
+      );
     }
 
     const errorCode = Buffer.alloc(4);
@@ -786,9 +1085,15 @@ export class SignatureManager extends EventEmitter {
    * const credentials = await sigManager.loadCredentialsPem('/path/to/cert.pem', '/path/to/key.pem');
    * ```
    */
-  async loadCredentialsPem(certFile: string, keyFile: string, keyPassword?: string): Promise<SigningCredentials> {
+  async loadCredentialsPem(
+    certFile: string,
+    keyFile: string,
+    keyPassword?: string
+  ): Promise<SigningCredentials> {
     if (!this.native?.pdf_credentials_from_pem) {
-      throw new SignatureException('Native signing not available: pdf_credentials_from_pem not found');
+      throw new SignatureException(
+        'Native signing not available: pdf_credentials_from_pem not found'
+      );
     }
 
     const errorCode = Buffer.alloc(4);
@@ -796,7 +1101,7 @@ export class SignatureManager extends EventEmitter {
       certFile,
       keyFile,
       keyPassword ?? null,
-      errorCode,
+      errorCode
     );
     const code = errorCode.readInt32LE(0);
 
@@ -858,7 +1163,7 @@ export class SignatureManager extends EventEmitter {
     pdfData: Buffer,
     filePath: string,
     password: string,
-    options?: SignOptions,
+    options?: SignOptions
   ): Promise<Buffer> {
     const credentials = await this.loadCredentialsPkcs12(filePath, password);
     try {
@@ -895,7 +1200,7 @@ export class SignatureManager extends EventEmitter {
     pdfData: Buffer,
     certFile: string,
     keyFile: string,
-    options?: SignOptions,
+    options?: SignOptions
   ): Promise<Buffer> {
     const credentials = await this.loadCredentialsPem(certFile, keyFile);
     try {
@@ -931,7 +1236,7 @@ export class SignatureManager extends EventEmitter {
   async signWithCredentials(
     pdfData: Buffer,
     credentials: SigningCredentials,
-    options?: SignOptions,
+    options?: SignOptions
   ): Promise<Buffer> {
     if (!this.native?.pdf_document_sign) {
       throw new SignatureException('Native signing not available: pdf_document_sign not found');
@@ -943,7 +1248,7 @@ export class SignatureManager extends EventEmitter {
 
     const errorCode = Buffer.alloc(4);
     const outDataPtr = Buffer.alloc(8); // pointer to output data
-    const outLen = Buffer.alloc(8);     // output length (size_t)
+    const outLen = Buffer.alloc(8); // output length (size_t)
 
     const algorithm = options?.algorithm ?? FfiDigestAlgorithm.SHA256;
     const subfilter = options?.subfilter ?? FfiSignatureSubFilter.PKCS7_DETACHED;
@@ -959,7 +1264,7 @@ export class SignatureManager extends EventEmitter {
       subfilter,
       outDataPtr,
       outLen,
-      errorCode,
+      errorCode
     );
 
     const code = errorCode.readInt32LE(0);
@@ -1015,10 +1320,12 @@ export class SignatureManager extends EventEmitter {
     inputPath: string,
     outputPath: string,
     credentials: SigningCredentials,
-    options?: SignOptions,
+    options?: SignOptions
   ): Promise<void> {
     if (!this.native?.pdf_document_sign_file) {
-      throw new SignatureException('Native signing not available: pdf_document_sign_file not found');
+      throw new SignatureException(
+        'Native signing not available: pdf_document_sign_file not found'
+      );
     }
 
     if (!credentials._handle) {
@@ -1038,7 +1345,7 @@ export class SignatureManager extends EventEmitter {
       options?.contact ?? null,
       algorithm,
       subfilter,
-      errorCode,
+      errorCode
     );
 
     const code = errorCode.readInt32LE(0);
@@ -1072,13 +1379,11 @@ export class SignatureManager extends EventEmitter {
    * await fs.writeFile('signed-ltv.pdf', ltvPdf);
    * ```
    */
-  async embedLtv(
-    pdfData: Buffer,
-    ocspData?: Buffer,
-    crlData?: Buffer,
-  ): Promise<Buffer> {
+  async embedLtv(pdfData: Buffer, ocspData?: Buffer, crlData?: Buffer): Promise<Buffer> {
     if (!this.native?.pdf_embed_ltv_data) {
-      throw new SignatureException('Native LTV embedding not available: pdf_embed_ltv_data not found');
+      throw new SignatureException(
+        'Native LTV embedding not available: pdf_embed_ltv_data not found'
+      );
     }
 
     const errorCode = Buffer.alloc(4);
@@ -1094,7 +1399,7 @@ export class SignatureManager extends EventEmitter {
       crlData?.length ?? 0,
       outDataPtr,
       outLen,
-      errorCode,
+      errorCode
     );
 
     const code = errorCode.readInt32LE(0);
@@ -1147,7 +1452,7 @@ export class SignatureManager extends EventEmitter {
       pdfData,
       pdfData.length,
       outputPath,
-      errorCode,
+      errorCode
     );
 
     const code = errorCode.readInt32LE(0);
@@ -1186,7 +1491,9 @@ export class SignatureManager extends EventEmitter {
    */
   async loadCredentialsFromDer(certData: Buffer, keyData?: Buffer): Promise<SigningCredentials> {
     if (!this.native?.pdf_credentials_from_der) {
-      throw new SignatureException('Native signing not available: pdf_credentials_from_der not found');
+      throw new SignatureException(
+        'Native signing not available: pdf_credentials_from_der not found'
+      );
     }
 
     if (!certData || certData.length === 0) {
@@ -1199,7 +1506,7 @@ export class SignatureManager extends EventEmitter {
       certData.length,
       keyData ?? null,
       keyData?.length ?? 0,
-      errorCode,
+      errorCode
     );
     const code = errorCode.readInt32LE(0);
 
@@ -1231,7 +1538,9 @@ export class SignatureManager extends EventEmitter {
    */
   async addChainCert(credentials: SigningCredentials, certData: Buffer): Promise<void> {
     if (!this.native?.pdf_credentials_add_chain_cert) {
-      throw new SignatureException('Native signing not available: pdf_credentials_add_chain_cert not found');
+      throw new SignatureException(
+        'Native signing not available: pdf_credentials_add_chain_cert not found'
+      );
     }
 
     if (!credentials._handle) {
@@ -1247,7 +1556,7 @@ export class SignatureManager extends EventEmitter {
       credentials._handle,
       certData,
       certData.length,
-      errorCode,
+      errorCode
     );
     const code = errorCode.readInt32LE(0);
 
@@ -1281,7 +1590,9 @@ export class SignatureManager extends EventEmitter {
    */
   async getCertificate(credentials: SigningCredentials): Promise<any> {
     if (!this.native?.pdf_credentials_get_certificate) {
-      throw new SignatureException('Native signing not available: pdf_credentials_get_certificate not found');
+      throw new SignatureException(
+        'Native signing not available: pdf_credentials_get_certificate not found'
+      );
     }
 
     if (!credentials._handle) {
@@ -1289,10 +1600,7 @@ export class SignatureManager extends EventEmitter {
     }
 
     const errorCode = Buffer.alloc(4);
-    const certHandle = this.native.pdf_credentials_get_certificate(
-      credentials._handle,
-      errorCode,
-    );
+    const certHandle = this.native.pdf_credentials_get_certificate(credentials._handle, errorCode);
     const code = errorCode.readInt32LE(0);
 
     if (code !== 0 || !certHandle) {
@@ -1324,7 +1632,9 @@ export class SignatureManager extends EventEmitter {
    */
   async loadCertificateFromDerBytes(certData: Buffer): Promise<any> {
     if (!this.native?.pdf_certificate_load_from_bytes) {
-      throw new SignatureException('Native signing not available: pdf_certificate_load_from_bytes not found');
+      throw new SignatureException(
+        'Native signing not available: pdf_certificate_load_from_bytes not found'
+      );
     }
 
     if (!certData || certData.length === 0) {
@@ -1335,7 +1645,7 @@ export class SignatureManager extends EventEmitter {
     const certHandle = this.native.pdf_certificate_load_from_bytes(
       certData,
       certData.length,
-      errorCode,
+      errorCode
     );
     const code = errorCode.readInt32LE(0);
 
@@ -1366,7 +1676,9 @@ export class SignatureManager extends EventEmitter {
    */
   async getCertificateCn(certHandle: any): Promise<string> {
     if (!this.native?.pdf_certificate_get_cn) {
-      throw new SignatureException('Native signing not available: pdf_certificate_get_cn not found');
+      throw new SignatureException(
+        'Native signing not available: pdf_certificate_get_cn not found'
+      );
     }
 
     if (!certHandle) {
@@ -1404,7 +1716,9 @@ export class SignatureManager extends EventEmitter {
    */
   async getCertificateIssuerFromHandle(certHandle: any): Promise<string> {
     if (!this.native?.pdf_certificate_get_issuer) {
-      throw new SignatureException('Native signing not available: pdf_certificate_get_issuer not found');
+      throw new SignatureException(
+        'Native signing not available: pdf_certificate_get_issuer not found'
+      );
     }
 
     if (!certHandle) {
@@ -1442,7 +1756,9 @@ export class SignatureManager extends EventEmitter {
    */
   async getCertificateSize(certHandle: any): Promise<number> {
     if (!this.native?.pdf_certificate_get_size) {
-      throw new SignatureException('Native signing not available: pdf_certificate_get_size not found');
+      throw new SignatureException(
+        'Native signing not available: pdf_certificate_get_size not found'
+      );
     }
 
     if (!certHandle) {
@@ -1492,13 +1808,11 @@ export class SignatureManager extends EventEmitter {
    * @returns Buffer containing the timestamped PDF bytes
    * @throws SignatureException if timestamping fails
    */
-  async addTimestamp(
-    pdfData: Buffer,
-    signatureIndex: number,
-    tsaUrl: string,
-  ): Promise<Buffer> {
+  async addTimestamp(pdfData: Buffer, signatureIndex: number, tsaUrl: string): Promise<Buffer> {
     if (!this.native?.pdf_add_timestamp) {
-      throw new SignatureException('Native timestamping not available: pdf_add_timestamp not found');
+      throw new SignatureException(
+        'Native timestamping not available: pdf_add_timestamp not found'
+      );
     }
 
     if (!pdfData || pdfData.length === 0) {
@@ -1520,7 +1834,7 @@ export class SignatureManager extends EventEmitter {
       tsaUrl,
       outDataPtr,
       outLen,
-      errorCode,
+      errorCode
     );
 
     const code = errorCode.readInt32LE(0);
@@ -1562,12 +1876,16 @@ export class SignatureManager extends EventEmitter {
     pdfData: Buffer,
     credentials: SigningCredentials,
     pageNum: number,
-    x: number, y: number,
-    width: number, height: number,
-    options?: SignOptions,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    options?: SignOptions
   ): Promise<Buffer> {
     if (!this.native?.pdf_document_sign_with_appearance) {
-      throw new SignatureException('Native signing not available: pdf_document_sign_with_appearance not found');
+      throw new SignatureException(
+        'Native signing not available: pdf_document_sign_with_appearance not found'
+      );
     }
 
     if (!credentials._handle) {
@@ -1595,7 +1913,7 @@ export class SignatureManager extends EventEmitter {
       algorithm,
       outDataPtr,
       outLen,
-      errorCode,
+      errorCode
     );
 
     const code = errorCode.readInt32LE(0);
@@ -1636,7 +1954,11 @@ export class SignatureManager extends EventEmitter {
   }
 
   getCacheStats(): Record<string, any> {
-    return { cacheSize: this.resultCache.size, maxCacheSize: this.maxCacheSize, entries: Array.from(this.resultCache.keys()) };
+    return {
+      cacheSize: this.resultCache.size,
+      maxCacheSize: this.maxCacheSize,
+      entries: Array.from(this.resultCache.keys()),
+    };
   }
 
   destroy(): void {
@@ -1656,8 +1978,12 @@ export class SignatureManager extends EventEmitter {
   }
 
   private clearCachePattern(prefix: string): void {
-    const keysToDelete = Array.from(this.resultCache.keys()).filter(key => key.startsWith(prefix));
-    keysToDelete.forEach(key => this.resultCache.delete(key));
+    const keysToDelete = Array.from(this.resultCache.keys()).filter((key) =>
+      key.startsWith(prefix)
+    );
+    keysToDelete.forEach((key) => {
+      this.resultCache.delete(key);
+    });
   }
 }
 

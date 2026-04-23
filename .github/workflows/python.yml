@@ -126,13 +126,43 @@ jobs:
         run: uv sync --group dev
 
       - name: Generate .pyi from Rust
-        run: uvx rylai -o python/pdf_oxide/
+        run: |
+          uvx rylai -o python/pdf_oxide/
+          # Modernise rylai's pre-PEP-585 typing so basedpyright is
+          # clean — the deprecated-typing noise is fixable via
+          # post-processing, not upstream.
+          python scripts/modernize_stubs.py python/pdf_oxide/pdf_oxide.pyi
 
-      - name: Run Ruff
-        run: uv run ruff check . --fix
+      # ruff runs without --fix in CI (CI verifies; developers auto-fix locally).
+      - name: Ruff lint
+        run: uv run ruff check . --output-format=github
 
+      - name: Ruff format --check
+        run: uv run ruff format --check .
+
+      # Project's existing type checker
       - name: Run ty check
         run: uv run ty check .
+
+      # basedpyright — stricter fork of pyright that catches issues ty misses.
+      # Hard gate now that #44 is closed (0 errors, 0 warnings on a clean tree).
+      - name: basedpyright (type check)
+        run: |
+          uv pip install basedpyright
+          uv run basedpyright python/pdf_oxide
+
+      # pip-audit the dependency graph (uv-locked), excluding the
+      # current project itself — pdf-oxide is not on PyPI until the
+      # release job publishes it, so `--strict` on the live venv would
+      # flag our own package as "not found". Export deps-only and audit
+      # from requirements. `--no-deps` is required because uv-exported
+      # requirements are not hashed; the export already contains the
+      # full resolved dependency set.
+      - name: pip-audit (project deps)
+        run: |
+          uv export --no-emit-project --format requirements-txt --no-hashes > /tmp/pip-audit-requirements.txt
+          uv pip install pip-audit
+          uv run pip-audit --strict --disable-pip --no-deps -r /tmp/pip-audit-requirements.txt
 
   # Build Linux wheels (manylinux + musllinux, x86_64 + aarch64)
   # Uses PyO3/maturin-action, which handles cross-compilation via Docker + zig.
@@ -239,12 +269,19 @@ jobs:
           name: sdist
           path: dist/*.tar.gz
 
-  # Publish to PyPI on release
+  # Publish to PyPI on release using Trusted Publishing (OIDC — no stored tokens).
+  # Setup: add this repo as a trusted publisher on PyPI for the pdf_oxide project.
+  # See https://docs.pypi.org/trusted-publishers/
   publish:
     name: Publish to PyPI
     needs: [test, lint, build-wheels-linux, build-wheels-macos, build-wheels-windows, build-sdist]
     runs-on: ubuntu-latest
     if: github.event_name == 'release' && github.event.action == 'published'
+    environment:
+      name: pypi
+      url: https://pypi.org/p/pdf_oxide
+    permissions:
+      id-token: write   # Required for OIDC / Trusted Publishing
 
     steps:
       - uses: actions/download-artifact@v8
@@ -258,10 +295,9 @@ jobs:
           name: sdist
           path: dist
 
-      - name: Publish to PyPI
+      - name: Publish to PyPI (Trusted Publishing)
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
           skip-existing: true
 
   # Generate documentation

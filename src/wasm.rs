@@ -180,6 +180,37 @@ impl WasmPdfDocument {
             .map_err(|e| JsValue::from_str(&format!("Failed to get page count: {}", e)))
     }
 
+    /// Count existing PDF signatures. Returns 0 when the document has
+    /// no AcroForm or no signed signature fields.
+    #[cfg(feature = "signatures")]
+    #[wasm_bindgen(js_name = "signatureCount")]
+    pub fn signature_count(&mut self) -> Result<usize, JsValue> {
+        let mut doc = self
+            .inner
+            .lock()
+            .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
+        crate::signatures::count_signatures(&mut doc)
+            .map_err(|e| JsValue::from_str(&format!("Failed to count signatures: {}", e)))
+    }
+
+    /// Enumerate existing PDF signatures. Each entry is a
+    /// `WasmSignature` (inspection-only) mirroring the C# and Python
+    /// Signature surfaces.
+    #[cfg(feature = "signatures")]
+    #[wasm_bindgen(js_name = "signatures")]
+    pub fn signatures(&mut self) -> Result<Vec<WasmSignature>, JsValue> {
+        let mut doc = self
+            .inner
+            .lock()
+            .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
+        let list = crate::signatures::enumerate_signatures(&mut doc)
+            .map_err(|e| JsValue::from_str(&format!("Failed to enumerate signatures: {}", e)))?;
+        Ok(list
+            .into_iter()
+            .map(|info| WasmSignature { info })
+            .collect())
+    }
+
     /// Get the PDF version as [major, minor].
     #[wasm_bindgen(js_name = "version")]
     pub fn version(&self) -> Result<Vec<u8>, JsValue> {
@@ -1210,6 +1241,268 @@ impl WasmPdfDocument {
             .map_err(|e| JsValue::from_str(&format!("Failed to extract lines: {}", e)))?;
         serde_wasm_bindgen::to_value(&lines)
             .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))
+    }
+}
+
+/// X.509 certificate parsed from a raw DER blob. Mirrors the C#,
+/// Node, Python, and Go `Certificate` surfaces — `subject` / `issuer`
+/// / `serial` / `validity` / `isValid` getters only.
+#[cfg(feature = "signatures")]
+#[wasm_bindgen]
+pub struct WasmCertificate {
+    creds: crate::signatures::SigningCredentials,
+}
+
+#[cfg(feature = "signatures")]
+#[wasm_bindgen]
+impl WasmCertificate {
+    /// Load a certificate from a DER-encoded X.509 blob. Throws if
+    /// the DER doesn't parse.
+    #[wasm_bindgen(js_name = "load")]
+    pub fn load(data: &[u8]) -> Result<WasmCertificate, JsValue> {
+        if data.is_empty() {
+            return Err(JsValue::from_str("Certificate data must not be empty"));
+        }
+        let creds = crate::signatures::SigningCredentials::from_der(data.to_vec())
+            .map_err(|e| JsValue::from_str(&format!("Invalid certificate: {e}")))?;
+        Ok(Self { creds })
+    }
+
+    /// Subject distinguished name.
+    #[wasm_bindgen(getter)]
+    pub fn subject(&self) -> Result<String, JsValue> {
+        self.creds
+            .subject()
+            .map_err(|e| JsValue::from_str(&format!("{e}")))
+    }
+
+    /// Issuer distinguished name.
+    #[wasm_bindgen(getter)]
+    pub fn issuer(&self) -> Result<String, JsValue> {
+        self.creds
+            .issuer()
+            .map_err(|e| JsValue::from_str(&format!("{e}")))
+    }
+
+    /// Serial number as a hex string (no `0x` prefix).
+    #[wasm_bindgen(getter)]
+    pub fn serial(&self) -> Result<String, JsValue> {
+        self.creds
+            .serial()
+            .map_err(|e| JsValue::from_str(&format!("{e}")))
+    }
+
+    /// Validity window as `[notBefore, notAfter]` Unix epoch seconds.
+    /// JavaScript: `new Date(notBefore * 1000)` for a Date.
+    #[wasm_bindgen(getter)]
+    pub fn validity(&self) -> Result<Vec<i64>, JsValue> {
+        let (nb, na) = self
+            .creds
+            .validity()
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?;
+        Ok(vec![nb, na])
+    }
+
+    /// Whether the certificate is currently within its validity
+    /// window. Does NOT verify chain, trust-root, or revocation.
+    #[wasm_bindgen(getter, js_name = "isValid")]
+    pub fn is_valid(&self) -> Result<bool, JsValue> {
+        self.creds
+            .is_valid()
+            .map_err(|e| JsValue::from_str(&format!("{e}")))
+    }
+}
+
+/// RFC 3161 timestamp parsed from a DER TimeStampToken or bare
+/// TSTInfo. Mirrors the C#, Go, and Python `Timestamp` surfaces.
+#[cfg(feature = "signatures")]
+#[wasm_bindgen]
+pub struct WasmTimestamp {
+    inner: crate::signatures::Timestamp,
+}
+
+#[cfg(feature = "signatures")]
+#[wasm_bindgen]
+impl WasmTimestamp {
+    /// Parse a DER blob that may be either a full TimeStampToken or
+    /// the bare TSTInfo SEQUENCE.
+    #[wasm_bindgen(js_name = "parse")]
+    pub fn parse(data: &[u8]) -> Result<WasmTimestamp, JsValue> {
+        if data.is_empty() {
+            return Err(JsValue::from_str("Timestamp data must not be empty"));
+        }
+        let inner = crate::signatures::Timestamp::from_der(data)
+            .map_err(|e| JsValue::from_str(&format!("Invalid timestamp: {e}")))?;
+        Ok(Self { inner })
+    }
+
+    /// Generation time as Unix epoch seconds.
+    #[wasm_bindgen(getter)]
+    pub fn time(&self) -> i64 {
+        self.inner.time()
+    }
+
+    /// Serial number as a hex string (no `0x` prefix).
+    #[wasm_bindgen(getter)]
+    pub fn serial(&self) -> String {
+        self.inner.serial()
+    }
+
+    /// TSA policy OID in dotted-decimal form.
+    #[wasm_bindgen(getter, js_name = "policyOid")]
+    pub fn policy_oid(&self) -> String {
+        self.inner.policy_oid()
+    }
+
+    /// TSA name from the token (may be empty).
+    #[wasm_bindgen(getter, js_name = "tsaName")]
+    pub fn tsa_name(&self) -> String {
+        self.inner.tsa_name()
+    }
+
+    /// Hash algorithm enum value (1=SHA1, 2=SHA256, 3=SHA384,
+    /// 4=SHA512, 0=unknown).
+    #[wasm_bindgen(getter, js_name = "hashAlgorithm")]
+    pub fn hash_algorithm(&self) -> i32 {
+        self.inner.hash_algorithm() as i32
+    }
+
+    /// Raw message-imprint hash bytes.
+    #[wasm_bindgen(getter, js_name = "messageImprint")]
+    pub fn message_imprint(&self) -> Vec<u8> {
+        self.inner.message_imprint()
+    }
+
+    /// Cryptographic verify — not yet implemented.
+    #[wasm_bindgen]
+    pub fn verify(&self) -> Result<bool, JsValue> {
+        Err(JsValue::from_str(
+            "Timestamp.verify() requires CMS signer verification — not yet landed",
+        ))
+    }
+}
+
+/// A single existing PDF signature surfaced by
+/// `WasmPdfDocument.signatures()`. `verify()` runs the RSA-PKCS#1 v1.5
+/// signer-attributes check; `verifyDetached()` adds the
+/// `messageDigest` content-hash check. RSA-PSS / ECDSA signers still
+/// throw an `UnsupportedFeature`-mapped JS error.
+#[cfg(feature = "signatures")]
+#[wasm_bindgen]
+pub struct WasmSignature {
+    info: crate::signatures::SignatureInfo,
+}
+
+#[cfg(feature = "signatures")]
+#[wasm_bindgen]
+impl WasmSignature {
+    /// `/Name` entry from the signature dictionary, if present.
+    #[wasm_bindgen(getter, js_name = "signerName")]
+    pub fn signer_name(&self) -> Option<String> {
+        self.info.signer_name.clone()
+    }
+
+    /// `/Reason` entry from the signature dictionary, if present.
+    #[wasm_bindgen(getter)]
+    pub fn reason(&self) -> Option<String> {
+        self.info.reason.clone()
+    }
+
+    /// `/Location` entry from the signature dictionary, if present.
+    #[wasm_bindgen(getter)]
+    pub fn location(&self) -> Option<String> {
+        self.info.location.clone()
+    }
+
+    /// `/ContactInfo` entry from the signature dictionary, if present.
+    #[wasm_bindgen(getter, js_name = "contactInfo")]
+    pub fn contact_info(&self) -> Option<String> {
+        self.info.contact_info.clone()
+    }
+
+    /// Unix epoch (seconds). `None` if the `/M` entry is missing or
+    /// unparseable.
+    #[wasm_bindgen(getter, js_name = "signingTime")]
+    pub fn signing_time(&self) -> Option<i64> {
+        self.info
+            .signing_time
+            .as_deref()
+            .and_then(crate::signatures::parse_pdf_date_to_epoch)
+    }
+
+    /// True iff `/ByteRange` is a 4-element array covering the whole
+    /// document (i.e. the signature protects every byte of the file).
+    #[wasm_bindgen(getter, js_name = "coversWholeDocument")]
+    pub fn covers_whole_document(&self) -> bool {
+        self.info.covers_whole_document
+    }
+
+    /// Run the RFC 5652 §5.4 signer-attributes crypto check. Today
+    /// this covers RSA-PKCS#1 v1.5 over SHA-1/256/384/512 — the
+    /// padding used by essentially every PDF signature.
+    ///
+    /// A `true` return proves the signer held the private key matching
+    /// the embedded certificate and that the signed-attribute bundle
+    /// is authentic. It does **not** verify the `messageDigest`
+    /// attribute against the document's byte-range content hash —
+    /// call `verifyDetached()` for that end-to-end check.
+    ///
+    /// Throws for RSA-PSS, ECDSA, unknown digest OIDs, or signatures
+    /// without signed_attrs.
+    #[wasm_bindgen(js_name = "verify")]
+    pub fn verify(&self) -> Result<bool, JsValue> {
+        let Some(contents) = self.info.contents() else {
+            return Err(JsValue::from_str("Signature has no /Contents blob — nothing to verify"));
+        };
+        match crate::signatures::verify_signer(contents) {
+            Ok(crate::signatures::SignerVerify::Valid) => Ok(true),
+            Ok(crate::signatures::SignerVerify::Invalid) => Ok(false),
+            Ok(crate::signatures::SignerVerify::Unknown) => Err(JsValue::from_str(
+                "Signature.verify(): signer uses RSA-PSS, ECDSA, an unknown \
+                 digest OID, or the CMS blob lacks signed_attrs",
+            )),
+            Err(e) => Err(JsValue::from_str(&format!(
+                "Signature.verify(): failed to parse /Contents as CMS: {e}"
+            ))),
+        }
+    }
+
+    /// End-to-end detached-signature verification. Runs both the
+    /// signer-attributes RSA-PKCS#1 v1.5 crypto check AND the RFC 5652
+    /// §11.2 `messageDigest` check against the segment of `pdfData`
+    /// this signature covers (extracted via `/ByteRange`).
+    ///
+    /// `pdfData` must be the full PDF file. A `true` result proves
+    /// both the signer is authentic and that the document's byte-range
+    /// content has not been altered since signing. `false` means one
+    /// of the two checks failed (wrong key or tampered content).
+    ///
+    /// Throws for RSA-PSS, ECDSA, unknown digest OIDs, or CMS blobs
+    /// missing `signed_attrs` / `messageDigest`.
+    #[wasm_bindgen(js_name = "verifyDetached")]
+    pub fn verify_detached(&self, pdf_data: &[u8]) -> Result<bool, JsValue> {
+        let Some(contents) = self.info.contents() else {
+            return Err(JsValue::from_str("Signature has no /Contents blob — nothing to verify"));
+        };
+        let br = self.info.byte_range();
+        if br.len() != 4 {
+            return Err(JsValue::from_str(
+                "Signature has no /ByteRange — cannot extract signed bytes",
+            ));
+        }
+        let byte_range: [i64; 4] = [br[0], br[1], br[2], br[3]];
+        let signed_bytes =
+            crate::signatures::ByteRangeCalculator::extract_signed_bytes(pdf_data, &byte_range)
+                .map_err(|e| JsValue::from_str(&format!("Failed to extract signed bytes: {e}")))?;
+        match crate::signatures::verify_signer_detached(contents, &signed_bytes) {
+            Ok(crate::signatures::SignerVerify::Valid) => Ok(true),
+            Ok(crate::signatures::SignerVerify::Invalid) => Ok(false),
+            Ok(crate::signatures::SignerVerify::Unknown) => Err(JsValue::from_str(
+                "Signature.verifyDetached(): signer uses RSA-PSS, ECDSA, an \
+                 unknown digest, or the CMS blob lacks signed_attrs / messageDigest",
+            )),
+            Err(e) => Err(JsValue::from_str(&format!("Signature.verifyDetached(): {e}"))),
+        }
     }
 }
 
@@ -2662,6 +2955,33 @@ impl WasmPdfDocument {
         Ok(())
     }
 
+    /// Move a page within the document. Zero-based; `from_index` and
+    /// `to_index` refer to positions **before** the move, matching the
+    /// Python (`PyPdfDocument.move_page`) / Go (`DocumentEditor.MovePage`) /
+    /// C# contracts.
+    #[wasm_bindgen(js_name = "movePage")]
+    pub fn move_page(&mut self, from_index: usize, to_index: usize) -> Result<(), JsValue> {
+        use crate::editor::EditableDocument;
+        let bytes = self.raw_bytes.to_vec();
+        let mut editor = crate::editor::DocumentEditor::from_bytes(bytes)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        editor
+            .move_page(from_index, to_index)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let new_bytes = editor
+            .save_to_bytes()
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let new_doc = crate::document::PdfDocument::from_bytes(new_bytes.clone())
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| JsValue::from_str("Lock failed"))?;
+        *inner = new_doc;
+        self.raw_bytes = Arc::new(new_bytes);
+        Ok(())
+    }
+
     /// Extract specific pages to a new PDF (returns bytes).
     #[wasm_bindgen(js_name = "extractPages")]
     pub fn extract_pages(&mut self, pages: Vec<usize>) -> Result<Vec<u8>, JsValue> {
@@ -2891,6 +3211,49 @@ impl WasmPdf {
     pub fn size(&self) -> usize {
         self.bytes.len()
     }
+
+    /// Render `html` with `css` applied, embedding `font_bytes` for the
+    /// body text. The font must cover every codepoint used by `html` or
+    /// unknown glyphs fall back to `.notdef`. See
+    /// [`Self::from_html_css_with_fonts`] for a multi-font cascade.
+    #[wasm_bindgen(js_name = "fromHtmlCss")]
+    pub fn from_html_css(html: &str, css: &str, font_bytes: &[u8]) -> Result<WasmPdf, JsValue> {
+        let pdf = crate::api::Pdf::from_html_css(html, css, font_bytes.to_vec())
+            .map_err(|e| JsValue::from_str(&format!("fromHtmlCss failed: {e}")))?;
+        Ok(WasmPdf {
+            bytes: pdf.into_bytes(),
+        })
+    }
+
+    /// Render `html` + `css` with a multi-font cascade. `families` and
+    /// `fonts` are parallel arrays: `families[i]` names the CSS
+    /// `font-family` that resolves to `fonts[i]` bytes. The first entry
+    /// is the default used whenever a CSS `font-family` doesn't match a
+    /// registered family.
+    #[wasm_bindgen(js_name = "fromHtmlCssWithFonts")]
+    pub fn from_html_css_with_fonts(
+        html: &str,
+        css: &str,
+        families: Vec<String>,
+        fonts: Vec<js_sys::Uint8Array>,
+    ) -> Result<WasmPdf, JsValue> {
+        if families.is_empty() {
+            return Err(JsValue::from_str("at least one font must be provided"));
+        }
+        if families.len() != fonts.len() {
+            return Err(JsValue::from_str("families and fonts arrays must be the same length"));
+        }
+        let font_vec: Vec<(String, Vec<u8>)> = families
+            .into_iter()
+            .zip(fonts.iter())
+            .map(|(name, arr)| (name, arr.to_vec()))
+            .collect();
+        let pdf = crate::api::Pdf::from_html_css_with_fonts(html, css, font_vec)
+            .map_err(|e| JsValue::from_str(&format!("fromHtmlCssWithFonts failed: {e}")))?;
+        Ok(WasmPdf {
+            bytes: pdf.into_bytes(),
+        })
+    }
 }
 
 // ============================================================================
@@ -2974,6 +3337,710 @@ fn outline_to_json(items: &[crate::outline::OutlineItem]) -> Vec<serde_json::Val
             serde_json::Value::Object(obj)
         })
         .collect()
+}
+
+// ============================================================================
+// Write-side API: DocumentBuilder / FluentPageBuilder / EmbeddedFont
+// ============================================================================
+
+/// Parse a stamp-type name into the Rust `StampType` enum. Unknown names
+/// fall through to `Custom(String)`.
+fn parse_wasm_stamp_type(name: &str) -> crate::writer::StampType {
+    use crate::writer::StampType;
+    match name {
+        "Approved" => StampType::Approved,
+        "Experimental" => StampType::Experimental,
+        "NotApproved" => StampType::NotApproved,
+        "AsIs" => StampType::AsIs,
+        "Expired" => StampType::Expired,
+        "NotForPublicRelease" => StampType::NotForPublicRelease,
+        "Confidential" => StampType::Confidential,
+        "Final" => StampType::Final,
+        "Sold" => StampType::Sold,
+        "Departmental" => StampType::Departmental,
+        "ForComment" => StampType::ForComment,
+        "TopSecret" => StampType::TopSecret,
+        "Draft" => StampType::Draft,
+        "ForPublicRelease" => StampType::ForPublicRelease,
+        other => StampType::Custom(other.to_string()),
+    }
+}
+//
+// Mirrors the Python bindings' surface (see src/python.rs). Same buffering
+// design: the Rust `FluentPageBuilder<'a>` borrows from `DocumentBuilder`
+// and can't cross the wasm-bindgen boundary, so `WasmFluentPageBuilder`
+// buffers operations and replays them against a real Rust builder inside
+// `.done()`.
+//
+// Classes exported to JS (camelCase names via `js_name`):
+//   * DocumentBuilder   — fluent top-level API
+//   * FluentPageBuilder — per-page fluent API, committed by .done()
+//   * EmbeddedFont      — TTF / OTF handle, consumed on registerEmbeddedFont
+
+/// Buffered operations applied to a real Rust `FluentPageBuilder` inside
+/// `WasmFluentPageBuilder::done()`.
+enum WasmPageOp {
+    Font(String, f32),
+    At(f32, f32),
+    Text(String),
+    Heading(u8, String),
+    Paragraph(String),
+    Space(f32),
+    HorizontalRule,
+    LinkUrl(String),
+    LinkPage(usize),
+    LinkNamed(String),
+    Highlight(f32, f32, f32),
+    Underline(f32, f32, f32),
+    Strikeout(f32, f32, f32),
+    Squiggly(f32, f32, f32),
+    StickyNote(String),
+    StickyNoteAt(f32, f32, String),
+    Watermark(String),
+    WatermarkConfidential,
+    WatermarkDraft,
+    Stamp(String),
+    FreeText {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        text: String,
+    },
+    TextField {
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        default_value: Option<String>,
+    },
+    Checkbox {
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        checked: bool,
+    },
+    ComboBox {
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        options: Vec<String>,
+        selected: Option<String>,
+    },
+    RadioGroup {
+        name: String,
+        buttons: Vec<(String, f32, f32, f32, f32)>,
+        selected: Option<String>,
+    },
+    PushButton {
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        caption: String,
+    },
+    Rect(f32, f32, f32, f32),
+    FilledRect(f32, f32, f32, f32, f32, f32, f32),
+    Line(f32, f32, f32, f32),
+}
+
+/// Embedded TTF/OTF font usable by `WasmDocumentBuilder`. Single-use: once
+/// passed to `registerEmbeddedFont`, the underlying Rust `EmbeddedFont` is
+/// moved into the builder and this handle becomes empty.
+#[wasm_bindgen]
+pub struct WasmEmbeddedFont {
+    inner: Option<crate::writer::EmbeddedFont>,
+}
+
+#[wasm_bindgen]
+impl WasmEmbeddedFont {
+    /// Load an embedded font from raw TTF/OTF bytes. Pass `name` to
+    /// override the PostScript name baked into the font file.
+    #[wasm_bindgen(js_name = "fromBytes")]
+    pub fn from_bytes(data: &[u8], name: Option<String>) -> Result<WasmEmbeddedFont, JsValue> {
+        crate::writer::EmbeddedFont::from_data(name, data.to_vec())
+            .map(|inner| WasmEmbeddedFont { inner: Some(inner) })
+            .map_err(|e| JsValue::from_str(&format!("fromBytes failed: {e}")))
+    }
+
+    /// The font's PostScript name (or the override). Empty once consumed.
+    #[wasm_bindgen(getter)]
+    pub fn name(&self) -> String {
+        self.inner
+            .as_ref()
+            .map(|f| f.name.clone())
+            .unwrap_or_default()
+    }
+}
+
+/// WASM wrapper for [`crate::writer::DocumentBuilder`]. Fluent API for
+/// programmatic multi-page PDF construction with embedded fonts and
+/// annotations.
+///
+/// The terminal methods (`build`, `toBytesEncrypted`) **consume** the
+/// builder; subsequent calls throw `Error: DocumentBuilder already
+/// consumed`.
+#[wasm_bindgen]
+pub struct WasmDocumentBuilder {
+    inner: Option<crate::writer::DocumentBuilder>,
+}
+
+impl WasmDocumentBuilder {
+    fn take_inner(&mut self, ctx: &str) -> Result<crate::writer::DocumentBuilder, JsValue> {
+        self.inner
+            .take()
+            .ok_or_else(|| JsValue::from_str(&format!("DocumentBuilder already consumed ({ctx})")))
+    }
+
+    fn with_inner<F>(&mut self, ctx: &str, f: F) -> Result<(), JsValue>
+    where
+        F: FnOnce(crate::writer::DocumentBuilder) -> crate::writer::DocumentBuilder,
+    {
+        let taken = self.take_inner(ctx)?;
+        self.inner = Some(f(taken));
+        Ok(())
+    }
+}
+
+#[wasm_bindgen]
+impl WasmDocumentBuilder {
+    /// Create a new empty document builder. Equivalent to the Rust
+    /// [`crate::writer::DocumentBuilder::new`] — every other method
+    /// chains off the instance returned here.
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> WasmDocumentBuilder {
+        WasmDocumentBuilder {
+            inner: Some(crate::writer::DocumentBuilder::new()),
+        }
+    }
+
+    /// Set document title.
+    #[wasm_bindgen(js_name = "title")]
+    pub fn title(&mut self, title: String) -> Result<(), JsValue> {
+        self.with_inner("title", |b| b.title(title))
+    }
+
+    /// Set document author.
+    #[wasm_bindgen(js_name = "author")]
+    pub fn author(&mut self, author: String) -> Result<(), JsValue> {
+        self.with_inner("author", |b| b.author(author))
+    }
+
+    /// Set document subject.
+    #[wasm_bindgen(js_name = "subject")]
+    pub fn subject(&mut self, subject: String) -> Result<(), JsValue> {
+        self.with_inner("subject", |b| b.subject(subject))
+    }
+
+    /// Set document keywords (comma-separated per PDF convention).
+    #[wasm_bindgen(js_name = "keywords")]
+    pub fn keywords(&mut self, keywords: String) -> Result<(), JsValue> {
+        self.with_inner("keywords", |b| b.keywords(keywords))
+    }
+
+    /// Set the creator application name recorded in the PDF.
+    #[wasm_bindgen(js_name = "creator")]
+    pub fn creator(&mut self, creator: String) -> Result<(), JsValue> {
+        self.with_inner("creator", |b| b.creator(creator))
+    }
+
+    /// Register a TTF / OTF font the pages can reference by name.
+    /// **Consumes** `font` — reusing the `WasmEmbeddedFont` throws.
+    #[wasm_bindgen(js_name = "registerEmbeddedFont")]
+    pub fn register_embedded_font(
+        &mut self,
+        name: String,
+        font: &mut WasmEmbeddedFont,
+    ) -> Result<(), JsValue> {
+        let embedded = font
+            .inner
+            .take()
+            .ok_or_else(|| JsValue::from_str("EmbeddedFont already consumed"))?;
+        self.with_inner("registerEmbeddedFont", |b| b.register_embedded_font(name, embedded))
+    }
+
+    /// Start a new A4 page. Returns a `FluentPageBuilder` that must be
+    /// committed with `.done()` before calling another page method or a
+    /// terminal (`build`, etc.).
+    #[wasm_bindgen(js_name = "a4Page")]
+    pub fn a4_page(&mut self) -> Result<WasmFluentPageBuilder, JsValue> {
+        if self.inner.is_none() {
+            return Err(JsValue::from_str("DocumentBuilder already consumed"));
+        }
+        Ok(WasmFluentPageBuilder {
+            page_size: Some(crate::writer::PageSize::A4),
+            custom_width: 0.0,
+            custom_height: 0.0,
+            ops: Vec::new(),
+            done_called: false,
+        })
+    }
+
+    /// Start a new US Letter page.
+    #[wasm_bindgen(js_name = "letterPage")]
+    pub fn letter_page(&mut self) -> Result<WasmFluentPageBuilder, JsValue> {
+        if self.inner.is_none() {
+            return Err(JsValue::from_str("DocumentBuilder already consumed"));
+        }
+        Ok(WasmFluentPageBuilder {
+            page_size: Some(crate::writer::PageSize::Letter),
+            custom_width: 0.0,
+            custom_height: 0.0,
+            ops: Vec::new(),
+            done_called: false,
+        })
+    }
+
+    /// Start a new page with custom dimensions in PDF points
+    /// (72 pt = 1 inch).
+    #[wasm_bindgen(js_name = "page")]
+    pub fn page(&mut self, width: f32, height: f32) -> Result<WasmFluentPageBuilder, JsValue> {
+        if self.inner.is_none() {
+            return Err(JsValue::from_str("DocumentBuilder already consumed"));
+        }
+        Ok(WasmFluentPageBuilder {
+            page_size: None,
+            custom_width: width,
+            custom_height: height,
+            ops: Vec::new(),
+            done_called: false,
+        })
+    }
+
+    /// Commit a completed `FluentPageBuilder` back to this builder.
+    /// Takes the place of the Rust `page.done()` re-parenting.
+    ///
+    /// JS users typically don't call this directly — the ergonomic
+    /// pattern is `builder.a4Page();` for each page, then
+    /// `builder.commitPage(page)` once ops are queued. For more fluent
+    /// code, see the `FluentPageBuilder.done(builder)` helper which
+    /// delegates to this method.
+    #[wasm_bindgen(js_name = "commitPage")]
+    pub fn commit_page(&mut self, page: &mut WasmFluentPageBuilder) -> Result<(), JsValue> {
+        if page.done_called {
+            return Err(JsValue::from_str("FluentPageBuilder.done() already called"));
+        }
+        page.done_called = true;
+
+        let inner = self
+            .inner
+            .as_mut()
+            .ok_or_else(|| JsValue::from_str("DocumentBuilder already consumed"))?;
+
+        let page_size = page
+            .page_size
+            .unwrap_or(crate::writer::PageSize::Custom(page.custom_width, page.custom_height));
+        let mut rust_page = inner.page(page_size);
+        for op in page.ops.drain(..) {
+            rust_page = match op {
+                WasmPageOp::Font(name, size) => rust_page.font(&name, size),
+                WasmPageOp::At(x, y) => rust_page.at(x, y),
+                WasmPageOp::Text(text) => rust_page.text(&text),
+                WasmPageOp::Heading(level, text) => rust_page.heading(level, &text),
+                WasmPageOp::Paragraph(text) => rust_page.paragraph(&text),
+                WasmPageOp::Space(points) => rust_page.space(points),
+                WasmPageOp::HorizontalRule => rust_page.horizontal_rule(),
+                WasmPageOp::LinkUrl(url) => rust_page.link_url(&url),
+                WasmPageOp::LinkPage(p) => rust_page.link_page(p),
+                WasmPageOp::LinkNamed(dest) => rust_page.link_named(&dest),
+                WasmPageOp::Highlight(r, g, b) => rust_page.highlight((r, g, b)),
+                WasmPageOp::Underline(r, g, b) => rust_page.underline((r, g, b)),
+                WasmPageOp::Strikeout(r, g, b) => rust_page.strikeout((r, g, b)),
+                WasmPageOp::Squiggly(r, g, b) => rust_page.squiggly((r, g, b)),
+                WasmPageOp::StickyNote(text) => rust_page.sticky_note(&text),
+                WasmPageOp::StickyNoteAt(x, y, text) => rust_page.sticky_note_at(x, y, &text),
+                WasmPageOp::Watermark(text) => rust_page.watermark(&text),
+                WasmPageOp::WatermarkConfidential => rust_page.watermark_confidential(),
+                WasmPageOp::WatermarkDraft => rust_page.watermark_draft(),
+                WasmPageOp::Stamp(name) => rust_page.stamp(parse_wasm_stamp_type(&name)),
+                WasmPageOp::FreeText { x, y, w, h, text } => {
+                    rust_page.freetext(crate::geometry::Rect::new(x, y, w, h), &text)
+                },
+                WasmPageOp::TextField {
+                    name,
+                    x,
+                    y,
+                    w,
+                    h,
+                    default_value,
+                } => rust_page.text_field(name, x, y, w, h, default_value),
+                WasmPageOp::Checkbox {
+                    name,
+                    x,
+                    y,
+                    w,
+                    h,
+                    checked,
+                } => rust_page.checkbox(name, x, y, w, h, checked),
+                WasmPageOp::ComboBox {
+                    name,
+                    x,
+                    y,
+                    w,
+                    h,
+                    options,
+                    selected,
+                } => rust_page.combo_box(name, x, y, w, h, options, selected),
+                WasmPageOp::RadioGroup {
+                    name,
+                    buttons,
+                    selected,
+                } => rust_page.radio_group(name, buttons, selected),
+                WasmPageOp::PushButton {
+                    name,
+                    x,
+                    y,
+                    w,
+                    h,
+                    caption,
+                } => rust_page.push_button(name, x, y, w, h, caption),
+                WasmPageOp::Rect(x, y, w, h) => rust_page.rect(x, y, w, h),
+                WasmPageOp::FilledRect(x, y, w, h, r, g, b) => {
+                    rust_page.filled_rect(x, y, w, h, r, g, b)
+                },
+                WasmPageOp::Line(x1, y1, x2, y2) => rust_page.line(x1, y1, x2, y2),
+            };
+        }
+        rust_page.done();
+        Ok(())
+    }
+
+    /// Build the PDF and return it as a `Uint8Array`. **Consumes** the
+    /// builder.
+    #[wasm_bindgen(js_name = "build")]
+    pub fn build(&mut self) -> Result<Vec<u8>, JsValue> {
+        let inner = self.take_inner("build")?;
+        inner
+            .build()
+            .map_err(|e| JsValue::from_str(&format!("build failed: {e}")))
+    }
+
+    /// Build the PDF with AES-256 encryption and return it as a
+    /// `Uint8Array`. Granted permissions default to all. **Consumes**
+    /// the builder.
+    #[wasm_bindgen(js_name = "toBytesEncrypted")]
+    pub fn to_bytes_encrypted(
+        &mut self,
+        user_password: &str,
+        owner_password: &str,
+    ) -> Result<Vec<u8>, JsValue> {
+        let inner = self.take_inner("toBytesEncrypted")?;
+        inner
+            .to_bytes_encrypted(user_password, owner_password)
+            .map_err(|e| JsValue::from_str(&format!("toBytesEncrypted failed: {e}")))
+    }
+}
+
+impl Default for WasmDocumentBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Per-page fluent builder. Buffers operations until `done(builder)` is
+/// called, which commits them to the parent `WasmDocumentBuilder`. Each
+/// instance is single-use — `done()` twice throws.
+#[wasm_bindgen]
+pub struct WasmFluentPageBuilder {
+    page_size: Option<crate::writer::PageSize>,
+    custom_width: f32,
+    custom_height: f32,
+    ops: Vec<WasmPageOp>,
+    done_called: bool,
+}
+
+#[allow(missing_docs)] // docstrings on the Rust side (FluentPageBuilder::*) — methods here are thin op-buffers
+#[wasm_bindgen]
+impl WasmFluentPageBuilder {
+    #[wasm_bindgen(js_name = "font")]
+    pub fn font(&mut self, name: String, size: f32) -> Result<(), JsValue> {
+        self.push(WasmPageOp::Font(name, size))
+    }
+
+    #[wasm_bindgen(js_name = "at")]
+    pub fn at(&mut self, x: f32, y: f32) -> Result<(), JsValue> {
+        self.push(WasmPageOp::At(x, y))
+    }
+
+    #[wasm_bindgen(js_name = "text")]
+    pub fn text(&mut self, text: String) -> Result<(), JsValue> {
+        self.push(WasmPageOp::Text(text))
+    }
+
+    #[wasm_bindgen(js_name = "heading")]
+    pub fn heading(&mut self, level: u8, text: String) -> Result<(), JsValue> {
+        self.push(WasmPageOp::Heading(level, text))
+    }
+
+    #[wasm_bindgen(js_name = "paragraph")]
+    pub fn paragraph(&mut self, text: String) -> Result<(), JsValue> {
+        self.push(WasmPageOp::Paragraph(text))
+    }
+
+    #[wasm_bindgen(js_name = "space")]
+    pub fn space(&mut self, points: f32) -> Result<(), JsValue> {
+        self.push(WasmPageOp::Space(points))
+    }
+
+    #[wasm_bindgen(js_name = "horizontalRule")]
+    pub fn horizontal_rule(&mut self) -> Result<(), JsValue> {
+        self.push(WasmPageOp::HorizontalRule)
+    }
+
+    // Annotations (Phase 3) ---------------------------------------------
+
+    #[wasm_bindgen(js_name = "linkUrl")]
+    pub fn link_url(&mut self, url: String) -> Result<(), JsValue> {
+        self.push(WasmPageOp::LinkUrl(url))
+    }
+
+    #[wasm_bindgen(js_name = "linkPage")]
+    pub fn link_page(&mut self, page: usize) -> Result<(), JsValue> {
+        self.push(WasmPageOp::LinkPage(page))
+    }
+
+    #[wasm_bindgen(js_name = "linkNamed")]
+    pub fn link_named(&mut self, destination: String) -> Result<(), JsValue> {
+        self.push(WasmPageOp::LinkNamed(destination))
+    }
+
+    #[wasm_bindgen(js_name = "highlight")]
+    pub fn highlight(&mut self, r: f32, g: f32, b: f32) -> Result<(), JsValue> {
+        self.push(WasmPageOp::Highlight(r, g, b))
+    }
+
+    #[wasm_bindgen(js_name = "underline")]
+    pub fn underline(&mut self, r: f32, g: f32, b: f32) -> Result<(), JsValue> {
+        self.push(WasmPageOp::Underline(r, g, b))
+    }
+
+    #[wasm_bindgen(js_name = "strikeout")]
+    pub fn strikeout(&mut self, r: f32, g: f32, b: f32) -> Result<(), JsValue> {
+        self.push(WasmPageOp::Strikeout(r, g, b))
+    }
+
+    #[wasm_bindgen(js_name = "squiggly")]
+    pub fn squiggly(&mut self, r: f32, g: f32, b: f32) -> Result<(), JsValue> {
+        self.push(WasmPageOp::Squiggly(r, g, b))
+    }
+
+    #[wasm_bindgen(js_name = "stickyNote")]
+    pub fn sticky_note(&mut self, text: String) -> Result<(), JsValue> {
+        self.push(WasmPageOp::StickyNote(text))
+    }
+
+    #[wasm_bindgen(js_name = "stickyNoteAt")]
+    pub fn sticky_note_at(&mut self, x: f32, y: f32, text: String) -> Result<(), JsValue> {
+        self.push(WasmPageOp::StickyNoteAt(x, y, text))
+    }
+
+    #[wasm_bindgen(js_name = "watermark")]
+    pub fn watermark(&mut self, text: String) -> Result<(), JsValue> {
+        self.push(WasmPageOp::Watermark(text))
+    }
+
+    #[wasm_bindgen(js_name = "watermarkConfidential")]
+    pub fn watermark_confidential(&mut self) -> Result<(), JsValue> {
+        self.push(WasmPageOp::WatermarkConfidential)
+    }
+
+    #[wasm_bindgen(js_name = "watermarkDraft")]
+    pub fn watermark_draft(&mut self) -> Result<(), JsValue> {
+        self.push(WasmPageOp::WatermarkDraft)
+    }
+
+    #[wasm_bindgen(js_name = "stamp")]
+    pub fn stamp(&mut self, name: String) -> Result<(), JsValue> {
+        self.push(WasmPageOp::Stamp(name))
+    }
+
+    #[wasm_bindgen(js_name = "freeText")]
+    pub fn freetext(
+        &mut self,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        text: String,
+    ) -> Result<(), JsValue> {
+        self.push(WasmPageOp::FreeText { x, y, w, h, text })
+    }
+
+    #[wasm_bindgen(js_name = "textField")]
+    pub fn text_field(
+        &mut self,
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        default_value: Option<String>,
+    ) -> Result<(), JsValue> {
+        self.push(WasmPageOp::TextField {
+            name,
+            x,
+            y,
+            w,
+            h,
+            default_value,
+        })
+    }
+
+    #[wasm_bindgen(js_name = "checkbox")]
+    pub fn checkbox(
+        &mut self,
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        checked: bool,
+    ) -> Result<(), JsValue> {
+        self.push(WasmPageOp::Checkbox {
+            name,
+            x,
+            y,
+            w,
+            h,
+            checked,
+        })
+    }
+
+    /// Add a dropdown combo-box.
+    #[wasm_bindgen(js_name = "comboBox")]
+    pub fn combo_box(
+        &mut self,
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        options: Vec<String>,
+        selected: Option<String>,
+    ) -> Result<(), JsValue> {
+        self.push(WasmPageOp::ComboBox {
+            name,
+            x,
+            y,
+            w,
+            h,
+            options,
+            selected,
+        })
+    }
+
+    /// Add a radio-button group. `values`, `xs`, `ys`, `ws`, `hs` are
+    /// parallel arrays of length N describing each option's export
+    /// value and rectangle. `selected` picks the initial value.
+    #[wasm_bindgen(js_name = "radioGroup")]
+    pub fn radio_group(
+        &mut self,
+        name: String,
+        values: Vec<String>,
+        xs: Vec<f32>,
+        ys: Vec<f32>,
+        ws: Vec<f32>,
+        hs: Vec<f32>,
+        selected: Option<String>,
+    ) -> Result<(), JsValue> {
+        let n = values.len();
+        if xs.len() != n || ys.len() != n || ws.len() != n || hs.len() != n {
+            return Err(JsValue::from_str(
+                "radio_group: values/xs/ys/ws/hs must be equal-length arrays",
+            ));
+        }
+        let buttons: Vec<(String, f32, f32, f32, f32)> = values
+            .into_iter()
+            .zip(xs)
+            .zip(ys)
+            .zip(ws)
+            .zip(hs)
+            .map(|((((v, x), y), w), h)| (v, x, y, w, h))
+            .collect();
+        self.push(WasmPageOp::RadioGroup {
+            name,
+            buttons,
+            selected,
+        })
+    }
+
+    /// Add a clickable push button with a visible caption.
+    #[wasm_bindgen(js_name = "pushButton")]
+    pub fn push_button(
+        &mut self,
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        caption: String,
+    ) -> Result<(), JsValue> {
+        self.push(WasmPageOp::PushButton {
+            name,
+            x,
+            y,
+            w,
+            h,
+            caption,
+        })
+    }
+
+    /// Draw a stroked rectangle outline (1pt black).
+    #[wasm_bindgen(js_name = "rect")]
+    pub fn rect(&mut self, x: f32, y: f32, w: f32, h: f32) -> Result<(), JsValue> {
+        self.push(WasmPageOp::Rect(x, y, w, h))
+    }
+
+    /// Draw a filled rectangle. RGB channels in 0.0-1.0.
+    #[wasm_bindgen(js_name = "filledRect")]
+    pub fn filled_rect(
+        &mut self,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+    ) -> Result<(), JsValue> {
+        self.push(WasmPageOp::FilledRect(x, y, w, h, r, g, b))
+    }
+
+    /// Draw a line from (x1, y1) to (x2, y2) with 1pt black stroke.
+    #[wasm_bindgen(js_name = "line")]
+    pub fn line(&mut self, x1: f32, y1: f32, x2: f32, y2: f32) -> Result<(), JsValue> {
+        self.push(WasmPageOp::Line(x1, y1, x2, y2))
+    }
+
+    /// Convenience: commit this page's buffered ops to `builder`. Same
+    /// as `builder.commitPage(this)` but lets JS users keep the
+    /// chain-like flow:
+    ///
+    /// ```javascript
+    /// const page = builder.a4Page();
+    /// page.at(72, 720); page.text("Hi");
+    /// page.done(builder);
+    /// ```
+    #[wasm_bindgen(js_name = "done")]
+    pub fn done(&mut self, builder: &mut WasmDocumentBuilder) -> Result<(), JsValue> {
+        builder.commit_page(self)
+    }
+}
+
+impl WasmFluentPageBuilder {
+    fn push(&mut self, op: WasmPageOp) -> Result<(), JsValue> {
+        if self.done_called {
+            return Err(JsValue::from_str("FluentPageBuilder.done() already called"));
+        }
+        self.ops.push(op);
+        Ok(())
+    }
 }
 
 // ============================================================================

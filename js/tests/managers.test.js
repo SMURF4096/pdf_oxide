@@ -10,15 +10,15 @@
  * - AnnotationManager: Page annotations
  */
 
-import { describe, it } from 'node:test';
 import assert from 'node:assert';
+import { describe, it } from 'node:test';
 import {
-  OutlineManager,
-  MetadataManager,
+  AnnotationManager,
   ExtractionManager,
+  MetadataManager,
+  OutlineManager,
   SearchManager,
   SecurityManager,
-  AnnotationManager,
 } from '../lib/managers/index.js';
 
 describe('Managers - Phase 2.7', () => {
@@ -719,7 +719,7 @@ describe('Managers - Phase 2.7', () => {
         new SecurityManager(mockDoc),
       ];
 
-      managers.forEach(manager => {
+      managers.forEach((manager) => {
         assert.ok(manager instanceof Object);
       });
     });

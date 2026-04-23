@@ -14,11 +14,11 @@ import * as path from 'path';
  * Page size presets
  */
 export enum PageSize {
-  Letter = 'letter',      // 8.5 x 11 inches
-  Legal = 'legal',        // 8.5 x 14 inches
-  A4 = 'a4',              // 210 x 297 mm
-  A3 = 'a3',              // 297 x 420 mm
-  A5 = 'a5',              // 148 x 210 mm
+  Letter = 'letter', // 8.5 x 11 inches
+  Legal = 'legal', // 8.5 x 14 inches
+  A4 = 'a4', // 210 x 297 mm
+  A3 = 'a3', // 297 x 420 mm
+  A5 = 'a5', // 148 x 210 mm
   Custom = 'custom',
 }
 
@@ -151,7 +151,7 @@ export class PdfCreatorManager extends EventEmitter {
   addPage(config?: PageConfig): number {
     const pageConfig = { ...this.defaultPageConfig, ...config };
 
-    let width = 612;  // Letter width in points
+    let width = 612; // Letter width in points
     let height = 792; // Letter height in points
 
     // Set dimensions based on page size
@@ -288,7 +288,10 @@ export class PdfCreatorManager extends EventEmitter {
 
     const lineContent = {
       type: 'line',
-      x1, y1, x2, y2,
+      x1,
+      y1,
+      x2,
+      y2,
       color,
       width,
     };
@@ -442,16 +445,20 @@ export class PdfCreatorManager extends EventEmitter {
     // Object 2: Pages
     const pageRefs = this.pages.map((_, i) => `${3 + i} 0 R`).join(' ');
     chunks.push(Buffer.from('2 0 obj\n'));
-    chunks.push(Buffer.from(`<< /Type /Pages /Kids [${pageRefs}] /Count ${this.pages.length} >>\n`));
+    chunks.push(
+      Buffer.from(`<< /Type /Pages /Kids [${pageRefs}] /Count ${this.pages.length} >>\n`)
+    );
     chunks.push(Buffer.from('endobj\n'));
 
     // Objects 3+: Pages
     this.pages.forEach((page, idx) => {
       const objNum = 3 + idx;
       chunks.push(Buffer.from(`${objNum} 0 obj\n`));
-      chunks.push(Buffer.from(
-        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${page.width} ${page.height}] /Contents ${objNum + this.pages.length} 0 R >>\n`
-      ));
+      chunks.push(
+        Buffer.from(
+          `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${page.width} ${page.height}] /Contents ${objNum + this.pages.length} 0 R >>\n`
+        )
+      );
       chunks.push(Buffer.from('endobj\n'));
     });
 
@@ -480,9 +487,7 @@ export class PdfCreatorManager extends EventEmitter {
 
     // Trailer
     chunks.push(Buffer.from('trailer\n'));
-    chunks.push(Buffer.from(
-      `<< /Size ${3 + this.pages.length * 2} /Root 1 0 R >>\n`
-    ));
+    chunks.push(Buffer.from(`<< /Size ${3 + this.pages.length * 2} /Root 1 0 R >>\n`));
     chunks.push(Buffer.from('startxref\n'));
     chunks.push(Buffer.from(`${xrefOffset}\n`));
     chunks.push(Buffer.from('%%EOF\n'));

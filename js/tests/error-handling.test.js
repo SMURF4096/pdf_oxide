@@ -1,24 +1,24 @@
-import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
+import { describe, it } from 'node:test';
 import {
-  PdfException,
-  PdfIoError,
-  PdfParseError,
-  PdfEncryptionError,
-  PdfUnsupportedError,
-  PdfInvalidStateError,
+  PdfBarcodeError,
+  PdfCircularReferenceError,
   PdfDecodeError,
   PdfEncodeError,
+  PdfEncryptionError,
+  PdfException,
   PdfFontError,
   PdfImageError,
-  PdfCircularReferenceError,
-  PdfRecursionLimitError,
-  PdfOcrError,
+  PdfInvalidStateError,
+  PdfIoError,
   PdfMlError,
-  PdfBarcodeError,
+  PdfOcrError,
+  PdfParseError,
+  PdfRecursionLimitError,
+  PdfUnsupportedError,
+  wrapAsyncMethod,
   wrapError,
   wrapMethod,
-  wrapAsyncMethod,
 } from '../lib/errors.js';
 
 // Alias for compatibility with tests
@@ -137,7 +137,9 @@ describe('Error Handling - Phase 2.2', () => {
     });
 
     it('should map ENCRYPTION_ERROR to PdfEncryptionError', () => {
-      assert.ok(wrapError({ code: 'ENCRYPTION_ERROR', message: 'msg' }) instanceof PdfEncryptionError);
+      assert.ok(
+        wrapError({ code: 'ENCRYPTION_ERROR', message: 'msg' }) instanceof PdfEncryptionError
+      );
     });
 
     it('should map UNSUPPORTED to PdfUnsupportedError', () => {
@@ -145,7 +147,9 @@ describe('Error Handling - Phase 2.2', () => {
     });
 
     it('should map INVALID_STATE to PdfInvalidStateError', () => {
-      assert.ok(wrapError({ code: 'INVALID_STATE', message: 'msg' }) instanceof PdfInvalidStateError);
+      assert.ok(
+        wrapError({ code: 'INVALID_STATE', message: 'msg' }) instanceof PdfInvalidStateError
+      );
     });
 
     it('should map DECODE_ERROR to PdfDecodeError', () => {
@@ -165,11 +169,17 @@ describe('Error Handling - Phase 2.2', () => {
     });
 
     it('should map CIRCULAR_REFERENCE to PdfCircularReferenceError', () => {
-      assert.ok(wrapError({ code: 'CIRCULAR_REFERENCE', message: 'msg' }) instanceof PdfCircularReferenceError);
+      assert.ok(
+        wrapError({ code: 'CIRCULAR_REFERENCE', message: 'msg' }) instanceof
+          PdfCircularReferenceError
+      );
     });
 
     it('should map RECURSION_LIMIT_EXCEEDED to PdfRecursionLimitError', () => {
-      assert.ok(wrapError({ code: 'RECURSION_LIMIT_EXCEEDED', message: 'msg' }) instanceof PdfRecursionLimitError);
+      assert.ok(
+        wrapError({ code: 'RECURSION_LIMIT_EXCEEDED', message: 'msg' }) instanceof
+          PdfRecursionLimitError
+      );
     });
 
     it('should map OCR_ERROR to PdfOcrError', () => {
@@ -222,7 +232,9 @@ describe('Error Handling - Phase 2.2', () => {
     it('should preserve function context (this)', () => {
       const obj = {
         value: 42,
-        method: function() { return this.value; }
+        method: function () {
+          return this.value;
+        },
       };
       const wrapped = wrapMethod(obj.method, obj);
       assert.strictEqual(wrapped(), 42);
@@ -269,7 +281,9 @@ describe('Error Handling - Phase 2.2', () => {
     it('should preserve function context in async methods', async () => {
       const obj = {
         value: 99,
-        asyncMethod: async function() { return this.value; }
+        asyncMethod: async function () {
+          return this.value;
+        },
       };
       const wrapped = wrapAsyncMethod(obj.asyncMethod, obj);
       const result = await wrapped();

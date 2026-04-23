@@ -5,13 +5,13 @@
  * plugin registry, and example plugins.
  */
 
-import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert';
+import { beforeEach, describe, it } from 'node:test';
 import {
-  ExtractionPlugin,
-  SearchPlugin,
   AnnotationPlugin,
+  ExtractionPlugin,
   PluginRegistry,
+  SearchPlugin,
 } from '../lib/plugins/index.js';
 
 /**
@@ -148,7 +148,7 @@ describe('Plugin System Tests - Phase 3', () => {
         search(searchText, pageIndex, options) {
           const results = super.search(searchText, pageIndex, options);
           // Filter or modify results
-          return results.filter(r => r.position > 0);
+          return results.filter((r) => r.position > 0);
         }
       }
 
@@ -204,10 +204,7 @@ describe('Plugin System Tests - Phase 3', () => {
 
       it('should throw on duplicate registration', () => {
         registry.register('testPlugin', ExtractionPlugin);
-        assert.throws(
-          () => registry.register('testPlugin', SearchPlugin),
-          /already registered/
-        );
+        assert.throws(() => registry.register('testPlugin', SearchPlugin), /already registered/);
       });
 
       it('should throw on invalid plugin class', () => {
@@ -218,10 +215,7 @@ describe('Plugin System Tests - Phase 3', () => {
       });
 
       it('should throw on invalid plugin name', () => {
-        assert.throws(
-          () => registry.register('', ExtractionPlugin),
-          /must be a non-empty string/
-        );
+        assert.throws(() => registry.register('', ExtractionPlugin), /must be a non-empty string/);
       });
 
       it('should unregister a plugin', () => {
@@ -231,10 +225,7 @@ describe('Plugin System Tests - Phase 3', () => {
       });
 
       it('should throw on unregistering nonexistent plugin', () => {
-        assert.throws(
-          () => registry.unregister('nonexistent'),
-          /not registered/
-        );
+        assert.throws(() => registry.unregister('nonexistent'), /not registered/);
       });
     });
 
@@ -256,7 +247,7 @@ describe('Plugin System Tests - Phase 3', () => {
 
         const plugins = registry.getPlugins();
         assert.strictEqual(plugins.length, 2);
-        assert.ok(plugins.some(p => p.name === 'plugin1'));
+        assert.ok(plugins.some((p) => p.name === 'plugin1'));
       });
 
       it('should get plugins by category', () => {
@@ -288,10 +279,7 @@ describe('Plugin System Tests - Phase 3', () => {
       });
 
       it('should throw on creating unregistered plugin', () => {
-        assert.throws(
-          () => registry.createInstance('nonexistent', mockDoc),
-          /not registered/
-        );
+        assert.throws(() => registry.createInstance('nonexistent', mockDoc), /not registered/);
       });
 
       it('should release plugin instance', () => {
@@ -449,7 +437,7 @@ describe('Plugin System Tests - Phase 3', () => {
         search(searchText, pageIndex, options) {
           const results = super.search(searchText, pageIndex, options);
           // Filter results based on position
-          return results.filter(r => r.position >= 0);
+          return results.filter((r) => r.position >= 0);
         }
       }
 
@@ -464,7 +452,7 @@ describe('Plugin System Tests - Phase 3', () => {
         getAnnotations() {
           const annotations = super.getAnnotations();
           // Enrich annotations with additional metadata
-          return annotations.map(ann => ({
+          return annotations.map((ann) => ({
             ...ann,
             enriched: true,
             timestamp: new Date().toISOString(),
@@ -505,7 +493,7 @@ describe('Plugin System Tests - Phase 3', () => {
       ];
 
       assert.strictEqual(features.length, 7);
-      features.forEach(feature => {
+      features.forEach((feature) => {
         assert.ok(typeof feature === 'string');
       });
     });

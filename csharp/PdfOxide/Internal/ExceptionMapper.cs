@@ -19,20 +19,29 @@ namespace PdfOxide.Internal
             {
                 throw new System.ArgumentOutOfRangeException(nameof(errorCode), "Cannot create an exception from success code 0.");
             }
+            // Codes must match src/ffi.rs:48-56 exactly.
+            // Prior versions of this table were offset by one — FFI code 8
+            // (unsupported) was labelled SignatureException, causing the
+            // u/gevorgter Reddit regression where a render failure surfaced
+            // as a misleading signature error on Windows 11.
             return errorCode switch
             {
-                1 => new IoException("I/O error: File not found, permission denied, or read/write failed"),
-                2 => new ParseException("Parse error: Invalid PDF structure or content stream"),
-                3 => new EncryptionException("Encryption error: Incorrect password or unsupported encryption"),
-                4 => new InvalidStateException("Invalid state: Operation not allowed in current document state"),
-                5 => new UnsupportedFeatureException("rendering"),
-                6 => new UnsupportedFeatureException("ocr"),
-                7 => new InvalidStateException("Invalid argument: One or more arguments were invalid"),
-                8 => new SignatureException("Signature error: Certificate loading, signing, or verification failed"),
-                9 => new RedactionException("Redaction error: Content redaction or metadata scrubbing failed"),
-                10 => new ComplianceException("Compliance error: PDF/A, PDF/X, or PDF/UA conversion or validation failed"),
-                11 => new AccessibilityException("Accessibility error: Tagging, structure tree, or alt text operation failed"),
-                12 => new OptimizationException("Optimization error: Font subsetting, image downsampling, or deduplication failed"),
+                1 => new InvalidParameter(
+                    "Invalid argument: one or more arguments were invalid"),
+                2 => new IoException(
+                    "I/O error: file not found, permission denied, or read/write failed"),
+                3 => new ParseException(
+                    "Parse error: invalid PDF structure or content stream"),
+                4 => new ParseException(
+                    "Extraction failed: page content could not be extracted"),
+                5 => new InternalError(
+                    "Internal error: unexpected failure in the core library"),
+                6 => new InvalidParameter(
+                    "Invalid page index: page out of range for this document"),
+                7 => new SearchException(
+                    "Search error: search operation failed"),
+                8 => new UnsupportedFeatureException(
+                    "Unsupported feature: this build was compiled without support for the requested operation"),
                 _ => new UnknownError($"Unknown error (code: {errorCode})")
             };
         }

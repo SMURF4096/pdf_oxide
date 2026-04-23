@@ -1,9 +1,9 @@
-import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PdfDocument, Pdf, PdfBuilder } from '../index.js';
+import { before, describe, it } from 'node:test';
+import { Pdf, PdfBuilder, PdfDocument } from '../index.js';
 
 describe('PDF Oxide Node.js Bindings', () => {
   let tempDir;

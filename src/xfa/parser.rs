@@ -89,7 +89,7 @@ pub struct XfaOption {
 pub struct XfaField {
     /// Field name
     pub name: String,
-    /// Full path/binding (e.g., "topmostSubform[0].Page1[0].field1[0]")
+    /// Full path/binding (e.g., `topmostSubform[0].Page1[0].field1[0]`)
     pub binding: String,
     /// Field type
     pub field_type: XfaFieldType,

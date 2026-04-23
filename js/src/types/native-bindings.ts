@@ -482,14 +482,18 @@ export interface NativeModule {
   getPdfOxideVersion(): string;
 
   // Classes
-  PdfDocument: new (...args: any[]) => NativePdfDocument;
+  PdfDocument: new (
+    ...args: any[]
+  ) => NativePdfDocument;
   Pdf: new (...args: any[]) => NativePdf;
   PdfPage: new (...args: any[]) => NativePdfPage;
   PdfBuilder: new (...args: any[]) => NativePdfBuilder;
   TextSearcher: new (...args: any[]) => NativeTextSearcher;
 
   // Element types
-  PdfElement: new (...args: any[]) => PdfElement;
+  PdfElement: new (
+    ...args: any[]
+  ) => PdfElement;
   PdfText: new (...args: any[]) => PdfText;
   PdfImage: new (...args: any[]) => PdfImage;
   PdfPath: new (...args: any[]) => PdfPath;
@@ -497,7 +501,9 @@ export interface NativeModule {
   PdfStructure: new (...args: any[]) => any;
 
   // Annotation types
-  Annotation: new (...args: any[]) => Annotation;
+  Annotation: new (
+    ...args: any[]
+  ) => Annotation;
   TextAnnotation: new (...args: any[]) => TextAnnotation;
   HighlightAnnotation: new (...args: any[]) => HighlightAnnotation;
   LinkAnnotation: new (...args: any[]) => LinkAnnotation;
@@ -509,7 +515,9 @@ export interface NativeModule {
   Color: new (red: number, green: number, blue: number, alpha?: number) => Color;
 
   // Options
-  ConversionOptions: new (...args: any[]) => ConversionOptions;
+  ConversionOptions: new (
+    ...args: any[]
+  ) => ConversionOptions;
   SearchOptions: new (...args: any[]) => SearchOptions;
   SearchResult: new (...args: any[]) => SearchResult;
 

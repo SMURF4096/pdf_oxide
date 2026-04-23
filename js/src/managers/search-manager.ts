@@ -128,7 +128,7 @@ export class SearchManager {
     try {
       for (let i = 0; i < this._document.pageCount; i++) {
         const results = this.search(searchText, i, options);
-        results.forEach(result => {
+        results.forEach((result) => {
           result.pageIndex = i;
           result.pageNumber = i + 1;
         });
@@ -227,7 +227,7 @@ export class SearchManager {
    */
   getPagesContaining(searchText: string, options?: Record<string, any>): number[] {
     const results = this.searchAll(searchText, options);
-    const pageSet = new Set(results.map(r => r.pageIndex || 0));
+    const pageSet = new Set(results.map((r) => r.pageIndex || 0));
     return Array.from(pageSet).sort((a, b) => a - b);
   }
 
@@ -267,7 +267,7 @@ export class SearchManager {
       firstMatchPage: pages.length > 0 ? (pages[0] as number) : -1,
       lastMatchPage: pages.length > 0 ? (pages[pages.length - 1] as number) : -1,
       pages,
-      occurrencesPerPage: pages.map(p => ({
+      occurrencesPerPage: pages.map((p) => ({
         pageIndex: p,
         pageNumber: p + 1,
         count: pageMap.get(p) || 0,

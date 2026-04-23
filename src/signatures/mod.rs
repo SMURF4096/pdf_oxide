@@ -42,12 +42,34 @@
 //! Requires the `signatures` feature to be enabled.
 
 mod byterange;
+#[cfg(feature = "signatures")]
+mod cms;
+#[cfg(feature = "signatures")]
+mod cms_verify;
+#[cfg(feature = "signatures")]
+mod crypto;
+mod enumerate;
+mod pdf_date;
 mod signer;
+#[cfg(feature = "signatures")]
+mod timestamp;
+#[cfg(all(feature = "signatures", feature = "tsa-client"))]
+mod tsa_client;
 mod types;
 mod verifier;
 
 pub use byterange::ByteRangeCalculator;
+#[cfg(feature = "signatures")]
+pub use cms::extract_signer_certificate_der;
+#[cfg(feature = "signatures")]
+pub use cms_verify::{verify_signer, verify_signer_detached, SignerVerify};
+pub use enumerate::{count_signatures, enumerate_signatures};
+pub use pdf_date::parse_pdf_date_to_epoch;
 pub use signer::PdfSigner;
+#[cfg(feature = "signatures")]
+pub use timestamp::{HashAlgorithm, Timestamp};
+#[cfg(all(feature = "signatures", feature = "tsa-client"))]
+pub use tsa_client::{TsaClient, TsaClientConfig};
 pub use types::{
     DigestAlgorithm, SignOptions, SignatureAppearance, SignatureInfo, SignatureSubFilter,
     SigningCredentials, VerificationResult, VerificationStatus,

@@ -176,7 +176,7 @@ Console.WriteLine($"Pages: {editor.PageCount}");
 
 // Update metadata (properties are get/set)
 editor.Title = "Quarterly Report";
-editor.Author = "Finance Team";
+editor.Author = "Example Author";
 editor.Subject = "Q1 2026 Results";
 
 // Save (or save async)

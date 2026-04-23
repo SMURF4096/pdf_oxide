@@ -282,7 +282,7 @@ impl BoundedObjectCache {
 /// # Memory management
 ///
 /// The document maintains several internal caches for performance. The main
-/// object cache is bounded at [`DEFAULT_OBJECT_CACHE_MAX_BYTES`] (64 MB) and
+/// object cache is bounded at 64 MB (see `DEFAULT_OBJECT_CACHE_MAX_BYTES`) and
 /// uses FIFO eviction to prevent unbounded heap growth when processing
 /// many pages sequentially.
 pub struct PdfDocument {
@@ -1034,7 +1034,7 @@ impl PdfDocument {
                 self.object_cache.lock_or_recover().clear();
                 log::debug!(
                     "authenticate(): object cache cleared after successful authentication \
-                     to force re-decryption of any pre-auth cached objects (#323)"
+                     to force re-decryption of any pre-auth cached objects"
                 );
             }
         }
@@ -7108,7 +7108,7 @@ impl PdfDocument {
 
     /// Extract complete page text data in a single call.
     ///
-    /// Returns a [`PageText`] containing spans in reading order, per-character
+    /// Returns a [`PageText`](crate::layout::text_block::PageText) containing spans in reading order, per-character
     /// data derived from those spans (using font-metric widths when available),
     /// and the page dimensions. Uses the default `TopToBottom` reading order.
     ///

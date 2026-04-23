@@ -184,7 +184,11 @@ export class ExtractionManager {
     try {
       const parts: string[] = [];
       for (const pageIndex of pageIndices) {
-        if (typeof pageIndex !== 'number' || pageIndex < 0 || pageIndex >= this._document.pageCount) {
+        if (
+          typeof pageIndex !== 'number' ||
+          pageIndex < 0 ||
+          pageIndex >= this._document.pageCount
+        ) {
           throw new Error(`Invalid page index: ${pageIndex}`);
         }
         parts.push(this.extractText(pageIndex, options));
@@ -262,7 +266,9 @@ export class ExtractionManager {
     try {
       return this._document.toMarkdown(pageIndex, options);
     } catch (error) {
-      throw new Error(`Failed to extract markdown from page ${pageIndex}: ${(error as Error).message}`);
+      throw new Error(
+        `Failed to extract markdown from page ${pageIndex}: ${(error as Error).message}`
+      );
     }
   }
 
@@ -345,7 +351,10 @@ export class ExtractionManager {
    */
   getTotalWordCount(): number {
     const allText = this.extractAllText();
-    return allText.trim().split(/\s+/).filter(word => word.length > 0).length;
+    return allText
+      .trim()
+      .split(/\s+/)
+      .filter((word) => word.length > 0).length;
   }
 
   /**

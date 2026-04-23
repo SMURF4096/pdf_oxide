@@ -2,6 +2,215 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [0.3.38] - 2026-04-23
+> DocumentBuilder fluent API across every language binding, real font subsetting, DocumentBuilder encryption, multi-target WASM packaging, and the first cryptographic slice of PDF signature verification
+
+This release closes the "Rust-only `DocumentBuilder` gap": the fluent
+write-side builder, embedded fonts, the HTML+CSS pipeline, annotations,
+form-field creation, and low-level graphics primitives are now reachable
+from **Python, WASM, C#, Go, and Node/TypeScript** — the Rust
+implementation is the single source of truth and every binding is a
+thin translation layer. On top of that it lands the first
+cryptographic signature-verification path (RSA-PKCS#1 v1.5) across
+every binding and a pdf.js-parity fix for scanned / bilevel pages
+rendered under a Multiply-blended overlay.
+
+> **Scope note.** "Write-side API" here refers specifically to the
+> `DocumentBuilder` surface listed below. Reader / editor /
+> rendering-options parity across bindings is ongoing work; see the
+> post-release audit (`docs/api-coverage-audit.md` / issue tracker
+> `#384` follow-ups) for the full picture.
+
+### Write-side API × every binding (#384)
+
+Every binding now exposes the full `DocumentBuilder` fluent API:
+
+```python
+# Python — the same shape ships in WASM, C#, Go, and Node/TS
+font = EmbeddedFont.from_file("DejaVuSans.ttf")
+(DocumentBuilder()
+  .register_embedded_font("DejaVu", font)
+  .a4_page()
+    .font("DejaVu", 12).at(72, 720).text("Привет, мир!")
+    .highlight((1.0, 1.0, 0.0))
+    .text_field("name", 150, 680, 200, 20, "Jane Doe")
+    .checkbox("subscribe", 72, 650, 15, 15, True)
+    .rect(50, 50, 500, 700)
+  .done()
+  .build())
+```
+
+Surface shipped in all 6 bindings:
+
+- **DocumentBuilder** + **FluentPageBuilder** + **EmbeddedFont** —
+  multi-page construction with CJK / Cyrillic / Greek support (closes
+  **#382** cross-language).
+- **HTML+CSS pipeline** — `Pdf.from_html_css(...)` and
+  `from_html_css_with_fonts(...)` for multi-font cascades.
+- **15 annotation methods** — link (URL / page / named), highlight,
+  underline, strikeout, squiggly, sticky note, stamp (14 standard
+  types + custom), free text, watermark (custom / DRAFT /
+  CONFIDENTIAL).
+- **5 AcroForm widget types** — text_field, checkbox, combo_box,
+  radio_group, push_button.
+- **Graphics primitives** — `rect`, `filled_rect`, `line`.
+- **AES-256 encryption** — `save_encrypted` / `to_bytes_encrypted` on
+  every binding.
+
+Per-binding regression tests for every capability above; ~70 new
+integration tests pass across Python (20), C FFI (11), C# (11), Go
+(11), Node/TS (10), and WASM (9).
+
+### Real font subsetting on the write path (#385 — FONT-3b)
+
+Documents that embed a CJK face now ship a **subset**, not the full
+font. A PDF with 5 characters from `NotoSansCJKtc-Regular.otf`
+(~17 MB original) is typically under 100 KB. Content streams, `/W`
+widths, and `ToUnicode` CMap are all re-keyed onto the subset GID
+space; `extract_text` round-trips unchanged.
+
+*Breaking (v0.3.x semver-acceptable):* `EmbeddedFont::encode_string` /
+`encode_shaped_run` now return `Vec<u16>` instead of a hex `String`,
+and `build_embedded_font_objects` returns a `GlyphRemapper` that
+callers must pass to `ContentStreamBuilder::build_with_remappers`.
+Internal writer-library consumers only — no change to high-level APIs.
+
+### DocumentBuilder encryption (#386)
+
+AES-256 encryption is now available on programmatically-built PDFs:
+
+```rust
+DocumentBuilder::new()
+    .a4_page().text("secret").done()
+    .save_encrypted("out.pdf", "user-pw", "owner-pw")?;
+```
+
+Also: `save_with_encryption` (custom algorithm + permissions) and
+`to_bytes_encrypted` for in-memory output.
+
+### Multi-target WASM packaging (#392)
+
+`pdf-oxide-wasm` now ships three builds side-by-side and routes each
+consumer through `package.json` conditional exports:
+
+| Environment                                       | Build      |
+|---------------------------------------------------|------------|
+| Node.js                                           | `nodejs/`  |
+| Bundlers (Vite, webpack, Rollup, esbuild, Bun)    | `bundler/` |
+| Browsers / Deno / Cloudflare Workers              | `web/`     |
+
+Fixes `ReferenceError: Can't find variable: __dirname` thrown in any
+browser bundler. Subpath imports (`pdf-oxide-wasm/web` etc.) are also
+available for manual routing.
+
+### Digital signature verification (#208 — verification half)
+
+First cryptographically-backed signature surface on the reader side.
+Every binding (`Signature.verify()` / `.verifyDetached()` / equivalents)
+now runs the RFC 5652 §5.4 signer-attributes check against the
+embedded certificate and the §11.2 `messageDigest` check against the
+caller's document bytes:
+
+```python
+for sig in doc.signatures():
+    print(sig.signer_name, "→", sig.verify())            # signer-attrs only
+    print("detached ok =", sig.verify_detached(pdf_bytes))  # + content hash
+```
+
+- **RSA-PKCS#1 v1.5** over SHA-1 / SHA-256 / SHA-384 / SHA-512 — the
+  padding used by effectively every signed PDF in the wild — returns
+  `Valid` / `Invalid`.
+- **RSA-PSS** and **ECDSA** surface as `Unknown` /
+  `UnsupportedFeatureException` for now; callers that need those can
+  still read the signer certificate via `Signature.GetCertificate()`
+  and drive their own check.
+- `SignatureVerifier::verify` (Rust) also stamps the verification
+  result with trust-root lookup, expiry window, and signer DN pulled
+  from the embedded certificate.
+
+Supporting surface shipped alongside:
+
+- `Certificate` — DER inspection (subject, issuer, serial, validity,
+  `is_valid`) via `x509-parser` — **every binding**.
+- `Signature` — enumerate + inspect + `.GetCertificate()` —
+  **every binding**.
+- `Timestamp` — RFC 3161 `TSTInfo` parsing (time, serial, policy,
+  TSA name, hash algorithm, message imprint) — **every binding**.
+- `TsaClient` — RFC 3161 HTTP POST with nonce + HTTP Basic auth,
+  behind a new `tsa-client` Cargo feature — **every binding except
+  WASM**. Intentionally not wired on WASM (ureq is wasm-incompatible).
+- `DocumentEditor::set_producer` / `set_creation_date` — metadata
+  writers.
+- `render_page_region` / `render_page_fit` — clipped / fitted
+  rendering surface.
+- Bicubic image filtering (pdf.js#19978 parity) — scanned / bilevel
+  pages with a Multiply-blended overlay no longer collapse their
+  grayscale range on downscale.
+
+Signing (as opposed to verification) is not covered by this release;
+#208 remains open for the signing half.
+
+### Binding parity follow-ups
+
+Five thin-wrapper commits closed the last coverage holes in this
+release's signature surface — Python/Go/WASM `Certificate` inspect,
+Node `Timestamp` parse+verify, Node `TsaClient` HTTP. Every capability
+in the Supporting Surface list above is now the language-idiomatic
+shape across all six non-Rust bindings (modulo the principled
+WASM-TsaClient omission).
+
+### Go binding — purego backend + cache-dir install
+
+Go users can now build with `CGO_ENABLED=0` via a second backend that
+uses [ebitengine/purego](https://github.com/ebitengine/purego) to
+`dlopen` `libpdf_oxide.{so,dylib,dll}` at runtime — no C toolchain
+required. Backend selection is automatic via Go's built-in `cgo` tag
+(`//go:build cgo` → full CGo API, `//go:build !cgo` → purego).
+
+The purego backend covers the read-side `PdfDocument` surface — open
+(path / bytes / password), page count, version, text / Markdown / HTML
+/ plain-text extraction, fonts, annotations, page elements, search,
+page dimensions, logging — plus `PdfCreator.FromMarkdown` for test
+fixtures. Editor, `DocumentBuilder`, barcode, signature, TSA,
+rendering, OCR, and forms stay CGo-only; using them under `!cgo` is a
+compile-time error. Full parity is tracked for a follow-up.
+
+Installer:
+
+- **New `-shared` flag** fetches the cdylib instead of the staticlib
+  and prints `CGO_ENABLED=0` + `PDF_OXIDE_LIB_PATH=…` to export.
+- **Install dir moved to `os.UserCacheDir()`** — `~/.cache/pdf_oxide`
+  on Linux, `~/Library/Caches/pdf_oxide` on macOS,
+  `%LocalAppData%\pdf_oxide` on Windows. Matches Go's own `GOCACHE`
+  convention; existing installs re-fetch once into the new path.
+
+Release assets now include `pdf_oxide-go-ffi-shared-<platform>.tar.gz`
+for every Tier-1 platform alongside the existing staticlib archives.
+
+### Bug fixes
+
+- **#395** — `PdfOxide.Exceptions.SignatureException: '[8500]
+  Signature error...'` raised by `doc.RenderPage(0, 0)` on a
+  specific 9-page PDF reported by
+  [@gevorgter](https://github.com/gevorgter). The failure was the
+  renderer propagating a signature-parse error up as the page-render
+  verdict even though the page itself had no interactive signature
+  widget on it. Fixed by treating unparseable signature-field
+  metadata as non-fatal at render time; pinned by
+  `tests/test_issue_395_render_signature_exception.rs` + the C#
+  regression test so this can't silently come back.
+
+### Thanks
+
+Reports and feature requests from
+[@sparkyandrew](https://github.com/sparkyandrew) (#382 CJK via
+`DocumentBuilder`, #385 subsetter),
+[@arthurlassagne](https://github.com/arthurlassagne) (#392 browser
+build breakage), and
+[@gevorgter](https://github.com/gevorgter) (#395 RenderPage
+SignatureException). All three surfaced the gaps that drove this
+release.
+
 ## [0.3.37] - 2026-04-20
 > HTML + CSS → PDF (issue #248) — first credible pure-Rust pipeline
 

@@ -1,6 +1,6 @@
 {
   "name": "pdf-oxide",
-  "version": "0.3.37",
+  "version": "0.3.38",
   "type": "module",
   "description": "High-performance PDF parsing and text extraction library — prebuilt native bindings, no build toolchain required",
   "main": "lib/index.js",
@@ -14,6 +14,12 @@
     "clean:ts": "rimraf lib/",
     "clean": "npm run clean:ts && node-gyp clean",
     "prepack": "npm run build:ts",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "check:publint": "publint",
+    "check:types": "attw --pack . --ignore-rules=cjs-resolves-to-esm",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
     "test": "node --test tests/smoke.test.mjs"
   },
   "files": [
@@ -36,7 +42,7 @@
   "homepage": "https://github.com/yfedoseev/pdf_oxide",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yfedoseev/pdf_oxide.git",
+    "url": "git+https://github.com/yfedoseev/pdf_oxide.git",
     "directory": "js"
   },
   "engines": {
@@ -44,20 +50,20 @@
   },
   "exports": {
     ".": {
-      "import": "./lib/index.js",
-      "types": "./lib/index.d.ts"
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js"
     },
     "./builders": {
-      "import": "./lib/builders/index.js",
-      "types": "./lib/builders/index.d.ts"
+      "types": "./lib/builders/index.d.ts",
+      "import": "./lib/builders/index.js"
     },
     "./managers": {
-      "import": "./lib/managers/index.js",
-      "types": "./lib/managers/index.d.ts"
+      "types": "./lib/managers/index.d.ts",
+      "import": "./lib/managers/index.js"
     },
     "./errors": {
-      "import": "./lib/errors.js",
-      "types": "./lib/errors.d.ts"
+      "types": "./lib/errors.d.ts",
+      "import": "./lib/errors.js"
     }
   },
   "devDependencies": {

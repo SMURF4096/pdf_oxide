@@ -69,8 +69,7 @@ namespace PdfOxide.Core
         /// </example>
         public static Pdf FromMarkdown(string markdown)
         {
-            if (markdown == null)
-                throw new ArgumentNullException(nameof(markdown));
+            ArgumentNullException.ThrowIfNull(markdown);
 
             var handle = NativeMethods.PdfFromMarkdown(markdown, out var errorCode);
             if (handle.IsInvalid)
@@ -98,8 +97,7 @@ namespace PdfOxide.Core
         /// </example>
         public static Pdf FromHtml(string html)
         {
-            if (html == null)
-                throw new ArgumentNullException(nameof(html));
+            ArgumentNullException.ThrowIfNull(html);
 
             var handle = NativeMethods.PdfFromHtml(html, out var errorCode);
             if (handle.IsInvalid)
@@ -108,6 +106,114 @@ namespace PdfOxide.Core
             }
 
             return new Pdf(handle);
+        }
+
+        /// <summary>
+        /// Creates a PDF by rendering HTML + CSS with a single embedded
+        /// font. The font must cover every codepoint used by
+        /// <paramref name="html"/>, or unknown glyphs fall back to
+        /// <c>.notdef</c>.
+        /// </summary>
+        /// <param name="html">The HTML content.</param>
+        /// <param name="css">The CSS stylesheet applied to the HTML.</param>
+        /// <param name="fontBytes">TTF/OTF font bytes used for the body text.</param>
+        /// <returns>A new <see cref="Pdf"/> document.</returns>
+        /// <exception cref="ArgumentNullException">Any argument is null.</exception>
+        /// <exception cref="PdfException">Rendering fails.</exception>
+        /// <example>
+        /// <code>
+        /// byte[] font = File.ReadAllBytes("DejaVuSans.ttf");
+        /// using var pdf = Pdf.FromHtmlCss(
+        ///     "&lt;h1&gt;Hello&lt;/h1&gt;&lt;p&gt;World&lt;/p&gt;",
+        ///     "h1 { color: blue }",
+        ///     font);
+        /// pdf.Save("out.pdf");
+        /// </code>
+        /// </example>
+        public static Pdf FromHtmlCss(string html, string css, byte[] fontBytes)
+        {
+            ArgumentNullException.ThrowIfNull(html);
+            ArgumentNullException.ThrowIfNull(css);
+            ArgumentNullException.ThrowIfNull(fontBytes);
+            if (fontBytes.Length == 0) throw new ArgumentException("fontBytes is empty", nameof(fontBytes));
+
+            var ptr = NativeMethods.PdfFromHtmlCss(html, css, fontBytes, (nuint)fontBytes.Length, out var errorCode);
+            if (ptr == IntPtr.Zero)
+                ExceptionMapper.ThrowIfError(errorCode);
+            return new Pdf(new NativeHandle(ptr, p => NativeMethods.PdfFree(p)));
+        }
+
+        /// <summary>
+        /// Creates a PDF from HTML+CSS with a multi-font cascade. The first
+        /// entry of <paramref name="fonts"/> is the default used when a CSS
+        /// <c>font-family</c> doesn't match any registered family.
+        /// </summary>
+        public static unsafe Pdf FromHtmlCssWithFonts(string html, string css,
+            System.Collections.Generic.IReadOnlyList<System.Collections.Generic.KeyValuePair<string, byte[]>> fonts)
+        {
+            ArgumentNullException.ThrowIfNull(html);
+            ArgumentNullException.ThrowIfNull(css);
+            if (fonts == null || fonts.Count == 0)
+                throw new ArgumentException("at least one font must be provided", nameof(fonts));
+
+            int n = fonts.Count;
+            // Pin every font's byte[] and every UTF-8-encoded name so the
+            // native call sees stable pointers for the duration of the
+            // FFI crossing.
+            var byteHandles = new System.Runtime.InteropServices.GCHandle[n];
+            var nameBuffers = new byte[n][];
+            var nameHandles = new System.Runtime.InteropServices.GCHandle[n];
+            var fontPointers = new IntPtr[n];
+            var namePointers = new IntPtr[n];
+            var fontLens = new nuint[n];
+            try
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    var kv = fonts[i];
+                    if (kv.Value == null || kv.Value.Length == 0)
+                        throw new ArgumentException($"fonts[{i}] has empty bytes", nameof(fonts));
+                    byteHandles[i] = System.Runtime.InteropServices.GCHandle.Alloc(kv.Value, System.Runtime.InteropServices.GCHandleType.Pinned);
+                    fontPointers[i] = byteHandles[i].AddrOfPinnedObject();
+                    fontLens[i] = (nuint)kv.Value.Length;
+
+                    // UTF-8 NUL-terminated name
+                    var utf8 = System.Text.Encoding.UTF8.GetBytes(kv.Key + "\0");
+                    nameBuffers[i] = utf8;
+                    nameHandles[i] = System.Runtime.InteropServices.GCHandle.Alloc(utf8, System.Runtime.InteropServices.GCHandleType.Pinned);
+                    namePointers[i] = nameHandles[i].AddrOfPinnedObject();
+                }
+                var fpHandle = System.Runtime.InteropServices.GCHandle.Alloc(fontPointers, System.Runtime.InteropServices.GCHandleType.Pinned);
+                var npHandle = System.Runtime.InteropServices.GCHandle.Alloc(namePointers, System.Runtime.InteropServices.GCHandleType.Pinned);
+                var flHandle = System.Runtime.InteropServices.GCHandle.Alloc(fontLens, System.Runtime.InteropServices.GCHandleType.Pinned);
+                try
+                {
+                    var ptr = NativeMethods.PdfFromHtmlCssWithFonts(
+                        html, css,
+                        (IntPtr*)npHandle.AddrOfPinnedObject(),
+                        (IntPtr*)fpHandle.AddrOfPinnedObject(),
+                        (nuint*)flHandle.AddrOfPinnedObject(),
+                        (nuint)n,
+                        out var errorCode);
+                    if (ptr == IntPtr.Zero)
+                        ExceptionMapper.ThrowIfError(errorCode);
+                    return new Pdf(new NativeHandle(ptr, p => NativeMethods.PdfFree(p)));
+                }
+                finally
+                {
+                    fpHandle.Free();
+                    npHandle.Free();
+                    flHandle.Free();
+                }
+            }
+            finally
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    if (byteHandles[i].IsAllocated) byteHandles[i].Free();
+                    if (nameHandles[i].IsAllocated) nameHandles[i].Free();
+                }
+            }
         }
 
         /// <summary>
@@ -127,8 +233,7 @@ namespace PdfOxide.Core
         /// </example>
         public static Pdf FromText(string text)
         {
-            if (text == null)
-                throw new ArgumentNullException(nameof(text));
+            ArgumentNullException.ThrowIfNull(text);
 
             var handle = NativeMethods.PdfFromText(text, out var errorCode);
             if (handle.IsInvalid)
@@ -136,6 +241,52 @@ namespace PdfOxide.Core
                 ExceptionMapper.ThrowIfError(errorCode);
             }
 
+            return new Pdf(handle);
+        }
+
+        /// <summary>
+        /// Creates a single-page PDF wrapping a raster image on disk.
+        /// Supported formats match the core <c>pdf_from_image</c> FFI
+        /// entry point (JPEG, PNG).
+        /// </summary>
+        /// <param name="path">Path to the image file.</param>
+        /// <returns>A new <see cref="Pdf"/>.</returns>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="path"/> is null.</exception>
+        /// <exception cref="PdfException">Thrown if the image cannot be read or converted.</exception>
+        public static Pdf FromImage(string path)
+        {
+            ArgumentNullException.ThrowIfNull(path);
+
+            var handle = NativeMethods.PdfFromImage(path, out var errorCode);
+            if (handle.IsInvalid)
+            {
+                ExceptionMapper.ThrowIfError(errorCode);
+            }
+            return new Pdf(handle);
+        }
+
+        /// <summary>
+        /// Creates a single-page PDF wrapping a raster image already in
+        /// memory (JPEG or PNG bytes). Use this overload when the image
+        /// comes from a network response or a database blob and you want
+        /// to avoid a scratch file.
+        /// </summary>
+        /// <param name="data">Raw image bytes.</param>
+        /// <returns>A new <see cref="Pdf"/>.</returns>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="data"/> is null.</exception>
+        /// <exception cref="ArgumentException">Thrown if <paramref name="data"/> is empty.</exception>
+        /// <exception cref="PdfException">Thrown if the image is malformed or an unsupported format.</exception>
+        public static Pdf FromImageBytes(byte[] data)
+        {
+            ArgumentNullException.ThrowIfNull(data);
+            if (data.Length == 0)
+                throw new ArgumentException("Image byte array must not be empty.", nameof(data));
+
+            var handle = NativeMethods.PdfFromImageBytes(data, data.Length, out var errorCode);
+            if (handle.IsInvalid)
+            {
+                ExceptionMapper.ThrowIfError(errorCode);
+            }
             return new Pdf(handle);
         }
 
@@ -173,8 +324,7 @@ namespace PdfOxide.Core
         /// </example>
         public void Save(string path)
         {
-            if (path == null)
-                throw new ArgumentNullException(nameof(path));
+            ArgumentNullException.ThrowIfNull(path);
 
             ThrowIfDisposed();
 
@@ -222,7 +372,7 @@ namespace PdfOxide.Core
             }
             finally
             {
-                NativeMethods.FreeBytes(outputPtr, outputLen);
+                NativeMethods.FreeBytes(outputPtr);
             }
         }
 
@@ -244,8 +394,7 @@ namespace PdfOxide.Core
         /// </example>
         public void SaveToStream(Stream stream)
         {
-            if (stream == null)
-                throw new ArgumentNullException(nameof(stream));
+            ArgumentNullException.ThrowIfNull(stream);
 
             byte[] bytes = SaveToBytes();
             stream.Write(bytes, 0, bytes.Length);
@@ -261,8 +410,7 @@ namespace PdfOxide.Core
         /// <exception cref="OperationCanceledException">Thrown if the operation is cancelled.</exception>
         public Task SaveAsync(string path, CancellationToken cancellationToken = default)
         {
-            if (path == null)
-                throw new ArgumentNullException(nameof(path));
+            ArgumentNullException.ThrowIfNull(path);
 
             return Task.Run(() =>
             {
@@ -281,8 +429,7 @@ namespace PdfOxide.Core
         /// <exception cref="OperationCanceledException">Thrown if the operation is cancelled.</exception>
         public Task SaveToStreamAsync(Stream stream, CancellationToken cancellationToken = default)
         {
-            if (stream == null)
-                throw new ArgumentNullException(nameof(stream));
+            ArgumentNullException.ThrowIfNull(stream);
 
             return Task.Run(() =>
             {
@@ -305,8 +452,7 @@ namespace PdfOxide.Core
 
         private void ThrowIfDisposed()
         {
-            if (_disposed)
-                throw new ObjectDisposedException(nameof(Pdf));
+            ObjectDisposedException.ThrowIf(_disposed, this);
         }
     }
 }

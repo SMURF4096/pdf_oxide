@@ -5,7 +5,7 @@
 //! LAYOUT and Phase PAINT need a *resolved* stylesheet — only the
 //! rules whose `@media` queries currently apply, the page-context
 //! configuration from `@page` rules, and the `@font-face` descriptor
-//! list ready for [`super::super::super::writer::SystemFontDb`] to
+//! list ready for `SystemFontDb` (writer module, `system-fonts` feature) to
 //! load. This module does that resolution against a [`MediaContext`].
 //!
 //! v0.3.35 surface:

@@ -17,20 +17,15 @@
  * 5. Error Handling
  */
 
-import { describe, it } from 'node:test';
 import assert from 'node:assert';
+import { describe, it } from 'node:test';
 import {
-  PdfBuilder,
   ConversionOptionsBuilder,
   MetadataBuilder,
-  AnnotationBuilder,
+  PdfBuilder,
   SearchOptionsBuilder,
 } from '../lib/builders/index.js';
-import {
-  PdfException,
-  PdfIoError,
-  PdfParseError,
-} from '../lib/errors.js';
+import { PdfException, PdfIoError, PdfParseError } from '../lib/errors.js';
 
 /**
  * Feature Parity Test Suite
@@ -64,7 +59,12 @@ describe('Cross-Language Feature Parity - Phase 3.1', () => {
       assert.strictEqual(metadata.title, 'Cross-Language Document');
       assert.strictEqual(metadata.author, 'Test Suite');
       assert.strictEqual(metadata.subject, 'Feature Parity Testing');
-      assert.deepStrictEqual(metadata.keywords, ['integration', 'test', 'cross-language', 'feature-parity']);
+      assert.deepStrictEqual(metadata.keywords, [
+        'integration',
+        'test',
+        'cross-language',
+        'feature-parity',
+      ]);
       assert.strictEqual(metadata.creator, 'PDF Oxide');
       assert.ok(metadata.creationDate instanceof Date);
       assert.ok(metadata.modificationDate instanceof Date);
@@ -81,10 +81,7 @@ describe('Cross-Language Feature Parity - Phase 3.1', () => {
      * C# Equivalent: MetadataManager with missing fields
      */
     it('should handle partial metadata with optional fields', () => {
-      const partial = MetadataBuilder.create()
-        .title('Minimal Document')
-        .keywords(['test'])
-        .build();
+      const partial = MetadataBuilder.create().title('Minimal Document').keywords(['test']).build();
 
       // Populated fields should have values
       assert.strictEqual(partial.title, 'Minimal Document');
@@ -101,10 +98,7 @@ describe('Cross-Language Feature Parity - Phase 3.1', () => {
      * C# Equivalent: MetadataManager validation
      */
     it('should validate metadata fields are properly typed', () => {
-      const metadata = MetadataBuilder.create()
-        .title('Test')
-        .keywords(['a', 'b', 'c'])
-        .build();
+      const metadata = MetadataBuilder.create().title('Test').keywords(['a', 'b', 'c']).build();
 
       assert.ok(typeof metadata.title === 'string');
       assert.ok(Array.isArray(metadata.keywords));
@@ -256,9 +250,7 @@ describe('Cross-Language Feature Parity - Phase 3.1', () => {
      * C# Equivalent: maxResults type handling
      */
     it('should floor maxResults to integer', () => {
-      const options = SearchOptionsBuilder.create()
-        .maxResults(123.7)
-        .build();
+      const options = SearchOptionsBuilder.create().maxResults(123.7).build();
 
       assert.strictEqual(options.maxResults, 123, 'Should floor to 123');
     });
@@ -288,7 +280,7 @@ describe('Cross-Language Feature Parity - Phase 3.1', () => {
     it('should validate page sizes consistently', () => {
       // Valid sizes (parity with C#)
       const validSizes = ['Letter', 'Legal', 'A4', 'A3', 'A5', 'B4', 'B5'];
-      validSizes.forEach(size => {
+      validSizes.forEach((size) => {
         const builder = PdfBuilder.create().pageSize(size);
         assert.ok(builder instanceof PdfBuilder, `Should accept ${size}`);
       });
@@ -392,7 +384,7 @@ describe('Cross-Language Feature Parity - Phase 3.1', () => {
         new PdfException('General error'),
       ];
 
-      errors.forEach(error => {
+      errors.forEach((error) => {
         // All should be Error instances (Java/C# parity)
         assert.ok(error instanceof Error, 'All errors should extend Error');
         assert.ok(error instanceof PdfException, 'Should be PDF error type');
@@ -455,10 +447,7 @@ describe('Cross-Language Feature Parity - Phase 3.1', () => {
      */
     it('should return proper types from builder build() methods', () => {
       // Metadata output
-      const metadata = MetadataBuilder.create()
-        .title('Test')
-        .keywords(['a'])
-        .build();
+      const metadata = MetadataBuilder.create().title('Test').keywords(['a']).build();
 
       assert.ok(typeof metadata === 'object');
       assert.ok(typeof metadata.title === 'string');
@@ -523,7 +512,7 @@ describe('Cross-Language Feature Parity - Phase 3.1', () => {
       console.log(`\n✅ Cross-Language Parity Coverage:`);
       console.log(`   Features tested: ${Object.keys(features).length}`);
       console.log(`   Total tests: ${totalTests}`);
-      console.log(`   Coverage: ${(totalTests / 21 * 100).toFixed(1)}%\n`);
+      console.log(`   Coverage: ${((totalTests / 21) * 100).toFixed(1)}%\n`);
 
       assert.ok(totalTests >= 16, 'Should have minimum test coverage');
     });

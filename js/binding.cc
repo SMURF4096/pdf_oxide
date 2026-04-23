@@ -104,6 +104,13 @@ extern "C" {
   // Rendering Operations (real Rust FFI signatures)
   extern void* pdf_render_page(void* document, int32_t page_index, int32_t format, int* error_code);
   extern void* pdf_render_page_thumbnail(void* document, int32_t page_index, int32_t size, int32_t format, int* error_code);
+  // Full RenderOptions surface (dpi, bg, annotations, jpeg quality).
+  extern void* pdf_render_page_with_options(
+    void* document, int32_t page_index,
+    int32_t dpi, int32_t format,
+    float bg_r, float bg_g, float bg_b, float bg_a,
+    int32_t transparent_background, int32_t render_annotations, int32_t jpeg_quality,
+    int* error_code);
   extern int pdf_get_rendered_image_width(const void* image, int* error_code);
   extern int pdf_get_rendered_image_height(const void* image, int* error_code);
   extern void pdf_rendered_image_free(void* image);
@@ -138,6 +145,7 @@ extern "C" {
   extern char* pdf_signature_get_signing_reason(const void* signature, int* error_code);
   extern char* pdf_signature_get_signing_location(const void* signature, int* error_code);
   extern int pdf_signature_verify(const void* signature, int* error_code);
+  extern int pdf_signature_verify_detached(const void* signature, const unsigned char* pdf_data, size_t pdf_len, int* error_code);
   extern int pdf_document_verify_all_signatures(const void* document, int* error_code);
   extern void* pdf_signature_get_certificate(const void* signature, int* error_code);
   extern void pdf_certificate_free(void* cert);
@@ -357,6 +365,7 @@ extern "C" {
   extern const uint8_t* pdf_timestamp_get_token(const void* timestamp, size_t* out_len, int* error_code);
   extern char* pdf_timestamp_get_tsa_name(const void* timestamp, int* error_code);
   extern bool pdf_timestamp_verify(const void* timestamp, int* error_code);
+  extern void* pdf_timestamp_parse(const uint8_t* bytes, size_t len, int* error_code);
   extern void* pdf_tsa_client_create(const char* url, const char* username, const char* password, int timeout, int hash_algo, bool use_nonce, bool cert_req, int* error_code);
   extern void pdf_tsa_client_free(void* client);
   extern void* pdf_tsa_request_timestamp(const void* client, const uint8_t* data, size_t data_len, int* error_code);
@@ -409,6 +418,105 @@ extern "C" {
   // Memory Management
   extern void free_string(char* ptr);
   extern void free_bytes(uint8_t* bytes);
+
+  // Write-side API: DocumentBuilder, PageBuilder, EmbeddedFont, HTML+CSS.
+  // See include/pdf_oxide_c/pdf_oxide.h for the handle-lifetime contract.
+  extern void* pdf_embedded_font_from_file(const char* path, int* error_code);
+  extern void* pdf_embedded_font_from_bytes(const uint8_t* data, size_t len,
+                                            const char* name, int* error_code);
+  extern void  pdf_embedded_font_free(void* handle);
+
+  extern void* pdf_document_builder_create(int* error_code);
+  extern void  pdf_document_builder_free(void* handle);
+
+  extern int   pdf_document_builder_set_title(void* handle, const char* value, int* error_code);
+  extern int   pdf_document_builder_set_author(void* handle, const char* value, int* error_code);
+  extern int   pdf_document_builder_set_subject(void* handle, const char* value, int* error_code);
+  extern int   pdf_document_builder_set_keywords(void* handle, const char* value, int* error_code);
+  extern int   pdf_document_builder_set_creator(void* handle, const char* value, int* error_code);
+
+  extern int   pdf_document_builder_register_embedded_font(void* handle, const char* name,
+                                                           void* font, int* error_code);
+
+  extern void* pdf_document_builder_a4_page(void* handle, int* error_code);
+  extern void* pdf_document_builder_letter_page(void* handle, int* error_code);
+  extern void* pdf_document_builder_page(void* handle, float width, float height, int* error_code);
+
+  extern int   pdf_page_builder_font(void* page, const char* name, float size, int* error_code);
+  extern int   pdf_page_builder_at(void* page, float x, float y, int* error_code);
+  extern int   pdf_page_builder_text(void* page, const char* text, int* error_code);
+  extern int   pdf_page_builder_heading(void* page, unsigned char level, const char* text, int* error_code);
+  extern int   pdf_page_builder_paragraph(void* page, const char* text, int* error_code);
+  extern int   pdf_page_builder_space(void* page, float points, int* error_code);
+  extern int   pdf_page_builder_horizontal_rule(void* page, int* error_code);
+
+  extern int   pdf_page_builder_link_url(void* page, const char* url, int* error_code);
+  extern int   pdf_page_builder_link_page(void* page, size_t target_page, int* error_code);
+  extern int   pdf_page_builder_link_named(void* page, const char* destination, int* error_code);
+  extern int   pdf_page_builder_highlight(void* page, float r, float g, float b, int* error_code);
+  extern int   pdf_page_builder_underline(void* page, float r, float g, float b, int* error_code);
+  extern int   pdf_page_builder_strikeout(void* page, float r, float g, float b, int* error_code);
+  extern int   pdf_page_builder_squiggly(void* page, float r, float g, float b, int* error_code);
+  extern int   pdf_page_builder_sticky_note(void* page, const char* text, int* error_code);
+  extern int   pdf_page_builder_sticky_note_at(void* page, float x, float y, const char* text, int* error_code);
+  extern int   pdf_page_builder_watermark(void* page, const char* text, int* error_code);
+  extern int   pdf_page_builder_watermark_confidential(void* page, int* error_code);
+  extern int   pdf_page_builder_watermark_draft(void* page, int* error_code);
+  extern int   pdf_page_builder_stamp(void* page, const char* type_name, int* error_code);
+  extern int   pdf_page_builder_freetext(void* page, float x, float y, float w, float h,
+                                         const char* text, int* error_code);
+
+  extern int   pdf_page_builder_text_field(void* page, const char* name,
+                                           float x, float y, float w, float h,
+                                           const char* default_value, int* error_code);
+  extern int   pdf_page_builder_checkbox(void* page, const char* name,
+                                         float x, float y, float w, float h,
+                                         int checked, int* error_code);
+  extern int   pdf_page_builder_combo_box(void* page, const char* name,
+                                          float x, float y, float w, float h,
+                                          const char* const* options,
+                                          size_t options_count,
+                                          const char* selected,
+                                          int* error_code);
+  extern int   pdf_page_builder_radio_group(void* page, const char* name,
+                                            const char* const* values,
+                                            const float* xs, const float* ys,
+                                            const float* ws, const float* hs,
+                                            size_t count,
+                                            const char* selected,
+                                            int* error_code);
+  extern int   pdf_page_builder_push_button(void* page, const char* name,
+                                            float x, float y, float w, float h,
+                                            const char* caption, int* error_code);
+
+  extern int   pdf_page_builder_rect(void* page, float x, float y, float w, float h, int* error_code);
+  extern int   pdf_page_builder_filled_rect(void* page, float x, float y, float w, float h,
+                                            float r, float g, float b, int* error_code);
+  extern int   pdf_page_builder_line(void* page, float x1, float y1, float x2, float y2, int* error_code);
+
+  extern int   pdf_page_builder_done(void* page, int* error_code);
+  extern void  pdf_page_builder_free(void* page);
+
+  extern uint8_t* pdf_document_builder_build(void* handle, size_t* out_len, int* error_code);
+  extern int      pdf_document_builder_save(void* handle, const char* path, int* error_code);
+  extern int      pdf_document_builder_save_encrypted(void* handle, const char* path,
+                                                      const char* user_password,
+                                                      const char* owner_password,
+                                                      int* error_code);
+  extern uint8_t* pdf_document_builder_to_bytes_encrypted(void* handle,
+                                                          const char* user_password,
+                                                          const char* owner_password,
+                                                          size_t* out_len, int* error_code);
+
+  extern void* pdf_from_html_css(const char* html, const char* css,
+                                 const uint8_t* font_bytes, size_t font_len,
+                                 int* error_code);
+  extern void* pdf_from_html_css_with_fonts(const char* html, const char* css,
+                                            const char* const* families,
+                                            const uint8_t* const* font_bytes,
+                                            const size_t* font_lens,
+                                            size_t count,
+                                            int* error_code);
 }
 
 // ============================================================
@@ -735,6 +843,42 @@ Napi::Value RenderPage(const Napi::CallbackInfo& info) {
   return Napi::External<void>::New(env, image);
 }
 
+// RenderPageWithOptions exposes the full Rust `RenderOptions` surface
+// (dpi, format, background RGBA, transparent background toggle,
+// render_annotations, jpeg_quality). TS wrapper in src/index.ts turns
+// the options object into these 11 positional args.
+Napi::Value RenderPageWithOptions(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 11) {
+    throw Napi::TypeError::New(
+      env,
+      "invalid arguments: (document, pageIndex, dpi, format, bgR, bgG, bgB, bgA, transparent, renderAnnotations, jpegQuality)");
+  }
+  void* document = info[0].As<Napi::External<void>>().Data();
+  int32_t pageIndex   = info[1].As<Napi::Number>().Int32Value();
+  int32_t dpi         = info[2].As<Napi::Number>().Int32Value();
+  int32_t format      = info[3].As<Napi::Number>().Int32Value();
+  float bgR           = info[4].As<Napi::Number>().FloatValue();
+  float bgG           = info[5].As<Napi::Number>().FloatValue();
+  float bgB           = info[6].As<Napi::Number>().FloatValue();
+  float bgA           = info[7].As<Napi::Number>().FloatValue();
+  int32_t transparent = info[8].As<Napi::Number>().Int32Value();
+  int32_t renderAnns  = info[9].As<Napi::Number>().Int32Value();
+  int32_t jpegQuality = info[10].As<Napi::Number>().Int32Value();
+
+  int errorCode = 0;
+  void* image = pdf_render_page_with_options(
+    document, pageIndex,
+    dpi, format,
+    bgR, bgG, bgB, bgA,
+    transparent, renderAnns, jpegQuality,
+    &errorCode);
+  if (errorCode != 0 || !image) {
+    throw Napi::Error::New(env, "renderPageWithOptions failed: " + getErrorMessage(errorCode));
+  }
+  return Napi::External<void>::New(env, image);
+}
+
 Napi::Value RenderThumbnail(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
 
@@ -1005,6 +1149,40 @@ Napi::Value SignatureVerify(const Napi::CallbackInfo& info) {
 
   if (errorCode != 0) {
     throw Napi::Error::New(env, "Signature verification failed: " + getErrorMessage(errorCode));
+  }
+
+  return Napi::Number::New(env, result);
+}
+
+Napi::Value SignatureVerifyDetached(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+
+  if (info.Length() < 2 || !info[0].IsExternal()) {
+    throw Napi::TypeError::New(env,
+      "expected (signature: external, pdfData: Buffer | Uint8Array)");
+  }
+
+  void* signature = info[0].As<Napi::External<void>>().Data();
+  const uint8_t* data;
+  size_t length;
+  if (info[1].IsBuffer()) {
+    auto buf = info[1].As<Napi::Buffer<uint8_t>>();
+    data = buf.Data();
+    length = buf.Length();
+  } else if (info[1].IsTypedArray()) {
+    auto arr = info[1].As<Napi::Uint8Array>();
+    data = arr.Data();
+    length = arr.ByteLength();
+  } else {
+    throw Napi::TypeError::New(env, "pdfData must be a Buffer or Uint8Array");
+  }
+
+  int errorCode = 0;
+  int result = pdf_signature_verify_detached(signature, data, length, &errorCode);
+
+  if (errorCode != 0) {
+    throw Napi::Error::New(env,
+      "Signature detached verification failed: " + getErrorMessage(errorCode));
   }
 
   return Napi::Number::New(env, result);
@@ -2513,6 +2691,18 @@ Napi::Value TimestampVerify(const Napi::CallbackInfo& info) {
   return Napi::Boolean::New(env, valid);
 }
 
+// Parse a DER-encoded TimeStampToken (or bare TSTInfo) into a Timestamp
+// handle. Returns null on parse failure (with errorCode surfaced).
+Napi::Value TimestampParse(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  auto buf = info[0].As<Napi::Buffer<uint8_t>>();
+  int errorCode = 0;
+  void* ts = pdf_timestamp_parse(buf.Data(), buf.Length(), &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, "Failed to parse timestamp: " + getErrorMessage(errorCode));
+  if (!ts) return env.Null();
+  return Napi::External<void>::New(env, ts);
+}
+
 Napi::Value TsaClientCreate(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   std::string url = info[0].As<Napi::String>().Utf8Value();
@@ -2822,6 +3012,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
 
   // Rendering Operations
   exports.Set("renderPage", Napi::Function::New(env, RenderPage));
+  exports.Set("renderPageWithOptions", Napi::Function::New(env, RenderPageWithOptions));
   exports.Set("renderThumbnail", Napi::Function::New(env, RenderThumbnail));
   exports.Set("freeRenderedImage", Napi::Function::New(env, FreeRenderedImage));
 
@@ -2841,6 +3032,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("getSignatureCount", Napi::Function::New(env, GetSignatureCount));
   exports.Set("getSignatureInfo", Napi::Function::New(env, GetSignatureInfo));
   exports.Set("verifyAllSignatures", Napi::Function::New(env, VerifyAllSignatures));
+  exports.Set("signatureVerify", Napi::Function::New(env, SignatureVerify));
+  exports.Set("signatureVerifyDetached", Napi::Function::New(env, SignatureVerifyDetached));
 
   // Detailed Annotation Accessors
   exports.Set("getAnnotationsDetailed", Napi::Function::New(env, GetAnnotationsDetailed));
@@ -2957,6 +3150,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("timestampGetTime", Napi::Function::New(env, TimestampGetTime));
   exports.Set("timestampGetToken", Napi::Function::New(env, TimestampGetToken));
   exports.Set("timestampGetTsaName", Napi::Function::New(env, TimestampGetTsaName));
+  exports.Set("timestampParse", Napi::Function::New(env, TimestampParse));
   exports.Set("timestampVerify", Napi::Function::New(env, TimestampVerify));
   exports.Set("tsaClientCreate", Napi::Function::New(env, TsaClientCreate));
   exports.Set("tsaClientFree", Napi::Function::New(env, TsaClientFree));
@@ -2996,8 +3190,715 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   // XFA Operations
   exports.Set("hasXFA", Napi::Function::New(env, HasXFA));
 
+  // ==========================================================================
+  // Write-side API — see end of file for function definitions
+  // ==========================================================================
+  extern Napi::Value EmbeddedFontFromFile(const Napi::CallbackInfo&);
+  extern Napi::Value EmbeddedFontFromBytes(const Napi::CallbackInfo&);
+  extern Napi::Value EmbeddedFontFree(const Napi::CallbackInfo&);
+  extern Napi::Value DocumentBuilderCreate(const Napi::CallbackInfo&);
+  extern Napi::Value DocumentBuilderFree(const Napi::CallbackInfo&);
+  extern Napi::Value DocumentBuilderSetTitle(const Napi::CallbackInfo&);
+  extern Napi::Value DocumentBuilderSetAuthor(const Napi::CallbackInfo&);
+  extern Napi::Value DocumentBuilderSetSubject(const Napi::CallbackInfo&);
+  extern Napi::Value DocumentBuilderSetKeywords(const Napi::CallbackInfo&);
+  extern Napi::Value DocumentBuilderSetCreator(const Napi::CallbackInfo&);
+  extern Napi::Value DocumentBuilderRegisterEmbeddedFont(const Napi::CallbackInfo&);
+  extern Napi::Value DocumentBuilderA4Page(const Napi::CallbackInfo&);
+  extern Napi::Value DocumentBuilderLetterPage(const Napi::CallbackInfo&);
+  extern Napi::Value DocumentBuilderPage(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderFont(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderAt(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderText(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderHeading(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderParagraph(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderSpace(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderHorizontalRule(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderLinkUrl(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderLinkPage(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderLinkNamed(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderHighlight(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderUnderline(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderStrikeout(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderSquiggly(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderStickyNote(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderStickyNoteAt(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderWatermark(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderWatermarkConfidential(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderWatermarkDraft(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderStamp(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderFreetext(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderTextField(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderCheckbox(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderComboBox(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderRadioGroup(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderPushButton(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderRect(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderFilledRect(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderLine(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderDone(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderFree(const Napi::CallbackInfo&);
+  extern Napi::Value DocumentBuilderBuild(const Napi::CallbackInfo&);
+  extern Napi::Value DocumentBuilderSave(const Napi::CallbackInfo&);
+  extern Napi::Value DocumentBuilderSaveEncrypted(const Napi::CallbackInfo&);
+  extern Napi::Value DocumentBuilderToBytesEncrypted(const Napi::CallbackInfo&);
+  extern Napi::Value PdfFromHtmlCss(const Napi::CallbackInfo&);
+  extern Napi::Value PdfFromHtmlCssWithFonts(const Napi::CallbackInfo&);
+
+  exports.Set("embeddedFontFromFile", Napi::Function::New(env, EmbeddedFontFromFile));
+  exports.Set("embeddedFontFromBytes", Napi::Function::New(env, EmbeddedFontFromBytes));
+  exports.Set("embeddedFontFree", Napi::Function::New(env, EmbeddedFontFree));
+  exports.Set("documentBuilderCreate", Napi::Function::New(env, DocumentBuilderCreate));
+  exports.Set("documentBuilderFree", Napi::Function::New(env, DocumentBuilderFree));
+  exports.Set("documentBuilderSetTitle", Napi::Function::New(env, DocumentBuilderSetTitle));
+  exports.Set("documentBuilderSetAuthor", Napi::Function::New(env, DocumentBuilderSetAuthor));
+  exports.Set("documentBuilderSetSubject", Napi::Function::New(env, DocumentBuilderSetSubject));
+  exports.Set("documentBuilderSetKeywords", Napi::Function::New(env, DocumentBuilderSetKeywords));
+  exports.Set("documentBuilderSetCreator", Napi::Function::New(env, DocumentBuilderSetCreator));
+  exports.Set("documentBuilderRegisterEmbeddedFont", Napi::Function::New(env, DocumentBuilderRegisterEmbeddedFont));
+  exports.Set("documentBuilderA4Page", Napi::Function::New(env, DocumentBuilderA4Page));
+  exports.Set("documentBuilderLetterPage", Napi::Function::New(env, DocumentBuilderLetterPage));
+  exports.Set("documentBuilderPage", Napi::Function::New(env, DocumentBuilderPage));
+  exports.Set("pageBuilderFont", Napi::Function::New(env, PageBuilderFont));
+  exports.Set("pageBuilderAt", Napi::Function::New(env, PageBuilderAt));
+  exports.Set("pageBuilderText", Napi::Function::New(env, PageBuilderText));
+  exports.Set("pageBuilderHeading", Napi::Function::New(env, PageBuilderHeading));
+  exports.Set("pageBuilderParagraph", Napi::Function::New(env, PageBuilderParagraph));
+  exports.Set("pageBuilderSpace", Napi::Function::New(env, PageBuilderSpace));
+  exports.Set("pageBuilderHorizontalRule", Napi::Function::New(env, PageBuilderHorizontalRule));
+  exports.Set("pageBuilderLinkUrl", Napi::Function::New(env, PageBuilderLinkUrl));
+  exports.Set("pageBuilderLinkPage", Napi::Function::New(env, PageBuilderLinkPage));
+  exports.Set("pageBuilderLinkNamed", Napi::Function::New(env, PageBuilderLinkNamed));
+  exports.Set("pageBuilderHighlight", Napi::Function::New(env, PageBuilderHighlight));
+  exports.Set("pageBuilderUnderline", Napi::Function::New(env, PageBuilderUnderline));
+  exports.Set("pageBuilderStrikeout", Napi::Function::New(env, PageBuilderStrikeout));
+  exports.Set("pageBuilderSquiggly", Napi::Function::New(env, PageBuilderSquiggly));
+  exports.Set("pageBuilderStickyNote", Napi::Function::New(env, PageBuilderStickyNote));
+  exports.Set("pageBuilderStickyNoteAt", Napi::Function::New(env, PageBuilderStickyNoteAt));
+  exports.Set("pageBuilderWatermark", Napi::Function::New(env, PageBuilderWatermark));
+  exports.Set("pageBuilderWatermarkConfidential", Napi::Function::New(env, PageBuilderWatermarkConfidential));
+  exports.Set("pageBuilderWatermarkDraft", Napi::Function::New(env, PageBuilderWatermarkDraft));
+  exports.Set("pageBuilderStamp", Napi::Function::New(env, PageBuilderStamp));
+  exports.Set("pageBuilderFreetext", Napi::Function::New(env, PageBuilderFreetext));
+  exports.Set("pageBuilderTextField", Napi::Function::New(env, PageBuilderTextField));
+  exports.Set("pageBuilderCheckbox", Napi::Function::New(env, PageBuilderCheckbox));
+  exports.Set("pageBuilderComboBox", Napi::Function::New(env, PageBuilderComboBox));
+  exports.Set("pageBuilderRadioGroup", Napi::Function::New(env, PageBuilderRadioGroup));
+  exports.Set("pageBuilderPushButton", Napi::Function::New(env, PageBuilderPushButton));
+  exports.Set("pageBuilderRect", Napi::Function::New(env, PageBuilderRect));
+  exports.Set("pageBuilderFilledRect", Napi::Function::New(env, PageBuilderFilledRect));
+  exports.Set("pageBuilderLine", Napi::Function::New(env, PageBuilderLine));
+  exports.Set("pageBuilderDone", Napi::Function::New(env, PageBuilderDone));
+  exports.Set("pageBuilderFree", Napi::Function::New(env, PageBuilderFree));
+  exports.Set("documentBuilderBuild", Napi::Function::New(env, DocumentBuilderBuild));
+  exports.Set("documentBuilderSave", Napi::Function::New(env, DocumentBuilderSave));
+  exports.Set("documentBuilderSaveEncrypted", Napi::Function::New(env, DocumentBuilderSaveEncrypted));
+  exports.Set("documentBuilderToBytesEncrypted", Napi::Function::New(env, DocumentBuilderToBytesEncrypted));
+  exports.Set("pdfFromHtmlCss", Napi::Function::New(env, PdfFromHtmlCss));
+  exports.Set("pdfFromHtmlCssWithFonts", Napi::Function::New(env, PdfFromHtmlCssWithFonts));
+
 
   return exports;
+}
+
+// ============================================================================
+// Write-side API implementations
+// ============================================================================
+
+namespace {
+
+// --- Small helpers to cut boilerplate --------------------------------------
+
+static void* externPtr(const Napi::CallbackInfo& info, size_t idx, const char* what) {
+  if (info.Length() <= idx || !info[idx].IsExternal()) {
+    throw Napi::TypeError::New(info.Env(), std::string(what) + " must be an external pointer");
+  }
+  return info[idx].As<Napi::External<void>>().Data();
+}
+
+static std::string requireString(const Napi::CallbackInfo& info, size_t idx, const char* name) {
+  if (info.Length() <= idx || !info[idx].IsString()) {
+    throw Napi::TypeError::New(info.Env(), std::string(name) + " must be a string");
+  }
+  return info[idx].As<Napi::String>().Utf8Value();
+}
+
+static double requireNumber(const Napi::CallbackInfo& info, size_t idx, const char* name) {
+  if (info.Length() <= idx || !info[idx].IsNumber()) {
+    throw Napi::TypeError::New(info.Env(), std::string(name) + " must be a number");
+  }
+  return info[idx].As<Napi::Number>().DoubleValue();
+}
+
+static void throwOnError(const Napi::Env& env, int errorCode, const char* what) {
+  if (errorCode != 0) {
+    throw Napi::Error::New(env, std::string(what) + ": " + getErrorMessage(errorCode));
+  }
+}
+
+}  // namespace
+
+// --- EmbeddedFont ----------------------------------------------------------
+
+Napi::Value EmbeddedFontFromFile(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  std::string path = requireString(info, 0, "path");
+  int errorCode = 0;
+  void* h = pdf_embedded_font_from_file(path.c_str(), &errorCode);
+  throwOnError(env, errorCode, "EmbeddedFont.fromFile");
+  if (!h) throw Napi::Error::New(env, "EmbeddedFont.fromFile: null handle");
+  return Napi::External<void>::New(env, h);
+}
+
+Napi::Value EmbeddedFontFromBytes(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 1 || !info[0].IsBuffer()) {
+    throw Napi::TypeError::New(env, "data must be a Buffer or Uint8Array");
+  }
+  auto buf = info[0].As<Napi::Buffer<uint8_t>>();
+  const char* name = nullptr;
+  std::string nameStr;
+  if (info.Length() >= 2 && info[1].IsString()) {
+    nameStr = info[1].As<Napi::String>().Utf8Value();
+    name = nameStr.c_str();
+  }
+  int errorCode = 0;
+  void* h = pdf_embedded_font_from_bytes(buf.Data(), buf.Length(), name, &errorCode);
+  throwOnError(env, errorCode, "EmbeddedFont.fromBytes");
+  return Napi::External<void>::New(env, h);
+}
+
+Napi::Value EmbeddedFontFree(const Napi::CallbackInfo& info) {
+  pdf_embedded_font_free(externPtr(info, 0, "font"));
+  return info.Env().Undefined();
+}
+
+// --- DocumentBuilder -------------------------------------------------------
+
+Napi::Value DocumentBuilderCreate(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  int errorCode = 0;
+  void* h = pdf_document_builder_create(&errorCode);
+  throwOnError(env, errorCode, "DocumentBuilder.create");
+  return Napi::External<void>::New(env, h);
+}
+
+Napi::Value DocumentBuilderFree(const Napi::CallbackInfo& info) {
+  pdf_document_builder_free(externPtr(info, 0, "builder"));
+  return info.Env().Undefined();
+}
+
+#define BUILDER_SETTER(Fn, rustFn, what)                                                   \
+  Napi::Value Fn(const Napi::CallbackInfo& info) {                                         \
+    Napi::Env env = info.Env();                                                            \
+    void* h = externPtr(info, 0, "builder");                                               \
+    std::string s = requireString(info, 1, "value");                                       \
+    int errorCode = 0;                                                                     \
+    rustFn(h, s.c_str(), &errorCode);                                                      \
+    throwOnError(env, errorCode, what);                                                    \
+    return env.Undefined();                                                                \
+  }
+
+BUILDER_SETTER(DocumentBuilderSetTitle,    pdf_document_builder_set_title,    "DocumentBuilder.title")
+BUILDER_SETTER(DocumentBuilderSetAuthor,   pdf_document_builder_set_author,   "DocumentBuilder.author")
+BUILDER_SETTER(DocumentBuilderSetSubject,  pdf_document_builder_set_subject,  "DocumentBuilder.subject")
+BUILDER_SETTER(DocumentBuilderSetKeywords, pdf_document_builder_set_keywords, "DocumentBuilder.keywords")
+BUILDER_SETTER(DocumentBuilderSetCreator,  pdf_document_builder_set_creator,  "DocumentBuilder.creator")
+#undef BUILDER_SETTER
+
+Napi::Value DocumentBuilderRegisterEmbeddedFont(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* builder = externPtr(info, 0, "builder");
+  std::string name = requireString(info, 1, "name");
+  void* font = externPtr(info, 2, "font");
+  int errorCode = 0;
+  pdf_document_builder_register_embedded_font(builder, name.c_str(), font, &errorCode);
+  throwOnError(env, errorCode, "DocumentBuilder.registerEmbeddedFont");
+  return env.Undefined();
+}
+
+#define BUILDER_OPEN_PAGE(Fn, rustFn)                                                      \
+  Napi::Value Fn(const Napi::CallbackInfo& info) {                                         \
+    Napi::Env env = info.Env();                                                            \
+    void* h = externPtr(info, 0, "builder");                                               \
+    int errorCode = 0;                                                                     \
+    void* page = rustFn(h, &errorCode);                                                    \
+    throwOnError(env, errorCode, "DocumentBuilder.page");                                  \
+    if (!page) throw Napi::Error::New(env, "DocumentBuilder.page: null page handle");      \
+    return Napi::External<void>::New(env, page);                                           \
+  }
+
+BUILDER_OPEN_PAGE(DocumentBuilderA4Page,     pdf_document_builder_a4_page)
+BUILDER_OPEN_PAGE(DocumentBuilderLetterPage, pdf_document_builder_letter_page)
+#undef BUILDER_OPEN_PAGE
+
+Napi::Value DocumentBuilderPage(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* h = externPtr(info, 0, "builder");
+  float w = static_cast<float>(requireNumber(info, 1, "width"));
+  float ht = static_cast<float>(requireNumber(info, 2, "height"));
+  int errorCode = 0;
+  void* page = pdf_document_builder_page(h, w, ht, &errorCode);
+  throwOnError(env, errorCode, "DocumentBuilder.page");
+  if (!page) throw Napi::Error::New(env, "DocumentBuilder.page: null page handle");
+  return Napi::External<void>::New(env, page);
+}
+
+// --- PageBuilder ------------------------------------------------------------
+
+Napi::Value PageBuilderFont(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  std::string name = requireString(info, 1, "name");
+  float size = static_cast<float>(requireNumber(info, 2, "size"));
+  int errorCode = 0;
+  pdf_page_builder_font(p, name.c_str(), size, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.font");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderAt(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  float x = static_cast<float>(requireNumber(info, 1, "x"));
+  float y = static_cast<float>(requireNumber(info, 2, "y"));
+  int errorCode = 0;
+  pdf_page_builder_at(p, x, y, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.at");
+  return env.Undefined();
+}
+
+#define PAGE_TEXT_OP(Fn, rustFn, what)                                                    \
+  Napi::Value Fn(const Napi::CallbackInfo& info) {                                        \
+    Napi::Env env = info.Env();                                                           \
+    void* p = externPtr(info, 0, "page");                                                 \
+    std::string text = requireString(info, 1, "text");                                    \
+    int errorCode = 0;                                                                    \
+    rustFn(p, text.c_str(), &errorCode);                                                  \
+    throwOnError(env, errorCode, what);                                                   \
+    return env.Undefined();                                                               \
+  }
+
+PAGE_TEXT_OP(PageBuilderText,      pdf_page_builder_text,      "PageBuilder.text")
+PAGE_TEXT_OP(PageBuilderParagraph, pdf_page_builder_paragraph, "PageBuilder.paragraph")
+PAGE_TEXT_OP(PageBuilderLinkUrl,   pdf_page_builder_link_url,  "PageBuilder.linkUrl")
+PAGE_TEXT_OP(PageBuilderLinkNamed, pdf_page_builder_link_named, "PageBuilder.linkNamed")
+PAGE_TEXT_OP(PageBuilderStickyNote, pdf_page_builder_sticky_note, "PageBuilder.stickyNote")
+PAGE_TEXT_OP(PageBuilderWatermark,  pdf_page_builder_watermark,   "PageBuilder.watermark")
+#undef PAGE_TEXT_OP
+
+Napi::Value PageBuilderHeading(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  uint8_t level = static_cast<uint8_t>(requireNumber(info, 1, "level"));
+  std::string text = requireString(info, 2, "text");
+  int errorCode = 0;
+  pdf_page_builder_heading(p, level, text.c_str(), &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.heading");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderSpace(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  float pts = static_cast<float>(requireNumber(info, 1, "points"));
+  int errorCode = 0;
+  pdf_page_builder_space(p, pts, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.space");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderHorizontalRule(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  int errorCode = 0;
+  pdf_page_builder_horizontal_rule(p, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.horizontalRule");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderLinkPage(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  size_t target = static_cast<size_t>(requireNumber(info, 1, "pageIndex"));
+  int errorCode = 0;
+  pdf_page_builder_link_page(p, target, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.linkPage");
+  return env.Undefined();
+}
+
+#define PAGE_RGB_OP(Fn, rustFn, what)                                                     \
+  Napi::Value Fn(const Napi::CallbackInfo& info) {                                        \
+    Napi::Env env = info.Env();                                                           \
+    void* p = externPtr(info, 0, "page");                                                 \
+    float r = static_cast<float>(requireNumber(info, 1, "r"));                            \
+    float g = static_cast<float>(requireNumber(info, 2, "g"));                            \
+    float b = static_cast<float>(requireNumber(info, 3, "b"));                            \
+    int errorCode = 0;                                                                    \
+    rustFn(p, r, g, b, &errorCode);                                                       \
+    throwOnError(env, errorCode, what);                                                   \
+    return env.Undefined();                                                               \
+  }
+
+PAGE_RGB_OP(PageBuilderHighlight, pdf_page_builder_highlight, "PageBuilder.highlight")
+PAGE_RGB_OP(PageBuilderUnderline, pdf_page_builder_underline, "PageBuilder.underline")
+PAGE_RGB_OP(PageBuilderStrikeout, pdf_page_builder_strikeout, "PageBuilder.strikeout")
+PAGE_RGB_OP(PageBuilderSquiggly,  pdf_page_builder_squiggly,  "PageBuilder.squiggly")
+#undef PAGE_RGB_OP
+
+Napi::Value PageBuilderStickyNoteAt(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  float x = static_cast<float>(requireNumber(info, 1, "x"));
+  float y = static_cast<float>(requireNumber(info, 2, "y"));
+  std::string text = requireString(info, 3, "text");
+  int errorCode = 0;
+  pdf_page_builder_sticky_note_at(p, x, y, text.c_str(), &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.stickyNoteAt");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderWatermarkConfidential(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  int errorCode = 0;
+  pdf_page_builder_watermark_confidential(p, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.watermarkConfidential");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderWatermarkDraft(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  int errorCode = 0;
+  pdf_page_builder_watermark_draft(p, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.watermarkDraft");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderStamp(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  std::string name = requireString(info, 1, "typeName");
+  int errorCode = 0;
+  pdf_page_builder_stamp(p, name.c_str(), &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.stamp");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderFreetext(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  float x = static_cast<float>(requireNumber(info, 1, "x"));
+  float y = static_cast<float>(requireNumber(info, 2, "y"));
+  float w = static_cast<float>(requireNumber(info, 3, "w"));
+  float h = static_cast<float>(requireNumber(info, 4, "h"));
+  std::string text = requireString(info, 5, "text");
+  int errorCode = 0;
+  pdf_page_builder_freetext(p, x, y, w, h, text.c_str(), &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.freeText");
+  return env.Undefined();
+}
+
+// Form fields
+Napi::Value PageBuilderTextField(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  std::string name = requireString(info, 1, "name");
+  float x = static_cast<float>(requireNumber(info, 2, "x"));
+  float y = static_cast<float>(requireNumber(info, 3, "y"));
+  float w = static_cast<float>(requireNumber(info, 4, "w"));
+  float h = static_cast<float>(requireNumber(info, 5, "h"));
+  const char* defaultValue = nullptr;
+  std::string defaultStorage;
+  if (info.Length() >= 7 && info[6].IsString()) {
+    defaultStorage = info[6].As<Napi::String>().Utf8Value();
+    defaultValue = defaultStorage.c_str();
+  }
+  int errorCode = 0;
+  pdf_page_builder_text_field(p, name.c_str(), x, y, w, h, defaultValue, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.textField");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderCheckbox(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  std::string name = requireString(info, 1, "name");
+  float x = static_cast<float>(requireNumber(info, 2, "x"));
+  float y = static_cast<float>(requireNumber(info, 3, "y"));
+  float w = static_cast<float>(requireNumber(info, 4, "w"));
+  float h = static_cast<float>(requireNumber(info, 5, "h"));
+  bool checked = info.Length() >= 7 && info[6].IsBoolean() && info[6].As<Napi::Boolean>().Value();
+  int errorCode = 0;
+  pdf_page_builder_checkbox(p, name.c_str(), x, y, w, h, checked ? 1 : 0, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.checkbox");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderComboBox(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  std::string name = requireString(info, 1, "name");
+  float x = static_cast<float>(requireNumber(info, 2, "x"));
+  float y = static_cast<float>(requireNumber(info, 3, "y"));
+  float w = static_cast<float>(requireNumber(info, 4, "w"));
+  float h = static_cast<float>(requireNumber(info, 5, "h"));
+  if (info.Length() < 7 || !info[6].IsArray()) {
+    throw Napi::TypeError::New(env, "options must be an array of strings");
+  }
+  auto arr = info[6].As<Napi::Array>();
+  size_t n = arr.Length();
+  if (n == 0) throw Napi::Error::New(env, "options must be non-empty");
+  std::vector<std::string> storage(n);
+  std::vector<const char*> ptrs(n);
+  for (size_t i = 0; i < n; i++) {
+    Napi::Value v = arr.Get(i);
+    if (!v.IsString()) throw Napi::TypeError::New(env, "options[i] must be a string");
+    storage[i] = v.As<Napi::String>().Utf8Value();
+    ptrs[i] = storage[i].c_str();
+  }
+  const char* selected = nullptr;
+  std::string selectedStorage;
+  if (info.Length() >= 8 && info[7].IsString()) {
+    selectedStorage = info[7].As<Napi::String>().Utf8Value();
+    selected = selectedStorage.c_str();
+  }
+  int errorCode = 0;
+  pdf_page_builder_combo_box(p, name.c_str(), x, y, w, h, ptrs.data(), n, selected, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.comboBox");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderRadioGroup(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  std::string name = requireString(info, 1, "name");
+  if (info.Length() < 3 || !info[2].IsArray()) {
+    throw Napi::TypeError::New(env,
+        "buttons must be an array of [value, x, y, w, h] tuples");
+  }
+  auto arr = info[2].As<Napi::Array>();
+  size_t n = arr.Length();
+  if (n == 0) throw Napi::Error::New(env, "buttons must be non-empty");
+  std::vector<std::string> valueStorage(n);
+  std::vector<const char*> valuePtrs(n);
+  std::vector<float> xs(n), ys(n), ws(n), hs(n);
+  for (size_t i = 0; i < n; i++) {
+    Napi::Value v = arr.Get(i);
+    if (!v.IsArray()) throw Napi::TypeError::New(env, "buttons[i] must be a tuple array");
+    auto tup = v.As<Napi::Array>();
+    if (tup.Length() != 5) throw Napi::TypeError::New(env, "buttons[i] must have 5 entries");
+    valueStorage[i] = tup.Get((uint32_t)0).As<Napi::String>().Utf8Value();
+    valuePtrs[i] = valueStorage[i].c_str();
+    xs[i] = static_cast<float>(tup.Get((uint32_t)1).As<Napi::Number>().DoubleValue());
+    ys[i] = static_cast<float>(tup.Get((uint32_t)2).As<Napi::Number>().DoubleValue());
+    ws[i] = static_cast<float>(tup.Get((uint32_t)3).As<Napi::Number>().DoubleValue());
+    hs[i] = static_cast<float>(tup.Get((uint32_t)4).As<Napi::Number>().DoubleValue());
+  }
+  const char* selected = nullptr;
+  std::string selectedStorage;
+  if (info.Length() >= 4 && info[3].IsString()) {
+    selectedStorage = info[3].As<Napi::String>().Utf8Value();
+    selected = selectedStorage.c_str();
+  }
+  int errorCode = 0;
+  pdf_page_builder_radio_group(p, name.c_str(), valuePtrs.data(),
+      xs.data(), ys.data(), ws.data(), hs.data(), n, selected, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.radioGroup");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderPushButton(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  std::string name = requireString(info, 1, "name");
+  float x = static_cast<float>(requireNumber(info, 2, "x"));
+  float y = static_cast<float>(requireNumber(info, 3, "y"));
+  float w = static_cast<float>(requireNumber(info, 4, "w"));
+  float h = static_cast<float>(requireNumber(info, 5, "h"));
+  std::string caption = requireString(info, 6, "caption");
+  int errorCode = 0;
+  pdf_page_builder_push_button(p, name.c_str(), x, y, w, h, caption.c_str(), &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.pushButton");
+  return env.Undefined();
+}
+
+// Low-level graphics primitives (PdfWriter exposure)
+Napi::Value PageBuilderRect(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  float x = static_cast<float>(requireNumber(info, 1, "x"));
+  float y = static_cast<float>(requireNumber(info, 2, "y"));
+  float w = static_cast<float>(requireNumber(info, 3, "w"));
+  float h = static_cast<float>(requireNumber(info, 4, "h"));
+  int errorCode = 0;
+  pdf_page_builder_rect(p, x, y, w, h, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.rect");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderFilledRect(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  float x = static_cast<float>(requireNumber(info, 1, "x"));
+  float y = static_cast<float>(requireNumber(info, 2, "y"));
+  float w = static_cast<float>(requireNumber(info, 3, "w"));
+  float h = static_cast<float>(requireNumber(info, 4, "h"));
+  float r = static_cast<float>(requireNumber(info, 5, "r"));
+  float g = static_cast<float>(requireNumber(info, 6, "g"));
+  float b = static_cast<float>(requireNumber(info, 7, "b"));
+  int errorCode = 0;
+  pdf_page_builder_filled_rect(p, x, y, w, h, r, g, b, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.filledRect");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderLine(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  float x1 = static_cast<float>(requireNumber(info, 1, "x1"));
+  float y1 = static_cast<float>(requireNumber(info, 2, "y1"));
+  float x2 = static_cast<float>(requireNumber(info, 3, "x2"));
+  float y2 = static_cast<float>(requireNumber(info, 4, "y2"));
+  int errorCode = 0;
+  pdf_page_builder_line(p, x1, y1, x2, y2, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.line");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderDone(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  int errorCode = 0;
+  pdf_page_builder_done(p, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.done");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderFree(const Napi::CallbackInfo& info) {
+  pdf_page_builder_free(externPtr(info, 0, "page"));
+  return info.Env().Undefined();
+}
+
+// --- Finalisation ----------------------------------------------------------
+
+Napi::Value DocumentBuilderBuild(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* h = externPtr(info, 0, "builder");
+  size_t outLen = 0;
+  int errorCode = 0;
+  uint8_t* data = pdf_document_builder_build(h, &outLen, &errorCode);
+  if (!data) {
+    throwOnError(env, errorCode, "DocumentBuilder.build");
+    throw Napi::Error::New(env, "DocumentBuilder.build: null output");
+  }
+  auto buf = Napi::Buffer<uint8_t>::Copy(env, data, outLen);
+  free_bytes(data);
+  return buf;
+}
+
+Napi::Value DocumentBuilderSave(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* h = externPtr(info, 0, "builder");
+  std::string path = requireString(info, 1, "path");
+  int errorCode = 0;
+  pdf_document_builder_save(h, path.c_str(), &errorCode);
+  throwOnError(env, errorCode, "DocumentBuilder.save");
+  return env.Undefined();
+}
+
+Napi::Value DocumentBuilderSaveEncrypted(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* h = externPtr(info, 0, "builder");
+  std::string path = requireString(info, 1, "path");
+  std::string user = requireString(info, 2, "userPassword");
+  std::string owner = requireString(info, 3, "ownerPassword");
+  int errorCode = 0;
+  pdf_document_builder_save_encrypted(h, path.c_str(), user.c_str(), owner.c_str(), &errorCode);
+  throwOnError(env, errorCode, "DocumentBuilder.saveEncrypted");
+  return env.Undefined();
+}
+
+Napi::Value DocumentBuilderToBytesEncrypted(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* h = externPtr(info, 0, "builder");
+  std::string user = requireString(info, 1, "userPassword");
+  std::string owner = requireString(info, 2, "ownerPassword");
+  size_t outLen = 0;
+  int errorCode = 0;
+  uint8_t* data = pdf_document_builder_to_bytes_encrypted(h, user.c_str(), owner.c_str(), &outLen, &errorCode);
+  if (!data) {
+    throwOnError(env, errorCode, "DocumentBuilder.toBytesEncrypted");
+    throw Napi::Error::New(env, "DocumentBuilder.toBytesEncrypted: null output");
+  }
+  auto buf = Napi::Buffer<uint8_t>::Copy(env, data, outLen);
+  free_bytes(data);
+  return buf;
+}
+
+// --- HTML+CSS pipeline (Phase 2) -------------------------------------------
+
+Napi::Value PdfFromHtmlCss(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  std::string html = requireString(info, 0, "html");
+  std::string css = requireString(info, 1, "css");
+  if (info.Length() < 3 || !info[2].IsBuffer()) {
+    throw Napi::TypeError::New(env, "fontBytes must be a Buffer or Uint8Array");
+  }
+  auto buf = info[2].As<Napi::Buffer<uint8_t>>();
+  int errorCode = 0;
+  void* handle = pdf_from_html_css(html.c_str(), css.c_str(), buf.Data(), buf.Length(), &errorCode);
+  throwOnError(env, errorCode, "Pdf.fromHtmlCss");
+  if (!handle) throw Napi::Error::New(env, "Pdf.fromHtmlCss: null handle");
+  return Napi::External<void>::New(env, handle);
+}
+
+// Phase 2 multi-font cascade: expects (html, css, families[], fontBytes[])
+// where families[i] is a JS string and fontBytes[i] is a Buffer/Uint8Array.
+Napi::Value PdfFromHtmlCssWithFonts(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  std::string html = requireString(info, 0, "html");
+  std::string css = requireString(info, 1, "css");
+  if (info.Length() < 4 || !info[2].IsArray() || !info[3].IsArray()) {
+    throw Napi::TypeError::New(env, "families and fontBytes must be arrays of equal length");
+  }
+  auto families = info[2].As<Napi::Array>();
+  auto fontArr = info[3].As<Napi::Array>();
+  if (families.Length() != fontArr.Length()) {
+    throw Napi::TypeError::New(env, "families and fontBytes must be equal-length arrays");
+  }
+  size_t n = families.Length();
+  if (n == 0) {
+    throw Napi::Error::New(env, "at least one font must be provided");
+  }
+
+  // Own all C strings for the families; font buffers are owned by JS, we
+  // just copy their data pointers.
+  std::vector<std::string> nameStorage;
+  nameStorage.reserve(n);
+  std::vector<const char*> namePtrs(n);
+  std::vector<const uint8_t*> bytePtrs(n);
+  std::vector<size_t> byteLens(n);
+  for (size_t i = 0; i < n; i++) {
+    Napi::Value nv = families.Get(i);
+    if (!nv.IsString()) throw Napi::TypeError::New(env, "families[i] must be a string");
+    nameStorage.push_back(nv.As<Napi::String>().Utf8Value());
+    namePtrs[i] = nameStorage[i].c_str();
+    Napi::Value bv = fontArr.Get(i);
+    if (!bv.IsBuffer()) throw Napi::TypeError::New(env, "fontBytes[i] must be a Buffer/Uint8Array");
+    auto b = bv.As<Napi::Buffer<uint8_t>>();
+    bytePtrs[i] = b.Data();
+    byteLens[i] = b.Length();
+  }
+  int errorCode = 0;
+  void* handle = pdf_from_html_css_with_fonts(
+      html.c_str(), css.c_str(),
+      namePtrs.data(), bytePtrs.data(), byteLens.data(),
+      n, &errorCode);
+  throwOnError(env, errorCode, "Pdf.fromHtmlCssWithFonts");
+  if (!handle) throw Napi::Error::New(env, "Pdf.fromHtmlCssWithFonts: null handle");
+  return Napi::External<void>::New(env, handle);
 }
 
 NODE_API_MODULE(pdf_oxide, Init)

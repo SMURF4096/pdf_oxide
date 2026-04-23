@@ -1306,8 +1306,16 @@ fn is_email_context(preceding_text: &str, following_text: &str) -> bool {
     // Only check the last ~64 bytes for email patterns to avoid O(n) scan
     // of the entire accumulated text (which would cause O(n²) in merge loop)
     let prev_start = preceding_text.len().saturating_sub(64);
-    // Find a valid UTF-8 char boundary
-    let prev_start = preceding_text.ceil_char_boundary(prev_start);
+    // Round up to the next UTF-8 char boundary. `str::ceil_char_boundary`
+    // would do this in one line but it's only stable since Rust 1.91,
+    // above our MSRV (1.88 — pinned by transitive deps).
+    let prev_start = {
+        let mut i = prev_start;
+        while i < preceding_text.len() && !preceding_text.is_char_boundary(i) {
+            i += 1;
+        }
+        i
+    };
     let prev = preceding_text[prev_start..].trim_end();
     let next = following_text.trim_start();
 

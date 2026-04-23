@@ -5,8 +5,8 @@
  * Verifies layer management, rendering capabilities, and page properties.
  */
 
-import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert';
+import { beforeEach, describe, it } from 'node:test';
 import { LayerManager } from '../lib/managers/LayerManager.js';
 import { RenderingManager } from '../lib/managers/RenderingManager.js';
 
@@ -34,10 +34,7 @@ describe('Advanced Managers Tests - Phase 2', () => {
       });
 
       it('should throw on null document', () => {
-        assert.throws(
-          () => new LayerManager(null),
-          /Document is required/
-        );
+        assert.throws(() => new LayerManager(null), /Document is required/);
       });
 
       it('should provide clearCache method', () => {
@@ -86,10 +83,7 @@ describe('Advanced Managers Tests - Phase 2', () => {
 
       it('should throw on empty layer name', () => {
         const manager = new LayerManager(mockDoc);
-        assert.throws(
-          () => manager.getLayerByName(''),
-          /Layer name must be a non-empty string/
-        );
+        assert.throws(() => manager.getLayerByName(''), /Layer name must be a non-empty string/);
       });
 
       it('should get layer by ID', () => {
@@ -100,10 +94,7 @@ describe('Advanced Managers Tests - Phase 2', () => {
 
       it('should throw on empty layer ID', () => {
         const manager = new LayerManager(mockDoc);
-        assert.throws(
-          () => manager.getLayerById(''),
-          /Layer ID must be a non-empty string/
-        );
+        assert.throws(() => manager.getLayerById(''), /Layer ID must be a non-empty string/);
       });
     });
 
@@ -226,10 +217,7 @@ describe('Advanced Managers Tests - Phase 2', () => {
       });
 
       it('should throw on null document', () => {
-        assert.throws(
-          () => new RenderingManager(null),
-          /Document is required/
-        );
+        assert.throws(() => new RenderingManager(null), /Document is required/);
       });
 
       it('should provide clearCache method', () => {
@@ -277,10 +265,7 @@ describe('Advanced Managers Tests - Phase 2', () => {
 
       it('should throw on invalid page index', () => {
         const manager = new RenderingManager(mockDoc);
-        assert.throws(
-          () => manager.getPageDimensions(100),
-          /out of range/
-        );
+        assert.throws(() => manager.getPageDimensions(100), /out of range/);
       });
 
       it('should get display size at zoom level', () => {
@@ -292,10 +277,7 @@ describe('Advanced Managers Tests - Phase 2', () => {
 
       it('should throw on invalid zoom level', () => {
         const manager = new RenderingManager(mockDoc);
-        assert.throws(
-          () => manager.getDisplaySize(0, -1),
-          /positive number/
-        );
+        assert.throws(() => manager.getDisplaySize(0, -1), /positive number/);
       });
     });
 
@@ -351,10 +333,7 @@ describe('Advanced Managers Tests - Phase 2', () => {
 
       it('should throw on invalid viewport width', () => {
         const manager = new RenderingManager(mockDoc);
-        assert.throws(
-          () => manager.calculateZoomForWidth(0, -100),
-          /positive number/
-        );
+        assert.throws(() => manager.calculateZoomForWidth(0, -100), /positive number/);
       });
 
       it('should calculate zoom for height', () => {
@@ -433,10 +412,7 @@ describe('Advanced Managers Tests - Phase 2', () => {
 
       it('should throw on invalid quality', () => {
         const manager = new RenderingManager(mockDoc);
-        assert.throws(
-          () => manager.getRecommendedResolution('invalid'),
-          /Invalid quality/
-        );
+        assert.throws(() => manager.getRecommendedResolution('invalid'), /Invalid quality/);
       });
     });
 
@@ -522,7 +498,7 @@ describe('Advanced Managers Tests - Phase 2', () => {
         'clearCache',
       ];
 
-      methods.forEach(method => {
+      methods.forEach((method) => {
         assert.ok(
           typeof manager[method] === 'function',
           `LayerManager should have ${method} method`
@@ -557,7 +533,7 @@ describe('Advanced Managers Tests - Phase 2', () => {
         'clearCache',
       ];
 
-      methods.forEach(method => {
+      methods.forEach((method) => {
         assert.ok(
           typeof manager[method] === 'function',
           `RenderingManager should have ${method} method`
@@ -578,7 +554,7 @@ describe('Advanced Managers Tests - Phase 2', () => {
       ];
 
       assert.strictEqual(phase2Tasks.length, 8);
-      phase2Tasks.forEach(task => {
+      phase2Tasks.forEach((task) => {
         assert.ok(typeof task === 'string');
       });
     });

@@ -1,3 +1,5 @@
+//go:build cgo
+
 package pdfoxide
 
 // Linking configuration — v0.3.31 onwards.
@@ -30,6 +32,7 @@ package pdfoxide
 /*
 #include <stdlib.h>
 #include <stdint.h>
+#include <stddef.h>
 #include <stdbool.h>
 
 extern void* pdf_document_open(const char* path, int* error_code);
@@ -161,6 +164,7 @@ extern int pdf_document_sign(void* document_handle, const void* certificate_hand
 extern int32_t pdf_document_get_signature_count(const void* document_handle, int* error_code);
 extern void* pdf_document_get_signature(const void* document_handle, int32_t index, int* error_code);
 extern int pdf_signature_verify(const void* signature_handle, int* error_code);
+extern int pdf_signature_verify_detached(const void* signature_handle, const unsigned char* pdf_data, size_t pdf_len, int* error_code);
 extern int pdf_document_verify_all_signatures(const void* document_handle, int* error_code);
 extern char* pdf_signature_get_signer_name(const void* signature_handle, int* error_code);
 extern int64_t pdf_signature_get_signing_time(const void* signature_handle, int* error_code);
@@ -183,6 +187,7 @@ extern void* pdf_render_page_region(void* document_handle, int32_t page_index, f
 extern void* pdf_render_page_zoom(void* document_handle, int32_t page_index, float zoom_level, int32_t format, int* error_code);
 extern void* pdf_render_page_fit(void* document_handle, int32_t page_index, int32_t fit_width, int32_t fit_height, int32_t format, int* error_code);
 extern void* pdf_render_page_thumbnail(void* document_handle, int32_t page_index, int32_t thumbnail_size, int32_t format, int* error_code);
+extern void* pdf_render_page_with_options(void* document_handle, int32_t page_index, int32_t dpi, int32_t format, float bg_r, float bg_g, float bg_b, float bg_a, int32_t transparent_background, int32_t render_annotations, int32_t jpeg_quality, int* error_code);
 extern int32_t pdf_get_rendered_image_width(const void* image_handle, int* error_code);
 extern int32_t pdf_get_rendered_image_height(const void* image_handle, int* error_code);
 extern void* pdf_get_rendered_image_data(const void* image_handle, int32_t* data_len, int* error_code);
@@ -191,6 +196,7 @@ extern void pdf_rendered_image_free(void* handle);
 extern void pdf_renderer_free(void* handle);
 
 // TSA (Time Stamp Authority) FFI declarations
+extern void* pdf_timestamp_parse(const uint8_t* bytes, size_t len, int* error_code);
 extern void* pdf_tsa_client_create(const char* url, const char* username, const char* password, int32_t timeout, int32_t hash_algo, bool use_nonce, bool cert_req, int* error_code);
 extern void pdf_tsa_client_free(void* client);
 extern void* pdf_tsa_request_timestamp(const void* client, const uint8_t* data, size_t data_len, int* error_code);
@@ -389,121 +395,32 @@ import "C"
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"sync"
+	"time"
 	"unsafe"
 )
 
 // PdfDocument represents an open PDF document.
-// It is safe for concurrent use by multiple goroutines.
+//
+// A *PdfDocument is safe to share across goroutines. The internal lock
+// serializes every method call (including reads) because the underlying
+// native PDF parser is not reentrant — concurrent native-side reads could
+// return spurious parse errors. The previous RWMutex design was
+// downgraded to an exclusive lock after TestConcurrentReads flaked with
+// "parse error (code 5)" under `go test -race`.
 type PdfDocument struct {
 	mu     sync.RWMutex
 	handle unsafe.Pointer
 	closed bool
 }
 
-// Sentinel errors for errors.Is comparisons. Every failure path in this
-// package reports one of these wrapped in an *Error for FFI errors, or
-// returns the sentinel directly for non-FFI failures.
-var (
-	// ErrInvalidPath indicates the path argument was invalid. FFI code 1.
-	ErrInvalidPath = errors.New("pdf_oxide: invalid path")
-	// ErrDocumentNotFound indicates the document could not be opened. FFI code 2.
-	ErrDocumentNotFound = errors.New("pdf_oxide: document not found")
-	// ErrInvalidFormat indicates the PDF could not be parsed. FFI code 3.
-	ErrInvalidFormat = errors.New("pdf_oxide: invalid PDF format")
-	// ErrExtractionFailed indicates extraction failed. FFI code 4.
-	ErrExtractionFailed = errors.New("pdf_oxide: extraction failed")
-	// ErrParseError indicates a parse failure. FFI code 5.
-	ErrParseError = errors.New("pdf_oxide: parse error")
-	// ErrInvalidPageIndex indicates an out-of-range page index. FFI code 6.
-	ErrInvalidPageIndex = errors.New("pdf_oxide: invalid page index")
-	// ErrSearchFailed indicates a search operation failed. FFI code 7.
-	ErrSearchFailed = errors.New("pdf_oxide: search failed")
-	// ErrInternal indicates an internal/unknown error. FFI code 8.
-	ErrInternal = errors.New("pdf_oxide: internal error")
-
-	// ErrDocumentClosed indicates the document has been closed.
-	ErrDocumentClosed = errors.New("pdf_oxide: document is closed")
-	// ErrEditorClosed indicates the editor has been closed.
-	ErrEditorClosed = errors.New("pdf_oxide: editor is closed")
-	// ErrCreatorClosed indicates the PDF creator has been closed.
-	ErrCreatorClosed = errors.New("pdf_oxide: creator is closed")
-	// ErrIndexOutOfBounds indicates an out-of-range index.
-	ErrIndexOutOfBounds = errors.New("pdf_oxide: index out of bounds")
-	// ErrEmptyContent indicates required content was empty.
-	ErrEmptyContent = errors.New("pdf_oxide: content must not be empty")
-)
-
-// Error is a structured PDF error that carries an FFI error code alongside a
-// canonical sentinel. It implements Unwrap so errors.Is works with the exported
-// Err* sentinels, and Is so two *Error values with the same Code compare equal.
-type Error struct {
-	Code     int
-	Message  string
-	sentinel error
-}
-
-// Error returns a human-readable description of the error.
-func (e *Error) Error() string {
-	if e.Message == "" {
-		return fmt.Sprintf("pdf_oxide: error %d", e.Code)
-	}
-	return fmt.Sprintf("pdf_oxide: %s (code %d)", e.Message, e.Code)
-}
-
-// Unwrap returns the canonical sentinel so errors.Is(err, ErrInvalidPath) works.
-func (e *Error) Unwrap() error { return e.sentinel }
-
-// Is reports whether target is the same canonical sentinel, or another *Error
-// carrying the same Code.
-func (e *Error) Is(target error) bool {
-	if e.sentinel != nil && target == e.sentinel {
-		return true
-	}
-	var other *Error
-	if errors.As(target, &other) {
-		return e.Code == other.Code
-	}
-	return false
-}
-
-// ffiError wraps an FFI error code into a fully populated *Error. It is the
-// canonical constructor for every error returned from the FFI boundary.
+// ffiError wraps a C.int FFI error code into a fully populated *Error. It is
+// the canonical cgo-backend constructor for every error returned from the FFI
+// boundary. Sentinels, Error struct, and sentinelForCode live in types.go.
 func ffiError(errorCode C.int) error {
-	code := int(errorCode)
-	sentinel := sentinelForCode(code)
-	return &Error{
-		Code:     code,
-		Message:  sentinel.Error(),
-		sentinel: sentinel,
-	}
-}
-
-// sentinelForCode returns the canonical sentinel for an FFI error code.
-func sentinelForCode(code int) error {
-	switch code {
-	case 1:
-		return ErrInvalidPath
-	case 2:
-		return ErrDocumentNotFound
-	case 3:
-		return ErrInvalidFormat
-	case 4:
-		return ErrExtractionFailed
-	case 5:
-		return ErrParseError
-	case 6:
-		return ErrInvalidPageIndex
-	case 7:
-		return ErrSearchFailed
-	case 8:
-		return ErrInternal
-	default:
-		return ErrInternal
-	}
+	return ffiErrorFromInt(int(errorCode))
 }
 
 // Open opens a PDF document from file path
@@ -541,12 +458,14 @@ func (doc *PdfDocument) Close() error {
 	return nil
 }
 
-// acquireRead locks for reading and checks the document is open.
-// Caller must call doc.mu.RUnlock() when done.
+// acquireRead takes the exclusive lock and checks the document is open.
+// (Name kept for the read-side API surface, but semantically an exclusive
+// lock — see PdfDocument doc comment for why.) Caller must call
+// doc.mu.Unlock() when done.
 func (doc *PdfDocument) acquireRead() error {
-	doc.mu.RLock()
+	doc.mu.Lock()
 	if doc.closed {
-		doc.mu.RUnlock()
+		doc.mu.Unlock()
 		return ErrDocumentClosed
 	}
 	return nil
@@ -557,7 +476,7 @@ func (doc *PdfDocument) PageCount() (int, error) {
 	if err := doc.acquireRead(); err != nil {
 		return 0, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	var errorCode C.int
 	count := C.pdf_document_get_page_count(doc.handle, &errorCode)
@@ -575,7 +494,7 @@ func (doc *PdfDocument) Version() (major, minor uint8, err error) {
 	if err := doc.acquireRead(); err != nil {
 		return 0, 0, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var cmajor, cminor C.uint8_t
 	C.pdf_document_get_version(doc.handle, &cmajor, &cminor)
 	return uint8(cmajor), uint8(cminor), nil
@@ -588,7 +507,7 @@ func (doc *PdfDocument) HasStructureTree() (bool, error) {
 	if err := doc.acquireRead(); err != nil {
 		return false, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	return bool(C.pdf_document_has_structure_tree(doc.handle)), nil
 }
 
@@ -597,7 +516,7 @@ func (doc *PdfDocument) ExtractText(pageIndex int) (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	if pageIndex < 0 {
 		return "", ErrInvalidPageIndex
@@ -625,7 +544,7 @@ func (doc *PdfDocument) ToMarkdown(pageIndex int) (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	var errorCode C.int
 	cMarkdown := C.pdf_document_to_markdown(doc.handle, C.int32_t(pageIndex), &errorCode)
@@ -645,7 +564,7 @@ func (doc *PdfDocument) ToHtml(pageIndex int) (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	var errorCode C.int
 	cHtml := C.pdf_document_to_html(doc.handle, C.int32_t(pageIndex), &errorCode)
@@ -665,7 +584,7 @@ func (doc *PdfDocument) ToPlainText(pageIndex int) (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	var errorCode C.int
 	cText := C.pdf_document_to_plain_text(doc.handle, C.int32_t(pageIndex), &errorCode)
@@ -685,7 +604,7 @@ func (doc *PdfDocument) ToMarkdownAll() (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	var errorCode C.int
 	cMarkdown := C.pdf_document_to_markdown_all(doc.handle, &errorCode)
@@ -702,8 +621,8 @@ func (doc *PdfDocument) ToMarkdownAll() (string, error) {
 
 // IsClosed returns whether the document is closed
 func (doc *PdfDocument) IsClosed() bool {
-	doc.mu.RLock()
-	defer doc.mu.RUnlock()
+	doc.mu.Lock()
+	defer doc.mu.Unlock()
 	return doc.closed
 }
 
@@ -716,13 +635,13 @@ type DocumentEditor struct {
 	closed bool
 }
 
-// acquireRead takes the editor's read lock and verifies the editor is not
-// closed. On success the caller MUST defer editor.mu.RUnlock(). On failure
-// the lock is released automatically and an error is returned.
+// acquireRead takes the editor's exclusive lock and verifies the editor
+// is not closed. On success the caller MUST defer editor.mu.Unlock(). On
+// failure the lock is released automatically and an error is returned.
 func (editor *DocumentEditor) acquireRead() error {
-	editor.mu.RLock()
+	editor.mu.Lock()
 	if editor.closed {
-		editor.mu.RUnlock()
+		editor.mu.Unlock()
 		return ErrEditorClosed
 	}
 	return nil
@@ -778,7 +697,7 @@ func (editor *DocumentEditor) IsModified() (bool, error) {
 	if err := editor.acquireRead(); err != nil {
 		return false, err
 	}
-	defer editor.mu.RUnlock()
+	defer editor.mu.Unlock()
 	return bool(C.document_editor_is_modified(editor.handle)), nil
 }
 
@@ -787,7 +706,7 @@ func (editor *DocumentEditor) SourcePath() (string, error) {
 	if err := editor.acquireRead(); err != nil {
 		return "", err
 	}
-	defer editor.mu.RUnlock()
+	defer editor.mu.Unlock()
 
 	var errorCode C.int
 	cPath := C.document_editor_get_source_path(editor.handle, &errorCode)
@@ -807,7 +726,7 @@ func (editor *DocumentEditor) Version() (major, minor uint8, err error) {
 	if err := editor.acquireRead(); err != nil {
 		return 0, 0, err
 	}
-	defer editor.mu.RUnlock()
+	defer editor.mu.Unlock()
 	var cmajor, cminor C.uint8_t
 	C.document_editor_get_version(editor.handle, &cmajor, &cminor)
 	return uint8(cmajor), uint8(cminor), nil
@@ -818,7 +737,7 @@ func (editor *DocumentEditor) PageCount() (int, error) {
 	if err := editor.acquireRead(); err != nil {
 		return 0, err
 	}
-	defer editor.mu.RUnlock()
+	defer editor.mu.Unlock()
 
 	var errorCode C.int
 	count := C.document_editor_get_page_count(editor.handle, &errorCode)
@@ -835,7 +754,7 @@ func (editor *DocumentEditor) Title() (string, error) {
 	if err := editor.acquireRead(); err != nil {
 		return "", err
 	}
-	defer editor.mu.RUnlock()
+	defer editor.mu.Unlock()
 
 	var errorCode C.int
 	cTitle := C.document_editor_get_title(editor.handle, &errorCode)
@@ -878,7 +797,7 @@ func (editor *DocumentEditor) Author() (string, error) {
 	if err := editor.acquireRead(); err != nil {
 		return "", err
 	}
-	defer editor.mu.RUnlock()
+	defer editor.mu.Unlock()
 
 	var errorCode C.int
 	cAuthor := C.document_editor_get_author(editor.handle, &errorCode)
@@ -921,7 +840,7 @@ func (editor *DocumentEditor) Subject() (string, error) {
 	if err := editor.acquireRead(); err != nil {
 		return "", err
 	}
-	defer editor.mu.RUnlock()
+	defer editor.mu.Unlock()
 
 	var errorCode C.int
 	cSubject := C.document_editor_get_subject(editor.handle, &errorCode)
@@ -964,7 +883,7 @@ func (editor *DocumentEditor) Producer() (string, error) {
 	if err := editor.acquireRead(); err != nil {
 		return "", err
 	}
-	defer editor.mu.RUnlock()
+	defer editor.mu.Unlock()
 
 	var errorCode C.int
 	cProducer := C.document_editor_get_producer(editor.handle, &errorCode)
@@ -1007,7 +926,7 @@ func (editor *DocumentEditor) CreationDate() (string, error) {
 	if err := editor.acquireRead(); err != nil {
 		return "", err
 	}
-	defer editor.mu.RUnlock()
+	defer editor.mu.Unlock()
 
 	var errorCode C.int
 	cDate := C.document_editor_get_creation_date(editor.handle, &errorCode)
@@ -1250,17 +1169,8 @@ func (pdf *PdfCreator) Close() {
 	pdf.closed = true
 }
 
-// SearchResult represents a single search result in a PDF. JSON tags match
-// the `pdf_oxide_search_results_to_json` Rust FFI schema so the Go layer does
-// not need any per-field FFI calls.
-type SearchResult struct {
-	Text   string  `json:"text"`
-	Page   int     `json:"page"`
-	X      float32 `json:"x"`
-	Y      float32 `json:"y"`
-	Width  float32 `json:"width"`
-	Height float32 `json:"height"`
-}
+// SearchResult, Font, Annotation, Element structs live in types.go so
+// both the cgo and purego backends share them.
 
 // SearchPage searches for text on a specific page and returns all matches.
 // All marshaling logic lives on the Rust side in `pdf_oxide_search_results_to_json`;
@@ -1269,7 +1179,7 @@ func (doc *PdfDocument) SearchPage(pageIndex int, searchTerm string, caseSensiti
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	cSearchTerm := C.CString(searchTerm)
 	defer C.free(unsafe.Pointer(cSearchTerm))
@@ -1292,7 +1202,7 @@ func (doc *PdfDocument) SearchAll(searchTerm string, caseSensitive bool) ([]Sear
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	cSearchTerm := C.CString(searchTerm)
 	defer C.free(unsafe.Pointer(cSearchTerm))
@@ -1328,17 +1238,6 @@ func decodeSearchResults(handle unsafe.Pointer) ([]SearchResult, error) {
 	return results, nil
 }
 
-// Font represents a font embedded in or used by a PDF page. JSON tags match
-// the `pdf_oxide_fonts_to_json` Rust FFI schema.
-type Font struct {
-	Name       string  `json:"name"`
-	Type       string  `json:"type"`
-	Encoding   string  `json:"encoding"`
-	IsEmbedded bool    `json:"isEmbedded"`
-	IsSubset   bool    `json:"isSubset"`
-	Size       float32 `json:"size"`
-}
-
 // Fonts returns all fonts used or embedded in the given page. Marshaling is
 // done entirely on the Rust side via `pdf_oxide_fonts_to_json`; the Go layer
 // makes exactly one FFI call per page.
@@ -1346,7 +1245,7 @@ func (doc *PdfDocument) Fonts(pageIndex int) ([]Font, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	var errorCode C.int
 	handle := C.pdf_document_get_embedded_fonts(doc.handle, C.int32_t(pageIndex), &errorCode)
@@ -1390,7 +1289,7 @@ func (doc *PdfDocument) Images(pageIndex int) ([]Image, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	var errorCode C.int
 	handle := C.pdf_document_get_embedded_images(doc.handle, C.int32_t(pageIndex), &errorCode)
@@ -1468,38 +1367,13 @@ func readImageAt(handle unsafe.Pointer, index C.int32_t) (Image, error) {
 	}, nil
 }
 
-// Annotation represents a single annotation on a PDF page with all its
-// metadata already materialized. JSON tags match the
-// `pdf_oxide_annotations_to_json` Rust FFI schema so the Go layer makes
-// exactly one FFI call per page.
-type Annotation struct {
-	Type             string  `json:"type"`
-	Subtype          string  `json:"subtype"`
-	Content          string  `json:"content"`
-	X                float32 `json:"x"`
-	Y                float32 `json:"y"`
-	Width            float32 `json:"width"`
-	Height           float32 `json:"height"`
-	Author           string  `json:"author"`
-	BorderWidth      float32 `json:"borderWidth"`
-	Color            uint32  `json:"color"`
-	CreationDate     int64   `json:"creationDate"`
-	ModificationDate int64   `json:"modificationDate"`
-	LinkURI          string  `json:"linkURI"`
-	TextIconName     string  `json:"textIconName"`
-	IsHidden         bool    `json:"isHidden"`
-	IsPrintable      bool    `json:"isPrintable"`
-	IsReadOnly       bool    `json:"isReadOnly"`
-	IsMarkedDeleted  bool    `json:"isMarkedDeleted"`
-}
-
 // Annotations returns all annotations on the given page with full details.
 // Marshaling is done entirely on the Rust side via `pdf_oxide_annotations_to_json`.
 func (doc *PdfDocument) Annotations(pageIndex int) ([]Annotation, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	var errorCode C.int
 	handle := C.pdf_document_get_page_annotations(doc.handle, C.int32_t(pageIndex), &errorCode)
@@ -1553,7 +1427,7 @@ func (doc *PdfDocument) PageInfo(pageIndex int) (*PageInfo, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	var errorCode C.int
 
@@ -1612,24 +1486,13 @@ func (doc *PdfDocument) PageInfo(pageIndex int) (*PageInfo, error) {
 	}, nil
 }
 
-// Element represents a content element on a page (a text span with position).
-// JSON tags match the `pdf_oxide_elements_to_json` Rust FFI schema.
-type Element struct {
-	Type   string  `json:"type"`
-	Text   string  `json:"text"`
-	X      float32 `json:"x"`
-	Y      float32 `json:"y"`
-	Width  float32 `json:"width"`
-	Height float32 `json:"height"`
-}
-
 // PageElements returns all text-span elements on the given page. Marshaling
 // is done entirely on the Rust side via `pdf_oxide_elements_to_json`.
 func (doc *PdfDocument) PageElements(pageIndex int) ([]Element, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 
 	var errorCode C.int
 	handle := C.pdf_page_get_elements(doc.handle, C.int32_t(pageIndex), &errorCode)
@@ -1738,7 +1601,7 @@ func (doc *PdfDocument) IsEncrypted() bool {
 	if err := doc.acquireRead(); err != nil {
 		return false
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	return bool(C.pdf_document_is_encrypted(doc.handle))
 }
 
@@ -1747,7 +1610,7 @@ func (doc *PdfDocument) Authenticate(password string) (bool, error) {
 	if err := doc.acquireRead(); err != nil {
 		return false, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	cPwd := C.CString(password)
 	defer C.free(unsafe.Pointer(cPwd))
 	var errorCode C.int
@@ -1763,7 +1626,7 @@ func (doc *PdfDocument) ExtractAllText() (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	cText := C.pdf_document_extract_all_text(doc.handle, &errorCode)
 	if errorCode != 0 {
@@ -1779,7 +1642,7 @@ func (doc *PdfDocument) ToHtmlAll() (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	cText := C.pdf_document_to_html_all(doc.handle, &errorCode)
 	if errorCode != 0 {
@@ -1795,7 +1658,7 @@ func (doc *PdfDocument) ToPlainTextAll() (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	cText := C.pdf_document_to_plain_text_all(doc.handle, &errorCode)
 	if errorCode != 0 {
@@ -1820,7 +1683,7 @@ func (doc *PdfDocument) ExtractWords(pageIndex int) ([]Word, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	handle := C.pdf_document_extract_words(doc.handle, C.int32_t(pageIndex), &errorCode)
 	if errorCode != 0 {
@@ -1860,7 +1723,7 @@ func (doc *PdfDocument) ExtractTextLines(pageIndex int) ([]TextLine, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	handle := C.pdf_document_extract_text_lines(doc.handle, C.int32_t(pageIndex), &errorCode)
 	if errorCode != 0 {
@@ -1897,7 +1760,7 @@ func (doc *PdfDocument) ExtractTables(pageIndex int) ([]Table, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	handle := C.pdf_document_extract_tables(doc.handle, C.int32_t(pageIndex), &errorCode)
 	if errorCode != 0 {
@@ -1934,7 +1797,7 @@ func (doc *PdfDocument) ExtractTextInRect(pageIndex int, x, y, w, h float32) (st
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	cText := C.pdf_document_extract_text_in_rect(doc.handle, C.int32_t(pageIndex), C.float(x), C.float(y), C.float(w), C.float(h), &errorCode)
 	if errorCode != 0 {
@@ -1954,12 +1817,12 @@ type FormField struct {
 	Required bool
 }
 
-// GetFormFields returns all form fields in the document
+// FormFields returns all form fields in the document.
 func (doc *PdfDocument) FormFields() ([]FormField, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	handle := C.pdf_document_get_form_fields(doc.handle, &errorCode)
 	if errorCode != 0 {
@@ -1995,7 +1858,7 @@ func (doc *PdfDocument) HasXfa() bool {
 	if err := doc.acquireRead(); err != nil {
 		return false
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	return bool(C.pdf_document_has_xfa(doc.handle))
 }
 
@@ -2042,7 +1905,7 @@ func (doc *PdfDocument) NeedsOcr(pageIndex int) (bool, error) {
 	if err := doc.acquireRead(); err != nil {
 		return false, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	result := bool(C.pdf_ocr_page_needs_ocr(doc.handle, C.int32_t(pageIndex), &errorCode))
 	if errorCode != 0 {
@@ -2057,7 +1920,7 @@ func (doc *PdfDocument) ExtractTextWithOcr(pageIndex int, engine *OcrEngine) (st
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var enginePtr unsafe.Pointer
 	if engine != nil {
 		enginePtr = engine.handle
@@ -2080,7 +1943,7 @@ func (doc *PdfDocument) RemoveHeaders(threshold float32) (int, error) {
 	if err := doc.acquireRead(); err != nil {
 		return 0, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	n := C.pdf_document_remove_headers(doc.handle, C.float(threshold), &errorCode)
 	if errorCode != 0 {
@@ -2094,7 +1957,7 @@ func (doc *PdfDocument) RemoveFooters(threshold float32) (int, error) {
 	if err := doc.acquireRead(); err != nil {
 		return 0, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	n := C.pdf_document_remove_footers(doc.handle, C.float(threshold), &errorCode)
 	if errorCode != 0 {
@@ -2108,7 +1971,7 @@ func (doc *PdfDocument) RemoveArtifacts(threshold float32) (int, error) {
 	if err := doc.acquireRead(); err != nil {
 		return 0, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	n := C.pdf_document_remove_artifacts(doc.handle, C.float(threshold), &errorCode)
 	if errorCode != 0 {
@@ -2122,7 +1985,7 @@ func (doc *PdfDocument) ExportFormData(format int) ([]byte, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	var outLen C.size_t
 	data := C.pdf_document_export_form_data_to_bytes(doc.handle, C.int32_t(format), &outLen, &errorCode)
@@ -2172,7 +2035,7 @@ func (editor *DocumentEditor) PageRotation(pageIndex int) (int, error) {
 	if err := editor.acquireRead(); err != nil {
 		return 0, err
 	}
-	defer editor.mu.RUnlock()
+	defer editor.mu.Unlock()
 	var errorCode C.int
 	r := C.document_editor_get_page_rotation(editor.handle, C.int32_t(pageIndex), &errorCode)
 	if errorCode != 0 {
@@ -2299,7 +2162,7 @@ func (doc *PdfDocument) ValidatePdfA(level int) (*PdfAResult, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	results := C.pdf_validate_pdf_a_level(doc.handle, C.int32_t(level), &errorCode)
 	if errorCode != 0 {
@@ -2340,7 +2203,7 @@ func (doc *PdfDocument) ValidatePdfUa() (bool, []string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return false, nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	results := C.pdf_validate_pdf_ua(doc.handle, C.int32_t(1), &errorCode)
 	if errorCode != 0 {
@@ -2373,7 +2236,7 @@ func (doc *PdfDocument) ExtractChars(pageIndex int) ([]Char, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	handle := C.pdf_document_extract_chars(doc.handle, C.int32_t(pageIndex), &errorCode)
 	if errorCode != 0 {
@@ -2411,7 +2274,7 @@ func (doc *PdfDocument) ExtractPaths(pageIndex int) ([]Path, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	handle := C.pdf_document_extract_paths(doc.handle, C.int32_t(pageIndex), &errorCode)
 	if errorCode != 0 {
@@ -2434,12 +2297,12 @@ func (doc *PdfDocument) ExtractPaths(pageIndex int) ([]Path, error) {
 	return paths, nil
 }
 
-// GetPageLabels returns page labels as JSON string
+// PageLabels returns the document's page-label map serialised as a JSON string.
 func (doc *PdfDocument) PageLabels() (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	cText := C.pdf_document_get_page_labels(doc.handle, &errorCode)
 	if errorCode != 0 {
@@ -2450,12 +2313,12 @@ func (doc *PdfDocument) PageLabels() (string, error) {
 	return text, nil
 }
 
-// GetXmpMetadata returns XMP metadata as JSON string
+// XmpMetadata returns the document's XMP metadata serialised as a JSON string.
 func (doc *PdfDocument) XmpMetadata() (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	cText := C.pdf_document_get_xmp_metadata(doc.handle, &errorCode)
 	if errorCode != 0 {
@@ -2466,12 +2329,12 @@ func (doc *PdfDocument) XmpMetadata() (string, error) {
 	return text, nil
 }
 
-// GetOutline returns document outline/bookmarks as JSON string
+// Outline returns the document outline / bookmarks serialised as a JSON string.
 func (doc *PdfDocument) Outline() (string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return "", err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	cText := C.pdf_document_get_outline(doc.handle, &errorCode)
 	if errorCode != 0 {
@@ -2523,7 +2386,7 @@ func (doc *PdfDocument) ValidatePdfX(level int) (bool, []string, error) {
 	if err := doc.acquireRead(); err != nil {
 		return false, nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	results := C.pdf_validate_pdf_x_level(doc.handle, C.int32_t(level), &errorCode)
 	if errorCode != 0 {
@@ -2561,7 +2424,7 @@ func (doc *PdfDocument) ExtractWordsInRect(pageIndex int, x, y, w, h float32) ([
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	handle := C.pdf_document_extract_words_in_rect(doc.handle, C.int32_t(pageIndex), C.float(x), C.float(y), C.float(w), C.float(h), &errorCode)
 	if errorCode != 0 {
@@ -2586,7 +2449,7 @@ func (doc *PdfDocument) ExtractImagesInRect(pageIndex int, x, y, w, h float32) (
 	if err := doc.acquireRead(); err != nil {
 		return 0, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	handle := C.pdf_document_extract_images_in_rect(doc.handle, C.int32_t(pageIndex), C.float(x), C.float(y), C.float(w), C.float(h), &errorCode)
 	if errorCode != 0 {
@@ -2654,12 +2517,131 @@ type RenderedImage struct {
 	Height int
 }
 
+// RenderFormat selects the output image format.
+type RenderFormat int32
+
+const (
+	// RenderFormatPng selects PNG output (supports transparency).
+	RenderFormatPng RenderFormat = 0
+	// RenderFormatJpeg selects JPEG output (honours JpegQuality).
+	RenderFormatJpeg RenderFormat = 1
+)
+
+// RenderOptions mirrors Rust's RenderOptions
+// (src/rendering/page_renderer.rs:41). Fields are individually
+// zero-safe: a zero-value RenderOptions{} renders at 150 DPI PNG with
+// an opaque white background, annotations on, JPEG quality 85 (same
+// defaults as Rust).
+type RenderOptions struct {
+	// Dpi is the resolution in dots per inch. 0 => default 150.
+	Dpi int
+	// Format selects PNG or JPEG. Zero = PNG.
+	Format RenderFormat
+	// Background is RGBA in [0.0, 1.0]. Zero value is the alpha-0
+	// transparent (unusual default); if all four channels are zero
+	// we substitute the Rust default of opaque white so Go callers
+	// get intuitive behaviour without having to fill the struct.
+	Background [4]float32
+	// TransparentBackground drops the background fill entirely.
+	// When true, overrides Background and matches Rust's
+	// `Option::None` on the background field.
+	TransparentBackground bool
+	// RenderAnnotations toggles the annotation layer. Zero value
+	// (false) maps to Rust's default of true.
+	RenderAnnotations bool
+	// JpegQuality is 1..=100. 0 => default 85. Only applies when
+	// Format is RenderFormatJpeg.
+	JpegQuality int
+	// renderAnnotationsSet is an internal sentinel letting callers
+	// set RenderAnnotations=false deliberately without having to
+	// pass the whole struct through a constructor.
+	renderAnnotationsSet bool
+}
+
+// WithAnnotationsOff returns a copy of opts with annotation rendering
+// disabled. Use this instead of setting RenderAnnotations=false
+// directly, otherwise a zero-value struct cannot be distinguished
+// from an unspecified field.
+func (opts RenderOptions) WithAnnotationsOff() RenderOptions {
+	opts.RenderAnnotations = false
+	opts.renderAnnotationsSet = true
+	return opts
+}
+
+// WithAnnotationsOn mirrors WithAnnotationsOff.
+func (opts RenderOptions) WithAnnotationsOn() RenderOptions {
+	opts.RenderAnnotations = true
+	opts.renderAnnotationsSet = true
+	return opts
+}
+
+// RenderPageWithOptions renders a page with the full RenderOptions
+// surface — DPI, format, background colour or transparency,
+// annotation toggle, and JPEG quality. Mirrors Python's expanded
+// `render_page` keywords and the C#
+// `RenderPage(int, RenderOptions)` overload.
+//
+// Returns an error (wrapping ErrInvalidPath or equivalent) on bad
+// options, matching other Go FFI error paths.
+func (doc *PdfDocument) RenderPageWithOptions(pageIndex int, opts RenderOptions) (*RenderedImage, error) {
+	if err := doc.acquireRead(); err != nil {
+		return nil, err
+	}
+	defer doc.mu.Unlock()
+
+	dpi := opts.Dpi
+	if dpi == 0 {
+		dpi = 150
+	}
+	jpegQuality := opts.JpegQuality
+	if jpegQuality == 0 {
+		jpegQuality = 85
+	}
+	// Apply "zero-value means Rust default (opaque white)" trick.
+	bg := opts.Background
+	if bg == [4]float32{0, 0, 0, 0} && !opts.TransparentBackground {
+		bg = [4]float32{1, 1, 1, 1}
+	}
+	renderAnnots := int32(1)
+	if opts.renderAnnotationsSet {
+		if !opts.RenderAnnotations {
+			renderAnnots = 0
+		}
+	}
+	transparent := int32(0)
+	if opts.TransparentBackground {
+		transparent = 1
+	}
+
+	var errorCode C.int
+	handle := C.pdf_render_page_with_options(
+		doc.handle,
+		C.int32_t(pageIndex),
+		C.int32_t(dpi),
+		C.int32_t(opts.Format),
+		C.float(bg[0]), C.float(bg[1]), C.float(bg[2]), C.float(bg[3]),
+		C.int32_t(transparent),
+		C.int32_t(renderAnnots),
+		C.int32_t(jpegQuality),
+		&errorCode,
+	)
+	if errorCode != 0 {
+		return nil, ffiError(errorCode)
+	}
+	if handle == nil {
+		return nil, ErrInternal
+	}
+	w := int(C.pdf_get_rendered_image_width(handle, &errorCode))
+	h := int(C.pdf_get_rendered_image_height(handle, &errorCode))
+	return &RenderedImage{handle: handle, Width: w, Height: h}, nil
+}
+
 // RenderPage renders a page to an image. format: 0=PNG, 1=JPEG
 func (doc *PdfDocument) RenderPage(pageIndex int, format int) (*RenderedImage, error) {
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	handle := C.pdf_render_page(doc.handle, C.int32_t(pageIndex), C.int32_t(format), &errorCode)
 	if errorCode != 0 {
@@ -2678,7 +2660,7 @@ func (doc *PdfDocument) RenderPageZoom(pageIndex int, zoom float32, format int) 
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	handle := C.pdf_render_page_zoom(doc.handle, C.int32_t(pageIndex), C.float(zoom), C.int32_t(format), &errorCode)
 	if errorCode != 0 {
@@ -2697,7 +2679,7 @@ func (doc *PdfDocument) RenderThumbnail(pageIndex int, size int, format int) (*R
 	if err := doc.acquireRead(); err != nil {
 		return nil, err
 	}
-	defer doc.mu.RUnlock()
+	defer doc.mu.Unlock()
 	var errorCode C.int
 	handle := C.pdf_render_page_thumbnail(doc.handle, C.int32_t(pageIndex), C.int32_t(size), C.int32_t(format), &errorCode)
 	if errorCode != 0 {
@@ -2850,6 +2832,79 @@ func (cert *Certificate) Close() {
 	}
 }
 
+// certReadString is the shared body for Subject / Issuer / Serial — each FFI
+// call returns a `*C.char` that must be copied to Go memory and freed.
+func (cert *Certificate) certReadString(fn func(unsafe.Pointer, *C.int) *C.char) (string, error) {
+	if cert.handle == nil {
+		return "", ErrInternal
+	}
+	var errorCode C.int
+	cStr := fn(cert.handle, &errorCode)
+	if errorCode != 0 {
+		return "", ffiError(errorCode)
+	}
+	if cStr == nil {
+		return "", nil
+	}
+	defer C.free_string(cStr)
+	return C.GoString(cStr), nil
+}
+
+// Subject returns the certificate's subject distinguished name (e.g.
+// "CN=Example Corp, O=Example, C=US"). Returns an error if the certificate
+// has been closed or the native call fails.
+func (cert *Certificate) Subject() (string, error) {
+	return cert.certReadString(func(h unsafe.Pointer, ec *C.int) *C.char {
+		return C.pdf_certificate_get_subject(h, ec)
+	})
+}
+
+// Issuer returns the issuer distinguished name — the DN of the CA that
+// signed this certificate (self-signed certs have Issuer == Subject).
+func (cert *Certificate) Issuer() (string, error) {
+	return cert.certReadString(func(h unsafe.Pointer, ec *C.int) *C.char {
+		return C.pdf_certificate_get_issuer(h, ec)
+	})
+}
+
+// Serial returns the certificate's serial number as a hex-encoded string.
+func (cert *Certificate) Serial() (string, error) {
+	return cert.certReadString(func(h unsafe.Pointer, ec *C.int) *C.char {
+		return C.pdf_certificate_get_serial(h, ec)
+	})
+}
+
+// Validity returns the certificate's notBefore and notAfter times as Unix
+// epoch seconds, wrapped in time.Time. Callers comparing against time.Now()
+// get "is this cert currently time-valid" — IsValid() does that check.
+func (cert *Certificate) Validity() (notBefore, notAfter time.Time, err error) {
+	if cert.handle == nil {
+		return time.Time{}, time.Time{}, ErrInternal
+	}
+	var nb, na C.int64_t
+	var errorCode C.int
+	C.pdf_certificate_get_validity(cert.handle, &nb, &na, &errorCode)
+	if errorCode != 0 {
+		return time.Time{}, time.Time{}, ffiError(errorCode)
+	}
+	return time.Unix(int64(nb), 0).UTC(), time.Unix(int64(na), 0).UTC(), nil
+}
+
+// IsValid reports whether the certificate is currently within its validity
+// window (notBefore ≤ now ≤ notAfter). It does NOT verify the signature
+// chain, trust-root, or revocation — this is a time-window check only.
+func (cert *Certificate) IsValid() (bool, error) {
+	if cert.handle == nil {
+		return false, ErrInternal
+	}
+	var errorCode C.int
+	rc := C.pdf_certificate_is_valid(cert.handle, &errorCode)
+	if errorCode != 0 {
+		return false, ffiError(errorCode)
+	}
+	return rc != 0, nil
+}
+
 // SignatureInfo holds extracted signature information
 type SignatureInfo struct {
 	handle     unsafe.Pointer
@@ -2864,6 +2919,424 @@ func (sig *SignatureInfo) Close() {
 		C.pdf_signature_free(sig.handle)
 		sig.handle = nil
 	}
+}
+
+// Signature is a live handle to an existing PDF digital signature
+// returned by PdfDocument.Signatures. Close() must be called to
+// release the underlying native handle. Cryptographic Verify()
+// surfaces as ErrUnsupportedFeature until the Rust CMS
+// signature-verification path lands.
+type Signature struct {
+	handle unsafe.Pointer
+}
+
+// SignatureCount returns the number of existing digital signatures in
+// the document. Returns 0 when the PDF has no AcroForm or no signed
+// signature fields (not an error).
+func (doc *PdfDocument) SignatureCount() (int, error) {
+	if err := doc.acquireRead(); err != nil {
+		return 0, err
+	}
+	defer doc.mu.Unlock()
+	var errorCode C.int
+	n := C.pdf_document_get_signature_count(doc.handle, &errorCode)
+	if errorCode != 0 {
+		return 0, ffiError(errorCode)
+	}
+	return int(n), nil
+}
+
+// Signatures returns a snapshot of every signature currently on the
+// document. Each Signature must be Close()d by the caller.
+func (doc *PdfDocument) Signatures() ([]*Signature, error) {
+	if err := doc.acquireRead(); err != nil {
+		return nil, err
+	}
+	defer doc.mu.Unlock()
+	var errorCode C.int
+	n := C.pdf_document_get_signature_count(doc.handle, &errorCode)
+	if errorCode != 0 {
+		return nil, ffiError(errorCode)
+	}
+	out := make([]*Signature, 0, n)
+	for i := C.int32_t(0); i < n; i++ {
+		var e C.int
+		h := C.pdf_document_get_signature(doc.handle, i, &e)
+		if e != 0 {
+			for _, s := range out {
+				s.Close()
+			}
+			return nil, ffiError(e)
+		}
+		if h == nil {
+			for _, s := range out {
+				s.Close()
+			}
+			return nil, fmt.Errorf("pdf_oxide: pdf_document_get_signature(%d) returned null", i)
+		}
+		out = append(out, &Signature{handle: h})
+	}
+	return out, nil
+}
+
+// SignerName returns the /Name entry on the signature dictionary, or
+// an empty string if absent.
+func (s *Signature) SignerName() (string, error) {
+	return sigReadString(s.handle, func(h unsafe.Pointer, e *C.int) *C.char {
+		return C.pdf_signature_get_signer_name(h, e)
+	})
+}
+
+// Reason returns the /Reason entry on the signature dictionary, or an
+// empty string if absent.
+func (s *Signature) Reason() (string, error) {
+	return sigReadString(s.handle, func(h unsafe.Pointer, e *C.int) *C.char {
+		return C.pdf_signature_get_signing_reason(h, e)
+	})
+}
+
+// Location returns the /Location entry on the signature dictionary, or
+// an empty string if absent.
+func (s *Signature) Location() (string, error) {
+	return sigReadString(s.handle, func(h unsafe.Pointer, e *C.int) *C.char {
+		return C.pdf_signature_get_signing_location(h, e)
+	})
+}
+
+// SigningTime returns the signing time parsed from the /M entry as a
+// Unix epoch. Returns 0 when the /M entry is absent or unparseable.
+func (s *Signature) SigningTime() (int64, error) {
+	if s.handle == nil {
+		return 0, ErrDocumentClosed
+	}
+	var e C.int
+	t := C.pdf_signature_get_signing_time(s.handle, &e)
+	if e != 0 {
+		return 0, ffiError(e)
+	}
+	return int64(t), nil
+}
+
+// Verify runs the RFC 5652 §5.4 signer-attributes RSA-PKCS#1 v1.5
+// crypto check against the certificate embedded in the signature's
+// CMS blob. Today it covers SHA-1 / SHA-256 / SHA-384 / SHA-512 —
+// the padding used by essentially every PDF signature in the wild.
+//
+// A true return proves the signer held the private key matching the
+// embedded certificate and that the signed-attribute bundle is
+// authentic. It does NOT verify the messageDigest attribute against
+// the document's byte-range content hash — call VerifyDetached for
+// that end-to-end check.
+//
+// Returns ErrUnsupportedFeature for RSA-PSS, ECDSA, unknown digest
+// OIDs, or CMS blobs missing signed_attrs.
+func (s *Signature) Verify() (bool, error) {
+	if s.handle == nil {
+		return false, ErrDocumentClosed
+	}
+	var e C.int
+	r := C.pdf_signature_verify(s.handle, &e)
+	if e != 0 {
+		return false, ffiError(e)
+	}
+	return r == 1, nil
+}
+
+// VerifyDetached runs both the signer-attributes RSA-PKCS#1 v1.5
+// crypto check AND the RFC 5652 §11.2 messageDigest attribute check
+// against the portion of pdfData that this signature covers (extracted
+// via the signature's /ByteRange).
+//
+// pdfData must be the full PDF file. A true result proves the signer
+// is authentic AND the document bytes under the ByteRange have not
+// been altered since signing. A false result means either the signer
+// check failed (wrong key / tampered attributes) or the content was
+// modified.
+//
+// Returns ErrUnsupportedFeature for RSA-PSS, ECDSA, unknown digest
+// OIDs, or CMS blobs missing signed_attrs / messageDigest.
+func (s *Signature) VerifyDetached(pdfData []byte) (bool, error) {
+	if s.handle == nil {
+		return false, ErrDocumentClosed
+	}
+	var e C.int
+	var dataPtr *C.uchar
+	if len(pdfData) > 0 {
+		dataPtr = (*C.uchar)(unsafe.Pointer(&pdfData[0]))
+	}
+	r := C.pdf_signature_verify_detached(
+		s.handle,
+		dataPtr,
+		C.size_t(len(pdfData)),
+		&e,
+	)
+	if e != 0 {
+		return false, ffiError(e)
+	}
+	return r == 1, nil
+}
+
+// Close releases the underlying native signature handle. Safe to call
+// more than once.
+func (s *Signature) Close() {
+	if s.handle != nil {
+		C.pdf_signature_free(s.handle)
+		s.handle = nil
+	}
+}
+
+// TimestampHashAlgorithm matches the Rust `HashAlgorithm` enum / FFI
+// contract: 1=SHA-1, 2=SHA-256, 3=SHA-384, 4=SHA-512, 0=Unknown.
+type TimestampHashAlgorithm int32
+
+// TimestampHashAlgorithm constants mirror the Rust `HashAlgorithm` enum /
+// FFI contract. Use these when creating or inspecting a Timestamp.
+const (
+	TimestampHashUnknown TimestampHashAlgorithm = 0
+	TimestampHashSha1    TimestampHashAlgorithm = 1
+	TimestampHashSha256  TimestampHashAlgorithm = 2
+	TimestampHashSha384  TimestampHashAlgorithm = 3
+	TimestampHashSha512  TimestampHashAlgorithm = 4
+)
+
+// Timestamp is an RFC 3161 timestamp parsed from a DER TimeStampToken
+// or a bare TSTInfo. Close() must be called to release the native
+// handle.
+type Timestamp struct {
+	handle unsafe.Pointer
+}
+
+// ParseTimestamp parses a DER-encoded RFC 3161 TimeStampToken (or a
+// bare TSTInfo SEQUENCE) into a Timestamp.
+func ParseTimestamp(data []byte) (*Timestamp, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("pdf_oxide: timestamp data is empty: %w", ErrEmptyContent)
+	}
+	var e C.int
+	h := C.pdf_timestamp_parse((*C.uint8_t)(unsafe.Pointer(&data[0])), C.size_t(len(data)), &e)
+	if e != 0 {
+		return nil, ffiError(e)
+	}
+	if h == nil {
+		return nil, fmt.Errorf("pdf_oxide: pdf_timestamp_parse returned null")
+	}
+	return &Timestamp{handle: h}, nil
+}
+
+// Time returns the generation time of the timestamp as a Unix epoch.
+func (t *Timestamp) Time() (int64, error) {
+	if t.handle == nil {
+		return 0, ErrDocumentClosed
+	}
+	var e C.int
+	ts := C.pdf_timestamp_get_time(t.handle, &e)
+	if e != 0 {
+		return 0, ffiError(e)
+	}
+	return int64(ts), nil
+}
+
+// Serial returns the serial number as a hex string (no 0x prefix).
+func (t *Timestamp) Serial() (string, error) {
+	return sigReadString(t.handle, func(h unsafe.Pointer, e *C.int) *C.char {
+		return C.pdf_timestamp_get_serial(h, e)
+	})
+}
+
+// PolicyOid returns the TSA policy OID in dotted-decimal form.
+func (t *Timestamp) PolicyOid() (string, error) {
+	return sigReadString(t.handle, func(h unsafe.Pointer, e *C.int) *C.char {
+		return C.pdf_timestamp_get_policy_oid(h, e)
+	})
+}
+
+// TsaName returns the TSA name declared in the TSTInfo, or "" if
+// absent.
+func (t *Timestamp) TsaName() (string, error) {
+	return sigReadString(t.handle, func(h unsafe.Pointer, e *C.int) *C.char {
+		return C.pdf_timestamp_get_tsa_name(h, e)
+	})
+}
+
+// HashAlgorithm returns the hash algorithm of the message imprint.
+func (t *Timestamp) HashAlgorithm() (TimestampHashAlgorithm, error) {
+	if t.handle == nil {
+		return TimestampHashUnknown, ErrDocumentClosed
+	}
+	var e C.int
+	code := C.pdf_timestamp_get_hash_algorithm(t.handle, &e)
+	if e != 0 {
+		return TimestampHashUnknown, ffiError(e)
+	}
+	return TimestampHashAlgorithm(int32(code)), nil
+}
+
+// MessageImprint returns the raw message-imprint hash bytes.
+func (t *Timestamp) MessageImprint() ([]byte, error) {
+	if t.handle == nil {
+		return nil, ErrDocumentClosed
+	}
+	var e C.int
+	var outLen C.size_t
+	p := C.pdf_timestamp_get_message_imprint(t.handle, &outLen, &e)
+	if e != 0 {
+		return nil, ffiError(e)
+	}
+	if p == nil || outLen == 0 {
+		return nil, nil
+	}
+	return C.GoBytes(unsafe.Pointer(p), C.int(outLen)), nil
+}
+
+// Verify cryptographically verifies the timestamp. Currently returns
+// ErrUnsupportedFeature until the Rust CMS signer verification path
+// lands.
+func (t *Timestamp) Verify() (bool, error) {
+	if t.handle == nil {
+		return false, ErrDocumentClosed
+	}
+	var e C.int
+	ok := C.pdf_timestamp_verify(t.handle, &e)
+	if e != 0 {
+		return false, ffiError(e)
+	}
+	return bool(ok), nil
+}
+
+// Close releases the native timestamp handle. Safe to call more than
+// once.
+func (t *Timestamp) Close() {
+	if t.handle != nil {
+		C.pdf_timestamp_free(t.handle)
+		t.handle = nil
+	}
+}
+
+// TsaClientOptions configures a TsaClient. Only Url is required;
+// everything else mirrors the Rust-core TsaClientConfig defaults.
+type TsaClientOptions struct {
+	URL            string
+	Username       string // optional
+	Password       string // optional
+	TimeoutSeconds int32  // 0 falls back to 30s
+	HashAlgorithm  TimestampHashAlgorithm
+	UseNonce       bool
+	CertReq        bool
+}
+
+// NewTsaClientOptions returns options with Rust-core-matching defaults.
+func NewTsaClientOptions(url string) TsaClientOptions {
+	return TsaClientOptions{
+		URL:            url,
+		TimeoutSeconds: 30,
+		HashAlgorithm:  TimestampHashSha256,
+		UseNonce:       true,
+		CertReq:        true,
+	}
+}
+
+// TsaClient is an RFC 3161 TSA HTTP client.
+// Only linked when pdf_oxide was built with the `tsa-client` Rust-core
+// feature; otherwise the FFI entry returns ErrUnsupportedFeature.
+type TsaClient struct {
+	handle unsafe.Pointer
+}
+
+// NewTsaClient builds a TSA client. Network is not touched until
+// RequestTimestamp / RequestTimestampHash is called.
+func NewTsaClient(opts TsaClientOptions) (*TsaClient, error) {
+	if opts.URL == "" {
+		return nil, fmt.Errorf("pdf_oxide: TSA url must not be empty")
+	}
+	cURL := C.CString(opts.URL)
+	defer C.free(unsafe.Pointer(cURL))
+	cUser := C.CString(opts.Username)
+	defer C.free(unsafe.Pointer(cUser))
+	cPass := C.CString(opts.Password)
+	defer C.free(unsafe.Pointer(cPass))
+	var e C.int
+	h := C.pdf_tsa_client_create(
+		cURL, cUser, cPass,
+		C.int32_t(opts.TimeoutSeconds),
+		C.int32_t(opts.HashAlgorithm),
+		C.bool(opts.UseNonce),
+		C.bool(opts.CertReq),
+		&e,
+	)
+	if e != 0 {
+		return nil, ffiError(e)
+	}
+	if h == nil {
+		return nil, fmt.Errorf("pdf_oxide: pdf_tsa_client_create returned null")
+	}
+	return &TsaClient{handle: h}, nil
+}
+
+// RequestTimestamp hashes data with the configured algorithm and
+// requests a timestamp for the digest.
+func (c *TsaClient) RequestTimestamp(data []byte) (*Timestamp, error) {
+	if c.handle == nil {
+		return nil, ErrDocumentClosed
+	}
+	var e C.int
+	var dataPtr *C.uint8_t
+	if len(data) > 0 {
+		dataPtr = (*C.uint8_t)(unsafe.Pointer(&data[0]))
+	}
+	h := C.pdf_tsa_request_timestamp(c.handle, dataPtr, C.size_t(len(data)), &e)
+	if e != 0 {
+		return nil, ffiError(e)
+	}
+	if h == nil {
+		return nil, fmt.Errorf("pdf_oxide: pdf_tsa_request_timestamp returned null")
+	}
+	return &Timestamp{handle: h}, nil
+}
+
+// RequestTimestampHash requests a timestamp for a pre-computed hash.
+func (c *TsaClient) RequestTimestampHash(hash []byte, algo TimestampHashAlgorithm) (*Timestamp, error) {
+	if c.handle == nil {
+		return nil, ErrDocumentClosed
+	}
+	var e C.int
+	var hashPtr *C.uint8_t
+	if len(hash) > 0 {
+		hashPtr = (*C.uint8_t)(unsafe.Pointer(&hash[0]))
+	}
+	h := C.pdf_tsa_request_timestamp_hash(
+		c.handle, hashPtr, C.size_t(len(hash)), C.int32_t(algo), &e,
+	)
+	if e != 0 {
+		return nil, ffiError(e)
+	}
+	if h == nil {
+		return nil, fmt.Errorf("pdf_oxide: pdf_tsa_request_timestamp_hash returned null")
+	}
+	return &Timestamp{handle: h}, nil
+}
+
+// Close releases the client handle. Safe to call more than once.
+func (c *TsaClient) Close() {
+	if c.handle != nil {
+		C.pdf_tsa_client_free(c.handle)
+		c.handle = nil
+	}
+}
+
+func sigReadString(h unsafe.Pointer, fn func(unsafe.Pointer, *C.int) *C.char) (string, error) {
+	if h == nil {
+		return "", ErrDocumentClosed
+	}
+	var e C.int
+	p := fn(h, &e)
+	if e != 0 {
+		return "", ffiError(e)
+	}
+	if p == nil {
+		return "", nil
+	}
+	defer C.free_string(p)
+	return C.GoString(p), nil
 }
 
 // ================================================================
@@ -2882,26 +3355,9 @@ func OpenReader(r io.Reader) (*PdfDocument, error) {
 }
 
 // ================================================================
-// Logging
+// Logging — LogLevel type and constants live in types.go (tag-free)
+// so both backends share them.
 // ================================================================
-
-// LogLevel represents the log verbosity level.
-type LogLevel int
-
-const (
-	// LogOff disables all logging.
-	LogOff LogLevel = 0
-	// LogError enables error messages only.
-	LogError LogLevel = 1
-	// LogWarn enables warnings and errors.
-	LogWarn LogLevel = 2
-	// LogInfo enables informational messages.
-	LogInfo LogLevel = 3
-	// LogDebug enables debug messages.
-	LogDebug LogLevel = 4
-	// LogTrace enables verbose trace messages.
-	LogTrace LogLevel = 5
-)
 
 // SetLogLevel sets the global log level for the pdf_oxide library.
 // Use the LogLevel constants (LogOff, LogError, LogWarn, LogInfo, LogDebug, LogTrace).
@@ -2950,23 +3406,54 @@ func (doc *PdfDocument) Pages() ([]*Page, error) {
 	return pages, nil
 }
 
-func (p *Page) Text() (string, error)              { return p.doc.ExtractText(p.Index) }
-func (p *Page) Markdown() (string, error)          { return p.doc.ToMarkdown(p.Index) }
-func (p *Page) Html() (string, error)              { return p.doc.ToHtml(p.Index) }
-func (p *Page) PlainText() (string, error)         { return p.doc.ToPlainText(p.Index) }
-func (p *Page) Chars() ([]Char, error)             { return p.doc.ExtractChars(p.Index) }
-func (p *Page) Words() ([]Word, error)             { return p.doc.ExtractWords(p.Index) }
-func (p *Page) Lines() ([]TextLine, error)         { return p.doc.ExtractTextLines(p.Index) }
-func (p *Page) Tables() ([]Table, error)           { return p.doc.ExtractTables(p.Index) }
-func (p *Page) Images() ([]Image, error)           { return p.doc.Images(p.Index) }
-func (p *Page) Paths() ([]Path, error)             { return p.doc.ExtractPaths(p.Index) }
-func (p *Page) Fonts() ([]Font, error)             { return p.doc.Fonts(p.Index) }
+// Text extracts plain text from the page. Wrapper around PdfDocument.ExtractText.
+func (p *Page) Text() (string, error) { return p.doc.ExtractText(p.Index) }
+
+// Markdown renders the page as Markdown.
+func (p *Page) Markdown() (string, error) { return p.doc.ToMarkdown(p.Index) }
+
+// Html renders the page as HTML.
+func (p *Page) Html() (string, error) { return p.doc.ToHtml(p.Index) }
+
+// PlainText returns the page's stripped plain-text form.
+func (p *Page) PlainText() (string, error) { return p.doc.ToPlainText(p.Index) }
+
+// Chars returns the individual character records for the page.
+func (p *Page) Chars() ([]Char, error) { return p.doc.ExtractChars(p.Index) }
+
+// Words returns word-level records for the page.
+func (p *Page) Words() ([]Word, error) { return p.doc.ExtractWords(p.Index) }
+
+// Lines returns text-line records for the page.
+func (p *Page) Lines() ([]TextLine, error) { return p.doc.ExtractTextLines(p.Index) }
+
+// Tables returns detected tables on the page.
+func (p *Page) Tables() ([]Table, error) { return p.doc.ExtractTables(p.Index) }
+
+// Images returns embedded images on the page.
+func (p *Page) Images() ([]Image, error) { return p.doc.Images(p.Index) }
+
+// Paths returns vector paths on the page.
+func (p *Page) Paths() ([]Path, error) { return p.doc.ExtractPaths(p.Index) }
+
+// Fonts returns the fonts referenced by the page.
+func (p *Page) Fonts() ([]Font, error) { return p.doc.Fonts(p.Index) }
+
+// Annotations returns the page's annotations.
 func (p *Page) Annotations() ([]Annotation, error) { return p.doc.Annotations(p.Index) }
-func (p *Page) Info() (*PageInfo, error)           { return p.doc.PageInfo(p.Index) }
+
+// Info returns the page's metadata (size, rotation, …).
+func (p *Page) Info() (*PageInfo, error) { return p.doc.PageInfo(p.Index) }
+
+// Search runs a text search across the page. Case-sensitive if cs is true.
 func (p *Page) Search(term string, cs bool) ([]SearchResult, error) {
 	return p.doc.SearchPage(p.Index, term, cs)
 }
+
+// NeedsOcr reports whether the page appears to be scanned image content.
 func (p *Page) NeedsOcr() (bool, error) { return p.doc.NeedsOcr(p.Index) }
+
+// TextWithOcr runs OCR on the page using the supplied engine.
 func (p *Page) TextWithOcr(engine *OcrEngine) (string, error) {
 	return p.doc.ExtractTextWithOcr(p.Index, engine)
 }

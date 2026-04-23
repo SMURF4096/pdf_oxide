@@ -1,72 +1,71 @@
 // PDF Oxide Node.js bindings - Native module loader
 
-import type { Table } from './types/common.js';
-import { platform, arch } from 'node:process';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
+import { arch, platform } from 'node:process';
+import { fileURLToPath } from 'node:url';
 import {
-  PdfException,
-  ParseException,
-  IoException,
-  EncryptionException,
-  UnsupportedFeatureException,
-  InvalidStateException,
-  ValidationException,
-  RenderingException,
-  SearchException,
-  ComplianceException,
-  OcrException,
-  SignatureException,
-  CertificateLoadFailed,
-  SigningFailed,
-  RedactionException,
-  AccessibilityException,
-  OptimizationException,
-  UnknownError,
-  ErrorCategory,
-  ErrorSeverity,
-  wrapError,
-  wrapMethod,
-  wrapAsyncMethod,
-  mapFfiErrorCode,
-} from './errors';
-import {
-  addPdfDocumentProperties,
-  addPdfProperties,
-  addPdfPageProperties,
-} from './properties';
-import {
-  PdfBuilder,
-  ConversionOptionsBuilder,
-  MetadataBuilder,
   AnnotationBuilder,
+  ConversionOptionsBuilder,
+  DocumentBuilder,
+  EmbeddedFont,
+  MetadataBuilder,
+  PageBuilder,
+  PdfBuilder,
   SearchOptionsBuilder,
 } from './builders/index';
+import { DocumentEditor } from './document-editor';
 import {
-  OutlineManager,
-  MetadataManager,
-  ExtractionManager,
-  SearchManager,
-  SecurityManager,
+  AccessibilityException,
+  CertificateLoadFailed,
+  ComplianceException,
+  EncryptionException,
+  ErrorCategory,
+  ErrorSeverity,
+  InvalidStateException,
+  IoException,
+  mapFfiErrorCode,
+  OcrException,
+  OptimizationException,
+  ParseException,
+  PdfException,
+  RedactionException,
+  RenderingException,
+  SearchException,
+  SignatureException,
+  SigningFailed,
+  UnknownError,
+  UnsupportedFeatureException,
+  ValidationException,
+  wrapAsyncMethod,
+  wrapError,
+  wrapMethod,
+} from './errors';
+import {
   AnnotationManager,
-  LayerManager,
-  RenderingManager,
-  SearchStream,
-  ExtractionStream,
-  MetadataStream,
-  createSearchStream,
-  createExtractionStream,
-  createMetadataStream,
-  BatchManager,
   type BatchDocument,
+  BatchManager,
+  type BatchOptions,
   type BatchProgress,
   type BatchResult,
-  type BatchOptions,
   type BatchStatistics,
+  createExtractionStream,
+  createMetadataStream,
+  createSearchStream,
+  ExtractionManager,
+  ExtractionStream,
+  LayerManager,
+  MetadataManager,
+  MetadataStream,
+  OutlineManager,
+  RenderingManager,
+  SearchManager,
+  SearchStream,
+  SecurityManager,
 } from './managers/index';
+import type { Table } from './types/common.js';
+import type { WorkerResult, WorkerTask } from './workers/index';
 import { WorkerPool, workerPool } from './workers/index';
-import type { WorkerTask, WorkerResult } from './workers/index';
 
 // Create require function for CommonJS modules
 const __filename = fileURLToPath(import.meta.url);
@@ -123,16 +122,16 @@ const { OcrLanguage: OCRLanguage } = require('../lib/managers/ocr-manager.js') a
  * resolves to js/prebuilds/.
  */
 const PLATFORMS: Record<string, Record<string, string>> = {
-  'darwin': {
-    'x64': '../prebuilds/darwin-x64/pdf_oxide.node',
-    'arm64': '../prebuilds/darwin-arm64/pdf_oxide.node',
+  darwin: {
+    x64: '../prebuilds/darwin-x64/pdf_oxide.node',
+    arm64: '../prebuilds/darwin-arm64/pdf_oxide.node',
   },
-  'linux': {
-    'x64': '../prebuilds/linux-x64/pdf_oxide.node',
-    'arm64': '../prebuilds/linux-arm64/pdf_oxide.node',
+  linux: {
+    x64: '../prebuilds/linux-x64/pdf_oxide.node',
+    arm64: '../prebuilds/linux-arm64/pdf_oxide.node',
   },
-  'win32': {
-    'x64': '../prebuilds/win32-x64/pdf_oxide.node',
+  win32: {
+    x64: '../prebuilds/win32-x64/pdf_oxide.node',
   },
 };
 
@@ -144,12 +143,16 @@ const PLATFORMS: Record<string, Record<string, string>> = {
 function getPrebuildPath(): string {
   const osPaths = PLATFORMS[platform];
   if (!osPaths) {
-    throw new Error(`Unsupported platform: ${platform}. Supported platforms: ${Object.keys(PLATFORMS).join(', ')}`);
+    throw new Error(
+      `Unsupported platform: ${platform}. Supported platforms: ${Object.keys(PLATFORMS).join(', ')}`
+    );
   }
 
   const prebuildPath = osPaths[arch];
   if (!prebuildPath) {
-    throw new Error(`Unsupported architecture: ${arch} for ${platform}. Supported architectures: ${Object.keys(osPaths).join(', ')}`);
+    throw new Error(
+      `Unsupported architecture: ${arch} for ${platform}. Supported architectures: ${Object.keys(osPaths).join(', ')}`
+    );
   }
 
   return prebuildPath;
@@ -206,7 +209,12 @@ function wrapNativeClass(nativeClass: any, asyncMethods: string[] = []): any {
 
   // For static methods like PdfDocument.open()
   for (const key of Object.getOwnPropertyNames(nativeClass)) {
-    if (key !== 'prototype' && key !== 'length' && key !== 'name' && typeof nativeClass[key] === 'function') {
+    if (
+      key !== 'prototype' &&
+      key !== 'length' &&
+      key !== 'name' &&
+      typeof nativeClass[key] === 'function'
+    ) {
       const isAsync = asyncMethods.includes(key);
       if (isAsync) {
         nativeClass[key] = wrapAsyncMethod(nativeClass[key], nativeClass);
@@ -246,6 +254,26 @@ function wrapNativeClass(nativeClass: any, asyncMethods: string[] = []): any {
 // lifecycle wrapping the same FFI surface.
 // ---------------------------------------------------------------------------
 
+/**
+ * Options mirroring Rust's `RenderOptions` struct
+ * (see `src/rendering/page_renderer.rs:41`). Used by
+ * {@link PdfDocumentImpl.renderPageWithOptions}.
+ */
+export interface RenderOptions {
+  /** Resolution (default 150). */
+  dpi?: number;
+  /** Output format (default PNG). */
+  format?: 'png' | 'jpeg';
+  /** RGBA 0..=1 tuple (default opaque white). */
+  background?: [number, number, number, number];
+  /** Drop background fill entirely (overrides `background`). */
+  transparentBackground?: boolean;
+  /** Render annotation layer (default true). */
+  renderAnnotations?: boolean;
+  /** JPEG quality 1..=100 (default 85). */
+  jpegQuality?: number;
+}
+
 class PdfDocumentImpl {
   private _handle: any;
   private _closed = false;
@@ -274,28 +302,79 @@ class PdfDocumentImpl {
     if (this._closed) throw new Error('Document is closed');
   }
 
-  get handle(): any { return this._handle; }
+  get handle(): any {
+    return this._handle;
+  }
 
-  pageCount(): number { this.ensureOpen(); return native.getPageCount(this._handle); }
-  getPageCount(): number { return this.pageCount(); }
-  get PageCount(): number { return this.pageCount(); }
+  pageCount(): number {
+    this.ensureOpen();
+    return native.getPageCount(this._handle);
+  }
+  getPageCount(): number {
+    return this.pageCount();
+  }
+  get PageCount(): number {
+    return this.pageCount();
+  }
 
-  extractText(pageIndex: number): string { this.ensureOpen(); return native.extractText(this._handle, pageIndex); }
-  toMarkdown(pageIndex: number): string { this.ensureOpen(); return native.toMarkdown(this._handle, pageIndex); }
-  toHtml(pageIndex: number): string { this.ensureOpen(); return native.toHtml(this._handle, pageIndex); }
-  toPlainText(pageIndex: number): string { this.ensureOpen(); return native.toPlainText(this._handle, pageIndex); }
-  toMarkdownAll(): string { this.ensureOpen(); return native.toMarkdownAll(this._handle); }
-  extractAllText(): string { this.ensureOpen(); return native.extractAllText(this._handle); }
-  toHtmlAll(): string { this.ensureOpen(); return native.toHtmlAll(this._handle); }
-  toPlainTextAll(): string { this.ensureOpen(); return native.toPlainTextAll(this._handle); }
+  extractText(pageIndex: number): string {
+    this.ensureOpen();
+    return native.extractText(this._handle, pageIndex);
+  }
+  toMarkdown(pageIndex: number): string {
+    this.ensureOpen();
+    return native.toMarkdown(this._handle, pageIndex);
+  }
+  toHtml(pageIndex: number): string {
+    this.ensureOpen();
+    return native.toHtml(this._handle, pageIndex);
+  }
+  toPlainText(pageIndex: number): string {
+    this.ensureOpen();
+    return native.toPlainText(this._handle, pageIndex);
+  }
+  toMarkdownAll(): string {
+    this.ensureOpen();
+    return native.toMarkdownAll(this._handle);
+  }
+  extractAllText(): string {
+    this.ensureOpen();
+    return native.extractAllText(this._handle);
+  }
+  toHtmlAll(): string {
+    this.ensureOpen();
+    return native.toHtmlAll(this._handle);
+  }
+  toPlainTextAll(): string {
+    this.ensureOpen();
+    return native.toPlainTextAll(this._handle);
+  }
 
-  getVersion(): { major: number; minor: number } { this.ensureOpen(); return native.getVersion(this._handle); }
-  hasStructureTree(): boolean { this.ensureOpen(); return native.hasStructureTree(this._handle); }
-  hasXFA(): boolean { this.ensureOpen(); return native.hasXFA(this._handle); }
+  getVersion(): { major: number; minor: number } {
+    this.ensureOpen();
+    return native.getVersion(this._handle);
+  }
+  hasStructureTree(): boolean {
+    this.ensureOpen();
+    return native.hasStructureTree(this._handle);
+  }
+  hasXFA(): boolean {
+    this.ensureOpen();
+    return native.hasXFA(this._handle);
+  }
 
-  getPageWidth(pageIndex: number): number { this.ensureOpen(); return native.getPageWidth(this._handle, pageIndex); }
-  getPageHeight(pageIndex: number): number { this.ensureOpen(); return native.getPageHeight(this._handle, pageIndex); }
-  getPageRotation(pageIndex: number): number { this.ensureOpen(); return native.getPageRotation(this._handle, pageIndex); }
+  getPageWidth(pageIndex: number): number {
+    this.ensureOpen();
+    return native.getPageWidth(this._handle, pageIndex);
+  }
+  getPageHeight(pageIndex: number): number {
+    this.ensureOpen();
+    return native.getPageHeight(this._handle, pageIndex);
+  }
+  getPageRotation(pageIndex: number): number {
+    this.ensureOpen();
+    return native.getPageRotation(this._handle, pageIndex);
+  }
 
   searchPage(pageIndex: number, query: string, caseSensitive = false): any {
     this.ensureOpen();
@@ -307,16 +386,97 @@ class PdfDocumentImpl {
     return native.searchAll(this._handle, query, caseSensitive);
   }
 
-  getFormFields(): any { this.ensureOpen(); return native.getFormFields(this._handle); }
-  getOutline(): any { this.ensureOpen(); return native.getOutline(this._handle); }
-  getPageAnnotations(pageIndex: number): any { this.ensureOpen(); return native.getPageAnnotations(this._handle, pageIndex); }
-  getEmbeddedFonts(pageIndex: number): any { this.ensureOpen(); return native.getEmbeddedFonts(this._handle, pageIndex); }
-  getEmbeddedImages(pageIndex: number): any { this.ensureOpen(); return native.getEmbeddedImages(this._handle, pageIndex); }
-  extractWords(pageIndex: number): any { this.ensureOpen(); return native.extractWords(this._handle, pageIndex); }
-  extractTextLines(pageIndex: number): any { this.ensureOpen(); return native.extractTextLines(this._handle, pageIndex); }
-  extractTables(pageIndex: number): Table[] { this.ensureOpen(); return native.extractTables(this._handle, pageIndex); }
-  extractPaths(pageIndex: number): any { this.ensureOpen(); return native.extractPaths(this._handle, pageIndex); }
-  ocrExtractText(pageIndex: number, engineHandle: any): any { this.ensureOpen(); return native.ocrExtractText(this._handle, pageIndex, engineHandle); }
+  getFormFields(): any {
+    this.ensureOpen();
+    return native.getFormFields(this._handle);
+  }
+  getOutline(): any {
+    this.ensureOpen();
+    return native.getOutline(this._handle);
+  }
+  getPageAnnotations(pageIndex: number): any {
+    this.ensureOpen();
+    return native.getPageAnnotations(this._handle, pageIndex);
+  }
+  getEmbeddedFonts(pageIndex: number): any {
+    this.ensureOpen();
+    return native.getEmbeddedFonts(this._handle, pageIndex);
+  }
+  getEmbeddedImages(pageIndex: number): any {
+    this.ensureOpen();
+    return native.getEmbeddedImages(this._handle, pageIndex);
+  }
+  extractWords(pageIndex: number): any {
+    this.ensureOpen();
+    return native.extractWords(this._handle, pageIndex);
+  }
+  extractTextLines(pageIndex: number): any {
+    this.ensureOpen();
+    return native.extractTextLines(this._handle, pageIndex);
+  }
+  extractTables(pageIndex: number): Table[] {
+    this.ensureOpen();
+    return native.extractTables(this._handle, pageIndex);
+  }
+  extractPaths(pageIndex: number): any {
+    this.ensureOpen();
+    return native.extractPaths(this._handle, pageIndex);
+  }
+  ocrExtractText(pageIndex: number, engineHandle: any): any {
+    this.ensureOpen();
+    return native.ocrExtractText(this._handle, pageIndex, engineHandle);
+  }
+
+  /**
+   * Render a page with the full Rust `RenderOptions` surface
+   * (DPI, format, RGBA background, transparency, annotation toggle,
+   * JPEG quality). Returns the image bytes.
+   */
+  renderPageWithOptions(pageIndex: number, options: RenderOptions = {}): Uint8Array {
+    this.ensureOpen();
+    const dpi = options.dpi ?? 150;
+    if (dpi <= 0) throw new RangeError(`dpi must be > 0, got ${dpi}`);
+    const format = options.format === 'jpeg' ? 1 : 0;
+    const quality = options.jpegQuality ?? 85;
+    if (quality < 1 || quality > 100) {
+      throw new RangeError(`jpegQuality must be in 1..=100, got ${quality}`);
+    }
+    const bg = options.background ?? [1, 1, 1, 1];
+    const renderAnnotations = options.renderAnnotations === false ? 0 : 1;
+    const transparent = options.transparentBackground ? 1 : 0;
+
+    const imgHandle = native.renderPageWithOptions(
+      this._handle,
+      pageIndex,
+      dpi,
+      format,
+      bg[0],
+      bg[1],
+      bg[2],
+      bg[3],
+      transparent,
+      renderAnnotations,
+      quality
+    );
+    try {
+      const buf = native.pdfGetRenderedImageData(imgHandle);
+      return new Uint8Array(buf);
+    } finally {
+      if (native.freeRenderedImage) {
+        native.freeRenderedImage(imgHandle);
+      }
+    }
+  }
+
+  /**
+   * Estimate render time (milliseconds) for a page at a given DPI.
+   * Thin wrapper around the existing `estimateRenderTime` N-API
+   * export — exposed in TS for the first time as part of gap L.
+   */
+  estimateRenderTime(pageIndex: number, dpi = 150): number {
+    this.ensureOpen();
+    return native.estimateRenderTime(this._handle, pageIndex, dpi);
+  }
 
   page(index: number): Page {
     this.ensureOpen();
@@ -346,7 +506,9 @@ class PdfDocumentImpl {
     }
   }
 
-  [Symbol.dispose](): void { this.close(); }
+  [Symbol.dispose](): void {
+    this.close();
+  }
 }
 
 class Page {
@@ -359,7 +521,9 @@ class Page {
     this._index = index;
   }
 
-  get index(): number { return this._index; }
+  get index(): number {
+    return this._index;
+  }
 
   get width(): number {
     if (!this._cache.has('width')) this._cache.set('width', this._doc.getPageWidth(this._index));
@@ -372,24 +536,51 @@ class Page {
   }
 
   get rotation(): number {
-    if (!this._cache.has('rotation')) this._cache.set('rotation', this._doc.getPageRotation(this._index));
+    if (!this._cache.has('rotation'))
+      this._cache.set('rotation', this._doc.getPageRotation(this._index));
     return this._cache.get('rotation');
   }
 
-  text(): string { return this._doc.extractText(this._index); }
-  markdown(): string { return this._doc.toMarkdown(this._index); }
-  html(): string { return this._doc.toHtml(this._index); }
-  plainText(): string { return this._doc.toPlainText(this._index); }
-  words(): any { return this._doc.extractWords(this._index); }
-  lines(): any { return this._doc.extractTextLines(this._index); }
-  tables(): Table[] { return this._doc.extractTables(this._index); }
-  images(): any { return this._doc.getEmbeddedImages(this._index); }
-  paths(): any { return this._doc.extractPaths(this._index); }
-  annotations(): any { return this._doc.getPageAnnotations(this._index); }
-  fonts(): any { return this._doc.getEmbeddedFonts(this._index); }
-  search(query: string, caseSensitive = false): any { return this._doc.searchPage(this._index, query, caseSensitive); }
+  text(): string {
+    return this._doc.extractText(this._index);
+  }
+  markdown(): string {
+    return this._doc.toMarkdown(this._index);
+  }
+  html(): string {
+    return this._doc.toHtml(this._index);
+  }
+  plainText(): string {
+    return this._doc.toPlainText(this._index);
+  }
+  words(): any {
+    return this._doc.extractWords(this._index);
+  }
+  lines(): any {
+    return this._doc.extractTextLines(this._index);
+  }
+  tables(): Table[] {
+    return this._doc.extractTables(this._index);
+  }
+  images(): any {
+    return this._doc.getEmbeddedImages(this._index);
+  }
+  paths(): any {
+    return this._doc.extractPaths(this._index);
+  }
+  annotations(): any {
+    return this._doc.getPageAnnotations(this._index);
+  }
+  fonts(): any {
+    return this._doc.getEmbeddedFonts(this._index);
+  }
+  search(query: string, caseSensitive = false): any {
+    return this._doc.searchPage(this._index, query, caseSensitive);
+  }
 
-  toString(): string { return `Page(index=${this._index})`; }
+  toString(): string {
+    return `Page(index=${this._index})`;
+  }
 }
 
 class PdfImpl {
@@ -425,9 +616,18 @@ class PdfImpl {
     if (this._closed) throw new Error('PDF handle is closed');
   }
 
-  save(path: string): void { this.ensureOpen(); native.pdfSave(this._handle, path); }
-  saveToBytes(): Buffer { this.ensureOpen(); return native.pdfSaveToBytes(this._handle); }
-  pageCount(): number { this.ensureOpen(); return native.pdfGetPageCount(this._handle); }
+  save(path: string): void {
+    this.ensureOpen();
+    native.pdfSave(this._handle, path);
+  }
+  saveToBytes(): Buffer {
+    this.ensureOpen();
+    return native.pdfSaveToBytes(this._handle);
+  }
+  pageCount(): number {
+    this.ensureOpen();
+    return native.pdfGetPageCount(this._handle);
+  }
 
   close(): void {
     if (!this._closed && this._handle) {
@@ -436,7 +636,9 @@ class PdfImpl {
     }
   }
 
-  [Symbol.dispose](): void { this.close(); }
+  [Symbol.dispose](): void {
+    this.close();
+  }
 }
 
 // Export as ES module
@@ -454,137 +656,135 @@ const SearchOptions = native.SearchOptions;
 const SearchResult = native.SearchResult;
 const TextSearcher = native.TextSearcher;
 
+// RFC 3161 Timestamp + TSA Client — standalone, re-exported from
+// their own modules so downstream users get the full API surface.
+export { Timestamp, TimestampHashAlgorithm } from './timestamp.js';
+export { TsaClient, type TsaClientOptions } from './tsa-client.js';
+export type {
+  BatchDocument,
+  BatchOptions,
+  BatchProgress,
+  BatchResult,
+  BatchStatistics,
+  Table,
+  WorkerResult,
+  WorkerTask,
+};
 export {
-  // Version info
-  getVersion,
-  getPdfOxideVersion,
-
-  // Main classes
-  PdfDocument,
-  Pdf,
-  Page,
-
-  // Error types
-  PdfError,
-  PdfException,
-  ParseException,
-  IoException,
-  EncryptionException,
-  UnsupportedFeatureException,
-  InvalidStateException,
-  ValidationException,
-  RenderingException,
-  SearchException,
-  ComplianceException,
-  OcrException,
-  SignatureException,
-  CertificateLoadFailed,
-  SigningFailed,
-  RedactionException,
   AccessibilityException,
-  OptimizationException,
-  UnknownError,
-
-  // Types
-  PageSize,
-  Rect,
-  Point,
+  AccessibilityManager,
+  AnnotationBuilder,
+  AnnotationManager,
+  AnnotationProperties,
+  BarcodeErrorCorrection,
+  BarcodeFormat,
+  BarcodeManager,
+  // Phase 2.5: Batch Processing API
+  BatchManager,
+  CacheManager,
+  CertificateLoadFailed,
   Color,
+  ComplianceException,
+  ComplianceIssueType,
+  ComplianceManager,
+  ContentType,
   ConversionOptions,
-  SearchOptions,
-  SearchResult,
-
-  // Utilities
-  TextSearcher,
-
+  ConversionOptionsBuilder,
+  createExtractionStream,
+  createMetadataStream,
+  createSearchStream,
+  DigestAlgorithm,
+  // Write-side fluent API
+  DocumentBuilder,
+  // Editor mutation API
+  DocumentEditor,
+  EditingManager,
+  EmbeddedFont,
+  EncryptionException,
+  EnterpriseManager,
   // Error utilities
   ErrorCategory,
   ErrorSeverity,
-  wrapError,
-  wrapMethod,
-  wrapAsyncMethod,
-  mapFfiErrorCode,
-
-  // Builders
-  PdfBuilder,
-  ConversionOptionsBuilder,
-  MetadataBuilder,
-  AnnotationBuilder,
-  SearchOptionsBuilder,
-
-  // Managers (Phase 1-3: Core)
-  OutlineManager,
-  MetadataManager,
   ExtractionManager,
-  SearchManager,
-  SecurityManager,
-  AnnotationManager,
-  LayerManager,
-  RenderingManager,
-
-  // Managers (Phase 4+, consolidated in Phase 9)
-  OcrManager,
-  OCRManager,
-  OCRLanguage,
-  OCRDetectionMode,
-  ComplianceManager,
-  PdfALevel,
-  PdfXLevel,
-  PdfUALevel,
-  ComplianceIssueType,
-  IssueSeverity,
-  SignatureManager,
-  SignatureAlgorithm,
-  DigestAlgorithm,
-  BarcodeManager,
-  BarcodeFormat,
-  BarcodeErrorCorrection,
+  ExtractionStream,
+  FieldVisibility,
+  FontProperties,
   FormFieldManager,
   FormFieldType,
-  FieldVisibility,
-  ResultAccessorsManager,
-  SearchResultProperties,
-  FontProperties,
-  ImageProperties,
-  AnnotationProperties,
-  ThumbnailManager,
-  ThumbnailSize,
-  ImageFormat,
+  getPdfOxideVersion,
+  // Version info
+  getVersion,
   HybridMLManager,
-  PageComplexity,
-  ContentType,
-  XfaManager,
-  XfaFormType,
-  XfaFieldType,
-  CacheManager,
-  EditingManager,
-  AccessibilityManager,
+  ImageFormat,
+  ImageProperties,
+  InvalidStateException,
+  IoException,
+  IssueSeverity,
+  LayerManager,
+  MetadataBuilder,
+  MetadataManager,
+  MetadataStream,
+  mapFfiErrorCode,
+  OCRDetectionMode,
+  OCRLanguage,
+  OCRManager,
+  OcrException,
+  // Managers (Phase 4+, consolidated in Phase 9)
+  OcrManager,
+  OptimizationException,
   OptimizationManager,
-  EnterpriseManager,
-
+  // Managers (Phase 1-3: Core)
+  OutlineManager,
+  Page,
+  PageBuilder,
+  PageComplexity,
+  // Types
+  PageSize,
+  ParseException,
+  Pdf,
+  PdfALevel,
+  // Builders
+  PdfBuilder,
+  // Main classes
+  PdfDocument,
+  // Error types
+  PdfError,
+  PdfException,
+  PdfUALevel,
+  PdfXLevel,
+  Point,
+  Rect,
+  RedactionException,
+  RenderingException,
+  RenderingManager,
+  ResultAccessorsManager,
+  SearchException,
+  SearchManager,
+  SearchOptions,
+  SearchOptionsBuilder,
+  SearchResult,
+  SearchResultProperties,
   // Phase 2.4: Stream API
   SearchStream,
-  ExtractionStream,
-  MetadataStream,
-  createSearchStream,
-  createExtractionStream,
-  createMetadataStream,
-
-  // Phase 2.5: Batch Processing API
-  BatchManager,
-
+  SecurityManager,
+  SignatureAlgorithm,
+  SignatureException,
+  SignatureManager,
+  SigningFailed,
+  // Utilities
+  TextSearcher,
+  ThumbnailManager,
+  ThumbnailSize,
+  UnknownError,
+  UnsupportedFeatureException,
+  ValidationException,
   // Worker Threads API
   WorkerPool,
   workerPool,
-};
-
-export type {
-  WorkerTask,
-  WorkerResult,
-  BatchDocument,
-  BatchProgress,
-  BatchResult,
-  BatchOptions,
-  BatchStatistics,
-  Table,
+  wrapAsyncMethod,
+  wrapError,
+  wrapMethod,
+  XfaFieldType,
+  XfaFormType,
+  XfaManager,
 };

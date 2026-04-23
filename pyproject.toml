@@ -4,16 +4,27 @@ build-backend = "maturin"
 
 [project]
 name = "pdf_oxide"
-version = "0.3.37"
+version = "0.3.38"
 description = "The fastest Python PDF library: 0.8ms mean, 5× faster than PyMuPDF. Text extraction, markdown conversion, PDF creation. 100% pass rate on 3,830 PDFs."
 readme = "README.md"
 requires-python = ">=3.8"
 
-license = {text = "MIT OR Apache-2.0"}
-authors = [
-    {name = "PDF Oxide Contributors", email = "yfedoseev@gmail.com"},
+license = { text = "MIT OR Apache-2.0" }
+authors = [{ name = "PDF Oxide Contributors", email = "yfedoseev@gmail.com" }]
+keywords = [
+    "pdf",
+    "text-extraction",
+    "pdf-parser",
+    "pymupdf-alternative",
+    "rag",
+    "llm",
+    "ocr",
+    "markdown",
+    "document-parser",
+    "pdf-to-text",
+    "pdf-to-markdown",
+    "data-extraction",
 ]
-keywords = ["pdf", "text-extraction", "pdf-parser", "pymupdf-alternative", "rag", "llm", "ocr", "markdown", "document-parser", "pdf-to-text", "pdf-to-markdown", "data-extraction"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -66,10 +77,7 @@ dev = [
     # Build tool for Python bindings
     "maturin>=1.0,<2.0",
 ]
-test = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-]
+test = ["pytest>=7.0.0", "pytest-cov>=4.0.0"]
 benchmark = [
     "pikepdf>=9.2.1",
     "borb>=3.0.4",
@@ -81,23 +89,11 @@ benchmark = [
     "pdfminer-six>=20231228",
     "playa-pdf>=1.0.0",
 ]
-seg-edgar = [
-    "sec-edgar-downloader>=5.0.3",
-]
-convert-models = [
-    "torch>=2.4.1",
-    "onnxruntime>=1.20.1",
-    "transformers>=4.46.3",
-]
-inspect-tj-array = [
-    "pymupdf>=1.24.11",
-]
-check-pdf-structure = [
-    "pypdf",
-]
-analyze-pdf-spacing = [
-    "pymupdf>=1.24.11",
-]
+seg-edgar = ["sec-edgar-downloader>=5.0.3"]
+convert-models = ["torch>=2.4.1", "onnxruntime>=1.20.1", "transformers>=4.46.3"]
+inspect-tj-array = ["pymupdf>=1.24.11"]
+check-pdf-structure = ["pypdf"]
+analyze-pdf-spacing = ["pymupdf>=1.24.11"]
 
 
 [tool.maturin]
@@ -122,34 +118,27 @@ python_functions = ["test_*"]
 [tool.ruff]
 line-length = 100
 target-version = "py38"
-extend-exclude = [
-    ".git",
-    "__pycache__",
-    "build",
-    "dist",
-    ".eggs",
-    "*.egg-info",
-]
+extend-exclude = [".git", "__pycache__", "build", "dist", ".eggs", "*.egg-info"]
 
 [tool.ruff.lint]
 # Enable these rule sets
 select = [
-    "E",      # pycodestyle errors
-    "W",      # pycodestyle warnings
-    "F",      # pyflakes
-    "I",      # isort (import sorting)
-    "N",      # pep8-naming
-    "B",      # flake8-bugbear (find likely bugs)
-    "C4",     # flake8-comprehensions
-    "SIM",    # flake8-simplify
-    "TCH",    # flake8-type-checking
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort (import sorting)
+    "N",   # pep8-naming
+    "B",   # flake8-bugbear (find likely bugs)
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+    "TCH", # flake8-type-checking
 ]
 
 # Disable specific rules if needed
 ignore = [
-    "E501",   # Line too long (handled by formatter)
-    "B008",   # Do not perform function calls in argument defaults
-    "UP",     # pyupgrade (modernize Python code) # compatible with py38
+    "E501", # Line too long (handled by formatter)
+    "B008", # Do not perform function calls in argument defaults
+    "UP",   # pyupgrade (modernize Python code) # compatible with py38
 ]
 
 # Allow unused variables when underscore-prefixed
@@ -186,7 +175,36 @@ include = ["python/pdf_oxide"]
 python = "./.venv"
 
 [tool.pdm.scripts]
-fmt = {composite = ["cargo fmt", "ruff check . --select I --fix", "ruff format ."]}
-lint = {composite = ["cargo check", "cargo clippy -- -D warnings", "ruff check . --fix", "ty check ."]}
-# Generate .pyi from Rust (Rylai). Use: pdm run stub_gen
-stub_gen = "uvx rylai -o python/pdf_oxide/"
+fmt = { composite = ["cargo fmt", "ruff check . --select I --fix", "ruff format ."] }
+lint = { composite = [
+    "cargo check",
+    "cargo clippy -- -D warnings",
+    "ruff check . --fix",
+    "ty check .",
+] }
+# Generate .pyi from Rust (Rylai) and modernise the output so it
+# type-checks clean against basedpyright. Use: `pdm run stub_gen`.
+stub_gen = { composite = [
+    "uvx rylai -o python/pdf_oxide/",
+    "python scripts/modernize_stubs.py python/pdf_oxide/pdf_oxide.pyi",
+] }
+
+# basedpyright — stricter pyright fork. CI-enforced (see .github/workflows/python.yml).
+# The auto-generated pdf_oxide.pyi is produced by rylai upstream and
+# unavoidably types some pyo3 surfaces with `Any` (e.g.
+# context-manager __enter__/__exit__ objects). We silence that subset
+# of rules specifically for the generated stub — hand-written .py
+# code in this package still gets the default strictness.
+[tool.basedpyright]
+include = ["python/pdf_oxide"]
+# PEP-585 / PEP-604 modernisation is handled by scripts/modernize_stubs.py;
+# leave reportDeprecated at warn for whatever we forgot to rewrite.
+reportAny = "none"
+reportUnknownArgumentType = "none"
+reportUnknownMemberType = "none"
+reportUnknownParameterType = "none"
+reportUnknownVariableType = "none"
+reportMissingParameterType = "none"
+reportMissingTypeArgument = "warning"
+reportImplicitOverride = "none"
+reportUnannotatedClassAttribute = "none"

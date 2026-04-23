@@ -1,13 +1,8 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import {
-  ThumbnailManager,
-  ThumbnailSize,
-  ThumbnailConfig,
-  ThumbnailInfo,
-} from '../src/thumbnail-manager';
-import { PdfDocument } from '../src/pdf-document';
 import * as fs from 'fs';
 import * as path from 'path';
+import { beforeEach, describe, expect, it } from 'vitest';
+import type { PdfDocument } from '../src/pdf-document';
+import { type ThumbnailConfig, ThumbnailManager, ThumbnailSize } from '../src/thumbnail-manager';
 
 describe('ThumbnailManager', () => {
   let mockDocument: PdfDocument;
@@ -276,10 +271,10 @@ describe('ThumbnailManager', () => {
       };
 
       await manager.generateThumbnail(0, config);
-      expect((manager.getThumbnailStatistics().total_cached_thumbnails as number)).toBeGreaterThan(0);
+      expect(manager.getThumbnailStatistics().total_cached_thumbnails as number).toBeGreaterThan(0);
 
       manager.clearThumbnailCache();
-      expect((manager.getThumbnailStatistics().total_cached_thumbnails as number)).toBe(0);
+      expect(manager.getThumbnailStatistics().total_cached_thumbnails as number).toBe(0);
     });
 
     it('should clear all cache', async () => {
@@ -294,7 +289,7 @@ describe('ThumbnailManager', () => {
 
       await manager.generateThumbnail(0, config);
       manager.clearCache();
-      expect((manager.getThumbnailStatistics().total_cached_thumbnails as number)).toBe(0);
+      expect(manager.getThumbnailStatistics().total_cached_thumbnails as number).toBe(0);
     });
   });
 });

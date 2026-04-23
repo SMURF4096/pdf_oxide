@@ -1,10 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  ComplianceIssueType,
   ComplianceManager,
   PdfALevel,
-  PdfXLevel,
   PdfUALevel,
-  ComplianceIssueType,
+  PdfXLevel,
 } from '../src/compliance-manager';
 
 describe('ComplianceManager', () => {
@@ -72,11 +72,7 @@ describe('ComplianceManager', () => {
     });
 
     it('should validate PDF/A with different levels', async () => {
-      const levels = [
-        PdfALevel.PDF_A_1B,
-        PdfALevel.PDF_A_2B,
-        PdfALevel.PDF_A_3B,
-      ];
+      const levels = [PdfALevel.PDF_A_1B, PdfALevel.PDF_A_2B, PdfALevel.PDF_A_3B];
 
       for (const level of levels) {
         const result = await manager.validatePdfA(level);
@@ -94,11 +90,7 @@ describe('ComplianceManager', () => {
     });
 
     it('should validate PDF/X with different levels', async () => {
-      const levels = [
-        PdfXLevel.PDF_X_1A_2001,
-        PdfXLevel.PDF_X_3_2002,
-        PdfXLevel.PDF_X_4_2008,
-      ];
+      const levels = [PdfXLevel.PDF_X_1A_2001, PdfXLevel.PDF_X_3_2002, PdfXLevel.PDF_X_4_2008];
 
       for (const level of levels) {
         const result = await manager.validatePdfX(level);

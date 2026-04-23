@@ -1,10 +1,9 @@
-import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { Pdf, PdfDocument } from '../index.js';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, unlinkSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { dirname } from 'node:path';
-import { mkdirSync, existsSync, unlinkSync } from 'node:fs';
+import { Pdf, PdfDocument } from '../index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEMP_DIR = join(__dirname, '.temp');
@@ -126,10 +125,7 @@ describe('Async Methods - Phase 2.4', () => {
       const startTime = Date.now();
 
       // Run multiple async operations concurrently
-      const [text, markdown] = await Promise.all([
-        doc.extractTextAsync(0),
-        doc.toMarkdownAsync(0),
-      ]);
+      const [text, markdown] = await Promise.all([doc.extractTextAsync(0), doc.toMarkdownAsync(0)]);
 
       const elapsed = Date.now() - startTime;
 
@@ -194,11 +190,7 @@ describe('Async Methods - Phase 2.4', () => {
       const path3 = join(TEMP_DIR, 'async-concurrent-3.pdf');
 
       // Save all concurrently
-      await Promise.all([
-        pdf1.saveAsync(path1),
-        pdf2.saveAsync(path2),
-        pdf3.saveAsync(path3),
-      ]);
+      await Promise.all([pdf1.saveAsync(path1), pdf2.saveAsync(path2), pdf3.saveAsync(path3)]);
 
       // Verify all files were created
       assert.ok(existsSync(path1));
@@ -233,7 +225,9 @@ describe('Async Methods - Phase 2.4', () => {
       const stat1 = require('node:fs').statSync(outputPath);
 
       // Save second version (should overwrite)
-      const pdf2 = Pdf.fromMarkdown('# Second Version\n\nWith more content that should make file larger.');
+      const pdf2 = Pdf.fromMarkdown(
+        '# Second Version\n\nWith more content that should make file larger.'
+      );
       await pdf2.saveAsync(outputPath);
       const stat2 = require('node:fs').statSync(outputPath);
 

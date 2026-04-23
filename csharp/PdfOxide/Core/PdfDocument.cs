@@ -110,8 +110,7 @@ namespace PdfOxide.Core
         /// <exception cref="PdfParseException">Thrown if the PDF is invalid.</exception>
         public static PdfDocument Open(string path)
         {
-            if (path == null)
-                throw new ArgumentNullException(nameof(path));
+            ArgumentNullException.ThrowIfNull(path);
 
             var handle = NativeMethods.PdfDocumentOpen(path, out var errorCode);
             if (handle.IsInvalid)
@@ -125,15 +124,17 @@ namespace PdfOxide.Core
         /// <summary>
         /// Opens a PDF document from a stream.
         /// </summary>
+        /// <remarks>
+        /// If the PDF is already in memory as a <see cref="byte"/>[] or
+        /// <see cref="ReadOnlySpan{T}"/>, prefer the dedicated overloads —
+        /// they skip the intermediate <see cref="MemoryStream"/> copy this
+        /// overload has to make to produce a contiguous buffer for the FFI.
+        /// </remarks>
         /// <param name="stream">The stream containing PDF data.</param>
         /// <returns>An opened PdfDocument.</returns>
-        /// <exception cref="ArgumentNullException">Thrown if <paramref name="stream"/> is null.</exception>
-        /// <exception cref="PdfIoException">Thrown if the stream cannot be read.</exception>
-        /// <exception cref="PdfParseException">Thrown if the PDF is invalid.</exception>
         public static PdfDocument Open(Stream stream)
         {
-            if (stream == null)
-                throw new ArgumentNullException(nameof(stream));
+            ArgumentNullException.ThrowIfNull(stream);
 
             byte[] data;
             using (var ms = new MemoryStream())
@@ -142,12 +143,61 @@ namespace PdfOxide.Core
                 data = ms.ToArray();
             }
 
+            return Open(data);
+        }
+
+        /// <summary>
+        /// Opens a PDF document from a byte array.
+        /// </summary>
+        /// <remarks>
+        /// Forwards <paramref name="data"/> directly to the FFI without the
+        /// <see cref="MemoryStream"/> copy the <see cref="Open(Stream)"/>
+        /// overload has to make.
+        /// </remarks>
+        /// <param name="data">The PDF bytes. Must be non-null and non-empty.</param>
+        /// <returns>An opened PdfDocument.</returns>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="data"/> is null.</exception>
+        /// <exception cref="ArgumentException">Thrown if <paramref name="data"/> is empty.</exception>
+        public static PdfDocument Open(byte[] data)
+        {
+            ArgumentNullException.ThrowIfNull(data);
+            if (data.Length == 0)
+                throw new ArgumentException("PDF byte array must not be empty.", nameof(data));
+
             var handle = NativeMethods.PdfDocumentOpenFromBytes(data, data.Length, out var errorCode);
             if (handle.IsInvalid)
             {
                 ExceptionMapper.ThrowIfError(errorCode);
             }
+            return new PdfDocument(handle);
+        }
 
+        /// <summary>
+        /// Opens a PDF document from a <see cref="ReadOnlySpan{T}"/> of bytes.
+        /// </summary>
+        /// <remarks>
+        /// Zero-copy entry point: LibraryImport pins the span while the FFI
+        /// call is in flight, so no managed-array allocation or
+        /// <see cref="MemoryStream"/> hop is involved. Use when the PDF is
+        /// already materialised in an un-pinned buffer you don't want to
+        /// duplicate.
+        /// </remarks>
+        /// <param name="data">The PDF bytes. Must be non-empty.</param>
+        /// <returns>An opened PdfDocument.</returns>
+        /// <exception cref="ArgumentException">Thrown if <paramref name="data"/> is empty.</exception>
+        public static PdfDocument Open(ReadOnlySpan<byte> data)
+        {
+            if (data.IsEmpty)
+                throw new ArgumentException("PDF byte span must not be empty.", nameof(data));
+
+            var handle = NativeMethods.PdfDocumentOpenFromBytesRef(
+                ref System.Runtime.InteropServices.MemoryMarshal.GetReference(data),
+                data.Length,
+                out var errorCode);
+            if (handle.IsInvalid)
+            {
+                ExceptionMapper.ThrowIfError(errorCode);
+            }
             return new PdfDocument(handle);
         }
 
@@ -180,6 +230,60 @@ namespace PdfOxide.Core
                 var count = NativeMethods.PdfDocumentGetPageCount(_handle, out var errorCode);
                 ExceptionMapper.ThrowIfError(errorCode);
                 return count;
+            }
+        }
+
+        /// <summary>
+        /// Gets the number of existing digital signatures in this document.
+        /// Returns 0 for documents without an AcroForm or without
+        /// signed signature fields. Surfaces the Rust
+        /// <c>enumerate_signatures</c> walker.
+        /// </summary>
+        public int SignatureCount
+        {
+            get
+            {
+                ThrowIfDisposed();
+                var count = NativeMethods.pdf_document_get_signature_count(_handle, out int err);
+                ExceptionMapper.ThrowIfError(err);
+                return count;
+            }
+        }
+
+        /// <summary>
+        /// Enumerate every existing digital signature in the document.
+        /// Each <see cref="Signature"/> must be disposed by the caller;
+        /// the returned list is a snapshot, not live-linked to the
+        /// underlying PDF state.
+        /// </summary>
+        public System.Collections.Generic.IReadOnlyList<Signature> Signatures
+        {
+            get
+            {
+                ThrowIfDisposed();
+                var count = NativeMethods.pdf_document_get_signature_count(_handle, out int err);
+                ExceptionMapper.ThrowIfError(err);
+                var list = new System.Collections.Generic.List<Signature>(count);
+                try
+                {
+                    for (int i = 0; i < count; i++)
+                    {
+                        var sigHandle = NativeMethods.pdf_document_get_signature(_handle, i, out int e);
+                        ExceptionMapper.ThrowIfError(e);
+                        if (sigHandle.IsInvalid)
+                        {
+                            throw new PdfException(
+                                $"pdf_document_get_signature({i}) returned null with no error code");
+                        }
+                        list.Add(Signature.FromHandle(sigHandle));
+                    }
+                    return list;
+                }
+                catch
+                {
+                    foreach (var s in list) s.Dispose();
+                    throw;
+                }
             }
         }
 
@@ -366,7 +470,7 @@ namespace PdfOxide.Core
         public bool Authenticate(string password)
         {
             ThrowIfDisposed();
-            if (password == null) throw new ArgumentNullException(nameof(password));
+            ArgumentNullException.ThrowIfNull(password);
             return NativeMethods.pdf_document_authenticate(_handle.Ptr, password, out _);
         }
 
@@ -509,7 +613,7 @@ namespace PdfOxide.Core
         public (int Page, string Text, float X, float Y, float W, float H)[] SearchAll(string text, bool caseSensitive = false)
         {
             ThrowIfDisposed();
-            if (text == null) throw new ArgumentNullException(nameof(text));
+            ArgumentNullException.ThrowIfNull(text);
             var resultsHandle = NativeMethods.pdf_document_search_all(_handle.Ptr, text, caseSensitive, out var errorCode);
             ExceptionMapper.ThrowIfError(errorCode);
             if (resultsHandle == IntPtr.Zero) return Array.Empty<(int, string, float, float, float, float)>();
@@ -524,7 +628,7 @@ namespace PdfOxide.Core
         public (int Page, string Text, float X, float Y, float W, float H)[] SearchPage(int pageIndex, string text, bool caseSensitive = false)
         {
             ThrowIfDisposed();
-            if (text == null) throw new ArgumentNullException(nameof(text));
+            ArgumentNullException.ThrowIfNull(text);
             var resultsHandle = NativeMethods.pdf_document_search_page(_handle.Ptr, pageIndex, text, caseSensitive, out var errorCode);
             ExceptionMapper.ThrowIfError(errorCode);
             if (resultsHandle == IntPtr.Zero) return Array.Empty<(int, string, float, float, float, float)>();
@@ -699,7 +803,50 @@ namespace PdfOxide.Core
                 if (data == IntPtr.Zero) return Array.Empty<byte>();
                 var bytes = new byte[dataLen];
                 System.Runtime.InteropServices.Marshal.Copy(data, bytes, 0, dataLen);
-                NativeMethods.FreeBytes(data, dataLen);
+                NativeMethods.FreeBytes(data);
+                return bytes;
+            }
+            finally { NativeMethods.pdf_rendered_image_free(imgHandle); }
+        }
+
+        /// <summary>
+        /// Renders a page with the full <see cref="RenderOptions"/> surface:
+        /// DPI, output format, background colour or transparency,
+        /// annotation toggle, and JPEG quality. The simpler
+        /// <see cref="RenderPage(int, int)"/> overload only exposes the
+        /// format knob.
+        /// </summary>
+        /// <param name="pageIndex">Page index, 0-based.</param>
+        /// <param name="options">Render options; see <see cref="RenderOptions"/>.</param>
+        /// <exception cref="ArgumentNullException">If <paramref name="options"/> is null.</exception>
+        public byte[] RenderPage(int pageIndex, RenderOptions options)
+        {
+            ArgumentNullException.ThrowIfNull(options);
+            options.Validate();
+            ThrowIfDisposed();
+
+            var imgHandle = NativeMethods.PdfRenderPageWithOptions(
+                _handle.Ptr,
+                pageIndex,
+                options.Dpi,
+                (int)options.Format,
+                options.Background.R,
+                options.Background.G,
+                options.Background.B,
+                options.Background.A,
+                options.TransparentBackground ? 1 : 0,
+                options.RenderAnnotations ? 1 : 0,
+                options.JpegQuality,
+                out var errorCode);
+            ExceptionMapper.ThrowIfError(errorCode);
+            if (imgHandle == IntPtr.Zero) return Array.Empty<byte>();
+            try
+            {
+                var data = NativeMethods.pdf_get_rendered_image_data(imgHandle, out var dataLen, out _);
+                if (data == IntPtr.Zero) return Array.Empty<byte>();
+                var bytes = new byte[dataLen];
+                System.Runtime.InteropServices.Marshal.Copy(data, bytes, 0, dataLen);
+                NativeMethods.FreeBytes(data);
                 return bytes;
             }
             finally { NativeMethods.pdf_rendered_image_free(imgHandle); }
@@ -718,7 +865,7 @@ namespace PdfOxide.Core
                 if (data == IntPtr.Zero) return Array.Empty<byte>();
                 var bytes = new byte[dataLen];
                 System.Runtime.InteropServices.Marshal.Copy(data, bytes, 0, dataLen);
-                NativeMethods.FreeBytes(data, dataLen);
+                NativeMethods.FreeBytes(data);
                 return bytes;
             }
             finally { NativeMethods.pdf_rendered_image_free(imgHandle); }
@@ -737,7 +884,7 @@ namespace PdfOxide.Core
                 if (data == IntPtr.Zero) return Array.Empty<byte>();
                 var bytes = new byte[dataLen];
                 System.Runtime.InteropServices.Marshal.Copy(data, bytes, 0, dataLen);
-                NativeMethods.FreeBytes(data, dataLen);
+                NativeMethods.FreeBytes(data);
                 return bytes;
             }
             finally { NativeMethods.pdf_rendered_image_free(imgHandle); }
@@ -908,8 +1055,7 @@ namespace PdfOxide.Core
 
         private void ThrowIfDisposed()
         {
-            if (_disposed)
-                throw new ObjectDisposedException(nameof(PdfDocument));
+            ObjectDisposedException.ThrowIf(_disposed, this);
         }
 
         /// <summary>

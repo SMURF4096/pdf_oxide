@@ -6,12 +6,12 @@
  * Tests the Pdf and PdfBuilder classes with realistic scenarios
  */
 
-import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
-import { Pdf, PdfBuilder, PdfDocument } from '../index.js';
 import { promises as fs } from 'node:fs';
-import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { after, before, describe, it } from 'node:test';
+import { Pdf, PdfBuilder, PdfDocument } from '../index.js';
 
 const TEMP_DIR = join(tmpdir(), `pdf-oxide-tests-${Date.now()}`);
 
@@ -145,9 +145,7 @@ describe('Pdf Creation and Editing', () => {
 
     it('should apply title metadata via builder', async () => {
       const outputPath = join(TEMP_DIR, 'builder-title.pdf');
-      const pdf = PdfBuilder.create()
-        .title('Test Document')
-        .fromMarkdown('Content');
+      const pdf = PdfBuilder.create().title('Test Document').fromMarkdown('Content');
 
       pdf.save(outputPath);
 
@@ -157,9 +155,7 @@ describe('Pdf Creation and Editing', () => {
 
     it('should apply author metadata via builder', async () => {
       const outputPath = join(TEMP_DIR, 'builder-author.pdf');
-      const pdf = PdfBuilder.create()
-        .author('John Doe')
-        .fromMarkdown('Content');
+      const pdf = PdfBuilder.create().author('John Doe').fromMarkdown('Content');
 
       pdf.save(outputPath);
 
@@ -183,9 +179,7 @@ describe('Pdf Creation and Editing', () => {
 
     it('should support pageSize configuration', async () => {
       const outputPath = join(TEMP_DIR, 'builder-pagesize.pdf');
-      const pdf = PdfBuilder.create()
-        .pageSize('A4')
-        .fromMarkdown('Page sized content');
+      const pdf = PdfBuilder.create().pageSize('A4').fromMarkdown('Page sized content');
 
       pdf.save(outputPath);
 

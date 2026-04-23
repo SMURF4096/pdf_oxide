@@ -91,13 +91,15 @@ export class OptimizationManager extends EventEmitter {
    */
   async subsetFonts(): Promise<OptimizationResult> {
     if (!this.native?.pdf_optimize_subset_fonts) {
-      throw new OptimizationException('Native optimization not available: pdf_optimize_subset_fonts not found');
+      throw new OptimizationException(
+        'Native optimization not available: pdf_optimize_subset_fonts not found'
+      );
     }
 
     const errorCode = Buffer.alloc(4);
     const resultPtr = this.native.pdf_optimize_subset_fonts(
       this.document._handle ?? this.document,
-      errorCode,
+      errorCode
     );
     const code = errorCode.readInt32LE(0);
 
@@ -122,7 +124,9 @@ export class OptimizationManager extends EventEmitter {
    */
   async downsampleImages(dpi?: number, quality?: number): Promise<OptimizationResult> {
     if (!this.native?.pdf_optimize_downsample_images) {
-      throw new OptimizationException('Native optimization not available: pdf_optimize_downsample_images not found');
+      throw new OptimizationException(
+        'Native optimization not available: pdf_optimize_downsample_images not found'
+      );
     }
 
     const errorCode = Buffer.alloc(4);
@@ -130,7 +134,7 @@ export class OptimizationManager extends EventEmitter {
       this.document._handle ?? this.document,
       dpi ?? 150,
       quality ?? 80,
-      errorCode,
+      errorCode
     );
     const code = errorCode.readInt32LE(0);
 
@@ -139,7 +143,11 @@ export class OptimizationManager extends EventEmitter {
     }
 
     const result = this.parseOptimizationResult(resultPtr);
-    this.emit('images-downsampled', { dpi: dpi ?? 150, quality: quality ?? 80, bytesSaved: result.bytesSaved });
+    this.emit('images-downsampled', {
+      dpi: dpi ?? 150,
+      quality: quality ?? 80,
+      bytesSaved: result.bytesSaved,
+    });
 
     this.freeOptimizationResult(resultPtr);
     return result;
@@ -156,13 +164,15 @@ export class OptimizationManager extends EventEmitter {
    */
   async deduplicate(): Promise<OptimizationResult> {
     if (!this.native?.pdf_optimize_deduplicate) {
-      throw new OptimizationException('Native optimization not available: pdf_optimize_deduplicate not found');
+      throw new OptimizationException(
+        'Native optimization not available: pdf_optimize_deduplicate not found'
+      );
     }
 
     const errorCode = Buffer.alloc(4);
     const resultPtr = this.native.pdf_optimize_deduplicate(
       this.document._handle ?? this.document,
-      errorCode,
+      errorCode
     );
     const code = errorCode.readInt32LE(0);
 
@@ -190,7 +200,9 @@ export class OptimizationManager extends EventEmitter {
    */
   async optimizeFull(dpi?: number, quality?: number): Promise<OptimizationResult> {
     if (!this.native?.pdf_optimize_full) {
-      throw new OptimizationException('Native optimization not available: pdf_optimize_full not found');
+      throw new OptimizationException(
+        'Native optimization not available: pdf_optimize_full not found'
+      );
     }
 
     const errorCode = Buffer.alloc(4);
@@ -198,7 +210,7 @@ export class OptimizationManager extends EventEmitter {
       this.document._handle ?? this.document,
       dpi ?? 150,
       quality ?? 80,
-      errorCode,
+      errorCode
     );
     const code = errorCode.readInt32LE(0);
 
@@ -207,7 +219,11 @@ export class OptimizationManager extends EventEmitter {
     }
 
     const result = this.parseOptimizationResult(resultPtr);
-    this.emit('optimized-full', { dpi: dpi ?? 150, quality: quality ?? 80, bytesSaved: result.bytesSaved });
+    this.emit('optimized-full', {
+      dpi: dpi ?? 150,
+      quality: quality ?? 80,
+      bytesSaved: result.bytesSaved,
+    });
 
     this.freeOptimizationResult(resultPtr);
     return result;
@@ -219,14 +235,26 @@ export class OptimizationManager extends EventEmitter {
 
   private parseOptimizationResult(resultPtr: any): OptimizationResult {
     if (!resultPtr) {
-      return { success: true, bytesSaved: 0, originalSize: 0, optimizedSize: 0, compressionRatio: 0 };
+      return {
+        success: true,
+        bytesSaved: 0,
+        originalSize: 0,
+        optimizedSize: 0,
+        compressionRatio: 0,
+      };
     }
 
     if (typeof resultPtr === 'string') {
       try {
         return JSON.parse(resultPtr);
       } catch {
-        return { success: true, bytesSaved: 0, originalSize: 0, optimizedSize: 0, compressionRatio: 0 };
+        return {
+          success: true,
+          bytesSaved: 0,
+          originalSize: 0,
+          optimizedSize: 0,
+          compressionRatio: 0,
+        };
       }
     }
 

@@ -8,7 +8,7 @@ use crate::object::Object;
 
 /// A content stream operator.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::box_collection)] // Intentional: Boxing reduces enum from 112 to 40 bytes (#150)
+#[allow(clippy::box_collection)] // Intentional: Boxing reduces enum from 112 to 40 bytes
 pub enum Operator {
     // Text positioning operators
     /// Move text position (Td)
@@ -219,7 +219,7 @@ pub enum Operator {
         /// Color components (may be empty for patterns)
         components: Vec<f32>,
         /// Optional pattern name for pattern color spaces.
-        /// Boxed to reduce Operator enum size (Option<String> is 24 bytes → 8 bytes).
+        /// Boxed to reduce Operator enum size (`Option<String>` is 24 bytes → 8 bytes).
         name: Option<Box<String>>,
     },
     /// Set stroke color with named pattern (SCN)

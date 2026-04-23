@@ -9,7 +9,9 @@
 // Flags:
 //
 //	-version       Version to download (default: version baked in at build time)
-//	-dir           Install directory (default: $HOME/.pdf_oxide)
+//	-dir           Install directory (default: os.UserCacheDir()/pdf_oxide/v<ver>)
+//	-shared        Download the shared library (.so/.dylib/.dll) for the
+//	               purego backend (CGO_ENABLED=0) instead of the static .a
 //	-write-flags   Directory to write a generated cgo_flags.go into
 //	               (default: empty — just print env vars)
 //	-env-only      Skip download; only print env vars for an existing install
@@ -50,15 +52,35 @@ const (
 	// taken from the build info and THIS constant is irrelevant. That's what
 	// lets `@latest` just work — each tagged release resolves to its own
 	// version automatically, without a sed step in release automation.
-	fallbackVersion   = "0.3.37"
-	BaseURL           = "https://github.com/yfedoseev/pdf_oxide/releases/download"
-	DefaultInstallDir = ".pdf_oxide"
-	dirPerm           = 0o750
-	filePerm          = 0o644
-	maxExtractSize    = int64(500 * 1024 * 1024) // 500 MiB
-	httpTimeout       = 5 * time.Minute
-	osWindows         = "windows"
+	fallbackVersion = "0.3.38"
+	BaseURL         = "https://github.com/yfedoseev/pdf_oxide/releases/download"
+	// cacheSubdir lives under os.UserCacheDir() — XDG_CACHE_HOME on Linux,
+	// ~/Library/Caches on macOS (Time-Machine-excluded), %LocalAppData% on
+	// Windows. Replaces the old $HOME/.pdf_oxide layout, which polluted
+	// the home dir and didn't match platform conventions.
+	cacheSubdir    = "pdf_oxide"
+	dirPerm        = 0o750
+	filePerm       = 0o644
+	maxExtractSize = int64(500 * 1024 * 1024) // 500 MiB
+	httpTimeout    = 5 * time.Minute
+	osWindows      = "windows"
 )
+
+// defaultInstallRoot returns the per-user cache dir that should hold pdf_oxide
+// native libs. Resolves to:
+//
+//	Linux:   $XDG_CACHE_HOME/pdf_oxide  or  ~/.cache/pdf_oxide
+//	macOS:   ~/Library/Caches/pdf_oxide
+//	Windows: %LocalAppData%\pdf_oxide
+//
+// Matches how Go's own toolchain picks GOCACHE.
+func defaultInstallRoot() (string, error) {
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve user cache dir: %w", err)
+	}
+	return filepath.Join(dir, cacheSubdir), nil
+}
 
 // resolveVersion returns the module version baked in by `go run ...@<tag>`.
 // `debug.ReadBuildInfo()` reports Main.Version as "v0.3.32" for that path,
@@ -133,10 +155,11 @@ func main() {
 
 func run() error {
 	version := flag.String("version", resolveVersion(), "Version to download (semver, e.g. 0.3.32). Defaults to the installer's own module version — so `go run ...@latest` and `go run ...@v0.3.32` both just work.")
-	installDir := flag.String("dir", "", "Install directory (default: $HOME/.pdf_oxide)")
+	installDir := flag.String("dir", "", "Install directory (default: <user-cache-dir>/pdf_oxide/v<version>)")
 	writeFlagsDir := flag.String("write-flags", "", "Directory in which to write cgo_flags.go (default: empty — just print env vars)")
 	envOnly := flag.Bool("env-only", false, "Skip download; print env vars for an existing install")
 	skipChecksum := flag.Bool("skip-checksum", false, "Skip SHA-256 checksum verification of the downloaded archive (NOT recommended)")
+	shared := flag.Bool("shared", false, "Download the shared library (.so/.dylib/.dll) for the purego backend (CGO_ENABLED=0) instead of the static .a")
 	flag.Parse()
 
 	platform := runtime.GOOS + "/" + runtime.GOARCH
@@ -155,22 +178,23 @@ func run() error {
 
 	targetDir := *installDir
 	if targetDir == "" {
-		home, err := os.UserHomeDir()
+		root, err := defaultInstallRoot()
 		if err != nil {
-			return fmt.Errorf("resolve home dir: %w", err)
+			return err
 		}
-		targetDir = filepath.Join(home, DefaultInstallDir, "v"+*version)
+		targetDir = filepath.Join(root, "v"+*version)
 	}
 
 	libDir := filepath.Join(targetDir, "lib", subdir)
-	libPath := filepath.Join(libDir, staticlibName(platform))
+	libFile := chosenLibName(platform, *shared)
+	libPath := filepath.Join(libDir, libFile)
 	includeDir := filepath.Join(targetDir, "include")
 
 	if !*envOnly {
 		if _, err := os.Stat(libPath); err == nil {
 			fmt.Fprintf(os.Stderr, "pdf_oxide FFI already installed at %s\n", libPath)
 		} else {
-			if err := downloadAndExtract(*version, assetSuffix, targetDir, !*skipChecksum); err != nil {
+			if err := downloadAndExtract(*version, assetSuffix, targetDir, !*skipChecksum, *shared); err != nil {
 				return err
 			}
 		}
@@ -181,6 +205,9 @@ func run() error {
 	}
 
 	if *writeFlagsDir != "" {
+		if *shared {
+			return fmt.Errorf("-write-flags is only meaningful for static (cgo) installs; purego reads PDF_OXIDE_LIB_PATH at runtime")
+		}
 		outPath, err := writeCgoFlagsGo(*writeFlagsDir, targetDir)
 		if err != nil {
 			return fmt.Errorf("write cgo_flags.go: %w", err)
@@ -188,23 +215,39 @@ func run() error {
 		fmt.Fprintf(os.Stderr, "Generated %s\n", outPath)
 	}
 
-	printEnv(libDir, includeDir, platform)
+	printEnv(libDir, includeDir, platform, *shared, libPath)
 	return nil
 }
 
-func staticlibName(platform string) string {
-	if platform == "windows/amd64" {
-		// We ship the MinGW-compatible .a even on Windows (see release workflow).
+// chosenLibName picks either the static archive or the platform-appropriate
+// shared library file the caller asked for. The purego backend (CGO_ENABLED=0)
+// only needs the shared lib; cgo needs the static .a.
+func chosenLibName(platform string, shared bool) string {
+	if !shared {
 		return "libpdf_oxide.a"
 	}
-	return "libpdf_oxide.a"
+	switch platform {
+	case "darwin/amd64", "darwin/arm64":
+		return "libpdf_oxide.dylib"
+	case "windows/amd64":
+		return "pdf_oxide.dll"
+	default:
+		return "libpdf_oxide.so"
+	}
 }
 
-func downloadAndExtract(version, assetSuffix, targetDir string, verifyChecksum bool) error {
+func downloadAndExtract(version, assetSuffix, targetDir string, verifyChecksum, shared bool) error {
 	if !versionRegex.MatchString(version) {
 		return fmt.Errorf("invalid version %q (expected semver like 0.3.32)", version)
 	}
-	assetName := "pdf_oxide-go-ffi-" + assetSuffix + ".tar.gz"
+	// Static (.a) ships under pdf_oxide-go-ffi-<platform>.tar.gz (pre-existing);
+	// shared (.so/.dylib/.dll) under pdf_oxide-go-ffi-shared-<platform>.tar.gz.
+	// Release workflow (stage 4) publishes both.
+	variant := ""
+	if shared {
+		variant = "shared-"
+	}
+	assetName := "pdf_oxide-go-ffi-" + variant + assetSuffix + ".tar.gz"
 	baseURL := BaseURL + "/v" + version + "/"
 	url := baseURL + assetName
 	fmt.Fprintf(os.Stderr, "Downloading %s\n", url)
@@ -244,7 +287,7 @@ func downloadAndExtract(version, assetSuffix, targetDir string, verifyChecksum b
 // signature check.
 func httpGetLimited(url string) ([]byte, error) {
 	client := &http.Client{Timeout: httpTimeout}
-	resp, err := client.Get(url) //nolint:gosec // URL constructed from hard-coded base + validated version
+	resp, err := client.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("http get: %w", err)
 	}
@@ -348,7 +391,7 @@ func writeFileLimited(src io.Reader, path string, size int64) (retErr error) {
 	if size > maxExtractSize {
 		return fmt.Errorf("file too large: %d bytes", size)
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, filePerm) //nolint:gosec // path validated by caller
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, filePerm)
 	if err != nil {
 		return err
 	}
@@ -385,9 +428,22 @@ func ldflagsFor(goos string, libPath string) string {
 	}
 }
 
-func printEnv(libDir, includeDir, platform string) {
+func printEnv(libDir, includeDir, platform string, shared bool, libPath string) {
 	goos := strings.Split(platform, "/")[0]
-	libPath := filepath.Join(libDir, "libpdf_oxide.a")
+
+	if shared {
+		// purego backend reads PDF_OXIDE_LIB_PATH at runtime; no CGO_* needed.
+		fmt.Println("\n# Export to run Go programs with the pdf_oxide purego backend (CGO_ENABLED=0):")
+		if goos == osWindows {
+			fmt.Printf("set CGO_ENABLED=0\n")
+			fmt.Printf("set PDF_OXIDE_LIB_PATH=%s\n", libPath)
+		} else {
+			fmt.Printf("export CGO_ENABLED=0\n")
+			fmt.Printf("export PDF_OXIDE_LIB_PATH=%q\n", libPath)
+		}
+		return
+	}
+
 	ldflags := ldflagsFor(goos, libPath)
 	cflags := "-I" + includeDir
 
@@ -417,11 +473,11 @@ func writeCgoFlagsGo(outDir, installDir string) (string, error) {
 		return "", err
 	}
 	outPath := filepath.Join(outDir, "cgo_flags.go")
-	f, err := os.OpenFile(outPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, filePerm) //nolint:gosec // outDir provided by user
+	f, err := os.OpenFile(outPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, filePerm)
 	if err != nil {
 		return "", err
 	}
-	defer f.Close() //nolint:errcheck
+	defer f.Close()
 	if err := tmpl.Execute(f, data); err != nil {
 		return "", err
 	}

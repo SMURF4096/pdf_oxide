@@ -12,7 +12,7 @@
  */
 
 import { EventEmitter } from 'events';
-import { mapFfiErrorCode, AccessibilityException } from '../errors';
+import { AccessibilityException, mapFfiErrorCode } from '../errors';
 
 // =============================================================================
 // Type Definitions
@@ -128,13 +128,15 @@ export class AccessibilityManager extends EventEmitter {
    */
   async isTagged(): Promise<boolean> {
     if (!this.native?.pdf_accessibility_is_tagged) {
-      throw new AccessibilityException('Native accessibility not available: pdf_accessibility_is_tagged not found');
+      throw new AccessibilityException(
+        'Native accessibility not available: pdf_accessibility_is_tagged not found'
+      );
     }
 
     const errorCode = Buffer.alloc(4);
     const result = this.native.pdf_accessibility_is_tagged(
       this.document._handle ?? this.document,
-      errorCode,
+      errorCode
     );
     const code = errorCode.readInt32LE(0);
 
@@ -157,13 +159,15 @@ export class AccessibilityManager extends EventEmitter {
    */
   async getStructureTree(): Promise<StructureTree> {
     if (!this.native?.pdf_accessibility_get_structure_tree) {
-      throw new AccessibilityException('Native accessibility not available: pdf_accessibility_get_structure_tree not found');
+      throw new AccessibilityException(
+        'Native accessibility not available: pdf_accessibility_get_structure_tree not found'
+      );
     }
 
     const errorCode = Buffer.alloc(4);
     const resultPtr = this.native.pdf_accessibility_get_structure_tree(
       this.document._handle ?? this.document,
-      errorCode,
+      errorCode
     );
     const code = errorCode.readInt32LE(0);
 
@@ -172,9 +176,7 @@ export class AccessibilityManager extends EventEmitter {
     }
 
     try {
-      const tree: StructureTree = typeof resultPtr === 'string'
-        ? JSON.parse(resultPtr)
-        : resultPtr;
+      const tree: StructureTree = typeof resultPtr === 'string' ? JSON.parse(resultPtr) : resultPtr;
 
       this.emit('structure-tree-retrieved', { totalElements: tree.totalElements });
 
@@ -205,14 +207,16 @@ export class AccessibilityManager extends EventEmitter {
    */
   async autoTag(language?: string): Promise<AutoTagResult> {
     if (!this.native?.pdf_accessibility_auto_tag) {
-      throw new AccessibilityException('Native accessibility not available: pdf_accessibility_auto_tag not found');
+      throw new AccessibilityException(
+        'Native accessibility not available: pdf_accessibility_auto_tag not found'
+      );
     }
 
     const errorCode = Buffer.alloc(4);
     const resultPtr = this.native.pdf_accessibility_auto_tag(
       this.document._handle ?? this.document,
       language ?? null,
-      errorCode,
+      errorCode
     );
     const code = errorCode.readInt32LE(0);
 
@@ -222,11 +226,24 @@ export class AccessibilityManager extends EventEmitter {
 
     let result: AutoTagResult;
     try {
-      result = typeof resultPtr === 'string'
-        ? JSON.parse(resultPtr)
-        : resultPtr ?? { success: true, elementsTagged: 0, imagesFound: 0, headingsDetected: 0, warnings: [] };
+      result =
+        typeof resultPtr === 'string'
+          ? JSON.parse(resultPtr)
+          : (resultPtr ?? {
+              success: true,
+              elementsTagged: 0,
+              imagesFound: 0,
+              headingsDetected: 0,
+              warnings: [],
+            });
     } catch {
-      result = { success: true, elementsTagged: 0, imagesFound: 0, headingsDetected: 0, warnings: [] };
+      result = {
+        success: true,
+        elementsTagged: 0,
+        imagesFound: 0,
+        headingsDetected: 0,
+        warnings: [],
+      };
     }
 
     this.emit('auto-tagged', { language, elementsTagged: result.elementsTagged });
@@ -247,7 +264,9 @@ export class AccessibilityManager extends EventEmitter {
    */
   async setAltText(page: number, mcid: number, text: string): Promise<void> {
     if (!this.native?.pdf_accessibility_set_alt_text) {
-      throw new AccessibilityException('Native accessibility not available: pdf_accessibility_set_alt_text not found');
+      throw new AccessibilityException(
+        'Native accessibility not available: pdf_accessibility_set_alt_text not found'
+      );
     }
 
     const errorCode = Buffer.alloc(4);
@@ -256,7 +275,7 @@ export class AccessibilityManager extends EventEmitter {
       page,
       mcid,
       text,
-      errorCode,
+      errorCode
     );
     const code = errorCode.readInt32LE(0);
 
@@ -279,14 +298,16 @@ export class AccessibilityManager extends EventEmitter {
    */
   async setLanguage(lang: string): Promise<void> {
     if (!this.native?.pdf_accessibility_set_language) {
-      throw new AccessibilityException('Native accessibility not available: pdf_accessibility_set_language not found');
+      throw new AccessibilityException(
+        'Native accessibility not available: pdf_accessibility_set_language not found'
+      );
     }
 
     const errorCode = Buffer.alloc(4);
     this.native.pdf_accessibility_set_language(
       this.document._handle ?? this.document,
       lang,
-      errorCode,
+      errorCode
     );
     const code = errorCode.readInt32LE(0);
 
@@ -305,14 +326,16 @@ export class AccessibilityManager extends EventEmitter {
    */
   async setTitle(title: string): Promise<void> {
     if (!this.native?.pdf_accessibility_set_title) {
-      throw new AccessibilityException('Native accessibility not available: pdf_accessibility_set_title not found');
+      throw new AccessibilityException(
+        'Native accessibility not available: pdf_accessibility_set_title not found'
+      );
     }
 
     const errorCode = Buffer.alloc(4);
     this.native.pdf_accessibility_set_title(
       this.document._handle ?? this.document,
       title,
-      errorCode,
+      errorCode
     );
     const code = errorCode.readInt32LE(0);
 

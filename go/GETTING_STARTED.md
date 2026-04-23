@@ -3,18 +3,27 @@
 ## Prerequisites
 
 - **Go 1.21+**
-- **CGo enabled** (default; requires a C compiler: gcc, clang, or MSVC)
+- **One of:**
+  - **CGo + C compiler** (gcc, clang, or MSVC) — default, full API coverage.
+  - **CGO_ENABLED=0** — pure-Go build via the [purego](https://github.com/ebitengine/purego) backend (read-side API only).
 
-No Rust toolchain required — prebuilt native libraries are bundled in the module.
+No Rust toolchain required — the native library is downloaded from GitHub Releases on demand.
 
 ## Installation
 
 ```bash
 go get github.com/yfedoseev/pdf_oxide/go
+
+# CGo flow (default, full API) — downloads the staticlib and prints CGO_* env vars:
+go run github.com/yfedoseev/pdf_oxide/go/cmd/install@latest
+
+# Pure-Go flow (CGO_ENABLED=0) — downloads the shared lib and prints PDF_OXIDE_LIB_PATH:
+go run github.com/yfedoseev/pdf_oxide/go/cmd/install@latest -shared
 ```
 
-Prebuilt `libpdf_oxide` binaries for Linux, macOS, and Windows (x64 + ARM64) live in the
-module's `lib/` directory. CGo links against them automatically.
+The installer drops the library under `os.UserCacheDir()/pdf_oxide/v<ver>/`
+— `~/.cache/pdf_oxide/` on Linux, `~/Library/Caches/pdf_oxide/` on macOS,
+`%LocalAppData%\pdf_oxide\` on Windows. Override with `-dir <path>`.
 
 Import as:
 
@@ -329,12 +338,19 @@ go vet ./...
 
 ### "Failed to load library"
 
-Check that the prebuilt binary for your platform is present in `go/lib/`:
+Make sure you've run the installer. The library lives under the user cache dir:
 
 ```bash
-ls -la go/lib/
-# Should contain libpdf_oxide.so (Linux), libpdf_oxide.dylib (macOS), or pdf_oxide.dll (Windows)
+# Linux
+ls -la ~/.cache/pdf_oxide/v*/lib/*/libpdf_oxide.*
+# macOS
+ls -la ~/Library/Caches/pdf_oxide/v*/lib/*/libpdf_oxide.*
+# Windows (PowerShell)
+dir $env:LocalAppData\pdf_oxide\v*\lib\*\*
 ```
+
+If missing, run `go run github.com/yfedoseev/pdf_oxide/go/cmd/install@latest`
+(or `-shared` if you're using the purego backend).
 
 ### CGo compilation errors
 

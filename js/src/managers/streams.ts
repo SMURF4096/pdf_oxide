@@ -122,16 +122,15 @@ export class SearchStream extends Readable {
     try {
       // Perform search
       if (this.pageIndex !== undefined) {
-        this._results = (this.searchManager.search(
-          this.searchTerm,
-          this.pageIndex,
-          { caseSensitive: this.caseSensitive, wholeWords: this.wholeWords }
-        ) || []) as any[];
+        this._results = (this.searchManager.search(this.searchTerm, this.pageIndex, {
+          caseSensitive: this.caseSensitive,
+          wholeWords: this.wholeWords,
+        }) || []) as any[];
       } else {
-        this._results = (this.searchManager.searchAll(
-          this.searchTerm,
-          { caseSensitive: this.caseSensitive, wholeWords: this.wholeWords }
-        ) || []) as any[];
+        this._results = (this.searchManager.searchAll(this.searchTerm, {
+          caseSensitive: this.caseSensitive,
+          wholeWords: this.wholeWords,
+        }) || []) as any[];
       }
 
       // Apply max results limit
@@ -208,7 +207,6 @@ export class SearchStream extends Readable {
       this.destroy();
     }
   }
-
 }
 
 /**
@@ -304,20 +302,11 @@ export class ExtractionStream extends Readable {
       // Extract current page
       let extractedText: string;
       if (this.extractionType === 'markdown') {
-        extractedText = this.extractionManager.extractMarkdown(
-          this._currentPage,
-          this.options
-        );
+        extractedText = this.extractionManager.extractMarkdown(this._currentPage, this.options);
       } else if (this.extractionType === 'html') {
-        extractedText = this.extractionManager.extractHtml(
-          this._currentPage,
-          this.options
-        );
+        extractedText = this.extractionManager.extractHtml(this._currentPage, this.options);
       } else {
-        extractedText = this.extractionManager.extractText(
-          this._currentPage,
-          this.options
-        );
+        extractedText = this.extractionManager.extractText(this._currentPage, this.options);
       }
 
       // Emit progress object
@@ -347,20 +336,11 @@ export class ExtractionStream extends Readable {
         // Extract current page
         let extractedText: string;
         if (this.extractionType === 'markdown') {
-          extractedText = this.extractionManager.extractMarkdown(
-            this._currentPage,
-            this.options
-          );
+          extractedText = this.extractionManager.extractMarkdown(this._currentPage, this.options);
         } else if (this.extractionType === 'html') {
-          extractedText = this.extractionManager.extractHtml(
-            this._currentPage,
-            this.options
-          );
+          extractedText = this.extractionManager.extractHtml(this._currentPage, this.options);
         } else {
-          extractedText = this.extractionManager.extractText(
-            this._currentPage,
-            this.options
-          );
+          extractedText = this.extractionManager.extractText(this._currentPage, this.options);
         }
 
         // Create progress object

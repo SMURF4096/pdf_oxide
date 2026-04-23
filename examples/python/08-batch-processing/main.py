@@ -18,6 +18,7 @@ def process_pdf(path):
         total_tables += len(doc.extract_tables(p))
     return path, pages, total_words, total_tables
 
+
 def main():
     paths = sys.argv[1:]
     if not paths:
@@ -38,6 +39,7 @@ def main():
 
     elapsed = time.time() - start
     print(f"\nDone: {len(paths)} files processed in {elapsed:.2f}s")
+
 
 if __name__ == "__main__":
     main()

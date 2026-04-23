@@ -510,9 +510,7 @@ export class FormFieldManager extends EventEmitter {
    * @param fieldName Name of the field
    * @returns Color as [R, G, B] array (0-255) or null if no color
    */
-  async getFieldBackgroundColor(
-    fieldName: string
-  ): Promise<[number, number, number] | null> {
+  async getFieldBackgroundColor(fieldName: string): Promise<[number, number, number] | null> {
     const cacheKey = `form:bgcolor:${fieldName}`;
     if (this.resultCache.has(cacheKey)) {
       return this.resultCache.get(cacheKey);
@@ -656,10 +654,10 @@ export class FormFieldManager extends EventEmitter {
 
   private clearCachePattern(pattern: string): void {
     const regex = new RegExp(pattern);
-    const keysToDelete = Array.from(this.resultCache.keys()).filter((key) =>
-      regex.test(key)
-    );
-    keysToDelete.forEach((key) => this.resultCache.delete(key));
+    const keysToDelete = Array.from(this.resultCache.keys()).filter((key) => regex.test(key));
+    keysToDelete.forEach((key) => {
+      this.resultCache.delete(key);
+    });
   }
 }
 

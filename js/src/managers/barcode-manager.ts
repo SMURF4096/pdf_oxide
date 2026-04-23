@@ -39,7 +39,10 @@ export enum BarcodeErrorCorrection {
 }
 
 export enum QrErrorCorrection {
-  L = 0, M = 1, Q = 2, H = 3,
+  L = 0,
+  M = 1,
+  Q = 2,
+  H = 3,
 }
 
 export interface DetectedBarcode {
@@ -74,7 +77,11 @@ export class BarcodeManager extends EventEmitter {
   constructor(document: any) {
     super();
     this.document = document;
-    try { this.native = require('../../index.node'); } catch { this.native = null; }
+    try {
+      this.native = require('../../index.node');
+    } catch {
+      this.native = null;
+    }
   }
 
   // ===========================================================================
@@ -88,8 +95,11 @@ export class BarcodeManager extends EventEmitter {
     if (this.native?.detect_barcodes) {
       try {
         const barcodesJson = this.native.detect_barcodes(pageIndex) ?? [];
-        barcodes = barcodesJson.length > 0 ? barcodesJson.map((json: string) => JSON.parse(json)) : [];
-      } catch { barcodes = []; }
+        barcodes =
+          barcodesJson.length > 0 ? barcodesJson.map((json: string) => JSON.parse(json)) : [];
+      } catch {
+        barcodes = [];
+      }
     }
     this.setCached(cacheKey, barcodes);
     this.emit('barcodesDetected', { page: pageIndex, count: barcodes.length });
@@ -105,9 +115,16 @@ export class BarcodeManager extends EventEmitter {
         const barcodesJson = this.native.detect_all_barcodes();
         const parsed = JSON.parse(barcodesJson);
         for (const [page, barcodesArray] of Object.entries(parsed)) {
-          barcodes.set(parseInt(page), (barcodesArray as any[]).map(b => JSON.parse(typeof b === 'string' ? b : JSON.stringify(b))));
+          barcodes.set(
+            parseInt(page),
+            (barcodesArray as any[]).map((b) =>
+              JSON.parse(typeof b === 'string' ? b : JSON.stringify(b))
+            )
+          );
         }
-      } catch { barcodes = new Map(); }
+      } catch {
+        barcodes = new Map();
+      }
     }
     this.setCached(cacheKey, barcodes);
     this.emit('allBarcodesDetected', { pages: barcodes.size });
@@ -115,15 +132,20 @@ export class BarcodeManager extends EventEmitter {
   }
 
   async getBarcodesOfFormat(format: BarcodeFormat, pageIndex?: number): Promise<DetectedBarcode[]> {
-    const cacheKey = pageIndex ? `barcodes:format:${format}:${pageIndex}` : `barcodes:format:${format}:all`;
+    const cacheKey = pageIndex
+      ? `barcodes:format:${format}:${pageIndex}`
+      : `barcodes:format:${format}:all`;
     if (this.resultCache.has(cacheKey)) return this.resultCache.get(cacheKey);
     let barcodes: DetectedBarcode[] = [];
     if (this.native?.get_barcodes_of_format) {
       try {
         const page = pageIndex ?? -1;
         const barcodesJson = this.native.get_barcodes_of_format(format, page) ?? [];
-        barcodes = barcodesJson.length > 0 ? barcodesJson.map((json: string) => JSON.parse(json)) : [];
-      } catch { barcodes = []; }
+        barcodes =
+          barcodesJson.length > 0 ? barcodesJson.map((json: string) => JSON.parse(json)) : [];
+      } catch {
+        barcodes = [];
+      }
     }
     this.setCached(cacheKey, barcodes);
     return barcodes;
@@ -164,21 +186,30 @@ export class BarcodeManager extends EventEmitter {
         const configJson = config ? JSON.stringify(config) : '{}';
         const result = this.native.generate_barcode(data, configJson);
         imageData = Buffer.from(result);
-      } catch { imageData = Buffer.alloc(0); }
+      } catch {
+        imageData = Buffer.alloc(0);
+      }
     }
     this.setCached(cacheKey, imageData);
     this.emit('barcodeGenerated', { format, dataLength: data.length });
     return imageData;
   }
 
-  async generateQrCode(data: string, errorCorrection: QrErrorCorrection = QrErrorCorrection.M, sizePx: number = 256): Promise<Buffer> {
+  async generateQrCode(
+    data: string,
+    errorCorrection: QrErrorCorrection = QrErrorCorrection.M,
+    sizePx: number = 256
+  ): Promise<Buffer> {
     try {
       if (!data || typeof data !== 'string') throw new Error('Data must be a non-empty string');
       if (sizePx < 1 || sizePx > 10000) throw new Error('Size must be between 1 and 10000 pixels');
       const barcodeData = await this.document?.generateQrCode?.(data, errorCorrection, sizePx);
-      this.emit('barcode-generated', { format: 'qr', size: sizePx });
+      this.emit('barcodeGenerated', { format: 'qr', size: sizePx });
       return barcodeData || Buffer.alloc(0);
-    } catch (error) { this.emit('error', error); throw error; }
+    } catch (error) {
+      this.emit('error', error);
+      throw error;
+    }
   }
 
   // ===========================================================================
@@ -194,11 +225,21 @@ export class BarcodeManager extends EventEmitter {
     return `<svg xmlns="http://www.w3.org/2000/svg"><image href="data:image/png;base64,${encoded}"/></svg>`;
   }
 
-  async addBarcodeToPage(pageIndex: number, barcodeData: Buffer, x: number, y: number, width: number, height: number): Promise<boolean> {
+  async addBarcodeToPage(
+    pageIndex: number,
+    barcodeData: Buffer,
+    x: number,
+    y: number,
+    width: number,
+    height: number
+  ): Promise<boolean> {
     try {
       if (!this.document) throw new Error('Document required for adding barcode to page');
       return false;
-    } catch (error) { this.emit('error', error); throw error; }
+    } catch (error) {
+      this.emit('error', error);
+      throw error;
+    }
   }
 
   detectBarcodeFormat(barcodeData: Buffer): BarcodeFormat {
@@ -217,10 +258,17 @@ export class BarcodeManager extends EventEmitter {
   // Cache
   // ===========================================================================
 
-  clearCache(): void { this.resultCache.clear(); this.emit('cacheCleared'); }
+  clearCache(): void {
+    this.resultCache.clear();
+    this.emit('cacheCleared');
+  }
 
   getCacheStats(): Record<string, any> {
-    return { cacheSize: this.resultCache.size, maxCacheSize: this.maxCacheSize, entries: Array.from(this.resultCache.keys()) };
+    return {
+      cacheSize: this.resultCache.size,
+      maxCacheSize: this.maxCacheSize,
+      entries: Array.from(this.resultCache.keys()),
+    };
   }
 
   private setCached(key: string, value: any): void {

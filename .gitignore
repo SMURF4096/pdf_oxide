@@ -177,6 +177,12 @@ logs/
 .env.local
 .env.*.local
 
+# Secrets — keys and certs generated for local fixtures must never be committed
+*.pem
+*.key
+*.p12
+*.pfx
+
 # Docker
 .dockerignore
 
@@ -198,7 +204,7 @@ node_modules/
 
 # Node native addons — always built in CI, never committed to git.
 # The js/npm/<triple>/*.node files are populated by the build-nodejs
-# job in release.yml and live only in build artifacts (#335).
+# job in release.yml and live only in build artifacts.
 *.node
 
 # Build artifacts
@@ -283,6 +289,10 @@ PLAN_*.md
 CLEANUP_ROADMAP.md
 WORD_BOUNDARY_ANALYSIS.md
 examples/test_pdf.rs
+
+# Session handoff notes (per-release scratchpads for the next engineer —
+# valuable while the work is fresh, not durable docs)
+docs/handoff/
 
 # Temporary working documents (NOT for public repo)
 COMPLETION_CHECKLIST.md

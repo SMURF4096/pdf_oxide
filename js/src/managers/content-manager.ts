@@ -170,7 +170,8 @@ export class ContentManager {
       const widthMm = width * 0.352778;
       const heightMm = height * 0.352778;
 
-      const summary = `${width.toFixed(0)} x ${height.toFixed(0)} pt ` +
+      const summary =
+        `${width.toFixed(0)} x ${height.toFixed(0)} pt ` +
         `(${widthInches.toFixed(2)} x ${heightInches.toFixed(2)} in, ` +
         `${widthMm.toFixed(0)} x ${heightMm.toFixed(0)} mm)`;
 

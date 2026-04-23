@@ -3,13 +3,12 @@
  * Tests: EventManager, EncryptionManager, CompressionManager, CustomAnnotationManager, ContentSecurityManager
  */
 
-import { describe, it, expect, beforeEach } from '@jest/globals';
-
-import EventManager from '../managers/event-manager';
-import EncryptionManager from '../managers/encryption-manager';
+import { beforeEach, describe, expect, it } from '@jest/globals';
 import CompressionManager from '../managers/compression-manager';
-import CustomAnnotationManager from '../managers/custom-annotation-manager';
 import ContentSecurityManager from '../managers/content-security-manager';
+import CustomAnnotationManager from '../managers/custom-annotation-manager';
+import EncryptionManager from '../managers/encryption-manager';
+import EventManager from '../managers/event-manager';
 
 describe('Phase 8 Final Utilities', () => {
   describe('EventManager', () => {

@@ -150,10 +150,7 @@ export class ResultAccessorsManager extends EventEmitter {
    * @param index Index of the result
    * @returns Paragraph number (0-based)
    */
-  async getSearchResultParagraphNumber(
-    results: any,
-    index: number
-  ): Promise<number> {
+  async getSearchResultParagraphNumber(results: any, index: number): Promise<number> {
     const cacheKey = `search:paragraphnum:${index}`;
     if (this.resultCache.has(cacheKey)) {
       return this.resultCache.get(cacheKey);
@@ -223,10 +220,7 @@ export class ResultAccessorsManager extends EventEmitter {
    * @param index Index of the result
    * @returns Color as [R, G, B] array (0-255)
    */
-  async getSearchResultColor(
-    results: any,
-    index: number
-  ): Promise<[number, number, number]> {
+  async getSearchResultColor(results: any, index: number): Promise<[number, number, number]> {
     const cacheKey = `search:color:${index}`;
     if (this.resultCache.has(cacheKey)) {
       return this.resultCache.get(cacheKey);
@@ -304,10 +298,7 @@ export class ResultAccessorsManager extends EventEmitter {
    * @param index Index of the result
    * @returns Object with all properties
    */
-  async getSearchResultAllProperties(
-    results: any,
-    index: number
-  ): Promise<SearchResultProperties> {
+  async getSearchResultAllProperties(results: any, index: number): Promise<SearchResultProperties> {
     const cacheKey = `search:all:${index}`;
     if (this.resultCache.has(cacheKey)) {
       return this.resultCache.get(cacheKey);
@@ -696,10 +687,7 @@ export class ResultAccessorsManager extends EventEmitter {
    * @param index Index of the annotation
    * @returns Timestamp in milliseconds
    */
-  async getAnnotationModifiedDate(
-    annotations: any,
-    index: number
-  ): Promise<number> {
+  async getAnnotationModifiedDate(annotations: any, index: number): Promise<number> {
     const cacheKey = `annotation:modifieddate:${index}`;
     if (this.resultCache.has(cacheKey)) {
       return this.resultCache.get(cacheKey);
@@ -803,10 +791,7 @@ export class ResultAccessorsManager extends EventEmitter {
    * @param index Index of the annotation
    * @returns Object with all annotation properties
    */
-  async getAnnotationAllProperties(
-    annotations: any,
-    index: number
-  ): Promise<AnnotationProperties> {
+  async getAnnotationAllProperties(annotations: any, index: number): Promise<AnnotationProperties> {
     const cacheKey = `annotation:all:${index}`;
     if (this.resultCache.has(cacheKey)) {
       return this.resultCache.get(cacheKey);
@@ -857,10 +842,10 @@ export class ResultAccessorsManager extends EventEmitter {
 
   private clearCachePattern(pattern: string): void {
     const regex = new RegExp(pattern);
-    const keysToDelete = Array.from(this.resultCache.keys()).filter((key) =>
-      regex.test(key)
-    );
-    keysToDelete.forEach((key) => this.resultCache.delete(key));
+    const keysToDelete = Array.from(this.resultCache.keys()).filter((key) => regex.test(key));
+    keysToDelete.forEach((key) => {
+      this.resultCache.delete(key);
+    });
   }
 }
 

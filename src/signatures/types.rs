@@ -121,6 +121,78 @@ impl SigningCredentials {
         let _ = (cert_pem, key_pem);
         Err(Error::InvalidPdf("PEM loading not yet implemented".to_string()))
     }
+
+    /// Load credentials from a raw DER-encoded X.509 certificate. No
+    /// private key is attached — the resulting value is only useful
+    /// for inspection (subject / issuer / serial / validity / is_valid)
+    /// and not for signing. The signing-path dep chain (PKCS#12 parsing)
+    /// is still upstream, but every binding can surface Certificate
+    /// metadata by feeding the raw cert DER.
+    #[cfg(feature = "signatures")]
+    pub fn from_der(cert_der: Vec<u8>) -> Result<Self> {
+        use x509_parser::prelude::*;
+        // Validate the DER parses before handing out credentials.
+        let (_, _parsed) = X509Certificate::from_der(&cert_der)
+            .map_err(|e| Error::InvalidPdf(format!("invalid X.509 DER: {e}")))?;
+        Ok(Self {
+            certificate: cert_der,
+            private_key: Vec::new(),
+            chain: Vec::new(),
+        })
+    }
+
+    /// Certificate subject Distinguished Name (e.g. `CN=pdfoxide-test, O=...`).
+    #[cfg(feature = "signatures")]
+    pub fn subject(&self) -> Result<String> {
+        use x509_parser::prelude::*;
+        let (_, cert) = X509Certificate::from_der(&self.certificate)
+            .map_err(|e| Error::InvalidPdf(format!("invalid X.509 DER: {e}")))?;
+        Ok(cert.subject().to_string())
+    }
+
+    /// Certificate issuer Distinguished Name.
+    #[cfg(feature = "signatures")]
+    pub fn issuer(&self) -> Result<String> {
+        use x509_parser::prelude::*;
+        let (_, cert) = X509Certificate::from_der(&self.certificate)
+            .map_err(|e| Error::InvalidPdf(format!("invalid X.509 DER: {e}")))?;
+        Ok(cert.issuer().to_string())
+    }
+
+    /// Certificate serial number as a hex string.
+    #[cfg(feature = "signatures")]
+    pub fn serial(&self) -> Result<String> {
+        use x509_parser::prelude::*;
+        let (_, cert) = X509Certificate::from_der(&self.certificate)
+            .map_err(|e| Error::InvalidPdf(format!("invalid X.509 DER: {e}")))?;
+        Ok(cert.serial.to_str_radix(16))
+    }
+
+    /// Validity window as Unix timestamps `(not_before, not_after)`.
+    #[cfg(feature = "signatures")]
+    pub fn validity(&self) -> Result<(i64, i64)> {
+        use x509_parser::prelude::*;
+        let (_, cert) = X509Certificate::from_der(&self.certificate)
+            .map_err(|e| Error::InvalidPdf(format!("invalid X.509 DER: {e}")))?;
+        let nb = cert.validity().not_before.timestamp();
+        let na = cert.validity().not_after.timestamp();
+        Ok((nb, na))
+    }
+
+    /// Whether the certificate is within its validity window right now.
+    #[cfg(feature = "signatures")]
+    pub fn is_valid(&self) -> Result<bool> {
+        use x509_parser::prelude::*;
+        let (_, cert) = X509Certificate::from_der(&self.certificate)
+            .map_err(|e| Error::InvalidPdf(format!("invalid X.509 DER: {e}")))?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let nb = cert.validity().not_before.timestamp();
+        let na = cert.validity().not_after.timestamp();
+        Ok(now >= nb && now <= na)
+    }
 }
 
 impl std::fmt::Debug for SigningCredentials {
@@ -265,6 +337,34 @@ pub struct SignatureInfo {
     pub valid_from: Option<String>,
     /// Certificate validity end
     pub valid_to: Option<String>,
+    /// Raw DER-encoded PKCS#7/CMS SignedData blob from `/Contents`,
+    /// retained so that later accessors (signer certificate, verify)
+    /// can parse it on demand. `None` when the signature dictionary
+    /// had no `/Contents` entry (blank signature field).
+    ///
+    /// Prefer [`SignatureInfo::contents`] (the accessor) over touching
+    /// this field directly — the field layout is not a stable part of
+    /// the public API.
+    pub contents: Option<Vec<u8>>,
+}
+
+impl SignatureInfo {
+    /// Borrowed view of the raw PKCS#7/CMS SignedData blob from the
+    /// signature dictionary's `/Contents` entry. Returns `None` when
+    /// the dictionary had no `/Contents`.
+    ///
+    /// This is the FFI-stable way to get at the signed bytes — use it
+    /// instead of reaching for the `contents` field, whose backing
+    /// storage may change.
+    pub fn contents(&self) -> Option<&[u8]> {
+        self.contents.as_deref()
+    }
+
+    /// Borrowed view of the signature's `/ByteRange` array. Empty when
+    /// the signature is a blank field.
+    pub fn byte_range(&self) -> &[i64] {
+        &self.byte_range
+    }
 }
 
 /// Result of signature verification.

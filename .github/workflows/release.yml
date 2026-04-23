@@ -238,10 +238,31 @@ jobs:
           echo "Installing wasm-bindgen-cli@${WASM_BINDGEN_VERSION}"
           cargo install wasm-bindgen-cli --version "$WASM_BINDGEN_VERSION"
 
-      - name: Generate bindings
+      - name: Generate bindings for bundler, nodejs, and web targets
+        # Issue #392: the v0.3.37 artefact shipped a single `--target nodejs`
+        # build, which hard-codes `__dirname` and `require('fs')`. That
+        # crashes in every browser bundler (Vite, webpack, Rollup, esbuild)
+        # and every browser runtime even though the package metadata
+        # advertises browser support.
+        #
+        # Fix: ship all three wasm-bindgen targets side-by-side under
+        # `bundler/`, `nodejs/`, and `web/` subdirectories. The top-level
+        # package.json routes each consumer to the right one through
+        # `exports` conditions (see wasm-pkg/package.json).
+        #
+        # Nested per-directory package.json files pin the module format so
+        # Node unambiguously treats the ESM outputs (bundler/web, which
+        # wasm-bindgen emits as ESM) and the CJS output (nodejs, which
+        # wasm-bindgen emits as CommonJS) correctly regardless of the
+        # top-level `type` setting.
         run: |
-          wasm-bindgen --target nodejs --out-dir wasm-out/ \
-            target/wasm32-unknown-unknown/release/pdf_oxide.wasm
+          for target in bundler nodejs web; do
+            wasm-bindgen --target "$target" --out-dir "wasm-out/$target/" \
+              target/wasm32-unknown-unknown/release/pdf_oxide.wasm
+          done
+          echo '{"type":"module","sideEffects":false}'     > wasm-out/bundler/package.json
+          echo '{"type":"commonjs","sideEffects":false}'   > wasm-out/nodejs/package.json
+          echo '{"type":"module","sideEffects":false}'     > wasm-out/web/package.json
 
       - name: Copy package files
         run: |
@@ -419,12 +440,41 @@ jobs:
             (cd "$OUT" && sha256sum "pdf_oxide-go-ffi-$asset_name.tar.gz" > "pdf_oxide-go-ffi-$asset_name.tar.gz.sha256")
           }
 
+          # pack_shared mirrors pack() but ships the cdylib (.so/.dylib/.dll)
+          # for consumption by the purego backend (CGO_ENABLED=0) which
+          # dlopens the lib at runtime. Archive filename scheme:
+          #   pdf_oxide-go-ffi-shared-<platform>.tar.gz
+          pack_shared() {
+            local platform="$1" src_artifact="$2" src_lib="$3" dest_lib="$4"
+            local tmp="tmp-shared-$platform"
+            rm -rf "$tmp"
+            mkdir -p "$tmp/lib/$platform" "$tmp/include"
+
+            cp "native-libs/$src_artifact/$src_lib" "$tmp/lib/$platform/$dest_lib"
+            cp include/pdf_oxide_c/pdf_oxide.h "$tmp/include/pdf_oxide.h"
+
+            local asset_name="${platform/_/-}"
+            local tgz="$OUT/pdf_oxide-go-ffi-shared-$asset_name.tar.gz"
+            tar -C "$tmp" -czf "$tgz" lib include
+
+            (cd "$OUT" && sha256sum "pdf_oxide-go-ffi-shared-$asset_name.tar.gz" > "pdf_oxide-go-ffi-shared-$asset_name.tar.gz.sha256")
+          }
+
           pack linux_amd64   native-linux-x86_64       libpdf_oxide.a
           pack linux_arm64   native-linux-aarch64      libpdf_oxide.a
           pack darwin_amd64  native-macos-x86_64       libpdf_oxide.a
           pack darwin_arm64  native-macos-aarch64      libpdf_oxide.a
           # Windows x64: MinGW cross-compiled .a (CGo uses MinGW gcc).
           pack windows_amd64 native-windows-x86_64-gnu libpdf_oxide.a
+
+          # Shared-lib variants for the purego backend.
+          pack_shared linux_amd64   native-linux-x86_64  libpdf_oxide.so    libpdf_oxide.so
+          pack_shared linux_arm64   native-linux-aarch64 libpdf_oxide.so    libpdf_oxide.so
+          pack_shared darwin_amd64  native-macos-x86_64  libpdf_oxide.dylib libpdf_oxide.dylib
+          pack_shared darwin_arm64  native-macos-aarch64 libpdf_oxide.dylib libpdf_oxide.dylib
+          # Windows MSVC .dll (what the purego backend Dlopen's) — MinGW also
+          # produces a .dll but the MSVC build is what consumers expect.
+          pack_shared windows_amd64 native-windows-x86_64 pdf_oxide.dll pdf_oxide.dll
 
           echo "=== Go FFI release assets ==="
           ls -lh "$OUT/"

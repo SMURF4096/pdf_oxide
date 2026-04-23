@@ -16,43 +16,34 @@ export interface Table {
   cells: (string | null)[][];
 }
 
-import type {
-  SearchOptions,
-  SearchResult,
-  Metadata,
-  DocumentInfo,
-  EmbeddedFile,
-  Annotation,
-} from './native-bindings';
-
 // Re-export commonly used native types
 export type {
-  SearchOptions,
-  SearchResult,
-  Metadata,
+  Annotation,
+  CircleAnnotation,
+  Color,
   DocumentInfo,
   EmbeddedFile,
-  Annotation,
-  NativePdfDocument,
+  HighlightAnnotation,
+  InkAnnotation,
+  LineAnnotation,
+  LinkAnnotation,
+  Metadata,
   NativePdf,
+  NativePdfDocument,
   NativePdfPage,
-  Rect,
-  Point,
-  Color,
   PdfElement,
-  PdfText,
   PdfImage,
   PdfPath,
   PdfTable,
   PdfTableCell,
-  TextAnnotation,
-  HighlightAnnotation,
-  LinkAnnotation,
-  InkAnnotation,
-  SquareAnnotation,
-  CircleAnnotation,
-  LineAnnotation,
+  PdfText,
+  Point,
   PolygonAnnotation,
+  Rect,
+  SearchOptions,
+  SearchResult,
+  SquareAnnotation,
+  TextAnnotation,
 } from './native-bindings';
 
 /**

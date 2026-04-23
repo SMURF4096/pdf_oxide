@@ -1,6 +1,6 @@
 {
   "name": "pdf-oxide-wasm",
-  "version": "0.3.37",
+  "version": "0.3.38",
   "description": "Fast, zero-dependency PDF toolkit for Node.js, browsers, and edge runtimes — text extraction, markdown/HTML conversion, search, form filling, creation, and editing. Rust core compiled to WebAssembly.",
   "license": "MIT OR Apache-2.0",
   "repository": {
@@ -15,15 +15,37 @@
     "node": ">=18"
   },
   "files": [
-    "pdf_oxide_bg.wasm",
-    "pdf_oxide.js",
-    "pdf_oxide.d.ts",
-    "pdf_oxide_bg.wasm.d.ts",
+    "bundler/",
+    "nodejs/",
+    "web/",
     "README.md"
   ],
-  "main": "pdf_oxide.js",
-  "types": "pdf_oxide.d.ts",
+  "main": "./nodejs/pdf_oxide.js",
+  "module": "./bundler/pdf_oxide.js",
+  "types": "./bundler/pdf_oxide.d.ts",
+  "browser": "./web/pdf_oxide.js",
   "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./bundler/pdf_oxide.d.ts",
+      "browser": "./web/pdf_oxide.js",
+      "bun": "./bundler/pdf_oxide.js",
+      "deno": "./web/pdf_oxide.js",
+      "worker": "./web/pdf_oxide.js",
+      "workerd": "./web/pdf_oxide.js",
+      "node": {
+        "import": "./nodejs/pdf_oxide.js",
+        "require": "./nodejs/pdf_oxide.js",
+        "default": "./nodejs/pdf_oxide.js"
+      },
+      "import": "./bundler/pdf_oxide.js",
+      "default": "./bundler/pdf_oxide.js"
+    },
+    "./bundler": "./bundler/pdf_oxide.js",
+    "./nodejs": "./nodejs/pdf_oxide.js",
+    "./web": "./web/pdf_oxide.js",
+    "./package.json": "./package.json"
+  },
   "keywords": [
     "pdf",
     "wasm",

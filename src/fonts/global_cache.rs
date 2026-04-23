@@ -12,7 +12,7 @@
 //! # Usage
 //!
 //! The cache is integrated automatically into `PdfDocument::load_fonts()`.
-//! For explicit memory management, call [`clear_global_font_cache()`] between
+//! For explicit memory management, call `clear_global_font_cache` between
 //! batches or when reclaiming memory.
 //!
 //! ```no_run
