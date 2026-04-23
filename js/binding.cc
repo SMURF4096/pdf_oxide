@@ -365,6 +365,7 @@ extern "C" {
   extern const uint8_t* pdf_timestamp_get_token(const void* timestamp, size_t* out_len, int* error_code);
   extern char* pdf_timestamp_get_tsa_name(const void* timestamp, int* error_code);
   extern bool pdf_timestamp_verify(const void* timestamp, int* error_code);
+  extern void* pdf_timestamp_parse(const uint8_t* bytes, size_t len, int* error_code);
   extern void* pdf_tsa_client_create(const char* url, const char* username, const char* password, int timeout, int hash_algo, bool use_nonce, bool cert_req, int* error_code);
   extern void pdf_tsa_client_free(void* client);
   extern void* pdf_tsa_request_timestamp(const void* client, const uint8_t* data, size_t data_len, int* error_code);
@@ -2690,6 +2691,18 @@ Napi::Value TimestampVerify(const Napi::CallbackInfo& info) {
   return Napi::Boolean::New(env, valid);
 }
 
+// Parse a DER-encoded TimeStampToken (or bare TSTInfo) into a Timestamp
+// handle. Returns null on parse failure (with errorCode surfaced).
+Napi::Value TimestampParse(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  auto buf = info[0].As<Napi::Buffer<uint8_t>>();
+  int errorCode = 0;
+  void* ts = pdf_timestamp_parse(buf.Data(), buf.Length(), &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, "Failed to parse timestamp: " + getErrorMessage(errorCode));
+  if (!ts) return env.Null();
+  return Napi::External<void>::New(env, ts);
+}
+
 Napi::Value TsaClientCreate(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   std::string url = info[0].As<Napi::String>().Utf8Value();
@@ -3137,6 +3150,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("timestampGetTime", Napi::Function::New(env, TimestampGetTime));
   exports.Set("timestampGetToken", Napi::Function::New(env, TimestampGetToken));
   exports.Set("timestampGetTsaName", Napi::Function::New(env, TimestampGetTsaName));
+  exports.Set("timestampParse", Napi::Function::New(env, TimestampParse));
   exports.Set("timestampVerify", Napi::Function::New(env, TimestampVerify));
   exports.Set("tsaClientCreate", Napi::Function::New(env, TsaClientCreate));
   exports.Set("tsaClientFree", Napi::Function::New(env, TsaClientFree));
