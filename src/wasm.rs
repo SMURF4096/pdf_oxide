@@ -1244,6 +1244,75 @@ impl WasmPdfDocument {
     }
 }
 
+/// X.509 certificate parsed from a raw DER blob. Mirrors the C#,
+/// Node, Python, and Go `Certificate` surfaces — `subject` / `issuer`
+/// / `serial` / `validity` / `isValid` getters only.
+#[cfg(feature = "signatures")]
+#[wasm_bindgen]
+pub struct WasmCertificate {
+    creds: crate::signatures::SigningCredentials,
+}
+
+#[cfg(feature = "signatures")]
+#[wasm_bindgen]
+impl WasmCertificate {
+    /// Load a certificate from a DER-encoded X.509 blob. Throws if
+    /// the DER doesn't parse.
+    #[wasm_bindgen(js_name = "load")]
+    pub fn load(data: &[u8]) -> Result<WasmCertificate, JsValue> {
+        if data.is_empty() {
+            return Err(JsValue::from_str("Certificate data must not be empty"));
+        }
+        let creds = crate::signatures::SigningCredentials::from_der(data.to_vec())
+            .map_err(|e| JsValue::from_str(&format!("Invalid certificate: {e}")))?;
+        Ok(Self { creds })
+    }
+
+    /// Subject distinguished name.
+    #[wasm_bindgen(getter)]
+    pub fn subject(&self) -> Result<String, JsValue> {
+        self.creds
+            .subject()
+            .map_err(|e| JsValue::from_str(&format!("{e}")))
+    }
+
+    /// Issuer distinguished name.
+    #[wasm_bindgen(getter)]
+    pub fn issuer(&self) -> Result<String, JsValue> {
+        self.creds
+            .issuer()
+            .map_err(|e| JsValue::from_str(&format!("{e}")))
+    }
+
+    /// Serial number as a hex string (no `0x` prefix).
+    #[wasm_bindgen(getter)]
+    pub fn serial(&self) -> Result<String, JsValue> {
+        self.creds
+            .serial()
+            .map_err(|e| JsValue::from_str(&format!("{e}")))
+    }
+
+    /// Validity window as `[notBefore, notAfter]` Unix epoch seconds.
+    /// JavaScript: `new Date(notBefore * 1000)` for a Date.
+    #[wasm_bindgen(getter)]
+    pub fn validity(&self) -> Result<Vec<i64>, JsValue> {
+        let (nb, na) = self
+            .creds
+            .validity()
+            .map_err(|e| JsValue::from_str(&format!("{e}")))?;
+        Ok(vec![nb, na])
+    }
+
+    /// Whether the certificate is currently within its validity
+    /// window. Does NOT verify chain, trust-root, or revocation.
+    #[wasm_bindgen(getter, js_name = "isValid")]
+    pub fn is_valid(&self) -> Result<bool, JsValue> {
+        self.creds
+            .is_valid()
+            .map_err(|e| JsValue::from_str(&format!("{e}")))
+    }
+}
+
 /// RFC 3161 timestamp parsed from a DER TimeStampToken or bare
 /// TSTInfo. Mirrors the C#, Go, and Python `Timestamp` surfaces.
 #[cfg(feature = "signatures")]
