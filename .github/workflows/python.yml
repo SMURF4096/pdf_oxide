@@ -151,14 +151,18 @@ jobs:
           uv pip install basedpyright
           uv run basedpyright python/pdf_oxide
 
-      # pip-audit scans the installed Python environment for known
-      # CVEs against the live venv (uv-resolved, post-`uv sync`).
-      # `--disable-pip` only applies to -r / requirements mode; we
-      # audit the environment here, so it's dropped.
+      # pip-audit the dependency graph (uv-locked), excluding the
+      # current project itself — pdf-oxide is not on PyPI until the
+      # release job publishes it, so `--strict` on the live venv would
+      # flag our own package as "not found". Export deps-only and audit
+      # from requirements. `--no-deps` is required because uv-exported
+      # requirements are not hashed; the export already contains the
+      # full resolved dependency set.
       - name: pip-audit (project deps)
         run: |
+          uv export --no-emit-project --format requirements-txt --no-hashes > /tmp/pip-audit-requirements.txt
           uv pip install pip-audit
-          uv run pip-audit --strict
+          uv run pip-audit --strict --disable-pip --no-deps -r /tmp/pip-audit-requirements.txt
 
   # Build Linux wheels (manylinux + musllinux, x86_64 + aarch64)
   # Uses PyO3/maturin-action, which handles cross-compilation via Docker + zig.

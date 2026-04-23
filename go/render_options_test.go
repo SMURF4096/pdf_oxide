@@ -5,7 +5,6 @@ package pdfoxide
 
 import (
 	"bytes"
-	"errors"
 	"testing"
 )
 
@@ -83,10 +82,8 @@ func TestRenderPageWithOptions_InvalidDpi_Error(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for Dpi=-1")
 	}
-	// FFI code 1 = INVALID_ARG → ErrInvalidPath in Go's sentinel map.
-	if !errors.Is(err, ErrInvalidPath) {
-		t.Logf("got %v (FFI code 1 maps to ErrInvalidPath, accepting any error)", err)
-	}
+	// Contract: any non-nil error is acceptable — the FFI layer may
+	// classify invalid DPI under different sentinels across releases.
 }
 
 func TestRenderPageWithOptions_TransparentBackground_StillPng(t *testing.T) {

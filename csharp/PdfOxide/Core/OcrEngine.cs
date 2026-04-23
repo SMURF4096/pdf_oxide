@@ -61,7 +61,9 @@ namespace PdfOxide.Core
             // NativeHandle variant: wrap the IntPtr through the document's
             // internal NativeHandle by calling the NativeHandle-typed
             // P/Invoke directly through a lightweight scope.
-            return NativeMethods.OcrPageNeedsOcrByPtr(document.Handle, pageIndex, out int err) && err == 0;
+            var needsOcr = NativeMethods.OcrPageNeedsOcrByPtr(document.Handle, pageIndex, out int err);
+            ExceptionMapper.ThrowIfError(err);
+            return needsOcr;
         }
 
         /// <summary>

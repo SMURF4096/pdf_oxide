@@ -123,11 +123,16 @@ namespace PdfOxide.Core
             get
             {
                 ThrowIfDisposed();
+                // Native returns a BORROWED pointer into the Timestamp's
+                // own buffer (see src/ffi.rs:3589-3608); do NOT free.
                 var ptr = NativeMethods.pdf_timestamp_get_message_imprint(
                     _handle, out UIntPtr len, out int err);
                 ExceptionMapper.ThrowIfError(err);
                 if (ptr == IntPtr.Zero || len == UIntPtr.Zero) return Array.Empty<byte>();
-                var bytes = new byte[(int)len];
+                ulong nativeLen = len.ToUInt64();
+                if (nativeLen > int.MaxValue)
+                    throw new OverflowException("Message-imprint length exceeds managed array limits.");
+                var bytes = new byte[(int)nativeLen];
                 Marshal.Copy(ptr, bytes, 0, bytes.Length);
                 return bytes;
             }

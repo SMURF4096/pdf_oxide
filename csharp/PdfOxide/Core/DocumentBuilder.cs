@@ -205,17 +205,26 @@ namespace PdfOxide.Core
                 NativeMethods.PdfDocumentBuilderFree(h);
                 _handle = IntPtr.Zero;
                 ExceptionMapper.ThrowIfError(ec);
-                return Array.Empty<byte>();
+                throw new PdfException("PDF build failed: native builder returned a null buffer.");
             }
+            if (outLen > int.MaxValue)
+            {
+                // native free_bytes ignores the length arg; pass 0 to satisfy the P/Invoke shape.
+                NativeMethods.FreeBytes(ptr, 0);
+                NativeMethods.PdfDocumentBuilderFree(h);
+                _handle = IntPtr.Zero;
+                throw new OverflowException("Built PDF exceeds the maximum supported managed byte[] size.");
+            }
+            var outLenInt = (int)outLen;
             try
             {
-                var bytes = new byte[(int)outLen];
-                System.Runtime.InteropServices.Marshal.Copy(ptr, bytes, 0, (int)outLen);
+                var bytes = new byte[outLenInt];
+                System.Runtime.InteropServices.Marshal.Copy(ptr, bytes, 0, outLenInt);
                 return bytes;
             }
             finally
             {
-                NativeMethods.FreeBytes(ptr, (int)outLen);
+                NativeMethods.FreeBytes(ptr, outLenInt);
                 // FFI consumed the inner builder, but the wrapper Box is still alive.
                 NativeMethods.PdfDocumentBuilderFree(h);
                 _handle = IntPtr.Zero;
@@ -274,17 +283,25 @@ namespace PdfOxide.Core
                 NativeMethods.PdfDocumentBuilderFree(h);
                 _handle = IntPtr.Zero;
                 ExceptionMapper.ThrowIfError(ec);
-                return Array.Empty<byte>();
+                throw new PdfException("Encrypted PDF build failed: native builder returned a null buffer.");
             }
+            if (outLen > int.MaxValue)
+            {
+                NativeMethods.FreeBytes(ptr, 0);
+                NativeMethods.PdfDocumentBuilderFree(h);
+                _handle = IntPtr.Zero;
+                throw new OverflowException("Built PDF exceeds the maximum supported managed byte[] size.");
+            }
+            var outLenInt = (int)outLen;
             try
             {
-                var bytes = new byte[(int)outLen];
-                System.Runtime.InteropServices.Marshal.Copy(ptr, bytes, 0, (int)outLen);
+                var bytes = new byte[outLenInt];
+                System.Runtime.InteropServices.Marshal.Copy(ptr, bytes, 0, outLenInt);
                 return bytes;
             }
             finally
             {
-                NativeMethods.FreeBytes(ptr, (int)outLen);
+                NativeMethods.FreeBytes(ptr, outLenInt);
                 NativeMethods.PdfDocumentBuilderFree(h);
                 _handle = IntPtr.Zero;
             }

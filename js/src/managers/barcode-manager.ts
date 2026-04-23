@@ -204,7 +204,7 @@ export class BarcodeManager extends EventEmitter {
       if (!data || typeof data !== 'string') throw new Error('Data must be a non-empty string');
       if (sizePx < 1 || sizePx > 10000) throw new Error('Size must be between 1 and 10000 pixels');
       const barcodeData = await this.document?.generateQrCode?.(data, errorCorrection, sizePx);
-      this.emit('barcode-generated', { format: 'qr', size: sizePx });
+      this.emit('barcodeGenerated', { format: 'qr', size: sizePx });
       return barcodeData || Buffer.alloc(0);
     } catch (error) {
       this.emit('error', error);

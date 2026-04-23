@@ -503,7 +503,7 @@ jobs:
         working-directory: js
         run: >-
           npx --yes @arethetypeswrong/cli --pack .
-          --ignore-rules=cjs-resolves-to-esm,no-resolution,internal-resolution-error
+          --ignore-rules cjs-resolves-to-esm no-resolution internal-resolution-error
 
       # npm audit fails on high+ severity transitive vulns.
       - name: npm audit (prod deps, high severity)

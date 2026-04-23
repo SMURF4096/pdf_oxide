@@ -92,7 +92,8 @@ namespace PdfOxide.Core
             }
             try
             {
-                bool compliant = NativeMethods.PdfPdfAIsCompliant(results, out int _err);
+                bool compliant = NativeMethods.PdfPdfAIsCompliant(results, out int complianceErr);
+                ExceptionMapper.ThrowIfError(complianceErr);
                 int errCount = NativeMethods.PdfPdfAErrorCount(results);
                 // PDF/A warning count is exposed but no text accessor
                 // — include in Errors via the error list only.
@@ -120,7 +121,8 @@ namespace PdfOxide.Core
             }
             try
             {
-                bool compliant = NativeMethods.PdfPdfXIsCompliant(results, out int _err);
+                bool compliant = NativeMethods.PdfPdfXIsCompliant(results, out int complianceErr);
+                ExceptionMapper.ThrowIfError(complianceErr);
                 int errCount = NativeMethods.PdfPdfXErrorCount(results);
                 var errors = ReadStrings(results, errCount, NativeMethods.PdfPdfXGetError);
                 return new PdfValidationResult(compliant, errors, new List<string>());
@@ -146,7 +148,8 @@ namespace PdfOxide.Core
             }
             try
             {
-                bool compliant = NativeMethods.PdfPdfUaIsAccessible(results, out int _err);
+                bool compliant = NativeMethods.PdfPdfUaIsAccessible(results, out int complianceErr);
+                ExceptionMapper.ThrowIfError(complianceErr);
                 int errCount = NativeMethods.PdfPdfUaErrorCount(results);
                 int warnCount = NativeMethods.PdfPdfUaWarningCount(results);
                 var errors = ReadStrings(results, errCount, NativeMethods.PdfPdfUaGetError);

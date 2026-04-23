@@ -264,18 +264,26 @@ namespace PdfOxide.Core
                 var count = NativeMethods.pdf_document_get_signature_count(_handle, out int err);
                 ExceptionMapper.ThrowIfError(err);
                 var list = new System.Collections.Generic.List<Signature>(count);
-                for (int i = 0; i < count; i++)
+                try
                 {
-                    var sigHandle = NativeMethods.pdf_document_get_signature(_handle, i, out int e);
-                    ExceptionMapper.ThrowIfError(e);
-                    if (sigHandle.IsInvalid)
+                    for (int i = 0; i < count; i++)
                     {
-                        throw new PdfException(
-                            $"pdf_document_get_signature({i}) returned null with no error code");
+                        var sigHandle = NativeMethods.pdf_document_get_signature(_handle, i, out int e);
+                        ExceptionMapper.ThrowIfError(e);
+                        if (sigHandle.IsInvalid)
+                        {
+                            throw new PdfException(
+                                $"pdf_document_get_signature({i}) returned null with no error code");
+                        }
+                        list.Add(Signature.FromHandle(sigHandle));
                     }
-                    list.Add(Signature.FromHandle(sigHandle));
+                    return list;
                 }
-                return list;
+                catch
+                {
+                    foreach (var s in list) s.Dispose();
+                    throw;
+                }
             }
         }
 

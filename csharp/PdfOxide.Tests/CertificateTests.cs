@@ -84,14 +84,17 @@ namespace PdfOxide.Tests
         }
 
         [Fact]
-        public void IsValid_True_AtTimeOfWriting()
+        public void Validity_MatchesFixtureWindow()
         {
-            // Fixture: valid 2026-04-22 → 2027-04-22. Tests written 2026-04-21
-            // so the cert becomes valid within the next day of fixture
-            // minting. This test locks in that IsValid reflects
-            // current time rather than "always true".
+            // Assert against the certificate's declared validity window
+            // rather than cert.IsValid, which depends on the current system
+            // time and would be flaky near NotBefore and fail permanently
+            // after NotAfter (fixture expires 2027-04-22).
             using var cert = Certificate.Load(TestCertificateDer());
-            Assert.True(cert.IsValid);
+            var (nb, na) = cert.Validity;
+            Assert.Equal(new DateTime(2026, 4, 22), nb.Date);
+            Assert.Equal(new DateTime(2027, 4, 22), na.Date);
+            Assert.True(na > nb, "not_after must be after not_before");
         }
 
         [Fact]

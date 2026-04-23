@@ -136,6 +136,8 @@ namespace PdfOxide.Core
         public bool VerifyDetached(ReadOnlySpan<byte> pdfData)
         {
             ThrowIfDisposed();
+            if (pdfData.IsEmpty)
+                throw new ArgumentException("pdfData must contain the full PDF bytes; got an empty span.", nameof(pdfData));
             int result;
             int err;
             unsafe
