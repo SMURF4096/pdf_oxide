@@ -66,7 +66,8 @@ namespace PdfOxide.Tests
                 .Done();
             var bytes = builder.Build();
 
-            using var doc = PdfDocument.Open(WriteTemp(bytes));
+            using var tmp = WriteTemp(bytes);
+            using var doc = PdfDocument.Open(tmp);
             var text = doc.ExtractText(0);
             Assert.Contains("Привет, мир!", text);
             Assert.Contains("Καλημέρα κόσμε", text);
@@ -159,7 +160,8 @@ namespace PdfOxide.Tests
             builder.A4Page().At(72, 720).Text("page 2").Done();
             builder.A4Page().At(72, 720).Text("page 3").Done();
             var bytes = builder.Build();
-            using var doc = PdfDocument.Open(WriteTemp(bytes));
+            using var tmp = WriteTemp(bytes);
+            using var doc = PdfDocument.Open(tmp);
             Assert.Equal(3, doc.PageCount);
         }
 
@@ -173,7 +175,8 @@ namespace PdfOxide.Tests
                 .At(72, 680).Text("revisit").StickyNote("review").WatermarkDraft()
                 .Done();
             var bytes = builder.Build();
-            using var doc = PdfDocument.Open(WriteTemp(bytes));
+            using var tmp = WriteTemp(bytes);
+            using var doc = PdfDocument.Open(tmp);
             var text = doc.ExtractText(0);
             Assert.Contains("click me", text);
             Assert.Contains("important", text);
@@ -193,7 +196,8 @@ namespace PdfOxide.Tests
             using (pdf)
             {
                 var bytes = pdf.SaveToBytes();
-                using var doc = PdfDocument.Open(WriteTemp(bytes));
+                using var tmp = WriteTemp(bytes);
+                using var doc = PdfDocument.Open(tmp);
                 var text = doc.ExtractText(0);
                 Assert.Contains("Hello", text);
                 Assert.Contains("World", text);
@@ -202,11 +206,35 @@ namespace PdfOxide.Tests
 
         // --- Helpers ---------------------------------------------------------
 
-        private static string WriteTemp(byte[] bytes)
+        /// <summary>
+        /// Scoped temp-file wrapper — deletes the underlying file on Dispose.
+        /// Used via <c>using var tmp = WriteTemp(bytes);</c> so PdfDocument
+        /// tests don't leak temp files into the user's tmpdir across runs.
+        /// Implicitly converts to <see cref="string"/> so existing
+        /// <c>PdfDocument.Open(tmp)</c> call sites keep working.
+        /// </summary>
+        private readonly struct TempFile : IDisposable
         {
-            var path = Path.Combine(Path.GetTempPath(), $"pdfoxide-tmp-{Guid.NewGuid():N}.pdf");
+            public string Path { get; }
+
+            public TempFile(string path) => Path = path;
+
+            public static implicit operator string(TempFile t) => t.Path;
+
+            public void Dispose()
+            {
+                try { File.Delete(Path); }
+                catch { /* best-effort cleanup; OS will reap on reboot */ }
+            }
+        }
+
+        private static TempFile WriteTemp(byte[] bytes)
+        {
+            var path = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(),
+                $"pdfoxide-tmp-{Guid.NewGuid():N}.pdf");
             File.WriteAllBytes(path, bytes);
-            return path;
+            return new TempFile(path);
         }
     }
 }

@@ -803,7 +803,7 @@ namespace PdfOxide.Core
                 if (data == IntPtr.Zero) return Array.Empty<byte>();
                 var bytes = new byte[dataLen];
                 System.Runtime.InteropServices.Marshal.Copy(data, bytes, 0, dataLen);
-                NativeMethods.FreeBytes(data, dataLen);
+                NativeMethods.FreeBytes(data);
                 return bytes;
             }
             finally { NativeMethods.pdf_rendered_image_free(imgHandle); }
@@ -846,7 +846,7 @@ namespace PdfOxide.Core
                 if (data == IntPtr.Zero) return Array.Empty<byte>();
                 var bytes = new byte[dataLen];
                 System.Runtime.InteropServices.Marshal.Copy(data, bytes, 0, dataLen);
-                NativeMethods.FreeBytes(data, dataLen);
+                NativeMethods.FreeBytes(data);
                 return bytes;
             }
             finally { NativeMethods.pdf_rendered_image_free(imgHandle); }
@@ -865,7 +865,7 @@ namespace PdfOxide.Core
                 if (data == IntPtr.Zero) return Array.Empty<byte>();
                 var bytes = new byte[dataLen];
                 System.Runtime.InteropServices.Marshal.Copy(data, bytes, 0, dataLen);
-                NativeMethods.FreeBytes(data, dataLen);
+                NativeMethods.FreeBytes(data);
                 return bytes;
             }
             finally { NativeMethods.pdf_rendered_image_free(imgHandle); }
@@ -884,7 +884,7 @@ namespace PdfOxide.Core
                 if (data == IntPtr.Zero) return Array.Empty<byte>();
                 var bytes = new byte[dataLen];
                 System.Runtime.InteropServices.Marshal.Copy(data, bytes, 0, dataLen);
-                NativeMethods.FreeBytes(data, dataLen);
+                NativeMethods.FreeBytes(data);
                 return bytes;
             }
             finally { NativeMethods.pdf_rendered_image_free(imgHandle); }

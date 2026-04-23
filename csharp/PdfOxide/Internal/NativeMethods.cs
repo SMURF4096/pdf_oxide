@@ -181,13 +181,15 @@ namespace PdfOxide.Internal
         public static partial void FreeString(IntPtr ptr);
 
         /// <summary>
-        /// Frees a byte buffer allocated by Rust.
+        /// Frees a byte buffer allocated by Rust. Matches the native signature
+        /// <c>void free_bytes(void* ptr)</c> — length is not passed because
+        /// Rust's allocator tracks it internally. Callers that have a length
+        /// should pass it to the managed copy step, not this function.
         /// </summary>
         /// <param name="ptr">Pointer to the buffer to free.</param>
-        /// <param name="len">Length of the buffer (for validation).</param>
-        [LibraryImport(LibName, StringMarshalling = StringMarshalling.Utf8)]
+        [LibraryImport(LibName, EntryPoint = "free_bytes", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-        public static partial void FreeBytes(IntPtr ptr, int len);
+        public static partial void FreeBytes(IntPtr ptr);
 
         #endregion
 

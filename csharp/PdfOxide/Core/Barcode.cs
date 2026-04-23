@@ -124,7 +124,7 @@ namespace PdfOxide.Core
             }
             finally
             {
-                NativeMethods.FreeBytes(ptr, dataLen);
+                NativeMethods.FreeBytes(ptr);
             }
         }
 

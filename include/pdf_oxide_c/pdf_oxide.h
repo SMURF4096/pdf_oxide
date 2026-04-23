@@ -287,8 +287,12 @@ int   pdf_oxide_get_log_level(void);
 /* ─── Write-side API ─────────────────────────────────────────────────────── *
  *
  * DocumentBuilder + PageBuilder + EmbeddedFont mirror the Rust fluent
- * builder. Each method returns 0 on success, -1 on error (error_code
- * out-param carries the specific code).
+ * builder. Error conventions depend on the return type:
+ *   - `int`-returning methods: 0 on success, -1 on error.
+ *   - Pointer-returning methods (`void*` handles, `uint8_t*` byte buffers):
+ *     a valid pointer on success, NULL on error.
+ *   - `void`-returning methods: no return-side failure channel (free fns).
+ * In every case the `error_code` out-param carries the specific code.
  *
  * Handle-lifetime contract:
  *

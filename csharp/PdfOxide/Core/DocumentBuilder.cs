@@ -212,8 +212,7 @@ namespace PdfOxide.Core
             }
             if (outLen > int.MaxValue)
             {
-                // native free_bytes ignores the length arg; pass 0 to satisfy the P/Invoke shape.
-                NativeMethods.FreeBytes(ptr, 0);
+                NativeMethods.FreeBytes(ptr);
                 NativeMethods.PdfDocumentBuilderFree(h);
                 _handle = IntPtr.Zero;
                 throw new OverflowException("Built PDF exceeds the maximum supported managed byte[] size.");
@@ -227,7 +226,7 @@ namespace PdfOxide.Core
             }
             finally
             {
-                NativeMethods.FreeBytes(ptr, outLenInt);
+                NativeMethods.FreeBytes(ptr);
                 // FFI consumed the inner builder, but the wrapper Box is still alive.
                 NativeMethods.PdfDocumentBuilderFree(h);
                 _handle = IntPtr.Zero;
@@ -290,7 +289,7 @@ namespace PdfOxide.Core
             }
             if (outLen > int.MaxValue)
             {
-                NativeMethods.FreeBytes(ptr, 0);
+                NativeMethods.FreeBytes(ptr);
                 NativeMethods.PdfDocumentBuilderFree(h);
                 _handle = IntPtr.Zero;
                 throw new OverflowException("Built PDF exceeds the maximum supported managed byte[] size.");
@@ -304,7 +303,7 @@ namespace PdfOxide.Core
             }
             finally
             {
-                NativeMethods.FreeBytes(ptr, outLenInt);
+                NativeMethods.FreeBytes(ptr);
                 NativeMethods.PdfDocumentBuilderFree(h);
                 _handle = IntPtr.Zero;
             }
