@@ -46,14 +46,13 @@ linters:
       excludes:
         - G115  # intentional signed/unsigned round-trips at the cgo boundary
         - G204  # subprocess from environment (build scripts only)
-    misspell:
-      # Codebase mixes US and UK spellings intentionally (e.g.
-      # "colour", "finalisation"). Leave locale unset so only hard
-      # misspellings are flagged; golangci-lint v2 dropped the
-      # `ignore-words` key that used to suppress UK-spelling hits, so
-      # if a British spelling does get flagged, `//nolint:misspell` on
-      # the specific line is the workaround.
-      locale: ""
+    # misspell: intentionally not configured. The codebase mixes US and
+    # UK spellings (e.g. "colour", "finalisation") so we don't set
+    # `locale`. Only hard misspellings get flagged. golangci-lint v2.0.2
+    # rejects `locale: ""` (the enum only allows 'US' / 'UK'), so the
+    # whole `misspell:` block is omitted rather than set to an empty
+    # string. If a British spelling does get flagged, `//nolint:misspell`
+    # on the specific line is the workaround.
     prealloc:
       simple: true
       range-loops: true
