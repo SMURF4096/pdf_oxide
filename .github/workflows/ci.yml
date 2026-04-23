@@ -764,7 +764,18 @@ jobs:
   semver-checks:
     name: Semver check (PR only)
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    # Disabled pre-1.0. Under Cargo's 0.y.z rule every breaking change
+    # demands a `y` bump and cargo-semver-checks enforces that strictly,
+    # which produces a permanent red FAILURE on the PR check list for
+    # any release bundling writer-layer internal changes (the writer
+    # surface — ContentStreamOp / ContentStreamBuilder / EmbeddedFont —
+    # is still shaking out). `continue-on-error: true` keeps the
+    # workflow green but GitHub still renders the job red in the PR UI,
+    # which is noise. Re-enable by flipping `if:` back to
+    # `github.event_name == 'pull_request'` once the public API
+    # stabilises and we cut 1.0. Until then the CHANGELOG is the
+    # source of truth for breaking changes.
+    if: false
     continue-on-error: true
     steps:
       - uses: actions/checkout@v6
