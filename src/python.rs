@@ -5137,6 +5137,92 @@ impl PyTsaClient {
     }
 }
 
+/// X.509 certificate parsed from a raw DER blob. Mirrors the C# /
+/// Node `Certificate` class — `subject` / `issuer` / `serial` /
+/// `validity` / `is_valid` getters only; signing uses the PKCS#12
+/// loader once the Rust core's chain-of-trust work lands.
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "Certificate")]
+pub struct PyCertificate {
+    creds: crate::signatures::SigningCredentials,
+}
+
+#[pymethods]
+impl PyCertificate {
+    /// Load a certificate from a DER-encoded X.509 blob. Raises
+    /// ValueError if the DER doesn't parse.
+    #[staticmethod]
+    fn load(data: &Bound<'_, PyBytes>) -> PyResult<Self> {
+        #[cfg(feature = "signatures")]
+        {
+            let bytes = data.as_bytes();
+            if bytes.is_empty() {
+                return Err(PyValueError::new_err("Certificate data must not be empty"));
+            }
+            let creds = crate::signatures::SigningCredentials::from_der(bytes.to_vec())
+                .map_err(|e| PyValueError::new_err(format!("Invalid certificate: {e}")))?;
+            Ok(Self { creds })
+        }
+        #[cfg(not(feature = "signatures"))]
+        {
+            let _ = data;
+            Err(PyNotImplementedError::new_err(
+                "Certificate.load(): pdf_oxide was built without --features signatures",
+            ))
+        }
+    }
+
+    /// Subject distinguished name (e.g. `CN=pdfoxide-test, O=pdf_oxide, C=US`).
+    #[getter]
+    fn subject(&self) -> PyResult<String> {
+        self.creds
+            .subject()
+            .map_err(|e| PyValueError::new_err(format!("{e}")))
+    }
+
+    /// Issuer distinguished name — the DN of the CA that signed this
+    /// certificate (self-signed certs have `issuer == subject`).
+    #[getter]
+    fn issuer(&self) -> PyResult<String> {
+        self.creds
+            .issuer()
+            .map_err(|e| PyValueError::new_err(format!("{e}")))
+    }
+
+    /// Serial number as a hex string (no `0x` prefix).
+    #[getter]
+    fn serial(&self) -> PyResult<String> {
+        self.creds
+            .serial()
+            .map_err(|e| PyValueError::new_err(format!("{e}")))
+    }
+
+    /// Validity window as a `(not_before, not_after)` tuple of Unix
+    /// epoch seconds. Use `datetime.fromtimestamp(t, tz=timezone.utc)`
+    /// to get a Python datetime.
+    #[getter]
+    fn validity(&self) -> PyResult<(i64, i64)> {
+        self.creds
+            .validity()
+            .map_err(|e| PyValueError::new_err(format!("{e}")))
+    }
+
+    /// Whether the certificate is currently within its validity
+    /// window. Does NOT verify the signature chain, trust-root, or
+    /// revocation — this is a time-window check only.
+    #[getter]
+    fn is_valid(&self) -> PyResult<bool> {
+        self.creds
+            .is_valid()
+            .map_err(|e| PyValueError::new_err(format!("{e}")))
+    }
+
+    fn __repr__(&self) -> String {
+        let subject = self.creds.subject().unwrap_or_else(|_| "<unreadable>".into());
+        let serial = self.creds.serial().unwrap_or_else(|_| "<unreadable>".into());
+        format!("Certificate(subject={subject:?}, serial={serial:?})")
+    }
+}
+
 /// RFC 3161 timestamp parsed from a DER TimeStampToken or bare
 /// TSTInfo. Mirrors the C# `Timestamp` class.
 #[pyclass(module = "pdf_oxide.pdf_oxide", name = "Timestamp")]
@@ -5403,6 +5489,7 @@ fn pdf_oxide(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyPatternPresets>()?;
     m.add_class::<PyOfficeConverter>()?;
     m.add_class::<PySignature>()?;
+    m.add_class::<PyCertificate>()?;
     m.add_class::<PyTimestamp>()?;
     m.add_class::<PyTsaClient>()?;
     m.add("VERSION", env!("CARGO_PKG_VERSION"))?;
