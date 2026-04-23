@@ -45,7 +45,7 @@ export class TsaClient {
       options.timeoutSeconds ?? 30,
       options.hashAlgorithm ?? TimestampHashAlgorithm.Sha256,
       options.useNonce ?? true,
-      options.certReq ?? true,
+      options.certReq ?? true
     );
     if (!handle) {
       throw new Error('TsaClient: native create returned null');
@@ -76,7 +76,7 @@ export class TsaClient {
    */
   requestTimestampHash(
     hash: Uint8Array | Buffer,
-    hashAlgorithm: TimestampHashAlgorithm = TimestampHashAlgorithm.Sha256,
+    hashAlgorithm: TimestampHashAlgorithm = TimestampHashAlgorithm.Sha256
   ): Timestamp {
     this.assertOpen();
     const buf = Buffer.isBuffer(hash) ? hash : Buffer.from(hash);

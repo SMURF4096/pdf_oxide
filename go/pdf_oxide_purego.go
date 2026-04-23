@@ -170,19 +170,19 @@ var (
 	// Bulk JSON extractors — Fonts / Annotations / Elements / Search.
 	// Each returns an opaque list handle, then `<thing>_to_json` serialises
 	// the whole list in one FFI call; we unmarshal on the Go side.
-	ffiPdfDocumentGetEmbeddedFonts  func(handle uintptr, pageIndex int32, errCode *int32) uintptr
-	ffiPdfOxideFontListFree         func(handle uintptr)
-	ffiPdfOxideFontsToJSON          func(fonts uintptr, errCode *int32) *byte
+	ffiPdfDocumentGetEmbeddedFonts   func(handle uintptr, pageIndex int32, errCode *int32) uintptr
+	ffiPdfOxideFontListFree          func(handle uintptr)
+	ffiPdfOxideFontsToJSON           func(fonts uintptr, errCode *int32) *byte
 	ffiPdfDocumentGetPageAnnotations func(handle uintptr, pageIndex int32, errCode *int32) uintptr
-	ffiPdfOxideAnnotationListFree   func(handle uintptr)
-	ffiPdfOxideAnnotationsToJSON    func(ann uintptr, errCode *int32) *byte
-	ffiPdfPageGetElements           func(handle uintptr, pageIndex int32, errCode *int32) uintptr
-	ffiPdfOxideElementsFree         func(handle uintptr)
-	ffiPdfOxideElementsToJSON       func(elements uintptr, errCode *int32) *byte
-	ffiPdfDocumentSearchPage        func(handle uintptr, pageIndex int32, term string, caseSensitive bool, errCode *int32) uintptr
-	ffiPdfDocumentSearchAll         func(handle uintptr, term string, caseSensitive bool, errCode *int32) uintptr
-	ffiPdfOxideSearchResultFree     func(handle uintptr)
-	ffiPdfOxideSearchResultsToJSON  func(results uintptr, errCode *int32) *byte
+	ffiPdfOxideAnnotationListFree    func(handle uintptr)
+	ffiPdfOxideAnnotationsToJSON     func(ann uintptr, errCode *int32) *byte
+	ffiPdfPageGetElements            func(handle uintptr, pageIndex int32, errCode *int32) uintptr
+	ffiPdfOxideElementsFree          func(handle uintptr)
+	ffiPdfOxideElementsToJSON        func(elements uintptr, errCode *int32) *byte
+	ffiPdfDocumentSearchPage         func(handle uintptr, pageIndex int32, term string, caseSensitive bool, errCode *int32) uintptr
+	ffiPdfDocumentSearchAll          func(handle uintptr, term string, caseSensitive bool, errCode *int32) uintptr
+	ffiPdfOxideSearchResultFree      func(handle uintptr)
+	ffiPdfOxideSearchResultsToJSON   func(results uintptr, errCode *int32) *byte
 
 	// Page info — width/height/rotation/boxes.
 	ffiPdfPageGetWidth    func(handle uintptr, pageIndex int32, errCode *int32) float32

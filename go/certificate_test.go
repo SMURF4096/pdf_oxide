@@ -123,16 +123,27 @@ func TestCertificate_Validity_WindowCoherent(t *testing.T) {
 	}
 }
 
-func TestCertificate_IsValid_Timebound(t *testing.T) {
+// TestCertificate_IsValid_MatchesWindow asserts that IsValid() agrees with
+// "now is within [notBefore, notAfter]" as reported by Validity(). This keeps
+// the test self-consistent regardless of wall-clock — after the fixture's
+// notAfter elapses IsValid() flips to false and the test still passes because
+// the window check also reports out-of-window. The C# suite avoids a raw
+// `IsValid == true` assertion for the same reason (see CertificateTests.cs
+// Validity_MatchesFixtureWindow).
+func TestCertificate_IsValid_MatchesWindow(t *testing.T) {
 	cert := loadTestCertificate(t)
+	nb, na, err := cert.Validity()
+	if err != nil {
+		t.Fatalf("Validity: %v", err)
+	}
 	ok, err := cert.IsValid()
 	if err != nil {
 		t.Fatalf("IsValid: %v", err)
 	}
-	// Fixture is valid 2026-04-22 → 2027-04-22. This test was written
-	// on 2026-04-22 — if it's failing, check the calendar.
-	if !ok {
-		t.Error("IsValid() = false for a cert known to be in its window")
+	now := time.Now().UTC()
+	expected := !now.Before(nb) && !now.After(na)
+	if ok != expected {
+		t.Errorf("IsValid()=%v but now=%v within [%v, %v]=%v", ok, now, nb, na, expected)
 	}
 }
 

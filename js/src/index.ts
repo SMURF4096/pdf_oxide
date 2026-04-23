@@ -656,6 +656,10 @@ const SearchOptions = native.SearchOptions;
 const SearchResult = native.SearchResult;
 const TextSearcher = native.TextSearcher;
 
+// RFC 3161 Timestamp + TSA Client — standalone, re-exported from
+// their own modules so downstream users get the full API surface.
+export { Timestamp, TimestampHashAlgorithm } from './timestamp.js';
+export { TsaClient, type TsaClientOptions } from './tsa-client.js';
 export type {
   BatchDocument,
   BatchOptions,
@@ -784,8 +788,3 @@ export {
   XfaFormType,
   XfaManager,
 };
-
-// RFC 3161 Timestamp + TSA Client — standalone, re-exported from
-// their own modules so downstream users get the full API surface.
-export { Timestamp, TimestampHashAlgorithm } from './timestamp.js';
-export { TsaClient, type TsaClientOptions } from './tsa-client.js';

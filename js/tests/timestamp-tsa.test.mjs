@@ -21,7 +21,7 @@ describe('Timestamp + TsaClient smoke tests', () => {
       TsaClient = mod.TsaClient;
     } catch (err) {
       throw new Error(
-        `Failed to import compiled Node binding — run 'npm run build' first. (${err?.message})`,
+        `Failed to import compiled Node binding — run 'npm run build' first. (${err?.message})`
       );
     }
   });
