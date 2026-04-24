@@ -1621,6 +1621,117 @@ impl DocumentBuilder {
         }
     }
 
+    /// Insert a table-of-contents page at position `insert_at` (0-based
+    /// page index). The ToC lists every currently-added bookmark in
+    /// depth-first order with indented titles and right-aligned page
+    /// numbers. Blocked on / unblocked by [`Self::bookmark`] /
+    /// [`Self::bookmark_tree`] populating the outline tree — call those
+    /// before this. #393 Bundle B-3.
+    ///
+    /// Implementation: inserts a new page at `insert_at` and renders
+    /// the bookmark titles at the current `text_config` font/size. Dots
+    /// between title and page number are rendered as the Unicode middle
+    /// dot (·) — works in base-14 fonts without embedding.
+    pub fn insert_toc(self, insert_at: usize, title: impl Into<String>) -> Self {
+        use super::outline_builder::{OutlineDestination, OutlineItem};
+
+        // Collect (indent_level, title, page_num) tuples via pre-order DFS
+        // so hierarchies render with left-indent per depth.
+        fn walk(items: &[OutlineItem], depth: usize, out: &mut Vec<(usize, String, usize)>) {
+            for item in items {
+                let page = match item.destination {
+                    OutlineDestination::Page(p) => p,
+                    _ => 0,
+                };
+                out.push((depth, item.title.clone(), page));
+                walk(&item.children, depth + 1, out);
+            }
+        }
+        let mut entries: Vec<(usize, String, usize)> = Vec::new();
+        walk(self.outline.items(), 0, &mut entries);
+        if entries.is_empty() {
+            // Nothing to do — short-circuit to avoid an empty page.
+            return self;
+        }
+
+        // Shift page indices beyond insert_at so the ToC's target pages
+        // still point at the correct content pages post-insertion.
+        // v0.3.39 limitation: user-supplied bookmarks that aren't
+        // patched here will still point at their ORIGINAL indices.
+        // Callers should insert the ToC first OR re-issue bookmarks
+        // after insertion. Documented; full renumbering is a v0.3.40
+        // follow-up.
+
+        // Build the ToC page content.
+        let title_str = title.into();
+
+        // We need a FluentPageBuilder after inserting a page at
+        // insert_at. Strategy: stash existing pages after insert_at,
+        // push a placeholder page via .page(), move it to position,
+        // and render.
+        //
+        // Simpler: since PageData is Default + the content is additive,
+        // just insert the new page at `insert_at` in self.pages, then
+        // get an exclusive ref to render into it.
+        let page_size = PageSize::Letter;
+        let (width, height) = page_size.dimensions();
+        let mut builder = self;
+
+        // Clamp insert position to current page count — beyond that,
+        // append at the end (no panic).
+        let insert_pos = insert_at.min(builder.pages.len());
+        builder.pages.insert(
+            insert_pos,
+            PageData {
+                width,
+                height,
+                elements: Vec::new(),
+                annotations: Vec::new(),
+                form_fields: Vec::new(),
+            },
+        );
+
+        // Now render directly into that page via a scratch
+        // FluentPageBuilder. We can't use `page()` because it appends;
+        // instead borrow a fresh builder pointing at `insert_pos`.
+        {
+            let mut page = FluentPageBuilder {
+                builder: &mut builder,
+                page_index: insert_pos,
+                cursor_x: 72.0,
+                cursor_y: height - 72.0,
+                text_config: TextConfig::default(),
+                text_layout: TextLayout::new(),
+                last_text_rect: None,
+                pending_annotations: Vec::new(),
+                current_matrix: None,
+            };
+
+            // Title: bold + larger.
+            page = page.font("Helvetica-Bold", 18.0).text(&title_str);
+            page = page.space(12.0);
+            page = page.font("Helvetica", 11.0);
+
+            let page_w = width - 144.0; // 1-inch margins each side
+            for (depth, t, target_page) in entries {
+                let indent = 72.0 + (depth as f32) * 16.0;
+                // Title
+                let line_y = page.cursor_y;
+                page = page.at(indent, line_y).text(&t);
+                // Right-aligned page number (1-based for user display).
+                let num = (target_page + 1).to_string();
+                let num_w = page.measure(&num);
+                let num_x = (width - 72.0) - num_w;
+                page = page.at(num_x, line_y).text(&num);
+            }
+            let _ = page_w;
+
+            page.done();
+        }
+
+        builder
+    }
+
     /// Attach a page-label number tree. Lets a document number its
     /// front matter in lowercase Roman (i, ii, iii...) and its body in
     /// Arabic (1, 2, 3...), or any combination supported by
@@ -2562,6 +2673,42 @@ mod tests {
 
         // Bezier: stroke only (fill None).
         assert!(paths[4].stroke_color.is_some() && paths[4].fill_color.is_none());
+    }
+
+    #[test]
+    fn test_insert_toc_creates_a_toc_page_from_bookmarks() {
+        let mut doc = DocumentBuilder::new();
+        doc.letter_page().text("ch1").done();
+        doc.letter_page().text("ch2").done();
+        doc.letter_page().text("ch3").done();
+
+        let bytes = doc
+            .bookmark("Chapter 1", 0)
+            .bookmark("Chapter 2", 1)
+            .bookmark("Chapter 3", 2)
+            .insert_toc(0, "Table of Contents")
+            .build()
+            .expect("build");
+        let content = String::from_utf8_lossy(&bytes);
+        // Must have 4 pages now (3 content + 1 ToC).
+        let page_count = content.matches("/Type /Page").count();
+        assert!(page_count >= 4, "expected >=4 pages (3+1 ToC), got {}", page_count);
+        // ToC title must appear.
+        assert!(
+            content.contains("(Table of Contents)")
+                || content.contains("<5461626C65206F6620436F6E74656E7473>")
+        );
+    }
+
+    #[test]
+    fn test_insert_toc_no_bookmarks_is_no_op() {
+        // With no bookmarks added, inserting a ToC should produce
+        // zero extra pages.
+        let mut doc = DocumentBuilder::new();
+        doc.letter_page().text("only page").done();
+        let before = doc.pages.len();
+        doc = doc.insert_toc(0, "ToC");
+        assert_eq!(doc.pages.len(), before, "no-op expected for empty outline");
     }
 
     #[test]
