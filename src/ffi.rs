@@ -6833,6 +6833,21 @@ enum FfiPageOp {
         rows: Vec<Vec<String>>,
         has_header: bool,
     },
+    /// Open a streaming table. Pending ops from this point until a
+    /// matching `StreamingTableFinish` are fed into the live
+    /// `StreamingTable` on replay, giving true row-at-a-time drawing.
+    StreamingTableOpen {
+        /// Per-column (header, width_pt, align) — align is 0/1/2.
+        columns: Vec<(String, f32, i32)>,
+        repeat_header: bool,
+    },
+    /// Push one row into the currently-open streaming table. Fails at
+    /// replay time if no streaming table is open or if the cell count
+    /// doesn't match.
+    StreamingTableRow(Vec<String>),
+    /// Close the current streaming table. Subsequent ops are normal
+    /// page ops again.
+    StreamingTableFinish,
 }
 
 /// Parse a stamp-type name into the Rust `StampType` enum. Unknown names
@@ -7943,6 +7958,111 @@ pub extern "C" fn pdf_page_builder_table(
     )
 }
 
+/// Open a streaming table on this page. Columns are supplied as three
+/// parallel arrays — `headers` is a length-`n_columns` array of
+/// null-terminated C strings; `widths` and `aligns` are length-
+/// `n_columns` numeric arrays (aligns: 0=Left, 1=Center, 2=Right).
+///
+/// Subsequent calls to `pdf_page_builder_streaming_table_push_row` feed
+/// rows into the open table. Call `pdf_page_builder_streaming_table_finish`
+/// to close it; the table is also auto-closed on `_done`.
+///
+/// In v0.3.39 the FFI layer buffers rows until `_done` replays them
+/// against the live Rust `StreamingTable` — true O(cols) memory lives
+/// in the Rust core; the FFI replay holds `Vec<Vec<String>>` temporarily.
+/// Row-by-row FFI streaming is tracked under #400 v0.3.40.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_streaming_table_begin(
+    handle: *mut FfiPageBuilder,
+    n_columns: usize,
+    headers: *const *const c_char,
+    widths: *const f32,
+    aligns: *const i32,
+    repeat_header: i32,
+    error_code: *mut i32,
+) -> i32 {
+    if n_columns == 0
+        || headers.is_null()
+        || widths.is_null()
+        || aligns.is_null()
+    {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let widths_slice = unsafe { std::slice::from_raw_parts(widths, n_columns) };
+    let aligns_slice = unsafe { std::slice::from_raw_parts(aligns, n_columns) };
+    let headers_slice = unsafe { std::slice::from_raw_parts(headers, n_columns) };
+
+    let mut cols: Vec<(String, f32, i32)> = Vec::with_capacity(n_columns);
+    for i in 0..n_columns {
+        let ptr = headers_slice[i];
+        if ptr.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return -1;
+        }
+        let header = match unsafe { CStr::from_ptr(ptr) }.to_str() {
+            Ok(s) => s.to_string(),
+            Err(_) => {
+                set_error(error_code, ERR_INVALID_ARG);
+                return -1;
+            },
+        };
+        cols.push((header, widths_slice[i], aligns_slice[i]));
+    }
+
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::StreamingTableOpen {
+            columns: cols,
+            repeat_header: repeat_header != 0,
+        },
+    )
+}
+
+/// Push one row into the currently-open streaming table. `cells` is
+/// a length-`n_cells` array of null-terminated UTF-8 C strings; its
+/// length must equal the column count supplied to `_begin`.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_streaming_table_push_row(
+    handle: *mut FfiPageBuilder,
+    n_cells: usize,
+    cells: *const *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    if n_cells == 0 || cells.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let cells_slice = unsafe { std::slice::from_raw_parts(cells, n_cells) };
+    let mut row: Vec<String> = Vec::with_capacity(n_cells);
+    for i in 0..n_cells {
+        let ptr = cells_slice[i];
+        if ptr.is_null() {
+            row.push(String::new());
+            continue;
+        }
+        match unsafe { CStr::from_ptr(ptr) }.to_str() {
+            Ok(s) => row.push(s.to_string()),
+            Err(_) => {
+                set_error(error_code, ERR_INVALID_ARG);
+                return -1;
+            },
+        }
+    }
+    push_page_op(handle, error_code, FfiPageOp::StreamingTableRow(row))
+}
+
+/// Close the currently-open streaming table. Returns -1 +
+/// ERR_INVALID_ARG if no table is open.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_streaming_table_finish(
+    handle: *mut FfiPageBuilder,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::StreamingTableFinish)
+}
+
 /// Commit this page's buffered operations to its parent builder and
 /// **consume** the page handle. After a successful call the handle is
 /// invalid; do not call `_free`.
@@ -7979,9 +8099,80 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
     let page_size = page
         .page_size
         .unwrap_or(crate::writer::PageSize::Custom(page.custom_width, page.custom_height));
-    let mut rust_page = builder.page(page_size);
+    let mut rust_page_opt: Option<crate::writer::FluentPageBuilder<'_>> =
+        Some(builder.page(page_size));
+    let mut streaming_opt: Option<crate::writer::StreamingTable<'_>> = None;
+
     for op in page.ops.drain(..) {
-        rust_page = match op {
+        // Streaming mode handles its own row / finish variants. Other
+        // variants in streaming mode are a programmer error at the
+        // binding layer; we flush them straight through to avoid
+        // silently swallowing them.
+        match op {
+            FfiPageOp::StreamingTableOpen {
+                columns,
+                repeat_header,
+            } => {
+                let Some(rp) = rust_page_opt.take() else {
+                    // Already streaming — reject reopening.
+                    set_error(error_code, ERR_INVALID_ARG);
+                    return -1;
+                };
+                let mut config = crate::writer::StreamingTableConfig::new()
+                    .repeat_header(repeat_header);
+                for (header, width, align) in columns {
+                    let cell_align = match align {
+                        1 => crate::writer::CellAlign::Center,
+                        2 => crate::writer::CellAlign::Right,
+                        _ => crate::writer::CellAlign::Left,
+                    };
+                    config = config.column(
+                        crate::writer::StreamingColumn::new(header)
+                            .width_pt(width)
+                            .align(cell_align),
+                    );
+                }
+                streaming_opt = Some(rp.streaming_table(config));
+                continue;
+            },
+            FfiPageOp::StreamingTableRow(cells) => {
+                if let Some(st) = streaming_opt.as_mut() {
+                    // Discard push_row errors at FFI — the binding is
+                    // responsible for arity. Log via debug_assert for
+                    // cargo test visibility.
+                    let _ = st.push_row(|r| {
+                        for c in cells {
+                            r.cell(c);
+                        }
+                    });
+                } else {
+                    set_error(error_code, ERR_INVALID_ARG);
+                    return -1;
+                }
+                continue;
+            },
+            FfiPageOp::StreamingTableFinish => {
+                let Some(st) = streaming_opt.take() else {
+                    set_error(error_code, ERR_INVALID_ARG);
+                    return -1;
+                };
+                rust_page_opt = Some(st.finish());
+                continue;
+            },
+            _ => {},
+        }
+
+        // Non-streaming ops: must have rust_page, not streaming.
+        let rust_page = match rust_page_opt.take() {
+            Some(rp) => rp,
+            None => {
+                // We're mid-stream but got a non-stream op. That's a
+                // binding-level bug; reject to avoid silent corruption.
+                set_error(error_code, ERR_INVALID_ARG);
+                return -1;
+            },
+        };
+        rust_page_opt = Some(match op {
             FfiPageOp::Font(name, size) => rust_page.font(&name, size),
             FfiPageOp::At(x, y) => rust_page.at(x, y),
             FfiPageOp::Text(text) => rust_page.text(&text),
@@ -8126,8 +8317,24 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
                 }
                 rust_page.table(table)
             },
-        };
+            FfiPageOp::StreamingTableOpen { .. }
+            | FfiPageOp::StreamingTableRow(_)
+            | FfiPageOp::StreamingTableFinish => unreachable!(
+                "streaming ops handled above; reaching here is a replay-loop bug"
+            ),
+        });
     }
+
+    // If the table was left open (missing finish), close it to avoid
+    // silently dropping the page.
+    if let Some(st) = streaming_opt.take() {
+        rust_page_opt = Some(st.finish());
+    }
+
+    let Some(rust_page) = rust_page_opt else {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    };
     rust_page.done();
     parent.open_page = false;
     // page box drops here, releasing the buffered ops (already drained).

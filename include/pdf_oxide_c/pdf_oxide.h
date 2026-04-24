@@ -475,6 +475,32 @@ int   pdf_page_builder_table(void* page,
                              int has_header,
                              int* error_code);
 
+/* Streaming table (row-at-a-time, true O(cols) memory at the Rust core).
+ * FFI layer currently buffers rows between _begin and _finish, replaying
+ * them against a live StreamingTable on _done. Full FFI row-by-row
+ * streaming is tracked under issue #400 for v0.3.40. */
+
+/* Open a streaming table. `headers`, `widths`, `aligns` are parallel
+ * arrays of length n_columns (aligns: 0=Left, 1=Center, 2=Right). */
+int   pdf_page_builder_streaming_table_begin(void* page,
+                                             size_t n_columns,
+                                             const char* const* headers,
+                                             const float* widths,
+                                             const int* aligns,
+                                             int repeat_header,
+                                             int* error_code);
+
+/* Push one row. `cells` must have length matching n_columns from
+ * _begin. NULL cell pointers become empty strings. */
+int   pdf_page_builder_streaming_table_push_row(void* page,
+                                                size_t n_cells,
+                                                const char* const* cells,
+                                                int* error_code);
+
+/* Close the open streaming table. Auto-closed by _done if not
+ * explicit. */
+int   pdf_page_builder_streaming_table_finish(void* page, int* error_code);
+
 /* PageBuilder — commit / drop */
 int   pdf_page_builder_done(void* page, int* error_code);
 void  pdf_page_builder_free(void* page);

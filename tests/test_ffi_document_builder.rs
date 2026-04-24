@@ -460,6 +460,117 @@ fn ffi_page_builder_stroke_and_text_in_rect_and_table() {
 }
 
 #[test]
+fn ffi_streaming_table_end_to_end_thousand_rows() {
+    // Exercise the streaming FFI surface: begin → push_row × N → finish.
+    // The Rust core is O(cols) memory — the FFI buffers rows until done()
+    // replays them (per v0.3.39 scope, see #400 for true row-by-row).
+    let mut ec: i32 = -1;
+    let builder = unsafe { pdf_document_builder_create(&mut ec) };
+    assert_eq!(ec, 0);
+    let page = unsafe { pdf_document_builder_letter_page(builder, &mut ec) };
+    assert_eq!(ec, 0);
+
+    assert_eq!(
+        unsafe { pdf_page_builder_font(page, cstring("Helvetica").as_ptr(), 10.0, &mut ec) },
+        0
+    );
+    assert_eq!(
+        unsafe { pdf_page_builder_at(page, 72.0, 720.0, &mut ec) },
+        0
+    );
+
+    // Begin the streaming table.
+    let headers_cstr: [CString; 3] = [cstring("SKU"), cstring("Item"), cstring("Qty")];
+    let headers_ptrs: [*const std::os::raw::c_char; 3] = [
+        headers_cstr[0].as_ptr(),
+        headers_cstr[1].as_ptr(),
+        headers_cstr[2].as_ptr(),
+    ];
+    let widths: [f32; 3] = [72.0, 200.0, 48.0];
+    let aligns: [i32; 3] = [0, 0, 2];
+    assert_eq!(
+        unsafe {
+            pdf_page_builder_streaming_table_begin(
+                page,
+                3,
+                headers_ptrs.as_ptr(),
+                widths.as_ptr(),
+                aligns.as_ptr(),
+                1, // repeat_header
+                &mut ec,
+            )
+        },
+        0
+    );
+    assert_eq!(ec, 0);
+
+    // Push 1000 rows.
+    for i in 0..1000u32 {
+        let sku = cstring(&format!("A-{}", i));
+        let item = cstring("Widget");
+        let qty = cstring(&i.to_string());
+        let cells_ptrs: [*const std::os::raw::c_char; 3] =
+            [sku.as_ptr(), item.as_ptr(), qty.as_ptr()];
+        let rc = unsafe {
+            pdf_page_builder_streaming_table_push_row(
+                page,
+                3,
+                cells_ptrs.as_ptr(),
+                &mut ec,
+            )
+        };
+        assert_eq!(rc, 0, "push_row failed at i={}: ec={}", i, ec);
+    }
+
+    // Close the table explicitly.
+    assert_eq!(
+        unsafe { pdf_page_builder_streaming_table_finish(page, &mut ec) },
+        0
+    );
+    assert_eq!(ec, 0);
+
+    // Commit + build.
+    assert_eq!(unsafe { pdf_page_builder_done(page, &mut ec) }, 0);
+    assert_eq!(ec, 0);
+
+    let mut out_len: usize = 0;
+    let bytes_ptr = unsafe { pdf_document_builder_build(builder, &mut out_len, &mut ec) };
+    assert_eq!(ec, 0);
+    assert!(!bytes_ptr.is_null());
+    // 1000 rows × 3 cells + pagination → PDF must be non-trivial size.
+    assert!(out_len > 10_000, "expected sizable PDF, got {}", out_len);
+
+    let slice = unsafe { std::slice::from_raw_parts(bytes_ptr, out_len) };
+    assert!(slice.starts_with(b"%PDF-"));
+
+    unsafe { free_bytes(bytes_ptr) };
+    unsafe { pdf_document_builder_free(builder) };
+}
+
+#[test]
+fn ffi_streaming_table_push_without_begin_errors() {
+    let mut ec: i32 = -1;
+    let builder = unsafe { pdf_document_builder_create(&mut ec) };
+    let page = unsafe { pdf_document_builder_letter_page(builder, &mut ec) };
+
+    // Push a row without opening the table — should buffer but then fail
+    // at done() replay.
+    let cell = cstring("orphan");
+    let cells_ptrs: [*const std::os::raw::c_char; 1] = [cell.as_ptr()];
+    assert_eq!(
+        unsafe {
+            pdf_page_builder_streaming_table_push_row(page, 1, cells_ptrs.as_ptr(), &mut ec)
+        },
+        0
+    );
+    // done() must reject the orphan row.
+    let rc = unsafe { pdf_page_builder_done(page, &mut ec) };
+    assert_eq!(rc, -1);
+    assert_ne!(ec, 0);
+    unsafe { pdf_document_builder_free(builder) };
+}
+
+#[test]
 fn ffi_page_builder_table_invalid_widths_rejected() {
     let mut ec: i32 = -1;
     let builder = unsafe { pdf_document_builder_create(&mut ec) };
