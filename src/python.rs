@@ -4040,6 +4040,233 @@ enum PendingPageOp {
     Rect(f32, f32, f32, f32),
     FilledRect(f32, f32, f32, f32, f32, f32, f32),
     Line(f32, f32, f32, f32),
+    StrokeRect {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        width: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+    },
+    StrokeLine {
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        width: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+    },
+    TextInRect {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        text: String,
+        align: i32,
+    },
+    NewPageSameSize,
+    Table {
+        widths: Vec<f32>,
+        aligns: Vec<i32>,
+        rows: Vec<Vec<String>>,
+        has_header: bool,
+    },
+    StreamingTable {
+        headers: Vec<String>,
+        widths: Vec<f32>,
+        aligns: Vec<i32>,
+        repeat_header: bool,
+        rows: Vec<Vec<String>>,
+    },
+}
+
+fn parse_align_to_cell(i: i32) -> crate::writer::CellAlign {
+    match i {
+        1 => crate::writer::CellAlign::Center,
+        2 => crate::writer::CellAlign::Right,
+        _ => crate::writer::CellAlign::Left,
+    }
+}
+
+fn parse_align_to_text(i: i32) -> crate::writer::TextAlign {
+    match i {
+        1 => crate::writer::TextAlign::Center,
+        2 => crate::writer::TextAlign::Right,
+        _ => crate::writer::TextAlign::Left,
+    }
+}
+
+fn align_str_to_int(s: &str) -> PyResult<i32> {
+    match s.to_ascii_lowercase().as_str() {
+        "left" | "l" => Ok(0),
+        "center" | "centre" | "c" => Ok(1),
+        "right" | "r" => Ok(2),
+        other => Err(PyValueError::new_err(format!(
+            "invalid align '{}': expected 'left', 'center', or 'right'",
+            other
+        ))),
+    }
+}
+
+fn extract_align(py: Python<'_>, obj: &Bound<'_, PyAny>) -> PyResult<i32> {
+    // Accept str, int, or the Align pyclass itself.
+    if let Ok(s) = obj.extract::<String>() {
+        return align_str_to_int(&s);
+    }
+    if let Ok(a) = obj.extract::<PyAlign>() {
+        return Ok(a as i32);
+    }
+    if let Ok(a) = obj.extract::<PyRef<PyAlign>>() {
+        return Ok(*a as i32);
+    }
+    if let Ok(i) = obj.extract::<i32>() {
+        if (0..=2).contains(&i) {
+            return Ok(i);
+        }
+    }
+    let _ = py;
+    Err(PyValueError::new_err(
+        "align must be 'left'/'center'/'right' or an Align enum value",
+    ))
+}
+
+/// Python-side horizontal alignment enum. Maps 1:1 to `CellAlign` /
+/// `TextAlign` in the Rust core. Values are plain ints so the class can
+/// be used interchangeably with the string form ("left"/"center"/"right")
+/// anywhere the Python bindings accept alignment.
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "Align", eq, eq_int)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum PyAlign {
+    Left = 0,
+    Center = 1,
+    Right = 2,
+}
+
+#[pymethods]
+impl PyAlign {
+    #[classattr]
+    const LEFT: PyAlign = PyAlign::Left;
+    #[classattr]
+    const CENTER: PyAlign = PyAlign::Center;
+    #[classattr]
+    const RIGHT: PyAlign = PyAlign::Right;
+
+    fn __int__(&self) -> i32 {
+        *self as i32
+    }
+
+    fn __repr__(&self) -> &'static str {
+        match self {
+            PyAlign::Left => "Align.LEFT",
+            PyAlign::Center => "Align.CENTER",
+            PyAlign::Right => "Align.RIGHT",
+        }
+    }
+}
+
+/// Python-side column descriptor used by `Table` and
+/// `FluentPageBuilder.streaming_table`. Constructor matches the research
+/// C shape: `Column(header, width=100.0, align=Align.LEFT)`.
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "Column", skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyColumn {
+    pub header: String,
+    pub width: f32,
+    pub align: i32,
+}
+
+#[pymethods]
+impl PyColumn {
+    #[new]
+    #[pyo3(signature = (header, width=100.0, align=None))]
+    fn new(header: String, width: f32, align: Option<Bound<'_, PyAny>>) -> PyResult<Self> {
+        let align_i = match align {
+            Some(obj) => extract_align(obj.py(), &obj)?,
+            None => 0,
+        };
+        Ok(Self {
+            header,
+            width,
+            align: align_i,
+        })
+    }
+
+    #[getter]
+    fn header(&self) -> &str {
+        &self.header
+    }
+    #[getter]
+    fn width(&self) -> f32 {
+        self.width
+    }
+    #[getter]
+    fn align(&self) -> i32 {
+        self.align
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Column(header={:?}, width={}, align={})",
+            self.header, self.width, self.align
+        )
+    }
+}
+
+/// Python-side buffered-table value object consumed by
+/// `FluentPageBuilder.table`. Carries columns (with widths + alignments
+/// + headers), rows of string cells, and a `has_header` flag that
+/// promotes the first row to the header style.
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "Table", skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyTable {
+    pub columns: Vec<PyColumn>,
+    pub rows: Vec<Vec<String>>,
+    pub has_header: bool,
+}
+
+#[pymethods]
+impl PyTable {
+    #[new]
+    #[pyo3(signature = (columns, rows, has_header=false))]
+    fn new(
+        columns: Vec<PyRef<'_, PyColumn>>,
+        rows: Vec<Vec<String>>,
+        has_header: bool,
+    ) -> PyResult<Self> {
+        let cols: Vec<PyColumn> = columns.into_iter().map(|c| (*c).clone()).collect();
+        let n_cols = cols.len();
+        if n_cols == 0 {
+            return Err(PyValueError::new_err("Table requires at least one Column"));
+        }
+        for (i, row) in rows.iter().enumerate() {
+            if row.len() != n_cols {
+                return Err(PyValueError::new_err(format!(
+                    "Table row {} has {} cells, expected {}",
+                    i,
+                    row.len(),
+                    n_cols
+                )));
+            }
+        }
+        Ok(Self {
+            columns: cols,
+            rows,
+            has_header,
+        })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Table(columns={}, rows={}, has_header={})",
+            self.columns.len(),
+            self.rows.len(),
+            self.has_header
+        )
+    }
 }
 
 /// Python wrapper for an embedded TTF/OTF font usable by `DocumentBuilder`.
@@ -4196,6 +4423,9 @@ impl PyDocumentBuilder {
             custom_height: 0.0,
             ops: Vec::new(),
             done_called: false,
+            current_font: "Helvetica".to_string(),
+            current_size: 12.0,
+            last_y: None,
         }
     }
 
@@ -4207,6 +4437,9 @@ impl PyDocumentBuilder {
             custom_height: 0.0,
             ops: Vec::new(),
             done_called: false,
+            current_font: "Helvetica".to_string(),
+            current_size: 12.0,
+            last_y: None,
         }
     }
 
@@ -4220,6 +4453,9 @@ impl PyDocumentBuilder {
             custom_height: height,
             ops: Vec::new(),
             done_called: false,
+            current_font: "Helvetica".to_string(),
+            current_size: 12.0,
+            last_y: None,
         }
     }
 
@@ -4286,6 +4522,15 @@ pub struct PyFluentPageBuilder {
     custom_height: f32,
     ops: Vec<PendingPageOp>,
     done_called: bool,
+    /// Best-effort current font tracking for `measure()` — updated on
+    /// every buffered `font()` call. Pure client-side cache; the Rust
+    /// builder still owns authoritative state after `done()`.
+    current_font: String,
+    current_size: f32,
+    /// Last `at()` y coordinate, used for the client-side
+    /// `remaining_space` estimate. `None` means "unknown — assume top
+    /// margin of the page".
+    last_y: Option<f32>,
 }
 
 impl PyFluentPageBuilder {
@@ -4305,11 +4550,14 @@ impl PyFluentPageBuilder {
         name: String,
         size: f32,
     ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.current_font = name.clone();
+        slf.current_size = size;
         slf.push(PendingPageOp::Font(name, size))?;
         Ok(slf)
     }
 
     fn at<'a>(mut slf: PyRefMut<'a, Self>, x: f32, y: f32) -> PyResult<PyRefMut<'a, Self>> {
+        slf.last_y = Some(y);
         slf.push(PendingPageOp::At(x, y))?;
         Ok(slf)
     }
@@ -4604,6 +4852,189 @@ impl PyFluentPageBuilder {
         Ok(slf)
     }
 
+    // ── v0.3.39 primitives + tables (#393 step 6a) ──────────────────────
+
+    /// Measure the rendered width of `text` in PDF points, using the
+    /// most recently set `font()` / size (defaults: Helvetica, 12 pt).
+    ///
+    /// Implemented against a standalone base-14 `FontManager`, so any
+    /// PostScript name resolvable to a base-14 face (Helvetica, Times-
+    /// Roman, Courier, and their Bold/Italic variants) is measured
+    /// accurately. Custom embedded fonts registered on the
+    /// `DocumentBuilder` fall back to Helvetica metrics until a future
+    /// release routes measurement through the parent builder's
+    /// `FontManager`.
+    fn measure(&self, text: &str) -> PyResult<f32> {
+        let fm = crate::writer::FontManager::new();
+        Ok(fm.text_width(text, &self.current_font, self.current_size))
+    }
+
+    /// Best-effort vertical space between the last known cursor y and
+    /// the bottom margin (72 pt). Because `PyFluentPageBuilder` buffers
+    /// ops until `done()`, this is a client-side estimate: it returns
+    /// `last_at_y - 72` when `at()` has been called, else `page_height
+    /// - 144` (standard 1" top + bottom margins).
+    ///
+    /// For authoritative page-break decisions during streaming table
+    /// rendering, prefer `streaming_table(..., repeat_header=True)` —
+    /// the Rust core handles page breaks internally.
+    fn remaining_space(&self) -> f32 {
+        let page_height = match self.page_size {
+            Some(crate::writer::PageSize::A4) => 842.0,
+            Some(crate::writer::PageSize::Letter) => 792.0,
+            Some(crate::writer::PageSize::Legal) => 1008.0,
+            Some(crate::writer::PageSize::Custom(_, h)) => h,
+            _ => self.custom_height,
+        };
+        let y = self.last_y.unwrap_or(page_height - 72.0);
+        (y - 72.0).max(0.0)
+    }
+
+    /// Place wrapped text inside a rectangle with horizontal alignment.
+    /// `align` accepts `"left"`, `"center"`, `"right"` (case-insensitive)
+    /// or an `Align` enum value.
+    #[pyo3(signature = (x, y, w, h, text, align=None))]
+    fn text_in_rect<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        text: String,
+        align: Option<Bound<'_, PyAny>>,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        let align_i = match align {
+            Some(obj) => extract_align(obj.py(), &obj)?,
+            None => 0,
+        };
+        slf.push(PendingPageOp::TextInRect {
+            x,
+            y,
+            w,
+            h,
+            text,
+            align: align_i,
+        })?;
+        Ok(slf)
+    }
+
+    /// Draw a stroked rectangle with explicit width (points) and RGB
+    /// colour (channels 0..1).
+    #[pyo3(signature = (x, y, w, h, width=1.0, color=(0.0, 0.0, 0.0)))]
+    fn stroke_rect<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        width: f32,
+        color: (f32, f32, f32),
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::StrokeRect {
+            x,
+            y,
+            w,
+            h,
+            width,
+            r: color.0,
+            g: color.1,
+            b: color.2,
+        })?;
+        Ok(slf)
+    }
+
+    /// Draw a line with explicit width (points) and RGB colour.
+    #[pyo3(signature = (x1, y1, x2, y2, width=1.0, color=(0.0, 0.0, 0.0)))]
+    fn stroke_line<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        width: f32,
+        color: (f32, f32, f32),
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::StrokeLine {
+            x1,
+            y1,
+            x2,
+            y2,
+            width,
+            r: color.0,
+            g: color.1,
+            b: color.2,
+        })?;
+        Ok(slf)
+    }
+
+    /// Finish the current page and start a fresh one with the same
+    /// dimensions. Subsequent buffered ops land on the new page. The
+    /// current font / size tracking carries over.
+    fn new_page_same_size<'a>(mut slf: PyRefMut<'a, Self>) -> PyResult<PyRefMut<'a, Self>> {
+        slf.last_y = None;
+        slf.push(PendingPageOp::NewPageSameSize)?;
+        Ok(slf)
+    }
+
+    /// Emit a buffered `Table` — the whole row matrix is rendered in
+    /// one pass at `done()` time. Column widths come from the
+    /// `Column.width` on each `Column`; per-column alignment from
+    /// `Column.align`.
+    fn table<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        table: &Bound<'_, PyTable>,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        let t = table.borrow();
+        let widths: Vec<f32> = t.columns.iter().map(|c| c.width).collect();
+        let aligns: Vec<i32> = t.columns.iter().map(|c| c.align).collect();
+        let mut rows: Vec<Vec<String>> = Vec::with_capacity(t.rows.len() + 1);
+        if t.has_header {
+            // If has_header, the first user row isn't the header — the
+            // columns' own .header strings are. Inject a synthetic header
+            // row at the top so buffered Table::with_header_row works.
+            rows.push(t.columns.iter().map(|c| c.header.clone()).collect());
+        }
+        rows.extend(t.rows.iter().cloned());
+        slf.push(PendingPageOp::Table {
+            widths,
+            aligns,
+            rows,
+            has_header: t.has_header,
+        })?;
+        Ok(slf)
+    }
+
+    /// Open a `StreamingTable` bound to this page. Cells are pushed
+    /// row-at-a-time via the returned handle; `finish()` returns this
+    /// `FluentPageBuilder` for further chaining. Row emission is
+    /// deferred until `done()` (all rows are collected first, then
+    /// streamed through the Rust `StreamingTable` at commit time).
+    ///
+    /// `columns` is a list of `Column`; `repeat_header=True` redraws
+    /// the header row at every page break.
+    #[pyo3(signature = (columns, repeat_header=false))]
+    fn streaming_table(
+        slf_handle: Py<Self>,
+        py: Python<'_>,
+        columns: Vec<PyRef<'_, PyColumn>>,
+        repeat_header: bool,
+    ) -> PyResult<PyStreamingTable> {
+        if columns.is_empty() {
+            return Err(PyValueError::new_err(
+                "streaming_table requires at least one Column",
+            ));
+        }
+        let cols: Vec<PyColumn> = columns.into_iter().map(|c| (*c).clone()).collect();
+        let _ = py;
+        Ok(PyStreamingTable {
+            parent: slf_handle,
+            columns: cols,
+            repeat_header,
+            rows: Vec::new(),
+            finished: false,
+        })
+    }
+
     /// Commit the page's buffered operations to the parent
     /// `DocumentBuilder` and return the parent for further chaining.
     /// After `done()`, this `FluentPageBuilder` is spent.
@@ -4693,10 +5124,159 @@ impl PyFluentPageBuilder {
                     page.filled_rect(x, y, w, h, r, g, b)
                 },
                 PendingPageOp::Line(x1, y1, x2, y2) => page.line(x1, y1, x2, y2),
+                PendingPageOp::StrokeRect {
+                    x,
+                    y,
+                    w,
+                    h,
+                    width,
+                    r,
+                    g,
+                    b,
+                } => page.stroke_rect(x, y, w, h, crate::writer::LineStyle::new(width, r, g, b)),
+                PendingPageOp::StrokeLine {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    width,
+                    r,
+                    g,
+                    b,
+                } => page.stroke_line(x1, y1, x2, y2, crate::writer::LineStyle::new(width, r, g, b)),
+                PendingPageOp::TextInRect {
+                    x,
+                    y,
+                    w,
+                    h,
+                    text,
+                    align,
+                } => page.text_in_rect(
+                    crate::geometry::Rect::new(x, y, w, h),
+                    &text,
+                    parse_align_to_text(align),
+                ),
+                PendingPageOp::NewPageSameSize => page.new_page_same_size(),
+                PendingPageOp::Table {
+                    widths,
+                    aligns,
+                    rows,
+                    has_header,
+                } => {
+                    let cells: Vec<Vec<crate::writer::TableCell>> = rows
+                        .into_iter()
+                        .map(|row| row.into_iter().map(crate::writer::TableCell::text).collect())
+                        .collect();
+                    let mut tbl = crate::writer::Table::new(cells);
+                    let col_widths: Vec<crate::writer::ColumnWidth> = widths
+                        .iter()
+                        .map(|&w| crate::writer::ColumnWidth::Fixed(w))
+                        .collect();
+                    tbl = tbl.with_column_widths(col_widths);
+                    let col_aligns: Vec<crate::writer::CellAlign> =
+                        aligns.iter().map(|&a| parse_align_to_cell(a)).collect();
+                    tbl.column_aligns = col_aligns;
+                    if has_header {
+                        tbl = tbl.with_header_row();
+                    }
+                    page.table(tbl)
+                },
+                PendingPageOp::StreamingTable {
+                    headers,
+                    widths,
+                    aligns,
+                    repeat_header,
+                    rows,
+                } => {
+                    let mut cfg = crate::writer::StreamingTableConfig::new()
+                        .repeat_header(repeat_header);
+                    for i in 0..headers.len() {
+                        let col = crate::writer::StreamingColumn::new(headers[i].clone())
+                            .width_pt(widths[i])
+                            .align(parse_align_to_cell(aligns[i]));
+                        cfg = cfg.column(col);
+                    }
+                    let mut st = page.streaming_table(cfg);
+                    for row in rows {
+                        // Ignore per-row arity errors here — validated at
+                        // push_row() time on the Python side.
+                        let _ = st.push_row(|r| {
+                            for cell in row {
+                                r.cell(cell);
+                            }
+                        });
+                    }
+                    st.finish()
+                },
             };
         }
         page.done();
 
+        drop(parent_ref);
+        Ok(parent_handle)
+    }
+}
+
+/// Streaming-table handle: collects rows cell-by-cell and — at
+/// `finish()` — attaches a `PendingPageOp::StreamingTable` to the
+/// parent `PyFluentPageBuilder` so the Rust `StreamingTable` core runs
+/// at `done()` time. Per the buffered architecture note on
+/// `PyFluentPageBuilder`, we can't hold a live Rust `StreamingTable`
+/// across GIL boundaries, so we buffer Python-side and replay.
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "StreamingTable")]
+pub struct PyStreamingTable {
+    parent: Py<PyFluentPageBuilder>,
+    columns: Vec<PyColumn>,
+    repeat_header: bool,
+    rows: Vec<Vec<String>>,
+    finished: bool,
+}
+
+#[pymethods]
+impl PyStreamingTable {
+    /// Push a single row of string cells. Length must match the number
+    /// of configured columns; otherwise `ValueError` is raised.
+    fn push_row(&mut self, cells: Vec<String>) -> PyResult<()> {
+        if self.finished {
+            return Err(PyRuntimeError::new_err("StreamingTable.finish() already called"));
+        }
+        if cells.len() != self.columns.len() {
+            return Err(PyValueError::new_err(format!(
+                "row has {} cells, expected {}",
+                cells.len(),
+                self.columns.len()
+            )));
+        }
+        self.rows.push(cells);
+        Ok(())
+    }
+
+    /// Number of columns configured on this streaming table.
+    fn column_count(&self) -> usize {
+        self.columns.len()
+    }
+
+    /// Close the streaming table and return the parent
+    /// `FluentPageBuilder` for further chaining.
+    fn finish(&mut self, py: Python<'_>) -> PyResult<Py<PyFluentPageBuilder>> {
+        if self.finished {
+            return Err(PyRuntimeError::new_err("StreamingTable.finish() already called"));
+        }
+        self.finished = true;
+
+        let parent_handle = self.parent.clone_ref(py);
+        let mut parent_ref = parent_handle.borrow_mut(py);
+        let headers: Vec<String> = self.columns.iter().map(|c| c.header.clone()).collect();
+        let widths: Vec<f32> = self.columns.iter().map(|c| c.width).collect();
+        let aligns: Vec<i32> = self.columns.iter().map(|c| c.align).collect();
+        let rows = std::mem::take(&mut self.rows);
+        parent_ref.push(PendingPageOp::StreamingTable {
+            headers,
+            widths,
+            aligns,
+            repeat_header: self.repeat_header,
+            rows,
+        })?;
         drop(parent_ref);
         Ok(parent_handle)
     }
@@ -5483,6 +6063,11 @@ fn pdf_oxide(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyDocumentBuilder>()?;
     m.add_class::<PyFluentPageBuilder>()?;
     m.add_class::<PyEmbeddedFont>()?;
+    // v0.3.39 table + primitive surface (#393 step 6a)
+    m.add_class::<PyAlign>()?;
+    m.add_class::<PyColumn>()?;
+    m.add_class::<PyTable>()?;
+    m.add_class::<PyStreamingTable>()?;
     m.add_class::<PyPageTemplate>()?;
     m.add_class::<PyArtifact>()?;
     m.add_class::<PyHeader>()?;

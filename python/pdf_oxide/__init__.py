@@ -49,12 +49,15 @@ from ._async import (
 )
 from .pdf_oxide import (
     VERSION,
+    # v0.3.39 tables + primitives
+    Align,
     # Page Templates
     Artifact,
     ArtifactStyle,
     BlendMode,
     # Advanced Graphics
     Color,
+    Column,
     # Write-side fluent API
     DocumentBuilder,
     EmbeddedFont,
@@ -79,6 +82,8 @@ from .pdf_oxide import (
     Pdf,
     PdfDocument,
     RadialGradient,
+    StreamingTable,
+    Table,
     TextSpan,
     disable_logging,
     get_log_level,
@@ -97,6 +102,11 @@ __all__ = [
     "DocumentBuilder",
     "FluentPageBuilder",
     "EmbeddedFont",
+    # v0.3.39 tables + primitives (#393)
+    "Align",
+    "Column",
+    "Table",
+    "StreamingTable",
     # PDF Creation
     "Pdf",
     # Advanced Graphics

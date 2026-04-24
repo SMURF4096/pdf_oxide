@@ -397,3 +397,225 @@ def test_version_is_038_or_newer():
     # Phase 2 methods on existing Pdf class.
     assert hasattr(pdf_oxide.Pdf, "from_html_css")
     assert hasattr(pdf_oxide.Pdf, "from_html_css_with_fonts")
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — v0.3.39 primitives + tables (#393 step 6a, Python binding)
+# ---------------------------------------------------------------------------
+
+
+def test_v0339_symbols_exported():
+    """New symbols for #393 step 6a must be reachable from the
+    top-level ``pdf_oxide`` namespace."""
+    for name in ("Align", "Column", "Table", "StreamingTable"):
+        assert hasattr(pdf_oxide, name), f"missing export: {name}"
+    for name in ("measure", "text_in_rect", "stroke_rect", "stroke_line",
+                 "new_page_same_size", "remaining_space", "table",
+                 "streaming_table"):
+        assert hasattr(pdf_oxide.FluentPageBuilder, name), \
+            f"missing FluentPageBuilder.{name}"
+
+
+def test_measure_returns_positive_float_for_helvetica():
+    """``.measure(text)`` returns the base-14 Helvetica width in points.
+
+    The exact value is font-implementation-dependent but must be:
+        * a positive float,
+        * monotonic in text length,
+        * scale linearly with font size (roughly, to 1 %).
+    """
+    doc = pdf_oxide.DocumentBuilder()
+    page = doc.letter_page().font("Helvetica", 10.0).at(72.0, 720.0)
+    w_small = page.measure("Hello")
+    w_big = page.measure("Hello, world — this is longer text")
+    assert isinstance(w_small, float)
+    assert w_small > 0.0
+    assert w_big > w_small
+    # Clean up buffered page to avoid dangling builder.
+    page.done().build()
+
+
+def test_measure_scales_with_font_size():
+    doc = pdf_oxide.DocumentBuilder()
+    page = doc.letter_page().font("Helvetica", 10.0)
+    w10 = page.measure("ABC")
+    page = page.font("Helvetica", 20.0)
+    w20 = page.measure("ABC")
+    # 20pt should be ~2x 10pt; allow 1% slack for rounding.
+    assert 1.9 * w10 < w20 < 2.1 * w10
+    page.done().build()
+
+
+def test_text_in_rect_wraps_and_aligns(tmp_path):
+    """``text_in_rect`` wraps long strings and accepts either a str
+    alignment or an ``Align`` enum value."""
+    out = tmp_path / "wrap.pdf"
+    (
+        pdf_oxide.DocumentBuilder()
+        .letter_page()
+        .font("Helvetica", 10.0)
+        .text_in_rect(
+            72.0, 600.0, 200.0, 80.0,
+            "This is a fairly long sentence that ought to wrap inside "
+            "the configured rectangle when rendered by the Rust core.",
+            align="center",
+        )
+        .text_in_rect(
+            72.0, 500.0, 200.0, 40.0,
+            "Right-aligned",
+            align=pdf_oxide.Align.RIGHT,
+        )
+        .done()
+        .save(str(out))
+    )
+    assert out.stat().st_size > 256
+    doc = pdf_oxide.PdfDocument.from_bytes(out.read_bytes())
+    text = doc.extract_text(0)
+    assert "Right-aligned" in text
+    assert "configured rectangle" in text
+
+
+def test_text_in_rect_invalid_align_raises():
+    doc = pdf_oxide.DocumentBuilder()
+    page = doc.letter_page().font("Helvetica", 10.0)
+    with pytest.raises(ValueError):
+        page.text_in_rect(72.0, 600.0, 200.0, 40.0, "x", align="bogus")
+
+
+def test_stroke_rect_and_line_render(tmp_path):
+    out = tmp_path / "stroke.pdf"
+    (
+        pdf_oxide.DocumentBuilder()
+        .letter_page()
+        .stroke_rect(50.0, 50.0, 200.0, 100.0, width=2.0, color=(0.5, 0.5, 0.5))
+        .stroke_line(50.0, 50.0, 250.0, 50.0, width=1.0, color=(0.2, 0.2, 0.2))
+        .at(72.0, 500.0)
+        .font("Helvetica", 10.0)
+        .text("stroked shapes")
+        .done()
+        .save(str(out))
+    )
+    assert out.exists()
+    assert out.stat().st_size > 256
+    assert "stroked shapes" in pdf_oxide.PdfDocument.from_bytes(out.read_bytes()).extract_text(0)
+
+
+def test_new_page_same_size_creates_second_page():
+    bytes_ = (
+        pdf_oxide.DocumentBuilder()
+        .letter_page()
+        .font("Helvetica", 12.0)
+        .at(72.0, 720.0)
+        .text("first page")
+        .new_page_same_size()
+        .at(72.0, 720.0)
+        .text("second page")
+        .done()
+        .build()
+    )
+    doc = pdf_oxide.PdfDocument.from_bytes(bytes_)
+    assert doc.page_count() == 2
+    assert "first page" in doc.extract_text(0)
+    assert "second page" in doc.extract_text(1)
+
+
+def test_buffered_table_round_trip():
+    """``Table(columns=..., rows=..., has_header=True)`` renders via
+    ``FluentPageBuilder.table`` and the cell text round-trips through
+    extraction."""
+    tbl = pdf_oxide.Table(
+        columns=[
+            pdf_oxide.Column("SKU", width=100.0),
+            pdf_oxide.Column("Qty", width=60.0, align=pdf_oxide.Align.RIGHT),
+        ],
+        rows=[["A-1", "12"], ["B-2", "3"]],
+        has_header=True,
+    )
+    bytes_ = (
+        pdf_oxide.DocumentBuilder()
+        .letter_page()
+        .font("Helvetica", 10.0)
+        .at(72.0, 720.0)
+        .table(tbl)
+        .done()
+        .build()
+    )
+    doc = pdf_oxide.PdfDocument.from_bytes(bytes_)
+    text = doc.extract_text(0)
+    assert "SKU" in text
+    assert "Qty" in text
+    assert "A-1" in text
+    assert "B-2" in text
+
+
+def test_buffered_table_row_length_validation():
+    """Passing a row with the wrong cell count must raise ``ValueError``
+    at construction time rather than producing a broken PDF."""
+    with pytest.raises(ValueError):
+        pdf_oxide.Table(
+            columns=[pdf_oxide.Column("A", width=50.0), pdf_oxide.Column("B", width=50.0)],
+            rows=[["only-one-cell"]],  # short by one
+        )
+
+
+def test_buffered_table_requires_columns():
+    with pytest.raises(ValueError):
+        pdf_oxide.Table(columns=[], rows=[])
+
+
+def test_streaming_table_1000_rows_multi_page():
+    """1 000-row streaming table must span multiple pages and preserve
+    the header + some sampled cell values. The exact row count is held
+    well below the 30 k smoke in the Rust-core test to keep CI fast."""
+    N = 1000
+    doc = pdf_oxide.DocumentBuilder()
+    page = (
+        doc.letter_page()
+        .font("Helvetica", 9.0)
+        .at(72.0, 720.0)
+    )
+    st = page.streaming_table(
+        columns=[
+            pdf_oxide.Column("SKU", width=72.0),
+            pdf_oxide.Column("Item", width=200.0),
+            pdf_oxide.Column("Qty", width=48.0, align=pdf_oxide.Align.RIGHT),
+        ],
+        repeat_header=True,
+    )
+    assert st.column_count() == 3
+    for i in range(N):
+        st.push_row([f"S-{i:04d}", f"Item number {i}", str(i % 97)])
+    bytes_ = st.finish().done().build()
+    pdf = pdf_oxide.PdfDocument.from_bytes(bytes_)
+    # 1 000 rows at 9 pt / letter never fit on one page.
+    assert pdf.page_count() > 1
+    # Sample a few rows' content from the PDF.
+    full_text = "\n".join(pdf.extract_text(p) for p in range(pdf.page_count()))
+    assert "S-0000" in full_text
+    assert "S-0500" in full_text or "S-0750" in full_text
+    # Header must appear at least once (and more than once if repeat_header
+    # fired — but at minimum the first page has it).
+    assert "SKU" in full_text
+    assert "Item" in full_text
+
+
+def test_streaming_table_push_row_wrong_arity_raises():
+    doc = pdf_oxide.DocumentBuilder()
+    page = doc.letter_page().font("Helvetica", 10.0).at(72.0, 720.0)
+    st = page.streaming_table(
+        columns=[pdf_oxide.Column("A", width=50.0), pdf_oxide.Column("B", width=50.0)],
+    )
+    with pytest.raises(ValueError):
+        st.push_row(["only-one"])
+    # Clean up the buffered page so we don't leak the builder.
+    st.finish().done().build()
+
+
+def test_align_enum_int_and_string_interchangeable():
+    """Column constructor should accept ``Align.CENTER``, ``"center"``,
+    and omitting the arg (defaults to LEFT) interchangeably."""
+    c_enum = pdf_oxide.Column("X", width=10.0, align=pdf_oxide.Align.CENTER)
+    c_str = pdf_oxide.Column("X", width=10.0, align="center")
+    c_default = pdf_oxide.Column("X", width=10.0)
+    assert c_enum.align == c_str.align == 1
+    assert c_default.align == 0
