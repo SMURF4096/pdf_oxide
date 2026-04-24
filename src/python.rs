@@ -4094,6 +4094,10 @@ enum PendingPageOp {
     LinkJavaScript(String),
     OnOpen(String),
     OnClose(String),
+    FieldKeystroke(String),
+    FieldFormat(String),
+    FieldValidate(String),
+    FieldCalculate(String),
 }
 
 fn parse_align_to_cell(i: i32) -> crate::writer::CellAlign {
@@ -4655,6 +4659,38 @@ impl PyFluentPageBuilder {
         Ok(slf)
     }
 
+    fn field_keystroke<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        script: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::FieldKeystroke(script))?;
+        Ok(slf)
+    }
+
+    fn field_format<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        script: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::FieldFormat(script))?;
+        Ok(slf)
+    }
+
+    fn field_validate<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        script: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::FieldValidate(script))?;
+        Ok(slf)
+    }
+
+    fn field_calculate<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        script: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::FieldCalculate(script))?;
+        Ok(slf)
+    }
+
     fn highlight<'a>(
         mut slf: PyRefMut<'a, Self>,
         color: (f32, f32, f32),
@@ -5165,6 +5201,10 @@ impl PyFluentPageBuilder {
                 PendingPageOp::LinkJavaScript(script) => page.link_javascript(&script),
                 PendingPageOp::OnOpen(script) => page.on_open(&script),
                 PendingPageOp::OnClose(script) => page.on_close(&script),
+                PendingPageOp::FieldKeystroke(s) => page.field_keystroke(&s),
+                PendingPageOp::FieldFormat(s) => page.field_format(&s),
+                PendingPageOp::FieldValidate(s) => page.field_validate(&s),
+                PendingPageOp::FieldCalculate(s) => page.field_calculate(&s),
                 PendingPageOp::Highlight(r, g, b) => page.highlight((r, g, b)),
                 PendingPageOp::Underline(r, g, b) => page.underline((r, g, b)),
                 PendingPageOp::Strikeout(r, g, b) => page.strikeout((r, g, b)),

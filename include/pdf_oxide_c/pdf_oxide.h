@@ -370,6 +370,11 @@ int   pdf_page_builder_link_named(void* page, const char* destination, int* erro
 int   pdf_page_builder_link_javascript(void* page, const char* script, int* error_code);
 int   pdf_page_builder_on_open(void* page, const char* script, int* error_code);
 int   pdf_page_builder_on_close(void* page, const char* script, int* error_code);
+/* Field validation AA dict — call after text_field / combo_box / list_box */
+int   pdf_page_builder_field_keystroke(void* page, const char* script, int* error_code);
+int   pdf_page_builder_field_format(void* page, const char* script, int* error_code);
+int   pdf_page_builder_field_validate(void* page, const char* script, int* error_code);
+int   pdf_page_builder_field_calculate(void* page, const char* script, int* error_code);
 int   pdf_page_builder_highlight(void* page, float r, float g, float b, int* error_code);
 int   pdf_page_builder_underline(void* page, float r, float g, float b, int* error_code);
 int   pdf_page_builder_strikeout(void* page, float r, float g, float b, int* error_code);

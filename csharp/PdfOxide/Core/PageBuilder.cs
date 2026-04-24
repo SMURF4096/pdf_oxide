@@ -168,6 +168,42 @@ namespace PdfOxide.Core
             return this;
         }
 
+        /// <summary>Set a keystroke JS action (/AA /K) on the last form field.</summary>
+        public PageBuilder FieldKeystroke(string script)
+        {
+            ArgumentNullException.ThrowIfNull(script);
+            NativeMethods.PdfPageBuilderFieldKeystroke(Handle, script, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
+        /// <summary>Set a format JS action (/AA /F) on the last form field.</summary>
+        public PageBuilder FieldFormat(string script)
+        {
+            ArgumentNullException.ThrowIfNull(script);
+            NativeMethods.PdfPageBuilderFieldFormat(Handle, script, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
+        /// <summary>Set a validate JS action (/AA /V) on the last form field.</summary>
+        public PageBuilder FieldValidate(string script)
+        {
+            ArgumentNullException.ThrowIfNull(script);
+            NativeMethods.PdfPageBuilderFieldValidate(Handle, script, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
+        /// <summary>Set a calculate JS action (/AA /C) on the last form field.</summary>
+        public PageBuilder FieldCalculate(string script)
+        {
+            ArgumentNullException.ThrowIfNull(script);
+            NativeMethods.PdfPageBuilderFieldCalculate(Handle, script, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
         /// <summary>Highlight the previous text with an RGB colour (0–1 channels).</summary>
         public PageBuilder Highlight(float r, float g, float b)
         {

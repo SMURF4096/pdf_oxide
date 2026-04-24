@@ -3589,6 +3589,10 @@ enum WasmPageOp {
     LinkJavaScript(String),
     OnOpen(String),
     OnClose(String),
+    FieldKeystroke(String),
+    FieldFormat(String),
+    FieldValidate(String),
+    FieldCalculate(String),
 }
 
 /// Embedded TTF/OTF font usable by `WasmDocumentBuilder`. Single-use: once
@@ -3786,6 +3790,10 @@ impl WasmDocumentBuilder {
                 WasmPageOp::LinkJavaScript(script) => rust_page.link_javascript(&script),
                 WasmPageOp::OnOpen(script) => rust_page.on_open(&script),
                 WasmPageOp::OnClose(script) => rust_page.on_close(&script),
+                WasmPageOp::FieldKeystroke(s) => rust_page.field_keystroke(&s),
+                WasmPageOp::FieldFormat(s) => rust_page.field_format(&s),
+                WasmPageOp::FieldValidate(s) => rust_page.field_validate(&s),
+                WasmPageOp::FieldCalculate(s) => rust_page.field_calculate(&s),
                 WasmPageOp::Highlight(r, g, b) => rust_page.highlight((r, g, b)),
                 WasmPageOp::Underline(r, g, b) => rust_page.underline((r, g, b)),
                 WasmPageOp::Strikeout(r, g, b) => rust_page.strikeout((r, g, b)),
@@ -4098,6 +4106,26 @@ impl WasmFluentPageBuilder {
     #[wasm_bindgen(js_name = "onClose")]
     pub fn on_close(&mut self, script: String) -> Result<(), JsValue> {
         self.push(WasmPageOp::OnClose(script))
+    }
+
+    #[wasm_bindgen(js_name = "fieldKeystroke")]
+    pub fn field_keystroke(&mut self, script: String) -> Result<(), JsValue> {
+        self.push(WasmPageOp::FieldKeystroke(script))
+    }
+
+    #[wasm_bindgen(js_name = "fieldFormat")]
+    pub fn field_format(&mut self, script: String) -> Result<(), JsValue> {
+        self.push(WasmPageOp::FieldFormat(script))
+    }
+
+    #[wasm_bindgen(js_name = "fieldValidate")]
+    pub fn field_validate(&mut self, script: String) -> Result<(), JsValue> {
+        self.push(WasmPageOp::FieldValidate(script))
+    }
+
+    #[wasm_bindgen(js_name = "fieldCalculate")]
+    pub fn field_calculate(&mut self, script: String) -> Result<(), JsValue> {
+        self.push(WasmPageOp::FieldCalculate(script))
     }
 
     #[wasm_bindgen(js_name = "highlight")]

@@ -19,6 +19,14 @@ use crate::geometry::Rect;
 use crate::object::{Object, ObjectRef};
 use std::collections::HashMap;
 
+/// Build a PDF JavaScript action dictionary for /AA entries.
+fn js_action_dict(script: &str) -> Object {
+    let mut d = HashMap::new();
+    d.insert("S".to_string(), Object::Name("JavaScript".to_string()));
+    d.insert("JS".to_string(), Object::String(script.as_bytes().to_vec()));
+    Object::Dictionary(d)
+}
+
 /// A text input field widget.
 ///
 /// Text fields allow users to enter text. They can be single-line or multiline,
@@ -53,6 +61,14 @@ pub struct TextFieldWidget {
     border_width: f32,
     /// Tooltip text
     tooltip: Option<String>,
+    /// /AA /K — keystroke JavaScript action
+    keystroke: Option<String>,
+    /// /AA /F — format JavaScript action
+    format: Option<String>,
+    /// /AA /V — validate JavaScript action
+    validate: Option<String>,
+    /// /AA /C — calculate JavaScript action
+    calculate: Option<String>,
 }
 
 impl TextFieldWidget {
@@ -78,6 +94,10 @@ impl TextFieldWidget {
             background_color: Some((1.0, 1.0, 1.0)), // White background
             border_width: 1.0,
             tooltip: None,
+            keystroke: None,
+            format: None,
+            validate: None,
+            calculate: None,
         }
     }
 
@@ -210,6 +230,30 @@ impl TextFieldWidget {
         self
     }
 
+    /// Set a JavaScript keystroke action (`/AA /K`).
+    pub fn with_keystroke(mut self, script: impl Into<String>) -> Self {
+        self.keystroke = Some(script.into());
+        self
+    }
+
+    /// Set a JavaScript format action (`/AA /F`).
+    pub fn with_format(mut self, script: impl Into<String>) -> Self {
+        self.format = Some(script.into());
+        self
+    }
+
+    /// Set a JavaScript validate action (`/AA /V`).
+    pub fn with_validate(mut self, script: impl Into<String>) -> Self {
+        self.validate = Some(script.into());
+        self
+    }
+
+    /// Set a JavaScript calculate action (`/AA /C`).
+    pub fn with_calculate(mut self, script: impl Into<String>) -> Self {
+        self.calculate = Some(script.into());
+        self
+    }
+
     /// Build the default appearance string (DA).
     fn build_default_appearance(&self) -> String {
         let (r, g, b) = self.text_color;
@@ -280,6 +324,24 @@ impl FormFieldWidget for TextFieldWidget {
         // Quadding (text alignment)
         if self.alignment != TextAlignment::Left {
             dict.insert("Q".to_string(), Object::Integer(self.alignment.q_value()));
+        }
+
+        // /AA — additional actions (K/F/V/C JS hooks)
+        let mut aa: HashMap<String, Object> = HashMap::new();
+        if let Some(ref s) = self.keystroke {
+            aa.insert("K".to_string(), js_action_dict(s));
+        }
+        if let Some(ref s) = self.format {
+            aa.insert("F".to_string(), js_action_dict(s));
+        }
+        if let Some(ref s) = self.validate {
+            aa.insert("V".to_string(), js_action_dict(s));
+        }
+        if let Some(ref s) = self.calculate {
+            aa.insert("C".to_string(), js_action_dict(s));
+        }
+        if !aa.is_empty() {
+            dict.insert("AA".to_string(), Object::Dictionary(aa));
         }
 
         dict

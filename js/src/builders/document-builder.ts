@@ -357,6 +357,30 @@ export class PageBuilder {
     return this;
   }
 
+  /** Set a keystroke JS action (/AA /K) on the last form field. */
+  fieldKeystroke(script: string): this {
+    native.pageBuilderFieldKeystroke(this.h(), script);
+    return this;
+  }
+
+  /** Set a format JS action (/AA /F) on the last form field. */
+  fieldFormat(script: string): this {
+    native.pageBuilderFieldFormat(this.h(), script);
+    return this;
+  }
+
+  /** Set a validate JS action (/AA /V) on the last form field. */
+  fieldValidate(script: string): this {
+    native.pageBuilderFieldValidate(this.h(), script);
+    return this;
+  }
+
+  /** Set a calculate JS action (/AA /C) on the last form field. */
+  fieldCalculate(script: string): this {
+    native.pageBuilderFieldCalculate(this.h(), script);
+    return this;
+  }
+
   /** Highlight the previous text with an RGB colour (channels 0-1). */
   highlight(r: number, g: number, b: number): this {
     native.pageBuilderHighlight(this.h(), r, g, b);

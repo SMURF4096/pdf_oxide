@@ -6863,6 +6863,14 @@ enum FfiPageOp {
     OnOpen(String),
     /// JavaScript to run when the page is closed (`/AA /C`).
     OnClose(String),
+    /// /AA /K keystroke JS on the last form field.
+    FieldKeystroke(String),
+    /// /AA /F format JS on the last form field.
+    FieldFormat(String),
+    /// /AA /V validate JS on the last form field.
+    FieldValidate(String),
+    /// /AA /C calculate JS on the last form field.
+    FieldCalculate(String),
 }
 
 /// Parse a stamp-type name into the Rust `StampType` enum. Unknown names
@@ -7403,6 +7411,58 @@ pub extern "C" fn pdf_page_builder_on_close(
         return -1;
     };
     push_page_op(handle, error_code, FfiPageOp::OnClose(s))
+}
+
+/// Set a keystroke JS action (`/AA /K`) on the most-recently-added form field.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_field_keystroke(
+    handle: *mut FfiPageBuilder,
+    script: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(s) = read_cstr_or_fail(script, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::FieldKeystroke(s))
+}
+
+/// Set a format JS action (`/AA /F`) on the most-recently-added form field.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_field_format(
+    handle: *mut FfiPageBuilder,
+    script: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(s) = read_cstr_or_fail(script, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::FieldFormat(s))
+}
+
+/// Set a validate JS action (`/AA /V`) on the most-recently-added form field.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_field_validate(
+    handle: *mut FfiPageBuilder,
+    script: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(s) = read_cstr_or_fail(script, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::FieldValidate(s))
+}
+
+/// Set a calculate JS action (`/AA /C`) on the most-recently-added form field.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_field_calculate(
+    handle: *mut FfiPageBuilder,
+    script: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(s) = read_cstr_or_fail(script, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::FieldCalculate(s))
 }
 
 /// Highlight the previous text with an RGB colour (channels in 0.0–1.0).
@@ -8345,6 +8405,10 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
             FfiPageOp::LinkJavaScript(script) => rust_page.link_javascript(&script),
             FfiPageOp::OnOpen(script) => rust_page.on_open(&script),
             FfiPageOp::OnClose(script) => rust_page.on_close(&script),
+            FfiPageOp::FieldKeystroke(s) => rust_page.field_keystroke(&s),
+            FfiPageOp::FieldFormat(s) => rust_page.field_format(&s),
+            FfiPageOp::FieldValidate(s) => rust_page.field_validate(&s),
+            FfiPageOp::FieldCalculate(s) => rust_page.field_calculate(&s),
             FfiPageOp::Highlight(r, g, b) => rust_page.highlight((r, g, b)),
             FfiPageOp::Underline(r, g, b) => rust_page.underline((r, g, b)),
             FfiPageOp::Strikeout(r, g, b) => rust_page.strikeout((r, g, b)),

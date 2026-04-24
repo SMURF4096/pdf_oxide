@@ -457,6 +457,10 @@ extern "C" {
   extern int   pdf_page_builder_link_javascript(void* page, const char* script, int* error_code);
   extern int   pdf_page_builder_on_open(void* page, const char* script, int* error_code);
   extern int   pdf_page_builder_on_close(void* page, const char* script, int* error_code);
+  extern int   pdf_page_builder_field_keystroke(void* page, const char* script, int* error_code);
+  extern int   pdf_page_builder_field_format(void* page, const char* script, int* error_code);
+  extern int   pdf_page_builder_field_validate(void* page, const char* script, int* error_code);
+  extern int   pdf_page_builder_field_calculate(void* page, const char* script, int* error_code);
   extern int   pdf_page_builder_highlight(void* page, float r, float g, float b, int* error_code);
   extern int   pdf_page_builder_underline(void* page, float r, float g, float b, int* error_code);
   extern int   pdf_page_builder_strikeout(void* page, float r, float g, float b, int* error_code);
@@ -3250,6 +3254,10 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   extern Napi::Value PageBuilderLinkJavascript(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderOnOpen(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderOnClose(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderFieldKeystroke(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderFieldFormat(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderFieldValidate(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderFieldCalculate(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderHighlight(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderUnderline(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderStrikeout(const Napi::CallbackInfo&);
@@ -3313,6 +3321,10 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("pageBuilderLinkJavascript", Napi::Function::New(env, PageBuilderLinkJavascript));
   exports.Set("pageBuilderOnOpen", Napi::Function::New(env, PageBuilderOnOpen));
   exports.Set("pageBuilderOnClose", Napi::Function::New(env, PageBuilderOnClose));
+  exports.Set("pageBuilderFieldKeystroke", Napi::Function::New(env, PageBuilderFieldKeystroke));
+  exports.Set("pageBuilderFieldFormat", Napi::Function::New(env, PageBuilderFieldFormat));
+  exports.Set("pageBuilderFieldValidate", Napi::Function::New(env, PageBuilderFieldValidate));
+  exports.Set("pageBuilderFieldCalculate", Napi::Function::New(env, PageBuilderFieldCalculate));
   exports.Set("pageBuilderHighlight", Napi::Function::New(env, PageBuilderHighlight));
   exports.Set("pageBuilderUnderline", Napi::Function::New(env, PageBuilderUnderline));
   exports.Set("pageBuilderStrikeout", Napi::Function::New(env, PageBuilderStrikeout));
@@ -3535,10 +3547,14 @@ PAGE_TEXT_OP(PageBuilderText,          pdf_page_builder_text,             "PageB
 PAGE_TEXT_OP(PageBuilderParagraph,     pdf_page_builder_paragraph,        "PageBuilder.paragraph")
 PAGE_TEXT_OP(PageBuilderLinkUrl,       pdf_page_builder_link_url,         "PageBuilder.linkUrl")
 PAGE_TEXT_OP(PageBuilderLinkNamed,     pdf_page_builder_link_named,       "PageBuilder.linkNamed")
-PAGE_TEXT_OP(PageBuilderLinkJavascript,pdf_page_builder_link_javascript,  "PageBuilder.linkJavascript")
-PAGE_TEXT_OP(PageBuilderOnOpen,        pdf_page_builder_on_open,          "PageBuilder.onOpen")
-PAGE_TEXT_OP(PageBuilderOnClose,       pdf_page_builder_on_close,         "PageBuilder.onClose")
-PAGE_TEXT_OP(PageBuilderStickyNote,    pdf_page_builder_sticky_note,      "PageBuilder.stickyNote")
+PAGE_TEXT_OP(PageBuilderLinkJavascript,   pdf_page_builder_link_javascript,    "PageBuilder.linkJavascript")
+PAGE_TEXT_OP(PageBuilderOnOpen,           pdf_page_builder_on_open,            "PageBuilder.onOpen")
+PAGE_TEXT_OP(PageBuilderOnClose,          pdf_page_builder_on_close,           "PageBuilder.onClose")
+PAGE_TEXT_OP(PageBuilderFieldKeystroke,   pdf_page_builder_field_keystroke,    "PageBuilder.fieldKeystroke")
+PAGE_TEXT_OP(PageBuilderFieldFormat,      pdf_page_builder_field_format,       "PageBuilder.fieldFormat")
+PAGE_TEXT_OP(PageBuilderFieldValidate,    pdf_page_builder_field_validate,     "PageBuilder.fieldValidate")
+PAGE_TEXT_OP(PageBuilderFieldCalculate,   pdf_page_builder_field_calculate,    "PageBuilder.fieldCalculate")
+PAGE_TEXT_OP(PageBuilderStickyNote,       pdf_page_builder_sticky_note,        "PageBuilder.stickyNote")
 PAGE_TEXT_OP(PageBuilderWatermark,     pdf_page_builder_watermark,        "PageBuilder.watermark")
 #undef PAGE_TEXT_OP
 

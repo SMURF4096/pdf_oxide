@@ -661,6 +661,42 @@ func (p *PageBuilder) OnClose(script string) *PageBuilder {
 	})
 }
 
+// FieldKeystroke sets a keystroke JS action (/AA /K) on the last form field.
+func (p *PageBuilder) FieldKeystroke(script string) *PageBuilder {
+	return p.callInt(func(h unsafe.Pointer, ec *C.int) C.int {
+		cs := C.CString(script)
+		defer C.free(unsafe.Pointer(cs))
+		return C.pdf_page_builder_field_keystroke(h, cs, ec)
+	})
+}
+
+// FieldFormat sets a format JS action (/AA /F) on the last form field.
+func (p *PageBuilder) FieldFormat(script string) *PageBuilder {
+	return p.callInt(func(h unsafe.Pointer, ec *C.int) C.int {
+		cs := C.CString(script)
+		defer C.free(unsafe.Pointer(cs))
+		return C.pdf_page_builder_field_format(h, cs, ec)
+	})
+}
+
+// FieldValidate sets a validate JS action (/AA /V) on the last form field.
+func (p *PageBuilder) FieldValidate(script string) *PageBuilder {
+	return p.callInt(func(h unsafe.Pointer, ec *C.int) C.int {
+		cs := C.CString(script)
+		defer C.free(unsafe.Pointer(cs))
+		return C.pdf_page_builder_field_validate(h, cs, ec)
+	})
+}
+
+// FieldCalculate sets a calculate JS action (/AA /C) on the last form field.
+func (p *PageBuilder) FieldCalculate(script string) *PageBuilder {
+	return p.callInt(func(h unsafe.Pointer, ec *C.int) C.int {
+		cs := C.CString(script)
+		defer C.free(unsafe.Pointer(cs))
+		return C.pdf_page_builder_field_calculate(h, cs, ec)
+	})
+}
+
 // Highlight highlights the previous text with an RGB colour (channels 0-1).
 func (p *PageBuilder) Highlight(r, g, b float32) *PageBuilder {
 	return p.callInt(func(h unsafe.Pointer, ec *C.int) C.int {

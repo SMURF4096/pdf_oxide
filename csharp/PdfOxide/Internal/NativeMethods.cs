@@ -6930,6 +6930,26 @@ namespace PdfOxide.Internal
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial int PdfPageBuilderOnClose(IntPtr page, string script, out int errorCode);
 
+        /// <summary>Set a keystroke JS action (/AA /K) on the last form field.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_field_keystroke", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderFieldKeystroke(IntPtr page, string script, out int errorCode);
+
+        /// <summary>Set a format JS action (/AA /F) on the last form field.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_field_format", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderFieldFormat(IntPtr page, string script, out int errorCode);
+
+        /// <summary>Set a validate JS action (/AA /V) on the last form field.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_field_validate", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderFieldValidate(IntPtr page, string script, out int errorCode);
+
+        /// <summary>Set a calculate JS action (/AA /C) on the last form field.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_field_calculate", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderFieldCalculate(IntPtr page, string script, out int errorCode);
+
         /// <summary>Highlight the previous text (RGB channels 0–1).</summary>
         [LibraryImport(LibName, EntryPoint = "pdf_page_builder_highlight", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]

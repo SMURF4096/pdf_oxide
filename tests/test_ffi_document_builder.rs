@@ -364,6 +364,58 @@ fn ffi_js_actions_produce_valid_pdf() {
 }
 
 // ---------------------------------------------------------------------------
+// Field validation AA dict (K/F/V/C) through FFI
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ffi_field_validation_aa_dict_in_pdf() {
+    let mut ec = 0i32;
+    let builder = unsafe { pdf_document_builder_create(&mut ec) };
+    assert_eq!(ec, 0);
+
+    let page = unsafe { pdf_document_builder_a4_page(builder, &mut ec) };
+    assert_eq!(ec, 0);
+
+    let name = cstring("amount");
+    let default_v = std::ptr::null();
+    let ret =
+        unsafe { pdf_page_builder_text_field(page, name.as_ptr(), 72., 700., 200., 20., default_v, &mut ec) };
+    assert_eq!(ret, 0, "text_field failed: {ec}");
+
+    let ks = cstring("AFNumber_Keystroke(2,0,0,0,'',true);");
+    let ret = unsafe { pdf_page_builder_field_keystroke(page, ks.as_ptr(), &mut ec) };
+    assert_eq!(ret, 0, "field_keystroke failed: {ec}");
+
+    let fmt = cstring("AFNumber_Format(2,0,0,0,'',true);");
+    let ret = unsafe { pdf_page_builder_field_format(page, fmt.as_ptr(), &mut ec) };
+    assert_eq!(ret, 0, "field_format failed: {ec}");
+
+    let val = cstring("event.rc = (event.value >= 0);");
+    let ret = unsafe { pdf_page_builder_field_validate(page, val.as_ptr(), &mut ec) };
+    assert_eq!(ret, 0, "field_validate failed: {ec}");
+
+    let calc = cstring("event.value = 0;");
+    let ret = unsafe { pdf_page_builder_field_calculate(page, calc.as_ptr(), &mut ec) };
+    assert_eq!(ret, 0, "field_calculate failed: {ec}");
+
+    let ret = unsafe { pdf_page_builder_done(page, &mut ec) };
+    assert_eq!(ret, 0, "done failed: {ec}");
+
+    let mut out_len = 0usize;
+    let pdf_bytes = unsafe { pdf_document_builder_build(builder, &mut out_len, &mut ec) };
+    assert_eq!(ec, 0, "build failed: {ec}");
+    assert!(!pdf_bytes.is_null());
+
+    let slice = unsafe { std::slice::from_raw_parts(pdf_bytes, out_len) };
+    assert!(slice.starts_with(b"%PDF-"), "output is not a PDF");
+    // The output must contain the /AA dict keys
+    let s = String::from_utf8_lossy(slice);
+    assert!(s.contains("/AA"), "missing /AA dict in field PDF");
+
+    unsafe { free_bytes(pdf_bytes) };
+}
+
+// ---------------------------------------------------------------------------
 // Phase 2 — HTML+CSS pipeline through the C FFI
 // ---------------------------------------------------------------------------
 

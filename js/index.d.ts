@@ -1925,6 +1925,10 @@ export class PageBuilder {
   linkJavascript(script: string): this;
   onOpen(script: string): this;
   onClose(script: string): this;
+  fieldKeystroke(script: string): this;
+  fieldFormat(script: string): this;
+  fieldValidate(script: string): this;
+  fieldCalculate(script: string): this;
   highlight(r: number, g: number, b: number): this;
   underline(r: number, g: number, b: number): this;
   strikeout(r: number, g: number, b: number): this;

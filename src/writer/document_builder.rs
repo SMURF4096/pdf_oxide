@@ -1381,6 +1381,46 @@ impl<'a> FluentPageBuilder<'a> {
         self
     }
 
+    /// Attach a JavaScript keystroke action (`/AA /K`) to the most-recently-added
+    /// form field. Called on every keystroke while the field has focus.
+    pub fn field_keystroke(self, script: impl Into<String>) -> Self {
+        let page = &mut self.builder.pages[self.page_index];
+        if let Some(meta) = page.form_field_meta.last_mut() {
+            meta.keystroke = Some(script.into());
+        }
+        self
+    }
+
+    /// Attach a JavaScript format action (`/AA /F`) to the most-recently-added
+    /// form field. Called when the field value is formatted for display.
+    pub fn field_format(self, script: impl Into<String>) -> Self {
+        let page = &mut self.builder.pages[self.page_index];
+        if let Some(meta) = page.form_field_meta.last_mut() {
+            meta.format = Some(script.into());
+        }
+        self
+    }
+
+    /// Attach a JavaScript validate action (`/AA /V`) to the most-recently-added
+    /// form field. Called when the user commits the field value.
+    pub fn field_validate(self, script: impl Into<String>) -> Self {
+        let page = &mut self.builder.pages[self.page_index];
+        if let Some(meta) = page.form_field_meta.last_mut() {
+            meta.validate = Some(script.into());
+        }
+        self
+    }
+
+    /// Attach a JavaScript calculate action (`/AA /C`) to the most-recently-added
+    /// form field. Called when any field in the form changes.
+    pub fn field_calculate(self, script: impl Into<String>) -> Self {
+        let page = &mut self.builder.pages[self.page_index];
+        if let Some(meta) = page.form_field_meta.last_mut() {
+            meta.calculate = Some(script.into());
+        }
+        self
+    }
+
     /// Declare the page's tab-navigation order. `TabOrder::Row`
     /// (default in modern readers), `TabOrder::Column`, or
     /// `TabOrder::Structure` (requires tagged PDF — Bundle F).
@@ -1947,6 +1987,14 @@ struct PendingFieldMeta {
     required: bool,
     read_only: bool,
     tooltip: Option<String>,
+    /// /AA /K — keystroke JS action (text fields / choice fields with editing)
+    keystroke: Option<String>,
+    /// /AA /F — format JS action (text fields)
+    format: Option<String>,
+    /// /AA /V — validate JS action (all field types)
+    validate: Option<String>,
+    /// /AA /C — calculate JS action (text fields)
+    calculate: Option<String>,
 }
 
 enum PendingFormField {
@@ -2600,6 +2648,18 @@ impl DocumentBuilder {
                         if let Some(tip) = &meta.tooltip {
                             widget = widget.with_tooltip(tip.clone());
                         }
+                        if let Some(s) = &meta.keystroke {
+                            widget = widget.with_keystroke(s.clone());
+                        }
+                        if let Some(s) = &meta.format {
+                            widget = widget.with_format(s.clone());
+                        }
+                        if let Some(s) = &meta.validate {
+                            widget = widget.with_validate(s.clone());
+                        }
+                        if let Some(s) = &meta.calculate {
+                            widget = widget.with_calculate(s.clone());
+                        }
                         page.add_text_field(widget);
                     },
                     PendingFormField::Checkbox {
@@ -2642,6 +2702,12 @@ impl DocumentBuilder {
                         }
                         if let Some(tip) = &meta.tooltip {
                             widget = widget.with_tooltip(tip.clone());
+                        }
+                        if let Some(s) = &meta.keystroke {
+                            widget = widget.with_keystroke(s.clone());
+                        }
+                        if let Some(s) = &meta.validate {
+                            widget = widget.with_validate(s.clone());
                         }
                         page.add_combo_box(widget);
                     },
@@ -2712,6 +2778,9 @@ impl DocumentBuilder {
                         }
                         if let Some(tip) = &meta.tooltip {
                             widget = widget.with_tooltip(tip.clone());
+                        }
+                        if let Some(s) = &meta.validate {
+                            widget = widget.with_validate(s.clone());
                         }
                         page.add_list_box(widget);
                     },
