@@ -28,7 +28,7 @@
 // against `prebuilds/<triple>/pdf_oxide.node` in the published
 // package and the in-tree `build/Release/` output in dev mode.
 import { loadNative } from '../native.js';
-import { Align, type Column, type StreamingTableConfig, type TableSpec } from '../types/common.js';
+import { Align, type Column, type StreamingTableConfig, type TableSpec, type TableMode } from '../types/common.js';
 import { StreamingTable } from './streaming-table.js';
 
 const native = loadNative();
@@ -769,16 +769,45 @@ export class PageBuilder {
   }
 
   /**
-   * Begin a managed streaming table. Rows pushed via
-   * {@link StreamingTable.pushRow} are buffered in JS and flushed
-   * through the buffered-table FFI when {@link StreamingTable.finish}
-   * is called.
-   *
-   * The shape intentionally matches the future streaming FFI so
-   * callers don't need to migrate once O(cols) streaming lands.
+   * Begin a streaming table. Uses the native row-at-a-time FFI
+   * (`pdf_page_builder_streaming_table_begin_v2`). Pass a `mode` in
+   * `config` to control column-sizing strategy (default: fixed widths).
    */
   streamingTable(config: StreamingTableConfig): StreamingTable {
     return new StreamingTable(this, config);
+  }
+
+  /** @internal — open streaming table FFI handle on this page. */
+  _streamingTableBeginV2(
+    headers: string[],
+    widths: number[],
+    aligns: number[],
+    repeatHeader: boolean,
+    mode: TableMode | undefined,
+  ): void {
+    let modeInt = 0;
+    let sampleRows = 20;
+    let minW = 0;
+    let maxW = 9999;
+    if (mode?.kind === 'sample') {
+      modeInt = 1;
+      if (mode.sampleRows != null) sampleRows = mode.sampleRows;
+      if (mode.minColWidthPt != null) minW = mode.minColWidthPt;
+      if (mode.maxColWidthPt != null) maxW = mode.maxColWidthPt;
+    }
+    native.pageBuilderStreamingTableBeginV2(
+      this.h(), headers, widths, aligns, repeatHeader, modeInt, sampleRows, minW, maxW
+    );
+  }
+
+  /** @internal — push one row into the open streaming table. */
+  _streamingTablePushRow(cells: Array<string | null>): void {
+    native.pageBuilderStreamingTablePushRow(this.h(), cells);
+  }
+
+  /** @internal — close the open streaming table. */
+  _streamingTableFinish(): void {
+    native.pageBuilderStreamingTableFinish(this.h());
   }
 
   /** @internal — track the last font size for JS-side `measure()`. */
@@ -822,5 +851,5 @@ export class PageBuilder {
 // Re-export the v0.3.39 table surface so users can `import { Align,
 // StreamingTable } from 'pdf-oxide'` without reaching into ./types or
 // ./builders/streaming-table.
-export { Align, type Column, type StreamingTableConfig, type TableSpec };
+export { Align, type Column, type StreamingTableConfig, type TableMode, type TableSpec };
 export { StreamingTable } from './streaming-table.js';

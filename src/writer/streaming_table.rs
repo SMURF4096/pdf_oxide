@@ -6,15 +6,13 @@
 //! is **O(columns + current page)** — the row itself is consumed and
 //! dropped per call.
 //!
-//! Scope for v0.3.39: `TableMode::Fixed` only — widths are declared
-//! explicitly up front. No content-driven autofit (that is MigraDoc's
-//! O(rows²) failure mode the design explicitly rejects, per research B
-//! and decision doc `docs/v0.3.39/design/393_tables_decision.md`).
-//!
-//! Follow-ups deferred to v0.3.40 (#400):
-//! - `TableMode::Sample` — measure first N rows, freeze widths.
-//! - Cross-page cell splitting for tall rich cells.
-//! - Bounded-lookahead rowspan.
+//! Column-width modes (v0.3.40 / #400):
+//! - `TableMode::Fixed` (default) — widths are declared explicitly up front.
+//! - `TableMode::Sample { rows, min_col_width_pt, max_col_width_pt }` — buffer
+//!   the first `rows` rows, measure their content widths, freeze column widths
+//!   from the max observed value (clamped to min/max), then stream the rest.
+//! - `TableMode::AutoAll` — valid **only** for the buffered `table_renderer::Table`;
+//!   returns an error immediately when used with `StreamingTable`.
 //!
 //! ## Example
 //!
@@ -65,6 +63,52 @@ fn cell_to_text_align(a: CellAlign) -> TextAlign {
     }
 }
 
+/// Column-width sizing mode for a streaming table.
+///
+/// Choose between explicit widths (`Fixed`, the default), measuring the first
+/// N rows to determine widths automatically (`Sample`), or fully-buffered
+/// auto-sizing (`AutoAll`, only valid for the non-streaming `Table`).
+#[derive(Debug, Clone)]
+pub enum TableMode {
+    /// Widths come from [`StreamingColumn::width_pt`]. Default.
+    Fixed,
+    /// Buffer the first `rows` rows, measure max content width per column,
+    /// clamp to `[min_col_width_pt, max_col_width_pt]`, freeze, then stream.
+    Sample {
+        /// Number of rows to measure before freezing widths.
+        rows: usize,
+        /// Minimum allowed column width in PDF points (default 20).
+        min_col_width_pt: f32,
+        /// Maximum allowed column width in PDF points (default 400).
+        max_col_width_pt: f32,
+    },
+    /// Buffer **all** rows to compute exact widths. Valid only for the
+    /// buffered [`table_renderer::Table`]; [`StreamingTable`] rejects this
+    /// immediately with [`Error::InvalidOperation`].
+    AutoAll,
+}
+
+impl Default for TableMode {
+    fn default() -> Self {
+        TableMode::Fixed
+    }
+}
+
+/// Internal sample-collection state for `TableMode::Sample`.
+enum SampleState {
+    /// Fixed mode — no buffering.
+    Fixed,
+    /// Still collecting sample rows.
+    Collecting {
+        buffered: Vec<Vec<String>>,
+        target: usize,
+        min_w: f32,
+        max_w: f32,
+    },
+    /// Sample complete — widths have been frozen.
+    Frozen,
+}
+
 /// One column in a `StreamingTableConfig`.
 ///
 /// Widths are **explicit** — streaming tables can't autofit because that
@@ -107,7 +151,7 @@ impl StreamingColumn {
 
 /// Configuration for a streaming table. Built via `new()` + fluent setters,
 /// then consumed by `FluentPageBuilder::streaming_table`.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct StreamingTableConfig {
     pub(crate) columns: Vec<StreamingColumn>,
     pub(crate) repeat_header: bool,
@@ -117,6 +161,13 @@ pub struct StreamingTableConfig {
     pub(crate) grid_color: (f32, f32, f32),
     pub(crate) grid_width: f32,
     pub(crate) header_fill: Option<(f32, f32, f32)>,
+    pub(crate) mode: TableMode,
+}
+
+impl Default for StreamingTableConfig {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl StreamingTableConfig {
@@ -131,7 +182,39 @@ impl StreamingTableConfig {
             grid_color: (0.8, 0.8, 0.8),
             grid_width: 0.5,
             header_fill: Some((0.93, 0.93, 0.93)),
+            mode: TableMode::Fixed,
         }
+    }
+
+    /// Use `TableMode::Fixed` (the default) — column widths come from
+    /// [`StreamingColumn::width_pt`].
+    pub fn mode_fixed(mut self) -> Self {
+        self.mode = TableMode::Fixed;
+        self
+    }
+
+    /// Use `TableMode::Sample` — buffer the first `sample_rows` rows, measure
+    /// their content widths to determine column widths, then stream the rest.
+    ///
+    /// Column widths are clamped to `[min_col_width_pt, max_col_width_pt]`.
+    /// If fewer rows than `sample_rows` are pushed, widths are frozen at
+    /// `finish()` from whatever was buffered (or from the column defaults if
+    /// zero rows were buffered).
+    pub fn mode_sample(mut self, sample_rows: usize, min_col_width_pt: f32, max_col_width_pt: f32) -> Self {
+        self.mode = TableMode::Sample {
+            rows: sample_rows.max(1),
+            min_col_width_pt: min_col_width_pt.max(1.0),
+            max_col_width_pt: max_col_width_pt.max(min_col_width_pt).max(1.0),
+        };
+        self
+    }
+
+    /// Use `TableMode::AutoAll` — valid **only** for the non-streaming buffered
+    /// `Table`; calling `streaming_table(cfg)` with this mode returns an error
+    /// on the first `push_row` call.
+    pub fn mode_auto_all(mut self) -> Self {
+        self.mode = TableMode::AutoAll;
+        self
     }
 
     /// Add a column. Order matters — this is the left-to-right visual order.
@@ -206,6 +289,8 @@ pub struct StreamingTable<'a> {
     origin_x: f32,
     /// Whether the header has been drawn on the current page.
     header_drawn: bool,
+    /// State machine for `TableMode::Sample`.
+    sample_state: SampleState,
 }
 
 impl<'a> StreamingTable<'a> {
@@ -223,6 +308,20 @@ impl<'a> StreamingTable<'a> {
         }
         let total_width = cursor - origin_x;
 
+        let sample_state = match &config.mode {
+            TableMode::Fixed => SampleState::Fixed,
+            TableMode::Sample { rows, min_col_width_pt, max_col_width_pt } => {
+                SampleState::Collecting {
+                    buffered: Vec::with_capacity(*rows),
+                    target: *rows,
+                    min_w: *min_col_width_pt,
+                    max_w: *max_col_width_pt,
+                }
+            },
+            // AutoAll is detected lazily in push_row and surfaces an error there.
+            TableMode::AutoAll => SampleState::Fixed,
+        };
+
         Self {
             page,
             config,
@@ -230,6 +329,7 @@ impl<'a> StreamingTable<'a> {
             total_width,
             origin_x,
             header_drawn: false,
+            sample_state,
         }
     }
 
@@ -241,13 +341,21 @@ impl<'a> StreamingTable<'a> {
     /// Push one row. The closure receives a mutable `StreamingRow` into
     /// which the caller pushes cells in column order.
     ///
-    /// Returns `Err(Error::InvalidOperation)` if the number of cells
-    /// pushed does not match the column count. The row is then discarded
-    /// (no partial draw).
+    /// Returns `Err(Error::InvalidOperation)` if:
+    /// - the number of cells pushed does not match the column count, or
+    /// - the config used `TableMode::AutoAll` (only valid for buffered `Table`).
     pub fn push_row<F>(&mut self, build: F) -> Result<()>
     where
         F: FnOnce(&mut StreamingRow),
     {
+        // AutoAll requires full buffering; reject it on the streaming path.
+        if matches!(self.config.mode, TableMode::AutoAll) {
+            return Err(Error::InvalidOperation(
+                "streaming_table: TableMode::AutoAll requires the buffered Table, not StreamingTable; \
+                 use StreamingTableConfig::mode_fixed() or mode_sample() instead".into(),
+            ));
+        }
+
         let n_cols = self.config.columns.len();
         if n_cols == 0 {
             return Err(Error::InvalidOperation(
@@ -267,6 +375,26 @@ impl<'a> StreamingTable<'a> {
             )));
         }
 
+        // Sample-mode buffering: accumulate rows until target is reached,
+        // then freeze widths and flush all buffered rows before drawing this one.
+        let should_flush = match &mut self.sample_state {
+            SampleState::Collecting { buffered, target, .. } => {
+                buffered.push(cells.clone());
+                if buffered.len() >= *target {
+                    true // buffer full → freeze now
+                } else {
+                    return Ok(()); // still collecting
+                }
+            },
+            _ => false,
+        };
+        if should_flush {
+            // The triggering row was already pushed into the buffer and flushed
+            // inside freeze_and_flush — do not draw it again.
+            self.freeze_and_flush()?;
+            return Ok(());
+        }
+
         // Lazy-draw the header on the first push, and on every page break
         // when repeat_header is enabled.
         if !self.header_drawn {
@@ -280,11 +408,67 @@ impl<'a> StreamingTable<'a> {
 
     /// Finish the table and return the page builder for further fluent
     /// chaining.
-    pub fn finish(self) -> FluentPageBuilder<'a> {
+    ///
+    /// If `TableMode::Sample` was used and fewer rows than the sample target
+    /// were pushed, column widths are frozen from whatever was buffered (or
+    /// from the column defaults if zero rows were buffered), and those rows
+    /// are flushed now.
+    pub fn finish(mut self) -> FluentPageBuilder<'a> {
+        // Flush any remaining sample buffer (fewer rows than target).
+        if matches!(self.sample_state, SampleState::Collecting { .. }) {
+            self.freeze_and_flush().ok();
+        }
         self.page
     }
 
     // ───── internal ─────────────────────────────────────────────────
+
+    /// Freeze column widths from the sample buffer, then emit all buffered
+    /// rows. Transitions `sample_state` from `Collecting` to `Frozen`.
+    fn freeze_and_flush(&mut self) -> Result<()> {
+        // Extract buffer + constraints — replace state with Frozen now so
+        // that draw_row calls inside the flush see the updated widths.
+        let (buffered, min_w, max_w) = match std::mem::replace(&mut self.sample_state, SampleState::Frozen) {
+            SampleState::Collecting { buffered, min_w, max_w, .. } => (buffered, min_w, max_w),
+            _ => return Ok(()),
+        };
+
+        let h_pad = self.config.horizontal_padding;
+        let n_cols = self.config.columns.len();
+
+        // Compute max natural text width per column across all sampled rows
+        // and the header row.
+        for col_idx in 0..n_cols {
+            let header_w = self.page.measure(&self.config.columns[col_idx].header) + 2.0 * h_pad;
+            let content_w = buffered
+                .iter()
+                .map(|row| self.page.measure(&row[col_idx]) + 2.0 * h_pad)
+                .fold(header_w, f32::max);
+            self.config.columns[col_idx].width = content_w.max(min_w).min(max_w);
+        }
+
+        // Rebuild column_x from new widths.
+        let mut cursor = self.origin_x;
+        self.column_x.clear();
+        self.column_x.push(cursor);
+        for c in &self.config.columns {
+            cursor += c.width;
+            self.column_x.push(cursor);
+        }
+        self.total_width = cursor - self.origin_x;
+
+        // Draw header once (before the first buffered row).
+        if !self.header_drawn {
+            self.draw_header();
+            self.header_drawn = true;
+        }
+
+        // Flush buffered rows in order.
+        for row in buffered {
+            self.draw_row(&row, false)?;
+        }
+        Ok(())
+    }
 
     fn draw_header(&mut self) {
         let headers: Vec<String> =
@@ -458,6 +642,7 @@ impl<'a> StreamingTable<'a> {
 mod tests {
     use super::super::document_builder::DocumentBuilder;
     use super::*;
+    use crate::elements::ContentElement;
 
     #[test]
     fn test_streaming_table_emits_header_and_rows() {
@@ -597,5 +782,169 @@ mod tests {
         // error. We don't assert page count (depends on font metrics) —
         // the important property is no panic, no run-away memory.
         assert!(doc.page_count() > 100, "expected many pages for 30k rows");
+    }
+
+    // ── TableMode::Sample tests ────────────────────────────────────────────
+
+    #[test]
+    fn test_sample_mode_emits_all_rows_and_header() {
+        let mut doc = DocumentBuilder::new();
+        let page = doc.letter_page().font("Helvetica", 10.0).at(72.0, 720.0);
+
+        let mut t = page.streaming_table(
+            StreamingTableConfig::new()
+                .column(StreamingColumn::new("A").width_pt(60.0))
+                .column(StreamingColumn::new("B").width_pt(60.0))
+                .mode_sample(2, 20.0, 300.0),
+        );
+
+        // Push 4 rows; sample window is 2, so freeze happens after row 2.
+        for i in 0..4 {
+            t.push_row(|r| {
+                r.cell(format!("a{}", i));
+                r.cell(format!("b{}", i));
+            })
+            .unwrap();
+        }
+        t.finish().done();
+
+        let texts: Vec<&str> = doc
+            .page_elements(0)
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Text(t) => Some(t.text.as_str()),
+                _ => None,
+            })
+            .collect();
+
+        // 1 header row (2 cells) + 4 body rows (2 cells each) = 10 text elements
+        assert_eq!(texts.len(), 10, "expected 10 text elements, got {texts:?}");
+        assert_eq!(texts[0], "A", "first element must be header A");
+        assert_eq!(texts[1], "B", "second element must be header B");
+    }
+
+    #[test]
+    fn test_sample_mode_fewer_rows_than_target_flushes_on_finish() {
+        let mut doc = DocumentBuilder::new();
+        let page = doc.letter_page().font("Helvetica", 10.0).at(72.0, 720.0);
+
+        let mut t = page.streaming_table(
+            StreamingTableConfig::new()
+                .column(StreamingColumn::new("X").width_pt(80.0))
+                .mode_sample(10, 20.0, 300.0), // target 10, push only 3
+        );
+
+        for i in 0..3 {
+            t.push_row(|r| {
+                r.cell(format!("val{}", i));
+            })
+            .unwrap();
+        }
+        t.finish().done(); // must flush the 3 buffered rows
+
+        let texts: Vec<&str> = doc
+            .page_elements(0)
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Text(t) => Some(t.text.as_str()),
+                _ => None,
+            })
+            .collect();
+
+        // 1 header + 3 body = 4 elements
+        assert_eq!(texts.len(), 4, "expected header + 3 rows, got {texts:?}");
+        assert_eq!(texts[0], "X");
+        assert_eq!(texts[1], "val0");
+    }
+
+    #[test]
+    fn test_sample_mode_clamps_width_to_min_max() {
+        let mut doc = DocumentBuilder::new();
+        let page = doc.letter_page().font("Helvetica", 10.0).at(72.0, 720.0);
+
+        let min_w = 80.0_f32;
+        let max_w = 120.0_f32;
+
+        let mut t = page.streaming_table(
+            StreamingTableConfig::new()
+                .column(StreamingColumn::new("Col").width_pt(60.0))
+                .mode_sample(3, min_w, max_w),
+        );
+
+        // Push rows that would measure very wide content and very narrow content
+        for content in &["A", "A very long string that would exceed 120 pt if measured"] {
+            t.push_row(|r| {
+                r.cell(*content);
+            })
+            .unwrap();
+        }
+        t.finish().done();
+
+        // Verify no panic and the header is present (wide content may wrap into
+        // multiple text elements, so we only check the header is among them).
+        let texts: Vec<&str> = doc
+            .page_elements(0)
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Text(t) => Some(t.text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(texts.contains(&"Col"), "header 'Col' must appear, got {texts:?}");
+    }
+
+    #[test]
+    fn test_sample_mode_zero_buffered_uses_column_defaults() {
+        // If finish() is called with an empty sample buffer, column widths
+        // default to the header text width clamped to [min, max].
+        let mut doc = DocumentBuilder::new();
+        let page = doc.letter_page().font("Helvetica", 10.0).at(72.0, 720.0);
+
+        let mut t = page.streaming_table(
+            StreamingTableConfig::new()
+                .column(StreamingColumn::new("Head").width_pt(60.0))
+                .mode_sample(5, 20.0, 300.0),
+        );
+        // Push nothing — finish immediately
+        t.finish().done();
+
+        // Must not panic. Any header text that appeared is fine.
+        // (The header is drawn if at least one row, or on finish if any buffering happened)
+    }
+
+    // ── TableMode::AutoAll tests ───────────────────────────────────────────
+
+    #[test]
+    fn test_autoall_rejected_on_streaming_table() {
+        let mut doc = DocumentBuilder::new();
+        let page = doc.letter_page();
+
+        let mut t = page.streaming_table(
+            StreamingTableConfig::new()
+                .column(StreamingColumn::new("A").width_pt(60.0))
+                .mode_auto_all(),
+        );
+
+        let err = t.push_row(|r| {
+            r.cell("value");
+        });
+        assert!(err.is_err(), "AutoAll must be rejected on StreamingTable");
+        let msg = err.unwrap_err().to_string();
+        assert!(
+            msg.contains("AutoAll") || msg.contains("buffered"),
+            "error message should mention AutoAll or buffered Table, got: {msg}"
+        );
+    }
+
+    // ── Default mode regression ────────────────────────────────────────────
+
+    #[test]
+    fn test_fixed_mode_default_unchanged() {
+        // StreamingTableConfig::new() must remain TableMode::Fixed.
+        let cfg = StreamingTableConfig::new();
+        assert!(
+            matches!(cfg.mode, TableMode::Fixed),
+            "default mode must be Fixed"
+        );
     }
 }

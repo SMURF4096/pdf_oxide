@@ -48,6 +48,9 @@ namespace PdfOxide.Core
             }
         }
 
+        /// <summary>Raw page handle — for use by StreamingTable within this assembly.</summary>
+        internal IntPtr InternalHandle => Handle;
+
         // --- Content ops -----------------------------------------------------
 
         /// <summary>Set the font + size for subsequent text.</summary>
@@ -794,23 +797,21 @@ namespace PdfOxide.Core
         /// <summary>
         /// Open a streaming-table handle for the given columns. Rows
         /// are appended one at a time via
-        /// <see cref="StreamingTable.AddRow(string[])"/> and flushed
-        /// to the page on <see cref="StreamingTable.Build"/>.
+        /// <see cref="StreamingTable.AddRow(string[])"/> and finalised
+        /// via <see cref="StreamingTable.Build"/>.
         /// </summary>
         /// <param name="columns">Column specifications.</param>
-        /// <param name="repeatHeader">Draw the header row on every
-        /// page break (currently always <see langword="true"/> at the
-        /// FFI level — accepted for forward compatibility).</param>
-        /// <remarks>
-        /// See <see cref="StreamingTable"/> for the v0.3.39 buffering
-        /// caveat.
-        /// </remarks>
-        public StreamingTable StreamingTable(IReadOnlyList<Column> columns, bool repeatHeader = true)
+        /// <param name="repeatHeader">Repeat the header row on every page break.</param>
+        /// <param name="mode">Column-sizing mode (default: <see cref="TableMode.Fixed"/>).</param>
+        public StreamingTable StreamingTable(
+            IReadOnlyList<Column> columns,
+            bool repeatHeader = true,
+            TableMode? mode = null)
         {
             ArgumentNullException.ThrowIfNull(columns);
             if (columns.Count == 0)
                 throw new ArgumentException("columns must be non-empty", nameof(columns));
-            return new StreamingTable(this, columns, repeatHeader);
+            return new StreamingTable(this, columns, repeatHeader, mode);
         }
 
         /// <summary>

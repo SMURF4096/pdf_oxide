@@ -3470,6 +3470,15 @@ struct WasmStreamingTableSpec {
     columns: Vec<WasmStreamingColumnSpec>,
     #[serde(default, rename = "repeatHeader", alias = "repeat_header")]
     repeat_header: bool,
+    /// "fixed" | "sample" | "auto_all" (default "fixed")
+    #[serde(default)]
+    mode: Option<String>,
+    #[serde(default, rename = "sampleRows", alias = "sample_rows")]
+    sample_rows: Option<usize>,
+    #[serde(default, rename = "minColWidthPt", alias = "min_col_width_pt")]
+    min_col_width_pt: Option<f32>,
+    #[serde(default, rename = "maxColWidthPt", alias = "max_col_width_pt")]
+    max_col_width_pt: Option<f32>,
 }
 
 #[derive(serde::Deserialize)]
@@ -3622,6 +3631,10 @@ enum WasmPageOp {
         config_columns: Vec<(String, f32, WasmAlign)>,
         repeat_header: bool,
         rows: Vec<Vec<String>>,
+        mode: String,
+        sample_rows: usize,
+        min_col_width_pt: f32,
+        max_col_width_pt: f32,
     },
     /// Pre-rendered barcode PNG bytes (generated at record time).
     BarcodeImage {
@@ -4032,9 +4045,18 @@ impl WasmDocumentBuilder {
                     config_columns,
                     repeat_header,
                     rows,
+                    mode,
+                    sample_rows,
+                    min_col_width_pt,
+                    max_col_width_pt,
                 } => {
                     let mut cfg = crate::writer::StreamingTableConfig::new()
                         .repeat_header(repeat_header);
+                    cfg = match mode.as_str() {
+                        "sample" => cfg.mode_sample(sample_rows, min_col_width_pt, max_col_width_pt),
+                        "auto_all" => cfg.mode_auto_all(),
+                        _ => cfg.mode_fixed(),
+                    };
                     for (header, width, align) in config_columns {
                         cfg = cfg.column(
                             crate::writer::StreamingColumn::new(header)
@@ -4717,6 +4739,10 @@ impl WasmFluentPageBuilder {
             repeat_header: parsed.repeat_header,
             rows: Vec::new(),
             finished: false,
+            mode: parsed.mode.unwrap_or_else(|| "fixed".to_string()),
+            sample_rows: parsed.sample_rows.unwrap_or(50),
+            min_col_width_pt: parsed.min_col_width_pt.unwrap_or(20.0),
+            max_col_width_pt: parsed.max_col_width_pt.unwrap_or(400.0),
             page_ops: std::rc::Rc::clone(&self.ops),
         })
     }
@@ -4796,6 +4822,10 @@ pub struct WasmStreamingTable {
     repeat_header: bool,
     rows: Vec<Vec<String>>,
     finished: bool,
+    mode: String,
+    sample_rows: usize,
+    min_col_width_pt: f32,
+    max_col_width_pt: f32,
     /// Shared handle to the parent page's op queue — used by `finish()`
     /// to thread the recorded block back onto the page without JS having
     /// to pass the page argument.
@@ -4843,6 +4873,10 @@ impl WasmStreamingTable {
             config_columns: std::mem::take(&mut self.columns),
             repeat_header: self.repeat_header,
             rows: std::mem::take(&mut self.rows),
+            mode: self.mode.clone(),
+            sample_rows: self.sample_rows,
+            min_col_width_pt: self.min_col_width_pt,
+            max_col_width_pt: self.max_col_width_pt,
         };
         self.page_ops.borrow_mut().push(op);
         Ok(())

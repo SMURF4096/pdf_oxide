@@ -1,5 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+using PdfOxide.Exceptions;
+using PdfOxide.Internal;
 
 namespace PdfOxide.Core
 {
@@ -108,43 +112,115 @@ namespace PdfOxide.Core
     }
 
     /// <summary>
+    /// Column-sizing strategy for streaming tables (issue #400).
+    /// </summary>
+    public abstract class TableMode
+    {
+        private TableMode() { }
+
+        /// <summary>Use the <see cref="Column.Width"/> from each column as-is (default).</summary>
+        public sealed class Fixed : TableMode { }
+
+        /// <summary>
+        /// Buffer the first <see cref="SampleRows"/> rows, measure the
+        /// maximum content width per column, then freeze widths for the
+        /// remainder of the stream.
+        /// </summary>
+        public sealed class Sample : TableMode
+        {
+            /// <summary>Number of rows to sample (default 20).</summary>
+            public int SampleRows { get; init; } = 20;
+            /// <summary>Minimum column width in PDF points (default 0).</summary>
+            public float MinColWidthPt { get; init; } = 0f;
+            /// <summary>Maximum column width in PDF points (default 9999).</summary>
+            public float MaxColWidthPt { get; init; } = 9999f;
+        }
+    }
+
+    /// <summary>
     /// Streaming-table handle returned by
-    /// <see cref="PageBuilder.StreamingTable(System.Collections.Generic.IReadOnlyList{Column}, bool)"/>.
+    /// <see cref="PageBuilder.StreamingTable(System.Collections.Generic.IReadOnlyList{Column}, bool, TableMode)"/>.
     /// Accepts rows one at a time via <see cref="AddRow(string[])"/>
-    /// and flushes them to the page on <see cref="Build"/>.
+    /// and finalises on <see cref="Build"/>.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// <strong>v0.3.39 limitation:</strong> the managed side buffers
-    /// rows internally and forwards them to the buffered FFI
-    /// <c>pdf_page_builder_table</c> call at <see cref="Build"/> time.
-    /// Memory usage is therefore still <c>O(rows * columns)</c>. A
-    /// true streaming FFI (<c>O(columns)</c>) is tracked as issue
-    /// #393 step 6.5 and will land in a subsequent release — the
-    /// managed-side <see cref="AddRow(string[])"/> / <see cref="Build"/>
-    /// surface is forward-compatible and will transparently become
-    /// page-at-a-time once the FFI is ready.
-    /// </para>
-    /// <para>
     /// Always wrap in a <c>using</c>. <see cref="Dispose"/> on an
-    /// un-<see cref="Build"/>t handle drops the buffered rows without
-    /// drawing anything — useful for error recovery mid-stream.
-    /// </para>
+    /// un-<see cref="Build"/>t handle finishes the streaming table
+    /// without drawing any rows — useful for error recovery mid-stream.
     /// </remarks>
     public sealed class StreamingTable : IDisposable
     {
         private readonly PageBuilder _page;
-        private readonly List<Column> _columns;
-        private readonly bool _repeatHeader;
-        private readonly List<IList<string>> _buffered = new();
+        private readonly int _nCols;
         private bool _built;
         private bool _disposed;
 
-        internal StreamingTable(PageBuilder page, IReadOnlyList<Column> columns, bool repeatHeader)
+        internal unsafe StreamingTable(
+            PageBuilder page,
+            IReadOnlyList<Column> columns,
+            bool repeatHeader,
+            TableMode? mode)
         {
             _page = page;
-            _columns = new List<Column>(columns);
-            _repeatHeader = repeatHeader;
+            _nCols = columns.Count;
+
+            // Encode headers, widths, aligns.
+            var headers = new byte[_nCols][];
+            var widths  = new float[_nCols];
+            var aligns  = new int[_nCols];
+            for (int i = 0; i < _nCols; i++)
+            {
+                headers[i] = Encoding.UTF8.GetBytes((columns[i].Header ?? string.Empty) + "\0");
+                widths[i]  = columns[i].Width;
+                aligns[i]  = (int)columns[i].Align;
+            }
+
+            int modeInt = 0;
+            int sampleRows = 20;
+            float minW = 0f, maxW = 9999f;
+            if (mode is TableMode.Sample s)
+            {
+                modeInt    = 1;
+                sampleRows = s.SampleRows;
+                minW       = s.MinColWidthPt;
+                maxW       = s.MaxColWidthPt;
+            }
+
+            var hHandles = new GCHandle[_nCols];
+            var hPtrs    = new IntPtr[_nCols];
+            GCHandle hPtrsH = default, widthsH = default, alignsH = default;
+            try
+            {
+                for (int i = 0; i < _nCols; i++)
+                {
+                    hHandles[i] = GCHandle.Alloc(headers[i], GCHandleType.Pinned);
+                    hPtrs[i]    = hHandles[i].AddrOfPinnedObject();
+                }
+                hPtrsH  = GCHandle.Alloc(hPtrs, GCHandleType.Pinned);
+                widthsH = GCHandle.Alloc(widths, GCHandleType.Pinned);
+                alignsH = GCHandle.Alloc(aligns, GCHandleType.Pinned);
+
+                NativeMethods.PdfPageBuilderStreamingTableBeginV2(
+                    page.InternalHandle,
+                    (nuint)_nCols,
+                    (byte**)hPtrsH.AddrOfPinnedObject(),
+                    (float*)widthsH.AddrOfPinnedObject(),
+                    (int*)alignsH.AddrOfPinnedObject(),
+                    repeatHeader ? 1 : 0,
+                    modeInt,
+                    (nuint)sampleRows,
+                    minW, maxW,
+                    out var ec);
+                ExceptionMapper.ThrowIfError(ec);
+            }
+            finally
+            {
+                if (hPtrsH.IsAllocated)  hPtrsH.Free();
+                if (widthsH.IsAllocated) widthsH.Free();
+                if (alignsH.IsAllocated) alignsH.Free();
+                for (int i = 0; i < _nCols; i++)
+                    if (hHandles[i].IsAllocated) hHandles[i].Free();
+            }
         }
 
         /// <summary>
@@ -152,72 +228,75 @@ namespace PdfOxide.Core
         /// exactly <c>Columns.Count</c> entries; <see langword="null"/>
         /// entries render as empty strings.
         /// </summary>
-        /// <remarks>
-        /// In v0.3.39 this appends to an in-memory buffer; actual
-        /// drawing happens at <see cref="Build"/>. Once the streaming
-        /// FFI lands, this will flush rows page-at-a-time.
-        /// </remarks>
-        public StreamingTable AddRow(params string[] cells)
+        public unsafe StreamingTable AddRow(params string[] cells)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (_built)
-                throw new InvalidOperationException("StreamingTable already built; construct a new one for additional rows.");
+                throw new InvalidOperationException("StreamingTable already built.");
             ArgumentNullException.ThrowIfNull(cells);
-            if (cells.Length != _columns.Count)
+            if (cells.Length != _nCols)
                 throw new ArgumentException(
-                    $"row width mismatch: got {cells.Length} cells, expected {_columns.Count}",
+                    $"row width mismatch: got {cells.Length} cells, expected {_nCols}",
                     nameof(cells));
-            var row = new string[cells.Length];
-            for (int i = 0; i < cells.Length; i++)
-                row[i] = cells[i] ?? string.Empty;
-            _buffered.Add(row);
+
+            var cellBytes = new byte[_nCols][];
+            for (int i = 0; i < _nCols; i++)
+                cellBytes[i] = Encoding.UTF8.GetBytes((cells[i] ?? string.Empty) + "\0");
+
+            var handles = new GCHandle[_nCols];
+            var ptrs    = new IntPtr[_nCols];
+            GCHandle ptrsH = default;
+            try
+            {
+                for (int i = 0; i < _nCols; i++)
+                {
+                    handles[i] = GCHandle.Alloc(cellBytes[i], GCHandleType.Pinned);
+                    ptrs[i]    = handles[i].AddrOfPinnedObject();
+                }
+                ptrsH = GCHandle.Alloc(ptrs, GCHandleType.Pinned);
+                NativeMethods.PdfPageBuilderStreamingTablePushRow(
+                    _page.InternalHandle,
+                    (nuint)_nCols,
+                    (byte**)ptrsH.AddrOfPinnedObject(),
+                    out var ec);
+                ExceptionMapper.ThrowIfError(ec);
+            }
+            finally
+            {
+                if (ptrsH.IsAllocated) ptrsH.Free();
+                for (int i = 0; i < _nCols; i++)
+                    if (handles[i].IsAllocated) handles[i].Free();
+            }
             return this;
         }
 
         /// <summary>
-        /// Flush every buffered row to the underlying
-        /// <see cref="PageBuilder"/> and return the page for continued
-        /// chaining. Calling <see cref="AddRow(string[])"/> after
-        /// <see cref="Build"/> throws.
+        /// Close the streaming table and return the page for continued chaining.
         /// </summary>
-        /// <remarks>
-        /// The <c>repeatHeader</c> flag from the factory call is
-        /// currently advisory — the v0.3.39 FFI always repeats the
-        /// header on page breaks when <c>HasHeader = true</c>. The
-        /// field is kept on the managed API so callers don't need to
-        /// rewrite code once a separate "header once only" mode is
-        /// added to the FFI.
-        /// </remarks>
         public PageBuilder Build()
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (_built)
                 throw new InvalidOperationException("StreamingTable already built.");
             _built = true;
-
-            var spec = new TableSpec
-            {
-                Columns = new List<Column>(_columns),
-                Rows = new List<IList<string>>(_buffered.Count),
-                HasHeader = _repeatHeader,
-            };
-            foreach (var row in _buffered)
-                spec.Rows.Add(row);
-            _page.Table(spec);
+            NativeMethods.PdfPageBuilderStreamingTableFinish(_page.InternalHandle, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
             return _page;
         }
 
         /// <summary>
-        /// Drop the handle. If <see cref="Build"/> has not been called
-        /// the buffered rows are discarded silently — use this path
-        /// for error recovery when the caller decides mid-stream not
-        /// to emit the table.
+        /// Drop the handle. If <see cref="Build"/> has not been called the
+        /// open streaming table is finished silently.
         /// </summary>
         public void Dispose()
         {
             if (_disposed) return;
             _disposed = true;
-            _buffered.Clear();
+            if (!_built)
+            {
+                _built = true;
+                NativeMethods.PdfPageBuilderStreamingTableFinish(_page.InternalHandle, out _);
+            }
         }
     }
 }

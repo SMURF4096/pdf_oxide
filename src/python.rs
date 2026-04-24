@@ -4118,6 +4118,11 @@ enum PendingPageOp {
         aligns: Vec<i32>,
         repeat_header: bool,
         rows: Vec<Vec<String>>,
+        /// "fixed" | "sample" | "auto_all"
+        mode: String,
+        sample_rows: usize,
+        min_col_width_pt: f32,
+        max_col_width_pt: f32,
     },
     /// Pre-rendered barcode PNG (generated at record time so errors
     /// surface at the Python call site, not during replay).
@@ -5290,11 +5295,16 @@ impl PyFluentPageBuilder {
     /// `columns` is a list of `Column`; `repeat_header=True` redraws
     /// the header row at every page break.
     #[pyo3(signature = (columns, repeat_header=false))]
+    #[pyo3(signature = (columns, repeat_header=false, mode="fixed", sample_rows=50, min_col_width_pt=20.0, max_col_width_pt=400.0))]
     fn streaming_table(
         slf_handle: Py<Self>,
         py: Python<'_>,
         columns: Vec<PyRef<'_, PyColumn>>,
         repeat_header: bool,
+        mode: &str,
+        sample_rows: usize,
+        min_col_width_pt: f32,
+        max_col_width_pt: f32,
     ) -> PyResult<PyStreamingTable> {
         if columns.is_empty() {
             return Err(PyValueError::new_err(
@@ -5309,6 +5319,10 @@ impl PyFluentPageBuilder {
             repeat_header,
             rows: Vec::new(),
             finished: false,
+            mode: mode.to_string(),
+            sample_rows,
+            min_col_width_pt,
+            max_col_width_pt,
         })
     }
 
@@ -5491,9 +5505,18 @@ impl PyFluentPageBuilder {
                     aligns,
                     repeat_header,
                     rows,
+                    mode,
+                    sample_rows,
+                    min_col_width_pt,
+                    max_col_width_pt,
                 } => {
                     let mut cfg = crate::writer::StreamingTableConfig::new()
                         .repeat_header(repeat_header);
+                    cfg = match mode.as_str() {
+                        "sample" => cfg.mode_sample(sample_rows, min_col_width_pt, max_col_width_pt),
+                        "auto_all" => cfg.mode_auto_all(),
+                        _ => cfg.mode_fixed(),
+                    };
                     for i in 0..headers.len() {
                         let col = crate::writer::StreamingColumn::new(headers[i].clone())
                             .width_pt(widths[i])
@@ -5534,6 +5557,10 @@ pub struct PyStreamingTable {
     repeat_header: bool,
     rows: Vec<Vec<String>>,
     finished: bool,
+    mode: String,
+    sample_rows: usize,
+    min_col_width_pt: f32,
+    max_col_width_pt: f32,
 }
 
 #[pymethods]
@@ -5580,6 +5607,10 @@ impl PyStreamingTable {
             aligns,
             repeat_header: self.repeat_header,
             rows,
+            mode: self.mode.clone(),
+            sample_rows: self.sample_rows,
+            min_col_width_pt: self.min_col_width_pt,
+            max_col_width_pt: self.max_col_width_pt,
         })?;
         drop(parent_ref);
         Ok(parent_handle)

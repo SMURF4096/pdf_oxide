@@ -6915,6 +6915,11 @@ enum FfiPageOp {
         /// Per-column (header, width_pt, align) — align is 0/1/2.
         columns: Vec<(String, f32, i32)>,
         repeat_header: bool,
+        /// 0=fixed, 1=sample, 2=auto_all
+        mode: i32,
+        sample_rows: usize,
+        min_col_width_pt: f32,
+        max_col_width_pt: f32,
     },
     /// Push one row into the currently-open streaming table. Fails at
     /// replay time if no streaming table is open or if the cell count
@@ -8490,6 +8495,67 @@ pub extern "C" fn pdf_page_builder_streaming_table_begin(
         FfiPageOp::StreamingTableOpen {
             columns: cols,
             repeat_header: repeat_header != 0,
+            mode: 0,
+            sample_rows: 50,
+            min_col_width_pt: 20.0,
+            max_col_width_pt: 400.0,
+        },
+    )
+}
+
+/// Begin a streaming table with a column-width mode.
+///
+/// `mode`: 0 = Fixed (default), 1 = Sample(sample_rows, min_w, max_w),
+///         2 = AutoAll (rejected — see `pdf_page_builder_streaming_table_begin`).
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_streaming_table_begin_v2(
+    handle: *mut FfiPageBuilder,
+    n_columns: usize,
+    headers: *const *const c_char,
+    widths: *const f32,
+    aligns: *const i32,
+    repeat_header: i32,
+    mode: i32,
+    sample_rows: usize,
+    min_col_width_pt: f32,
+    max_col_width_pt: f32,
+    error_code: *mut i32,
+) -> i32 {
+    if n_columns == 0 || headers.is_null() || widths.is_null() || aligns.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let widths_slice = unsafe { std::slice::from_raw_parts(widths, n_columns) };
+    let aligns_slice = unsafe { std::slice::from_raw_parts(aligns, n_columns) };
+    let headers_slice = unsafe { std::slice::from_raw_parts(headers, n_columns) };
+
+    let mut cols: Vec<(String, f32, i32)> = Vec::with_capacity(n_columns);
+    for i in 0..n_columns {
+        let ptr = headers_slice[i];
+        if ptr.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return -1;
+        }
+        let header = match unsafe { CStr::from_ptr(ptr) }.to_str() {
+            Ok(s) => s.to_string(),
+            Err(_) => {
+                set_error(error_code, ERR_INVALID_ARG);
+                return -1;
+            },
+        };
+        cols.push((header, widths_slice[i], aligns_slice[i]));
+    }
+
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::StreamingTableOpen {
+            columns: cols,
+            repeat_header: repeat_header != 0,
+            mode,
+            sample_rows,
+            min_col_width_pt,
+            max_col_width_pt,
         },
     )
 }
@@ -8586,6 +8652,10 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
             FfiPageOp::StreamingTableOpen {
                 columns,
                 repeat_header,
+                mode,
+                sample_rows,
+                min_col_width_pt,
+                max_col_width_pt,
             } => {
                 let Some(rp) = rust_page_opt.take() else {
                     // Already streaming — reject reopening.
@@ -8594,6 +8664,11 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
                 };
                 let mut config = crate::writer::StreamingTableConfig::new()
                     .repeat_header(repeat_header);
+                config = match mode {
+                    1 => config.mode_sample(sample_rows, min_col_width_pt, max_col_width_pt),
+                    2 => config.mode_auto_all(),
+                    _ => config.mode_fixed(),
+                };
                 for (header, width, align) in columns {
                     let cell_align = match align {
                         1 => crate::writer::CellAlign::Center,

@@ -65,7 +65,7 @@ import {
   SearchStream,
   SecurityManager,
 } from './managers/index';
-import type { Column, StreamingTableConfig, Table, TableSpec } from './types/common.js';
+import type { Column, StreamingTableConfig, Table, TableMode, TableSpec } from './types/common.js';
 import type { WorkerResult, WorkerTask } from './workers/index';
 import { WorkerPool, workerPool } from './workers/index';
 
@@ -671,6 +671,7 @@ export type {
   Column,
   StreamingTableConfig,
   Table,
+  TableMode,
   TableSpec,
   WorkerResult,
   WorkerTask,

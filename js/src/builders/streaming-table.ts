@@ -1,13 +1,6 @@
 /**
- * Managed streaming-table adapter (v0.3.39, issue #393).
- *
- * The real O(cols)-memory streaming-table FFI is pending. Until it
- * lands, this adapter buffers rows on the JS heap and flushes them
- * through the buffered-table FFI when {@link StreamingTable.finish}
- * is called. The public shape deliberately matches the future
- * streaming-FFI surface so code written today does not need to
- * migrate when it ships — `pushRow`/`finish`/`pushAll` stay, only the
- * underlying transport changes.
+ * Streaming-table adapter backed by the native row-at-a-time FFI
+ * (`pdf_page_builder_streaming_table_begin_v2` / `_push_row` / `_finish`).
  *
  * @example
  * ```typescript
@@ -18,6 +11,7 @@
  *     { header: 'Qty',  width: 48, align: Align.Right },
  *   ],
  *   repeatHeader: true,
+ *   mode: { kind: 'sample', sampleRows: 30 },
  * });
  * for await (const row of readRowsFromDb()) {
  *   t.pushRow([row.sku, row.item, String(row.qty)]);
@@ -32,8 +26,7 @@ import type { Column, StreamingTableConfig } from '../types/common.js';
 export class StreamingTable {
   private _page: PageBuilder;
   private _columns: Column[];
-  private _repeatHeader: boolean;
-  private _rows: Array<Array<string | null>> = [];
+  private _opened = false;
   private _finished = false;
 
   /** @internal — constructed via `PageBuilder.streamingTable(...)`. */
@@ -43,7 +36,14 @@ export class StreamingTable {
     }
     this._page = page;
     this._columns = config.columns;
-    this._repeatHeader = config.repeatHeader !== false;
+
+    const headers = config.columns.map((c) => c.header ?? '');
+    const widths  = config.columns.map((c) => c.width);
+    const aligns  = config.columns.map((c) => (c.align ?? 0) as number);
+    const repeat  = config.repeatHeader !== false;
+
+    this._page._streamingTableBeginV2(headers, widths, aligns, repeat, config.mode);
+    this._opened = true;
   }
 
   /** Push a single row. Throws if `cells.length !== columns.length`. */
@@ -56,13 +56,12 @@ export class StreamingTable {
         `row width ${cells.length} does not match column count ${this._columns.length}`
       );
     }
-    this._rows.push(cells.map((c) => (c == null ? null : String(c))));
+    this._page._streamingTablePushRow(cells.map((c) => (c == null ? null : String(c))));
     return this;
   }
 
   /**
    * Convenience: consume a sync or async iterable and push each row.
-   * Useful for DB cursors, streams, generators.
    */
   async pushAll(
     rows: Iterable<Array<string | null | undefined>> | AsyncIterable<Array<string | null | undefined>>
@@ -70,9 +69,6 @@ export class StreamingTable {
     if (this._finished) {
       throw new Error('StreamingTable already finished');
     }
-    // Handle both sync and async iterables uniformly. Direct
-    // `for await` works on both Iterable and AsyncIterable under
-    // modern JS semantics, so we dispatch that way.
     const anyRows = rows as
       | (Iterable<Array<string | null | undefined>> &
           Partial<AsyncIterable<Array<string | null | undefined>>>);
@@ -89,29 +85,21 @@ export class StreamingTable {
   }
 
   /**
-   * Flush all buffered rows to the buffered-table FFI and return the
-   * parent PageBuilder for chaining. The adapter becomes invalid
-   * after `finish()`.
+   * Close the streaming table and return the parent PageBuilder for chaining.
    */
   async finish(): Promise<PageBuilder> {
     if (this._finished) {
       throw new Error('StreamingTable already finished');
     }
     this._finished = true;
-    this._page.table({
-      columns: this._columns,
-      rows: this._rows,
-      hasHeader: this._repeatHeader,
-    });
-    // Release buffered-row memory early.
-    this._rows = [];
+    if (this._opened) {
+      this._page._streamingTableFinish();
+    }
     return this._page;
   }
 
-  /**
-   * Number of body rows buffered so far (does not include the header).
-   */
-  get rowCount(): number {
-    return this._rows.length;
+  /** Number of the columns this table was opened with. */
+  get columnCount(): number {
+    return this._columns.length;
   }
 }

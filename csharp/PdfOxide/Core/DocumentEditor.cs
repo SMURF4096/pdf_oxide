@@ -462,7 +462,7 @@ namespace PdfOxide.Core
                     if (ptr != IntPtr.Zero)
                     {
                         result[i] = System.Runtime.InteropServices.Marshal.PtrToStringUTF8(ptr) ?? string.Empty;
-                        NativeMethods.free_string(ptr);
+                        NativeMethods.FreeString(ptr);
                     }
                 }
                 return result;

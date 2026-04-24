@@ -544,6 +544,20 @@ int   pdf_page_builder_streaming_table_begin(void* page,
                                              int repeat_header,
                                              int* error_code);
 
+/* Same as _begin but exposes column-sizing mode.
+ * mode: 0=Fixed, 1=Sample(sample_rows,min_w,max_w), 2=AutoAll (error). */
+int   pdf_page_builder_streaming_table_begin_v2(void* page,
+                                                size_t n_columns,
+                                                const char* const* headers,
+                                                const float* widths,
+                                                const int* aligns,
+                                                int repeat_header,
+                                                int mode,
+                                                size_t sample_rows,
+                                                float min_col_width_pt,
+                                                float max_col_width_pt,
+                                                int* error_code);
+
 /* Push one row. `cells` must have length matching n_columns from
  * _begin. NULL cell pointers become empty strings. */
 int   pdf_page_builder_streaming_table_push_row(void* page,

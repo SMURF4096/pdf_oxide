@@ -7196,6 +7196,33 @@ namespace PdfOxide.Internal
             int hasHeader,
             out int errorCode);
 
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_streaming_table_begin_v2")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial int PdfPageBuilderStreamingTableBeginV2(
+            IntPtr page,
+            nuint nColumns,
+            byte** headers,
+            float* widths,
+            int* aligns,
+            int repeatHeader,
+            int mode,
+            nuint sampleRows,
+            float minColWidthPt,
+            float maxColWidthPt,
+            out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_streaming_table_push_row")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial int PdfPageBuilderStreamingTablePushRow(
+            IntPtr page,
+            nuint nCells,
+            byte** cells,
+            out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_streaming_table_finish")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderStreamingTableFinish(IntPtr page, out int errorCode);
+
         /// <summary>Commit the page and CONSUME the page handle.</summary>
         [LibraryImport(LibName, EntryPoint = "pdf_page_builder_done", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]

@@ -144,6 +144,29 @@ extern int   pdf_page_builder_table(void* page,
                                     const char* const* cell_strings,
                                     int has_header,
                                     int* error_code);
+extern int   pdf_page_builder_streaming_table_begin(void* page,
+                                                    size_t n_columns,
+                                                    const char* const* headers,
+                                                    const float* widths,
+                                                    const int* aligns,
+                                                    int repeat_header,
+                                                    int* error_code);
+extern int   pdf_page_builder_streaming_table_begin_v2(void* page,
+                                                       size_t n_columns,
+                                                       const char* const* headers,
+                                                       const float* widths,
+                                                       const int* aligns,
+                                                       int repeat_header,
+                                                       int mode,
+                                                       size_t sample_rows,
+                                                       float min_col_width_pt,
+                                                       float max_col_width_pt,
+                                                       int* error_code);
+extern int   pdf_page_builder_streaming_table_push_row(void* page,
+                                                       size_t n_cells,
+                                                       const char* const* cells,
+                                                       int* error_code);
+extern int   pdf_page_builder_streaming_table_finish(void* page, int* error_code);
 
 extern int   pdf_page_builder_done(void* page, int* error_code);
 extern void  pdf_page_builder_free(void* page);
@@ -1262,36 +1285,86 @@ func (p *PageBuilder) Table(spec TableSpec) *PageBuilder {
 	return p
 }
 
-// StreamingTable opens a row-at-a-time table adapter on this page.
-//
-// In v0.3.39 the Go adapter is managed-buffered: PushRow appends to an
-// in-memory slice and Finish flushes a single Table() call. It exists
-// so consumer code written against the streaming shape today keeps
-// working when the native streaming FFI lands.
+// StreamingTable opens a native row-at-a-time streaming table on this page.
+// Feed rows via PushRow and finalise with Finish.
 func (p *PageBuilder) StreamingTable(cfg StreamingTableConfig) *StreamingTable {
-	return &StreamingTable{
-		page:    p,
-		columns: append([]Column(nil), cfg.Columns...),
+	if !p.checkUsable() {
+		return &StreamingTable{page: p, nCols: 0, finished: true}
 	}
+	nCols := len(cfg.Columns)
+	if nCols == 0 {
+		p.err = errors.New("pdf_oxide: StreamingTable: at least one column required")
+		return &StreamingTable{page: p, nCols: 0, finished: true}
+	}
+
+	// Build parallel arrays for headers, widths, aligns.
+	headers := make([]*C.char, nCols)
+	widths  := make([]C.float, nCols)
+	aligns  := make([]C.int, nCols)
+	for i, col := range cfg.Columns {
+		headers[i] = C.CString(col.Header)
+		widths[i]  = C.float(col.Width)
+		aligns[i]  = C.int(col.Align)
+	}
+	defer func() {
+		for _, h := range headers {
+			if h != nil {
+				C.free(unsafe.Pointer(h))
+			}
+		}
+	}()
+
+	modeInt := C.int(0)
+	sampleRows := C.size_t(20)
+	minW := C.float(0)
+	maxW := C.float(9999)
+	if cfg.Mode.Kind == TableModeSample {
+		modeInt = 1
+		if cfg.Mode.SampleRows > 0 {
+			sampleRows = C.size_t(cfg.Mode.SampleRows)
+		}
+		minW = C.float(cfg.Mode.MinColWidthPt)
+		maxW = C.float(cfg.Mode.MaxColWidthPt)
+		if maxW == 0 {
+			maxW = 9999
+		}
+	}
+
+	repeatHeader := C.int(0)
+	if cfg.RepeatHeader || hasAnyHeader(cfg.Columns) {
+		repeatHeader = 1
+	}
+
+	var ec C.int
+	if C.pdf_page_builder_streaming_table_begin_v2(
+		p.handle,
+		C.size_t(nCols),
+		(**C.char)(unsafe.Pointer(&headers[0])),
+		(*C.float)(unsafe.Pointer(&widths[0])),
+		(*C.int)(unsafe.Pointer(&aligns[0])),
+		repeatHeader,
+		modeInt,
+		sampleRows,
+		minW, maxW,
+		&ec,
+	) != 0 {
+		p.err = ffiError(ec)
+	}
+
+	return &StreamingTable{page: p, nCols: nCols}
 }
 
 // StreamingTable is a row-at-a-time table adapter. Obtain one from
-// PageBuilder.StreamingTable, feed rows with PushRow, and finalise with
-// Finish to resume the page chain.
-//
-// The v0.3.39 implementation buffers rows in Go memory and flushes a
-// single Table() call at Finish(). Finish is idempotent; subsequent
-// calls return the same parent PageBuilder without re-emitting.
+// PageBuilder.StreamingTable, feed rows with PushRow, and finalise
+// with Finish to resume the page chain.
 type StreamingTable struct {
 	page     *PageBuilder
-	columns  []Column
-	rows     [][]string
+	nCols    int
 	finished bool
 }
 
-// PushRow appends a row. len(cells) must equal the column count the
-// adapter was opened with. Errors surface through the returned value
-// AND through the parent PageBuilder (visible at Done()).
+// PushRow pushes one row to the native streaming table. len(cells) must
+// equal the column count the adapter was opened with.
 func (t *StreamingTable) PushRow(cells []string) error {
 	if t == nil {
 		return errors.New("pdf_oxide: PushRow on nil StreamingTable")
@@ -1302,21 +1375,42 @@ func (t *StreamingTable) PushRow(cells []string) error {
 	if t.page == nil {
 		return errors.New("pdf_oxide: StreamingTable has no parent page")
 	}
-	if len(cells) != len(t.columns) {
+	if len(cells) != t.nCols {
 		return fmt.Errorf(
 			"pdf_oxide: StreamingTable.PushRow: got %d cells, expected %d",
-			len(cells), len(t.columns))
+			len(cells), t.nCols)
 	}
-	// Store a defensive copy so callers can reuse their row slice.
-	row := make([]string, len(cells))
-	copy(row, cells)
-	t.rows = append(t.rows, row)
+	if !t.page.checkUsable() {
+		return t.page.err
+	}
+
+	cStrs := make([]*C.char, t.nCols)
+	for i, s := range cells {
+		cStrs[i] = C.CString(s)
+	}
+	defer func() {
+		for _, s := range cStrs {
+			if s != nil {
+				C.free(unsafe.Pointer(s))
+			}
+		}
+	}()
+
+	var ec C.int
+	if C.pdf_page_builder_streaming_table_push_row(
+		t.page.handle,
+		C.size_t(t.nCols),
+		(**C.char)(unsafe.Pointer(&cStrs[0])),
+		&ec,
+	) != 0 {
+		t.page.err = ffiError(ec)
+		return t.page.err
+	}
 	return nil
 }
 
-// Finish flushes the buffered rows as a Table() call and returns the
-// parent PageBuilder so callers can continue chaining. If the table
-// was never populated Finish is a no-op (it still returns the parent).
+// Finish closes the streaming table and returns the parent PageBuilder
+// so callers can continue chaining. Idempotent.
 func (t *StreamingTable) Finish() *PageBuilder {
 	if t == nil || t.page == nil {
 		return nil
@@ -1325,16 +1419,14 @@ func (t *StreamingTable) Finish() *PageBuilder {
 		return t.page
 	}
 	t.finished = true
-	// Empty streaming tables emit nothing.
-	if len(t.columns) == 0 && len(t.rows) == 0 {
+	if !t.page.checkUsable() {
 		return t.page
 	}
-	spec := TableSpec{
-		Columns:   t.columns,
-		Rows:      t.rows,
-		HasHeader: hasAnyHeader(t.columns),
+	var ec C.int
+	if C.pdf_page_builder_streaming_table_finish(t.page.handle, &ec) != 0 {
+		t.page.err = ffiError(ec)
 	}
-	return t.page.Table(spec)
+	return t.page
 }
 
 func hasAnyHeader(cols []Column) bool {

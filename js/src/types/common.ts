@@ -189,21 +189,29 @@ export interface TableSpec {
 }
 
 /**
- * Configuration for the managed streaming-table adapter.
+ * Column-sizing strategy for streaming tables (issue #400).
  *
- * v0.3.39 Node ships a managed streaming adapter that buffers rows in
- * JS and flushes them through the buffered-table FFI on `finish()`.
- * The public shape intentionally matches what the real streaming FFI
- * will expose in a later release so callers do not need to migrate.
+ * - `fixed` — use the `width` from each `Column` as-is (default).
+ * - `sample` — buffer the first N rows, measure content, then freeze
+ *   column widths automatically.  Supply `sampleRows`, `minColWidth`,
+ *   and `maxColWidth` to tune.
+ */
+export type TableMode =
+  | { kind: 'fixed' }
+  | { kind: 'sample'; sampleRows?: number; minColWidthPt?: number; maxColWidthPt?: number };
+
+/**
+ * Configuration for the managed streaming-table adapter.
  */
 export interface StreamingTableConfig {
   /** Column layout — widths, alignments, and header labels. */
   columns: Column[];
   /**
-   * Whether to emit a header row when the stream completes. Defaults
-   * to true. The parameter is named `repeatHeader` to match the
-   * future streaming FFI, even though in the managed adapter the
-   * header is emitted exactly once.
+   * Whether to repeat the header row on every page break. Defaults to true.
    */
   repeatHeader?: boolean;
+  /**
+   * Column-sizing mode. Defaults to `{ kind: 'fixed' }`.
+   */
+  mode?: TableMode;
 }

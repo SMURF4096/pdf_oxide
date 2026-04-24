@@ -259,23 +259,36 @@ type TableSpec struct {
 	HasHeader bool
 }
 
+// TableModeKind selects the column-sizing strategy for a StreamingTable.
+type TableModeKind int
+
+const (
+	// TableModeFixed uses the Width from each Column as-is (default).
+	TableModeFixed TableModeKind = 0
+	// TableModeSample buffers the first N rows, measures content widths,
+	// then freezes column widths for the remainder of the stream.
+	TableModeSample TableModeKind = 1
+)
+
+// TableMode configures how a StreamingTable sizes its columns (issue #400).
+// Use the TableModeFixed or TableModeSample constants for Kind.
+type TableMode struct {
+	Kind          TableModeKind
+	SampleRows    int     // used when Kind == TableModeSample (default 20)
+	MinColWidthPt float32 // used when Kind == TableModeSample (default 0)
+	MaxColWidthPt float32 // used when Kind == TableModeSample (default 9999)
+}
+
 // StreamingTableConfig configures a StreamingTable — the row-at-a-time
 // adapter returned by PageBuilder.StreamingTable.
 //
-// In v0.3.39 the Go streaming surface is managed-only: rows are buffered
-// in Go memory and flushed as a single Table FFI call at .Finish(). A
-// native streaming FFI path is planned for a later release; when it
-// lands the public shape here will still be source-compatible.
-//
 //   - Columns drives widths, alignments, and the header labels.
-//   - RepeatHeader is accepted but is a no-op in the managed adapter —
-//     the buffered Table call always emits a single header at the top.
-//     When the native streaming path arrives it will honour this flag on
-//     each page break. Present now so consumer code written today keeps
-//     working after the upgrade.
+//   - RepeatHeader repeats the header row on every page break.
+//   - Mode selects the column-sizing strategy (default: TableModeFixed).
 type StreamingTableConfig struct {
 	Columns      []Column
 	RepeatHeader bool
+	Mode         TableMode
 }
 
 // LogLevel represents the log verbosity level.
