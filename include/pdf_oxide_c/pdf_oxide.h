@@ -344,6 +344,12 @@ int   pdf_document_builder_set_keywords(void* handle, const char* keywords, int*
 int   pdf_document_builder_set_creator(void* handle, const char* creator, int* error_code);
 int   pdf_document_builder_on_open(void* handle, const char* script, int* error_code);
 
+/* DocumentBuilder — PDF/UA-1 accessibility (Bundle F-1/F-2/F-4) */
+int   pdf_document_builder_tagged_pdf_ua1(void* handle, int* error_code);
+int   pdf_document_builder_language(void* handle, const char* lang, int* error_code);
+int   pdf_document_builder_role_map(void* handle, const char* custom,
+                                    const char* standard, int* error_code);
+
 /* DocumentBuilder — font registration (CONSUMES font on success) */
 int   pdf_document_builder_register_embedded_font(void* handle, const char* name,
                                                   void* font, int* error_code);

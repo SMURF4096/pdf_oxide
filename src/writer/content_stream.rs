@@ -104,6 +104,18 @@ pub enum ContentStreamOp {
     /// End marked content (EMC)
     EndMarkedContent,
 
+    /// Begin an Artifact marked-content section (BDC /Artifact).
+    /// Used for pagination artifacts (headers, footers, page numbers) that
+    /// should be ignored by AT (Assistive Technology). F-3.
+    BeginArtifact {
+        /// Artifact type, e.g. "Pagination", "Layout", "Page".
+        artifact_type: String,
+        /// Optional subtype, e.g. "Header", "Footer".
+        subtype: Option<String>,
+    },
+    /// End an Artifact marked-content section (EMC).
+    EndArtifact,
+
     // === Clipping Operations ===
     /// Clip using non-zero winding rule (W)
     Clip,
@@ -251,6 +263,27 @@ pub enum TextArrayItem {
     Adjustment(f32),
 }
 
+/// A record of a structure element and its marked-content IDs, collected
+/// during content-stream construction for StructTreeRoot emission.
+///
+/// Each `StructElemRecord` corresponds to one `StructureElement` that was
+/// added via `add_element` / `add_structure_element`. The `mcid` field
+/// is the Marked Content ID emitted for this element's BDC bracket;
+/// `children` holds nested records from child `StructureElement`s.
+#[derive(Debug, Clone)]
+pub struct StructElemRecord {
+    /// The PDF structure type tag (e.g. "P", "H1", "Figure").
+    pub structure_type: String,
+    /// Marked Content ID emitted for this element's BDC operator.
+    pub mcid: u32,
+    /// Alternate text for accessibility (/Alt in StructElem dict).
+    pub alt_text: Option<String>,
+    /// Language override for this element (/Lang in StructElem dict).
+    pub language: Option<String>,
+    /// Nested structure records from child StructureElements.
+    pub children: Vec<StructElemRecord>,
+}
+
 /// An image that needs to be registered as an XObject.
 ///
 /// When ContentStreamBuilder encounters an ImageContent, it generates
@@ -284,6 +317,10 @@ pub struct ContentStreamBuilder {
     pending_images: Vec<PendingImage>,
     /// Next image resource ID counter
     next_image_id: u32,
+    /// Structure element records accumulated from add_element(Structure(...))
+    /// calls. Used by PdfWriter::finish to build the StructTreeRoot when
+    /// tagged PDF mode is enabled.
+    struct_records: Vec<StructElemRecord>,
 }
 
 impl ContentStreamBuilder {
@@ -768,13 +805,46 @@ impl ContentStreamBuilder {
             ContentElement::Text(text) => self.add_text_content(text),
             ContentElement::Path(path) => self.add_path_content(path),
             ContentElement::Image(image) => self.add_image_content(image),
-            ContentElement::Structure(_) => self, // Structure elements recurse via add_structure_element
+            ContentElement::Structure(s) => {
+                // Build the BDC/EMC brackets and collect the StructElemRecord
+                // so PdfWriter::finish can build the StructTreeRoot.
+                let record = self.add_structure_element_impl(s);
+                self.struct_records.push(record);
+                self
+            },
             ContentElement::Table(table) => self.add_table_content(table),
         }
     }
 
     /// Add text content element.
     fn add_text_content(&mut self, text: &TextContent) -> &mut Self {
+        // F-3: If this text has an artifact type, wrap it in /Artifact BDC/EMC
+        // so Assistive Technology skips it.
+        let is_artifact = text.artifact_type.is_some();
+        if is_artifact {
+            use crate::extractors::text::ArtifactType;
+            // End any open text object before BDC (BDC must be outside BT/ET).
+            self.end_text();
+            let (artifact_type, subtype) = match &text.artifact_type {
+                Some(ArtifactType::Pagination(sub)) => {
+                    use crate::extractors::text::PaginationSubtype;
+                    let sub_str = match sub {
+                        PaginationSubtype::Header => Some("Header".to_string()),
+                        PaginationSubtype::Footer => Some("Footer".to_string()),
+                        PaginationSubtype::PageNumber => Some("PageNum".to_string()),
+                        PaginationSubtype::Watermark => Some("Watermark".to_string()),
+                        PaginationSubtype::Other => None,
+                    };
+                    ("Pagination".to_string(), sub_str)
+                },
+                Some(ArtifactType::Layout) => ("Layout".to_string(), None),
+                Some(ArtifactType::Page) => ("Page".to_string(), None),
+                Some(ArtifactType::Background) => ("Background".to_string(), None),
+                None => unreachable!(),
+            };
+            self.op(ContentStreamOp::BeginArtifact { artifact_type, subtype });
+        }
+
         self.begin_text();
 
         // Set color if not black
@@ -789,6 +859,11 @@ impl ContentStreamBuilder {
         // Position and show text
         self.op(ContentStreamOp::SetTextMatrix(1.0, 0.0, 0.0, 1.0, text.bbox.x, text.bbox.y));
         self.op(ContentStreamOp::ShowText(text.text.clone()));
+
+        if is_artifact {
+            self.end_text();
+            self.op(ContentStreamOp::EndArtifact);
+        }
 
         self
     }
@@ -1158,11 +1233,17 @@ impl ContentStreamBuilder {
     /// - BDC operator with tag and MCID property dictionary
     /// - EMC operator for proper nesting
     pub fn add_structure_element(&mut self, elem: &StructureElement) -> &mut Self {
-        self.add_structure_element_impl(elem)
+        let record = self.add_structure_element_impl(elem);
+        self.struct_records.push(record);
+        self
     }
 
     /// Internal recursive implementation for adding structure elements.
-    fn add_structure_element_impl(&mut self, elem: &StructureElement) -> &mut Self {
+    ///
+    /// Returns a [`StructElemRecord`] capturing the allocated MCID and any
+    /// nested records from child `StructureElement`s. The caller is
+    /// responsible for storing or discarding the record.
+    fn add_structure_element_impl(&mut self, elem: &StructureElement) -> StructElemRecord {
         // Allocate MCID for this structure element
         let mcid = self.next_mcid();
 
@@ -1172,15 +1253,17 @@ impl ContentStreamBuilder {
             mcid,
         });
 
-        // Add children (recursively for nested structures)
+        // Add children (recursively for nested structures), accumulating records
+        let mut child_records: Vec<StructElemRecord> = Vec::new();
         for child in &elem.children {
             match child {
                 ContentElement::Structure(nested_elem) => {
-                    // Recursively add nested structure element
-                    self.add_structure_element_impl(nested_elem);
+                    // Recursively add nested structure element and collect record
+                    let child_record = self.add_structure_element_impl(nested_elem);
+                    child_records.push(child_record);
                 },
                 _ => {
-                    // Add regular content element
+                    // Add regular content element (no MCID record for leaf content)
                     self.add_element(child);
                 },
             }
@@ -1189,7 +1272,21 @@ impl ContentStreamBuilder {
         // End marked content
         self.op(ContentStreamOp::EndMarkedContent);
 
-        self
+        StructElemRecord {
+            structure_type: elem.structure_type.clone(),
+            mcid,
+            alt_text: elem.alt_text.clone(),
+            language: elem.language.clone(),
+            children: child_records,
+        }
+    }
+
+    /// Take the accumulated structure element records from this page's content stream.
+    ///
+    /// Called by `PdfWriter::finish` after processing each page to collect
+    /// the structure records needed to build the StructTreeRoot dict.
+    pub fn take_struct_records(&mut self) -> Vec<StructElemRecord> {
+        std::mem::take(&mut self.struct_records)
     }
 
     /// Build the content stream to bytes.
@@ -1320,6 +1417,17 @@ impl ContentStreamBuilder {
                 write!(w, "/{} <</MCID {}>> BDC", tag, mcid)
             },
             ContentStreamOp::EndMarkedContent => write!(w, "EMC"),
+
+            // Artifact marked content (F-3)
+            ContentStreamOp::BeginArtifact { artifact_type, subtype } => {
+                write!(w, "/Artifact <<")?;
+                write!(w, "/Type /{}", artifact_type)?;
+                if let Some(sub) = subtype {
+                    write!(w, " /Subtype /{}", sub)?;
+                }
+                write!(w, ">> BDC")
+            },
+            ContentStreamOp::EndArtifact => write!(w, "EMC"),
 
             // Clipping operations
             ContentStreamOp::Clip => write!(w, "W"),

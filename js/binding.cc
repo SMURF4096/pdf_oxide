@@ -435,6 +435,10 @@ extern "C" {
   extern int   pdf_document_builder_set_keywords(void* handle, const char* value, int* error_code);
   extern int   pdf_document_builder_set_creator(void* handle, const char* value, int* error_code);
   extern int   pdf_document_builder_on_open(void* handle, const char* script, int* error_code);
+  extern int   pdf_document_builder_tagged_pdf_ua1(void* handle, int* error_code);
+  extern int   pdf_document_builder_language(void* handle, const char* lang, int* error_code);
+  extern int   pdf_document_builder_role_map(void* handle, const char* custom,
+                                              const char* standard, int* error_code);
 
   extern int   pdf_document_builder_register_embedded_font(void* handle, const char* name,
                                                            void* font, int* error_code);
@@ -3308,6 +3312,9 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("documentBuilderSetKeywords", Napi::Function::New(env, DocumentBuilderSetKeywords));
   exports.Set("documentBuilderSetCreator", Napi::Function::New(env, DocumentBuilderSetCreator));
   exports.Set("documentBuilderOnOpen", Napi::Function::New(env, DocumentBuilderOnOpen));
+  exports.Set("documentBuilderTaggedPdfUa1", Napi::Function::New(env, DocumentBuilderTaggedPdfUa1));
+  exports.Set("documentBuilderLanguage", Napi::Function::New(env, DocumentBuilderLanguage));
+  exports.Set("documentBuilderRoleMap", Napi::Function::New(env, DocumentBuilderRoleMap));
   exports.Set("documentBuilderRegisterEmbeddedFont", Napi::Function::New(env, DocumentBuilderRegisterEmbeddedFont));
   exports.Set("documentBuilderA4Page", Napi::Function::New(env, DocumentBuilderA4Page));
   exports.Set("documentBuilderLetterPage", Napi::Function::New(env, DocumentBuilderLetterPage));
@@ -3473,7 +3480,30 @@ BUILDER_SETTER(DocumentBuilderSetSubject,  pdf_document_builder_set_subject,  "D
 BUILDER_SETTER(DocumentBuilderSetKeywords, pdf_document_builder_set_keywords, "DocumentBuilder.keywords")
 BUILDER_SETTER(DocumentBuilderSetCreator,  pdf_document_builder_set_creator,  "DocumentBuilder.creator")
 BUILDER_SETTER(DocumentBuilderOnOpen,      pdf_document_builder_on_open,      "DocumentBuilder.onOpen")
+BUILDER_SETTER(DocumentBuilderLanguage,    pdf_document_builder_language,     "DocumentBuilder.language")
 #undef BUILDER_SETTER
+
+// DocumentBuilder.taggedPdfUa1() — no string arg
+Napi::Value DocumentBuilderTaggedPdfUa1(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* h = externPtr(info, 0, "builder");
+  int errorCode = 0;
+  pdf_document_builder_tagged_pdf_ua1(h, &errorCode);
+  throwOnError(env, errorCode, "DocumentBuilder.taggedPdfUa1");
+  return env.Undefined();
+}
+
+// DocumentBuilder.roleMap(custom, standard)
+Napi::Value DocumentBuilderRoleMap(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* h = externPtr(info, 0, "builder");
+  std::string custom = requireString(info, 1, "custom");
+  std::string standard = requireString(info, 2, "standard");
+  int errorCode = 0;
+  pdf_document_builder_role_map(h, custom.c_str(), standard.c_str(), &errorCode);
+  throwOnError(env, errorCode, "DocumentBuilder.roleMap");
+  return env.Undefined();
+}
 
 Napi::Value DocumentBuilderRegisterEmbeddedFont(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();

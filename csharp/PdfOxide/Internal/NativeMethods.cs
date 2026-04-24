@@ -6841,6 +6841,21 @@ namespace PdfOxide.Internal
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial int PdfDocumentBuilderOnOpen(IntPtr handle, string script, out int errorCode);
 
+        /// <summary>Enable PDF/UA-1 tagged PDF mode (Bundle F-1/F-2).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_document_builder_tagged_pdf_ua1", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfDocumentBuilderTaggedPdfUa1(IntPtr handle, out int errorCode);
+
+        /// <summary>Set the document's natural language tag, e.g. "en-US" (Bundle F-2).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_document_builder_language", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfDocumentBuilderLanguage(IntPtr handle, string lang, out int errorCode);
+
+        /// <summary>Add a role-map entry: custom structure type → standard PDF type (Bundle F-4).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_document_builder_role_map", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfDocumentBuilderRoleMap(IntPtr handle, string custom, string standard, out int errorCode);
+
         /// <summary>Register a TTF/OTF font. CONSUMES <paramref name="font"/> on success.</summary>
         [LibraryImport(LibName, EntryPoint = "pdf_document_builder_register_embedded_font", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]

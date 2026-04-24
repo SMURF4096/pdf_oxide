@@ -5,7 +5,7 @@
 
 use super::acroform::AcroFormBuilder;
 use super::annotation_builder::{AnnotationBuilder, LinkAnnotation};
-use super::content_stream::ContentStreamBuilder;
+use super::content_stream::{ContentStreamBuilder, StructElemRecord};
 use super::form_fields::{
     CheckboxWidget, ComboBoxWidget, FormFieldEntry, ListBoxWidget, PushButtonWidget,
     RadioButtonGroup, SignatureWidget, TextFieldWidget,
@@ -49,6 +49,17 @@ pub struct PdfWriterConfig {
     /// Document-level `/OpenAction` JavaScript — runs when the PDF is
     /// opened. None → no action dict in the catalog.
     pub open_action_script: Option<String>,
+    /// When true, emit PDF/UA-1 tagged-PDF catalog entries:
+    /// `/MarkInfo << /Marked true >>`, `/StructTreeRoot`, `/Lang`,
+    /// `/ViewerPreferences << /DisplayDocTitle true >>`. F-1/F-2.
+    pub tagged: bool,
+    /// Natural language for the document catalog `/Lang` entry (e.g. "en-US").
+    /// Emitted only when `tagged` is true. F-2.
+    pub language: Option<String>,
+    /// Custom-type → standard-type role mappings. Emitted in the
+    /// StructTreeRoot `/RoleMap` dict when non-empty and `tagged` is true.
+    /// Each entry is `(custom_tag, standard_tag)`. F-4.
+    pub role_map: Vec<(String, String)>,
 }
 
 impl Default for PdfWriterConfig {
@@ -62,6 +73,9 @@ impl Default for PdfWriterConfig {
             creator: Some("pdf_oxide".to_string()),
             compress: false, // Disable compression for now (requires flate2)
             open_action_script: None,
+            tagged: false,
+            language: None,
+            role_map: Vec::new(),
         }
     }
 }
@@ -91,6 +105,18 @@ impl PdfWriterConfig {
     /// using FlateDecode (zlib/deflate) to reduce file size.
     pub fn with_compress(mut self, compress: bool) -> Self {
         self.compress = compress;
+        self
+    }
+
+    /// Enable PDF/UA-1 tagged PDF mode.
+    pub fn tagged_pdf_ua1(mut self) -> Self {
+        self.tagged = true;
+        self
+    }
+
+    /// Set the document natural language tag (e.g. `"en-US"`).
+    pub fn with_language(mut self, lang: impl Into<String>) -> Self {
+        self.language = Some(lang.into());
         self
     }
 }
@@ -1297,8 +1323,14 @@ impl PdfWriter {
         // a second &mut borrow on `self`.
         let mut pending_per_page: Vec<Vec<super::content_stream::PendingImage>> =
             Vec::with_capacity(page_count);
+        // Collect struct records per page (F-1: tagged PDF structure tree).
+        // We drain them here (before the main page loop) so that the content
+        // builder borrow is released before we build the StructTreeRoot below.
+        let mut struct_records_per_page: Vec<Vec<StructElemRecord>> =
+            Vec::with_capacity(page_count);
         for page_data in self.pages.iter_mut() {
             pending_per_page.push(page_data.content_builder.take_pending_images());
+            struct_records_per_page.push(page_data.content_builder.take_struct_records());
         }
         let mut image_ids_per_page: Vec<Vec<(u32, Option<u32>)>> = Vec::with_capacity(page_count);
         let mut image_objects: Vec<(u32, Object, Vec<u8>)> = Vec::new();
@@ -1450,6 +1482,13 @@ impl PdfWriter {
                 page_entries.push(("Tabs", ObjectSerializer::name(&c.to_string())));
             }
 
+            // /StructParents N — required for tagged PDF (F-1). Each page that
+            // participates in the structure tree gets a unique integer that
+            // the ParentTree number-tree uses to look up its StructElems.
+            if self.config.tagged {
+                page_entries.push(("StructParents", ObjectSerializer::integer(i as i64)));
+            }
+
             // /AA page-level additional actions (open/close JS).
             let mut aa_entries: Vec<(&str, Object)> = Vec::new();
             if let Some(ref s) = page_data.page_open_script {
@@ -1559,6 +1598,155 @@ impl PdfWriter {
             None
         };
 
+        // F-1: Build StructTreeRoot + ParentTree + per-element StructElem
+        // objects when tagged PDF is enabled.
+        //
+        // Strategy (flat, first-cut):
+        //   - Every top-level StructElemRecord from each page becomes a direct
+        //     child of the StructTreeRoot /K array.
+        //   - Nested child records are likewise emitted as StructElem objects
+        //     whose /P points to their parent StructElem.
+        //   - ParentTree: flat number-tree mapping page_index → array of
+        //     StructElem refs on that page (for AT reverse lookup).
+        //   - RoleMap emitted when config.role_map is non-empty (F-4).
+        //
+        // All struct-tree object IDs are tracked in `struct_tree_obj_ids` so
+        // the serialisation pass below can emit them in order.
+        let struct_tree_root_id: Option<u32>;
+        let mut struct_tree_obj_ids: Vec<u32> = Vec::new();
+
+        if self.config.tagged {
+            // Collect all struct elem records into flat StructElem objects.
+            // Page refs (for /Pg) come from the pre-built page_ids list.
+
+            let str_root_id = self.alloc_obj_id();
+            let parent_tree_id = self.alloc_obj_id();
+            struct_tree_obj_ids.push(str_root_id);
+            struct_tree_obj_ids.push(parent_tree_id);
+
+            // Recursive helper: emit StructElem dicts for a record tree.
+            // Returns the ObjectRef of the root element for this record.
+            fn emit_struct_elems(
+                record: &StructElemRecord,
+                parent_ref: ObjectRef,
+                page_ref: ObjectRef,
+                next_id: &mut u32,
+                obj_ids: &mut Vec<u32>,
+                out: &mut Vec<(u32, Object)>,
+            ) -> ObjectRef {
+                let my_id = *next_id;
+                *next_id += 1;
+                let my_ref = ObjectRef::new(my_id, 0);
+                obj_ids.push(my_id);
+
+                // Recurse into children first so we know their refs for /K
+                let child_refs: Vec<ObjectRef> = record
+                    .children
+                    .iter()
+                    .map(|child| {
+                        emit_struct_elems(child, my_ref, page_ref, next_id, obj_ids, out)
+                    })
+                    .collect();
+
+                let mut dict: HashMap<String, Object> = HashMap::new();
+                dict.insert("Type".to_string(), Object::Name("StructElem".to_string()));
+                dict.insert(
+                    "S".to_string(),
+                    Object::Name(record.structure_type.clone()),
+                );
+                dict.insert("P".to_string(), Object::Reference(parent_ref));
+                dict.insert("Pg".to_string(), Object::Reference(page_ref));
+                // /K: either array of MCIDs + child refs, or just the MCID
+                if child_refs.is_empty() {
+                    // Leaf: /K is just the integer MCID
+                    dict.insert("K".to_string(), Object::Integer(record.mcid as i64));
+                } else {
+                    // Has children: /K is an array of the MCID integer + child refs
+                    let mut k_array: Vec<Object> = Vec::new();
+                    k_array.push(Object::Integer(record.mcid as i64));
+                    for cr in &child_refs {
+                        k_array.push(Object::Reference(*cr));
+                    }
+                    dict.insert("K".to_string(), Object::Array(k_array));
+                }
+                if let Some(ref alt) = record.alt_text {
+                    dict.insert("Alt".to_string(), ObjectSerializer::string(alt));
+                }
+                if let Some(ref lang) = record.language {
+                    dict.insert("Lang".to_string(), ObjectSerializer::string(lang));
+                }
+
+                out.push((my_id, Object::Dictionary(dict)));
+                my_ref
+            }
+
+            let mut all_struct_elem_objs: Vec<(u32, Object)> = Vec::new();
+            // top-level refs → direct children of StructTreeRoot's /K
+            let mut top_level_refs: Vec<Object> = Vec::new();
+            // ParentTree entries: page_index → [StructElem refs on that page]
+            let mut parent_tree_entries: Vec<Object> = Vec::new();
+
+            let str_root_ref = ObjectRef::new(str_root_id, 0);
+            for (page_idx, records) in struct_records_per_page.iter().enumerate() {
+                let page_ref = ObjectRef::new(page_ids[page_idx].0, 0);
+
+                let mut page_elem_refs: Vec<Object> = Vec::new();
+
+                for record in records {
+                    let elem_ref = emit_struct_elems(
+                        record,
+                        str_root_ref,
+                        page_ref,
+                        &mut self.next_obj_id,
+                        &mut struct_tree_obj_ids,
+                        &mut all_struct_elem_objs,
+                    );
+                    top_level_refs.push(Object::Reference(elem_ref));
+                    page_elem_refs.push(Object::Reference(elem_ref));
+                }
+
+                // ParentTree entry for this page (even if empty, keep indexing stable)
+                parent_tree_entries.push(Object::Integer(page_idx as i64));
+                parent_tree_entries.push(Object::Array(page_elem_refs));
+            }
+
+            // ParentTree number-tree (flat /Nums array form)
+            let parent_tree_dict: HashMap<String, Object> = HashMap::from([(
+                "Nums".to_string(),
+                Object::Array(parent_tree_entries),
+            )]);
+            self.objects.insert(parent_tree_id, Object::Dictionary(parent_tree_dict));
+
+            // StructTreeRoot dict
+            let mut str_dict: HashMap<String, Object> = HashMap::new();
+            str_dict.insert("Type".to_string(), Object::Name("StructTreeRoot".to_string()));
+            str_dict.insert("K".to_string(), Object::Array(top_level_refs));
+            str_dict.insert(
+                "ParentTree".to_string(),
+                Object::Reference(ObjectRef::new(parent_tree_id, 0)),
+            );
+
+            // F-4: /RoleMap
+            if !self.config.role_map.is_empty() {
+                let mut role_map_dict: HashMap<String, Object> = HashMap::new();
+                for (custom, standard) in &self.config.role_map {
+                    role_map_dict.insert(custom.clone(), Object::Name(standard.clone()));
+                }
+                str_dict.insert("RoleMap".to_string(), Object::Dictionary(role_map_dict));
+            }
+
+            self.objects.insert(str_root_id, Object::Dictionary(str_dict));
+
+            // Store all StructElem objects
+            for (id, obj) in all_struct_elem_objs {
+                self.objects.insert(id, obj);
+            }
+
+            struct_tree_root_id = Some(str_root_id);
+        } else {
+            struct_tree_root_id = None;
+        }
+
         // Catalog object
         let mut catalog_entries = vec![
             ("Type", ObjectSerializer::name("Catalog")),
@@ -1583,6 +1771,36 @@ impl PdfWriter {
                 ("JS".to_string(), ObjectSerializer::string(script)),
             ]));
             catalog_entries.push(("OpenAction", action));
+        }
+        // F-1/F-2: Tagged PDF catalog entries
+        if self.config.tagged {
+            // /MarkInfo << /Marked true >>
+            let mark_info = Object::Dictionary(HashMap::from([(
+                "Marked".to_string(),
+                Object::Boolean(true),
+            )]));
+            catalog_entries.push(("MarkInfo", mark_info));
+
+            // /StructTreeRoot ref
+            if let Some(str_id) = struct_tree_root_id {
+                catalog_entries.push(("StructTreeRoot", ObjectSerializer::reference(str_id, 0)));
+            }
+
+            // F-2: /Lang
+            let lang = self
+                .config
+                .language
+                .as_deref()
+                .unwrap_or("en-US")
+                .to_string();
+            catalog_entries.push(("Lang", ObjectSerializer::string(&lang)));
+
+            // /ViewerPreferences << /DisplayDocTitle true >>
+            let viewer_prefs = Object::Dictionary(HashMap::from([(
+                "DisplayDocTitle".to_string(),
+                Object::Boolean(true),
+            )]));
+            catalog_entries.push(("ViewerPreferences", viewer_prefs));
         }
         let catalog_obj = ObjectSerializer::dict(catalog_entries);
 
@@ -1676,6 +1894,15 @@ impl PdfWriter {
 
         // PageLabels number tree (if set). #393 Bundle B-2.
         if let Some(id) = page_labels_id {
+            if let Some(obj) = self.objects.get(&id) {
+                xref_offsets.push((id, output.len()));
+                output.extend_from_slice(&serializer.serialize_indirect(id, 0, obj));
+            }
+        }
+
+        // F-1: StructTreeRoot + ParentTree + StructElem objects (tagged PDF).
+        // Emit in insertion order (struct_tree_obj_ids preserves this).
+        for &id in &struct_tree_obj_ids {
             if let Some(obj) = self.objects.get(&id) {
                 xref_offsets.push((id, output.len()));
                 output.extend_from_slice(&serializer.serialize_indirect(id, 0, obj));

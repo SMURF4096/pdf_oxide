@@ -53,6 +53,14 @@ pub struct DocumentMetadata {
     pub creator: Option<String>,
     /// PDF version (default: "1.7")
     pub version: Option<String>,
+    /// When true, emit PDF/UA-1 tagged-PDF catalog entries (/MarkInfo,
+    /// /StructTreeRoot, /Lang, /ViewerPreferences). F-1/F-2.
+    pub tagged: bool,
+    /// Document natural language tag (e.g. "en-US"). Emitted as catalog
+    /// /Lang when `tagged` is true, but also usable without tagging. F-2.
+    pub language: Option<String>,
+    /// Custom-type → standard-type role mappings for /RoleMap. F-4.
+    pub role_map: Vec<(String, String)>,
 }
 
 impl DocumentMetadata {
@@ -88,6 +96,29 @@ impl DocumentMetadata {
     /// Set creator application.
     pub fn creator(mut self, creator: impl Into<String>) -> Self {
         self.creator = Some(creator.into());
+        self
+    }
+
+    /// Enable PDF/UA-1 tagging. When true, `DocumentBuilder::build` will emit
+    /// `/MarkInfo`, `/StructTreeRoot`, `/Lang`, and `/ViewerPreferences` in the
+    /// catalog. Has no effect on existing callers that do not call this method.
+    pub fn tagged_pdf_ua1(mut self) -> Self {
+        self.tagged = true;
+        self
+    }
+
+    /// Set the document's natural language (e.g. `"en-US"`).
+    /// Emitted as `/Lang` in the PDF catalog when `tagged_pdf_ua1()` is set.
+    pub fn language(mut self, lang: impl Into<String>) -> Self {
+        self.language = Some(lang.into());
+        self
+    }
+
+    /// Add a custom → standard role mapping to the StructTreeRoot /RoleMap.
+    /// Multiple calls accumulate entries. Example: `("Note", "P")` maps the
+    /// custom "Note" structure type to the standard "P" (Paragraph).
+    pub fn role_map(mut self, custom: impl Into<String>, standard: impl Into<String>) -> Self {
+        self.role_map.push((custom.into(), standard.into()));
         self
     }
 }
@@ -2385,6 +2416,31 @@ impl DocumentBuilder {
         self
     }
 
+    /// Enable PDF/UA-1 tagging on this document. When enabled, `build()` emits
+    /// `/MarkInfo << /Marked true >>`, `/StructTreeRoot`, `/Lang`, and
+    /// `/ViewerPreferences << /DisplayDocTitle true >>` in the catalog.
+    ///
+    /// Has no effect on existing callers that do not call this method (opt-in).
+    pub fn tagged_pdf_ua1(mut self) -> Self {
+        self.metadata.tagged = true;
+        self
+    }
+
+    /// Set the document's natural language tag (e.g. `"en-US"`).
+    /// This is emitted as `/Lang` in the catalog when `tagged_pdf_ua1()` is set.
+    pub fn language(mut self, lang: impl Into<String>) -> Self {
+        self.metadata.language = Some(lang.into());
+        self
+    }
+
+    /// Add a role-map entry: custom structure type → standard PDF structure type.
+    /// Emitted in `/RoleMap` inside the StructTreeRoot when `tagged_pdf_ua1()` is
+    /// set. Multiple calls accumulate entries.
+    pub fn role_map(mut self, custom: impl Into<String>, standard: impl Into<String>) -> Self {
+        self.metadata.role_map.push((custom.into(), standard.into()));
+        self
+    }
+
     /// Set document metadata.
     pub fn metadata(mut self, metadata: DocumentMetadata) -> Self {
         self.metadata = metadata;
@@ -2462,6 +2518,10 @@ impl DocumentBuilder {
         if self.metadata.creator.is_some() {
             config.creator = self.metadata.creator.clone();
         }
+        // F-1/F-2/F-4: wire tagged PDF settings into writer config
+        config.tagged = self.metadata.tagged;
+        config.language = self.metadata.language.clone();
+        config.role_map = self.metadata.role_map.clone();
         if let Some(script) = self.open_action_script {
             config.open_action_script = Some(script);
         }

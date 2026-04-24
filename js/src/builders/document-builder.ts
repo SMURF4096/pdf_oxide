@@ -155,6 +155,39 @@ export class DocumentBuilder {
   }
 
   /**
+   * Enable PDF/UA-1 tagged PDF mode.
+   *
+   * When enabled, `build()` emits `/MarkInfo`, `/StructTreeRoot`, `/Lang`, and
+   * `/ViewerPreferences` in the catalog. Opt-in — no effect unless called.
+   * Bundle F-1/F-2.
+   */
+  taggedPdfUa1(): this {
+    native.documentBuilderTaggedPdfUa1(this.checkUsable());
+    return this;
+  }
+
+  /**
+   * Set the document's natural language tag, e.g. `"en-US"`.
+   *
+   * Emitted as `/Lang` in the catalog when `taggedPdfUa1()` is set. Bundle F-2.
+   */
+  language(lang: string): this {
+    native.documentBuilderLanguage(this.checkUsable(), lang);
+    return this;
+  }
+
+  /**
+   * Add a role-map entry: custom structure type → standard PDF structure type.
+   *
+   * Emitted in `/RoleMap` inside the StructTreeRoot when `taggedPdfUa1()` is
+   * set. Multiple calls accumulate entries. Bundle F-4.
+   */
+  roleMap(custom: string, standard: string): this {
+    native.documentBuilderRoleMap(this.checkUsable(), custom, standard);
+    return this;
+  }
+
+  /**
    * Register a TTF / OTF font under `name`. CONSUMES `font` on success —
    * do not call `close()` on the font afterwards.
    */

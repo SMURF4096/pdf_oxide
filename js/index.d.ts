@@ -1884,6 +1884,23 @@ export class DocumentBuilder {
   keywords(keywords: string): this;
   creator(creator: string): this;
   onOpen(script: string): this;
+  /**
+   * Enable PDF/UA-1 tagged PDF mode.
+   * Emits /MarkInfo, /StructTreeRoot, /Lang, and /ViewerPreferences in the
+   * catalog. Opt-in — no effect unless called. Bundle F-1/F-2.
+   */
+  taggedPdfUa1(): this;
+  /**
+   * Set the document's natural language tag, e.g. "en-US".
+   * Emitted as /Lang in the catalog when taggedPdfUa1() is set. Bundle F-2.
+   */
+  language(lang: string): this;
+  /**
+   * Add a role-map entry: custom structure type → standard PDF structure type.
+   * Emitted in /RoleMap inside the StructTreeRoot when taggedPdfUa1() is set.
+   * Multiple calls accumulate entries. Bundle F-4.
+   */
+  roleMap(custom: string, standard: string): this;
   registerEmbeddedFont(name: string, font: EmbeddedFont): this;
   a4Page(): PageBuilder;
   letterPage(): PageBuilder;

@@ -7149,6 +7149,57 @@ pub extern "C" fn pdf_document_builder_on_open(
     ffi_builder_apply(handle, error_code, |b| b.on_open(s))
 }
 
+/// Enable PDF/UA-1 tagged PDF mode. Returns 0 on success, -1 on error.
+///
+/// When enabled, `pdf_document_builder_build` emits `/MarkInfo`,
+/// `/StructTreeRoot`, `/Lang`, and `/ViewerPreferences` in the catalog.
+/// Opt-in — no effect unless called. Bundle F-1/F-2.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_tagged_pdf_ua1(
+    handle: *mut FfiDocumentBuilder,
+    error_code: *mut i32,
+) -> i32 {
+    ffi_builder_apply(handle, error_code, |b| b.tagged_pdf_ua1())
+}
+
+/// Set the document's natural language tag (e.g. "en-US"). Returns 0 on success.
+///
+/// Emitted as `/Lang` in the catalog when `pdf_document_builder_tagged_pdf_ua1`
+/// has been called. Bundle F-2.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_language(
+    handle: *mut FfiDocumentBuilder,
+    lang: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(lang) = read_cstr_or_fail(lang, error_code) else {
+        return -1;
+    };
+    ffi_builder_apply(handle, error_code, |b| b.language(lang))
+}
+
+/// Add a role-map entry: custom structure type → standard PDF structure type.
+/// Returns 0 on success, -1 on error.
+///
+/// Emitted in `/RoleMap` inside the StructTreeRoot when
+/// `pdf_document_builder_tagged_pdf_ua1` is set. Multiple calls accumulate
+/// entries. Bundle F-4.
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_role_map(
+    handle: *mut FfiDocumentBuilder,
+    custom: *const c_char,
+    standard: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(custom) = read_cstr_or_fail(custom, error_code) else {
+        return -1;
+    };
+    let Some(standard) = read_cstr_or_fail(standard, error_code) else {
+        return -1;
+    };
+    ffi_builder_apply(handle, error_code, |b| b.role_map(custom, standard))
+}
+
 /// Register a TTF / OTF font. **Consumes** the `font` handle — on
 /// success, callers must not call `pdf_embedded_font_free` on it.
 /// On error the font handle is NOT consumed and remains valid.

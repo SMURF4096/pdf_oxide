@@ -4424,6 +4424,37 @@ impl PyDocumentBuilder {
         Ok(slf)
     }
 
+    /// Enable PDF/UA-1 tagged PDF mode.
+    ///
+    /// When enabled, `build()` emits `/MarkInfo`, `/StructTreeRoot`, `/Lang`,
+    /// and `/ViewerPreferences` in the catalog. Safe to ignore — has no effect
+    /// on documents that don't call this method (strict opt-in). Bundle F-1/F-2.
+    fn tagged_pdf_ua1<'a>(mut slf: PyRefMut<'a, Self>) -> PyResult<PyRefMut<'a, Self>> {
+        slf.with_inner("tagged_pdf_ua1", |b| b.tagged_pdf_ua1())?;
+        Ok(slf)
+    }
+
+    /// Set the document's natural language tag (e.g. `"en-US"`).
+    ///
+    /// Emitted as `/Lang` in the catalog when `tagged_pdf_ua1()` is set.
+    fn language<'a>(mut slf: PyRefMut<'a, Self>, lang: String) -> PyResult<PyRefMut<'a, Self>> {
+        slf.with_inner("language", |b| b.language(lang))?;
+        Ok(slf)
+    }
+
+    /// Add a role-map entry: custom structure type → standard PDF structure type.
+    ///
+    /// Emitted in `/RoleMap` inside the StructTreeRoot when `tagged_pdf_ua1()`
+    /// is set. Multiple calls accumulate entries.
+    fn role_map<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        custom: String,
+        standard: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.with_inner("role_map", |b| b.role_map(custom, standard))?;
+        Ok(slf)
+    }
+
     /// Register a TTF/OTF font the PDF pages can reference by name. The
     /// `EmbeddedFont` handle is **consumed** — reusing it raises
     /// `RuntimeError`.

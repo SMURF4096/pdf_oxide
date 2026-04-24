@@ -142,6 +142,44 @@ namespace PdfOxide.Core
         }
 
         /// <summary>
+        /// Enable PDF/UA-1 tagged PDF mode.
+        /// Emits /MarkInfo, /StructTreeRoot, /Lang, and /ViewerPreferences
+        /// in the catalog. Opt-in — no effect unless called. Bundle F-1/F-2.
+        /// </summary>
+        public DocumentBuilder TaggedPdfUa1()
+        {
+            NativeMethods.PdfDocumentBuilderTaggedPdfUa1(Handle, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
+        /// <summary>
+        /// Set the document's natural language tag, e.g. "en-US".
+        /// Emitted as /Lang in the catalog when TaggedPdfUa1() is set. Bundle F-2.
+        /// </summary>
+        public DocumentBuilder Language(string lang)
+        {
+            ArgumentNullException.ThrowIfNull(lang);
+            NativeMethods.PdfDocumentBuilderLanguage(Handle, lang, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
+        /// <summary>
+        /// Add a role-map entry: custom structure type → standard PDF structure type.
+        /// Emitted in /RoleMap inside the StructTreeRoot when TaggedPdfUa1() is set.
+        /// Multiple calls accumulate entries. Bundle F-4.
+        /// </summary>
+        public DocumentBuilder RoleMap(string custom, string standard)
+        {
+            ArgumentNullException.ThrowIfNull(custom);
+            ArgumentNullException.ThrowIfNull(standard);
+            NativeMethods.PdfDocumentBuilderRoleMap(Handle, custom, standard, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
+        /// <summary>
         /// Register a TTF/OTF font under <paramref name="name"/>. The font
         /// is CONSUMED on success; do not use it after this call. On error
         /// the font handle is still valid and can be disposed normally.

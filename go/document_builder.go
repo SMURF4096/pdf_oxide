@@ -360,6 +360,53 @@ func (b *DocumentBuilder) OnOpen(script string) error {
 		}, "onOpen", script)
 }
 
+// TaggedPdfUa1 enables PDF/UA-1 tagged PDF mode.
+//
+// When enabled, Build emits /MarkInfo, /StructTreeRoot, /Lang, and
+// /ViewerPreferences in the catalog. Opt-in — no effect unless called.
+// Bundle F-1/F-2.
+func (b *DocumentBuilder) TaggedPdfUa1() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if err := b.checkUsable(); err != nil {
+		return err
+	}
+	var ec C.int
+	if C.pdf_document_builder_tagged_pdf_ua1(b.handle, &ec) != 0 {
+		return fmt.Errorf("taggedPdfUa1: error code %d", int(ec))
+	}
+	return nil
+}
+
+// Language sets the document's natural language tag, e.g. "en-US".
+// Emitted as /Lang in the catalog when TaggedPdfUa1 is set. Bundle F-2.
+func (b *DocumentBuilder) Language(lang string) error {
+	return b.setString(
+		func(h unsafe.Pointer, s *C.char, ec *C.int) C.int {
+			return C.pdf_document_builder_language(h, s, ec)
+		}, "language", lang)
+}
+
+// RoleMap adds a role-map entry: custom structure type → standard PDF type.
+// Emitted in /RoleMap inside the StructTreeRoot when TaggedPdfUa1 is set.
+// Multiple calls accumulate entries. Bundle F-4.
+func (b *DocumentBuilder) RoleMap(custom, standard string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if err := b.checkUsable(); err != nil {
+		return err
+	}
+	cCustom := C.CString(custom)
+	defer C.free(unsafe.Pointer(cCustom))
+	cStandard := C.CString(standard)
+	defer C.free(unsafe.Pointer(cStandard))
+	var ec C.int
+	if C.pdf_document_builder_role_map(b.handle, cCustom, cStandard, &ec) != 0 {
+		return fmt.Errorf("roleMap: error code %d", int(ec))
+	}
+	return nil
+}
+
 // RegisterEmbeddedFont registers a TTF/OTF font under name. CONSUMES the
 // EmbeddedFont on success — do not Close the font after.
 func (b *DocumentBuilder) RegisterEmbeddedFont(name string, font *EmbeddedFont) error {

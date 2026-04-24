@@ -807,6 +807,82 @@ fn ffi_page_builder_table_invalid_widths_rejected() {
 // Sanity
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// PDF/UA-1 tagged PDF (Bundle F-1/F-2/F-4)
+// ---------------------------------------------------------------------------
+
+/// Enable tagged PDF via the FFI, build a document with a paragraph structure
+/// element, and verify that /MarkInfo, /StructTreeRoot, and /Lang appear in
+/// the emitted bytes.
+#[test]
+fn ffi_tagged_pdf_ua1_basic() {
+    let mut ec: i32 = -1;
+    let builder = unsafe { pdf_document_builder_create(&mut ec) };
+    assert_eq!(ec, 0, "create returned error");
+    assert!(!builder.is_null());
+
+    // Enable PDF/UA-1
+    let rc = unsafe { pdf_document_builder_tagged_pdf_ua1(builder, &mut ec) };
+    assert_eq!(rc, 0, "tagged_pdf_ua1 failed");
+    assert_eq!(ec, 0);
+
+    // Set language
+    let lang = cstring("en-US");
+    let rc = unsafe { pdf_document_builder_language(builder, lang.as_ptr(), &mut ec) };
+    assert_eq!(rc, 0, "language failed");
+    assert_eq!(ec, 0);
+
+    // Add a role-map entry
+    let custom = cstring("Note");
+    let standard = cstring("P");
+    let rc =
+        unsafe { pdf_document_builder_role_map(builder, custom.as_ptr(), standard.as_ptr(), &mut ec) };
+    assert_eq!(rc, 0, "role_map failed");
+    assert_eq!(ec, 0);
+
+    // Open a page and add some text
+    let page = unsafe { pdf_document_builder_a4_page(builder, &mut ec) };
+    assert_eq!(ec, 0);
+    assert!(!page.is_null());
+
+    let text = cstring("Accessible heading text");
+    assert_eq!(unsafe { pdf_page_builder_at(page, 72.0, 720.0, &mut ec) }, 0);
+    assert_eq!(unsafe { pdf_page_builder_heading(page, 1, text.as_ptr(), &mut ec) }, 0);
+
+    assert_eq!(unsafe { pdf_page_builder_done(page, &mut ec) }, 0);
+    assert_eq!(ec, 0);
+
+    // Build and get bytes
+    let mut out_len: usize = 0;
+    let bytes_ptr = unsafe { pdf_document_builder_build(builder, &mut out_len, &mut ec) };
+    assert_eq!(ec, 0, "build failed");
+    assert!(!bytes_ptr.is_null());
+    assert!(out_len > 0);
+
+    let bytes = unsafe { std::slice::from_raw_parts(bytes_ptr as *const u8, out_len) };
+    let content = String::from_utf8_lossy(bytes);
+
+    // F-1: /MarkInfo must appear
+    assert!(
+        content.contains("/MarkInfo"),
+        "missing /MarkInfo in catalog — tagged PDF not enabled"
+    );
+    // F-1: /StructTreeRoot must appear
+    assert!(
+        content.contains("/StructTreeRoot"),
+        "missing /StructTreeRoot in catalog"
+    );
+    // F-2: /Lang must appear
+    assert!(content.contains("/Lang"), "missing /Lang in catalog");
+    // /ViewerPreferences must appear
+    assert!(
+        content.contains("/ViewerPreferences"),
+        "missing /ViewerPreferences"
+    );
+
+    unsafe { free_bytes(bytes_ptr) };
+}
+
 #[test]
 fn ffi_fixture_font_exists() {
     assert!(

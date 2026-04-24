@@ -3708,6 +3708,32 @@ impl WasmDocumentBuilder {
         self.with_inner("onOpen", |b| b.on_open(script))
     }
 
+    /// Enable PDF/UA-1 tagged PDF mode.
+    ///
+    /// When enabled, `build()` emits `/MarkInfo`, `/StructTreeRoot`, `/Lang`,
+    /// and `/ViewerPreferences` in the catalog. Opt-in — no effect unless called.
+    #[wasm_bindgen(js_name = "taggedPdfUa1")]
+    pub fn tagged_pdf_ua1(&mut self) -> Result<(), JsValue> {
+        self.with_inner("taggedPdfUa1", |b| b.tagged_pdf_ua1())
+    }
+
+    /// Set the document's natural language tag (e.g. `"en-US"`).
+    ///
+    /// Emitted as `/Lang` in the catalog when `taggedPdfUa1()` is set.
+    #[wasm_bindgen(js_name = "language")]
+    pub fn language(&mut self, lang: String) -> Result<(), JsValue> {
+        self.with_inner("language", |b| b.language(lang))
+    }
+
+    /// Add a role-map entry: custom structure type → standard PDF structure type.
+    ///
+    /// Emitted in `/RoleMap` inside the StructTreeRoot when `taggedPdfUa1()`
+    /// is set. Multiple calls accumulate entries.
+    #[wasm_bindgen(js_name = "roleMap")]
+    pub fn role_map(&mut self, custom: String, standard: String) -> Result<(), JsValue> {
+        self.with_inner("roleMap", |b| b.role_map(custom, standard))
+    }
+
     /// Register a TTF / OTF font the pages can reference by name.
     /// **Consumes** `font` — reusing the `WasmEmbeddedFont` throws.
     #[wasm_bindgen(js_name = "registerEmbeddedFont")]
