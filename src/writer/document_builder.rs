@@ -2298,13 +2298,20 @@ impl DocumentBuilder {
                         selected,
                     } => {
                         use super::form_fields::ComboBoxWidget;
-                        let widget =
+                        let mut widget =
                             ComboBoxWidget::new(name.clone(), *rect).with_options(options.clone());
-                        let widget = if let Some(v) = selected {
-                            widget.with_value(v.clone())
-                        } else {
-                            widget
-                        };
+                        if let Some(v) = selected {
+                            widget = widget.with_value(v.clone());
+                        }
+                        if meta.required {
+                            widget = widget.required();
+                        }
+                        if meta.read_only {
+                            widget = widget.read_only();
+                        }
+                        if let Some(tip) = &meta.tooltip {
+                            widget = widget.with_tooltip(tip.clone());
+                        }
                         page.add_combo_box(widget);
                     },
                     PendingFormField::RadioGroup {
@@ -2317,11 +2324,18 @@ impl DocumentBuilder {
                         for (value, rect) in buttons {
                             group = group.add_button(value.clone(), *rect, value.clone());
                         }
-                        let group = if let Some(v) = selected {
-                            group.selected(v.clone())
-                        } else {
-                            group
-                        };
+                        if let Some(v) = selected {
+                            group = group.selected(v.clone());
+                        }
+                        if meta.required {
+                            group = group.required();
+                        }
+                        if meta.read_only {
+                            group = group.read_only();
+                        }
+                        if let Some(tip) = &meta.tooltip {
+                            group = group.with_tooltip(tip.clone());
+                        }
                         page.add_radio_group(group);
                     },
                     PendingFormField::PushButton {
@@ -2330,8 +2344,17 @@ impl DocumentBuilder {
                         caption,
                     } => {
                         use super::form_fields::PushButtonWidget;
-                        let widget = PushButtonWidget::new(name.clone(), *rect)
+                        let mut widget = PushButtonWidget::new(name.clone(), *rect)
                             .with_caption(caption.clone());
+                        // PushButton has no `.required()` (it's a button,
+                        // not a field a user fills in) — only read_only +
+                        // tooltip apply.
+                        if meta.read_only {
+                            widget = widget.read_only();
+                        }
+                        if let Some(tip) = &meta.tooltip {
+                            widget = widget.with_tooltip(tip.clone());
+                        }
                         page.add_push_button(widget);
                     },
                     PendingFormField::ListBox {
@@ -2349,6 +2372,15 @@ impl DocumentBuilder {
                         }
                         if let Some(v) = selected {
                             widget = widget.with_value(v.clone());
+                        }
+                        if meta.required {
+                            widget = widget.required();
+                        }
+                        if meta.read_only {
+                            widget = widget.read_only();
+                        }
+                        if let Some(tip) = &meta.tooltip {
+                            widget = widget.with_tooltip(tip.clone());
                         }
                         page.add_list_box(widget);
                     },
