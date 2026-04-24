@@ -6804,6 +6804,11 @@ enum FfiPageOp {
         ref_mark: String,
         note_text: String,
     },
+    Columns {
+        count: u32,
+        gap_pt: f32,
+        text: String,
+    },
     Rect(f32, f32, f32, f32),
     FilledRect(f32, f32, f32, f32, f32, f32, f32),
     Line(f32, f32, f32, f32),
@@ -7968,6 +7973,29 @@ pub extern "C" fn pdf_page_builder_footnote(
     )
 }
 
+/// Lay out `text` as wrapped lines distributed across `column_count` balanced
+/// columns at the current cursor position, with `gap_pt` points between columns.
+///
+/// # Safety
+/// `handle` and `text` must be valid non-null pointers.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_columns(
+    handle: *mut FfiPageBuilder,
+    column_count: u32,
+    gap_pt: f32,
+    text: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(text_s) = read_cstr_or_fail(text, error_code) else {
+        return -1;
+    };
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::Columns { count: column_count, gap_pt, text: text_s },
+    )
+}
+
 // ── Barcode helpers ───────────────────────────────────────────────────
 
 /// Map FFI barcode-type integer to the Rust enum.
@@ -8576,6 +8604,9 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
             },
             FfiPageOp::Footnote { ref_mark, note_text } => {
                 rust_page.footnote(&ref_mark, &note_text)
+            },
+            FfiPageOp::Columns { count, gap_pt, text } => {
+                rust_page.columns(count, gap_pt, &text)
             },
             FfiPageOp::Rect(x, y, w, h) => rust_page.rect(x, y, w, h),
             FfiPageOp::FilledRect(x, y, w, h, r, g, b) => {

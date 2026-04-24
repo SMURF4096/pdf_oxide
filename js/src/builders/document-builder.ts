@@ -566,6 +566,16 @@ export class PageBuilder {
     return this;
   }
 
+  /**
+   * Lay out `text` as balanced multi-column flow.
+   * `columnCount` columns separated by `gapPt` points.
+   * Paragraphs in `text` are delimited by `"\n\n"`.
+   */
+  columns(columnCount: number, gapPt: number, text: string): this {
+    native.pageBuilderColumns(this.h(), columnCount, gapPt, text);
+    return this;
+  }
+
   // --- Barcode / QR-code placement ------------------------------------
 
   /**

@@ -3542,6 +3542,11 @@ enum WasmPageOp {
         ref_mark: String,
         note_text: String,
     },
+    Columns {
+        count: u32,
+        gap_pt: f32,
+        text: String,
+    },
     Rect(f32, f32, f32, f32),
     FilledRect(f32, f32, f32, f32, f32, f32, f32),
     Line(f32, f32, f32, f32),
@@ -3887,6 +3892,9 @@ impl WasmDocumentBuilder {
                 },
                 WasmPageOp::Footnote { ref_mark, note_text } => {
                     rust_page.footnote(&ref_mark, &note_text)
+                },
+                WasmPageOp::Columns { count, gap_pt, text } => {
+                    rust_page.columns(count, gap_pt, &text)
                 },
                 WasmPageOp::Rect(x, y, w, h) => rust_page.rect(x, y, w, h),
                 WasmPageOp::FilledRect(x, y, w, h, r, g, b) => {
@@ -4370,6 +4378,13 @@ impl WasmFluentPageBuilder {
     #[wasm_bindgen(js_name = "footnote")]
     pub fn footnote(&mut self, ref_mark: String, note_text: String) -> Result<(), JsValue> {
         self.push(WasmPageOp::Footnote { ref_mark, note_text })
+    }
+
+    /// Lay out `text` as balanced multi-column flow (`columnCount` columns,
+    /// `gapPt` points between columns). Paragraphs in `text` are separated by `"\n\n"`.
+    #[wasm_bindgen(js_name = "columns")]
+    pub fn columns(&mut self, column_count: u32, gap_pt: f32, text: String) -> Result<(), JsValue> {
+        self.push(WasmPageOp::Columns { count: column_count, gap_pt, text })
     }
 
     /// Place a 1-D barcode image at `(x, y, w, h)` on the page.

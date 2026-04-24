@@ -4048,6 +4048,11 @@ enum PendingPageOp {
         ref_mark: String,
         note_text: String,
     },
+    Columns {
+        count: u32,
+        gap_pt: f32,
+        text: String,
+    },
     Rect(f32, f32, f32, f32),
     FilledRect(f32, f32, f32, f32, f32, f32, f32),
     Line(f32, f32, f32, f32),
@@ -4956,6 +4961,19 @@ impl PyFluentPageBuilder {
         Ok(slf)
     }
 
+    /// Lay out `text` as balanced multi-column flow.
+    /// `column_count` columns with `gap_pt` points between them.
+    /// Paragraphs may be separated by `"\\n\\n"` in `text`.
+    fn columns<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        column_count: u32,
+        gap_pt: f32,
+        text: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::Columns { count: column_count, gap_pt, text })?;
+        Ok(slf)
+    }
+
     /// Place a 1-D barcode image at `(x, y, w, h)` on the page.
     /// `barcode_type`: 0=Code128 1=Code39 2=EAN13 3=EAN8 4=UPCA 5=ITF
     /// 6=Code93 7=Codabar. Errors surface here (at call time), not at
@@ -5327,6 +5345,9 @@ impl PyFluentPageBuilder {
                 },
                 PendingPageOp::Footnote { ref_mark, note_text } => {
                     page.footnote(&ref_mark, &note_text)
+                },
+                PendingPageOp::Columns { count, gap_pt, text } => {
+                    page.columns(count, gap_pt, &text)
                 },
                 PendingPageOp::Rect(x, y, w, h) => page.rect(x, y, w, h),
                 PendingPageOp::FilledRect(x, y, w, h, r, g, b) => {

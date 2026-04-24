@@ -929,6 +929,48 @@ fn ffi_footnote_in_pdf() {
 }
 
 #[test]
+fn ffi_columns_in_pdf() {
+    let mut ec: i32 = -1;
+    let builder = unsafe { pdf_document_builder_create(&mut ec) };
+    assert_eq!(ec, 0);
+    assert!(!builder.is_null());
+
+    let page = unsafe { pdf_document_builder_letter_page(builder, &mut ec) };
+    assert_eq!(ec, 0);
+    assert!(!page.is_null());
+
+    assert_eq!(unsafe { pdf_page_builder_at(page, 72.0, 700.0, &mut ec) }, 0);
+
+    let text = cstring(
+        "First paragraph text.\n\nSecond paragraph with more words that will wrap across columns.",
+    );
+    let rc = unsafe { pdf_page_builder_columns(page, 2, 12.0, text.as_ptr(), &mut ec) };
+    assert_eq!(rc, 0, "columns failed");
+    assert_eq!(ec, 0);
+
+    assert_eq!(unsafe { pdf_page_builder_done(page, &mut ec) }, 0);
+
+    let mut out_len: usize = 0;
+    let bytes_ptr = unsafe { pdf_document_builder_build(builder, &mut out_len, &mut ec) };
+    assert_eq!(ec, 0, "build failed");
+    assert!(!bytes_ptr.is_null());
+    assert!(out_len > 0);
+
+    let bytes = unsafe { std::slice::from_raw_parts(bytes_ptr as *const u8, out_len) };
+    assert!(bytes.starts_with(b"%PDF-"), "output is not a PDF");
+
+    // The text should appear somewhere in the PDF stream.
+    let content = String::from_utf8_lossy(bytes);
+    assert!(
+        content.contains("First paragraph"),
+        "column text not found in PDF output"
+    );
+
+    unsafe { pdf_document_builder_free(builder) };
+    unsafe { free_bytes(bytes_ptr) };
+}
+
+#[test]
 fn ffi_fixture_font_exists() {
     assert!(
         Path::new(DEJAVU_PATH).exists(),

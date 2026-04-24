@@ -469,6 +469,18 @@ namespace PdfOxide.Core
             return this;
         }
 
+        /// <summary>
+        /// Lay out <paramref name="text"/> as balanced multi-column flow.
+        /// Paragraphs in <paramref name="text"/> are separated by "\n\n".
+        /// </summary>
+        public PageBuilder Columns(uint columnCount, float gapPt, string text)
+        {
+            ArgumentNullException.ThrowIfNull(text);
+            NativeMethods.PdfPageBuilderColumns(Handle, columnCount, gapPt, text, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
         // --- Barcode / QR-code placement ------------------------------------
 
         /// <summary>

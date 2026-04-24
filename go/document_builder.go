@@ -95,6 +95,8 @@ extern int   pdf_page_builder_signature_field(void* page, const char* name,
                                               int* error_code);
 extern int   pdf_page_builder_footnote(void* page, const char* ref_mark,
                                        const char* note_text, int* error_code);
+extern int   pdf_page_builder_columns(void* page, unsigned int column_count,
+                                      float gap_pt, const char* text, int* error_code);
 extern int   pdf_page_builder_rect(void* page, float x, float y, float w, float h, int* error_code);
 extern int   pdf_page_builder_filled_rect(void* page, float x, float y, float w, float h,
                                           float r, float g, float b, int* error_code);
@@ -972,6 +974,16 @@ func (p *PageBuilder) Footnote(refMark, noteText string) *PageBuilder {
 		cn := C.CString(noteText)
 		defer C.free(unsafe.Pointer(cn))
 		return C.pdf_page_builder_footnote(hp, cm, cn, ec)
+	})
+}
+
+// Columns lays out text as balanced multi-column flow.
+// Paragraphs in text are separated by "\n\n".
+func (p *PageBuilder) Columns(columnCount uint, gapPt float32, text string) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		ct := C.CString(text)
+		defer C.free(unsafe.Pointer(ct))
+		return C.pdf_page_builder_columns(hp, C.uint(columnCount), C.float(gapPt), ct, ec)
 	})
 }
 

@@ -440,6 +440,12 @@ int   pdf_page_builder_signature_field(void* page, const char* name,
 int   pdf_page_builder_footnote(void* page, const char* ref_mark,
                                 const char* note_text, int* error_code);
 
+/* Multi-column text flow: wrap `text` into `column_count` balanced columns
+ * with `gap_pt` points between them, starting at the current cursor. */
+int   pdf_page_builder_columns(void* page, unsigned int column_count,
+                               float gap_pt, const char* text,
+                               int* error_code);
+
 /* Barcode / QR-code image placement.
  * barcode_type: 0=Code128 1=Code39 2=EAN13 3=EAN8 4=UPCA 5=ITF 6=Code93 7=Codabar */
 int   pdf_page_builder_barcode_1d(void* page, int barcode_type, const char* data,

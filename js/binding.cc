@@ -505,6 +505,8 @@ extern "C" {
                                                 int* error_code);
   extern int   pdf_page_builder_footnote(void* page, const char* ref_mark,
                                          const char* note_text, int* error_code);
+  extern int   pdf_page_builder_columns(void* page, unsigned int column_count,
+                                        float gap_pt, const char* text, int* error_code);
 
   extern int   pdf_page_builder_barcode_1d(void* page, int barcode_type, const char* data,
                                             float x, float y, float w, float h, int* error_code);
@@ -3285,6 +3287,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   extern Napi::Value PageBuilderPushButton(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderSignatureField(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderFootnote(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderColumns(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderBarcode1d(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderBarcodeQr(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderRect(const Napi::CallbackInfo&);
@@ -3357,6 +3360,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("pageBuilderPushButton", Napi::Function::New(env, PageBuilderPushButton));
   exports.Set("pageBuilderSignatureField", Napi::Function::New(env, PageBuilderSignatureField));
   exports.Set("pageBuilderFootnote", Napi::Function::New(env, PageBuilderFootnote));
+  exports.Set("pageBuilderColumns", Napi::Function::New(env, PageBuilderColumns));
   exports.Set("pageBuilderBarcode1d", Napi::Function::New(env, PageBuilderBarcode1d));
   exports.Set("pageBuilderBarcodeQr", Napi::Function::New(env, PageBuilderBarcodeQr));
   exports.Set("pageBuilderRect", Napi::Function::New(env, PageBuilderRect));
@@ -3856,6 +3860,18 @@ Napi::Value PageBuilderFootnote(const Napi::CallbackInfo& info) {
   int errorCode = 0;
   pdf_page_builder_footnote(p, refMark.c_str(), noteText.c_str(), &errorCode);
   throwOnError(env, errorCode, "PageBuilder.footnote");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderColumns(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  unsigned int columnCount = static_cast<unsigned int>(requireNumber(info, 1, "columnCount"));
+  float gapPt = static_cast<float>(requireNumber(info, 2, "gapPt"));
+  std::string text = requireString(info, 3, "text");
+  int errorCode = 0;
+  pdf_page_builder_columns(p, columnCount, gapPt, text.c_str(), &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.columns");
   return env.Undefined();
 }
 

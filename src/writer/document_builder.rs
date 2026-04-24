@@ -941,6 +941,113 @@ impl<'a> FluentPageBuilder<'a> {
         self
     }
 
+    /// Lay out `text` as wrapped lines distributed across `column_count`
+    /// balanced columns starting at the current cursor position.
+    ///
+    /// Internally uses
+    /// [`crate::html_css::layout::multicol::distribute_lines_into_columns`]
+    /// to balance the line distribution. The columns span the full available
+    /// width (page width minus the left cursor margin and a 72 pt right
+    /// margin), separated by `gap_pt` points of inter-column space.
+    ///
+    /// The cursor advances past the tallest column so subsequent content
+    /// continues below the column block.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// page.at(72.0, 700.0)
+    ///     .columns(2, 12.0, "First paragraph.\nSecond paragraph runs long enough to wrap across both columns.")
+    ///     .done()
+    /// ```
+    pub fn columns(mut self, column_count: u32, gap_pt: f32, text: &str) -> Self {
+        use crate::html_css::layout::multicol::distribute_lines_into_columns;
+
+        let n = column_count.max(1);
+        let gap = gap_pt.max(0.0);
+
+        // Geometry
+        let page_width = self.builder.pages[self.page_index].width;
+        let left_x = self.cursor_x;
+        let right_margin = 72.0_f32;
+        let available = (page_width - left_x - right_margin).max(0.0);
+        let total_gap = gap * (n - 1) as f32;
+        let col_width = ((available - total_gap) / n as f32).max(1.0);
+
+        let font_size = self.text_config.size;
+        let line_h = font_size * self.text_config.line_height;
+
+        // Collect all wrapped lines from the text (split on "\n\n" for paragraphs)
+        let mut all_lines: Vec<(String, f32)> = Vec::new(); // (text, measured_width)
+        let mut line_heights: Vec<f32> = Vec::new();
+        for (para_idx, para) in text.split("\n\n").enumerate() {
+            if para_idx > 0 {
+                // Blank separator line between paragraphs
+                all_lines.push((String::new(), 0.0));
+                line_heights.push(font_size * 0.5);
+            }
+            let wrapped = self.text_layout.wrap_text(
+                para,
+                &self.text_config.font,
+                font_size,
+                col_width,
+            );
+            for (line_text, line_width) in wrapped {
+                all_lines.push((line_text, line_width));
+                line_heights.push(line_h);
+            }
+        }
+
+        if all_lines.is_empty() {
+            return self;
+        }
+
+        // Balance: each column gets ≈ total_height / n height capacity.
+        let total_h: f32 = line_heights.iter().sum();
+        let col_h_cap = (total_h / n as f32).ceil().max(line_h);
+
+        let dist = distribute_lines_into_columns(&line_heights, n, col_h_cap);
+
+        // Emit elements — borrow pages mutably only during push
+        let start_y = self.cursor_y;
+        let mut max_drop = 0.0_f32;
+
+        for (col_idx, line_indices) in dist.iter().enumerate() {
+            let col_x = left_x + col_idx as f32 * (col_width + gap);
+            let mut drop = 0.0_f32;
+            for &li in line_indices {
+                let (ref line_text, line_width) = all_lines[li];
+                let lh = line_heights[li];
+                if !line_text.is_empty() {
+                    let y = start_y - drop;
+                    let font_name = self.text_config.font.clone();
+                    let reading_order = self.builder.pages[self.page_index].elements.len();
+                    self.builder.pages[self.page_index].elements.push(
+                        ContentElement::Text(TextContent {
+                            text: line_text.clone(),
+                            bbox: Rect::new(col_x, y, line_width, font_size),
+                            font: crate::elements::FontSpec {
+                                name: font_name,
+                                size: font_size,
+                            },
+                            style: Default::default(),
+                            reading_order: Some(reading_order),
+                            artifact_type: None,
+                            origin: None,
+                            rotation_degrees: None,
+                            matrix: self.current_matrix,
+                        }),
+                    );
+                }
+                drop += lh;
+            }
+            max_drop = max_drop.max(drop);
+        }
+
+        self.cursor_y = start_y - max_drop - font_size * 0.5;
+        self
+    }
+
     // ==========================================================================
     // Annotation Methods
     // ==========================================================================

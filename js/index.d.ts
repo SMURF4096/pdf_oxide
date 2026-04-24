@@ -1987,6 +1987,8 @@ export class PageBuilder {
   signatureField(name: string, x: number, y: number, w: number, h: number): this;
   /** Add a footnote: inline refMark at cursor + noteText near page bottom with separator. */
   footnote(refMark: string, noteText: string): this;
+  /** Lay out text as balanced multi-column flow (columnCount columns, gapPt between them). Paragraphs separated by "\n\n". */
+  columns(columnCount: number, gapPt: number, text: string): this;
 
   // --- Barcode / QR-code placement ----------------------------------
   /** Place a 1-D barcode image on the page. barcodeType: 0=Code128 1=Code39 2=EAN13 3=EAN8 4=UPCA 5=ITF 6=Code93 7=Codabar. */
