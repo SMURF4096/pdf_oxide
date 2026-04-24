@@ -342,6 +342,7 @@ int   pdf_document_builder_set_author(void* handle, const char* author, int* err
 int   pdf_document_builder_set_subject(void* handle, const char* subject, int* error_code);
 int   pdf_document_builder_set_keywords(void* handle, const char* keywords, int* error_code);
 int   pdf_document_builder_set_creator(void* handle, const char* creator, int* error_code);
+int   pdf_document_builder_on_open(void* handle, const char* script, int* error_code);
 
 /* DocumentBuilder — font registration (CONSUMES font on success) */
 int   pdf_document_builder_register_embedded_font(void* handle, const char* name,
@@ -366,6 +367,9 @@ int   pdf_page_builder_horizontal_rule(void* page, int* error_code);
 int   pdf_page_builder_link_url(void* page, const char* url, int* error_code);
 int   pdf_page_builder_link_page(void* page, size_t target_page, int* error_code);
 int   pdf_page_builder_link_named(void* page, const char* destination, int* error_code);
+int   pdf_page_builder_link_javascript(void* page, const char* script, int* error_code);
+int   pdf_page_builder_on_open(void* page, const char* script, int* error_code);
+int   pdf_page_builder_on_close(void* page, const char* script, int* error_code);
 int   pdf_page_builder_highlight(void* page, float r, float g, float b, int* error_code);
 int   pdf_page_builder_underline(void* page, float r, float g, float b, int* error_code);
 int   pdf_page_builder_strikeout(void* page, float r, float g, float b, int* error_code);

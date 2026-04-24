@@ -148,6 +148,12 @@ export class DocumentBuilder {
     return this;
   }
 
+  /** Run a JavaScript script when the document is opened (/OpenAction). */
+  onOpen(script: string): this {
+    native.documentBuilderOnOpen(this.checkUsable(), script);
+    return this;
+  }
+
   /**
    * Register a TTF / OTF font under `name`. CONSUMES `font` on success —
    * do not call `close()` on the font afterwards.
@@ -330,6 +336,24 @@ export class PageBuilder {
   /** Link the previous text to a named destination. */
   linkNamed(destination: string): this {
     native.pageBuilderLinkNamed(this.h(), destination);
+    return this;
+  }
+
+  /** Link the previous text to a JavaScript action. */
+  linkJavascript(script: string): this {
+    native.pageBuilderLinkJavascript(this.h(), script);
+    return this;
+  }
+
+  /** Run JavaScript when this page is opened (/AA /O). */
+  onOpen(script: string): this {
+    native.pageBuilderOnOpen(this.h(), script);
+    return this;
+  }
+
+  /** Run JavaScript when this page is closed (/AA /C). */
+  onClose(script: string): this {
+    native.pageBuilderOnClose(this.h(), script);
     return this;
   }
 

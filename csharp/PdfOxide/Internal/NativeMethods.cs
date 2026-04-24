@@ -6836,6 +6836,11 @@ namespace PdfOxide.Internal
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial int PdfDocumentBuilderSetCreator(IntPtr handle, string creator, out int errorCode);
 
+        /// <summary>Run JavaScript when the document is opened (/OpenAction).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_document_builder_on_open", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfDocumentBuilderOnOpen(IntPtr handle, string script, out int errorCode);
+
         /// <summary>Register a TTF/OTF font. CONSUMES <paramref name="font"/> on success.</summary>
         [LibraryImport(LibName, EntryPoint = "pdf_document_builder_register_embedded_font", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
@@ -6909,6 +6914,21 @@ namespace PdfOxide.Internal
         [LibraryImport(LibName, EntryPoint = "pdf_page_builder_link_named", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial int PdfPageBuilderLinkNamed(IntPtr page, string destination, out int errorCode);
+
+        /// <summary>Link the previous text to a JavaScript action.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_link_javascript", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderLinkJavascript(IntPtr page, string script, out int errorCode);
+
+        /// <summary>Run JavaScript when this page is opened (/AA /O).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_on_open", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderOnOpen(IntPtr page, string script, out int errorCode);
+
+        /// <summary>Run JavaScript when this page is closed (/AA /C).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_on_close", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderOnClose(IntPtr page, string script, out int errorCode);
 
         /// <summary>Highlight the previous text (RGB channels 0–1).</summary>
         [LibraryImport(LibName, EntryPoint = "pdf_page_builder_highlight", StringMarshalling = StringMarshalling.Utf8)]

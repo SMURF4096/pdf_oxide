@@ -141,6 +141,33 @@ namespace PdfOxide.Core
             return this;
         }
 
+        /// <summary>Link the previous text to a JavaScript action.</summary>
+        public PageBuilder LinkJavascript(string script)
+        {
+            ArgumentNullException.ThrowIfNull(script);
+            NativeMethods.PdfPageBuilderLinkJavascript(Handle, script, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
+        /// <summary>Run JavaScript when this page is opened (/AA /O).</summary>
+        public PageBuilder OnOpen(string script)
+        {
+            ArgumentNullException.ThrowIfNull(script);
+            NativeMethods.PdfPageBuilderOnOpen(Handle, script, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
+        /// <summary>Run JavaScript when this page is closed (/AA /C).</summary>
+        public PageBuilder OnClose(string script)
+        {
+            ArgumentNullException.ThrowIfNull(script);
+            NativeMethods.PdfPageBuilderOnClose(Handle, script, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
         /// <summary>Highlight the previous text with an RGB colour (0–1 channels).</summary>
         public PageBuilder Highlight(float r, float g, float b)
         {

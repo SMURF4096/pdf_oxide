@@ -349,6 +349,14 @@ func (b *DocumentBuilder) Creator(creator string) error {
 		}, "creator", creator)
 }
 
+// OnOpen sets a JavaScript script to run when the document is opened (/OpenAction).
+func (b *DocumentBuilder) OnOpen(script string) error {
+	return b.setString(
+		func(h unsafe.Pointer, s *C.char, ec *C.int) C.int {
+			return C.pdf_document_builder_on_open(h, s, ec)
+		}, "onOpen", script)
+}
+
 // RegisterEmbeddedFont registers a TTF/OTF font under name. CONSUMES the
 // EmbeddedFont on success — do not Close the font after.
 func (b *DocumentBuilder) RegisterEmbeddedFont(name string, font *EmbeddedFont) error {
@@ -623,6 +631,33 @@ func (p *PageBuilder) LinkNamed(destination string) *PageBuilder {
 		cs := C.CString(destination)
 		defer C.free(unsafe.Pointer(cs))
 		return C.pdf_page_builder_link_named(h, cs, ec)
+	})
+}
+
+// LinkJavascript links the previous text to a JavaScript action.
+func (p *PageBuilder) LinkJavascript(script string) *PageBuilder {
+	return p.callInt(func(h unsafe.Pointer, ec *C.int) C.int {
+		cs := C.CString(script)
+		defer C.free(unsafe.Pointer(cs))
+		return C.pdf_page_builder_link_javascript(h, cs, ec)
+	})
+}
+
+// OnOpen sets a JavaScript script to run when the page is opened (/AA /O).
+func (p *PageBuilder) OnOpen(script string) *PageBuilder {
+	return p.callInt(func(h unsafe.Pointer, ec *C.int) C.int {
+		cs := C.CString(script)
+		defer C.free(unsafe.Pointer(cs))
+		return C.pdf_page_builder_on_open(h, cs, ec)
+	})
+}
+
+// OnClose sets a JavaScript script to run when the page is closed (/AA /C).
+func (p *PageBuilder) OnClose(script string) *PageBuilder {
+	return p.callInt(func(h unsafe.Pointer, ec *C.int) C.int {
+		cs := C.CString(script)
+		defer C.free(unsafe.Pointer(cs))
+		return C.pdf_page_builder_on_close(h, cs, ec)
 	})
 }
 

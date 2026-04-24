@@ -3586,6 +3586,9 @@ enum WasmPageOp {
         w: f32,
         h: f32,
     },
+    LinkJavaScript(String),
+    OnOpen(String),
+    OnClose(String),
 }
 
 /// Embedded TTF/OTF font usable by `WasmDocumentBuilder`. Single-use: once
@@ -3688,6 +3691,12 @@ impl WasmDocumentBuilder {
         self.with_inner("creator", |b| b.creator(creator))
     }
 
+    /// Run a JavaScript script when the document is opened (`/OpenAction`).
+    #[wasm_bindgen(js_name = "onOpen")]
+    pub fn on_open(&mut self, script: String) -> Result<(), JsValue> {
+        self.with_inner("onOpen", |b| b.on_open(script))
+    }
+
     /// Register a TTF / OTF font the pages can reference by name.
     /// **Consumes** `font` — reusing the `WasmEmbeddedFont` throws.
     #[wasm_bindgen(js_name = "registerEmbeddedFont")]
@@ -3774,6 +3783,9 @@ impl WasmDocumentBuilder {
                 WasmPageOp::LinkUrl(url) => rust_page.link_url(&url),
                 WasmPageOp::LinkPage(p) => rust_page.link_page(p),
                 WasmPageOp::LinkNamed(dest) => rust_page.link_named(&dest),
+                WasmPageOp::LinkJavaScript(script) => rust_page.link_javascript(&script),
+                WasmPageOp::OnOpen(script) => rust_page.on_open(&script),
+                WasmPageOp::OnClose(script) => rust_page.on_close(&script),
                 WasmPageOp::Highlight(r, g, b) => rust_page.highlight((r, g, b)),
                 WasmPageOp::Underline(r, g, b) => rust_page.underline((r, g, b)),
                 WasmPageOp::Strikeout(r, g, b) => rust_page.strikeout((r, g, b)),
@@ -4071,6 +4083,21 @@ impl WasmFluentPageBuilder {
     #[wasm_bindgen(js_name = "linkNamed")]
     pub fn link_named(&mut self, destination: String) -> Result<(), JsValue> {
         self.push(WasmPageOp::LinkNamed(destination))
+    }
+
+    #[wasm_bindgen(js_name = "linkJavascript")]
+    pub fn link_javascript(&mut self, script: String) -> Result<(), JsValue> {
+        self.push(WasmPageOp::LinkJavaScript(script))
+    }
+
+    #[wasm_bindgen(js_name = "onOpen")]
+    pub fn on_open(&mut self, script: String) -> Result<(), JsValue> {
+        self.push(WasmPageOp::OnOpen(script))
+    }
+
+    #[wasm_bindgen(js_name = "onClose")]
+    pub fn on_close(&mut self, script: String) -> Result<(), JsValue> {
+        self.push(WasmPageOp::OnClose(script))
     }
 
     #[wasm_bindgen(js_name = "highlight")]

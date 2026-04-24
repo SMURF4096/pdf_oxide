@@ -434,6 +434,7 @@ extern "C" {
   extern int   pdf_document_builder_set_subject(void* handle, const char* value, int* error_code);
   extern int   pdf_document_builder_set_keywords(void* handle, const char* value, int* error_code);
   extern int   pdf_document_builder_set_creator(void* handle, const char* value, int* error_code);
+  extern int   pdf_document_builder_on_open(void* handle, const char* script, int* error_code);
 
   extern int   pdf_document_builder_register_embedded_font(void* handle, const char* name,
                                                            void* font, int* error_code);
@@ -453,6 +454,9 @@ extern "C" {
   extern int   pdf_page_builder_link_url(void* page, const char* url, int* error_code);
   extern int   pdf_page_builder_link_page(void* page, size_t target_page, int* error_code);
   extern int   pdf_page_builder_link_named(void* page, const char* destination, int* error_code);
+  extern int   pdf_page_builder_link_javascript(void* page, const char* script, int* error_code);
+  extern int   pdf_page_builder_on_open(void* page, const char* script, int* error_code);
+  extern int   pdf_page_builder_on_close(void* page, const char* script, int* error_code);
   extern int   pdf_page_builder_highlight(void* page, float r, float g, float b, int* error_code);
   extern int   pdf_page_builder_underline(void* page, float r, float g, float b, int* error_code);
   extern int   pdf_page_builder_strikeout(void* page, float r, float g, float b, int* error_code);
@@ -3228,6 +3232,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   extern Napi::Value DocumentBuilderSetSubject(const Napi::CallbackInfo&);
   extern Napi::Value DocumentBuilderSetKeywords(const Napi::CallbackInfo&);
   extern Napi::Value DocumentBuilderSetCreator(const Napi::CallbackInfo&);
+  extern Napi::Value DocumentBuilderOnOpen(const Napi::CallbackInfo&);
   extern Napi::Value DocumentBuilderRegisterEmbeddedFont(const Napi::CallbackInfo&);
   extern Napi::Value DocumentBuilderA4Page(const Napi::CallbackInfo&);
   extern Napi::Value DocumentBuilderLetterPage(const Napi::CallbackInfo&);
@@ -3242,6 +3247,9 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   extern Napi::Value PageBuilderLinkUrl(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderLinkPage(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderLinkNamed(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderLinkJavascript(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderOnOpen(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderOnClose(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderHighlight(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderUnderline(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderStrikeout(const Napi::CallbackInfo&);
@@ -3287,6 +3295,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("documentBuilderSetSubject", Napi::Function::New(env, DocumentBuilderSetSubject));
   exports.Set("documentBuilderSetKeywords", Napi::Function::New(env, DocumentBuilderSetKeywords));
   exports.Set("documentBuilderSetCreator", Napi::Function::New(env, DocumentBuilderSetCreator));
+  exports.Set("documentBuilderOnOpen", Napi::Function::New(env, DocumentBuilderOnOpen));
   exports.Set("documentBuilderRegisterEmbeddedFont", Napi::Function::New(env, DocumentBuilderRegisterEmbeddedFont));
   exports.Set("documentBuilderA4Page", Napi::Function::New(env, DocumentBuilderA4Page));
   exports.Set("documentBuilderLetterPage", Napi::Function::New(env, DocumentBuilderLetterPage));
@@ -3301,6 +3310,9 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("pageBuilderLinkUrl", Napi::Function::New(env, PageBuilderLinkUrl));
   exports.Set("pageBuilderLinkPage", Napi::Function::New(env, PageBuilderLinkPage));
   exports.Set("pageBuilderLinkNamed", Napi::Function::New(env, PageBuilderLinkNamed));
+  exports.Set("pageBuilderLinkJavascript", Napi::Function::New(env, PageBuilderLinkJavascript));
+  exports.Set("pageBuilderOnOpen", Napi::Function::New(env, PageBuilderOnOpen));
+  exports.Set("pageBuilderOnClose", Napi::Function::New(env, PageBuilderOnClose));
   exports.Set("pageBuilderHighlight", Napi::Function::New(env, PageBuilderHighlight));
   exports.Set("pageBuilderUnderline", Napi::Function::New(env, PageBuilderUnderline));
   exports.Set("pageBuilderStrikeout", Napi::Function::New(env, PageBuilderStrikeout));
@@ -3443,6 +3455,7 @@ BUILDER_SETTER(DocumentBuilderSetAuthor,   pdf_document_builder_set_author,   "D
 BUILDER_SETTER(DocumentBuilderSetSubject,  pdf_document_builder_set_subject,  "DocumentBuilder.subject")
 BUILDER_SETTER(DocumentBuilderSetKeywords, pdf_document_builder_set_keywords, "DocumentBuilder.keywords")
 BUILDER_SETTER(DocumentBuilderSetCreator,  pdf_document_builder_set_creator,  "DocumentBuilder.creator")
+BUILDER_SETTER(DocumentBuilderOnOpen,      pdf_document_builder_on_open,      "DocumentBuilder.onOpen")
 #undef BUILDER_SETTER
 
 Napi::Value DocumentBuilderRegisterEmbeddedFont(const Napi::CallbackInfo& info) {
@@ -3518,12 +3531,15 @@ Napi::Value PageBuilderAt(const Napi::CallbackInfo& info) {
     return env.Undefined();                                                               \
   }
 
-PAGE_TEXT_OP(PageBuilderText,      pdf_page_builder_text,      "PageBuilder.text")
-PAGE_TEXT_OP(PageBuilderParagraph, pdf_page_builder_paragraph, "PageBuilder.paragraph")
-PAGE_TEXT_OP(PageBuilderLinkUrl,   pdf_page_builder_link_url,  "PageBuilder.linkUrl")
-PAGE_TEXT_OP(PageBuilderLinkNamed, pdf_page_builder_link_named, "PageBuilder.linkNamed")
-PAGE_TEXT_OP(PageBuilderStickyNote, pdf_page_builder_sticky_note, "PageBuilder.stickyNote")
-PAGE_TEXT_OP(PageBuilderWatermark,  pdf_page_builder_watermark,   "PageBuilder.watermark")
+PAGE_TEXT_OP(PageBuilderText,          pdf_page_builder_text,             "PageBuilder.text")
+PAGE_TEXT_OP(PageBuilderParagraph,     pdf_page_builder_paragraph,        "PageBuilder.paragraph")
+PAGE_TEXT_OP(PageBuilderLinkUrl,       pdf_page_builder_link_url,         "PageBuilder.linkUrl")
+PAGE_TEXT_OP(PageBuilderLinkNamed,     pdf_page_builder_link_named,       "PageBuilder.linkNamed")
+PAGE_TEXT_OP(PageBuilderLinkJavascript,pdf_page_builder_link_javascript,  "PageBuilder.linkJavascript")
+PAGE_TEXT_OP(PageBuilderOnOpen,        pdf_page_builder_on_open,          "PageBuilder.onOpen")
+PAGE_TEXT_OP(PageBuilderOnClose,       pdf_page_builder_on_close,         "PageBuilder.onClose")
+PAGE_TEXT_OP(PageBuilderStickyNote,    pdf_page_builder_sticky_note,      "PageBuilder.stickyNote")
+PAGE_TEXT_OP(PageBuilderWatermark,     pdf_page_builder_watermark,        "PageBuilder.watermark")
 #undef PAGE_TEXT_OP
 
 Napi::Value PageBuilderHeading(const Napi::CallbackInfo& info) {

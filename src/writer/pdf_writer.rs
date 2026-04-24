@@ -46,6 +46,9 @@ pub struct PdfWriterConfig {
     pub creator: Option<String>,
     /// Whether to compress streams
     pub compress: bool,
+    /// Document-level `/OpenAction` JavaScript — runs when the PDF is
+    /// opened. None → no action dict in the catalog.
+    pub open_action_script: Option<String>,
 }
 
 impl Default for PdfWriterConfig {
@@ -58,6 +61,7 @@ impl Default for PdfWriterConfig {
             keywords: None,
             creator: Some("pdf_oxide".to_string()),
             compress: false, // Disable compression for now (requires flate2)
+            open_action_script: None,
         }
     }
 }
@@ -762,6 +766,18 @@ impl<'a> PageBuilder<'a> {
         self
     }
 
+    /// Set a JavaScript action to run when this page is opened (`/AA /O`).
+    pub fn set_page_open_script(&mut self, script: impl Into<String>) -> &mut Self {
+        self.writer.pages[self.page_index].page_open_script = Some(script.into());
+        self
+    }
+
+    /// Set a JavaScript action to run when this page is closed (`/AA /C`).
+    pub fn set_page_close_script(&mut self, script: impl Into<String>) -> &mut Self {
+        self.writer.pages[self.page_index].page_close_script = Some(script.into());
+        self
+    }
+
     // ===== Form Field Methods =====
 
     /// Add a text field to the page.
@@ -919,6 +935,10 @@ struct PageData {
     /// `/Tabs /c` where `c` is one of R (row), C (column), S (structure).
     /// #393 Bundle D-4.
     tab_order: Option<char>,
+    /// JavaScript to run when the page is navigated to (`/AA /O`).
+    page_open_script: Option<String>,
+    /// JavaScript to run when the page is navigated away from (`/AA /C`).
+    page_close_script: Option<String>,
 }
 
 /// PDF document writer.
@@ -1079,6 +1099,8 @@ impl PdfWriter {
             annotations: AnnotationBuilder::new(),
             form_fields: Vec::new(),
             tab_order: None,
+            page_open_script: None,
+            page_close_script: None,
         });
         PageBuilder {
             writer: self,
@@ -1409,6 +1431,28 @@ impl PdfWriter {
                 page_entries.push(("Tabs", ObjectSerializer::name(&c.to_string())));
             }
 
+            // /AA page-level additional actions (open/close JS).
+            let mut aa_entries: Vec<(&str, Object)> = Vec::new();
+            if let Some(ref s) = page_data.page_open_script {
+                let action = Object::Dictionary(HashMap::from([
+                    ("Type".to_string(), ObjectSerializer::name("Action")),
+                    ("S".to_string(), ObjectSerializer::name("JavaScript")),
+                    ("JS".to_string(), ObjectSerializer::string(s)),
+                ]));
+                aa_entries.push(("O", action));
+            }
+            if let Some(ref s) = page_data.page_close_script {
+                let action = Object::Dictionary(HashMap::from([
+                    ("Type".to_string(), ObjectSerializer::name("Action")),
+                    ("S".to_string(), ObjectSerializer::name("JavaScript")),
+                    ("JS".to_string(), ObjectSerializer::string(s)),
+                ]));
+                aa_entries.push(("C", action));
+            }
+            if !aa_entries.is_empty() {
+                page_entries.push(("AA", ObjectSerializer::dict(aa_entries)));
+            }
+
             let page_obj = ObjectSerializer::dict(page_entries);
 
             page_refs.push(Object::Reference(ObjectRef::new(page_id, 0)));
@@ -1509,6 +1553,14 @@ impl PdfWriter {
         }
         if let Some(labels_id) = page_labels_id {
             catalog_entries.push(("PageLabels", ObjectSerializer::reference(labels_id, 0)));
+        }
+        if let Some(ref script) = self.config.open_action_script {
+            let action = Object::Dictionary(HashMap::from([
+                ("Type".to_string(), ObjectSerializer::name("Action")),
+                ("S".to_string(), ObjectSerializer::name("JavaScript")),
+                ("JS".to_string(), ObjectSerializer::string(script)),
+            ]));
+            catalog_entries.push(("OpenAction", action));
         }
         let catalog_obj = ObjectSerializer::dict(catalog_entries);
 

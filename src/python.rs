@@ -4091,6 +4091,9 @@ enum PendingPageOp {
         w: f32,
         h: f32,
     },
+    LinkJavaScript(String),
+    OnOpen(String),
+    OnClose(String),
 }
 
 fn parse_align_to_cell(i: i32) -> crate::writer::CellAlign {
@@ -4405,6 +4408,11 @@ impl PyDocumentBuilder {
         Ok(slf)
     }
 
+    fn on_open<'a>(mut slf: PyRefMut<'a, Self>, script: String) -> PyResult<PyRefMut<'a, Self>> {
+        slf.with_inner("on_open", |b| b.on_open(script))?;
+        Ok(slf)
+    }
+
     /// Register a TTF/OTF font the PDF pages can reference by name. The
     /// `EmbeddedFont` handle is **consumed** — reusing it raises
     /// `RuntimeError`.
@@ -4620,6 +4628,30 @@ impl PyFluentPageBuilder {
         destination: String,
     ) -> PyResult<PyRefMut<'a, Self>> {
         slf.push(PendingPageOp::LinkNamed(destination))?;
+        Ok(slf)
+    }
+
+    fn link_javascript<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        script: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::LinkJavaScript(script))?;
+        Ok(slf)
+    }
+
+    fn on_open<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        script: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::OnOpen(script))?;
+        Ok(slf)
+    }
+
+    fn on_close<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        script: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::OnClose(script))?;
         Ok(slf)
     }
 
@@ -5130,6 +5162,9 @@ impl PyFluentPageBuilder {
                 PendingPageOp::LinkUrl(url) => page.link_url(&url),
                 PendingPageOp::LinkPage(p) => page.link_page(p),
                 PendingPageOp::LinkNamed(dest) => page.link_named(&dest),
+                PendingPageOp::LinkJavaScript(script) => page.link_javascript(&script),
+                PendingPageOp::OnOpen(script) => page.on_open(&script),
+                PendingPageOp::OnClose(script) => page.on_close(&script),
                 PendingPageOp::Highlight(r, g, b) => page.highlight((r, g, b)),
                 PendingPageOp::Underline(r, g, b) => page.underline((r, g, b)),
                 PendingPageOp::Strikeout(r, g, b) => page.strikeout((r, g, b)),

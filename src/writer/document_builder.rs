@@ -402,6 +402,8 @@ impl<'a> FluentPageBuilder<'a> {
             form_fields: Vec::new(),
             form_field_meta: Vec::new(),
             tab_order: None,
+            page_open_script: None,
+            page_close_script: None,
         });
 
         // Reset cursor to top-left (mirrors DocumentBuilder::page).
@@ -913,6 +915,37 @@ impl<'a> FluentPageBuilder<'a> {
             let link = LinkAnnotation::goto_named(rect, destination);
             self.pending_annotations.push(link.into());
         }
+        self
+    }
+
+    /// Add a JavaScript action link to the last text element.
+    ///
+    /// When clicked the viewer executes the provided JavaScript string.
+    pub fn link_javascript(mut self, script: &str) -> Self {
+        use super::annotation_builder::{BorderStyle, HighlightMode, LinkAction};
+        if let Some(rect) = self.last_text_rect {
+            let link = LinkAnnotation {
+                rect,
+                action: LinkAction::JavaScript(script.into()),
+                border: BorderStyle::none(),
+                highlight: HighlightMode::default(),
+                color: None,
+                quad_points: None,
+            };
+            self.pending_annotations.push(link.into());
+        }
+        self
+    }
+
+    /// Run a JavaScript script when this page is opened (`/AA /O`).
+    pub fn on_open(self, script: &str) -> Self {
+        self.builder.pages[self.page_index].page_open_script = Some(script.into());
+        self
+    }
+
+    /// Run a JavaScript script when this page is closed (`/AA /C`).
+    pub fn on_close(self, script: &str) -> Self {
+        self.builder.pages[self.page_index].page_close_script = Some(script.into());
         self
     }
 
@@ -1974,6 +2007,10 @@ struct PageData {
     /// Deferred `/Tabs` value — set via `FluentPageBuilder::tab_order`.
     /// #393 Bundle D-4.
     tab_order: Option<TabOrder>,
+    /// JavaScript to run when this page is opened (`/AA /O`).
+    page_open_script: Option<String>,
+    /// JavaScript to run when this page is closed (`/AA /C`).
+    page_close_script: Option<String>,
 }
 
 /// High-level document builder with fluent API.
@@ -2013,6 +2050,8 @@ pub struct DocumentBuilder {
     /// emits a `/PageLabels` number-tree for mixed Roman/Arabic/etc.
     /// numbering. #393 Bundle B-2.
     page_labels: Option<super::page_labels::PageLabelsBuilder>,
+    /// JavaScript to run when the document is opened (`/OpenAction`).
+    open_action_script: Option<String>,
 }
 
 impl DocumentBuilder {
@@ -2025,6 +2064,7 @@ impl DocumentBuilder {
             embedded_fonts: Vec::new(),
             outline: super::outline_builder::OutlineBuilder::new(),
             page_labels: None,
+            open_action_script: None,
         }
     }
 
@@ -2095,8 +2135,10 @@ impl DocumentBuilder {
                 elements: Vec::new(),
                 annotations: Vec::new(),
                 form_fields: Vec::new(),
-            form_field_meta: Vec::new(),
-            tab_order: None,
+                form_field_meta: Vec::new(),
+                tab_order: None,
+                page_open_script: None,
+                page_close_script: None,
             },
         );
 
@@ -2162,6 +2204,12 @@ impl DocumentBuilder {
         labels: super::page_labels::PageLabelsBuilder,
     ) -> Self {
         self.page_labels = Some(labels);
+        self
+    }
+
+    /// Run a JavaScript script when the document is opened (`/OpenAction`).
+    pub fn on_open(mut self, script: impl Into<String>) -> Self {
+        self.open_action_script = Some(script.into());
         self
     }
 
@@ -2300,6 +2348,8 @@ impl DocumentBuilder {
             form_fields: Vec::new(),
             form_field_meta: Vec::new(),
             tab_order: None,
+            page_open_script: None,
+            page_close_script: None,
         });
         FluentPageBuilder {
             builder: self,
@@ -2338,6 +2388,9 @@ impl DocumentBuilder {
         if self.metadata.creator.is_some() {
             config.creator = self.metadata.creator.clone();
         }
+        if let Some(script) = self.open_action_script {
+            config.open_action_script = Some(script);
+        }
 
         let mut writer = PdfWriter::with_config(config);
 
@@ -2364,6 +2417,14 @@ impl DocumentBuilder {
             // #393 Bundle D-4.
             if let Some(order) = page_data.tab_order {
                 page.set_tab_order(order.as_pdf_char());
+            }
+
+            // Propagate page-level JS open/close actions (/AA /O and /AA /C).
+            if let Some(ref s) = page_data.page_open_script {
+                page.set_page_open_script(s.clone());
+            }
+            if let Some(ref s) = page_data.page_close_script {
+                page.set_page_close_script(s.clone());
             }
 
             // 1. Add normal elements

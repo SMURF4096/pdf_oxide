@@ -1883,6 +1883,7 @@ export class DocumentBuilder {
   subject(subject: string): this;
   keywords(keywords: string): this;
   creator(creator: string): this;
+  onOpen(script: string): this;
   registerEmbeddedFont(name: string, font: EmbeddedFont): this;
   a4Page(): PageBuilder;
   letterPage(): PageBuilder;
@@ -1921,6 +1922,9 @@ export class PageBuilder {
   linkUrl(url: string): this;
   linkPage(pageIndex: number): this;
   linkNamed(destination: string): this;
+  linkJavascript(script: string): this;
+  onOpen(script: string): this;
+  onClose(script: string): this;
   highlight(r: number, g: number, b: number): this;
   underline(r: number, g: number, b: number): this;
   strikeout(r: number, g: number, b: number): this;

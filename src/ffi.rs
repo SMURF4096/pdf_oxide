@@ -6857,6 +6857,12 @@ enum FfiPageOp {
         w: f32,
         h: f32,
     },
+    /// JavaScript link annotation on the last text element.
+    LinkJavaScript(String),
+    /// JavaScript to run when the page is opened (`/AA /O`).
+    OnOpen(String),
+    /// JavaScript to run when the page is closed (`/AA /C`).
+    OnClose(String),
 }
 
 /// Parse a stamp-type name into the Rust `StampType` enum. Unknown names
@@ -7115,6 +7121,19 @@ pub extern "C" fn pdf_document_builder_set_creator(
     ffi_builder_apply(handle, error_code, |b| b.creator(creator))
 }
 
+/// Run JavaScript when the document is opened (`/OpenAction`).
+#[no_mangle]
+pub extern "C" fn pdf_document_builder_on_open(
+    handle: *mut FfiDocumentBuilder,
+    script: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(s) = read_cstr_or_fail(script, error_code) else {
+        return -1;
+    };
+    ffi_builder_apply(handle, error_code, |b| b.on_open(s))
+}
+
 /// Register a TTF / OTF font. **Consumes** the `font` handle — on
 /// success, callers must not call `pdf_embedded_font_free` on it.
 /// On error the font handle is NOT consumed and remains valid.
@@ -7345,6 +7364,45 @@ pub extern "C" fn pdf_page_builder_link_named(
         return -1;
     };
     push_page_op(handle, error_code, FfiPageOp::LinkNamed(dest_s))
+}
+
+/// Link the previous text to a JavaScript action.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_link_javascript(
+    handle: *mut FfiPageBuilder,
+    script: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(s) = read_cstr_or_fail(script, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::LinkJavaScript(s))
+}
+
+/// Run JavaScript when this page is opened (`/AA /O`).
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_on_open(
+    handle: *mut FfiPageBuilder,
+    script: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(s) = read_cstr_or_fail(script, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::OnOpen(s))
+}
+
+/// Run JavaScript when this page is closed (`/AA /C`).
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_on_close(
+    handle: *mut FfiPageBuilder,
+    script: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(s) = read_cstr_or_fail(script, error_code) else {
+        return -1;
+    };
+    push_page_op(handle, error_code, FfiPageOp::OnClose(s))
 }
 
 /// Highlight the previous text with an RGB colour (channels in 0.0–1.0).
@@ -8284,6 +8342,9 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
             FfiPageOp::LinkUrl(url) => rust_page.link_url(&url),
             FfiPageOp::LinkPage(p) => rust_page.link_page(p),
             FfiPageOp::LinkNamed(dest) => rust_page.link_named(&dest),
+            FfiPageOp::LinkJavaScript(script) => rust_page.link_javascript(&script),
+            FfiPageOp::OnOpen(script) => rust_page.on_open(&script),
+            FfiPageOp::OnClose(script) => rust_page.on_close(&script),
             FfiPageOp::Highlight(r, g, b) => rust_page.highlight((r, g, b)),
             FfiPageOp::Underline(r, g, b) => rust_page.underline((r, g, b)),
             FfiPageOp::Strikeout(r, g, b) => rust_page.strikeout((r, g, b)),

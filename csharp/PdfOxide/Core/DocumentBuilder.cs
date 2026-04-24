@@ -131,6 +131,16 @@ namespace PdfOxide.Core
             return this;
         }
 
+        /// <summary>Run JavaScript when the document is opened (/OpenAction).</summary>
+        public DocumentBuilder OnOpen(string script)
+        {
+            ArgumentNullException.ThrowIfNull(script);
+            CheckNoOpenPage();
+            NativeMethods.PdfDocumentBuilderOnOpen(Handle, script, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
         /// <summary>
         /// Register a TTF/OTF font under <paramref name="name"/>. The font
         /// is CONSUMED on success; do not use it after this call. On error

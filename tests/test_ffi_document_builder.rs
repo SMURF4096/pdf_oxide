@@ -310,6 +310,60 @@ fn ffi_barcode_unknown_type_errors() {
 }
 
 // ---------------------------------------------------------------------------
+// JS actions — link_javascript, page on_open / on_close, doc on_open
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ffi_js_actions_produce_valid_pdf() {
+    let mut ec = 0i32;
+    let builder = unsafe { pdf_document_builder_create(&mut ec) };
+    assert_eq!(ec, 0);
+
+    // Document-level on_open
+    let script = cstring("app.alert('opened')");
+    let ret = unsafe { pdf_document_builder_on_open(builder, script.as_ptr(), &mut ec) };
+    assert_eq!(ret, 0, "doc on_open failed: {ec}");
+
+    let page = unsafe { pdf_document_builder_a4_page(builder, &mut ec) };
+    assert_eq!(ec, 0);
+
+    // Page-level on_open / on_close
+    let pscript = cstring("app.alert('page open')");
+    let ret = unsafe { pdf_page_builder_on_open(page, pscript.as_ptr(), &mut ec) };
+    assert_eq!(ret, 0, "page on_open failed: {ec}");
+
+    let cscript = cstring("app.alert('page close')");
+    let ret = unsafe { pdf_page_builder_on_close(page, cscript.as_ptr(), &mut ec) };
+    assert_eq!(ret, 0, "page on_close failed: {ec}");
+
+    // link_javascript requires a preceding text element
+    let _at = unsafe { pdf_page_builder_at(page, 72.0, 700.0, &mut ec) };
+    let text = cstring("Click me");
+    let _txt = unsafe { pdf_page_builder_text(page, text.as_ptr(), &mut ec) };
+    let jscript = cstring("app.alert('clicked')");
+    let ret = unsafe { pdf_page_builder_link_javascript(page, jscript.as_ptr(), &mut ec) };
+    assert_eq!(ret, 0, "link_javascript failed: {ec}");
+
+    let ret = unsafe { pdf_page_builder_done(page, &mut ec) };
+    assert_eq!(ret, 0, "done failed: {ec}");
+
+    let mut out_len = 0usize;
+    let pdf_bytes = unsafe { pdf_document_builder_build(builder, &mut out_len, &mut ec) };
+    assert_eq!(ec, 0, "build failed: {ec}");
+    assert!(!pdf_bytes.is_null());
+    assert!(out_len > 100);
+
+    let slice = unsafe { std::slice::from_raw_parts(pdf_bytes, out_len) };
+    assert!(slice.starts_with(b"%PDF-"), "output is not a PDF");
+    // The output must contain the OpenAction and AA dict markers
+    let s = String::from_utf8_lossy(slice);
+    assert!(s.contains("/OpenAction"), "missing /OpenAction in PDF");
+    assert!(s.contains("/AA"), "missing /AA dict in PDF");
+
+    unsafe { free_bytes(pdf_bytes) };
+}
+
+// ---------------------------------------------------------------------------
 // Phase 2 — HTML+CSS pipeline through the C FFI
 // ---------------------------------------------------------------------------
 
