@@ -37,6 +37,22 @@ jobs:
       - name: Check formatting
         run: cargo fmt -- --check
 
+  # Fixture hygiene: every .pdf under tools/benchmark-harness/fixtures
+  # must start with %PDF- (or be listed in a directory-local .skip).
+  # Catches ISP DNS-hijack HTML, CMS-wrapped PDFs, and 404 pages
+  # entering the corpus silently. See tools/benchmark-harness/README.md.
+  fixture-hygiene:
+    name: Fixture Hygiene
+    runs-on: ubuntu-latest
+    # Only needs the script + skip-lists, which ARE tracked; the actual
+    # fixture corpus is gitignored and fetched separately. If no
+    # fixtures are checked out in CI, the script exits 0 trivially.
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate fixtures
+        run: ./tools/benchmark-harness/validate_fixtures.sh --strict
+
   # Linting with Clippy
   clippy:
     name: Clippy
