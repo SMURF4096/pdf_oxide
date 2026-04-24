@@ -23,7 +23,7 @@ use std::collections::HashMap;
 fn js_action_dict(script: &str) -> Object {
     let mut d = HashMap::new();
     d.insert("S".to_string(), Object::Name("JavaScript".to_string()));
-    d.insert("JS".to_string(), Object::String(script.as_bytes().to_vec()));
+    d.insert("JS".to_string(), Object::text_string(script));
     Object::Dictionary(d)
 }
 
@@ -296,16 +296,16 @@ impl FormFieldWidget for TextFieldWidget {
         dict.insert("FT".to_string(), Object::Name("Tx".to_string()));
 
         // Field name
-        dict.insert("T".to_string(), Object::String(self.name.as_bytes().to_vec()));
+        dict.insert("T".to_string(), Object::text_string(&self.name));
 
         // Value
         if let Some(ref value) = self.value {
-            dict.insert("V".to_string(), Object::String(value.as_bytes().to_vec()));
+            dict.insert("V".to_string(), Object::text_string(value));
         }
 
         // Default value
         if let Some(ref dv) = self.default_value {
-            dict.insert("DV".to_string(), Object::String(dv.as_bytes().to_vec()));
+            dict.insert("DV".to_string(), Object::text_string(dv));
         }
 
         // Maximum length
@@ -373,7 +373,7 @@ impl FormFieldWidget for TextFieldWidget {
 
         // Tooltip
         if let Some(ref tip) = self.tooltip {
-            dict.insert("TU".to_string(), Object::String(tip.as_bytes().to_vec()));
+            dict.insert("TU".to_string(), Object::text_string(tip));
         }
 
         // Border style

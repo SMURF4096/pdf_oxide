@@ -565,14 +565,14 @@ impl ThreeDView {
 
         // XN - external name (required)
         if let Some(ref name) = self.name {
-            dict.insert("XN".to_string(), Object::String(name.as_bytes().to_vec()));
+            dict.insert("XN".to_string(), Object::text_string(name));
         } else {
-            dict.insert("XN".to_string(), Object::String("Default".as_bytes().to_vec()));
+            dict.insert("XN".to_string(), Object::text_string("Default"));
         }
 
         // IN - internal name (same as external)
         if let Some(ref name) = self.name {
-            dict.insert("IN".to_string(), Object::String(name.as_bytes().to_vec()));
+            dict.insert("IN".to_string(), Object::text_string(name));
         }
 
         // C2W - camera-to-world transformation matrix
@@ -852,7 +852,7 @@ impl ThreeDAnnotation {
 
         // Title
         if let Some(ref title) = self.title {
-            dict.insert("T".to_string(), Object::String(title.as_bytes().to_vec()));
+            dict.insert("T".to_string(), Object::text_string(title));
         }
 
         // Flags
@@ -862,7 +862,7 @@ impl ThreeDAnnotation {
 
         // Contents
         if let Some(ref contents) = self.contents {
-            dict.insert("Contents".to_string(), Object::String(contents.as_bytes().to_vec()));
+            dict.insert("Contents".to_string(), Object::text_string(contents));
         }
 
         // 3DA - 3D Activation dictionary

@@ -187,7 +187,7 @@ impl FormFieldWidget for CheckboxWidget {
         dict.insert("FT".to_string(), Object::Name("Btn".to_string()));
 
         // Field name
-        dict.insert("T".to_string(), Object::String(self.name.as_bytes().to_vec()));
+        dict.insert("T".to_string(), Object::text_string(&self.name));
 
         // Value - the export value name if checked, /Off if not
         let value = if self.checked {
@@ -242,7 +242,7 @@ impl FormFieldWidget for CheckboxWidget {
 
         // Tooltip
         if let Some(ref tip) = self.tooltip {
-            dict.insert("TU".to_string(), Object::String(tip.as_bytes().to_vec()));
+            dict.insert("TU".to_string(), Object::text_string(tip));
         }
 
         // Border style
@@ -279,7 +279,7 @@ impl FormFieldWidget for CheckboxWidget {
         }
 
         // Caption character for checkbox (4 = checkmark in ZapfDingbats)
-        mk.insert("CA".to_string(), Object::String("4".as_bytes().to_vec()));
+        mk.insert("CA".to_string(), Object::text_string("4"));
 
         if !mk.is_empty() {
             dict.insert("MK".to_string(), Object::Dictionary(mk));

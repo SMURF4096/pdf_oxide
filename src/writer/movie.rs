@@ -410,7 +410,7 @@ impl MovieAnnotation {
 
         // Title
         if let Some(ref title) = self.title {
-            dict.insert("T".to_string(), Object::String(title.as_bytes().to_vec()));
+            dict.insert("T".to_string(), Object::text_string(title));
         }
 
         // Border
@@ -428,7 +428,7 @@ impl MovieAnnotation {
 
         // Contents
         if let Some(ref contents) = self.contents {
-            dict.insert("Contents".to_string(), Object::String(contents.as_bytes().to_vec()));
+            dict.insert("Contents".to_string(), Object::text_string(contents));
         }
 
         // A - Activation parameters (if not default)

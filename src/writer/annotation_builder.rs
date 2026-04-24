@@ -298,7 +298,7 @@ impl LinkAnnotation {
             LinkAction::Uri(uri) => {
                 let mut action = HashMap::new();
                 action.insert("S".to_string(), Object::Name("URI".to_string()));
-                action.insert("URI".to_string(), Object::String(uri.as_bytes().to_vec()));
+                action.insert("URI".to_string(), Object::text_string(uri));
                 dict.insert("A".to_string(), Object::Dictionary(action));
             },
             LinkAction::GoTo { page, fit } => {
@@ -315,12 +315,12 @@ impl LinkAnnotation {
                 }
             },
             LinkAction::GoToNamed(name) => {
-                dict.insert("Dest".to_string(), Object::String(name.as_bytes().to_vec()));
+                dict.insert("Dest".to_string(), Object::text_string(name));
             },
             LinkAction::GoToRemote { file, page } => {
                 let mut action = HashMap::new();
                 action.insert("S".to_string(), Object::Name("GoToR".to_string()));
-                action.insert("F".to_string(), Object::String(file.as_bytes().to_vec()));
+                action.insert("F".to_string(), Object::text_string(file));
                 action.insert(
                     "D".to_string(),
                     Object::Array(vec![
@@ -333,13 +333,13 @@ impl LinkAnnotation {
             LinkAction::Launch(app) => {
                 let mut action = HashMap::new();
                 action.insert("S".to_string(), Object::Name("Launch".to_string()));
-                action.insert("F".to_string(), Object::String(app.as_bytes().to_vec()));
+                action.insert("F".to_string(), Object::text_string(app));
                 dict.insert("A".to_string(), Object::Dictionary(action));
             },
             LinkAction::JavaScript(script) => {
                 let mut action = HashMap::new();
                 action.insert("S".to_string(), Object::Name("JavaScript".to_string()));
-                action.insert("JS".to_string(), Object::String(script.as_bytes().to_vec()));
+                action.insert("JS".to_string(), Object::text_string(script));
                 dict.insert("A".to_string(), Object::Dictionary(action));
             },
         }

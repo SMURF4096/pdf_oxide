@@ -1534,17 +1534,28 @@ impl ContentStreamBuilder {
         }
     }
 
-    /// Write an escaped PDF string.
+    /// Write an escaped PDF string for Base-14 font content streams (WinAnsiEncoding).
+    ///
+    /// Iterates Unicode scalar values and maps each to its WinAnsi/Latin-1 byte
+    /// (code-point value for U+0000–U+00FF).  Characters above U+00FF cannot be
+    /// represented in WinAnsiEncoding and are replaced with '?'; those require an
+    /// embedded font with Identity-H encoding.
     fn write_escaped_string<W: Write>(&self, w: &mut W, text: &str) -> std::io::Result<()> {
-        for byte in text.bytes() {
-            match byte {
+        for ch in text.chars() {
+            let cp = ch as u32;
+            if cp > 0xFF {
+                w.write_all(b"?")?;
+                continue;
+            }
+            let b = cp as u8;
+            match b {
                 b'(' => write!(w, "\\(")?,
                 b')' => write!(w, "\\)")?,
                 b'\\' => write!(w, "\\\\")?,
                 b'\n' => write!(w, "\\n")?,
                 b'\r' => write!(w, "\\r")?,
                 b'\t' => write!(w, "\\t")?,
-                _ => w.write_all(&[byte])?,
+                _ => w.write_all(&[b])?,
             }
         }
         Ok(())

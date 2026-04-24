@@ -386,7 +386,7 @@ impl OutlineBuilder {
         let mut next_id = start_id + 1;
 
         let mut dict = HashMap::new();
-        dict.insert("Title".to_string(), Object::String(item.title.as_bytes().to_vec()));
+        dict.insert("Title".to_string(), Object::text_string(&item.title));
         dict.insert("Parent".to_string(), Object::Reference(ObjectRef::new(parent_id, 0)));
 
         // Add destination
@@ -407,12 +407,12 @@ impl OutlineBuilder {
                 }
             },
             OutlineDestination::Named(name) => {
-                dict.insert("Dest".to_string(), Object::String(name.as_bytes().to_vec()));
+                dict.insert("Dest".to_string(), Object::text_string(name));
             },
             OutlineDestination::Uri(uri) => {
                 let mut action = HashMap::new();
                 action.insert("S".to_string(), Object::Name("URI".to_string()));
-                action.insert("URI".to_string(), Object::String(uri.as_bytes().to_vec()));
+                action.insert("URI".to_string(), Object::text_string(uri));
                 dict.insert("A".to_string(), Object::Dictionary(action));
             },
         }

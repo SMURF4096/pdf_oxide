@@ -199,7 +199,7 @@ impl TextAnnotation {
         );
 
         // Contents
-        dict.insert("Contents".to_string(), Object::String(self.contents.as_bytes().to_vec()));
+        dict.insert("Contents".to_string(), Object::text_string(&self.contents));
 
         // Icon name
         dict.insert("Name".to_string(), Object::Name(self.icon.pdf_name().to_string()));
@@ -236,30 +236,30 @@ impl TextAnnotation {
 
         // Author (T entry)
         if let Some(ref author) = self.author {
-            dict.insert("T".to_string(), Object::String(author.as_bytes().to_vec()));
+            dict.insert("T".to_string(), Object::text_string(author));
         }
 
         // Subject
         if let Some(ref subject) = self.subject {
-            dict.insert("Subj".to_string(), Object::String(subject.as_bytes().to_vec()));
+            dict.insert("Subj".to_string(), Object::text_string(subject));
         }
 
         // Creation date
         if let Some(ref date) = self.creation_date {
-            dict.insert("CreationDate".to_string(), Object::String(date.as_bytes().to_vec()));
+            dict.insert("CreationDate".to_string(), Object::text_string(date));
         }
 
         // Modification date
         if let Some(ref date) = self.modification_date {
-            dict.insert("M".to_string(), Object::String(date.as_bytes().to_vec()));
+            dict.insert("M".to_string(), Object::text_string(date));
         }
 
         // State (for review workflows)
         if let Some(ref state) = self.state {
-            dict.insert("State".to_string(), Object::String(state.as_bytes().to_vec()));
+            dict.insert("State".to_string(), Object::text_string(state));
         }
         if let Some(ref model) = self.state_model {
-            dict.insert("StateModel".to_string(), Object::String(model.as_bytes().to_vec()));
+            dict.insert("StateModel".to_string(), Object::text_string(model));
         }
 
         dict

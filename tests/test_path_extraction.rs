@@ -195,6 +195,9 @@ mod svg_conversion_tests {
             stroke_width: 2.0,
             line_cap: LineCap::Butt,
             line_join: LineJoin::Miter,
+            dash_pattern: None,
+            matrix: None,
+            artifact_type: None,
             reading_order: None,
         }
     }
@@ -257,6 +260,9 @@ mod svg_conversion_tests {
             stroke_width: 1.0,
             line_cap: LineCap::Butt,
             line_join: LineJoin::Miter,
+            dash_pattern: None,
+            matrix: None,
+            artifact_type: None,
             reading_order: None,
         };
 
@@ -286,6 +292,9 @@ mod svg_conversion_tests {
             stroke_width: 1.0,
             line_cap: LineCap::Butt,
             line_join: LineJoin::Miter,
+            dash_pattern: None,
+            matrix: None,
+            artifact_type: None,
             reading_order: None,
         };
 
@@ -310,6 +319,9 @@ mod svg_conversion_tests {
             stroke_width: 10.0,
             line_cap: LineCap::Round,
             line_join: LineJoin::Miter,
+            dash_pattern: None,
+            matrix: None,
+            artifact_type: None,
             reading_order: None,
         };
 
@@ -330,6 +342,9 @@ mod svg_conversion_tests {
             stroke_width: 5.0,
             line_cap: LineCap::Butt,
             line_join: LineJoin::Bevel,
+            dash_pattern: None,
+            matrix: None,
+            artifact_type: None,
             reading_order: None,
         };
 

@@ -153,7 +153,7 @@ impl MediaClip {
         dict.insert("S".to_string(), Object::Name("MCD".to_string())); // Media Clip Data
 
         // N - name/filename
-        dict.insert("N".to_string(), Object::String(self.filename.as_bytes().to_vec()));
+        dict.insert("N".to_string(), Object::text_string(&self.filename));
 
         // D - file specification (if provided)
         if let Some(ref_obj) = file_spec_ref {
@@ -162,7 +162,7 @@ impl MediaClip {
 
         // CT - content type (MIME)
         if let Some(ref ct) = self.content_type {
-            dict.insert("CT".to_string(), Object::String(ct.as_bytes().to_vec()));
+            dict.insert("CT".to_string(), Object::text_string(ct));
         }
 
         // Alt - alternate text (array of language/text pairs)
@@ -171,7 +171,7 @@ impl MediaClip {
                 "Alt".to_string(),
                 Object::Array(vec![
                     Object::String(Vec::new()), // empty string = default language
-                    Object::String(alt.as_bytes().to_vec()),
+                    Object::text_string(alt),
                 ]),
             );
         }
@@ -404,7 +404,7 @@ impl MediaRendition {
 
         // N - name
         if let Some(ref name) = self.name {
-            dict.insert("N".to_string(), Object::String(name.as_bytes().to_vec()));
+            dict.insert("N".to_string(), Object::text_string(name));
         }
 
         // C - media clip reference
@@ -597,7 +597,7 @@ impl ScreenAnnotation {
 
         // Title
         if let Some(ref title) = self.title {
-            dict.insert("T".to_string(), Object::String(title.as_bytes().to_vec()));
+            dict.insert("T".to_string(), Object::text_string(title));
         }
 
         // Flags
@@ -607,7 +607,7 @@ impl ScreenAnnotation {
 
         // Contents
         if let Some(ref contents) = self.contents {
-            dict.insert("Contents".to_string(), Object::String(contents.as_bytes().to_vec()));
+            dict.insert("Contents".to_string(), Object::text_string(contents));
         }
 
         // MK - appearance characteristics (border)

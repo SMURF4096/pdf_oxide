@@ -80,14 +80,14 @@ impl FormFieldWidget for SignatureWidget {
     fn build_field_dict(&self) -> HashMap<String, Object> {
         let mut dict = HashMap::new();
         dict.insert("FT".to_string(), Object::Name("Sig".to_string()));
-        dict.insert("T".to_string(), Object::String(self.name.as_bytes().to_vec()));
+        dict.insert("T".to_string(), Object::text_string(&self.name));
         // /V = null means the field is unsigned
         dict.insert("V".to_string(), Object::Null);
         if self.read_only {
             dict.insert("Ff".to_string(), Object::Integer(1));
         }
         if let Some(ref tip) = self.tooltip {
-            dict.insert("TU".to_string(), Object::String(tip.as_bytes().to_vec()));
+            dict.insert("TU".to_string(), Object::text_string(tip));
         }
         dict
     }

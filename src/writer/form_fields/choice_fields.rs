@@ -29,7 +29,7 @@ use std::collections::HashMap;
 fn js_action_dict(script: &str) -> Object {
     let mut d = HashMap::new();
     d.insert("S".to_string(), Object::Name("JavaScript".to_string()));
-    d.insert("JS".to_string(), Object::String(script.as_bytes().to_vec()));
+    d.insert("JS".to_string(), Object::text_string(script));
     Object::Dictionary(d)
 }
 
@@ -298,7 +298,7 @@ impl FormFieldWidget for ComboBoxWidget {
         dict.insert("FT".to_string(), Object::Name("Ch".to_string()));
 
         // Field name
-        dict.insert("T".to_string(), Object::String(self.name.as_bytes().to_vec()));
+        dict.insert("T".to_string(), Object::text_string(&self.name));
 
         // Options array
         let opt_array: Vec<Object> = self
@@ -306,11 +306,11 @@ impl FormFieldWidget for ComboBoxWidget {
             .iter()
             .map(|opt| {
                 if opt.display == opt.export {
-                    Object::String(opt.display.as_bytes().to_vec())
+                    Object::text_string(&opt.display)
                 } else {
                     Object::Array(vec![
-                        Object::String(opt.export.as_bytes().to_vec()),
-                        Object::String(opt.display.as_bytes().to_vec()),
+                        Object::text_string(&opt.export),
+                        Object::text_string(&opt.display),
                     ])
                 }
             })
@@ -319,12 +319,12 @@ impl FormFieldWidget for ComboBoxWidget {
 
         // Value
         if let Some(ref value) = self.value {
-            dict.insert("V".to_string(), Object::String(value.as_bytes().to_vec()));
+            dict.insert("V".to_string(), Object::text_string(value));
         }
 
         // Default value
         if let Some(ref dv) = self.default_value {
-            dict.insert("DV".to_string(), Object::String(dv.as_bytes().to_vec()));
+            dict.insert("DV".to_string(), Object::text_string(dv));
         }
 
         // Field flags
@@ -374,7 +374,7 @@ impl FormFieldWidget for ComboBoxWidget {
 
         // Tooltip
         if let Some(ref tip) = self.tooltip {
-            dict.insert("TU".to_string(), Object::String(tip.as_bytes().to_vec()));
+            dict.insert("TU".to_string(), Object::text_string(tip));
         }
 
         // Border style
@@ -585,7 +585,7 @@ impl FormFieldWidget for ListBoxWidget {
         dict.insert("FT".to_string(), Object::Name("Ch".to_string()));
 
         // Field name
-        dict.insert("T".to_string(), Object::String(self.name.as_bytes().to_vec()));
+        dict.insert("T".to_string(), Object::text_string(&self.name));
 
         // Options array
         let opt_array: Vec<Object> = self
@@ -593,11 +593,11 @@ impl FormFieldWidget for ListBoxWidget {
             .iter()
             .map(|opt| {
                 if opt.display == opt.export {
-                    Object::String(opt.display.as_bytes().to_vec())
+                    Object::text_string(&opt.display)
                 } else {
                     Object::Array(vec![
-                        Object::String(opt.export.as_bytes().to_vec()),
-                        Object::String(opt.display.as_bytes().to_vec()),
+                        Object::text_string(&opt.export),
+                        Object::text_string(&opt.display),
                     ])
                 }
             })
@@ -607,12 +607,12 @@ impl FormFieldWidget for ListBoxWidget {
         // Value(s)
         if !self.values.is_empty() {
             if self.values.len() == 1 {
-                dict.insert("V".to_string(), Object::String(self.values[0].as_bytes().to_vec()));
+                dict.insert("V".to_string(), Object::text_string(&self.values[0]));
             } else {
                 let v_array: Vec<Object> = self
                     .values
                     .iter()
-                    .map(|v| Object::String(v.as_bytes().to_vec()))
+                    .map(|v| Object::text_string(v))
                     .collect();
                 dict.insert("V".to_string(), Object::Array(v_array));
             }
@@ -623,13 +623,13 @@ impl FormFieldWidget for ListBoxWidget {
             if self.default_values.len() == 1 {
                 dict.insert(
                     "DV".to_string(),
-                    Object::String(self.default_values[0].as_bytes().to_vec()),
+                    Object::text_string(&self.default_values[0]),
                 );
             } else {
                 let dv_array: Vec<Object> = self
                     .default_values
                     .iter()
-                    .map(|v| Object::String(v.as_bytes().to_vec()))
+                    .map(|v| Object::text_string(v))
                     .collect();
                 dict.insert("DV".to_string(), Object::Array(dv_array));
             }
@@ -684,7 +684,7 @@ impl FormFieldWidget for ListBoxWidget {
 
         // Tooltip
         if let Some(ref tip) = self.tooltip {
-            dict.insert("TU".to_string(), Object::String(tip.as_bytes().to_vec()));
+            dict.insert("TU".to_string(), Object::text_string(tip));
         }
 
         // Border style

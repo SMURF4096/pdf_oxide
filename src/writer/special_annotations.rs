@@ -264,7 +264,7 @@ impl CaretAnnotation {
 
         // Contents
         if let Some(ref contents) = self.contents {
-            dict.insert("Contents".to_string(), Object::String(contents.as_bytes().to_vec()));
+            dict.insert("Contents".to_string(), Object::text_string(contents));
         }
 
         // Color
@@ -291,12 +291,12 @@ impl CaretAnnotation {
 
         // Author
         if let Some(ref author) = self.author {
-            dict.insert("T".to_string(), Object::String(author.as_bytes().to_vec()));
+            dict.insert("T".to_string(), Object::text_string(author));
         }
 
         // Subject
         if let Some(ref subject) = self.subject {
-            dict.insert("Subj".to_string(), Object::String(subject.as_bytes().to_vec()));
+            dict.insert("Subj".to_string(), Object::text_string(subject));
         }
 
         dict
@@ -445,15 +445,15 @@ impl FileAttachmentAnnotation {
         // File Specification (FS) - simplified version
         let mut fs_dict = HashMap::new();
         fs_dict.insert("Type".to_string(), Object::Name("Filespec".to_string()));
-        fs_dict.insert("F".to_string(), Object::String(self.file_name.as_bytes().to_vec()));
+        fs_dict.insert("F".to_string(), Object::text_string(&self.file_name));
         if let Some(ref desc) = self.description {
-            fs_dict.insert("Desc".to_string(), Object::String(desc.as_bytes().to_vec()));
+            fs_dict.insert("Desc".to_string(), Object::text_string(desc));
         }
         dict.insert("FS".to_string(), Object::Dictionary(fs_dict));
 
         // Contents
         if let Some(ref contents) = self.contents {
-            dict.insert("Contents".to_string(), Object::String(contents.as_bytes().to_vec()));
+            dict.insert("Contents".to_string(), Object::text_string(contents));
         }
 
         // Color
@@ -480,7 +480,7 @@ impl FileAttachmentAnnotation {
 
         // Author
         if let Some(ref author) = self.author {
-            dict.insert("T".to_string(), Object::String(author.as_bytes().to_vec()));
+            dict.insert("T".to_string(), Object::text_string(author));
         }
 
         dict
@@ -644,7 +644,7 @@ impl RedactAnnotation {
 
         // Overlay text
         if let Some(ref text) = self.overlay_text {
-            dict.insert("OverlayText".to_string(), Object::String(text.as_bytes().to_vec()));
+            dict.insert("OverlayText".to_string(), Object::text_string(text));
         }
 
         // Overlay text alignment (Q)
@@ -654,12 +654,12 @@ impl RedactAnnotation {
 
         // Default appearance
         if let Some(ref da) = self.default_appearance {
-            dict.insert("DA".to_string(), Object::String(da.as_bytes().to_vec()));
+            dict.insert("DA".to_string(), Object::text_string(da));
         }
 
         // Contents
         if let Some(ref contents) = self.contents {
-            dict.insert("Contents".to_string(), Object::String(contents.as_bytes().to_vec()));
+            dict.insert("Contents".to_string(), Object::text_string(contents));
         }
 
         // Flags
@@ -669,12 +669,12 @@ impl RedactAnnotation {
 
         // Author
         if let Some(ref author) = self.author {
-            dict.insert("T".to_string(), Object::String(author.as_bytes().to_vec()));
+            dict.insert("T".to_string(), Object::text_string(author));
         }
 
         // Subject
         if let Some(ref subject) = self.subject {
-            dict.insert("Subj".to_string(), Object::String(subject.as_bytes().to_vec()));
+            dict.insert("Subj".to_string(), Object::text_string(subject));
         }
 
         dict

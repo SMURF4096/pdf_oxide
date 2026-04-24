@@ -279,7 +279,7 @@ impl LineAnnotation {
 
         // Contents
         if let Some(ref contents) = self.contents {
-            dict.insert("Contents".to_string(), Object::String(contents.as_bytes().to_vec()));
+            dict.insert("Contents".to_string(), Object::text_string(contents));
         }
 
         // Flags
@@ -376,12 +376,12 @@ impl LineAnnotation {
 
         // Author
         if let Some(ref author) = self.author {
-            dict.insert("T".to_string(), Object::String(author.as_bytes().to_vec()));
+            dict.insert("T".to_string(), Object::text_string(author));
         }
 
         // Subject
         if let Some(ref subject) = self.subject {
-            dict.insert("Subj".to_string(), Object::String(subject.as_bytes().to_vec()));
+            dict.insert("Subj".to_string(), Object::text_string(subject));
         }
 
         dict
@@ -559,7 +559,7 @@ impl ShapeAnnotation {
 
         // Contents
         if let Some(ref contents) = self.contents {
-            dict.insert("Contents".to_string(), Object::String(contents.as_bytes().to_vec()));
+            dict.insert("Contents".to_string(), Object::text_string(contents));
         }
 
         // Flags
@@ -651,12 +651,12 @@ impl ShapeAnnotation {
 
         // Author
         if let Some(ref author) = self.author {
-            dict.insert("T".to_string(), Object::String(author.as_bytes().to_vec()));
+            dict.insert("T".to_string(), Object::text_string(author));
         }
 
         // Subject
         if let Some(ref subject) = self.subject {
-            dict.insert("Subj".to_string(), Object::String(subject.as_bytes().to_vec()));
+            dict.insert("Subj".to_string(), Object::text_string(subject));
         }
 
         dict
@@ -886,7 +886,7 @@ impl PolygonAnnotation {
 
         // Contents
         if let Some(ref contents) = self.contents {
-            dict.insert("Contents".to_string(), Object::String(contents.as_bytes().to_vec()));
+            dict.insert("Contents".to_string(), Object::text_string(contents));
         }
 
         // Flags
@@ -978,12 +978,12 @@ impl PolygonAnnotation {
 
         // Author
         if let Some(ref author) = self.author {
-            dict.insert("T".to_string(), Object::String(author.as_bytes().to_vec()));
+            dict.insert("T".to_string(), Object::text_string(author));
         }
 
         // Subject
         if let Some(ref subject) = self.subject {
-            dict.insert("Subj".to_string(), Object::String(subject.as_bytes().to_vec()));
+            dict.insert("Subj".to_string(), Object::text_string(subject));
         }
 
         dict
