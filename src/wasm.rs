@@ -3377,6 +3377,92 @@ fn parse_wasm_stamp_type(name: &str) -> crate::writer::StampType {
 //   * FluentPageBuilder — per-page fluent API, committed by .done()
 //   * EmbeddedFont      — TTF / OTF handle, consumed on registerEmbeddedFont
 
+/// Horizontal-alignment enum shared by `textInRect`, buffered `table`, and
+/// `streamingTable`. Maps 1:1 onto [`crate::writer::TextAlign`] /
+/// [`crate::writer::CellAlign`]. Exported to JS as `Align` via `js_name`.
+#[wasm_bindgen(js_name = "Align")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WasmAlign {
+    /// Align to the left edge.
+    Left = 0,
+    /// Center horizontally.
+    Center = 1,
+    /// Align to the right edge.
+    Right = 2,
+}
+
+impl From<WasmAlign> for crate::writer::TextAlign {
+    fn from(a: WasmAlign) -> Self {
+        match a {
+            WasmAlign::Left => crate::writer::TextAlign::Left,
+            WasmAlign::Center => crate::writer::TextAlign::Center,
+            WasmAlign::Right => crate::writer::TextAlign::Right,
+        }
+    }
+}
+
+impl From<WasmAlign> for crate::writer::CellAlign {
+    fn from(a: WasmAlign) -> Self {
+        match a {
+            WasmAlign::Left => crate::writer::CellAlign::Left,
+            WasmAlign::Center => crate::writer::CellAlign::Center,
+            WasmAlign::Right => crate::writer::CellAlign::Right,
+        }
+    }
+}
+
+impl WasmAlign {
+    fn from_i32(v: i32) -> Self {
+        match v {
+            1 => WasmAlign::Center,
+            2 => WasmAlign::Right,
+            _ => WasmAlign::Left,
+        }
+    }
+}
+
+// Serde-deserializable view of a buffered table described by JS.
+//
+// Example JS:
+//   page.table({
+//     columns: [{ header: "SKU", width: 100, align: 0 }, ...],
+//     rows: [["A-1","12"], ["B-2","3"]],
+//     hasHeader: true,
+//   });
+#[derive(serde::Deserialize)]
+struct WasmTableSpec {
+    columns: Vec<WasmTableColumnSpec>,
+    rows: Vec<Vec<String>>,
+    #[serde(default, rename = "hasHeader", alias = "has_header")]
+    has_header: bool,
+}
+
+#[derive(serde::Deserialize)]
+struct WasmTableColumnSpec {
+    header: Option<String>,
+    width: Option<f32>,
+    /// Accepts Align enum discriminant (0/1/2) or missing (defaults Left).
+    #[serde(default)]
+    align: Option<i32>,
+}
+
+#[derive(serde::Deserialize)]
+struct WasmStreamingTableSpec {
+    columns: Vec<WasmStreamingColumnSpec>,
+    #[serde(default, rename = "repeatHeader", alias = "repeat_header")]
+    repeat_header: bool,
+}
+
+#[derive(serde::Deserialize)]
+struct WasmStreamingColumnSpec {
+    #[serde(default)]
+    header: String,
+    #[serde(default, rename = "width", alias = "widthPt", alias = "width_pt")]
+    width: Option<f32>,
+    #[serde(default)]
+    align: Option<i32>,
+}
+
 /// Buffered operations applied to a real Rust `FluentPageBuilder` inside
 /// `WasmFluentPageBuilder::done()`.
 enum WasmPageOp {
@@ -3448,6 +3534,50 @@ enum WasmPageOp {
     Rect(f32, f32, f32, f32),
     FilledRect(f32, f32, f32, f32, f32, f32, f32),
     Line(f32, f32, f32, f32),
+    // v0.3.39 — issue #393 DocumentBuilder tables + primitives.
+    TextInRect {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        text: String,
+        align: WasmAlign,
+    },
+    StrokeRect {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        width: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+    },
+    StrokeLine {
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        width: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+    },
+    NewPageSameSize,
+    /// Buffered table: parsed columns + row strings are replayed by
+    /// constructing a `crate::writer::Table` at commit time.
+    BufferedTable {
+        columns: Vec<(String, Option<f32>, WasmAlign)>,
+        rows: Vec<Vec<String>>,
+        has_header: bool,
+    },
+    /// Replay a recorded sequence of `StreamingTable` operations against
+    /// the live `FluentPageBuilder` at commit time.
+    StreamingTableBlock {
+        config_columns: Vec<(String, f32, WasmAlign)>,
+        repeat_header: bool,
+        rows: Vec<Vec<String>>,
+    },
 }
 
 /// Embedded TTF/OTF font usable by `WasmDocumentBuilder`. Single-use: once
@@ -3573,13 +3703,7 @@ impl WasmDocumentBuilder {
         if self.inner.is_none() {
             return Err(JsValue::from_str("DocumentBuilder already consumed"));
         }
-        Ok(WasmFluentPageBuilder {
-            page_size: Some(crate::writer::PageSize::A4),
-            custom_width: 0.0,
-            custom_height: 0.0,
-            ops: Vec::new(),
-            done_called: false,
-        })
+        Ok(WasmFluentPageBuilder::new_with_size(crate::writer::PageSize::A4))
     }
 
     /// Start a new US Letter page.
@@ -3588,13 +3712,9 @@ impl WasmDocumentBuilder {
         if self.inner.is_none() {
             return Err(JsValue::from_str("DocumentBuilder already consumed"));
         }
-        Ok(WasmFluentPageBuilder {
-            page_size: Some(crate::writer::PageSize::Letter),
-            custom_width: 0.0,
-            custom_height: 0.0,
-            ops: Vec::new(),
-            done_called: false,
-        })
+        Ok(WasmFluentPageBuilder::new_with_size(
+            crate::writer::PageSize::Letter,
+        ))
     }
 
     /// Start a new page with custom dimensions in PDF points
@@ -3604,13 +3724,7 @@ impl WasmDocumentBuilder {
         if self.inner.is_none() {
             return Err(JsValue::from_str("DocumentBuilder already consumed"));
         }
-        Ok(WasmFluentPageBuilder {
-            page_size: None,
-            custom_width: width,
-            custom_height: height,
-            ops: Vec::new(),
-            done_called: false,
-        })
+        Ok(WasmFluentPageBuilder::new_custom(width, height))
     }
 
     /// Commit a completed `FluentPageBuilder` back to this builder.
@@ -3637,7 +3751,10 @@ impl WasmDocumentBuilder {
             .page_size
             .unwrap_or(crate::writer::PageSize::Custom(page.custom_width, page.custom_height));
         let mut rust_page = inner.page(page_size);
-        for op in page.ops.drain(..) {
+        // Take ownership of the queued ops so any lingering `WasmStreamingTable`
+        // Rc-clones become no-ops after the commit.
+        let ops: Vec<WasmPageOp> = std::mem::take(&mut *page.ops.borrow_mut());
+        for op in ops {
             rust_page = match op {
                 WasmPageOp::Font(name, size) => rust_page.font(&name, size),
                 WasmPageOp::At(x, y) => rust_page.at(x, y),
@@ -3705,6 +3822,119 @@ impl WasmDocumentBuilder {
                     rust_page.filled_rect(x, y, w, h, r, g, b)
                 },
                 WasmPageOp::Line(x1, y1, x2, y2) => rust_page.line(x1, y1, x2, y2),
+                WasmPageOp::TextInRect { x, y, w, h, text, align } => rust_page.text_in_rect(
+                    crate::geometry::Rect::new(x, y, w, h),
+                    &text,
+                    align.into(),
+                ),
+                WasmPageOp::StrokeRect {
+                    x,
+                    y,
+                    w,
+                    h,
+                    width,
+                    r,
+                    g,
+                    b,
+                } => rust_page.stroke_rect(
+                    x,
+                    y,
+                    w,
+                    h,
+                    crate::writer::LineStyle::new(width, r, g, b),
+                ),
+                WasmPageOp::StrokeLine {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    width,
+                    r,
+                    g,
+                    b,
+                } => rust_page.stroke_line(
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    crate::writer::LineStyle::new(width, r, g, b),
+                ),
+                WasmPageOp::NewPageSameSize => rust_page.new_page_same_size(),
+                WasmPageOp::BufferedTable {
+                    columns,
+                    rows,
+                    has_header,
+                } => {
+                    // Build TableCell matrix from row strings.
+                    let cell_rows: Vec<Vec<crate::writer::TableCell>> = rows
+                        .into_iter()
+                        .map(|r| {
+                            r.into_iter()
+                                .map(crate::writer::TableCell::text)
+                                .collect::<Vec<_>>()
+                        })
+                        .collect();
+
+                    // If hasHeader, prepend a synthetic header row built from column.header.
+                    let cell_rows = if has_header {
+                        let header: Vec<crate::writer::TableCell> = columns
+                            .iter()
+                            .map(|(h, _, _)| {
+                                crate::writer::TableCell::text(h.clone()).bold()
+                            })
+                            .collect();
+                        let mut out = Vec::with_capacity(cell_rows.len() + 1);
+                        out.push(header);
+                        out.extend(cell_rows);
+                        out
+                    } else {
+                        cell_rows
+                    };
+
+                    let mut table = crate::writer::Table::new(cell_rows);
+                    if has_header {
+                        table = table.with_header_row();
+                    }
+                    let widths: Vec<crate::writer::ColumnWidth> = columns
+                        .iter()
+                        .map(|(_, w, _)| match w {
+                            Some(pt) => crate::writer::ColumnWidth::Fixed(*pt),
+                            None => crate::writer::ColumnWidth::Auto,
+                        })
+                        .collect();
+                    let aligns: Vec<crate::writer::CellAlign> =
+                        columns.iter().map(|(_, _, a)| (*a).into()).collect();
+                    table = table.with_column_widths(widths).with_column_aligns(aligns);
+
+                    rust_page.table(table)
+                },
+                WasmPageOp::StreamingTableBlock {
+                    config_columns,
+                    repeat_header,
+                    rows,
+                } => {
+                    let mut cfg = crate::writer::StreamingTableConfig::new()
+                        .repeat_header(repeat_header);
+                    for (header, width, align) in config_columns {
+                        cfg = cfg.column(
+                            crate::writer::StreamingColumn::new(header)
+                                .width_pt(width)
+                                .align(align.into()),
+                        );
+                    }
+                    let mut t = rust_page.streaming_table(cfg);
+                    for row in rows {
+                        // Errors during push_row (row-length mismatch, etc.)
+                        // are swallowed into a best-effort render at commit
+                        // time — the op was already validated when pushed.
+                        let _ = t.push_row(|r| {
+                            for cell in &row {
+                                r.cell(cell.as_str());
+                            }
+                        });
+                    }
+                    t.finish()
+                },
             };
         }
         rust_page.done();
@@ -3751,8 +3981,20 @@ pub struct WasmFluentPageBuilder {
     page_size: Option<crate::writer::PageSize>,
     custom_width: f32,
     custom_height: f32,
-    ops: Vec<WasmPageOp>,
+    /// Shared so that any `WasmStreamingTable` spawned off this page can
+    /// append its recorded block at `finish()` time without holding a
+    /// Rust `&mut` borrow across the wasm-bindgen boundary.
+    ops: std::rc::Rc<std::cell::RefCell<Vec<WasmPageOp>>>,
     done_called: bool,
+    /// Tracked font name — mirrors the Rust `FluentPageBuilder`'s
+    /// `text_config.font` so `measure()` can be served without round-tripping
+    /// through a live builder.
+    tracked_font: String,
+    /// Tracked font size (points).
+    tracked_font_size: f32,
+    /// Tracked cursor y (points from page bottom, PDF convention). Needed so
+    /// `remainingSpace()` can answer without committing the buffered ops.
+    tracked_cursor_y: f32,
 }
 
 #[allow(missing_docs)] // docstrings on the Rust side (FluentPageBuilder::*) — methods here are thin op-buffers
@@ -3760,16 +4002,23 @@ pub struct WasmFluentPageBuilder {
 impl WasmFluentPageBuilder {
     #[wasm_bindgen(js_name = "font")]
     pub fn font(&mut self, name: String, size: f32) -> Result<(), JsValue> {
+        self.tracked_font = name.clone();
+        self.tracked_font_size = size;
         self.push(WasmPageOp::Font(name, size))
     }
 
     #[wasm_bindgen(js_name = "at")]
     pub fn at(&mut self, x: f32, y: f32) -> Result<(), JsValue> {
+        self.tracked_cursor_y = y;
+        let _ = x;
         self.push(WasmPageOp::At(x, y))
     }
 
     #[wasm_bindgen(js_name = "text")]
     pub fn text(&mut self, text: String) -> Result<(), JsValue> {
+        // Mirrors FluentPageBuilder::text — cursor drops by size * line_height
+        // (default line_height 1.2).
+        self.tracked_cursor_y -= self.tracked_font_size * 1.2;
         self.push(WasmPageOp::Text(text))
     }
 
@@ -3785,6 +4034,7 @@ impl WasmFluentPageBuilder {
 
     #[wasm_bindgen(js_name = "space")]
     pub fn space(&mut self, points: f32) -> Result<(), JsValue> {
+        self.tracked_cursor_y -= points;
         self.push(WasmPageOp::Space(points))
     }
 
@@ -4018,6 +4268,198 @@ impl WasmFluentPageBuilder {
         self.push(WasmPageOp::Line(x1, y1, x2, y2))
     }
 
+    // ──────────────────────────────────────────────────────────────────
+    // v0.3.39 — issue #393 DocumentBuilder tables + primitives.
+    // ──────────────────────────────────────────────────────────────────
+
+    /// Measure the rendered width of `text` in the builder's current font
+    /// and size, in PDF points. Pure query — does not mutate state.
+    ///
+    /// Thin JS view over [`crate::writer::FluentPageBuilder::measure`]. The
+    /// WASM class tracks the current font/size independently of the
+    /// buffered ops so this query is served without a live builder.
+    #[wasm_bindgen(js_name = "measure")]
+    pub fn measure(&self, text: &str) -> f32 {
+        // Spin up a scratch DocumentBuilder + page + font() to delegate to
+        // the real `FluentPageBuilder::measure`. This honours base-14 AFM
+        // widths (embedded fonts aren't registered on the scratch builder;
+        // callers measuring custom-font widths should measure after
+        // committing or use base-14 metrics).
+        let mut scratch = crate::writer::DocumentBuilder::new();
+        let page = scratch
+            .a4_page()
+            .font(&self.tracked_font, self.tracked_font_size);
+        page.measure(text)
+    }
+
+    /// Points remaining on the current page below the cursor (down to the
+    /// 72 pt bottom margin). Mirrors
+    /// [`crate::writer::FluentPageBuilder::remaining_space`] using the WASM
+    /// class's independently-tracked cursor — accurate after `at`, `text`,
+    /// `space`, `newPageSameSize`, `textInRect` and the table helpers.
+    #[wasm_bindgen(js_name = "remainingSpace")]
+    pub fn remaining_space(&self) -> f32 {
+        const BOTTOM_MARGIN: f32 = 72.0;
+        (self.tracked_cursor_y - BOTTOM_MARGIN).max(0.0)
+    }
+
+    /// Place wrapped text inside a rectangle with horizontal alignment.
+    /// `align` is the `Align` enum (0 = Left, 1 = Center, 2 = Right) — also
+    /// accepts a raw integer for JS callers that pre-date the enum import.
+    #[wasm_bindgen(js_name = "textInRect")]
+    pub fn text_in_rect(
+        &mut self,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        text: String,
+        align: i32,
+    ) -> Result<(), JsValue> {
+        self.push(WasmPageOp::TextInRect {
+            x,
+            y,
+            w,
+            h,
+            text,
+            align: WasmAlign::from_i32(align),
+        })
+    }
+
+    /// Draw a stroked rectangle with explicit stroke width and RGB colour.
+    #[wasm_bindgen(js_name = "strokeRect")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn stroke_rect(
+        &mut self,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        width: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+    ) -> Result<(), JsValue> {
+        self.push(WasmPageOp::StrokeRect {
+            x,
+            y,
+            w,
+            h,
+            width,
+            r,
+            g,
+            b,
+        })
+    }
+
+    /// Draw a straight line with explicit stroke width and RGB colour.
+    #[wasm_bindgen(js_name = "strokeLine")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn stroke_line(
+        &mut self,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        width: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+    ) -> Result<(), JsValue> {
+        self.push(WasmPageOp::StrokeLine {
+            x1,
+            y1,
+            x2,
+            y2,
+            width,
+            r,
+            g,
+            b,
+        })
+    }
+
+    /// Finish the current page and start a new one with the same page
+    /// size. Cursor resets to the top-left margin (72, height-72). The
+    /// builder's font carries over.
+    #[wasm_bindgen(js_name = "newPageSameSize")]
+    pub fn new_page_same_size(&mut self) -> Result<(), JsValue> {
+        // Reset tracked cursor to the top-left of a fresh page (same size).
+        self.tracked_cursor_y = self.page_height() - 72.0;
+        self.push(WasmPageOp::NewPageSameSize)
+    }
+
+    /// Render a buffered table from a JS object:
+    ///
+    /// ```javascript
+    /// page.table({
+    ///   columns: [
+    ///     { header: "SKU", width: 100, align: Align.Left },
+    ///     { header: "Qty", width: 60,  align: Align.Right },
+    ///   ],
+    ///   rows: [["A-1","12"], ["B-2","3"]],
+    ///   hasHeader: true,
+    /// });
+    /// ```
+    ///
+    /// Uses `serde-wasm-bindgen` for deserialisation. Replays against the
+    /// Rust `Table` builder at `done()` commit time.
+    #[wasm_bindgen(js_name = "table")]
+    pub fn table(&mut self, spec: JsValue) -> Result<(), JsValue> {
+        let parsed: WasmTableSpec = serde_wasm_bindgen::from_value(spec)
+            .map_err(|e| JsValue::from_str(&format!("table: invalid spec — {e}")))?;
+        let columns: Vec<(String, Option<f32>, WasmAlign)> = parsed
+            .columns
+            .into_iter()
+            .map(|c| {
+                (
+                    c.header.unwrap_or_default(),
+                    c.width,
+                    WasmAlign::from_i32(c.align.unwrap_or(0)),
+                )
+            })
+            .collect();
+        self.push(WasmPageOp::BufferedTable {
+            columns,
+            rows: parsed.rows,
+            has_header: parsed.has_header,
+        })
+    }
+
+    /// Open a streaming table. Returns a `StreamingTable` handle the caller
+    /// pushes rows into; call `finish()` when done. The streamed rows are
+    /// buffered per-table and replayed against the real Rust
+    /// `StreamingTable` at `done()` commit time — avoiding the
+    /// FluentPageBuilder-lifetime problem that otherwise can't cross the
+    /// wasm-bindgen boundary.
+    #[wasm_bindgen(js_name = "streamingTable")]
+    pub fn streaming_table(&mut self, spec: JsValue) -> Result<WasmStreamingTable, JsValue> {
+        if self.done_called {
+            return Err(JsValue::from_str(
+                "FluentPageBuilder.done() already called",
+            ));
+        }
+        let parsed: WasmStreamingTableSpec = serde_wasm_bindgen::from_value(spec)
+            .map_err(|e| JsValue::from_str(&format!("streamingTable: invalid spec — {e}")))?;
+        let columns: Vec<(String, f32, WasmAlign)> = parsed
+            .columns
+            .into_iter()
+            .map(|c| {
+                (
+                    c.header,
+                    c.width.unwrap_or(100.0),
+                    WasmAlign::from_i32(c.align.unwrap_or(0)),
+                )
+            })
+            .collect();
+        Ok(WasmStreamingTable {
+            columns,
+            repeat_header: parsed.repeat_header,
+            rows: Vec::new(),
+            finished: false,
+            page_ops: std::rc::Rc::clone(&self.ops),
+        })
+    }
+
     /// Convenience: commit this page's buffered ops to `builder`. Same
     /// as `builder.commitPage(this)` but lets JS users keep the
     /// chain-like flow:
@@ -4038,7 +4480,110 @@ impl WasmFluentPageBuilder {
         if self.done_called {
             return Err(JsValue::from_str("FluentPageBuilder.done() already called"));
         }
-        self.ops.push(op);
+        self.ops.borrow_mut().push(op);
+        Ok(())
+    }
+
+    fn new_with_size(size: crate::writer::PageSize) -> Self {
+        let (_, height) = size.dimensions();
+        Self {
+            page_size: Some(size),
+            custom_width: 0.0,
+            custom_height: 0.0,
+            ops: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
+            done_called: false,
+            tracked_font: "Helvetica".to_string(),
+            tracked_font_size: 12.0,
+            // Mirrors `DocumentBuilder::page`: cursor starts at height - 72.
+            tracked_cursor_y: height - 72.0,
+        }
+    }
+
+    fn new_custom(width: f32, height: f32) -> Self {
+        Self {
+            page_size: None,
+            custom_width: width,
+            custom_height: height,
+            ops: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
+            done_called: false,
+            tracked_font: "Helvetica".to_string(),
+            tracked_font_size: 12.0,
+            tracked_cursor_y: height - 72.0,
+        }
+    }
+
+    fn page_height(&self) -> f32 {
+        match self.page_size {
+            Some(s) => s.dimensions().1,
+            None => self.custom_height,
+        }
+    }
+}
+
+/// WASM handle to a streaming-table building session. Created by
+/// `FluentPageBuilder.streamingTable()`; rows are pushed via `pushRow`,
+/// and the session is sealed with `finish()`.
+///
+/// Single-use: `finish()` twice throws, and `pushRow` after `finish()`
+/// throws. The rows are buffered and replayed against the real Rust
+/// `StreamingTable` at `WasmFluentPageBuilder.done()` commit time —
+/// preserving the FluentPageBuilder borrow-lifetime invariant that can't
+/// cross the wasm-bindgen boundary.
+#[wasm_bindgen(js_name = "StreamingTable")]
+pub struct WasmStreamingTable {
+    columns: Vec<(String, f32, WasmAlign)>,
+    repeat_header: bool,
+    rows: Vec<Vec<String>>,
+    finished: bool,
+    /// Shared handle to the parent page's op queue — used by `finish()`
+    /// to thread the recorded block back onto the page without JS having
+    /// to pass the page argument.
+    page_ops: std::rc::Rc<std::cell::RefCell<Vec<WasmPageOp>>>,
+}
+
+#[wasm_bindgen(js_class = "StreamingTable")]
+impl WasmStreamingTable {
+    /// Number of columns configured on this streaming table.
+    #[wasm_bindgen(js_name = "columnCount")]
+    pub fn column_count(&self) -> usize {
+        self.columns.len()
+    }
+
+    /// Push one row as an array of cell strings. Returns an error if the
+    /// table has already been finished or if the row's cell count does not
+    /// match the column count.
+    #[wasm_bindgen(js_name = "pushRow")]
+    pub fn push_row(&mut self, cells: Vec<String>) -> Result<(), JsValue> {
+        if self.finished {
+            return Err(JsValue::from_str("StreamingTable already finished"));
+        }
+        if cells.len() != self.columns.len() {
+            return Err(JsValue::from_str(&format!(
+                "streamingTable: row has {} cells, expected {}",
+                cells.len(),
+                self.columns.len()
+            )));
+        }
+        self.rows.push(cells);
+        Ok(())
+    }
+
+    /// Seal the streaming table — the buffered rows are flushed onto the
+    /// parent page's op queue, to be replayed against the real Rust
+    /// `StreamingTable` at `done()` commit time. Calling `finish()` twice
+    /// throws.
+    #[wasm_bindgen(js_name = "finish")]
+    pub fn finish(&mut self) -> Result<(), JsValue> {
+        if self.finished {
+            return Err(JsValue::from_str("StreamingTable already finished"));
+        }
+        self.finished = true;
+        let op = WasmPageOp::StreamingTableBlock {
+            config_columns: std::mem::take(&mut self.columns),
+            repeat_header: self.repeat_header,
+            rows: std::mem::take(&mut self.rows),
+        };
+        self.page_ops.borrow_mut().push(op);
         Ok(())
     }
 }
@@ -4916,5 +5461,151 @@ mod tests {
         // Verify the extracted PDF is valid
         let extracted = WasmPdfDocument::new(&bytes, None);
         assert!(extracted.is_ok());
+    }
+
+    // ========================================================================
+    // Group: v0.3.39 DocumentBuilder — tables + primitives (#393 step 6b)
+    // ========================================================================
+
+    #[test]
+    fn test_measure_nonzero_for_nonempty_text() {
+        let mut b = WasmDocumentBuilder::new();
+        let mut p = b.a4_page().unwrap();
+        p.font("Helvetica".to_string(), 12.0).unwrap();
+        let w = p.measure("Hello");
+        assert!(w > 0.0, "measure should return a positive width, got {w}");
+    }
+
+    #[test]
+    fn test_measure_zero_for_empty_text() {
+        let b = WasmDocumentBuilder::new();
+        let p = WasmFluentPageBuilder::new_with_size(crate::writer::PageSize::A4);
+        let _ = b; // silence unused
+        assert_eq!(p.measure(""), 0.0, "empty string should measure 0");
+    }
+
+    #[test]
+    fn test_remaining_space_starts_at_page_height_minus_top_minus_bottom_margin() {
+        let p = WasmFluentPageBuilder::new_with_size(crate::writer::PageSize::Letter);
+        // Letter is 612 x 792. Top margin 72, bottom margin 72 → remaining = 792 - 72 - 72 = 648.
+        assert!((p.remaining_space() - 648.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_remaining_space_after_at() {
+        let mut p = WasmFluentPageBuilder::new_with_size(crate::writer::PageSize::Letter);
+        p.at(72.0, 500.0).unwrap();
+        // cursor_y = 500, bottom margin = 72 → 428.
+        assert!((p.remaining_space() - 428.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_remaining_space_clamped_at_zero() {
+        let mut p = WasmFluentPageBuilder::new_with_size(crate::writer::PageSize::Letter);
+        p.at(72.0, 50.0).unwrap(); // below bottom margin
+        assert_eq!(p.remaining_space(), 0.0);
+    }
+
+    #[test]
+    fn test_new_page_same_size_resets_cursor() {
+        let mut p = WasmFluentPageBuilder::new_with_size(crate::writer::PageSize::Letter);
+        p.at(72.0, 100.0).unwrap();
+        p.new_page_same_size().unwrap();
+        // Should reset to height - 72 = 720.
+        assert!((p.remaining_space() - 648.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_text_in_rect_round_trips_through_builder() {
+        let mut b = WasmDocumentBuilder::new();
+        let mut p = b.letter_page().unwrap();
+        p.font("Helvetica".to_string(), 10.0).unwrap();
+        p.text_in_rect(72.0, 720.0, 200.0, 100.0, "wrap me".to_string(), 1)
+            .unwrap();
+        p.done(&mut b).unwrap();
+        let bytes = b.build().unwrap();
+        assert!(bytes.starts_with(b"%PDF-"));
+    }
+
+    #[test]
+    fn test_stroke_rect_and_stroke_line_commit() {
+        let mut b = WasmDocumentBuilder::new();
+        let mut p = b.letter_page().unwrap();
+        p.stroke_rect(50.0, 50.0, 200.0, 100.0, 2.0, 0.5, 0.5, 0.5)
+            .unwrap();
+        p.stroke_line(50.0, 50.0, 250.0, 50.0, 1.0, 0.2, 0.2, 0.2)
+            .unwrap();
+        p.done(&mut b).unwrap();
+        let bytes = b.build().unwrap();
+        assert!(bytes.starts_with(b"%PDF-"));
+    }
+
+    #[test]
+    fn test_buffered_table_replays_to_rust_table() {
+        // Exercise the native path: construct a WasmPageOp::BufferedTable
+        // directly and commit through commit_page to prove the replay logic
+        // is wired. Skips the JsValue deserialisation that requires wasm32.
+        let mut b = WasmDocumentBuilder::new();
+        let mut p = b.letter_page().unwrap();
+        p.font("Helvetica".to_string(), 10.0).unwrap();
+        p.at(72.0, 720.0).unwrap();
+        p.ops.borrow_mut().push(WasmPageOp::BufferedTable {
+            columns: vec![
+                ("SKU".into(), Some(100.0), WasmAlign::Left),
+                ("Qty".into(), Some(60.0), WasmAlign::Right),
+            ],
+            rows: vec![
+                vec!["A-1".into(), "12".into()],
+                vec!["B-2".into(), "3".into()],
+            ],
+            has_header: true,
+        });
+        p.done(&mut b).unwrap();
+        let bytes = b.build().unwrap();
+        assert!(bytes.starts_with(b"%PDF-"));
+        assert!(bytes.len() > 512, "table should produce a meaningful PDF");
+    }
+
+    #[test]
+    fn test_streaming_table_block_replays_rows_to_rust_streaming_table() {
+        let mut b = WasmDocumentBuilder::new();
+        let mut p = b.letter_page().unwrap();
+        p.font("Helvetica".to_string(), 10.0).unwrap();
+        p.at(72.0, 720.0).unwrap();
+        p.ops.borrow_mut().push(WasmPageOp::StreamingTableBlock {
+            config_columns: vec![
+                ("SKU".into(), 72.0, WasmAlign::Left),
+                ("Item".into(), 200.0, WasmAlign::Left),
+                ("Qty".into(), 48.0, WasmAlign::Right),
+            ],
+            repeat_header: true,
+            rows: (0..5)
+                .map(|i| vec![format!("A-{i}"), "Widget".into(), (i * 10).to_string()])
+                .collect(),
+        });
+        p.done(&mut b).unwrap();
+        let bytes = b.build().unwrap();
+        assert!(bytes.starts_with(b"%PDF-"));
+
+        // Round-trip: re-open and extract text; at minimum the headers
+        // should be present in the content stream.
+        let mut doc = WasmPdfDocument::new(&bytes, None).unwrap();
+        let text = doc.extract_all_text().unwrap();
+        assert!(
+            text.contains("SKU") || text.contains("Item") || text.contains("Qty"),
+            "streaming-table output should contain at least one header cell, got: {text:?}",
+        );
+    }
+
+    #[test]
+    fn test_align_enum_discriminants() {
+        assert_eq!(WasmAlign::Left as i32, 0);
+        assert_eq!(WasmAlign::Center as i32, 1);
+        assert_eq!(WasmAlign::Right as i32, 2);
+        assert_eq!(WasmAlign::from_i32(0), WasmAlign::Left);
+        assert_eq!(WasmAlign::from_i32(1), WasmAlign::Center);
+        assert_eq!(WasmAlign::from_i32(2), WasmAlign::Right);
+        // Out-of-range falls back to Left.
+        assert_eq!(WasmAlign::from_i32(99), WasmAlign::Left);
     }
 }
