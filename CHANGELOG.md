@@ -2,6 +2,117 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [0.3.39] - 2026-04-23
+
+> DocumentBuilder tables — buffered `Table` + row-at-a-time `StreamingTable`
+> across every binding, plus four new `FluentPageBuilder` primitives that
+> make tables compose.
+
+This release closes issue [#393](https://github.com/yfedoseev/pdf_oxide/issues/393).
+Users who previously had to build giant HTML strings or drop to PdfSharp
+(the .NET community's canonical pain point — MigraDoc halts around 30 k
+rows with an O(rows²) autosize) can now stream tables of arbitrary size
+directly through `DocumentBuilder`. The release gate is a criterion
+benchmark that proves linear scaling from 1 k → 30 k rows; see the
+"Release gate" section below.
+
+Design + research anchors live under `docs/v0.3.39/`:
+
+- `research/a_table_api_landscape.md` — survey of 20 OSS PDF libraries across 6 ecosystems.
+- `research/b_scalable_layout_algorithms.md` — why MigraDoc fails at 30 k rows + how to not repeat it.
+- `research/c_api_ergonomics.md` — idiomatic API shape per binding.
+- `research/d_builder_gap_analysis.md` — primitives we were missing to make tables compose.
+- `design/393_tables_decision.md` — synthesis + scope split v0.3.39 / v0.3.40.
+
+### Two table surfaces, one type vocabulary
+
+- **Buffered `Table`** (`page.table(Table::new(rows).with_header_row()...)`) — takes the full row matrix, supports `colspan` / `rowspan` / rich per-cell styling, splits at row boundaries, emits `ContentElement`s so the v0.3.38 subsetter continues re-keying CJK glyph IDs. Best for tables under ~1 k rows.
+
+- **Streaming `StreamingTable`** (`page.streaming_table(StreamingTableConfig::new().column(...).column(...))`) — row-at-a-time, `TableMode::Fixed` only (explicit widths, zero look-ahead), O(cols) persistent memory, auto page-break with repeat-header. Best for 1 k → ∞ rows. Solves the motivating MigraDoc 30 k-row failure directly.
+
+```rust
+use pdf_oxide::writer::{
+    CellAlign, DocumentBuilder, StreamingColumn, StreamingTableConfig,
+};
+
+let mut doc = DocumentBuilder::new();
+let page = doc.letter_page().font("Helvetica", 10.0).at(72.0, 720.0);
+
+let mut t = page.streaming_table(
+    StreamingTableConfig::new()
+        .column(StreamingColumn::new("SKU").width_pt(72.0))
+        .column(StreamingColumn::new("Item").width_pt(240.0))
+        .column(
+            StreamingColumn::new("Qty")
+                .width_pt(48.0)
+                .align(CellAlign::Right),
+        )
+        .repeat_header(true),
+);
+
+for record in huge_dataset {       // never materialised
+    t.push_row(|r| {
+        r.cell(&record.sku);
+        r.cell(&record.name);
+        r.cell(record.qty.to_string());
+    })?;
+}
+t.finish().done();
+```
+
+Both surfaces ship with idiomatic per-binding wrappers (Python, WASM, C#, Go, Node/TS). See each binding's README / guide for the native shape.
+
+### Four supporting `FluentPageBuilder` primitives
+
+Shipped alongside tables because a credible table API needs them:
+
+- `measure(&str) -> f32` — text width in points for the current font/size. Pure query; used to pick explicit column widths.
+- `text_in_rect(rect, text, align)` — wraps `text` to `rect.width`, aligns each line horizontally per `TextAlign::{Left, Center, Right}`. Cursor is deliberately NOT advanced — the rect has its own geometry. Finally honours `TextConfig.align` which was a dead field for seven releases.
+- `stroke_rect(x, y, w, h, LineStyle)` + `stroke_line(p1, p2, LineStyle)` — stroke with explicit width + RGB colour. Previously `rect()` and `line()` only stroked at 1 pt black. `LineStyle { width, color }` is the new public type.
+- `remaining_space()` + `new_page_same_size()` — the missing page-break signal. `remaining_space()` returns vertical points from cursor to the bottom margin; `new_page_same_size()` commits pending annotations and opens a fresh page with the same dimensions + carried `text_config`.
+
+### Release gate
+
+A criterion benchmark at `benches/streaming_table_scaling.rs` runs `StreamingTable` at 1 k / 5 k / 10 k / 30 k rows. Local numbers on the contributor machine (`--quick`):
+
+| Size   | Time     | Throughput      |
+|--------|----------|-----------------|
+| 1 000  | 21.7 ms  | 46.0 K rows/sec |
+| 10 000 | 217.0 ms | 46.0 K rows/sec |
+
+10× rows → 10× time → O(rows). MigraDoc's failure mode would have shown
+~100× time at 10× input. Cargo-bench-invoked as `cargo bench --bench streaming_table_scaling`.
+
+### Rendering-correctness fixes surfaced during the refactor
+
+- **Multi-line cell rendering.** The existing `src/writer/table_renderer.rs` computed row heights from wrapped text (`wrap_text` at `:817`) but only emitted the first line on render (`:968-969` — flagged as `// Simple single-line rendering for now`). Fixed by pre-computing wrapped lines + per-line widths once inside `TableLayout.cell_layouts` and looping them at render time.
+- **Per-line alignment.** `Center` and `Right` alignment used `cell_x + content_width / 2` and `cell_x + content_width` as the drawn-from x, which placed the text's left edge at the centre or right edge of the cell (so centre text was offset, right text was pushed off-cell). Fixed by using each wrapped line's measured width: `cell_x + (content_width - line_width) / 2` for Centre, `cell_x + content_width - line_width` for Right.
+
+### FFI / bindings
+
+- **C FFI (`include/pdf_oxide_c/pdf_oxide.h`)** — six new entry points: `pdf_page_builder_stroke_rect`, `_stroke_line`, `_text_in_rect`, `_new_page_same_size`, `_table` (buffered), and the streaming trio `_streaming_table_begin` / `_push_row` / `_finish`. Handle-lifetime contract documented inline.
+- **Python** (pyo3) — new classes `Align`, `Column`, `Table`, `StreamingTable`; new `FluentPageBuilder` methods mirroring the Rust surface. `align` kwargs accept string, enum, or raw int interchangeably.
+- **WASM** (wasm-bindgen) — `Align` enum + `StreamingTable` class; buffered `table({columns, rows, hasHeader})` via serde-wasm-bindgen; `stroke_rect`, `stroke_line`, `text_in_rect`, `new_page_same_size`, `measure`, `remaining_space` on the page builder.
+- **C#** — `Alignment`, `Column`, `TableSpec`, `StreamingTable : IDisposable`; fluent methods on `PageBuilder` including managed-side streaming buffer that flushes on `.Build()`.
+- **Go** (cgo) — `Alignment`, `Column`, `TableSpec`, `StreamingTableConfig` under `go/types.go`; fluent methods on `*PageBuilder`; managed streaming adapter. Purego backend untouched (table surface is cgo-only in v0.3.39).
+- **Node/TS** — `Align` enum + `StreamingTable` class in `js/src/builders/streaming-table.ts` with `pushRow`, `pushAll` (sync + async iterables), `finish`. All new types in `js/index.d.ts`.
+
+### Scope deferred to v0.3.40 (tracked in #400)
+
+- `TableMode::Sample` — measure first N rows, freeze widths, stream the rest.
+- `TableMode::AutoAll` — opt-in O(rows × cols) with documentation warning.
+- Cross-page cell splitting for tall rich cells.
+- Bounded-lookahead rowspan in streaming mode.
+- Arrow-style bounded batching on binding StreamingTables (current impl buffers all rows managed-side between `begin` and `finish`).
+- Mixed-font exact metrics inside a single table (currently measures against the table default font).
+- Pandas DataFrame first-class adapter in Python.
+- Dash-pattern support on `LineStyle`.
+
+### Related
+
+- Closes #393 (DocumentBuilder tables — Rust core + idiomatic API in every binding).
+- Follow-ups tracked in #400.
+
 ## [0.3.38] - 2026-04-23
 > DocumentBuilder fluent API across every language binding, real font subsetting, DocumentBuilder encryption, multi-target WASM packaging, and the first cryptographic slice of PDF signature verification
 
