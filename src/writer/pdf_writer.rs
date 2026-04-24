@@ -948,6 +948,10 @@ pub struct PdfWriter {
     /// outline tree against the emitted page refs and links it as
     /// `/Outlines` on the catalog. #393 Bundle B-1.
     outline: Option<super::outline_builder::OutlineBuilder>,
+    /// Page labels (Roman / Arabic / etc. numbering ranges). When set,
+    /// `finish()` emits the built number-tree and links it as
+    /// `/PageLabels` on the catalog. #393 Bundle B-2.
+    page_labels: Option<super::page_labels::PageLabelsBuilder>,
 }
 
 impl PdfWriter {
@@ -970,6 +974,7 @@ impl PdfWriter {
             next_embedded_font_id: 1,
             acroform: None,
             outline: None,
+            page_labels: None,
         }
     }
 
@@ -977,6 +982,12 @@ impl PdfWriter {
     /// [`PdfWriter::finish`]. Replaces any previously-set outline.
     pub fn set_outline(&mut self, outline: super::outline_builder::OutlineBuilder) {
         self.outline = Some(outline);
+    }
+
+    /// Attach a `/PageLabels` number-tree (Roman numeral preface →
+    /// Arabic body etc.) to be emitted during `finish`.
+    pub fn set_page_labels(&mut self, labels: super::page_labels::PageLabelsBuilder) {
+        self.page_labels = Some(labels);
     }
 
     /// Register an embedded TrueType font for use in content streams.
@@ -1452,6 +1463,16 @@ impl PdfWriter {
             None
         };
 
+        // Build /PageLabels if set. #393 Bundle B-2. Each range becomes
+        // a mapping in the number-tree, wrapped in an indirect object.
+        let page_labels_id = if let Some(labels) = self.page_labels.take() {
+            let id = self.alloc_obj_id();
+            self.objects.insert(id, labels.build());
+            Some(id)
+        } else {
+            None
+        };
+
         // Catalog object
         let mut catalog_entries = vec![
             ("Type", ObjectSerializer::name("Catalog")),
@@ -1465,6 +1486,9 @@ impl PdfWriter {
                 "Outlines",
                 ObjectSerializer::reference(root_ref.id, root_ref.gen),
             ));
+        }
+        if let Some(labels_id) = page_labels_id {
+            catalog_entries.push(("PageLabels", ObjectSerializer::reference(labels_id, 0)));
         }
         let catalog_obj = ObjectSerializer::dict(catalog_entries);
 
@@ -1550,6 +1574,14 @@ impl PdfWriter {
 
         // Outline objects (root + every item). #393 Bundle B-1.
         for &id in &outline_object_ids {
+            if let Some(obj) = self.objects.get(&id) {
+                xref_offsets.push((id, output.len()));
+                output.extend_from_slice(&serializer.serialize_indirect(id, 0, obj));
+            }
+        }
+
+        // PageLabels number tree (if set). #393 Bundle B-2.
+        if let Some(id) = page_labels_id {
             if let Some(obj) = self.objects.get(&id) {
                 xref_offsets.push((id, output.len()));
                 output.extend_from_slice(&serializer.serialize_indirect(id, 0, obj));

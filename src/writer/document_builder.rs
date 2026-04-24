@@ -1602,6 +1602,10 @@ pub struct DocumentBuilder {
     /// Wired into the PDF catalog by `PdfWriter::finish` at build time.
     /// #393 Bundle B-1.
     outline: super::outline_builder::OutlineBuilder,
+    /// Page labels. `None` => default decimal 1, 2, 3... `Some(...)`
+    /// emits a `/PageLabels` number-tree for mixed Roman/Arabic/etc.
+    /// numbering. #393 Bundle B-2.
+    page_labels: Option<super::page_labels::PageLabelsBuilder>,
 }
 
 impl DocumentBuilder {
@@ -1613,7 +1617,31 @@ impl DocumentBuilder {
             template: None,
             embedded_fonts: Vec::new(),
             outline: super::outline_builder::OutlineBuilder::new(),
+            page_labels: None,
         }
+    }
+
+    /// Attach a page-label number tree. Lets a document number its
+    /// front matter in lowercase Roman (i, ii, iii...) and its body in
+    /// Arabic (1, 2, 3...), or any combination supported by
+    /// [`crate::writer::PageLabelsBuilder`]. #393 Bundle B-2.
+    ///
+    /// ```no_run
+    /// # use pdf_oxide::writer::{DocumentBuilder, PageLabelsBuilder};
+    /// # use pdf_oxide::extractors::page_labels::{PageLabelRange, PageLabelStyle};
+    /// let doc = DocumentBuilder::new()
+    ///     .with_page_labels(
+    ///         PageLabelsBuilder::new()
+    ///             .add_range(PageLabelRange::new(0).with_style(PageLabelStyle::RomanLower))
+    ///             .add_range(PageLabelRange::new(4).with_style(PageLabelStyle::Decimal)),
+    ///     );
+    /// ```
+    pub fn with_page_labels(
+        mut self,
+        labels: super::page_labels::PageLabelsBuilder,
+    ) -> Self {
+        self.page_labels = Some(labels);
+        self
     }
 
     /// Add a top-level outline entry (bookmark) pointing at page
@@ -1797,6 +1825,11 @@ impl DocumentBuilder {
         // emit the /Outlines tree and link it from the catalog.
         // #393 Bundle B-1.
         writer.set_outline(self.outline);
+
+        // Transfer the page-label number tree if set. #393 Bundle B-2.
+        if let Some(labels) = self.page_labels {
+            writer.set_page_labels(labels);
+        }
 
         let total_pages = self.pages.len();
 
@@ -2529,6 +2562,30 @@ mod tests {
 
         // Bezier: stroke only (fill None).
         assert!(paths[4].stroke_color.is_some() && paths[4].fill_color.is_none());
+    }
+
+    #[test]
+    fn test_page_labels_are_emitted_in_catalog() {
+        use crate::extractors::page_labels::{PageLabelRange, PageLabelStyle};
+        use crate::writer::PageLabelsBuilder;
+
+        let mut doc = DocumentBuilder::new();
+        doc.letter_page().text("prefi").done();
+        doc.letter_page().text("prefii").done();
+        doc.letter_page().text("body 1").done();
+
+        let bytes = doc
+            .with_page_labels(
+                PageLabelsBuilder::new()
+                    .add_range(PageLabelRange::new(0).with_style(PageLabelStyle::RomanLower))
+                    .add_range(PageLabelRange::new(2).with_style(PageLabelStyle::Decimal)),
+            )
+            .build()
+            .expect("build");
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("/PageLabels"), "catalog /PageLabels missing");
+        // Check the /Nums tree includes our two ranges.
+        assert!(content.contains("/Nums"));
     }
 
     #[test]
