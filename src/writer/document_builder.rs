@@ -227,6 +227,55 @@ impl<'a> FluentPageBuilder<'a> {
         self
     }
 
+    /// Vertical points remaining on the current page from the cursor down to
+    /// the bottom margin (conventionally 72 pt / 1 inch from the bottom of
+    /// the page). Pure query — no mutation, no emission.
+    ///
+    /// The streaming `Table` surface (research #393) uses this to decide
+    /// whether the next row fits or whether to trigger a page break:
+    ///
+    /// ```no_run
+    /// # use pdf_oxide::writer::DocumentBuilder;
+    /// # let mut doc = DocumentBuilder::new();
+    /// # let page = doc.letter_page();
+    /// if page.remaining_space() < 40.0 {
+    ///     // ... trigger new_page_same_size() and redraw header
+    /// }
+    /// ```
+    ///
+    /// Returns 0.0 (not negative) when the cursor has already passed the
+    /// bottom margin. A return of > 0.0 does not *guarantee* the next row
+    /// fits — that depends on the row's own measured height.
+    pub fn remaining_space(&self) -> f32 {
+        const BOTTOM_MARGIN: f32 = 72.0;
+        (self.cursor_y - BOTTOM_MARGIN).max(0.0)
+    }
+
+    /// Finish the current page and start a new one with the **same page
+    /// size**. The builder's `text_config` (font, size, alignment,
+    /// line-height multiplier) carries over; cursor resets to the same
+    /// top-left origin the current page started at.
+    ///
+    /// Pending annotations and form fields on the current page are
+    /// committed before the new page is opened. Does not re-draw any
+    /// header / footer — callers that want header-repeat-on-break (tables,
+    /// long documents) must redraw explicitly.
+    pub fn new_page_same_size(self) -> FluentPageBuilder<'a> {
+        let page_data = &self.builder.pages[self.page_index];
+        let width = page_data.width;
+        let height = page_data.height;
+
+        // Carry text_config across the page transition.
+        let carried_config = self.text_config.clone();
+
+        // done() commits pending annotations and returns the document
+        // borrow; then we open a new page of the same size.
+        let doc = self.done();
+        let mut new_page = doc.page(PageSize::Custom(width, height));
+        new_page.text_config = carried_config;
+        new_page
+    }
+
     /// Measure the rendered width of `text` in the builder's current font
     /// and size, in PDF points. Pure query — does not advance the cursor or
     /// emit any content.
@@ -1682,6 +1731,89 @@ mod tests {
             "doubling font size should ~double measured width: {} vs 2*{}",
             big,
             small
+        );
+    }
+
+    #[test]
+    fn test_remaining_space_matches_cursor_vs_bottom_margin() {
+        // Letter page is 612 × 792. Default cursor_y at page start = 792 - 72 = 720.
+        // Bottom margin convention = 72. So initial remaining = 720 - 72 = 648.
+        let mut doc = DocumentBuilder::new();
+        let page = doc.letter_page();
+        assert!((page.remaining_space() - 648.0).abs() < 0.01, "initial: {}", page.remaining_space());
+
+        // After .text(), cursor drops by size * line_height = 12 * 1.2 = 14.4.
+        // Remaining should drop by the same.
+        let page = page.font("Helvetica", 12.0).text("row 1");
+        let expected = 648.0 - 12.0 * 1.2;
+        assert!(
+            (page.remaining_space() - expected).abs() < 0.01,
+            "after one text line: {} vs expected {}",
+            page.remaining_space(),
+            expected
+        );
+
+        // Moving cursor below the bottom margin clamps remaining_space to 0.0.
+        let page = page.at(72.0, 10.0);
+        assert_eq!(page.remaining_space(), 0.0);
+    }
+
+    #[test]
+    fn test_new_page_same_size_preserves_dimensions_and_config() {
+        let mut doc = DocumentBuilder::new();
+        doc.page(PageSize::A3)
+            .font("Times-Roman", 14.0)
+            .text("page 1")
+            .new_page_same_size()
+            .text("page 2") // uses carried font/size
+            .done();
+
+        assert_eq!(doc.pages.len(), 2);
+        let (w0, h0) = (doc.pages[0].width, doc.pages[0].height);
+        let (w1, h1) = (doc.pages[1].width, doc.pages[1].height);
+        assert_eq!(w0, w1, "width preserved");
+        assert_eq!(h0, h1, "height preserved");
+
+        // The second page's "page 2" text element must be in Times-Roman
+        // 14pt, proving text_config carried over.
+        let texts_p2: Vec<_> = doc.pages[1]
+            .elements
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Text(t) => Some(t),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(texts_p2.len(), 1);
+        assert_eq!(texts_p2[0].font.name, "Times-Roman");
+        assert_eq!(texts_p2[0].font.size, 14.0);
+    }
+
+    #[test]
+    fn test_new_page_same_size_resets_cursor_to_top() {
+        // After a bunch of .text() calls the cursor is well down the first
+        // page. A fresh new_page_same_size must start at the top-left
+        // again (cursor_y = height - 72 for a fresh page).
+        let mut doc = DocumentBuilder::new();
+        let page = doc
+            .letter_page()
+            .font("Helvetica", 12.0)
+            .text("l1")
+            .text("l2")
+            .text("l3");
+
+        let first_remaining = page.remaining_space();
+        let new_page = page.new_page_same_size();
+        assert!(
+            new_page.remaining_space() > first_remaining,
+            "new page must have more headroom: new={} vs old={}",
+            new_page.remaining_space(),
+            first_remaining
+        );
+        assert!(
+            (new_page.remaining_space() - 648.0).abs() < 0.01,
+            "fresh letter page expected 648pt remaining, got {}",
+            new_page.remaining_space()
         );
     }
 
