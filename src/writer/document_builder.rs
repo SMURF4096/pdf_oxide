@@ -23,11 +23,12 @@
 //! ```
 
 use super::annotation_builder::{Annotation, LinkAnnotation};
-use super::font_manager::{EmbeddedFont, TextLayout};
+use super::font_manager::{EmbeddedFont, FontManager, TextLayout};
 use super::freetext::FreeTextAnnotation;
 use super::page_template::PageTemplate;
 use super::pdf_writer::{PdfWriter, PdfWriterConfig};
 use super::stamp::{StampAnnotation, StampType};
+use super::table_renderer::{FontMetrics, Table};
 use super::text_annotations::TextAnnotation;
 use super::text_markup::TextMarkupAnnotation;
 use super::watermark::WatermarkAnnotation;
@@ -924,6 +925,57 @@ impl<'a> FluentPageBuilder<'a> {
     // bindings.
     // ───────────────────────────────────────────────────────────────────
 
+    /// Place a buffered `Table` at the current cursor position.
+    ///
+    /// This is the v0.3.39 buffered table surface — see research #393.
+    /// The table layout (column widths, row heights, cell positions, wrapped
+    /// cell text) is solved against the page's content width
+    /// (`page.width - 2 × 72pt`), the result is emitted as a sequence of
+    /// `ContentElement::Text` and `ContentElement::Path` via
+    /// `Table::to_content_elements`, and the cursor is advanced by the
+    /// table's total height.
+    ///
+    /// **Scope:** in-memory tables. Supports colspan / rowspan / rich cell
+    /// styling. Does **not** page-break — if the layout overflows the
+    /// current page the overflow is drawn past the bottom margin. For
+    /// 1000+ rows that cross page boundaries, use `streaming_table`
+    /// (lands in step 5/9).
+    ///
+    /// Font measurement uses the page-default font (`text_config.font`).
+    /// Per-cell font overrides honour the font name string in the cell but
+    /// are measured against the table default — good enough for v0.3.39.
+    /// Track: #400 v0.3.40 (mixed-font precise metrics).
+    pub fn table(mut self, table: Table) -> Self {
+        let page_width = self.builder.pages[self.page_index].width;
+        let content_width = page_width - 2.0 * 72.0; // match margin convention
+
+        let metrics = FluentFontMetrics {
+            manager: self.text_layout.font_manager(),
+            font_name: self.text_config.font.clone(),
+        };
+        let layout = table.calculate_layout(content_width, &metrics);
+
+        let elements = table.to_content_elements(self.cursor_x, self.cursor_y, &layout);
+        let n = elements.len();
+
+        let page = &mut self.builder.pages[self.page_index];
+        let base_order = page.elements.len();
+        for (i, mut elem) in elements.into_iter().enumerate() {
+            // Rebase table-local reading_order onto the page's running
+            // sequence so subsequent builder calls don't alias orders.
+            match &mut elem {
+                ContentElement::Text(t) => t.reading_order = Some(base_order + i),
+                ContentElement::Path(p) => p.reading_order = Some(base_order + i),
+                _ => {},
+            }
+            page.elements.push(elem);
+        }
+        let _ = n; // retained for future logging / subsetter-registration path
+
+        self.cursor_y -= layout.total_height;
+        self
+    }
+
     /// Draw a stroked rectangle with a caller-supplied `LineStyle`.
     /// Unlike [`Self::rect`] (1pt black default), this exposes width and
     /// colour. Used by the upcoming buffered `Table` surface for per-side
@@ -1574,6 +1626,21 @@ impl Default for DocumentBuilder {
     }
 }
 
+/// Adapter that projects `FontManager` into the `table_renderer::FontMetrics`
+/// trait against a fixed font name. Lives here (not on FontManager itself)
+/// because FontMetrics is a table-renderer-owned abstraction the writer
+/// layer doesn't know about.
+struct FluentFontMetrics<'a> {
+    manager: &'a FontManager,
+    font_name: String,
+}
+
+impl FontMetrics for FluentFontMetrics<'_> {
+    fn text_width(&self, text: &str, font_size: f32) -> f32 {
+        self.manager.text_width(text, &self.font_name, font_size)
+    }
+}
+
 /// Simple word wrapping utility.
 #[allow(dead_code)]
 fn wrap_text(text: &str, max_chars: usize) -> Vec<String> {
@@ -1732,6 +1799,104 @@ mod tests {
             big,
             small
         );
+    }
+
+    #[test]
+    fn test_table_fluent_emits_elements_and_advances_cursor() {
+        use super::super::table_renderer::{
+            CellAlign, ColumnWidth, Table as RenderTable, TableCell,
+        };
+
+        let mut doc = DocumentBuilder::new();
+        let page = doc.letter_page().font("Helvetica", 12.0);
+        let cursor_before = page.cursor_y;
+
+        let table = RenderTable::new(vec![
+            vec![
+                TableCell::text("Name"),
+                TableCell::text("Value").align(CellAlign::Right),
+            ],
+            vec![TableCell::text("Alice"), TableCell::text("42")],
+            vec![TableCell::text("Bob"), TableCell::text("7")],
+        ])
+        .with_header_row()
+        .with_column_widths(vec![ColumnWidth::Fixed(200.0), ColumnWidth::Fixed(200.0)]);
+
+        let page = page.table(table);
+        let cursor_after = page.cursor_y;
+        page.done();
+
+        // Cursor advanced downward by at least one row's worth of height.
+        assert!(
+            cursor_after < cursor_before,
+            "cursor must move down after .table(): before={} after={}",
+            cursor_before,
+            cursor_after
+        );
+
+        // At least one Text element per non-empty cell — 6 cells here.
+        let texts: Vec<_> = doc.pages[0]
+            .elements
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Text(t) => Some(t),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            texts.len(),
+            6,
+            "expected one Text per cell; got {}: {:?}",
+            texts.len(),
+            texts.iter().map(|t| &t.text).collect::<Vec<_>>()
+        );
+
+        // Header row (first 2 Text elements) must use Helvetica-Bold because
+        // TableCell::header and is_header promote the font name.
+        assert_eq!(
+            texts[0].font.name, "Helvetica-Bold",
+            "header cell must use bold font"
+        );
+        assert_eq!(texts[1].font.name, "Helvetica-Bold");
+        // Body rows stay on the default Helvetica.
+        assert_eq!(texts[2].font.name, "Helvetica");
+    }
+
+    #[test]
+    fn test_table_fluent_reading_order_is_page_relative() {
+        // If there's already stuff on the page before .table(), the table's
+        // reading_order must start after the existing elements — not from 0.
+        use super::super::table_renderer::{ColumnWidth, Table as RenderTable, TableCell};
+
+        let mut doc = DocumentBuilder::new();
+        doc.letter_page()
+            .at(72.0, 720.0)
+            .font("Helvetica", 12.0)
+            .text("Before the table") // becomes reading_order=0
+            .table(
+                RenderTable::new(vec![vec![TableCell::text("a"), TableCell::text("b")]])
+                    .with_column_widths(vec![
+                        ColumnWidth::Fixed(100.0),
+                        ColumnWidth::Fixed(100.0),
+                    ]),
+            )
+            .text("After the table")
+            .done();
+
+        let orders: Vec<usize> = doc.pages[0]
+            .elements
+            .iter()
+            .filter_map(|e| e.reading_order())
+            .collect();
+
+        // Orders must be monotone and start from 0.
+        for pair in orders.windows(2) {
+            assert!(
+                pair[1] > pair[0],
+                "reading_order must be strictly monotone: {:?}",
+                orders
+            );
+        }
     }
 
     #[test]
