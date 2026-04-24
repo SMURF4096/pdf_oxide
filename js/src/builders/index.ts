@@ -11,3 +11,4 @@ export * from './document-builder';
 export * from './metadata-builder';
 export * from './pdf-builder';
 export * from './search-options-builder';
+export * from './streaming-table';

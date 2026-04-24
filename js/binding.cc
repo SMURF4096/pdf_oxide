@@ -494,6 +494,26 @@ extern "C" {
                                             float r, float g, float b, int* error_code);
   extern int   pdf_page_builder_line(void* page, float x1, float y1, float x2, float y2, int* error_code);
 
+  /* v0.3.39 — buffered Table surface (#393). */
+  extern int   pdf_page_builder_stroke_rect(void* page, float x, float y, float w, float h,
+                                            float width, float r, float g, float b,
+                                            int* error_code);
+  extern int   pdf_page_builder_stroke_line(void* page, float x1, float y1, float x2, float y2,
+                                            float width, float r, float g, float b,
+                                            int* error_code);
+  extern int   pdf_page_builder_text_in_rect(void* page, float x, float y, float w, float h,
+                                             const char* text, int align,
+                                             int* error_code);
+  extern int   pdf_page_builder_new_page_same_size(void* page, int* error_code);
+  extern int   pdf_page_builder_table(void* page,
+                                      size_t n_columns,
+                                      const float* widths,
+                                      const int* aligns,
+                                      size_t n_rows,
+                                      const char* const* cell_strings,
+                                      int has_header,
+                                      int* error_code);
+
   extern int   pdf_page_builder_done(void* page, int* error_code);
   extern void  pdf_page_builder_free(void* page);
 
@@ -3236,6 +3256,11 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   extern Napi::Value PageBuilderRect(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderFilledRect(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderLine(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderStrokeRect(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderStrokeLine(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderTextInRect(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderNewPageSameSize(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderTable(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderDone(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderFree(const Napi::CallbackInfo&);
   extern Napi::Value DocumentBuilderBuild(const Napi::CallbackInfo&);
@@ -3288,6 +3313,11 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("pageBuilderRect", Napi::Function::New(env, PageBuilderRect));
   exports.Set("pageBuilderFilledRect", Napi::Function::New(env, PageBuilderFilledRect));
   exports.Set("pageBuilderLine", Napi::Function::New(env, PageBuilderLine));
+  exports.Set("pageBuilderStrokeRect", Napi::Function::New(env, PageBuilderStrokeRect));
+  exports.Set("pageBuilderStrokeLine", Napi::Function::New(env, PageBuilderStrokeLine));
+  exports.Set("pageBuilderTextInRect", Napi::Function::New(env, PageBuilderTextInRect));
+  exports.Set("pageBuilderNewPageSameSize", Napi::Function::New(env, PageBuilderNewPageSameSize));
+  exports.Set("pageBuilderTable", Napi::Function::New(env, PageBuilderTable));
   exports.Set("pageBuilderDone", Napi::Function::New(env, PageBuilderDone));
   exports.Set("pageBuilderFree", Napi::Function::New(env, PageBuilderFree));
   exports.Set("documentBuilderBuild", Napi::Function::New(env, DocumentBuilderBuild));
@@ -3764,6 +3794,143 @@ Napi::Value PageBuilderLine(const Napi::CallbackInfo& info) {
   int errorCode = 0;
   pdf_page_builder_line(p, x1, y1, x2, y2, &errorCode);
   throwOnError(env, errorCode, "PageBuilder.line");
+  return env.Undefined();
+}
+
+// v0.3.39 — buffered Table surface (#393) primitives.
+
+Napi::Value PageBuilderStrokeRect(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  float x = static_cast<float>(requireNumber(info, 1, "x"));
+  float y = static_cast<float>(requireNumber(info, 2, "y"));
+  float w = static_cast<float>(requireNumber(info, 3, "w"));
+  float h = static_cast<float>(requireNumber(info, 4, "h"));
+  float width = static_cast<float>(requireNumber(info, 5, "width"));
+  float r = static_cast<float>(requireNumber(info, 6, "r"));
+  float g = static_cast<float>(requireNumber(info, 7, "g"));
+  float b = static_cast<float>(requireNumber(info, 8, "b"));
+  int errorCode = 0;
+  pdf_page_builder_stroke_rect(p, x, y, w, h, width, r, g, b, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.strokeRect");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderStrokeLine(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  float x1 = static_cast<float>(requireNumber(info, 1, "x1"));
+  float y1 = static_cast<float>(requireNumber(info, 2, "y1"));
+  float x2 = static_cast<float>(requireNumber(info, 3, "x2"));
+  float y2 = static_cast<float>(requireNumber(info, 4, "y2"));
+  float width = static_cast<float>(requireNumber(info, 5, "width"));
+  float r = static_cast<float>(requireNumber(info, 6, "r"));
+  float g = static_cast<float>(requireNumber(info, 7, "g"));
+  float b = static_cast<float>(requireNumber(info, 8, "b"));
+  int errorCode = 0;
+  pdf_page_builder_stroke_line(p, x1, y1, x2, y2, width, r, g, b, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.strokeLine");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderTextInRect(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  float x = static_cast<float>(requireNumber(info, 1, "x"));
+  float y = static_cast<float>(requireNumber(info, 2, "y"));
+  float w = static_cast<float>(requireNumber(info, 3, "w"));
+  float h = static_cast<float>(requireNumber(info, 4, "h"));
+  std::string text = requireString(info, 5, "text");
+  int align = 0;
+  if (info.Length() >= 7 && info[6].IsNumber()) {
+    align = info[6].As<Napi::Number>().Int32Value();
+  }
+  int errorCode = 0;
+  pdf_page_builder_text_in_rect(p, x, y, w, h, text.c_str(), align, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.textInRect");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderNewPageSameSize(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  int errorCode = 0;
+  pdf_page_builder_new_page_same_size(p, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.newPageSameSize");
+  return env.Undefined();
+}
+
+// table(page, widths[], aligns[], nRows, cells[], hasHeader)
+// widths    : number[]  — length = nColumns
+// aligns    : number[]  — length = nColumns (0=Left, 1=Center, 2=Right)
+// cells     : string[]  — row-major, length = nRows * nColumns
+// hasHeader : boolean
+Napi::Value PageBuilderTable(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  if (info.Length() < 6 || !info[1].IsArray() || !info[2].IsArray() || !info[4].IsArray()) {
+    throw Napi::TypeError::New(env,
+        "table(page, widths[], aligns[], nRows, cells[], hasHeader)");
+  }
+  auto widthsArr = info[1].As<Napi::Array>();
+  auto alignsArr = info[2].As<Napi::Array>();
+  if (!info[3].IsNumber()) {
+    throw Napi::TypeError::New(env, "nRows must be a number");
+  }
+  size_t nRows = static_cast<size_t>(info[3].As<Napi::Number>().Uint32Value());
+  auto cellsArr = info[4].As<Napi::Array>();
+  bool hasHeader = info[5].IsBoolean() && info[5].As<Napi::Boolean>().Value();
+
+  size_t nColumns = widthsArr.Length();
+  if (nColumns == 0) {
+    throw Napi::Error::New(env, "table requires at least one column");
+  }
+  if (alignsArr.Length() != nColumns) {
+    throw Napi::TypeError::New(env, "aligns length must equal widths length");
+  }
+  size_t expectedCells = nRows * nColumns;
+  if (cellsArr.Length() != expectedCells) {
+    throw Napi::TypeError::New(env,
+        "cells length must equal nRows * nColumns");
+  }
+
+  std::vector<float> widths(nColumns);
+  std::vector<int>   aligns(nColumns);
+  for (size_t i = 0; i < nColumns; i++) {
+    Napi::Value wv = widthsArr.Get(i);
+    if (!wv.IsNumber()) throw Napi::TypeError::New(env, "widths[i] must be a number");
+    widths[i] = static_cast<float>(wv.As<Napi::Number>().DoubleValue());
+    Napi::Value av = alignsArr.Get(i);
+    if (!av.IsNumber()) throw Napi::TypeError::New(env, "aligns[i] must be a number");
+    aligns[i] = av.As<Napi::Number>().Int32Value();
+  }
+
+  // Own every cell string for the duration of the FFI call.
+  std::vector<std::string> cellStorage;
+  cellStorage.reserve(expectedCells);
+  std::vector<const char*> cellPtrs(expectedCells);
+  for (size_t i = 0; i < expectedCells; i++) {
+    Napi::Value cv = cellsArr.Get(i);
+    if (cv.IsNull() || cv.IsUndefined()) {
+      cellStorage.emplace_back();
+    } else if (cv.IsString()) {
+      cellStorage.push_back(cv.As<Napi::String>().Utf8Value());
+    } else {
+      throw Napi::TypeError::New(env, "cells[i] must be string, null, or undefined");
+    }
+    cellPtrs[i] = cellStorage[i].c_str();
+  }
+
+  int errorCode = 0;
+  pdf_page_builder_table(p,
+                         nColumns,
+                         widths.data(),
+                         aligns.data(),
+                         nRows,
+                         cellPtrs.data(),
+                         hasHeader ? 1 : 0,
+                         &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.table");
   return env.Undefined();
 }
 

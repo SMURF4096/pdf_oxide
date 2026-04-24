@@ -5,6 +5,7 @@ import { dirname } from 'node:path';
 import { arch, platform } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import {
+  Align,
   AnnotationBuilder,
   ConversionOptionsBuilder,
   DocumentBuilder,
@@ -13,6 +14,7 @@ import {
   PageBuilder,
   PdfBuilder,
   SearchOptionsBuilder,
+  StreamingTable,
 } from './builders/index';
 import { DocumentEditor } from './document-editor';
 import {
@@ -63,7 +65,7 @@ import {
   SearchStream,
   SecurityManager,
 } from './managers/index';
-import type { Table } from './types/common.js';
+import type { Column, StreamingTableConfig, Table, TableSpec } from './types/common.js';
 import type { WorkerResult, WorkerTask } from './workers/index';
 import { WorkerPool, workerPool } from './workers/index';
 
@@ -666,13 +668,18 @@ export type {
   BatchProgress,
   BatchResult,
   BatchStatistics,
+  Column,
+  StreamingTableConfig,
   Table,
+  TableSpec,
   WorkerResult,
   WorkerTask,
 };
 export {
   AccessibilityException,
   AccessibilityManager,
+  // v0.3.39 — DocumentBuilder tables (#393)
+  Align,
   AnnotationBuilder,
   AnnotationManager,
   AnnotationProperties,
@@ -771,6 +778,8 @@ export {
   SignatureException,
   SignatureManager,
   SigningFailed,
+  // v0.3.39 — managed streaming-table adapter (#393)
+  StreamingTable,
   // Utilities
   TextSearcher,
   ThumbnailManager,

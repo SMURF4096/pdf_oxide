@@ -28,6 +28,8 @@
 // against `prebuilds/<triple>/pdf_oxide.node` in the published
 // package and the in-tree `build/Release/` output in dev mode.
 import { loadNative } from '../native.js';
+import { Align, type Column, type StreamingTableConfig, type TableSpec } from '../types/common.js';
+import { StreamingTable } from './streaming-table.js';
 
 const native = loadNative();
 
@@ -271,6 +273,7 @@ export class PageBuilder {
   /** Set font + size for subsequent text. */
   font(name: string, size: number): this {
     native.pageBuilderFont(this.h(), name, size);
+    this._lastFontSize = size;
     return this;
   }
 
@@ -487,6 +490,142 @@ export class PageBuilder {
     return this;
   }
 
+  // --- v0.3.39 primitives (#393) -------------------------------------
+
+  /**
+   * Draw a stroked rectangle outline with caller-supplied width + RGB
+   * colour (channels 0–1). Underlies the Table surface.
+   */
+  strokeRect(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    style?: { width?: number; color?: [number, number, number] }
+  ): this {
+    const width = style?.width ?? 1;
+    const [r, g, b] = style?.color ?? [0, 0, 0];
+    native.pageBuilderStrokeRect(this.h(), x, y, w, h, width, r, g, b);
+    return this;
+  }
+
+  /**
+   * Draw a straight line with caller-supplied width + RGB colour.
+   */
+  strokeLine(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    style?: { width?: number; color?: [number, number, number] }
+  ): this {
+    const width = style?.width ?? 1;
+    const [r, g, b] = style?.color ?? [0, 0, 0];
+    native.pageBuilderStrokeLine(this.h(), x1, y1, x2, y2, width, r, g, b);
+    return this;
+  }
+
+  /**
+   * Place wrapped text inside the rectangle (x, y, w, h) with the
+   * given horizontal alignment. Uses the current font + size. Text
+   * that does not fit is clipped to the rectangle height.
+   */
+  textInRect(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    text: string,
+    align: Align = Align.Left
+  ): this {
+    native.pageBuilderTextInRect(this.h(), x, y, w, h, text, align);
+    return this;
+  }
+
+  /**
+   * Start a new page with the *same* dimensions as the current one.
+   * Text config (font + size) carries over; the cursor resets to the
+   * top-left margin. Callers wanting header-repeat-on-break must
+   * re-emit the header explicitly.
+   */
+  newPageSameSize(): this {
+    native.pageBuilderNewPageSameSize(this.h());
+    return this;
+  }
+
+  /**
+   * Measure the width of `text` in the current font and size.
+   *
+   * Note: v0.3.39 ships a JS-side approximation (0.55em per glyph for
+   * ASCII / typical Latin-1 characters). A true per-glyph measurement
+   * FFI is pending. The result is in PDF points.
+   */
+  measure(text: string): number {
+    // Retrieve current font size if the user tracked it via `font(...)`.
+    // We have no FFI query for the size; fall back to the 10pt default.
+    const size = this._lastFontSize ?? 10;
+    // ~0.55 em is a reasonable average for proportional fonts.
+    return text.length * size * 0.55;
+  }
+
+  /**
+   * Estimate the remaining vertical space on the page at the current
+   * cursor position. v0.3.39 returns `null` when the native cursor is
+   * unknown — callers should treat `null` as "unknown; assume fresh
+   * page". A real FFI hook is pending in a follow-up release.
+   */
+  remainingSpace(): number | null {
+    return null;
+  }
+
+  /**
+   * Emit a buffered table at the current cursor. All rows are
+   * marshalled into a single FFI call — memory scales with the row
+   * count. For million-row streams use {@link streamingTable}.
+   */
+  table(spec: TableSpec): this {
+    const columns = spec.columns;
+    if (!columns || columns.length === 0) {
+      throw new Error('table spec must contain at least one column');
+    }
+    const widths = columns.map((c) => c.width);
+    const aligns = columns.map((c) => (c.align ?? Align.Left) as number);
+    const hasHeader = spec.hasHeader !== false;
+    const rows = spec.rows ?? [];
+    const cells: Array<string | null> = [];
+    if (hasHeader) {
+      for (const c of columns) cells.push(c.header);
+    }
+    const bodyRowCount = rows.length;
+    for (const row of rows) {
+      if (row.length !== columns.length) {
+        throw new Error(
+          `row width ${row.length} does not match column count ${columns.length}`
+        );
+      }
+      for (const cell of row) cells.push(cell ?? null);
+    }
+    const totalRows = (hasHeader ? 1 : 0) + bodyRowCount;
+    native.pageBuilderTable(this.h(), widths, aligns, totalRows, cells, hasHeader);
+    return this;
+  }
+
+  /**
+   * Begin a managed streaming table. Rows pushed via
+   * {@link StreamingTable.pushRow} are buffered in JS and flushed
+   * through the buffered-table FFI when {@link StreamingTable.finish}
+   * is called.
+   *
+   * The shape intentionally matches the future streaming FFI so
+   * callers don't need to migrate once O(cols) streaming lands.
+   */
+  streamingTable(config: StreamingTableConfig): StreamingTable {
+    return new StreamingTable(this, config);
+  }
+
+  /** @internal — track the last font size for JS-side `measure()`. */
+  _lastFontSize?: number;
+
   /**
    * Commit the page's buffered operations to the parent builder and
    * return the parent for chaining. After `done()` this PageBuilder is
@@ -521,3 +660,9 @@ export class PageBuilder {
     this.close();
   }
 }
+
+// Re-export the v0.3.39 table surface so users can `import { Align,
+// StreamingTable } from 'pdf-oxide'` without reaching into ./types or
+// ./builders/streaming-table.
+export { Align, type Column, type StreamingTableConfig, type TableSpec };
+export { StreamingTable } from './streaming-table.js';

@@ -1812,3 +1812,193 @@ export class RenderingManager {
  *   .save('output.pdf');
  * ```
  */
+
+// ============================================================================
+// DocumentBuilder — v0.3.39 table primitives (#393)
+// ============================================================================
+
+/**
+ * Horizontal alignment for `textInRect` and table cells.
+ * Integer values match the C FFI encoding.
+ */
+export enum Align {
+  Left = 0,
+  Center = 1,
+  Right = 2,
+}
+
+/** Column descriptor for {@link TableSpec} / {@link StreamingTableConfig}. */
+export interface Column {
+  /** Header label (bold when `hasHeader` / `repeatHeader` is true). */
+  header: string;
+  /** Column width in PDF points. */
+  width: number;
+  /** Cell alignment (default Align.Left). */
+  align?: Align;
+}
+
+/** Buffered-table spec consumed by `PageBuilder.table(...)`. */
+export interface TableSpec {
+  columns: Column[];
+  rows: Array<Array<string | null | undefined>>;
+  /** Promote columns to a styled header row. Default `true`. */
+  hasHeader?: boolean;
+}
+
+/** Config passed to `PageBuilder.streamingTable(...)`. */
+export interface StreamingTableConfig {
+  columns: Column[];
+  /** Emit the header on completion. Default `true`. */
+  repeatHeader?: boolean;
+}
+
+/**
+ * Managed streaming-table adapter. Rows pushed via `pushRow` /
+ * `pushAll` are buffered and flushed through the buffered-table FFI
+ * on `finish()`.
+ */
+export class StreamingTable {
+  /** Push a single row (cell count must equal `columns.length`). */
+  pushRow(cells: Array<string | null | undefined>): this;
+  /** Drain a sync or async iterable of rows. */
+  pushAll(
+    rows:
+      | Iterable<Array<string | null | undefined>>
+      | AsyncIterable<Array<string | null | undefined>>
+  ): Promise<this>;
+  /** Flush buffered rows and return the parent PageBuilder. */
+  finish(): Promise<PageBuilder>;
+  /** Number of body rows buffered so far. */
+  readonly rowCount: number;
+}
+
+/**
+ * Fluent document builder — the programmatic multi-page construction API
+ * exposed through the C FFI.
+ */
+export class DocumentBuilder {
+  static create(): DocumentBuilder;
+  title(title: string): this;
+  author(author: string): this;
+  subject(subject: string): this;
+  keywords(keywords: string): this;
+  creator(creator: string): this;
+  registerEmbeddedFont(name: string, font: EmbeddedFont): this;
+  a4Page(): PageBuilder;
+  letterPage(): PageBuilder;
+  page(width: number, height: number): PageBuilder;
+  build(): Buffer;
+  save(path: string): void;
+  saveEncrypted(path: string, userPassword: string, ownerPassword: string): void;
+  toBytesEncrypted(userPassword: string, ownerPassword: string): Buffer;
+  close(): void;
+  [Symbol.dispose](): void;
+}
+
+/** TTF / OTF font registerable with {@link DocumentBuilder}. */
+export class EmbeddedFont {
+  static fromFile(path: string): EmbeddedFont;
+  static fromBytes(data: Uint8Array | Buffer, name?: string): EmbeddedFont;
+  close(): void;
+  [Symbol.dispose](): void;
+}
+
+/**
+ * Fluent per-page builder returned by `DocumentBuilder.a4Page()` etc.
+ * Single-use — `done()` commits the page.
+ */
+export class PageBuilder {
+  // --- Text / typography --------------------------------------------
+  font(name: string, size: number): this;
+  at(x: number, y: number): this;
+  text(text: string): this;
+  heading(level: number, text: string): this;
+  paragraph(text: string): this;
+  space(points: number): this;
+  horizontalRule(): this;
+
+  // --- Annotations ---------------------------------------------------
+  linkUrl(url: string): this;
+  linkPage(pageIndex: number): this;
+  linkNamed(destination: string): this;
+  highlight(r: number, g: number, b: number): this;
+  underline(r: number, g: number, b: number): this;
+  strikeout(r: number, g: number, b: number): this;
+  squiggly(r: number, g: number, b: number): this;
+  stickyNote(text: string): this;
+  stickyNoteAt(x: number, y: number, text: string): this;
+  watermark(text: string): this;
+  watermarkConfidential(): this;
+  watermarkDraft(): this;
+  stamp(typeName: string): this;
+  freeText(x: number, y: number, w: number, h: number, text: string): this;
+
+  // --- Form fields ---------------------------------------------------
+  textField(
+    name: string,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    defaultValue?: string
+  ): this;
+  checkbox(name: string, x: number, y: number, w: number, h: number, checked?: boolean): this;
+  comboBox(
+    name: string,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    options: string[],
+    selected?: string
+  ): this;
+  radioGroup(
+    name: string,
+    buttons: Array<[string, number, number, number, number]>,
+    selected?: string
+  ): this;
+  pushButton(name: string, x: number, y: number, w: number, h: number, caption: string): this;
+
+  // --- Graphics primitives ------------------------------------------
+  rect(x: number, y: number, w: number, h: number): this;
+  filledRect(x: number, y: number, w: number, h: number, r: number, g: number, b: number): this;
+  line(x1: number, y1: number, x2: number, y2: number): this;
+
+  // --- v0.3.39 table primitives (#393) ------------------------------
+  strokeRect(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    style?: { width?: number; color?: [number, number, number] }
+  ): this;
+  strokeLine(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    style?: { width?: number; color?: [number, number, number] }
+  ): this;
+  textInRect(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    text: string,
+    align?: Align
+  ): this;
+  newPageSameSize(): this;
+  /** Approximate width of `text` in the current font (JS-side in v0.3.39). */
+  measure(text: string): number;
+  /** Remaining vertical space, or null when unknown. */
+  remainingSpace(): number | null;
+  /** Emit a buffered table at the current cursor. */
+  table(spec: TableSpec): this;
+  /** Begin a managed streaming-table adapter. */
+  streamingTable(config: StreamingTableConfig): StreamingTable;
+
+  // --- Lifecycle -----------------------------------------------------
+  done(): DocumentBuilder;
+  close(): void;
+  [Symbol.dispose](): void;
+}

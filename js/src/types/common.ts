@@ -145,3 +145,65 @@ export type StreamErrorCallback = (error: Error) => void;
  * Stream end callback
  */
 export type StreamEndCallback = () => void;
+
+// ============================================================================
+// DocumentBuilder — table primitives (v0.3.39, issue #393)
+// ============================================================================
+
+/**
+ * Horizontal alignment for wrapped text and table cells.
+ * Matches the C FFI integer encoding used by
+ * `pdf_page_builder_text_in_rect` and `pdf_page_builder_table`.
+ */
+export enum Align {
+  Left = 0,
+  Center = 1,
+  Right = 2,
+}
+
+/**
+ * Column descriptor for {@link TableSpec} / {@link StreamingTableConfig}.
+ */
+export interface Column {
+  /** Header label rendered in bold (used only when `hasHeader`/`repeatHeader`). */
+  header: string;
+  /** Column width in PDF points. */
+  width: number;
+  /** Cell alignment (default {@link Align.Left}). */
+  align?: Align;
+}
+
+/**
+ * Buffered-table spec passed to `PageBuilder.table(...)`.
+ *
+ * All rows are held in JS memory and flushed to the native
+ * `pdf_page_builder_table` call in a single step.
+ */
+export interface TableSpec {
+  /** Column layout — widths, alignments, and header labels. */
+  columns: Column[];
+  /** Body rows, each row has `columns.length` cells (nullable = empty). */
+  rows: Array<Array<string | null | undefined>>;
+  /** Promote the column headers to a styled first row. Defaults to true. */
+  hasHeader?: boolean;
+}
+
+/**
+ * Configuration for the managed streaming-table adapter.
+ *
+ * v0.3.39 Node ships a managed streaming adapter that buffers rows in
+ * JS and flushes them through the buffered-table FFI on `finish()`.
+ * The public shape intentionally matches what the real streaming FFI
+ * will expose in a later release so callers do not need to migrate.
+ */
+export interface StreamingTableConfig {
+  /** Column layout — widths, alignments, and header labels. */
+  columns: Column[];
+  /**
+   * Whether to emit a header row when the stream completes. Defaults
+   * to true. The parameter is named `repeatHeader` to match the
+   * future streaming FFI, even though in the managed adapter the
+   * header is emitted exactly once.
+   */
+  repeatHeader?: boolean;
+}
