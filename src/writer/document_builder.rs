@@ -1128,6 +1128,79 @@ impl<'a> FluentPageBuilder<'a> {
     }
 
     // ───────────────────────────────────────────────────────────────────
+    // Image placement
+    // ───────────────────────────────────────────────────────────────────
+
+    /// Embed an image at `rect` from a filesystem path. Supports JPEG
+    /// and PNG; format is detected from the bytes (not the extension).
+    /// PNG alpha channels become `/SMask` XObjects so transparent
+    /// images composite correctly.
+    ///
+    /// `rect.x` / `rect.y` use PDF's bottom-up coordinates (same
+    /// convention as the rest of the builder). `rect.width` /
+    /// `rect.height` are the on-page size in points — the image is
+    /// scaled to fit the rect without preserving aspect ratio; use
+    /// [`crate::writer::ImageData::fit_to_box`] before calling this
+    /// method if you need letterboxing.
+    pub fn image_from_file(
+        self,
+        path: impl AsRef<Path>,
+        rect: Rect,
+    ) -> Result<Self> {
+        use crate::writer::image_handler::ImageData;
+        let data =
+            ImageData::from_file(path).map_err(|e| crate::error::Error::Image(e.to_string()))?;
+        Ok(self.image_with(data, rect))
+    }
+
+    /// Embed an image at `rect` from in-memory bytes. Auto-detects
+    /// JPEG / PNG by magic number.
+    pub fn image_from_bytes(self, bytes: &[u8], rect: Rect) -> Result<Self> {
+        use crate::writer::image_handler::ImageData;
+        let data =
+            ImageData::from_bytes(bytes).map_err(|e| crate::error::Error::Image(e.to_string()))?;
+        Ok(self.image_with(data, rect))
+    }
+
+    /// Embed a pre-decoded [`crate::writer::ImageData`] at `rect`. Useful
+    /// when a caller has already loaded the image (e.g. for reuse across
+    /// multiple placements) and doesn't need the IO / parse step again.
+    pub fn image_with(
+        self,
+        data: crate::writer::image_handler::ImageData,
+        rect: Rect,
+    ) -> Self {
+        use crate::elements::{
+            ColorSpace as EColorSpace, ImageContent, ImageFormat as EImageFormat,
+        };
+        use crate::writer::image_handler::{ColorSpace as WColorSpace, ImageFormat as WImageFormat};
+
+        let format = match data.format {
+            WImageFormat::Jpeg => EImageFormat::Jpeg,
+            WImageFormat::Png => EImageFormat::Png,
+            WImageFormat::Raw => EImageFormat::Raw,
+        };
+        let color_space = match data.color_space {
+            WColorSpace::DeviceGray => EColorSpace::Gray,
+            WColorSpace::DeviceRGB => EColorSpace::RGB,
+            WColorSpace::DeviceCMYK => EColorSpace::CMYK,
+        };
+
+        let mut content =
+            ImageContent::new(rect, format, data.data, data.width, data.height);
+        content.color_space = color_space;
+        content.bits_per_component = data.bits_per_component;
+        if let Some(mask) = data.soft_mask {
+            content = content.with_soft_mask(mask);
+        }
+
+        let page = &mut self.builder.pages[self.page_index];
+        content.reading_order = Some(page.elements.len());
+        page.elements.push(ContentElement::Image(content));
+        self
+    }
+
+    // ───────────────────────────────────────────────────────────────────
     // Shape primitives (circle / ellipse / polygon / arc / bezier_curve)
     // ───────────────────────────────────────────────────────────────────
     // Each primitive accepts an optional LineStyle (stroke) and optional
@@ -2187,6 +2260,70 @@ mod tests {
                 orders
             );
         }
+    }
+
+    #[test]
+    fn test_image_from_file_and_bytes() {
+        // Happy path: load an image from disk + from bytes, confirm
+        // ContentElement::Image is pushed with the right geometry.
+        let mut doc = DocumentBuilder::new();
+        doc.letter_page()
+            .image_from_file(
+                "tests/fixtures/adobe_cmyk_10x11_white.jpg",
+                Rect::new(72.0, 600.0, 100.0, 110.0),
+            )
+            .expect("load from file")
+            .done();
+
+        let imgs: Vec<_> = doc.pages[0]
+            .elements
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Image(i) => Some(i),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(imgs.len(), 1);
+        assert!((imgs[0].bbox.x - 72.0).abs() < 0.01);
+        assert!((imgs[0].bbox.width - 100.0).abs() < 0.01);
+        // 10×11 fixture.
+        assert_eq!(imgs[0].width, 10);
+        assert_eq!(imgs[0].height, 11);
+    }
+
+    #[test]
+    fn test_image_from_bytes_roundtrip() {
+        // Same image loaded via from_bytes must produce an equivalent
+        // ContentElement::Image.
+        let bytes = std::fs::read("tests/fixtures/adobe_cmyk_10x11_white.jpg")
+            .expect("fixture must exist");
+
+        let mut doc = DocumentBuilder::new();
+        doc.letter_page()
+            .image_from_bytes(&bytes, Rect::new(0.0, 0.0, 50.0, 55.0))
+            .expect("decode bytes")
+            .done();
+
+        let imgs: Vec<_> = doc.pages[0]
+            .elements
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Image(i) => Some(i),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(imgs.len(), 1);
+        assert_eq!(imgs[0].width, 10);
+    }
+
+    #[test]
+    fn test_image_from_bytes_invalid_errors() {
+        // Garbage bytes must return Err, not panic.
+        let mut doc = DocumentBuilder::new();
+        let result = doc
+            .letter_page()
+            .image_from_bytes(b"not an image at all", Rect::new(0.0, 0.0, 10.0, 10.0));
+        assert!(result.is_err());
     }
 
     #[test]
