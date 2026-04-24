@@ -156,6 +156,68 @@ impl Default for TextConfig {
     }
 }
 
+/// Marker style for `numbered_list`. #393 Bundle E-2.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListStyle {
+    /// 1. 2. 3. ...
+    Decimal,
+    /// i. ii. iii. ...
+    RomanLower,
+    /// a. b. c. ...
+    AlphaLower,
+}
+
+/// Internal enum: which marker per item.
+enum ListMarker {
+    Bullet,
+    Numbered(ListStyle),
+}
+
+/// Convert a 1-based index to lowercase Roman numerals (`i, ii, iii`...).
+/// Caps at 3999 — same as PDF's own page-label Roman support.
+fn to_roman_lower(mut n: usize) -> String {
+    if n == 0 {
+        return String::new();
+    }
+    const NUMERALS: &[(usize, &str)] = &[
+        (1000, "m"),
+        (900, "cm"),
+        (500, "d"),
+        (400, "cd"),
+        (100, "c"),
+        (90, "xc"),
+        (50, "l"),
+        (40, "xl"),
+        (10, "x"),
+        (9, "ix"),
+        (5, "v"),
+        (4, "iv"),
+        (1, "i"),
+    ];
+    let mut out = String::new();
+    for &(value, glyph) in NUMERALS {
+        while n >= value {
+            out.push_str(glyph);
+            n -= value;
+        }
+    }
+    out
+}
+
+/// Convert 1 → "a", 2 → "b", ..., 26 → "z", 27 → "aa", ...
+fn to_alpha_lower(mut n: usize) -> String {
+    if n == 0 {
+        return String::new();
+    }
+    let mut out = String::new();
+    while n > 0 {
+        n -= 1;
+        out.insert(0, (b'a' + (n % 26) as u8) as char);
+        n /= 26;
+    }
+    out
+}
+
 /// Tab-navigation order for form fields / annotations within a page.
 /// Emitted as the `/Tabs` entry on the page dict. #393 Bundle D-4.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -538,6 +600,88 @@ impl<'a> FluentPageBuilder<'a> {
             _ => "Helvetica",
         };
         self.font(font, size).text(text)
+    }
+
+    /// Render an unordered list of items at the current cursor
+    /// position. Each item gets an indented bullet + wrapped text;
+    /// the cursor advances past the last item with a small bottom
+    /// padding.
+    ///
+    /// Bullet glyph is `•` (U+2022) — renders in Helvetica / Times /
+    /// Courier without font embedding. For custom bullets (e.g. `★`
+    /// with an embedded CJK / symbol font) call `bullet_list_styled`
+    /// (not yet in v0.3.39 — filed as a v0.3.40 enhancement).
+    ///
+    /// #393 Bundle E-2.
+    pub fn bullet_list<S: AsRef<str>>(self, items: &[S]) -> Self {
+        self.list_inner(items, ListMarker::Bullet)
+    }
+
+    /// Render an ordered/numbered list. `style` controls the marker
+    /// format (decimal `1. 2. 3.`, lowercase Roman, or lowercase
+    /// alphabetic). #393 Bundle E-2.
+    pub fn numbered_list<S: AsRef<str>>(
+        self,
+        items: &[S],
+        style: ListStyle,
+    ) -> Self {
+        self.list_inner(items, ListMarker::Numbered(style))
+    }
+
+    fn list_inner<S: AsRef<str>>(mut self, items: &[S], marker: ListMarker) -> Self {
+        if items.is_empty() {
+            return self;
+        }
+        let indent = 18.0_f32;
+        let marker_cell_w = 22.0_f32;
+        let line_height = self.text_config.size * self.text_config.line_height;
+        let font = self.text_config.font.clone();
+        let size = self.text_config.size;
+        let page_w = self.builder.pages[self.page_index].width;
+        let right_margin = 72.0;
+        let text_x = self.cursor_x + indent + marker_cell_w;
+        let content_w = page_w - text_x - right_margin;
+
+        for (idx, item) in items.iter().enumerate() {
+            let item_text = item.as_ref();
+            let line_y = self.cursor_y;
+            // Marker (bullet glyph or number) at indent.
+            let marker_str = match &marker {
+                ListMarker::Bullet => "\u{2022}".to_string(),
+                ListMarker::Numbered(style) => match style {
+                    ListStyle::Decimal => format!("{}.", idx + 1),
+                    ListStyle::RomanLower => format!("{}.", to_roman_lower(idx + 1)),
+                    ListStyle::AlphaLower => format!("{}.", to_alpha_lower(idx + 1)),
+                },
+            };
+            let marker_x = self.cursor_x + indent;
+            self = self
+                .at(marker_x, line_y)
+                .font(&font, size)
+                .text(&marker_str);
+            // Undo the cursor-y advance `.text()` applied so we can
+            // place the wrapped content lines at the correct ys below.
+            self.cursor_y += line_height;
+
+            // Body: wrap the item text across multiple lines.
+            let wrapped = self.text_layout.wrap_text(item_text, &font, size, content_w);
+            if wrapped.is_empty() {
+                // Empty item — just drop one blank line.
+                self.cursor_y -= line_height;
+                continue;
+            }
+            for (n, (ln, _)) in wrapped.iter().enumerate() {
+                let ly = line_y - (n as f32) * line_height;
+                self = self.at(text_x, ly).text(ln);
+                self.cursor_y += line_height;
+            }
+            // Net advance for this item: one line_height per wrapped
+            // line.
+            self.cursor_y -= (wrapped.len() as f32) * line_height;
+        }
+        // Small trailing breather after the whole list.
+        self.cursor_y -= 6.0;
+        self
     }
 
     /// Render a code block at the current cursor position. The block
@@ -2985,6 +3129,98 @@ mod tests {
 
         // Bezier: stroke only (fill None).
         assert!(paths[4].stroke_color.is_some() && paths[4].fill_color.is_none());
+    }
+
+    #[test]
+    fn test_bullet_list_emits_bullet_and_items() {
+        let mut doc = DocumentBuilder::new();
+        doc.letter_page()
+            .at(72.0, 720.0)
+            .bullet_list(&["Apples", "Bananas", "Cherries"])
+            .done();
+        let page = &doc.pages[0];
+        let texts: Vec<_> = page
+            .elements
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Text(t) => Some(t),
+                _ => None,
+            })
+            .collect();
+        // 3 items × 2 text elements each (bullet glyph + body) = 6.
+        assert_eq!(texts.len(), 6, "got texts: {:?}", texts.iter().map(|t| &t.text).collect::<Vec<_>>());
+        // Bullet glyph alternates with body text.
+        assert_eq!(texts[0].text, "\u{2022}");
+        assert_eq!(texts[1].text, "Apples");
+        assert_eq!(texts[2].text, "\u{2022}");
+        assert_eq!(texts[3].text, "Bananas");
+    }
+
+    #[test]
+    fn test_numbered_list_decimal_roman_alpha() {
+        let mut doc = DocumentBuilder::new();
+        doc.letter_page()
+            .at(72.0, 700.0)
+            .numbered_list(&["one", "two", "three"], ListStyle::Decimal)
+            .space(12.0)
+            .numbered_list(&["alpha", "beta"], ListStyle::RomanLower)
+            .space(12.0)
+            .numbered_list(&["x", "y", "z"], ListStyle::AlphaLower)
+            .done();
+        let texts: Vec<String> = doc.pages[0]
+            .elements
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Text(t) => Some(t.text.clone()),
+                _ => None,
+            })
+            .collect();
+        // Markers round-trip as expected.
+        assert!(texts.contains(&"1.".to_string()));
+        assert!(texts.contains(&"2.".to_string()));
+        assert!(texts.contains(&"3.".to_string()));
+        assert!(texts.contains(&"i.".to_string()));
+        assert!(texts.contains(&"ii.".to_string()));
+        assert!(texts.contains(&"a.".to_string()));
+        assert!(texts.contains(&"c.".to_string()));
+    }
+
+    #[test]
+    fn test_to_roman_lower() {
+        assert_eq!(to_roman_lower(1), "i");
+        assert_eq!(to_roman_lower(4), "iv");
+        assert_eq!(to_roman_lower(9), "ix");
+        assert_eq!(to_roman_lower(40), "xl");
+        assert_eq!(to_roman_lower(90), "xc");
+        assert_eq!(to_roman_lower(400), "cd");
+        assert_eq!(to_roman_lower(900), "cm");
+        assert_eq!(to_roman_lower(1994), "mcmxciv");
+    }
+
+    #[test]
+    fn test_to_alpha_lower() {
+        assert_eq!(to_alpha_lower(1), "a");
+        assert_eq!(to_alpha_lower(26), "z");
+        assert_eq!(to_alpha_lower(27), "aa");
+        assert_eq!(to_alpha_lower(52), "az");
+        assert_eq!(to_alpha_lower(53), "ba");
+    }
+
+    #[test]
+    fn test_empty_list_is_no_op() {
+        let mut doc = DocumentBuilder::new();
+        doc.letter_page()
+            .at(72.0, 720.0)
+            .bullet_list::<&str>(&[])
+            .numbered_list::<&str>(&[], ListStyle::Decimal)
+            .done();
+        // No text elements emitted.
+        let n_texts = doc.pages[0]
+            .elements
+            .iter()
+            .filter(|e| matches!(e, ContentElement::Text(_)))
+            .count();
+        assert_eq!(n_texts, 0);
     }
 
     #[test]
