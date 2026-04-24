@@ -156,6 +156,29 @@ impl Default for TextConfig {
     }
 }
 
+/// Tab-navigation order for form fields / annotations within a page.
+/// Emitted as the `/Tabs` entry on the page dict. #393 Bundle D-4.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TabOrder {
+    /// Row order — top-to-bottom, left-to-right (reader default).
+    Row,
+    /// Column order — left-to-right, top-to-bottom.
+    Column,
+    /// Structure order — requires tagged PDF (Bundle F). Until Bundle F
+    /// ships, readers fall back to row order.
+    Structure,
+}
+
+impl TabOrder {
+    fn as_pdf_char(self) -> char {
+        match self {
+            TabOrder::Row => 'R',
+            TabOrder::Column => 'C',
+            TabOrder::Structure => 'S',
+        }
+    }
+}
+
 /// Stroke style for line-drawing primitives (`stroke_rect`, `stroke_line`,
 /// shape primitives).
 ///
@@ -229,6 +252,9 @@ pub struct FluentPageBuilder<'a> {
     /// text only — see inline comment in the transforms section for
     /// the Path / Image / Table follow-up.
     current_matrix: Option<[f32; 6]>,
+    /// Deferred `/Tabs` value for the current page, set by
+    /// [`Self::tab_order`] and applied in [`Self::done`]. #393 D-4.
+    pending_tab_order: Option<TabOrder>,
 }
 
 impl<'a> FluentPageBuilder<'a> {
@@ -313,6 +339,7 @@ impl<'a> FluentPageBuilder<'a> {
             annotations: Vec::new(),
             form_fields: Vec::new(),
             form_field_meta: Vec::new(),
+            tab_order: None,
         });
 
         // Reset cursor to top-left (mirrors DocumentBuilder::page).
@@ -1089,6 +1116,16 @@ impl<'a> FluentPageBuilder<'a> {
         self
     }
 
+    /// Declare the page's tab-navigation order. `TabOrder::Row`
+    /// (default in modern readers), `TabOrder::Column`, or
+    /// `TabOrder::Structure` (requires tagged PDF — Bundle F).
+    /// Deferred until `done()` — the `/Tabs` key is emitted on the
+    /// page dict at build time. #393 Bundle D-4.
+    pub fn tab_order(mut self, order: TabOrder) -> Self {
+        self.pending_tab_order = Some(order);
+        self
+    }
+
     // ───────────────────────────────────────────────────────────────────
     // Low-level graphics primitives (PdfWriter exposure)
     //
@@ -1587,6 +1624,9 @@ impl<'a> FluentPageBuilder<'a> {
         // Move pending annotations to page data
         let page = &mut self.builder.pages[self.page_index];
         page.annotations.append(&mut self.pending_annotations);
+        if let Some(order) = self.pending_tab_order {
+            page.tab_order = Some(order);
+        }
         self.builder
     }
 }
@@ -1661,6 +1701,9 @@ struct PageData {
     /// Per-field metadata, parallel to `form_fields`. Index i applies
     /// to form_fields[i]. #393 Bundle D-3.
     form_field_meta: Vec<PendingFieldMeta>,
+    /// Deferred `/Tabs` value — set via `FluentPageBuilder::tab_order`.
+    /// #393 Bundle D-4.
+    tab_order: Option<TabOrder>,
 }
 
 /// High-level document builder with fluent API.
@@ -1783,6 +1826,7 @@ impl DocumentBuilder {
                 annotations: Vec::new(),
                 form_fields: Vec::new(),
             form_field_meta: Vec::new(),
+            tab_order: None,
             },
         );
 
@@ -1800,6 +1844,7 @@ impl DocumentBuilder {
                 last_text_rect: None,
                 pending_annotations: Vec::new(),
                 current_matrix: None,
+            pending_tab_order: None,
             };
 
             // Title: bold + larger.
@@ -1984,6 +2029,7 @@ impl DocumentBuilder {
             annotations: Vec::new(),
             form_fields: Vec::new(),
             form_field_meta: Vec::new(),
+            tab_order: None,
         });
         FluentPageBuilder {
             builder: self,
@@ -1995,6 +2041,7 @@ impl DocumentBuilder {
             last_text_rect: None,
             pending_annotations: Vec::new(),
             current_matrix: None,
+            pending_tab_order: None,
         }
     }
 
@@ -2042,6 +2089,12 @@ impl DocumentBuilder {
 
         for (idx, page_data) in self.pages.iter().enumerate() {
             let mut page = writer.add_page(page_data.width, page_data.height);
+
+            // Propagate the page's /Tabs value if the user set one.
+            // #393 Bundle D-4.
+            if let Some(order) = page_data.tab_order {
+                page.set_tab_order(order.as_pdf_char());
+            }
 
             // 1. Add normal elements
             page.add_elements(&page_data.elements);
@@ -2813,6 +2866,30 @@ mod tests {
 
         // Bezier: stroke only (fill None).
         assert!(paths[4].stroke_color.is_some() && paths[4].fill_color.is_none());
+    }
+
+    #[test]
+    fn test_tab_order_emits_tabs_entry() {
+        for (order, letter) in [
+            (TabOrder::Row, "R"),
+            (TabOrder::Column, "C"),
+            (TabOrder::Structure, "S"),
+        ] {
+            let mut doc = DocumentBuilder::new();
+            doc.letter_page()
+                .text_field("a", 72.0, 600.0, 100.0, 20.0, None)
+                .tab_order(order)
+                .done();
+            let bytes = doc.build().expect("build");
+            let s = String::from_utf8_lossy(&bytes);
+            let needle = format!("/Tabs /{}", letter);
+            assert!(
+                s.contains(&needle),
+                "expected {:?} in emitted PDF for TabOrder::{:?}",
+                needle,
+                order
+            );
+        }
     }
 
     #[test]

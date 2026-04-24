@@ -752,6 +752,16 @@ impl<'a> PageBuilder<'a> {
         self.add_redact(RedactAnnotation::new(rect).with_overlay_text(overlay_text))
     }
 
+    /// Set the page's `/Tabs` entry, declaring the tab-navigation
+    /// order for form fields and annotations. `'R'` = row order (top-
+    /// to-bottom, left-to-right), `'C'` = column order (left-to-right,
+    /// top-to-bottom), `'S'` = structure order (requires tagged PDF —
+    /// only meaningful once Bundle F lands). #393 Bundle D-4.
+    pub fn set_tab_order(&mut self, order: char) -> &mut Self {
+        self.writer.pages[self.page_index].tab_order = Some(order);
+        self
+    }
+
     // ===== Form Field Methods =====
 
     /// Add a text field to the page.
@@ -905,6 +915,10 @@ struct PageData {
     content_builder: ContentStreamBuilder,
     annotations: AnnotationBuilder,
     form_fields: Vec<FormFieldEntry>,
+    /// Per-page `/Tabs` entry: None => reader default. `Some(c)` emits
+    /// `/Tabs /c` where `c` is one of R (row), C (column), S (structure).
+    /// #393 Bundle D-4.
+    tab_order: Option<char>,
 }
 
 /// PDF document writer.
@@ -1064,6 +1078,7 @@ impl PdfWriter {
             content_builder: ContentStreamBuilder::new(),
             annotations: AnnotationBuilder::new(),
             form_fields: Vec::new(),
+            tab_order: None,
         });
         PageBuilder {
             writer: self,
@@ -1387,6 +1402,11 @@ impl PdfWriter {
             // Add Annots array if page has annotations
             if !annot_refs.is_empty() {
                 page_entries.push(("Annots", Object::Array(annot_refs)));
+            }
+
+            // /Tabs for tab-navigation order (#393 Bundle D-4)
+            if let Some(c) = page_data.tab_order {
+                page_entries.push(("Tabs", ObjectSerializer::name(&c.to_string())));
             }
 
             let page_obj = ObjectSerializer::dict(page_entries);
