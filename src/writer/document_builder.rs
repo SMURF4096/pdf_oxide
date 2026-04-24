@@ -1597,6 +1597,11 @@ pub struct DocumentBuilder {
     /// CJK / Cyrillic / Greek text via Type-0 hex strings instead of
     /// silently falling back to Helvetica.
     embedded_fonts: Vec<(String, EmbeddedFont)>,
+    /// Outline / bookmark tree. Empty by default; populated via
+    /// [`DocumentBuilder::bookmark`] and/or [`DocumentBuilder::bookmark_tree`].
+    /// Wired into the PDF catalog by `PdfWriter::finish` at build time.
+    /// #393 Bundle B-1.
+    outline: super::outline_builder::OutlineBuilder,
 }
 
 impl DocumentBuilder {
@@ -1607,7 +1612,47 @@ impl DocumentBuilder {
             pages: Vec::new(),
             template: None,
             embedded_fonts: Vec::new(),
+            outline: super::outline_builder::OutlineBuilder::new(),
         }
+    }
+
+    /// Add a top-level outline entry (bookmark) pointing at page
+    /// `page_index` (0-based). Chainable; for hierarchies use
+    /// [`Self::bookmark_tree`].
+    ///
+    /// Outline entries are materialised into the PDF `/Outlines`
+    /// dictionary at [`Self::build`] time and show up in any reader's
+    /// bookmarks panel. #393 Bundle B-1.
+    pub fn bookmark(
+        mut self,
+        title: impl Into<String>,
+        page_index: usize,
+    ) -> Self {
+        self.outline
+            .add_item(super::outline_builder::OutlineItem::new(title, page_index));
+        self
+    }
+
+    /// Mutate the underlying `OutlineBuilder` directly — useful for
+    /// building deep / conditional hierarchies inside a closure.
+    ///
+    /// ```no_run
+    /// # use pdf_oxide::writer::DocumentBuilder;
+    /// # use pdf_oxide::writer::outline_builder::OutlineItem;
+    /// let doc = DocumentBuilder::new().bookmark_tree(|o| {
+    ///     o.add_item(OutlineItem::new("Chapter 1", 0));
+    ///     o.add_child(OutlineItem::new("Section 1.1", 1));
+    ///     o.add_child(OutlineItem::new("Section 1.2", 2));
+    ///     o.pop();
+    ///     o.add_item(OutlineItem::new("Chapter 2", 3));
+    /// });
+    /// ```
+    pub fn bookmark_tree<F>(mut self, f: F) -> Self
+    where
+        F: FnOnce(&mut super::outline_builder::OutlineBuilder),
+    {
+        f(&mut self.outline);
+        self
     }
 
     /// Register an embedded TrueType/OpenType font under a user-visible
@@ -1747,6 +1792,11 @@ impl DocumentBuilder {
         for (user_name, font) in self.embedded_fonts {
             writer.register_embedded_font_as(user_name, font);
         }
+
+        // Transfer the outline (bookmarks) so PdfWriter::finish can
+        // emit the /Outlines tree and link it from the catalog.
+        // #393 Bundle B-1.
+        writer.set_outline(self.outline);
 
         let total_pages = self.pages.len();
 
@@ -2479,6 +2529,59 @@ mod tests {
 
         // Bezier: stroke only (fill None).
         assert!(paths[4].stroke_color.is_some() && paths[4].fill_color.is_none());
+    }
+
+    #[test]
+    fn test_bookmark_and_tree_emit_outlines_in_catalog() {
+        use crate::writer::outline_builder::OutlineItem;
+
+        let mut doc = DocumentBuilder::new();
+        doc.letter_page().text("page 1").done();
+        doc.letter_page().text("page 2").done();
+        doc.letter_page().text("page 3").done();
+
+        let bytes = doc
+            .bookmark("Intro", 0)
+            .bookmark_tree(|o| {
+                o.add_item(OutlineItem::new("Chapter 1", 1));
+                o.add_child(OutlineItem::new("Section 1.1", 2));
+            })
+            .build()
+            .expect("build");
+
+        let content = String::from_utf8_lossy(&bytes);
+        // Catalog must reference /Outlines.
+        assert!(
+            content.contains("/Outlines"),
+            "catalog must reference /Outlines; dump start=\n{}",
+            &content[..content.len().min(400)]
+        );
+        // Outline titles must be emitted as PDF strings. The
+        // ObjectSerializer may emit them as literal `(Intro)` or as
+        // a hex form `<4974726F>` depending on content.
+        let has_title = |needle: &str| -> bool {
+            let literal = format!("({})", needle);
+            let hex = needle
+                .as_bytes()
+                .iter()
+                .map(|b| format!("{:02X}", b))
+                .collect::<String>();
+            let wrapped_hex = format!("<{}>", hex);
+            content.contains(&literal) || content.contains(&wrapped_hex)
+        };
+        assert!(has_title("Intro"), "missing bookmark Intro");
+        assert!(has_title("Chapter 1"), "missing Chapter 1");
+        assert!(has_title("Section 1.1"), "missing Section 1.1");
+    }
+
+    #[test]
+    fn test_empty_outline_does_not_emit_outlines_entry() {
+        // Baseline: no .bookmark() calls => no /Outlines in the catalog.
+        let mut doc = DocumentBuilder::new();
+        doc.letter_page().text("just a page").done();
+        let bytes = doc.build().expect("build");
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(!content.contains("/Outlines"));
     }
 
     #[test]

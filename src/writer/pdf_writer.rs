@@ -944,6 +944,10 @@ pub struct PdfWriter {
     next_embedded_font_id: u32,
     /// AcroForm builder for interactive forms
     acroform: Option<AcroFormBuilder>,
+    /// Document outline (bookmarks). When set, `finish()` builds the
+    /// outline tree against the emitted page refs and links it as
+    /// `/Outlines` on the catalog. #393 Bundle B-1.
+    outline: Option<super::outline_builder::OutlineBuilder>,
 }
 
 impl PdfWriter {
@@ -965,7 +969,14 @@ impl PdfWriter {
             user_font_to_resource: HashMap::new(),
             next_embedded_font_id: 1,
             acroform: None,
+            outline: None,
         }
+    }
+
+    /// Attach a document outline (bookmarks) to be emitted during
+    /// [`PdfWriter::finish`]. Replaces any previously-set outline.
+    pub fn set_outline(&mut self, outline: super::outline_builder::OutlineBuilder) {
+        self.outline = Some(outline);
     }
 
     /// Register an embedded TrueType font for use in content streams.
@@ -1400,6 +1411,47 @@ impl PdfWriter {
             None
         };
 
+        // Build outline (bookmarks) if one is attached. Consumes the
+        // OutlineBuilder, walks its tree against the page ObjectRefs
+        // we just allocated, and returns the root object ID to link
+        // into the catalog. #393 Bundle B-1.
+        let mut outline_object_ids: Vec<u32> = Vec::new();
+        let outline_ref = if let Some(outline) = self.outline.take() {
+            // Extract `Vec<ObjectRef>` from the already-built
+            // `page_objects` (in the same insertion order as the Pages
+            // /Kids array).
+            let page_object_refs: Vec<ObjectRef> = page_objects
+                .iter()
+                .filter_map(|(id, obj, _)| match obj {
+                    Object::Dictionary(dict)
+                        if matches!(
+                            dict.get("Type"),
+                            Some(Object::Name(n)) if n == "Page"
+                        ) =>
+                    {
+                        Some(ObjectRef::new(*id, 0))
+                    },
+                    _ => None,
+                })
+                .collect();
+            if let Some(result) = outline.build(&page_object_refs, self.next_obj_id) {
+                // Splice the outline's objects into the writer's object
+                // table, track their IDs for the emission pass below,
+                // and advance the id counter past them.
+                outline_object_ids = result.objects.keys().copied().collect();
+                outline_object_ids.sort_unstable();
+                for (id, obj) in result.objects {
+                    self.objects.insert(id, obj);
+                }
+                self.next_obj_id = result.next_obj_id;
+                Some(result.root_ref)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         // Catalog object
         let mut catalog_entries = vec![
             ("Type", ObjectSerializer::name("Catalog")),
@@ -1407,6 +1459,12 @@ impl PdfWriter {
         ];
         if let Some(acroform_id) = acroform_id {
             catalog_entries.push(("AcroForm", ObjectSerializer::reference(acroform_id, 0)));
+        }
+        if let Some(root_ref) = outline_ref {
+            catalog_entries.push((
+                "Outlines",
+                ObjectSerializer::reference(root_ref.id, root_ref.gen),
+            ));
         }
         let catalog_obj = ObjectSerializer::dict(catalog_entries);
 
@@ -1487,6 +1545,14 @@ impl PdfWriter {
                     0,
                     acroform_obj,
                 ));
+            }
+        }
+
+        // Outline objects (root + every item). #393 Bundle B-1.
+        for &id in &outline_object_ids {
+            if let Some(obj) = self.objects.get(&id) {
+                xref_offsets.push((id, output.len()));
+                output.extend_from_slice(&serializer.serialize_indirect(id, 0, obj));
             }
         }
 

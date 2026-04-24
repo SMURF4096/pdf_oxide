@@ -66,7 +66,7 @@ pub mod layers;
 pub mod linearization;
 mod movie;
 mod object_serializer;
-mod outline_builder;
+pub mod outline_builder;
 mod page_labels;
 mod page_template;
 mod pattern;
