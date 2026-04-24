@@ -214,4 +214,18 @@ export interface StreamingTableConfig {
    * Column-sizing mode. Defaults to `{ kind: 'fixed' }`.
    */
   mode?: TableMode;
+  /**
+   * Maximum rowspan a cell may carry.  0 or 1 (default) disables rowspan.
+   * Set to ≥2 to allow `pushRowSpan` cells to span multiple rows.
+   */
+  maxRowspan?: number;
+}
+
+/**
+ * A single cell value for `StreamingTable.pushRowSpan`.
+ * `rowspan == 1` is equivalent to a normal cell.
+ */
+export interface SpanCell {
+  text: string;
+  rowspan: number;
 }

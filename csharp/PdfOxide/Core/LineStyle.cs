@@ -159,7 +159,8 @@ namespace PdfOxide.Core
             PageBuilder page,
             IReadOnlyList<Column> columns,
             bool repeatHeader,
-            TableMode? mode)
+            TableMode? mode,
+            int maxRowspan)
         {
             _page = page;
             _nCols = columns.Count;
@@ -210,6 +211,7 @@ namespace PdfOxide.Core
                     modeInt,
                     (nuint)sampleRows,
                     minW, maxW,
+                    (nuint)Math.Max(1, maxRowspan),
                     out var ec);
                 ExceptionMapper.ThrowIfError(ec);
             }
@@ -226,7 +228,7 @@ namespace PdfOxide.Core
         /// <summary>
         /// Append a row. The <paramref name="cells"/> array must have
         /// exactly <c>Columns.Count</c> entries; <see langword="null"/>
-        /// entries render as empty strings.
+        /// entries render as empty strings. All cells have rowspan=1.
         /// </summary>
         public unsafe StreamingTable AddRow(params string[] cells)
         {
@@ -264,6 +266,60 @@ namespace PdfOxide.Core
             finally
             {
                 if (ptrsH.IsAllocated) ptrsH.Free();
+                for (int i = 0; i < _nCols; i++)
+                    if (handles[i].IsAllocated) handles[i].Free();
+            }
+            return this;
+        }
+
+        /// <summary>
+        /// Append a row with per-cell rowspan values. Each <see cref="(string Text, int Rowspan)"/>
+        /// pair specifies the cell text and how many rows it spans (1 = normal).
+        /// Requires <c>maxRowspan ≥ 2</c> in the <see cref="PageBuilder.StreamingTable"/> call.
+        /// </summary>
+        public unsafe StreamingTable AddRowSpan(params (string? Text, int Rowspan)[] cells)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_built)
+                throw new InvalidOperationException("StreamingTable already built.");
+            ArgumentNullException.ThrowIfNull(cells);
+            if (cells.Length != _nCols)
+                throw new ArgumentException(
+                    $"row width mismatch: got {cells.Length} cells, expected {_nCols}",
+                    nameof(cells));
+
+            var cellBytes = new byte[_nCols][];
+            var rowspans  = new nuint[_nCols];
+            for (int i = 0; i < _nCols; i++)
+            {
+                cellBytes[i] = Encoding.UTF8.GetBytes((cells[i].Text ?? string.Empty) + "\0");
+                rowspans[i]  = (nuint)Math.Max(1, cells[i].Rowspan);
+            }
+
+            var handles = new GCHandle[_nCols];
+            var ptrs    = new IntPtr[_nCols];
+            GCHandle ptrsH = default, rowspansH = default;
+            try
+            {
+                for (int i = 0; i < _nCols; i++)
+                {
+                    handles[i] = GCHandle.Alloc(cellBytes[i], GCHandleType.Pinned);
+                    ptrs[i]    = handles[i].AddrOfPinnedObject();
+                }
+                ptrsH     = GCHandle.Alloc(ptrs,    GCHandleType.Pinned);
+                rowspansH = GCHandle.Alloc(rowspans, GCHandleType.Pinned);
+                NativeMethods.PdfPageBuilderStreamingTablePushRowV2(
+                    _page.InternalHandle,
+                    (nuint)_nCols,
+                    (byte**)ptrsH.AddrOfPinnedObject(),
+                    (nuint*)rowspansH.AddrOfPinnedObject(),
+                    out var ec);
+                ExceptionMapper.ThrowIfError(ec);
+            }
+            finally
+            {
+                if (ptrsH.IsAllocated)     ptrsH.Free();
+                if (rowspansH.IsAllocated) rowspansH.Free();
                 for (int i = 0; i < _nCols; i++)
                     if (handles[i].IsAllocated) handles[i].Free();
             }

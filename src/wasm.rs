@@ -3479,6 +3479,9 @@ struct WasmStreamingTableSpec {
     min_col_width_pt: Option<f32>,
     #[serde(default, rename = "maxColWidthPt", alias = "max_col_width_pt")]
     max_col_width_pt: Option<f32>,
+    /// Maximum rowspan. 0 or 1 = disabled (default).
+    #[serde(default, rename = "maxRowspan", alias = "max_rowspan")]
+    max_rowspan: Option<usize>,
 }
 
 #[derive(serde::Deserialize)]
@@ -3630,11 +3633,13 @@ enum WasmPageOp {
     StreamingTableBlock {
         config_columns: Vec<(String, f32, WasmAlign)>,
         repeat_header: bool,
-        rows: Vec<Vec<String>>,
+        /// Each cell: (text, rowspan).
+        rows: Vec<Vec<(String, usize)>>,
         mode: String,
         sample_rows: usize,
         min_col_width_pt: f32,
         max_col_width_pt: f32,
+        max_rowspan: usize,
     },
     /// Pre-rendered barcode PNG bytes (generated at record time).
     BarcodeImage {
@@ -4049,9 +4054,11 @@ impl WasmDocumentBuilder {
                     sample_rows,
                     min_col_width_pt,
                     max_col_width_pt,
+                    max_rowspan,
                 } => {
                     let mut cfg = crate::writer::StreamingTableConfig::new()
-                        .repeat_header(repeat_header);
+                        .repeat_header(repeat_header)
+                        .max_rowspan(max_rowspan);
                     cfg = match mode.as_str() {
                         "sample" => cfg.mode_sample(sample_rows, min_col_width_pt, max_col_width_pt),
                         "auto_all" => cfg.mode_auto_all(),
@@ -4066,12 +4073,13 @@ impl WasmDocumentBuilder {
                     }
                     let mut t = rust_page.streaming_table(cfg);
                     for row in rows {
-                        // Errors during push_row (row-length mismatch, etc.)
-                        // are swallowed into a best-effort render at commit
-                        // time — the op was already validated when pushed.
                         let _ = t.push_row(|r| {
-                            for cell in &row {
-                                r.cell(cell.as_str());
+                            for (text, span) in &row {
+                                if *span > 1 {
+                                    r.span_cell(text.as_str(), *span);
+                                } else {
+                                    r.cell(text.as_str());
+                                }
                             }
                         });
                     }
@@ -4743,6 +4751,7 @@ impl WasmFluentPageBuilder {
             sample_rows: parsed.sample_rows.unwrap_or(50),
             min_col_width_pt: parsed.min_col_width_pt.unwrap_or(20.0),
             max_col_width_pt: parsed.max_col_width_pt.unwrap_or(400.0),
+            max_rowspan: parsed.max_rowspan.unwrap_or(1),
             page_ops: std::rc::Rc::clone(&self.ops),
         })
     }
@@ -4820,12 +4829,14 @@ impl WasmFluentPageBuilder {
 pub struct WasmStreamingTable {
     columns: Vec<(String, f32, WasmAlign)>,
     repeat_header: bool,
-    rows: Vec<Vec<String>>,
+    /// Each cell: (text, rowspan).
+    rows: Vec<Vec<(String, usize)>>,
     finished: bool,
     mode: String,
     sample_rows: usize,
     min_col_width_pt: f32,
     max_col_width_pt: f32,
+    max_rowspan: usize,
     /// Shared handle to the parent page's op queue — used by `finish()`
     /// to thread the recorded block back onto the page without JS having
     /// to pass the page argument.
@@ -4840,9 +4851,9 @@ impl WasmStreamingTable {
         self.columns.len()
     }
 
-    /// Push one row as an array of cell strings. Returns an error if the
-    /// table has already been finished or if the row's cell count does not
-    /// match the column count.
+    /// Push one row as an array of cell strings (all rowspan=1). Returns an
+    /// error if the table has already been finished or if the row's cell count
+    /// does not match the column count.
     #[wasm_bindgen(js_name = "pushRow")]
     pub fn push_row(&mut self, cells: Vec<String>) -> Result<(), JsValue> {
         if self.finished {
@@ -4855,7 +4866,28 @@ impl WasmStreamingTable {
                 self.columns.len()
             )));
         }
-        self.rows.push(cells);
+        self.rows
+            .push(cells.into_iter().map(|s| (s, 1usize)).collect());
+        Ok(())
+    }
+
+    /// Push one row with per-cell rowspan values. `cells` is a JS array of
+    /// `[text, rowspan]` two-element arrays. `rowspan == 1` is a normal cell.
+    #[wasm_bindgen(js_name = "pushRowSpan")]
+    pub fn push_row_span(&mut self, cells: JsValue) -> Result<(), JsValue> {
+        if self.finished {
+            return Err(JsValue::from_str("StreamingTable already finished"));
+        }
+        let parsed: Vec<(String, usize)> = serde_wasm_bindgen::from_value(cells)
+            .map_err(|e| JsValue::from_str(&format!("pushRowSpan: invalid cells — {e}")))?;
+        if parsed.len() != self.columns.len() {
+            return Err(JsValue::from_str(&format!(
+                "streamingTable: row has {} cells, expected {}",
+                parsed.len(),
+                self.columns.len()
+            )));
+        }
+        self.rows.push(parsed);
         Ok(())
     }
 
@@ -4877,6 +4909,7 @@ impl WasmStreamingTable {
             sample_rows: self.sample_rows,
             min_col_width_pt: self.min_col_width_pt,
             max_col_width_pt: self.max_col_width_pt,
+            max_rowspan: self.max_rowspan,
         };
         self.page_ops.borrow_mut().push(op);
         Ok(())
@@ -5875,8 +5908,19 @@ mod tests {
             ],
             repeat_header: true,
             rows: (0..5)
-                .map(|i| vec![format!("A-{i}"), "Widget".into(), (i * 10).to_string()])
+                .map(|i| {
+                    vec![
+                        (format!("A-{i}"), 1usize),
+                        ("Widget".into(), 1),
+                        ((i * 10).to_string(), 1),
+                    ]
+                })
                 .collect(),
+            mode: "fixed".to_string(),
+            sample_rows: 50,
+            min_col_width_pt: 20.0,
+            max_col_width_pt: 400.0,
+            max_rowspan: 1,
         });
         p.done(&mut b).unwrap();
         let bytes = b.build().unwrap();

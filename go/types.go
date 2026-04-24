@@ -285,10 +285,13 @@ type TableMode struct {
 //   - Columns drives widths, alignments, and the header labels.
 //   - RepeatHeader repeats the header row on every page break.
 //   - Mode selects the column-sizing strategy (default: TableModeFixed).
+//   - MaxRowspan allows cells to span multiple rows via PushRowSpan.
+//     0 or 1 disables rowspan (default); ≥2 enables it.
 type StreamingTableConfig struct {
 	Columns      []Column
 	RepeatHeader bool
 	Mode         TableMode
+	MaxRowspan   int
 }
 
 // LogLevel represents the log verbosity level.

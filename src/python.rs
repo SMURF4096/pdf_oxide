@@ -4117,12 +4117,14 @@ enum PendingPageOp {
         widths: Vec<f32>,
         aligns: Vec<i32>,
         repeat_header: bool,
-        rows: Vec<Vec<String>>,
+        /// Each cell is (text, rowspan); rowspan==1 is a normal cell.
+        rows: Vec<Vec<(String, usize)>>,
         /// "fixed" | "sample" | "auto_all"
         mode: String,
         sample_rows: usize,
         min_col_width_pt: f32,
         max_col_width_pt: f32,
+        max_rowspan: usize,
     },
     /// Pre-rendered barcode PNG (generated at record time so errors
     /// surface at the Python call site, not during replay).
@@ -5294,8 +5296,7 @@ impl PyFluentPageBuilder {
     ///
     /// `columns` is a list of `Column`; `repeat_header=True` redraws
     /// the header row at every page break.
-    #[pyo3(signature = (columns, repeat_header=false))]
-    #[pyo3(signature = (columns, repeat_header=false, mode="fixed", sample_rows=50, min_col_width_pt=20.0, max_col_width_pt=400.0))]
+    #[pyo3(signature = (columns, repeat_header=false, mode="fixed", sample_rows=50, min_col_width_pt=20.0, max_col_width_pt=400.0, max_rowspan=1))]
     fn streaming_table(
         slf_handle: Py<Self>,
         py: Python<'_>,
@@ -5305,6 +5306,7 @@ impl PyFluentPageBuilder {
         sample_rows: usize,
         min_col_width_pt: f32,
         max_col_width_pt: f32,
+        max_rowspan: usize,
     ) -> PyResult<PyStreamingTable> {
         if columns.is_empty() {
             return Err(PyValueError::new_err(
@@ -5323,6 +5325,7 @@ impl PyFluentPageBuilder {
             sample_rows,
             min_col_width_pt,
             max_col_width_pt,
+            max_rowspan,
         })
     }
 
@@ -5509,9 +5512,11 @@ impl PyFluentPageBuilder {
                     sample_rows,
                     min_col_width_pt,
                     max_col_width_pt,
+                    max_rowspan,
                 } => {
                     let mut cfg = crate::writer::StreamingTableConfig::new()
-                        .repeat_header(repeat_header);
+                        .repeat_header(repeat_header)
+                        .max_rowspan(max_rowspan);
                     cfg = match mode.as_str() {
                         "sample" => cfg.mode_sample(sample_rows, min_col_width_pt, max_col_width_pt),
                         "auto_all" => cfg.mode_auto_all(),
@@ -5525,11 +5530,13 @@ impl PyFluentPageBuilder {
                     }
                     let mut st = page.streaming_table(cfg);
                     for row in rows {
-                        // Ignore per-row arity errors here — validated at
-                        // push_row() time on the Python side.
                         let _ = st.push_row(|r| {
-                            for cell in row {
-                                r.cell(cell);
+                            for (text, span) in row {
+                                if span > 1 {
+                                    r.span_cell(text, span);
+                                } else {
+                                    r.cell(text);
+                                }
                             }
                         });
                     }
@@ -5555,19 +5562,38 @@ pub struct PyStreamingTable {
     parent: Py<PyFluentPageBuilder>,
     columns: Vec<PyColumn>,
     repeat_header: bool,
-    rows: Vec<Vec<String>>,
+    /// Each cell: (text, rowspan).
+    rows: Vec<Vec<(String, usize)>>,
     finished: bool,
     mode: String,
     sample_rows: usize,
     min_col_width_pt: f32,
     max_col_width_pt: f32,
+    max_rowspan: usize,
 }
 
 #[pymethods]
 impl PyStreamingTable {
-    /// Push a single row of string cells. Length must match the number
-    /// of configured columns; otherwise `ValueError` is raised.
+    /// Push a single row of string cells (all rowspan=1). Length must match
+    /// the number of configured columns; otherwise `ValueError` is raised.
     fn push_row(&mut self, cells: Vec<String>) -> PyResult<()> {
+        if self.finished {
+            return Err(PyRuntimeError::new_err("StreamingTable.finish() already called"));
+        }
+        if cells.len() != self.columns.len() {
+            return Err(PyValueError::new_err(format!(
+                "row has {} cells, expected {}",
+                cells.len(),
+                self.columns.len()
+            )));
+        }
+        self.rows.push(cells.into_iter().map(|s| (s, 1usize)).collect());
+        Ok(())
+    }
+
+    /// Push a row with per-cell rowspan values. Each element is a
+    /// `(text, rowspan)` tuple; rowspan == 1 is a normal cell.
+    fn push_row_span(&mut self, cells: Vec<(String, usize)>) -> PyResult<()> {
         if self.finished {
             return Err(PyRuntimeError::new_err("StreamingTable.finish() already called"));
         }
@@ -5611,6 +5637,7 @@ impl PyStreamingTable {
             sample_rows: self.sample_rows,
             min_col_width_pt: self.min_col_width_pt,
             max_col_width_pt: self.max_col_width_pt,
+            max_rowspan: self.max_rowspan,
         })?;
         drop(parent_ref);
         Ok(parent_handle)

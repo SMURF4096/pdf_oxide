@@ -161,11 +161,17 @@ extern int   pdf_page_builder_streaming_table_begin_v2(void* page,
                                                        size_t sample_rows,
                                                        float min_col_width_pt,
                                                        float max_col_width_pt,
+                                                       size_t max_rowspan,
                                                        int* error_code);
 extern int   pdf_page_builder_streaming_table_push_row(void* page,
                                                        size_t n_cells,
                                                        const char* const* cells,
                                                        int* error_code);
+extern int   pdf_page_builder_streaming_table_push_row_v2(void* page,
+                                                          size_t n_cells,
+                                                          const char* const* cells,
+                                                          const size_t* rowspans,
+                                                          int* error_code);
 extern int   pdf_page_builder_streaming_table_finish(void* page, int* error_code);
 
 extern int   pdf_page_builder_done(void* page, int* error_code);
@@ -1335,6 +1341,11 @@ func (p *PageBuilder) StreamingTable(cfg StreamingTableConfig) *StreamingTable {
 		repeatHeader = 1
 	}
 
+	maxRowspan := C.size_t(1)
+	if cfg.MaxRowspan >= 2 {
+		maxRowspan = C.size_t(cfg.MaxRowspan)
+	}
+
 	var ec C.int
 	if C.pdf_page_builder_streaming_table_begin_v2(
 		p.handle,
@@ -1346,6 +1357,7 @@ func (p *PageBuilder) StreamingTable(cfg StreamingTableConfig) *StreamingTable {
 		modeInt,
 		sampleRows,
 		minW, maxW,
+		maxRowspan,
 		&ec,
 	) != 0 {
 		p.err = ffiError(ec)
@@ -1363,8 +1375,8 @@ type StreamingTable struct {
 	finished bool
 }
 
-// PushRow pushes one row to the native streaming table. len(cells) must
-// equal the column count the adapter was opened with.
+// PushRow pushes one row to the native streaming table (all rowspan=1).
+// len(cells) must equal the column count the adapter was opened with.
 func (t *StreamingTable) PushRow(cells []string) error {
 	if t == nil {
 		return errors.New("pdf_oxide: PushRow on nil StreamingTable")
@@ -1401,6 +1413,65 @@ func (t *StreamingTable) PushRow(cells []string) error {
 		t.page.handle,
 		C.size_t(t.nCols),
 		(**C.char)(unsafe.Pointer(&cStrs[0])),
+		&ec,
+	) != 0 {
+		t.page.err = ffiError(ec)
+		return t.page.err
+	}
+	return nil
+}
+
+// SpanCell is a cell value paired with its rowspan for PushRowSpan.
+type SpanCell struct {
+	Text    string
+	Rowspan int
+}
+
+// PushRowSpan pushes one row with per-cell rowspan values.
+// Requires MaxRowspan >= 2 in the StreamingTableConfig.
+func (t *StreamingTable) PushRowSpan(cells []SpanCell) error {
+	if t == nil {
+		return errors.New("pdf_oxide: PushRowSpan on nil StreamingTable")
+	}
+	if t.finished {
+		return errors.New("pdf_oxide: PushRowSpan on finished StreamingTable")
+	}
+	if t.page == nil {
+		return errors.New("pdf_oxide: StreamingTable has no parent page")
+	}
+	if len(cells) != t.nCols {
+		return fmt.Errorf(
+			"pdf_oxide: StreamingTable.PushRowSpan: got %d cells, expected %d",
+			len(cells), t.nCols)
+	}
+	if !t.page.checkUsable() {
+		return t.page.err
+	}
+
+	cStrs    := make([]*C.char, t.nCols)
+	rowspans := make([]C.size_t, t.nCols)
+	for i, c := range cells {
+		cStrs[i] = C.CString(c.Text)
+		rs := c.Rowspan
+		if rs < 1 {
+			rs = 1
+		}
+		rowspans[i] = C.size_t(rs)
+	}
+	defer func() {
+		for _, s := range cStrs {
+			if s != nil {
+				C.free(unsafe.Pointer(s))
+			}
+		}
+	}()
+
+	var ec C.int
+	if C.pdf_page_builder_streaming_table_push_row_v2(
+		t.page.handle,
+		C.size_t(t.nCols),
+		(**C.char)(unsafe.Pointer(&cStrs[0])),
+		(*C.size_t)(unsafe.Pointer(&rowspans[0])),
 		&ec,
 	) != 0 {
 		t.page.err = ffiError(ec)

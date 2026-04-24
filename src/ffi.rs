@@ -6920,11 +6920,12 @@ enum FfiPageOp {
         sample_rows: usize,
         min_col_width_pt: f32,
         max_col_width_pt: f32,
+        /// Maximum rowspan. Default 1 (rowspan disabled).
+        max_rowspan: usize,
     },
-    /// Push one row into the currently-open streaming table. Fails at
-    /// replay time if no streaming table is open or if the cell count
-    /// doesn't match.
-    StreamingTableRow(Vec<String>),
+    /// Push one row into the currently-open streaming table. Each cell
+    /// carries (text, rowspan); rowspan == 1 is a normal cell.
+    StreamingTableRow(Vec<(String, usize)>),
     /// Close the current streaming table. Subsequent ops are normal
     /// page ops again.
     StreamingTableFinish,
@@ -8499,6 +8500,7 @@ pub extern "C" fn pdf_page_builder_streaming_table_begin(
             sample_rows: 50,
             min_col_width_pt: 20.0,
             max_col_width_pt: 400.0,
+            max_rowspan: 1,
         },
     )
 }
@@ -8507,6 +8509,7 @@ pub extern "C" fn pdf_page_builder_streaming_table_begin(
 ///
 /// `mode`: 0 = Fixed (default), 1 = Sample(sample_rows, min_w, max_w),
 ///         2 = AutoAll (rejected — see `pdf_page_builder_streaming_table_begin`).
+/// `max_rowspan`: 0 or 1 disables rowspan; ≥2 enables cells to span that many rows.
 #[no_mangle]
 pub extern "C" fn pdf_page_builder_streaming_table_begin_v2(
     handle: *mut FfiPageBuilder,
@@ -8519,6 +8522,7 @@ pub extern "C" fn pdf_page_builder_streaming_table_begin_v2(
     sample_rows: usize,
     min_col_width_pt: f32,
     max_col_width_pt: f32,
+    max_rowspan: usize,
     error_code: *mut i32,
 ) -> i32 {
     if n_columns == 0 || headers.is_null() || widths.is_null() || aligns.is_null() {
@@ -8556,6 +8560,7 @@ pub extern "C" fn pdf_page_builder_streaming_table_begin_v2(
             sample_rows,
             min_col_width_pt,
             max_col_width_pt,
+            max_rowspan,
         },
     )
 }
@@ -8563,6 +8568,8 @@ pub extern "C" fn pdf_page_builder_streaming_table_begin_v2(
 /// Push one row into the currently-open streaming table. `cells` is
 /// a length-`n_cells` array of null-terminated UTF-8 C strings; its
 /// length must equal the column count supplied to `_begin`.
+/// All cells are treated as rowspan=1. For rowspan > 1 use
+/// `pdf_page_builder_streaming_table_push_row_v2`.
 #[no_mangle]
 pub extern "C" fn pdf_page_builder_streaming_table_push_row(
     handle: *mut FfiPageBuilder,
@@ -8570,25 +8577,53 @@ pub extern "C" fn pdf_page_builder_streaming_table_push_row(
     cells: *const *const c_char,
     error_code: *mut i32,
 ) -> i32 {
+    pdf_page_builder_streaming_table_push_row_v2(
+        handle,
+        n_cells,
+        cells,
+        std::ptr::null(), // rowspans=NULL → all 1
+        error_code,
+    )
+}
+
+/// Push one row with per-cell rowspan values. `cells` is a length-`n_cells`
+/// array of null-terminated UTF-8 C strings. `rowspans` is a length-`n_cells`
+/// array of `size_t` values (1 = normal cell, ≥2 = span). Pass NULL for
+/// `rowspans` to treat all cells as rowspan=1 (same as `_push_row`).
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_streaming_table_push_row_v2(
+    handle: *mut FfiPageBuilder,
+    n_cells: usize,
+    cells: *const *const c_char,
+    rowspans: *const usize,
+    error_code: *mut i32,
+) -> i32 {
     if n_cells == 0 || cells.is_null() {
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
     let cells_slice = unsafe { std::slice::from_raw_parts(cells, n_cells) };
-    let mut row: Vec<String> = Vec::with_capacity(n_cells);
+    let rowspans_slice = if rowspans.is_null() {
+        None
+    } else {
+        Some(unsafe { std::slice::from_raw_parts(rowspans, n_cells) })
+    };
+    let mut row: Vec<(String, usize)> = Vec::with_capacity(n_cells);
     for i in 0..n_cells {
         let ptr = cells_slice[i];
-        if ptr.is_null() {
-            row.push(String::new());
-            continue;
-        }
-        match unsafe { CStr::from_ptr(ptr) }.to_str() {
-            Ok(s) => row.push(s.to_string()),
-            Err(_) => {
-                set_error(error_code, ERR_INVALID_ARG);
-                return -1;
-            },
-        }
+        let text = if ptr.is_null() {
+            String::new()
+        } else {
+            match unsafe { CStr::from_ptr(ptr) }.to_str() {
+                Ok(s) => s.to_string(),
+                Err(_) => {
+                    set_error(error_code, ERR_INVALID_ARG);
+                    return -1;
+                },
+            }
+        };
+        let span = rowspans_slice.map_or(1, |rs| rs[i].max(1));
+        row.push((text, span));
     }
     push_page_op(handle, error_code, FfiPageOp::StreamingTableRow(row))
 }
@@ -8656,6 +8691,7 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
                 sample_rows,
                 min_col_width_pt,
                 max_col_width_pt,
+                max_rowspan,
             } => {
                 let Some(rp) = rust_page_opt.take() else {
                     // Already streaming — reject reopening.
@@ -8663,7 +8699,8 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
                     return -1;
                 };
                 let mut config = crate::writer::StreamingTableConfig::new()
-                    .repeat_header(repeat_header);
+                    .repeat_header(repeat_header)
+                    .max_rowspan(max_rowspan);
                 config = match mode {
                     1 => config.mode_sample(sample_rows, min_col_width_pt, max_col_width_pt),
                     2 => config.mode_auto_all(),
@@ -8686,12 +8723,13 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
             },
             FfiPageOp::StreamingTableRow(cells) => {
                 if let Some(st) = streaming_opt.as_mut() {
-                    // Discard push_row errors at FFI — the binding is
-                    // responsible for arity. Log via debug_assert for
-                    // cargo test visibility.
                     let _ = st.push_row(|r| {
-                        for c in cells {
-                            r.cell(c);
+                        for (text, span) in cells {
+                            if span > 1 {
+                                r.span_cell(text, span);
+                            } else {
+                                r.cell(text);
+                            }
                         }
                     });
                 } else {

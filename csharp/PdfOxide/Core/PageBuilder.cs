@@ -803,15 +803,21 @@ namespace PdfOxide.Core
         /// <param name="columns">Column specifications.</param>
         /// <param name="repeatHeader">Repeat the header row on every page break.</param>
         /// <param name="mode">Column-sizing mode (default: <see cref="TableMode.Fixed"/>).</param>
+        /// <param name="maxRowspan">
+        /// Maximum rowspan value cells may carry. 0 or 1 disables rowspan (default).
+        /// Pass ≥2 to enable <see cref="StreamingTable.AddRowSpan"/> for cells that
+        /// should span multiple rows.
+        /// </param>
         public StreamingTable StreamingTable(
             IReadOnlyList<Column> columns,
             bool repeatHeader = true,
-            TableMode? mode = null)
+            TableMode? mode = null,
+            int maxRowspan = 1)
         {
             ArgumentNullException.ThrowIfNull(columns);
             if (columns.Count == 0)
                 throw new ArgumentException("columns must be non-empty", nameof(columns));
-            return new StreamingTable(this, columns, repeatHeader, mode);
+            return new StreamingTable(this, columns, repeatHeader, mode, maxRowspan);
         }
 
         /// <summary>

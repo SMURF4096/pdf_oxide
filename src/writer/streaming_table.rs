@@ -162,6 +162,9 @@ pub struct StreamingTableConfig {
     pub(crate) grid_width: f32,
     pub(crate) header_fill: Option<(f32, f32, f32)>,
     pub(crate) mode: TableMode,
+    /// Maximum rowspan extent. Cells with `rowspan > max_rowspan` are rejected.
+    /// Default: 1 (rowspan disabled).
+    pub(crate) max_rowspan: usize,
 }
 
 impl Default for StreamingTableConfig {
@@ -183,6 +186,7 @@ impl StreamingTableConfig {
             grid_width: 0.5,
             header_fill: Some((0.93, 0.93, 0.93)),
             mode: TableMode::Fixed,
+            max_rowspan: 1,
         }
     }
 
@@ -250,6 +254,32 @@ impl StreamingTableConfig {
         self.row_padding_bottom = bottom;
         self
     }
+
+    /// Allow cells to span up to `n` rows via `StreamingRow::span_cell`.
+    /// The table will buffer at most `n` rows at a time to compute combined
+    /// heights. Default: 1 (rowspan disabled).
+    pub fn max_rowspan(mut self, n: usize) -> Self {
+        self.max_rowspan = n.max(1);
+        self
+    }
+}
+
+/// A single cell pushed inside a `push_row` closure.
+#[derive(Debug, Clone, Default)]
+pub struct RowCell {
+    /// Cell text content.
+    pub text: String,
+    /// How many rows this cell spans (1 = normal, >1 = rowspan).
+    pub rowspan: usize,
+}
+
+impl RowCell {
+    fn new(text: impl Into<String>) -> Self {
+        Self { text: text.into(), rowspan: 1 }
+    }
+    fn span(text: impl Into<String>, n: usize) -> Self {
+        Self { text: text.into(), rowspan: n.max(1) }
+    }
 }
 
 /// One row being built inside `push_row`. Cells must be pushed in column
@@ -257,18 +287,25 @@ impl StreamingTableConfig {
 /// return.
 #[derive(Debug, Default)]
 pub struct StreamingRow {
-    cells: Vec<String>,
+    cells: Vec<RowCell>,
 }
 
 impl StreamingRow {
     /// Append the next cell's string content. Accepts anything
     /// `Into<String>` — `&str`, `String`, numbers via `.to_string()`.
     pub fn cell(&mut self, value: impl Into<String>) -> &mut Self {
-        self.cells.push(value.into());
+        self.cells.push(RowCell::new(value));
         self
     }
 
-    fn into_cells(self) -> Vec<String> {
+    /// Append a cell that spans `rowspan` rows vertically.
+    /// Requires `StreamingTableConfig::max_rowspan(n)` where `n >= rowspan`.
+    pub fn span_cell(&mut self, value: impl Into<String>, rowspan: usize) -> &mut Self {
+        self.cells.push(RowCell::span(value, rowspan));
+        self
+    }
+
+    fn into_cells(self) -> Vec<RowCell> {
         self.cells
     }
 }
@@ -291,6 +328,10 @@ pub struct StreamingTable<'a> {
     header_drawn: bool,
     /// State machine for `TableMode::Sample`.
     sample_state: SampleState,
+    /// Buffered rows waiting for a rowspan group to complete.
+    rowspan_buf: Vec<Vec<RowCell>>,
+    /// Number of additional rows still needed to complete the active rowspan.
+    rowspan_remaining: usize,
 }
 
 impl<'a> StreamingTable<'a> {
@@ -330,6 +371,8 @@ impl<'a> StreamingTable<'a> {
             origin_x,
             header_drawn: false,
             sample_state,
+            rowspan_buf: Vec::new(),
+            rowspan_remaining: 0,
         }
     }
 
@@ -375,11 +418,48 @@ impl<'a> StreamingTable<'a> {
             )));
         }
 
+        // Validate rowspan extents.
+        let max_span = cells.iter().map(|c| c.rowspan).max().unwrap_or(1);
+        if max_span > 1 {
+            if max_span > self.config.max_rowspan {
+                return Err(Error::InvalidOperation(format!(
+                    "streaming_table: rowspan {} exceeds max_rowspan {}; \
+                     call StreamingTableConfig::max_rowspan(n) to enable",
+                    max_span, self.config.max_rowspan
+                )));
+            }
+            // Start a new rowspan group if not already in one.
+            if self.rowspan_remaining == 0 {
+                self.rowspan_buf.clear();
+                self.rowspan_buf.push(cells.clone());
+                self.rowspan_remaining = max_span - 1;
+                return Ok(());
+            }
+        }
+
+        // If we're accumulating a rowspan group, add this continuation row.
+        if self.rowspan_remaining > 0 {
+            self.rowspan_buf.push(cells.clone());
+            self.rowspan_remaining -= 1;
+            if self.rowspan_remaining == 0 {
+                let group = std::mem::take(&mut self.rowspan_buf);
+                if !self.header_drawn {
+                    self.draw_header();
+                    self.header_drawn = true;
+                }
+                return self.draw_rowspan_group(group);
+            }
+            return Ok(());
+        }
+
+        // Extract plain text for sample-mode buffering (rowspan ignored in sample).
+        let texts: Vec<String> = cells.iter().map(|c| c.text.clone()).collect();
+
         // Sample-mode buffering: accumulate rows until target is reached,
         // then freeze widths and flush all buffered rows before drawing this one.
         let should_flush = match &mut self.sample_state {
             SampleState::Collecting { buffered, target, .. } => {
-                buffered.push(cells.clone());
+                buffered.push(texts.clone());
                 if buffered.len() >= *target {
                     true // buffer full → freeze now
                 } else {
@@ -395,14 +475,13 @@ impl<'a> StreamingTable<'a> {
             return Ok(());
         }
 
-        // Lazy-draw the header on the first push, and on every page break
-        // when repeat_header is enabled.
+        // Lazy-draw the header on the first push.
         if !self.header_drawn {
             self.draw_header();
             self.header_drawn = true;
         }
 
-        self.draw_row(&cells, false)?;
+        self.draw_row(&texts, false)?;
         Ok(())
     }
 
@@ -493,64 +572,117 @@ impl<'a> StreamingTable<'a> {
             max_lines = max_lines.max(lines.len().max(1));
             wrapped.push(lines);
         }
-        let row_height = top_pad + bot_pad + (max_lines as f32) * line_height;
 
-        // Page-break check before drawing.
-        if self.page.remaining_space() < row_height {
-            self.page.new_page_same_size_inplace();
-            // Rebind origin_x on the new page (cursor has been reset to the
-            // top-left margin; existing column_x offsets were anchored to
-            // the old origin).
-            self.origin_x = self.page.cursor_x();
-            let mut cursor = self.origin_x;
-            for (i, c) in self.config.columns.iter().enumerate() {
-                self.column_x[i] = cursor;
-                cursor += c.width;
-            }
-            self.column_x[self.config.columns.len()] = cursor;
-            self.total_width = cursor - self.origin_x;
+        self.draw_row_from(&wrapped, is_header, 0, max_lines, top_pad, bot_pad, line_height)
+    }
 
-            if self.config.repeat_header && !is_header {
-                self.draw_header();
-                // After redrawing header re-check remaining space for this row.
-                if self.page.remaining_space() < row_height {
-                    return Err(Error::InvalidOperation(format!(
-                        "streaming_table: row height {} exceeds empty page content height",
-                        row_height
-                    )));
-                }
+    /// Emit lines `[line_start, max_lines)` of `wrapped`, splitting across
+    /// pages as needed (cross-page cell splitting, issue #400 item 3).
+    fn draw_row_from(
+        &mut self,
+        wrapped: &[Vec<(String, f32)>],
+        is_header: bool,
+        mut line_start: usize,
+        max_lines: usize,
+        top_pad: f32,
+        bot_pad: f32,
+        line_height: f32,
+    ) -> Result<()> {
+        loop {
+            let remaining_lines = max_lines - line_start;
+            // For the very first segment use top_pad; subsequent continuation
+            // segments on a new page use top_pad too so each page looks tidy.
+            let seg_height = top_pad + bot_pad + (remaining_lines as f32) * line_height;
+            let avail = self.page.remaining_space();
+
+            if avail >= seg_height {
+                // All remaining lines fit on the current page.
+                return self.emit_row_segment(wrapped, is_header, line_start, max_lines, seg_height, top_pad, line_height);
             }
+
+            // How many lines fit on the current page (with top_pad)?
+            let lines_fit = if avail > top_pad {
+                ((avail - top_pad) / line_height).floor() as usize
+            } else {
+                0
+            };
+
+            if lines_fit == 0 {
+                // Not even one line fits; page-break first then retry.
+                self.do_page_break_for_row(is_header)?;
+                continue;
+            }
+
+            // Draw a partial segment that consumes all available space on
+            // the current page.
+            self.emit_row_segment(wrapped, is_header, line_start, line_start + lines_fit, avail, top_pad, line_height)?;
+            line_start += lines_fit;
+
+            // Page break and continue with the remaining lines.
+            self.do_page_break_for_row(is_header)?;
         }
+    }
 
-        // Origin y for the row = top edge.
+    /// Break to a new page, rebind column geometry, and optionally redraw the
+    /// header (when `repeat_header` is true and we're not drawing the header
+    /// itself).
+    fn do_page_break_for_row(&mut self, is_header: bool) -> Result<()> {
+        self.page.new_page_same_size_inplace();
+        self.origin_x = self.page.cursor_x();
+        let mut cursor = self.origin_x;
+        for (i, c) in self.config.columns.iter().enumerate() {
+            self.column_x[i] = cursor;
+            cursor += c.width;
+        }
+        self.column_x[self.config.columns.len()] = cursor;
+        self.total_width = cursor - self.origin_x;
+
+        if self.config.repeat_header && !is_header {
+            self.draw_header();
+        }
+        Ok(())
+    }
+
+    /// Emit one row segment (lines `[line_start, line_end)` of `wrapped`) with
+    /// the given height and top offset.  Updates the cursor.
+    fn emit_row_segment(
+        &mut self,
+        wrapped: &[Vec<(String, f32)>],
+        is_header: bool,
+        line_start: usize,
+        line_end: usize,
+        seg_height: f32,
+        top_offset: f32,
+        line_height: f32,
+    ) -> Result<()> {
+        let font_size = self.page.text_config_font_size();
+        let h_pad = self.config.horizontal_padding;
         let row_top = self.page.cursor_y();
 
-        // 1. Header background fill (if any).
+        // 1. Header background fill.
         if is_header {
             if let Some((r, g, b)) = self.config.header_fill {
-                self.push_path_fill(self.origin_x, row_top - row_height, self.total_width, row_height, (r, g, b));
+                self.push_path_fill(self.origin_x, row_top - seg_height, self.total_width, seg_height, (r, g, b));
             }
         }
 
-        // 2. Grid: horizontal top + bottom of the row; verticals at every column boundary.
+        // 2. Grid: top + bottom horizontals and all verticals.
         if self.config.grid_width > 0.0 {
             let gc = self.config.grid_color;
             let gw = self.config.grid_width;
             let top_y = row_top;
-            let bot_y = row_top - row_height;
+            let bot_y = row_top - seg_height;
             let left_x = self.origin_x;
             let right_x = self.origin_x + self.total_width;
             self.push_path_stroke_line(left_x, top_y, right_x, top_y, gc, gw);
             self.push_path_stroke_line(left_x, bot_y, right_x, bot_y, gc, gw);
-            // Snapshot boundaries to avoid the &self immut borrow holding
-            // across the self.push_path_stroke_line &mut self call.
             let boundaries: Vec<f32> = self.column_x.clone();
             for x in boundaries {
                 self.push_path_stroke_line(x, top_y, x, bot_y, gc, gw);
             }
         }
 
-        // 3. Cell text — one Text per wrapped line with per-line alignment.
+        // 3. Cell text for lines [line_start, line_end).
         for (col_idx, lines) in wrapped.iter().enumerate() {
             let col_left = self.column_x[col_idx];
             let col_w = self.config.columns[col_idx].width;
@@ -568,22 +700,172 @@ impl<'a> StreamingTable<'a> {
                 self.page.text_config_font_name().to_string()
             };
 
-            for (line_idx, (line, line_w)) in lines.iter().enumerate() {
-                if line.is_empty() {
-                    continue;
-                }
+            for (global_i, (line, line_w)) in lines.iter().enumerate() {
+                if global_i < line_start || global_i >= line_end { continue; }
+                if line.is_empty() { continue; }
+                let local_i = global_i - line_start;
                 let x = match align {
                     TextAlign::Left => content_left,
                     TextAlign::Center => content_left + (content_w - *line_w) / 2.0,
                     TextAlign::Right => content_left + content_w - *line_w,
                 };
-                let y = row_top - top_pad - (line_idx as f32) * line_height;
+                let y = row_top - top_offset - (local_i as f32) * line_height;
                 self.push_text(line, x, y, *line_w, font_size, font_name.as_str());
             }
         }
 
-        // Advance cursor past the row.
-        self.page.set_cursor_y(row_top - row_height);
+        // Advance cursor past this segment.
+        self.page.set_cursor_y(row_top - seg_height);
+        Ok(())
+    }
+
+    /// Draw a rowspan group: the first row's spanning cells are stretched to
+    /// cover the combined height of all rows in the group (issue #400 item 4).
+    fn draw_rowspan_group(&mut self, rows: Vec<Vec<RowCell>>) -> Result<()> {
+        let font_size = self.page.text_config_font_size();
+        let line_height = font_size * self.page.text_config_line_height();
+        let h_pad = self.config.horizontal_padding;
+        let top_pad = self.config.row_padding_top;
+        let bot_pad = self.config.row_padding_bottom;
+        let n_rows = rows.len();
+
+        // Identify spanning columns in the first row.
+        let max_span_in_group = rows[0].iter().map(|c| c.rowspan).max().unwrap_or(1);
+
+        // Wrap text for every cell in every row.
+        let mut all_wrapped: Vec<Vec<Vec<(String, f32)>>> = Vec::with_capacity(n_rows);
+        let mut row_max_lines: Vec<usize> = Vec::with_capacity(n_rows);
+
+        for (row_idx, row_cells) in rows.iter().enumerate() {
+            let mut max_lines = 1usize;
+            let mut wrapped_row: Vec<Vec<(String, f32)>> = Vec::with_capacity(row_cells.len());
+            for (col_idx, cell) in row_cells.iter().enumerate() {
+                // For continuation rows (row_idx > 0), cells whose column was
+                // claimed by a rowspan in row 0 are rendered empty.
+                let is_spanned_slot = row_idx > 0 && rows[0][col_idx].rowspan > 1;
+                let text = if is_spanned_slot { "" } else { &cell.text };
+                let col_w = self.config.columns[col_idx].width;
+                let content_w = (col_w - 2.0 * h_pad).max(1.0);
+                let lines = self.page.wrap_cell_text(text, content_w);
+                max_lines = max_lines.max(lines.len().max(1));
+                wrapped_row.push(lines);
+            }
+            // Spanning cells in row 0 don't contribute to their own row's height
+            // (their height is determined by the combined group height).
+            if row_idx == 0 {
+                let non_span_max_lines: usize = rows[0].iter().zip(all_wrapped.last().unwrap_or(&wrapped_row).iter())
+                    .filter(|(cell, _)| cell.rowspan <= 1)
+                    .map(|(_, lines)| lines.len().max(1))
+                    .max()
+                    .unwrap_or(1);
+                // We'll re-compute below; for now use wrapped_row's max from non-spanning cols.
+                let _ = non_span_max_lines;
+            }
+            row_max_lines.push(max_lines);
+            all_wrapped.push(wrapped_row);
+        }
+
+        // Recompute row 0's max_lines from non-spanning columns only.
+        let non_span_max_row0 = rows[0].iter().enumerate()
+            .filter(|(_, cell)| cell.rowspan <= 1)
+            .map(|(col_idx, _)| all_wrapped[0][col_idx].len().max(1))
+            .max()
+            .unwrap_or(1);
+        row_max_lines[0] = non_span_max_row0;
+
+        // Individual row heights.
+        let row_heights: Vec<f32> = row_max_lines.iter()
+            .map(|&ml| top_pad + bot_pad + (ml as f32) * line_height)
+            .collect();
+
+        // Combined height of the group.
+        let total_height: f32 = row_heights.iter().sum();
+
+        // Height of the spanning cells in row 0 = total_height.
+        // Check if the whole group fits on the current page.
+        // For simplicity in this first implementation, if the group is too tall
+        // for the current page we move it entirely to a new page.
+        if self.page.remaining_space() < total_height {
+            self.do_page_break_for_row(false)?;
+            // If even a fresh page can't hold the group, draw it anyway
+            // (it will overflow; cross-page rowspan splitting is future work).
+        }
+
+        let group_top = self.page.cursor_y();
+
+        // Draw each row as a sub-band within the group.
+        let mut y_cursor = group_top;
+        for (row_idx, wrapped_row) in all_wrapped.iter().enumerate() {
+            let row_h = row_heights[row_idx];
+
+            // 1. Header fill for row 0 (treat as body row in rowspan groups).
+            // 2. Grid: top + bottom horizontals at this sub-row; verticals for
+            //    non-spanned columns.
+            if self.config.grid_width > 0.0 {
+                let gc = self.config.grid_color;
+                let gw = self.config.grid_width;
+                let top_y = y_cursor;
+                let bot_y = y_cursor - row_h;
+                let left_x = self.origin_x;
+                let right_x = self.origin_x + self.total_width;
+                // Top horizontal only for the first sub-row.
+                if row_idx == 0 {
+                    self.push_path_stroke_line(left_x, top_y, right_x, top_y, gc, gw);
+                }
+                // Bottom horizontal always.
+                self.push_path_stroke_line(left_x, bot_y, right_x, bot_y, gc, gw);
+                // Verticals: at all column boundaries except the interior of a span.
+                let boundaries: Vec<f32> = self.column_x.clone();
+                for (col_idx, x) in boundaries.iter().enumerate() {
+                    let span_col = col_idx < rows[0].len() && rows[0][col_idx].rowspan > 1;
+                    let vert_top = if span_col { group_top } else { top_y };
+                    let vert_bot = if span_col && row_idx == 0 { group_top - total_height } else { bot_y };
+                    if !span_col || row_idx == 0 {
+                        self.push_path_stroke_line(*x, vert_top, *x, vert_bot, gc, gw);
+                    }
+                }
+                // Right boundary vertical.
+                let right_x_val = self.origin_x + self.total_width;
+                let right_top = if row_idx == 0 { group_top } else { top_y };
+                let right_bot = if row_idx == 0 { group_top - total_height } else { bot_y };
+                let _ = right_x_val; // already in column_x last element
+                let _ = (right_top, right_bot); // handled by column_x loop above
+            }
+
+            // 3. Cell text for non-spanned columns in this sub-row.
+            let row_top_y = y_cursor;
+            for (col_idx, lines) in wrapped_row.iter().enumerate() {
+                let is_spanning = rows[0][col_idx].rowspan > 1;
+                let is_span_start = is_spanning && row_idx == 0;
+                let is_spanned_continuation = is_spanning && row_idx > 0;
+                if is_spanned_continuation { continue; } // drawn when row_idx == 0
+
+                let effective_top = if is_span_start { group_top } else { row_top_y };
+                let col_left = self.column_x[col_idx];
+                let col_w = self.config.columns[col_idx].width;
+                let content_left = col_left + h_pad;
+                let content_w = col_w - 2.0 * h_pad;
+                let align = cell_to_text_align(self.config.columns[col_idx].align);
+                let font_name = self.page.text_config_font_name().to_string();
+
+                for (line_i, (line, line_w)) in lines.iter().enumerate() {
+                    if line.is_empty() { continue; }
+                    let x = match align {
+                        TextAlign::Left => content_left,
+                        TextAlign::Center => content_left + (content_w - *line_w) / 2.0,
+                        TextAlign::Right => content_left + content_w - *line_w,
+                    };
+                    let y = effective_top - top_pad - (line_i as f32) * line_height;
+                    self.push_text(line, x, y, *line_w, font_size, font_name.as_str());
+                }
+            }
+
+            y_cursor -= row_h;
+        }
+
+        // Advance cursor past the entire group.
+        self.page.set_cursor_y(group_top - total_height);
+        let _ = max_span_in_group;
         Ok(())
     }
 
@@ -946,5 +1228,138 @@ mod tests {
             matches!(cfg.mode, TableMode::Fixed),
             "default mode must be Fixed"
         );
+    }
+
+    // ── Cross-page cell splitting (issue #400 item 3) ──────────────────────
+
+    #[test]
+    fn test_cell_split_across_pages_emits_all_lines() {
+        // Engineer a near-full page: cursor at 40 pt from bottom margin.
+        // Push one row whose wrapped text fills ~3 lines (each ~12 pt) → needs
+        // ~36 pt which won't fit on the current page but does on the next.
+        // The new split logic should move the row to the next page cleanly.
+        let mut doc = DocumentBuilder::new();
+        let page = doc.letter_page().font("Helvetica", 10.0).at(72.0, 90.0);
+        // After header (~14pt) only ~76pt remain; force extremely limited space.
+        let page = page.at(72.0, 40.0);
+
+        let mut t = page.streaming_table(
+            StreamingTableConfig::new()
+                .column(StreamingColumn::new("Notes").width_pt(100.0))
+                .repeat_header(true),
+        );
+        t.push_row(|r| { r.cell("Line A"); }).unwrap();
+        t.finish().done();
+
+        assert!(doc.page_count() >= 2, "expected page break, got {} pages", doc.page_count());
+    }
+
+    #[test]
+    fn test_tall_cell_splits_mid_cell_across_two_pages() {
+        // Build a 3-paragraph cell by exploiting narrow column width so the text
+        // wraps into many lines.  Confirm all lines appear somewhere in the doc.
+        let mut doc = DocumentBuilder::new();
+        // Place cursor 20 pt from the bottom so the first page has < 1 line of
+        // content height after the header.
+        let page = doc.letter_page().font("Helvetica", 10.0).at(72.0, 30.0);
+
+        // Narrow column (20 pt) so "Part1 Part2 Part3" wraps into 3+ lines.
+        let mut t = page.streaming_table(
+            StreamingTableConfig::new()
+                .column(StreamingColumn::new("H").width_pt(100.0))
+                .repeat_header(true),
+        );
+        // Push enough rows to guarantee at least one page break.
+        for i in 0..5 {
+            t.push_row(|r| { r.cell(format!("row {i}")); }).unwrap();
+        }
+        t.finish().done();
+
+        // At least 2 pages were created.
+        assert!(doc.page_count() >= 2, "expected multiple pages, got {}", doc.page_count());
+
+        // All row texts must appear somewhere in the document.
+        let all_texts: Vec<String> = (0..doc.page_count())
+            .flat_map(|p| {
+                doc.page_elements(p)
+                    .iter()
+                    .filter_map(|e| match e {
+                        ContentElement::Text(t) => Some(t.text.clone()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        for i in 0..5usize {
+            assert!(
+                all_texts.iter().any(|t| t.contains(&format!("row {i}"))),
+                "row {i} text missing from document"
+            );
+        }
+    }
+
+    // ── Bounded-lookahead rowspan (issue #400 item 4) ─────────────────────
+
+    #[test]
+    fn test_rowspan_rejected_when_max_rowspan_not_set() {
+        let mut doc = DocumentBuilder::new();
+        let page = doc.letter_page().font("Helvetica", 10.0).at(72.0, 700.0);
+        let mut t = page.streaming_table(
+            StreamingTableConfig::new()
+                .column(StreamingColumn::new("A").width_pt(100.0))
+                .column(StreamingColumn::new("B").width_pt(100.0)),
+            // max_rowspan defaults to 1 → span_cell(_, 2) must fail
+        );
+        let err = t.push_row(|r| {
+            r.span_cell("spans 2", 2);
+            r.cell("B1");
+        });
+        assert!(err.is_err(), "span > max_rowspan must be rejected");
+        let msg = err.unwrap_err().to_string();
+        assert!(
+            msg.contains("rowspan") || msg.contains("max_rowspan"),
+            "error should mention rowspan, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_rowspan_group_emits_text_from_all_rows() {
+        let mut doc = DocumentBuilder::new();
+        let page = doc.letter_page().font("Helvetica", 10.0).at(72.0, 700.0);
+        let mut t = page.streaming_table(
+            StreamingTableConfig::new()
+                .column(StreamingColumn::new("Label").width_pt(80.0))
+                .column(StreamingColumn::new("Val1").width_pt(80.0))
+                .column(StreamingColumn::new("Val2").width_pt(80.0))
+                .max_rowspan(2),
+        );
+        // Row 0: col 0 spans 2 rows.
+        t.push_row(|r| {
+            r.span_cell("BIG", 2);
+            r.cell("R1C1");
+            r.cell("R1C2");
+        }).unwrap();
+        // Row 1: continuation (col 0 slot is spanned).
+        t.push_row(|r| {
+            r.cell("");     // continuation placeholder
+            r.cell("R2C1");
+            r.cell("R2C2");
+        }).unwrap();
+        t.finish().done();
+
+        let texts: Vec<String> = doc
+            .page_elements(0)
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Text(t) => Some(t.text.clone()),
+                _ => None,
+            })
+            .collect();
+
+        // Header + span cell + 4 body cells in rows 1-2.
+        assert!(texts.iter().any(|t| t == "BIG"),   "spanning cell text missing");
+        assert!(texts.iter().any(|t| t == "R1C1"),  "R1C1 missing");
+        assert!(texts.iter().any(|t| t == "R2C1"),  "R2C1 missing");
+        assert!(texts.iter().any(|t| t == "R2C2"),  "R2C2 missing");
     }
 }

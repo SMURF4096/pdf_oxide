@@ -562,11 +562,17 @@ extern "C" {
                                                          size_t sample_rows,
                                                          float min_col_width_pt,
                                                          float max_col_width_pt,
+                                                         size_t max_rowspan,
                                                          int* error_code);
   extern int   pdf_page_builder_streaming_table_push_row(void* page,
                                                          size_t n_cells,
                                                          const char* const* cells,
                                                          int* error_code);
+  extern int   pdf_page_builder_streaming_table_push_row_v2(void* page,
+                                                            size_t n_cells,
+                                                            const char* const* cells,
+                                                            const size_t* rowspans,
+                                                            int* error_code);
   extern int   pdf_page_builder_streaming_table_finish(void* page, int* error_code);
 
   extern int   pdf_page_builder_done(void* page, int* error_code);
@@ -3434,6 +3440,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("pageBuilderTable", Napi::Function::New(env, PageBuilderTable));
   exports.Set("pageBuilderStreamingTableBeginV2", Napi::Function::New(env, PageBuilderStreamingTableBeginV2));
   exports.Set("pageBuilderStreamingTablePushRow", Napi::Function::New(env, PageBuilderStreamingTablePushRow));
+  exports.Set("pageBuilderStreamingTablePushRowV2", Napi::Function::New(env, PageBuilderStreamingTablePushRowV2));
   exports.Set("pageBuilderStreamingTableFinish", Napi::Function::New(env, PageBuilderStreamingTableFinish));
   exports.Set("pageBuilderDone", Napi::Function::New(env, PageBuilderDone));
   exports.Set("pageBuilderFree", Napi::Function::New(env, PageBuilderFree));
@@ -4202,10 +4209,10 @@ Napi::Value PageBuilderTable(const Napi::CallbackInfo& info) {
 
 Napi::Value PageBuilderStreamingTableBeginV2(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  // args: page, headers[], widths[], aligns[], repeatHeader, mode, sampleRows, minW, maxW
+  // args: page, headers[], widths[], aligns[], repeatHeader, mode, sampleRows, minW, maxW, maxRowspan
   if (info.Length() < 9 || !info[1].IsArray() || !info[2].IsArray() || !info[3].IsArray()) {
     throw Napi::TypeError::New(env,
-        "streamingTableBeginV2(page, headers[], widths[], aligns[], repeatHeader, mode, sampleRows, minW, maxW)");
+        "streamingTableBeginV2(page, headers[], widths[], aligns[], repeatHeader, mode, sampleRows, minW, maxW[, maxRowspan])");
   }
   void* p = externPtr(info, 0, "page");
   auto headersArr = info[1].As<Napi::Array>();
@@ -4216,6 +4223,8 @@ Napi::Value PageBuilderStreamingTableBeginV2(const Napi::CallbackInfo& info) {
   size_t sampleRows = info[6].IsNumber() ? static_cast<size_t>(info[6].As<Napi::Number>().Uint32Value()) : 20;
   float minW = info[7].IsNumber() ? static_cast<float>(info[7].As<Napi::Number>().DoubleValue()) : 0.0f;
   float maxW = info[8].IsNumber() ? static_cast<float>(info[8].As<Napi::Number>().DoubleValue()) : 9999.0f;
+  size_t maxRowspan = info.Length() >= 10 && info[9].IsNumber()
+                      ? static_cast<size_t>(info[9].As<Napi::Number>().Uint32Value()) : 1;
 
   size_t nCols = headersArr.Length();
   if (nCols == 0 || widthsArr.Length() != nCols || alignsArr.Length() != nCols) {
@@ -4242,6 +4251,7 @@ Napi::Value PageBuilderStreamingTableBeginV2(const Napi::CallbackInfo& info) {
       headerPtrs.data(), widths.data(), aligns.data(),
       repeatHeader ? 1 : 0,
       mode, sampleRows, minW, maxW,
+      maxRowspan,
       &errorCode);
   throwOnError(env, errorCode, "PageBuilder.streamingTableBeginV2");
   return env.Undefined();
@@ -4269,6 +4279,40 @@ Napi::Value PageBuilderStreamingTablePushRow(const Napi::CallbackInfo& info) {
   int errorCode = 0;
   pdf_page_builder_streaming_table_push_row(p, nCells, cellPtrs.data(), &errorCode);
   throwOnError(env, errorCode, "PageBuilder.streamingTablePushRow");
+  return env.Undefined();
+}
+
+// args: page, cells[] — each element is [text, rowspan]
+Napi::Value PageBuilderStreamingTablePushRowV2(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 2 || !info[1].IsArray()) {
+    throw Napi::TypeError::New(env, "streamingTablePushRowV2(page, cells[[text,rowspan]])");
+  }
+  void* p = externPtr(info, 0, "page");
+  auto cellsArr = info[1].As<Napi::Array>();
+  size_t nCells = cellsArr.Length();
+
+  std::vector<std::string> cellStorage(nCells);
+  std::vector<const char*> cellPtrs(nCells);
+  std::vector<size_t> rowspans(nCells, 1);
+  for (size_t i = 0; i < nCells; i++) {
+    Napi::Value cv = cellsArr.Get(i);
+    if (cv.IsArray()) {
+      auto pair = cv.As<Napi::Array>();
+      Napi::Value tv = pair.Get(0u);
+      cellStorage[i] = tv.IsString() ? tv.As<Napi::String>().Utf8Value() : std::string();
+      Napi::Value rv = pair.Get(1u);
+      rowspans[i] = rv.IsNumber() ? static_cast<size_t>(rv.As<Napi::Number>().Uint32Value()) : 1;
+    } else {
+      cellStorage[i] = cv.IsString() ? cv.As<Napi::String>().Utf8Value() : std::string();
+    }
+    if (rowspans[i] < 1) rowspans[i] = 1;
+    cellPtrs[i] = cellStorage[i].c_str();
+  }
+
+  int errorCode = 0;
+  pdf_page_builder_streaming_table_push_row_v2(p, nCells, cellPtrs.data(), rowspans.data(), &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.streamingTablePushRowV2");
   return env.Undefined();
 }
 

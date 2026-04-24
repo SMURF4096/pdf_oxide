@@ -7209,6 +7209,7 @@ namespace PdfOxide.Internal
             nuint sampleRows,
             float minColWidthPt,
             float maxColWidthPt,
+            nuint maxRowspan,
             out int errorCode);
 
         [LibraryImport(LibName, EntryPoint = "pdf_page_builder_streaming_table_push_row")]
@@ -7217,6 +7218,15 @@ namespace PdfOxide.Internal
             IntPtr page,
             nuint nCells,
             byte** cells,
+            out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_streaming_table_push_row_v2")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial int PdfPageBuilderStreamingTablePushRowV2(
+            IntPtr page,
+            nuint nCells,
+            byte** cells,
+            nuint* rowspans,
             out int errorCode);
 
         [LibraryImport(LibName, EntryPoint = "pdf_page_builder_streaming_table_finish")]

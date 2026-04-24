@@ -556,14 +556,24 @@ int   pdf_page_builder_streaming_table_begin_v2(void* page,
                                                 size_t sample_rows,
                                                 float min_col_width_pt,
                                                 float max_col_width_pt,
+                                                size_t max_rowspan,
                                                 int* error_code);
 
-/* Push one row. `cells` must have length matching n_columns from
- * _begin. NULL cell pointers become empty strings. */
+/* Push one row (all rowspan=1). `cells` must have length matching
+ * n_columns from _begin. NULL cell pointers become empty strings. */
 int   pdf_page_builder_streaming_table_push_row(void* page,
                                                 size_t n_cells,
                                                 const char* const* cells,
                                                 int* error_code);
+
+/* Push one row with per-cell rowspan values. `rowspans` is a length-
+ * n_cells array of size_t values (1 = normal, >=2 = span). Pass NULL
+ * to treat all cells as rowspan=1. */
+int   pdf_page_builder_streaming_table_push_row_v2(void* page,
+                                                   size_t n_cells,
+                                                   const char* const* cells,
+                                                   const size_t* rowspans,
+                                                   int* error_code);
 
 /* Close the open streaming table. Auto-closed by _done if not
  * explicit. */

@@ -65,7 +65,7 @@ import {
   SearchStream,
   SecurityManager,
 } from './managers/index';
-import type { Column, StreamingTableConfig, Table, TableMode, TableSpec } from './types/common.js';
+import type { Column, SpanCell, StreamingTableConfig, Table, TableMode, TableSpec } from './types/common.js';
 import type { WorkerResult, WorkerTask } from './workers/index';
 import { WorkerPool, workerPool } from './workers/index';
 
@@ -669,6 +669,7 @@ export type {
   BatchResult,
   BatchStatistics,
   Column,
+  SpanCell,
   StreamingTableConfig,
   Table,
   TableMode,

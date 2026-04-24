@@ -28,7 +28,7 @@
 // against `prebuilds/<triple>/pdf_oxide.node` in the published
 // package and the in-tree `build/Release/` output in dev mode.
 import { loadNative } from '../native.js';
-import { Align, type Column, type StreamingTableConfig, type TableSpec, type TableMode } from '../types/common.js';
+import { Align, type Column, type StreamingTableConfig, type TableSpec, type TableMode, type SpanCell } from '../types/common.js';
 import { StreamingTable } from './streaming-table.js';
 
 const native = loadNative();
@@ -784,6 +784,7 @@ export class PageBuilder {
     aligns: number[],
     repeatHeader: boolean,
     mode: TableMode | undefined,
+    maxRowspan: number,
   ): void {
     let modeInt = 0;
     let sampleRows = 20;
@@ -796,13 +797,18 @@ export class PageBuilder {
       if (mode.maxColWidthPt != null) maxW = mode.maxColWidthPt;
     }
     native.pageBuilderStreamingTableBeginV2(
-      this.h(), headers, widths, aligns, repeatHeader, modeInt, sampleRows, minW, maxW
+      this.h(), headers, widths, aligns, repeatHeader, modeInt, sampleRows, minW, maxW, maxRowspan
     );
   }
 
-  /** @internal — push one row into the open streaming table. */
+  /** @internal — push one row into the open streaming table (all rowspan=1). */
   _streamingTablePushRow(cells: Array<string | null>): void {
     native.pageBuilderStreamingTablePushRow(this.h(), cells);
+  }
+
+  /** @internal — push one row with per-cell rowspan values. */
+  _streamingTablePushRowV2(cells: Array<[string | null, number]>): void {
+    native.pageBuilderStreamingTablePushRowV2(this.h(), cells);
   }
 
   /** @internal — close the open streaming table. */
@@ -851,5 +857,5 @@ export class PageBuilder {
 // Re-export the v0.3.39 table surface so users can `import { Align,
 // StreamingTable } from 'pdf-oxide'` without reaching into ./types or
 // ./builders/streaming-table.
-export { Align, type Column, type StreamingTableConfig, type TableMode, type TableSpec };
+export { Align, type Column, type StreamingTableConfig, type TableMode, type TableSpec, type SpanCell };
 export { StreamingTable } from './streaming-table.js';

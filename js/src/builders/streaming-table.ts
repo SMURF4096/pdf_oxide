@@ -21,7 +21,7 @@
  */
 
 import type { PageBuilder } from './document-builder.js';
-import type { Column, StreamingTableConfig } from '../types/common.js';
+import type { Column, SpanCell, StreamingTableConfig } from '../types/common.js';
 
 export class StreamingTable {
   private _page: PageBuilder;
@@ -37,16 +37,17 @@ export class StreamingTable {
     this._page = page;
     this._columns = config.columns;
 
-    const headers = config.columns.map((c) => c.header ?? '');
-    const widths  = config.columns.map((c) => c.width);
-    const aligns  = config.columns.map((c) => (c.align ?? 0) as number);
-    const repeat  = config.repeatHeader !== false;
+    const headers    = config.columns.map((c) => c.header ?? '');
+    const widths     = config.columns.map((c) => c.width);
+    const aligns     = config.columns.map((c) => (c.align ?? 0) as number);
+    const repeat     = config.repeatHeader !== false;
+    const maxRowspan = (config.maxRowspan != null && config.maxRowspan >= 2) ? config.maxRowspan : 1;
 
-    this._page._streamingTableBeginV2(headers, widths, aligns, repeat, config.mode);
+    this._page._streamingTableBeginV2(headers, widths, aligns, repeat, config.mode, maxRowspan);
     this._opened = true;
   }
 
-  /** Push a single row. Throws if `cells.length !== columns.length`. */
+  /** Push a single row (all rowspan=1). Throws if `cells.length !== columns.length`. */
   pushRow(cells: Array<string | null | undefined>): this {
     if (this._finished) {
       throw new Error('StreamingTable already finished');
@@ -57,6 +58,29 @@ export class StreamingTable {
       );
     }
     this._page._streamingTablePushRow(cells.map((c) => (c == null ? null : String(c))));
+    return this;
+  }
+
+  /**
+   * Push a single row with per-cell rowspan values. Each element is either
+   * a `SpanCell` (`{ text, rowspan }`) or a plain string (rowspan=1).
+   * Requires `maxRowspan ≥ 2` in the `StreamingTableConfig`.
+   */
+  pushRowSpan(cells: Array<SpanCell | string | null | undefined>): this {
+    if (this._finished) {
+      throw new Error('StreamingTable already finished');
+    }
+    if (cells.length !== this._columns.length) {
+      throw new Error(
+        `row width ${cells.length} does not match column count ${this._columns.length}`
+      );
+    }
+    const normalized: Array<[string | null, number]> = cells.map((c) => {
+      if (c == null) return [null, 1];
+      if (typeof c === 'string') return [c, 1];
+      return [c.text, c.rowspan];
+    });
+    this._page._streamingTablePushRowV2(normalized);
     return this;
   }
 
