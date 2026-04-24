@@ -388,6 +388,14 @@ harness = false
 name = "full_pipeline_benchmarks"
 harness = false
 
+# #393 release gate: StreamingTable must stay linear at 30k rows.
+# Runs 1k / 5k / 10k / 30k sizes via criterion; CI smoke job exercises
+# only the 5k size (see tools/benchmark-harness for the dedicated CI
+# invocation).
+[[bench]]
+name = "streaming_table_scaling"
+harness = false
+
 # Cross-language benchmark runner (Rust baseline for comparing against Go/C#/JS bindings)
 [[bin]]
 name = "rust_bench"
