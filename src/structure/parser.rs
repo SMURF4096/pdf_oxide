@@ -122,7 +122,7 @@ fn decode_pdf_text_string(bytes: &[u8]) -> String {
 }
 
 /// Helper function to resolve an object (handles both direct objects and references).
-fn resolve_object(document: &mut PdfDocument, obj: &Object) -> Result<Object, Error> {
+fn resolve_object(document: &PdfDocument, obj: &Object) -> Result<Object, Error> {
     match obj {
         Object::Reference(obj_ref) => document.load_object(*obj_ref),
         _ => Ok(obj.clone()),
@@ -134,7 +134,7 @@ fn resolve_object(document: &mut PdfDocument, obj: &Object) -> Result<Object, Er
 ///
 /// Uses a single-pass traversal of the page tree (O(n)) instead of
 /// calling get_page_ref per page (which is O(n) per call → O(n²) total).
-fn build_page_map(document: &mut PdfDocument) -> HashMap<u32, u32> {
+fn build_page_map(document: &PdfDocument) -> HashMap<u32, u32> {
     let mut page_map = HashMap::new();
 
     // Get the root Pages node from the catalog
@@ -154,7 +154,7 @@ fn build_page_map(document: &mut PdfDocument) -> HashMap<u32, u32> {
 
 /// Recursively walk the page tree once, collecting page object IDs.
 fn build_page_map_recursive(
-    document: &mut PdfDocument,
+    document: &PdfDocument,
     node_ref: crate::object::ObjectRef,
     page_map: &mut HashMap<u32, u32>,
     index: &mut u32,
@@ -201,7 +201,7 @@ fn build_page_map_recursive(
 /// * `Ok(Some(StructTreeRoot))` - If the document has a structure tree and it parsed in time
 /// * `Ok(None)` - If the document is not tagged or the tree is too large to parse in budget
 /// * `Err(Error)` - If parsing fails
-pub fn parse_structure_tree(document: &mut PdfDocument) -> Result<Option<StructTreeRoot>, Error> {
+pub fn parse_structure_tree(document: &PdfDocument) -> Result<Option<StructTreeRoot>, Error> {
     let parse_start = Timer::now();
 
     // Get catalog
@@ -339,7 +339,7 @@ pub fn parse_structure_tree(document: &mut PdfDocument) -> Result<Option<StructT
 /// Returns `Ok(None)` if the deadline is exceeded, causing the caller to
 /// abandon the tree and fall back to content-stream order.
 fn parse_struct_elem(
-    document: &mut PdfDocument,
+    document: &PdfDocument,
     obj: &Object,
     role_map: &HashMap<String, String>,
     page_map: &HashMap<u32, u32>,
@@ -467,7 +467,7 @@ fn parse_struct_elem(
 
 /// Parse the /K entry (children) of a structure element.
 fn parse_k_children(
-    document: &mut PdfDocument,
+    document: &PdfDocument,
     k_obj: &Object,
     parent: &mut StructElem,
     role_map: &HashMap<String, String>,

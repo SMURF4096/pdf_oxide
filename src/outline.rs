@@ -56,7 +56,7 @@ impl PdfDocument {
     /// }
     /// # Ok::<(), pdf_oxide::error::Error>(())
     /// ```
-    pub fn get_outline(&mut self) -> Result<Option<Vec<OutlineItem>>> {
+    pub fn get_outline(&self) -> Result<Option<Vec<OutlineItem>>> {
         // Get catalog
         let catalog = self.catalog()?;
 
@@ -109,7 +109,7 @@ impl PdfDocument {
     }
 
     /// Parse a single outline item and its children recursively.
-    fn parse_outline_item(&mut self, item_ref: crate::object::ObjectRef) -> Result<OutlineItem> {
+    fn parse_outline_item(&self, item_ref: crate::object::ObjectRef) -> Result<OutlineItem> {
         let item_obj = self.load_object(item_ref)?;
 
         // Extract title
@@ -156,7 +156,7 @@ impl PdfDocument {
     }
 
     /// Parse destination from an outline item.
-    fn parse_outline_destination(&mut self, item: &Object) -> Result<Option<Destination>> {
+    fn parse_outline_destination(&self, item: &Object) -> Result<Option<Destination>> {
         let dict = match item.as_dict() {
             Some(d) => d,
             None => return Ok(None),
@@ -188,7 +188,7 @@ impl PdfDocument {
     }
 
     /// Resolve a destination object to a Destination enum.
-    fn resolve_destination(&mut self, dest_obj: &Object) -> Result<Option<Destination>> {
+    fn resolve_destination(&self, dest_obj: &Object) -> Result<Option<Destination>> {
         match dest_obj {
             // Named destination (string)
             Object::String(name) => {
@@ -222,7 +222,7 @@ impl PdfDocument {
     }
 
     /// Find the page index for a given page object reference.
-    fn find_page_index(&mut self, page_ref: crate::object::ObjectRef) -> Result<usize> {
+    fn find_page_index(&self, page_ref: crate::object::ObjectRef) -> Result<usize> {
         // Get page count to iterate through pages
         let count = self.page_count()?;
 

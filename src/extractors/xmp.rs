@@ -148,7 +148,7 @@ pub struct XmpExtractor;
 
 impl XmpExtractor {
     /// Helper function to resolve an Object (handles indirect references).
-    fn resolve_object(doc: &mut PdfDocument, obj: &Object) -> Result<Object> {
+    fn resolve_object(doc: &PdfDocument, obj: &Object) -> Result<Object> {
         if let Some(ref_val) = obj.as_reference() {
             doc.load_object(ref_val)
         } else {
@@ -183,7 +183,7 @@ impl XmpExtractor {
     /// }
     /// # Ok::<(), pdf_oxide::error::Error>(())
     /// ```
-    pub fn extract(doc: &mut PdfDocument) -> Result<Option<XmpMetadata>> {
+    pub fn extract(doc: &PdfDocument) -> Result<Option<XmpMetadata>> {
         // Get document catalog
         let catalog = doc.catalog()?;
         let catalog_dict = catalog

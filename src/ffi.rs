@@ -198,7 +198,7 @@ pub extern "C" fn pdf_document_get_page_count(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.page_count() {
         Ok(count) => {
             set_error(error_code, ERR_SUCCESS);
@@ -235,7 +235,7 @@ pub extern "C" fn pdf_document_has_structure_tree(handle: *mut PdfDocument) -> b
     if handle.is_null() {
         return false;
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     doc.structure_tree().ok().flatten().is_some()
 }
 
@@ -250,7 +250,7 @@ pub extern "C" fn pdf_document_extract_text(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.extract_text(page_index as usize) {
         Ok(text) => {
             set_error(error_code, ERR_SUCCESS);
@@ -274,7 +274,7 @@ pub extern "C" fn pdf_document_to_markdown(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     let opts = ConversionOptions::default();
     match doc.to_markdown(page_index as usize, &opts) {
         Ok(text) => {
@@ -299,7 +299,7 @@ pub extern "C" fn pdf_document_to_html(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     let opts = ConversionOptions::default();
     match doc.to_html(page_index as usize, &opts) {
         Ok(text) => {
@@ -324,7 +324,7 @@ pub extern "C" fn pdf_document_to_plain_text(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     let opts = ConversionOptions::default();
     match doc.to_plain_text(page_index as usize, &opts) {
         Ok(text) => {
@@ -348,7 +348,7 @@ pub extern "C" fn pdf_document_to_markdown_all(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     let opts = ConversionOptions::default();
     match doc.to_markdown_all(&opts) {
         Ok(text) => {
@@ -840,7 +840,7 @@ pub extern "C" fn pdf_document_search_page(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     let term = match unsafe { CStr::from_ptr(search_term) }.to_str() {
         Ok(s) => s,
         Err(_) => {
@@ -874,7 +874,7 @@ pub extern "C" fn pdf_document_search_all(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     let term = match unsafe { CStr::from_ptr(search_term) }.to_str() {
         Ok(s) => s,
         Err(_) => {
@@ -1005,7 +1005,7 @@ pub extern "C" fn pdf_document_get_embedded_fonts(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     // Extract spans to discover font names used on this page
     let fonts = match doc.extract_spans(page_index as usize) {
         Ok(spans) => {
@@ -1181,7 +1181,7 @@ pub extern "C" fn pdf_document_get_embedded_images(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.extract_images(page_index as usize) {
         Ok(images) => {
             set_error(error_code, ERR_SUCCESS);
@@ -1351,7 +1351,7 @@ pub extern "C" fn pdf_document_get_page_annotations(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.get_annotations(page_index as usize) {
         Ok(annotations) => {
             set_error(error_code, ERR_SUCCESS);
@@ -1762,7 +1762,7 @@ pub extern "C" fn pdf_page_get_width(
         set_error(error_code, ERR_INVALID_ARG);
         return 0.0;
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.get_page_media_box(page_index as usize) {
         Ok((_, _, w, _)) => {
             set_error(error_code, ERR_SUCCESS);
@@ -1785,7 +1785,7 @@ pub extern "C" fn pdf_page_get_height(
         set_error(error_code, ERR_INVALID_ARG);
         return 0.0;
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.get_page_media_box(page_index as usize) {
         Ok((_, _, _, h)) => {
             set_error(error_code, ERR_SUCCESS);
@@ -1825,7 +1825,7 @@ macro_rules! page_box_fn {
                 set_error(error_code, ERR_INVALID_ARG);
                 return;
             }
-            let doc = unsafe { &mut *handle };
+            let doc = unsafe { &*handle };
             match doc.get_page_media_box(page_index as usize) {
                 Ok((bx, by, bw, bh)) => {
                     unsafe {
@@ -1868,7 +1868,7 @@ pub extern "C" fn pdf_page_get_elements(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.extract_spans(page_index as usize) {
         Ok(spans) => {
             set_error(error_code, ERR_SUCCESS);
@@ -4019,7 +4019,7 @@ pub extern "C" fn pdf_document_authenticate(
         set_error(error_code, ERR_INVALID_ARG);
         return false;
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     let pwd = match unsafe { CStr::from_ptr(password) }.to_str() {
         Ok(s) => s,
         Err(_) => {
@@ -4050,7 +4050,7 @@ pub extern "C" fn pdf_document_extract_all_text(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.extract_all_text() {
         Ok(t) => {
             set_error(error_code, ERR_SUCCESS);
@@ -4072,7 +4072,7 @@ pub extern "C" fn pdf_document_to_html_all(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     let opts = ConversionOptions::default();
     match doc.to_html_all(&opts) {
         Ok(t) => {
@@ -4095,7 +4095,7 @@ pub extern "C" fn pdf_document_to_plain_text_all(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     let opts = ConversionOptions::default();
     match doc.to_plain_text_all(&opts) {
         Ok(t) => {
@@ -4129,7 +4129,7 @@ pub extern "C" fn pdf_document_extract_chars(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.extract_chars(page_index as usize) {
         Ok(chars) => {
             set_error(error_code, ERR_SUCCESS);
@@ -4261,7 +4261,7 @@ pub extern "C" fn pdf_document_extract_words(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.extract_words(page_index as usize) {
         Ok(words) => {
             set_error(error_code, ERR_SUCCESS);
@@ -4412,7 +4412,7 @@ pub extern "C" fn pdf_document_extract_text_lines(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.extract_text_lines(page_index as usize) {
         Ok(lines) => {
             set_error(error_code, ERR_SUCCESS);
@@ -4527,7 +4527,7 @@ pub extern "C" fn pdf_document_extract_tables(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.extract_tables(page_index as usize) {
         Ok(tables) => {
             set_error(error_code, ERR_SUCCESS);
@@ -4668,7 +4668,7 @@ pub extern "C" fn pdf_document_extract_text_in_rect(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.extract_text_in_rect(
         page_index as usize,
         make_rect(x, y, w, h),
@@ -4699,7 +4699,7 @@ pub extern "C" fn pdf_document_extract_words_in_rect(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.extract_words_in_rect(
         page_index as usize,
         make_rect(x, y, w, h),
@@ -4730,7 +4730,7 @@ pub extern "C" fn pdf_document_extract_lines_in_rect(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.extract_text_lines_in_rect(
         page_index as usize,
         make_rect(x, y, w, h),
@@ -4761,7 +4761,7 @@ pub extern "C" fn pdf_document_extract_tables_in_rect(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.extract_tables_in_rect(page_index as usize, make_rect(x, y, w, h)) {
         Ok(tables) => {
             set_error(error_code, ERR_SUCCESS);
@@ -4788,7 +4788,7 @@ pub extern "C" fn pdf_document_extract_images_in_rect(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.extract_images_in_rect(page_index as usize, make_rect(x, y, w, h)) {
         Ok(images) => {
             set_error(error_code, ERR_SUCCESS);
@@ -4818,7 +4818,7 @@ pub extern "C" fn pdf_document_get_form_fields(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match FormExtractor::extract_fields(doc) {
         Ok(fields) => {
             set_error(error_code, ERR_SUCCESS);
@@ -4955,7 +4955,7 @@ pub extern "C" fn pdf_document_has_xfa(handle: *mut PdfDocument) -> bool {
     if handle.is_null() {
         return false;
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     if let Ok(catalog) = doc.catalog() {
         if let crate::object::Object::Dictionary(dict) = &catalog {
             if let Some(acroform) = dict.get("AcroForm") {
@@ -4980,7 +4980,7 @@ pub extern "C" fn pdf_document_remove_headers(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.remove_headers(threshold) {
         Ok(n) => {
             set_error(error_code, ERR_SUCCESS);
@@ -5003,7 +5003,7 @@ pub extern "C" fn pdf_document_remove_footers(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.remove_footers(threshold) {
         Ok(n) => {
             set_error(error_code, ERR_SUCCESS);
@@ -5026,7 +5026,7 @@ pub extern "C" fn pdf_document_remove_artifacts(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.remove_artifacts(threshold) {
         Ok(n) => {
             set_error(error_code, ERR_SUCCESS);
@@ -5049,7 +5049,7 @@ pub extern "C" fn pdf_document_erase_header(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.erase_header(page_index as usize) {
         Ok(()) => {
             set_error(error_code, ERR_SUCCESS);
@@ -5072,7 +5072,7 @@ pub extern "C" fn pdf_document_erase_footer(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.erase_footer(page_index as usize) {
         Ok(()) => {
             set_error(error_code, ERR_SUCCESS);
@@ -5095,7 +5095,7 @@ pub extern "C" fn pdf_document_erase_artifacts(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.erase_artifacts(page_index as usize) {
         Ok(()) => {
             set_error(error_code, ERR_SUCCESS);
@@ -5687,7 +5687,7 @@ pub extern "C" fn pdf_document_extract_paths(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.extract_paths(page_index as usize) {
         Ok(paths) => {
             set_error(error_code, ERR_SUCCESS);
@@ -5836,7 +5836,7 @@ pub extern "C" fn pdf_document_get_page_labels(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match PageLabelExtractor::extract(doc) {
         Ok(ranges) => {
             let page_count = doc.page_count().unwrap_or(0);
@@ -5870,7 +5870,7 @@ pub extern "C" fn pdf_document_get_xmp_metadata(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match XmpExtractor::extract(doc) {
         Ok(Some(xmp)) => {
             let title = xmp.dc_title.as_deref().unwrap_or("").replace('"', "\\\"");
@@ -5973,7 +5973,7 @@ pub extern "C" fn pdf_document_get_outline(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = unsafe { &mut *handle };
+    let doc = unsafe { &*handle };
     match doc.get_outline() {
         Ok(Some(items)) => {
             set_error(error_code, ERR_SUCCESS);

@@ -180,7 +180,7 @@ impl PdfDocument {
     /// }
     /// # Ok::<(), pdf_oxide::error::Error>(())
     /// ```
-    pub fn get_annotations(&mut self, page_index: usize) -> Result<Vec<Annotation>> {
+    pub fn get_annotations(&self, page_index: usize) -> Result<Vec<Annotation>> {
         // Get the page reference
         let page_ref = self.get_page_ref(page_index)?;
         let page_obj = self.load_object(page_ref)?;
@@ -219,7 +219,7 @@ impl PdfDocument {
     }
 
     /// Parse a single annotation object.
-    fn parse_annotation(&mut self, annot_ref: crate::object::ObjectRef) -> Result<Annotation> {
+    fn parse_annotation(&self, annot_ref: crate::object::ObjectRef) -> Result<Annotation> {
         let annot_obj = self.load_object(annot_ref)?;
 
         let dict = annot_obj.as_dict().ok_or_else(|| {
@@ -394,7 +394,7 @@ impl PdfDocument {
     ///
     /// PDF Spec: ISO 32000-1:2008, Section 12.7 (Interactive Forms)
     fn parse_widget_fields(
-        &mut self,
+        &self,
         dict: &std::collections::HashMap<String, Object>,
     ) -> (
         Option<WidgetFieldType>,
@@ -637,7 +637,7 @@ impl PdfDocument {
     /// Parse a destination object.
     ///
     /// PDF Spec: ISO 32000-1:2008, Section 12.3.2 - Destinations
-    fn parse_destination(&mut self, dest_obj: &Object) -> Result<LinkDestination> {
+    fn parse_destination(&self, dest_obj: &Object) -> Result<LinkDestination> {
         match dest_obj {
             // Named destination (string or name)
             Object::String(s) => Ok(LinkDestination::Named(String::from_utf8_lossy(s).to_string())),
@@ -691,7 +691,7 @@ impl PdfDocument {
     /// Parse an action dictionary.
     ///
     /// PDF Spec: ISO 32000-1:2008, Section 12.6 - Actions
-    fn parse_action(&mut self, action_obj: &Object) -> Result<LinkAction> {
+    fn parse_action(&self, action_obj: &Object) -> Result<LinkAction> {
         // Resolve reference if needed
         let action = if let Object::Reference(r) = action_obj {
             self.load_object(*r)?
