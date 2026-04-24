@@ -224,7 +224,7 @@ impl PyPdfDocument {
     /// Synchronize erasures to editor.
     fn sync_editor_erasures(&mut self) -> PyResult<()> {
         if let Some(ref mut editor) = self.editor {
-            for (page, regions) in self.inner.erase_regions.iter() {
+            for (page, regions) in self.inner.erase_regions.lock().unwrap().iter() {
                 editor.clear_erase_regions(*page);
                 for rect in regions {
                     let _ = editor.erase_region(

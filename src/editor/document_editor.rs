@@ -3132,6 +3132,57 @@ impl DocumentEditor {
             None
         };
 
+        // ── Remaining-objects sweep ────────────────────────────────────────────
+        //
+        // The page-tree traversal above is deliberately shallow: it handles the
+        // catalog, pages tree, page dicts, content streams, and the first level
+        // of font/XObject resource references.  For documents built by
+        // `DocumentBuilder` with embedded TrueType fonts, the full object graph
+        // is deeper:
+        //
+        //   Type0 font dict  →  DescendantFonts  →  CIDFontType2 dict
+        //                                         →  FontDescriptor dict
+        //                                            → FontFile2 stream
+        //                    →  ToUnicode CMap stream
+        //
+        // Any of these that were not reached above would produce dangling
+        // cross-reference entries in the output, making the PDF unrenderable
+        // even though it is structurally valid.  (Issue #401.)
+        //
+        // Solution: after the main traversal, enumerate every object ID in the
+        // source document's xref table and write any that were not yet written.
+        // This is safe — written_ids provides O(1) dedup, so already-written
+        // objects are skipped; orphaned objects are harmless in a PDF reader.
+        //
+        // NOTE: `written_ids` must be rebuilt from `xref_entries` here because
+        // the merge-page and parent-field loops above push to `xref_entries`
+        // without updating `written_ids`.
+        written_ids.clear();
+        written_ids.extend(xref_entries.iter().map(|(id, _, _, _)| *id));
+
+        let all_source_ids = self.source.all_object_ids();
+        for obj_id in all_source_ids {
+            if obj_id == 0 || written_ids.contains(&obj_id) {
+                continue;
+            }
+            match self.source.load_object(ObjectRef { id: obj_id, gen: 0 }) {
+                Ok(obj) => {
+                    let offset = writer.stream_position()?;
+                    let bytes = serialize_obj(&serializer, obj_id, 0, &obj, &encryption_handler);
+                    writer.write_all(&bytes)?;
+                    xref_entries.push((obj_id, offset, 0, true));
+                    written_ids.insert(obj_id);
+                },
+                Err(e) => {
+                    log::debug!(
+                        "write_full_to_writer: skipping unloadable object {} during sweep: {}",
+                        obj_id,
+                        e
+                    );
+                },
+            }
+        }
+
         // Sort xref entries by object ID
         xref_entries.sort_by_key(|(id, _, _, _)| *id);
 

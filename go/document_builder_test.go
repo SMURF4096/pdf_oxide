@@ -636,3 +636,115 @@ func TestFromHTMLCSS(t *testing.T) {
 		t.Errorf("missing 'World' in %q", text)
 	}
 }
+
+// TestDocumentBuilderSaveEncrypted_EmbeddedFont_ContentObjects_Preserved verifies
+// that encrypting a DocumentBuilder PDF with an embedded TrueType font writes all
+// font sub-objects (DescendantFonts, FontFile2, ToUnicode, FontDescriptor) into the
+// encrypted output. Regression test for issue #401.
+//
+// Strategy: the embedded DejaVu font program (FontFile2 stream) is several KB even
+// after subsetting. If the object-graph sweep is broken, those sub-objects are
+// silently dropped and the encrypted embedded-font PDF is barely larger than a
+// simple base-14-font encrypted PDF. With the fix, the difference must be ≥10 KB.
+func TestDocumentBuilderSaveEncrypted_EmbeddedFont_ContentObjects_Preserved(t *testing.T) {
+	// ── baseline: simple text (base-14 font), encrypted ──────────────────
+	simpleB, err := NewDocumentBuilder()
+	if err != nil {
+		t.Skipf("NewDocumentBuilder unavailable: %v", err)
+	}
+	defer simpleB.Close()
+	simplePage, _ := simpleB.A4Page()
+	if _, err := simplePage.At(72, 720).Text("Hello simple").Done(); err != nil {
+		t.Fatalf("simple page chain: %v", err)
+	}
+	simpleTmp := filepath.Join(t.TempDir(), "simple_enc.pdf")
+	if err := simpleB.SaveEncrypted(simpleTmp, "userpw", "ownerpw"); err != nil {
+		t.Fatalf("simple SaveEncrypted: %v", err)
+	}
+	simpleRaw, err := os.ReadFile(simpleTmp)
+	if err != nil {
+		t.Fatalf("read simple encrypted: %v", err)
+	}
+
+	// ── embedded-font PDF, encrypted ─────────────────────────────────────
+	fontPath := fixtureFontPath(t)
+	font, err := EmbeddedFontFromFile(fontPath)
+	if err != nil {
+		t.Skipf("EmbeddedFontFromFile unavailable: %v", err)
+	}
+	ttfB, err := NewDocumentBuilder()
+	if err != nil {
+		t.Skipf("NewDocumentBuilder unavailable: %v", err)
+	}
+	defer ttfB.Close()
+	if err := ttfB.RegisterEmbeddedFont("DejaVu", font); err != nil {
+		t.Fatalf("RegisterEmbeddedFont: %v", err)
+	}
+	ttfPage, _ := ttfB.A4Page()
+	if _, err := ttfPage.Font("DejaVu", 12).At(72, 720).Text("Hello from embedded font").Done(); err != nil {
+		t.Fatalf("ttf page chain: %v", err)
+	}
+	ttfTmp := filepath.Join(t.TempDir(), "ttf_enc.pdf")
+	if err := ttfB.SaveEncrypted(ttfTmp, "userpw", "ownerpw"); err != nil {
+		t.Fatalf("ttf SaveEncrypted: %v", err)
+	}
+	ttfRaw, err := os.ReadFile(ttfTmp)
+	if err != nil {
+		t.Fatalf("read ttf encrypted: %v", err)
+	}
+
+	// ── assertions ────────────────────────────────────────────────────────
+	if !bytes.Contains(ttfRaw, []byte("/Encrypt")) {
+		t.Errorf("missing /Encrypt dict in embedded-font encrypted PDF")
+	}
+
+	// The embedded DejaVu font program adds ≥10 KB even when subsetted.
+	// Without the fix (#401), font sub-objects are missing and the size
+	// difference is near-zero.
+	diff := len(ttfRaw) - len(simpleRaw)
+	if diff < 10_000 {
+		t.Errorf(
+			"issue #401: embedded-font encrypted PDF (%d B) is not substantially "+
+				"larger than simple encrypted PDF (%d B); diff=%d B; "+
+				"font sub-objects (FontFile2, DescendantFonts, etc.) are likely missing",
+			len(ttfRaw), len(simpleRaw), diff,
+		)
+	}
+}
+
+// TestDocumentBuilderToBytesEncrypted_EmbeddedFont_ContentObjects_Preserved mirrors
+// the SaveEncrypted test above but exercises the ToBytesEncrypted code path.
+func TestDocumentBuilderToBytesEncrypted_EmbeddedFont_ContentObjects_Preserved(t *testing.T) {
+	fontPath := fixtureFontPath(t)
+	font, err := EmbeddedFontFromFile(fontPath)
+	if err != nil {
+		t.Skipf("EmbeddedFontFromFile unavailable: %v", err)
+	}
+	b, err := NewDocumentBuilder()
+	if err != nil {
+		t.Skipf("NewDocumentBuilder unavailable: %v", err)
+	}
+	defer b.Close()
+	if err := b.RegisterEmbeddedFont("DejaVu", font); err != nil {
+		t.Fatalf("RegisterEmbeddedFont: %v", err)
+	}
+	p, _ := b.A4Page()
+	if _, err := p.Font("DejaVu", 12).At(72, 720).Text("bytes encrypted with embedded font").Done(); err != nil {
+		t.Fatalf("page chain: %v", err)
+	}
+	data, err := b.ToBytesEncrypted("u", "o")
+	if err != nil {
+		t.Fatalf("ToBytesEncrypted: %v", err)
+	}
+	if !bytes.Contains(data, []byte("/Encrypt")) {
+		t.Errorf("missing /Encrypt dict")
+	}
+	// Font program must be present: embedded-font PDF must be >15 KB.
+	if len(data) < 15_000 {
+		t.Errorf(
+			"issue #401: ToBytesEncrypted embedded-font result (%d B) is too small; "+
+				"font sub-objects are likely missing from encrypted output",
+			len(data),
+		)
+	}
+}

@@ -1147,6 +1147,27 @@ impl PdfDocument {
         &self.trailer
     }
 
+    /// Return every object ID known to this document.
+    ///
+    /// Unions the cross-reference table with any object IDs that were
+    /// recovered from compressed object streams (which may not have an
+    /// explicit xref entry). The result is sorted and deduplicated so
+    /// callers can iterate once and write each object exactly once.
+    ///
+    /// Used by `DocumentEditor::write_full_to_writer` to sweep any
+    /// objects that were not reached during the shallow page-tree
+    /// traversal (e.g. embedded font sub-objects such as
+    /// `DescendantFonts`, `FontFile2`, `ToUnicode`, `FontDescriptor`).
+    pub fn all_object_ids(&self) -> Vec<u32> {
+        let mut ids: Vec<u32> = self.xref.all_object_numbers().collect();
+        for r in self.object_cache.lock_or_recover().keys() {
+            ids.push(r.id);
+        }
+        ids.sort_unstable();
+        ids.dedup();
+        ids
+    }
+
     /// Scan the file to find an object by its header.
     ///
     /// This is a fallback method used when an object is not in the xref table

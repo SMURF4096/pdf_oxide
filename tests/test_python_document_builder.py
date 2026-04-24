@@ -619,3 +619,136 @@ def test_align_enum_int_and_string_interchangeable():
     c_default = pdf_oxide.Column("X", width=10.0)
     assert c_enum.align == c_str.align == 1
     assert c_default.align == 0
+
+
+# ---------------------------------------------------------------------------
+# Issue #401 regression — encrypted embedded-font content preservation
+# ---------------------------------------------------------------------------
+
+FIXTURE_FONT_BOLD = Path(__file__).parent / "fixtures" / "fonts" / "DejaVuSans-Bold.ttf"
+
+
+def test_save_encrypted_embedded_font_content_objects_preserved(tmp_path):
+    """Regression test for issue #401.
+
+    ``DocumentBuilder.save_encrypted`` must write ALL font sub-objects
+    (DescendantFonts, FontFile2, ToUnicode, FontDescriptor) into the
+    encrypted output.
+
+    Strategy: the embedded DejaVu font program adds several KB even after
+    subsetting.  Without the fix, those sub-objects were silently dropped
+    and the encrypted embedded-font PDF was barely larger than a simple
+    base-14-font encrypted PDF.  With the fix the difference must be ≥10 KB.
+    """
+    if not FIXTURE_FONT.exists():
+        pytest.skip("DejaVuSans.ttf fixture not found")
+
+    # Baseline: simple text (base-14 font), encrypted.
+    simple_path = tmp_path / "simple_enc.pdf"
+    (
+        pdf_oxide.DocumentBuilder()
+        .letter_page()
+        .at(72.0, 720.0)
+        .text("Hello simple")
+        .done()
+        .save_encrypted(str(simple_path), "userpw", "ownerpw")
+    )
+    simple_size = simple_path.stat().st_size
+
+    # Embedded-font PDF, encrypted.
+    ttf_path = tmp_path / "ttf_enc.pdf"
+    font = pdf_oxide.EmbeddedFont.from_file(str(FIXTURE_FONT))
+    doc = pdf_oxide.DocumentBuilder().register_embedded_font("DejaVu", font)
+    (
+        doc.a4_page()
+        .font("DejaVu", 12.0)
+        .at(72.0, 720.0)
+        .text("Hello from embedded font")
+        .done()
+        .save_encrypted(str(ttf_path), "userpw", "ownerpw")
+    )
+    ttf_raw = ttf_path.read_bytes()
+    ttf_size = len(ttf_raw)
+
+    assert b"/Encrypt" in ttf_raw, "encrypted PDF must contain /Encrypt dict"
+
+    # The DejaVu font program (FontFile2) adds ≥10 KB even when subsetted.
+    # Without the fix (#401), font sub-objects are missing and the difference
+    # is near-zero.
+    diff = ttf_size - simple_size
+    assert diff >= 10_000, (
+        f"issue #401: embedded-font encrypted PDF ({ttf_size} B) is not "
+        f"substantially larger than simple encrypted PDF ({simple_size} B); "
+        f"diff={diff} B — font sub-objects (FontFile2, etc.) are likely missing"
+    )
+
+
+def test_to_bytes_encrypted_embedded_font_content_objects_preserved():
+    """Issue #401: ``to_bytes_encrypted`` must also preserve font sub-objects."""
+    if not FIXTURE_FONT.exists():
+        pytest.skip("DejaVuSans.ttf fixture not found")
+
+    font = pdf_oxide.EmbeddedFont.from_file(str(FIXTURE_FONT))
+    doc = pdf_oxide.DocumentBuilder().register_embedded_font("DejaVu", font)
+    encrypted_bytes = (
+        doc.a4_page()
+        .font("DejaVu", 12.0)
+        .at(72.0, 720.0)
+        .text("bytes encrypted with embedded font")
+        .done()
+        .to_bytes_encrypted("u", "o")
+    )
+
+    assert b"/Encrypt" in encrypted_bytes, "must contain /Encrypt dict"
+    # Font program must be present: PDF must be >15 KB.
+    assert len(encrypted_bytes) > 15_000, (
+        f"issue #401: to_bytes_encrypted embedded-font result ({len(encrypted_bytes)} B) "
+        "is too small; font sub-objects likely missing from encrypted output"
+    )
+
+
+def test_issue_401_two_embedded_fonts_save_encrypted(tmp_path):
+    """Exact scenario from issue #401: two embedded fonts, AES encryption.
+
+    The reporter used two TrueType fonts (regular + bold) with save_with_encryption
+    and got a blank PDF.  This test mirrors that exact usage pattern.
+    """
+    if not FIXTURE_FONT.exists() or not FIXTURE_FONT_BOLD.exists():
+        pytest.skip("DejaVuSans.ttf / DejaVuSans-Bold.ttf fixture not found")
+
+    font_reg = pdf_oxide.EmbeddedFont.from_file(str(FIXTURE_FONT))
+    font_bold = pdf_oxide.EmbeddedFont.from_file(str(FIXTURE_FONT_BOLD))
+
+    doc = (
+        pdf_oxide.DocumentBuilder()
+        .register_embedded_font("Regular", font_reg)
+        .register_embedded_font("Bold", font_bold)
+    )
+
+    (
+        doc.a4_page()
+        .font("Bold", 14.5)
+        .at(30.0, 800.0)
+        .text("High Performance")
+        .font("Regular", 10.5)
+        .at(30.0, 780.0)
+        .text("Rust is fast and memory-efficient.")
+        .font("Bold", 14.5)
+        .at(30.0, 745.0)
+        .text("Reliability")
+        .font("Regular", 10.5)
+        .at(30.0, 725.0)
+        .text("Rust's type system ensures memory and thread safety.")
+        .done()
+    )
+
+    out = tmp_path / "issue_401.pdf"
+    doc.save_encrypted(str(out), "123456", "123456")
+
+    raw = out.read_bytes()
+    assert b"/Encrypt" in raw, "encrypted PDF must contain /Encrypt dict"
+    # Two font programs → even more data → must be >25 KB.
+    assert len(raw) > 25_000, (
+        f"issue #401: two-font encrypted PDF ({len(raw)} B) is too small; "
+        "font sub-objects for both fonts are likely missing"
+    )

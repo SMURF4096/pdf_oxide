@@ -3254,6 +3254,9 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   extern Napi::Value DocumentBuilderSetKeywords(const Napi::CallbackInfo&);
   extern Napi::Value DocumentBuilderSetCreator(const Napi::CallbackInfo&);
   extern Napi::Value DocumentBuilderOnOpen(const Napi::CallbackInfo&);
+  extern Napi::Value DocumentBuilderTaggedPdfUa1(const Napi::CallbackInfo&);
+  extern Napi::Value DocumentBuilderLanguage(const Napi::CallbackInfo&);
+  extern Napi::Value DocumentBuilderRoleMap(const Napi::CallbackInfo&);
   extern Napi::Value DocumentBuilderRegisterEmbeddedFont(const Napi::CallbackInfo&);
   extern Napi::Value DocumentBuilderA4Page(const Napi::CallbackInfo&);
   extern Napi::Value DocumentBuilderLetterPage(const Napi::CallbackInfo&);

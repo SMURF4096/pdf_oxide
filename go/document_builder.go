@@ -36,6 +36,11 @@ extern int   pdf_document_builder_set_subject(void* handle, const char* subject,
 extern int   pdf_document_builder_set_keywords(void* handle, const char* keywords, int* error_code);
 extern int   pdf_document_builder_set_creator(void* handle, const char* creator, int* error_code);
 
+extern int   pdf_document_builder_on_open(void* handle, const char* script, int* error_code);
+extern int   pdf_document_builder_tagged_pdf_ua1(void* handle, int* error_code);
+extern int   pdf_document_builder_language(void* handle, const char* lang, int* error_code);
+extern int   pdf_document_builder_role_map(void* handle, const char* custom, const char* standard, int* error_code);
+
 extern int   pdf_document_builder_register_embedded_font(void* handle, const char* name,
                                                          void* font, int* error_code);
 
@@ -54,6 +59,13 @@ extern int   pdf_page_builder_horizontal_rule(void* page, int* error_code);
 extern int   pdf_page_builder_link_url(void* page, const char* url, int* error_code);
 extern int   pdf_page_builder_link_page(void* page, size_t target_page, int* error_code);
 extern int   pdf_page_builder_link_named(void* page, const char* destination, int* error_code);
+extern int   pdf_page_builder_link_javascript(void* page, const char* script, int* error_code);
+extern int   pdf_page_builder_on_open(void* page, const char* script, int* error_code);
+extern int   pdf_page_builder_on_close(void* page, const char* script, int* error_code);
+extern int   pdf_page_builder_field_keystroke(void* page, const char* script, int* error_code);
+extern int   pdf_page_builder_field_format(void* page, const char* script, int* error_code);
+extern int   pdf_page_builder_field_validate(void* page, const char* script, int* error_code);
+extern int   pdf_page_builder_field_calculate(void* page, const char* script, int* error_code);
 extern int   pdf_page_builder_highlight(void* page, float r, float g, float b, int* error_code);
 extern int   pdf_page_builder_underline(void* page, float r, float g, float b, int* error_code);
 extern int   pdf_page_builder_strikeout(void* page, float r, float g, float b, int* error_code);
@@ -118,6 +130,12 @@ extern int   pdf_page_builder_stroke_line(void* page, float x1, float y1, float 
 extern int   pdf_page_builder_text_in_rect(void* page, float x, float y, float w, float h,
                                            const char* text, int align, int* error_code);
 extern int   pdf_page_builder_new_page_same_size(void* page, int* error_code);
+extern int   pdf_page_builder_barcode_1d(void* page, int barcode_type, const char* data,
+                                         float x, float y, float w, float h,
+                                         int* error_code);
+extern int   pdf_page_builder_barcode_qr(void* page, const char* data,
+                                         float x, float y, float size,
+                                         int* error_code);
 extern int   pdf_page_builder_table(void* page,
                                     size_t n_columns,
                                     const float* widths,

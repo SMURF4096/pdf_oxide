@@ -5850,4 +5850,33 @@ mod tests {
         // Out-of-range falls back to Left.
         assert_eq!(WasmAlign::from_i32(99), WasmAlign::Left);
     }
+
+    // Issue #401 regression — WasmDocumentBuilder.to_bytes_encrypted preserves embedded font.
+    #[test]
+    fn test_to_bytes_encrypted_embedded_font_content_preserved() {
+        let font_path = std::path::Path::new("tests/fixtures/fonts/DejaVuSans.ttf");
+        if !font_path.exists() {
+            return; // skip if fixture missing
+        }
+        let font_bytes = std::fs::read(font_path).unwrap();
+        let mut font = WasmEmbeddedFont::from_bytes(&font_bytes, None).unwrap();
+
+        let mut builder = WasmDocumentBuilder::new();
+        builder.register_embedded_font("DejaVu".to_string(), &mut font).unwrap();
+        let mut page = builder.a4_page().unwrap();
+        page.font("DejaVu".to_string(), 12.0).unwrap();
+        page.at(72.0, 720.0).unwrap();
+        page.text("Hello embedded font".to_string()).unwrap();
+        page.done(&mut builder).unwrap();
+
+        let bytes = builder.to_bytes_encrypted("u", "o").unwrap();
+        assert!(
+            bytes.len() > 15_000,
+            "issue #401: WasmDocumentBuilder.to_bytes_encrypted embedded-font result \
+             ({} B) is too small; font sub-objects likely missing",
+            bytes.len()
+        );
+        let has_encrypt = bytes.windows(8).any(|w| w == b"/Encrypt");
+        assert!(has_encrypt, "encrypted PDF must contain /Encrypt");
+    }
 }
