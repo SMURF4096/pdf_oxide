@@ -1107,6 +1107,183 @@ impl<'a> FluentPageBuilder<'a> {
         self
     }
 
+    // ───────────────────────────────────────────────────────────────────
+    // Shape primitives (circle / ellipse / polygon / arc / bezier_curve)
+    // ───────────────────────────────────────────────────────────────────
+    // Each primitive accepts an optional LineStyle (stroke) and optional
+    // fill colour. `None` for a style leaves that side of the paint
+    // undrawn (e.g. fill-only vs stroke-only). Shared helper
+    // `push_stroked_fill` applies both to a `PathContent`.
+
+    /// Draw a circle centred at `(cx, cy)` with `radius`. Pass
+    /// `stroke = Some(...)` for outlined, `fill = Some((r, g, b))` for
+    /// filled. Both together draw a stroked + filled disc.
+    pub fn circle(
+        self,
+        cx: f32,
+        cy: f32,
+        radius: f32,
+        stroke: Option<LineStyle>,
+        fill: Option<(f32, f32, f32)>,
+    ) -> Self {
+        let path = crate::elements::PathContent::circle(cx, cy, radius);
+        self.push_shaped_path(path, stroke, fill)
+    }
+
+    /// Draw an ellipse centred at `(cx, cy)` with horizontal radius
+    /// `rx` and vertical radius `ry`. Same stroke/fill semantics as
+    /// [`Self::circle`].
+    pub fn ellipse(
+        self,
+        cx: f32,
+        cy: f32,
+        rx: f32,
+        ry: f32,
+        stroke: Option<LineStyle>,
+        fill: Option<(f32, f32, f32)>,
+    ) -> Self {
+        // Magic constant for approximating a quarter-ellipse with a cubic
+        // Bezier: k = 4 * (sqrt(2) - 1) / 3.
+        use crate::elements::{PathContent, PathOperation};
+        const K: f32 = 0.552_284_8;
+        let kx = rx * K;
+        let ky = ry * K;
+        let ops = vec![
+            PathOperation::MoveTo(cx, cy + ry),
+            PathOperation::CurveTo(cx + kx, cy + ry, cx + rx, cy + ky, cx + rx, cy),
+            PathOperation::CurveTo(cx + rx, cy - ky, cx + kx, cy - ry, cx, cy - ry),
+            PathOperation::CurveTo(cx - kx, cy - ry, cx - rx, cy - ky, cx - rx, cy),
+            PathOperation::CurveTo(cx - rx, cy + ky, cx - kx, cy + ry, cx, cy + ry),
+            PathOperation::ClosePath,
+        ];
+        self.push_shaped_path(PathContent::from_operations(ops), stroke, fill)
+    }
+
+    /// Draw a closed polygon through `points`. Requires at least 2
+    /// points — fewer is a no-op. Same stroke/fill semantics as
+    /// [`Self::circle`].
+    pub fn polygon(
+        self,
+        points: &[(f32, f32)],
+        stroke: Option<LineStyle>,
+        fill: Option<(f32, f32, f32)>,
+    ) -> Self {
+        if points.len() < 2 {
+            return self;
+        }
+        use crate::elements::{PathContent, PathOperation};
+        let mut ops: Vec<PathOperation> = Vec::with_capacity(points.len() + 2);
+        let (x0, y0) = points[0];
+        ops.push(PathOperation::MoveTo(x0, y0));
+        for &(x, y) in &points[1..] {
+            ops.push(PathOperation::LineTo(x, y));
+        }
+        ops.push(PathOperation::ClosePath);
+        self.push_shaped_path(PathContent::from_operations(ops), stroke, fill)
+    }
+
+    /// Draw a circular arc centred at `(cx, cy)` with `radius`, from
+    /// `start_angle` to `end_angle` (radians, anticlockwise). Only
+    /// stroke; arcs are not filled. Approximated by up to 4 cubic
+    /// Beziers (one per quadrant), matching the accuracy of the
+    /// [`Self::circle`] primitive.
+    pub fn arc(
+        self,
+        cx: f32,
+        cy: f32,
+        radius: f32,
+        start_angle: f32,
+        end_angle: f32,
+        stroke: LineStyle,
+    ) -> Self {
+        use crate::elements::{PathContent, PathOperation};
+        // Subdivide into arcs of <= π/2 each so a single cubic Bezier
+        // stays accurate. Magic ratio for quarter-arcs.
+        const K_Q: f32 = 0.552_284_8;
+        let (mut a, b) = (start_angle, end_angle);
+        let step = std::f32::consts::FRAC_PI_2;
+        let mut ops: Vec<PathOperation> =
+            vec![PathOperation::MoveTo(cx + radius * a.cos(), cy + radius * a.sin())];
+        while a < b {
+            let seg_end = (a + step).min(b);
+            let sweep = seg_end - a;
+            // Bezier control-point length for `sweep` radians around the
+            // origin: (4/3) * tan(sweep/4) × radius.
+            let k = (4.0 / 3.0) * (sweep / 4.0).tan();
+            let (sa, ca) = (a.sin(), a.cos());
+            let (sb, cb) = (seg_end.sin(), seg_end.cos());
+            let c1x = cx + radius * (ca - k * sa);
+            let c1y = cy + radius * (sa + k * ca);
+            let c2x = cx + radius * (cb + k * sb);
+            let c2y = cy + radius * (sb - k * cb);
+            let ex = cx + radius * cb;
+            let ey = cy + radius * sb;
+            ops.push(PathOperation::CurveTo(c1x, c1y, c2x, c2y, ex, ey));
+            a = seg_end;
+            // If sweep was full π/2, fall through; otherwise finish.
+            if (seg_end - b).abs() < 1e-6 {
+                break;
+            }
+        }
+        let _ = K_Q; // quarter-circle shortcut retained for future use
+        self.push_shaped_path(PathContent::from_operations(ops), Some(stroke), None)
+    }
+
+    /// Draw a single cubic Bezier curve from `(x0, y0)` to `(x3, y3)`
+    /// with control points `(c1x, c1y)` and `(c2x, c2y)`. Stroke only
+    /// by default; pass `Some((r, g, b))` for fill.
+    pub fn bezier_curve(
+        self,
+        x0: f32,
+        y0: f32,
+        c1x: f32,
+        c1y: f32,
+        c2x: f32,
+        c2y: f32,
+        x3: f32,
+        y3: f32,
+        stroke: LineStyle,
+        fill: Option<(f32, f32, f32)>,
+    ) -> Self {
+        use crate::elements::{PathContent, PathOperation};
+        let ops = vec![
+            PathOperation::MoveTo(x0, y0),
+            PathOperation::CurveTo(c1x, c1y, c2x, c2y, x3, y3),
+        ];
+        self.push_shaped_path(PathContent::from_operations(ops), Some(stroke), fill)
+    }
+
+    /// Internal helper: apply optional stroke + fill to a `PathContent`
+    /// and push it as a `ContentElement::Path` on the current page.
+    /// Shared by all shape primitives so stroke/fill semantics stay
+    /// consistent across `circle` / `ellipse` / `polygon` / `arc` /
+    /// `bezier_curve`.
+    fn push_shaped_path(
+        self,
+        mut path: crate::elements::PathContent,
+        stroke: Option<LineStyle>,
+        fill: Option<(f32, f32, f32)>,
+    ) -> Self {
+        if let Some(style) = stroke {
+            path.stroke_color = Some(crate::layout::Color {
+                r: style.color.0,
+                g: style.color.1,
+                b: style.color.2,
+            });
+            path.stroke_width = style.width;
+        } else {
+            path.stroke_color = None;
+        }
+        if let Some((r, g, b)) = fill {
+            path.fill_color = Some(crate::layout::Color { r, g, b });
+        } else {
+            path.fill_color = None;
+        }
+        let page = &mut self.builder.pages[self.page_index];
+        page.elements.push(ContentElement::Path(path));
+        self
+    }
+
     /// Draw a stroked rectangle outline at `(x, y)` with size `w × h`
     /// using the default 1pt black stroke. For a filled rectangle with
     /// a custom colour, see [`Self::filled_rect`].
@@ -1989,6 +2166,72 @@ mod tests {
                 orders
             );
         }
+    }
+
+    #[test]
+    fn test_shape_primitives_emit_path_elements() {
+        // Every shape primitive must push exactly one ContentElement::Path
+        // with stroke and/or fill honoured.
+        let mut doc = DocumentBuilder::new();
+        doc.letter_page()
+            .circle(100.0, 100.0, 20.0, Some(LineStyle::new(1.5, 0.1, 0.2, 0.3)), None)
+            .ellipse(200.0, 100.0, 30.0, 15.0, None, Some((0.9, 0.1, 0.1)))
+            .polygon(
+                &[(300.0, 100.0), (320.0, 120.0), (340.0, 100.0), (320.0, 80.0)],
+                Some(LineStyle::default()),
+                Some((0.5, 0.5, 0.9)),
+            )
+            .arc(400.0, 100.0, 25.0, 0.0, std::f32::consts::PI, LineStyle::default())
+            .bezier_curve(
+                500.0, 100.0, 510.0, 140.0, 540.0, 140.0, 550.0, 100.0,
+                LineStyle::default(),
+                None,
+            )
+            .done();
+
+        let paths: Vec<_> = doc.pages[0]
+            .elements
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Path(p) => Some(p),
+                _ => None,
+            })
+            .collect();
+        // Five primitives, five Path elements.
+        assert_eq!(paths.len(), 5);
+
+        // Circle: stroke set, no fill.
+        assert!(paths[0].stroke_color.is_some() && paths[0].fill_color.is_none());
+        assert!((paths[0].stroke_width - 1.5).abs() < 1e-6);
+
+        // Ellipse: fill set, no stroke.
+        assert!(paths[1].fill_color.is_some() && paths[1].stroke_color.is_none());
+
+        // Polygon: both stroke (default 1pt black) and fill.
+        assert!(paths[2].stroke_color.is_some() && paths[2].fill_color.is_some());
+
+        // Arc: stroke only.
+        assert!(paths[3].stroke_color.is_some() && paths[3].fill_color.is_none());
+
+        // Bezier: stroke only (fill None).
+        assert!(paths[4].stroke_color.is_some() && paths[4].fill_color.is_none());
+    }
+
+    #[test]
+    fn test_polygon_requires_two_points() {
+        // Fewer than 2 points must be a no-op, not a panic.
+        let mut doc = DocumentBuilder::new();
+        doc.letter_page()
+            .polygon(&[], Some(LineStyle::default()), None)
+            .polygon(&[(100.0, 100.0)], Some(LineStyle::default()), None)
+            .done();
+        // No paths emitted from either degenerate call.
+        let paths_n = doc.pages[0]
+            .elements
+            .iter()
+            .filter(|e| matches!(e, ContentElement::Path(_)))
+            .count();
+        assert_eq!(paths_n, 0);
     }
 
     #[test]
