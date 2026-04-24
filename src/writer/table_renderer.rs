@@ -917,6 +917,238 @@ impl Table {
         positions
     }
 
+    /// Render the table to a list of high-level `ContentElement`s.
+    ///
+    /// This is the blessed path for the fluent `FluentPageBuilder::table`
+    /// surface (#393). Emitting `ContentElement::Text` + `ContentElement::
+    /// Path` rather than writing raw content-stream ops lets the writer's
+    /// subsetter (v0.3.38 #385) re-key glyph IDs for dynamically-added
+    /// CJK cell text — raw `ContentStreamBuilder.text()` bypasses that
+    /// dispatch and would corrupt subset embedding.
+    ///
+    /// The low-level `render()` method is retained as an escape hatch for
+    /// callers that already have a `ContentStreamBuilder` in hand, and
+    /// for the renderer's own unit tests which inspect emitted PDF ops.
+    pub fn to_content_elements(
+        &self,
+        x: f32,
+        y: f32,
+        layout: &TableLayout,
+    ) -> Vec<crate::elements::ContentElement> {
+        use crate::elements::{
+            ContentElement, FontSpec, PathContent, PathOperation, TextContent, TextStyle,
+        };
+        use crate::geometry::Rect;
+        use crate::layout::Color;
+
+        // y is top of table (paragraph/text convention — y decreases
+        // going down a page).
+        let table_top = y;
+        let mut elements: Vec<ContentElement> = Vec::new();
+
+        // ── Pass 1 ── backgrounds and cell borders ──────────────────
+        for (row_idx, row) in self.rows.iter().enumerate() {
+            for (cell_idx, cell) in row.cells.iter().enumerate() {
+                let pos = &layout.cell_positions[row_idx][cell_idx];
+                let cell_x = x + pos.x;
+                let cell_y = table_top - pos.y - pos.height;
+
+                // Background colour precedence: cell > header-row > stripe > row.
+                let bg = cell.background.or({
+                    if row.is_header {
+                        self.style.header_background
+                    } else if let Some(stripe) = self.style.stripe_color {
+                        if row_idx % 2 == 1 {
+                            Some(stripe)
+                        } else {
+                            row.background
+                        }
+                    } else {
+                        row.background
+                    }
+                });
+
+                if let Some((r, g, b)) = bg {
+                    let mut path =
+                        PathContent::new(Rect::new(cell_x, cell_y, pos.width, pos.height));
+                    path.operations.push(PathOperation::Rectangle(
+                        cell_x, cell_y, pos.width, pos.height,
+                    ));
+                    path.fill_color = Some(Color { r, g, b });
+                    path.stroke_color = None;
+                    path.reading_order = Some(elements.len());
+                    elements.push(ContentElement::Path(path));
+                }
+
+                let borders = cell.borders.as_ref().unwrap_or(&self.style.cell_borders);
+                Self::push_cell_border_elements(
+                    &mut elements,
+                    cell_x,
+                    cell_y,
+                    pos.width,
+                    pos.height,
+                    borders,
+                );
+            }
+        }
+
+        // ── Pass 2 ── text per wrapped line, aligned by measured width
+        for (row_idx, row) in self.rows.iter().enumerate() {
+            for (cell_idx, cell) in row.cells.iter().enumerate() {
+                if cell.content.is_empty() {
+                    continue;
+                }
+
+                let pos = &layout.cell_positions[row_idx][cell_idx];
+                let padding = cell.padding.as_ref().unwrap_or(&self.style.cell_padding);
+                let cell_x = x + pos.x + padding.left;
+                let cell_y = table_top - pos.y - padding.top;
+                let content_width = pos.width - padding.horizontal();
+
+                let align = if cell.align != CellAlign::Left {
+                    cell.align
+                } else {
+                    self.column_aligns
+                        .get(cell_idx)
+                        .copied()
+                        .unwrap_or(CellAlign::Left)
+                };
+
+                let font_name = cell.font_name.as_deref().unwrap_or(&self.style.font_name);
+                let font_size = cell.font_size.unwrap_or(self.style.font_size);
+
+                let actual_font = if cell.bold && cell.italic {
+                    format!("{}-BoldOblique", font_name)
+                } else if cell.bold || row.is_header {
+                    format!("{}-Bold", font_name)
+                } else if cell.italic {
+                    format!("{}-Oblique", font_name)
+                } else {
+                    font_name.to_string()
+                };
+
+                let line_height = font_size * 1.2;
+                let cell_layout = &layout.cell_layouts[row_idx][cell_idx];
+
+                for (line_idx, (line, line_width)) in cell_layout
+                    .lines
+                    .iter()
+                    .zip(cell_layout.line_widths.iter())
+                    .enumerate()
+                {
+                    if line.is_empty() {
+                        continue;
+                    }
+
+                    let text_x = match align {
+                        CellAlign::Left => cell_x,
+                        CellAlign::Center => cell_x + (content_width - line_width) / 2.0,
+                        CellAlign::Right => cell_x + content_width - line_width,
+                    };
+
+                    // TextContent.bbox uses the top-edge y convention; the
+                    // first line sits at the cell's top-after-padding.
+                    let line_top = cell_y - (line_idx as f32) * line_height;
+
+                    elements.push(ContentElement::Text(TextContent {
+                        text: line.clone(),
+                        bbox: Rect::new(text_x, line_top, *line_width, font_size),
+                        font: FontSpec {
+                            name: actual_font.clone(),
+                            size: font_size,
+                        },
+                        style: TextStyle::default(),
+                        reading_order: Some(elements.len()),
+                        artifact_type: None,
+                        origin: None,
+                        rotation_degrees: None,
+                        matrix: None,
+                    }));
+                }
+            }
+        }
+
+        // ── Pass 3 ── outer table border ────────────────────────────
+        if let Some(outer) = &self.style.outer_border {
+            if outer.width > 0.0 {
+                let outer_y = table_top - layout.total_height;
+                let mut path = PathContent::new(Rect::new(
+                    x,
+                    outer_y,
+                    layout.total_width,
+                    layout.total_height,
+                ));
+                path.operations.push(PathOperation::Rectangle(
+                    x,
+                    outer_y,
+                    layout.total_width,
+                    layout.total_height,
+                ));
+                path.stroke_color = Some(Color {
+                    r: outer.color.0,
+                    g: outer.color.1,
+                    b: outer.color.2,
+                });
+                path.stroke_width = outer.width;
+                path.fill_color = None;
+                path.reading_order = Some(elements.len());
+                elements.push(ContentElement::Path(path));
+            }
+        }
+
+        elements
+    }
+
+    /// Push one `ContentElement::Path` per enabled border side. Used by
+    /// `to_content_elements` to mirror `draw_cell_borders` semantics.
+    fn push_cell_border_elements(
+        elements: &mut Vec<crate::elements::ContentElement>,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        borders: &Borders,
+    ) {
+        use crate::elements::{ContentElement, PathContent, PathOperation};
+        use crate::geometry::Rect;
+        use crate::layout::Color;
+
+        let mut push_line = |x1: f32, y1: f32, x2: f32, y2: f32, style: &TableBorderStyle| {
+            if style.width <= 0.0 {
+                return;
+            }
+            let min_x = x1.min(x2);
+            let min_y = y1.min(y2);
+            let w = (x2 - x1).abs().max(1.0);
+            let h = (y2 - y1).abs().max(1.0);
+            let mut path = PathContent::new(Rect::new(min_x, min_y, w, h));
+            path.operations.push(PathOperation::MoveTo(x1, y1));
+            path.operations.push(PathOperation::LineTo(x2, y2));
+            path.stroke_color = Some(Color {
+                r: style.color.0,
+                g: style.color.1,
+                b: style.color.2,
+            });
+            path.stroke_width = style.width;
+            path.fill_color = None;
+            path.reading_order = Some(elements.len());
+            elements.push(ContentElement::Path(path));
+        };
+
+        if let Some(border) = &borders.top {
+            push_line(x, y + height, x + width, y + height, border);
+        }
+        if let Some(border) = &borders.bottom {
+            push_line(x, y, x + width, y, border);
+        }
+        if let Some(border) = &borders.left {
+            push_line(x, y, x, y + height, border);
+        }
+        if let Some(border) = &borders.right {
+            push_line(x + width, y, x + width, y + height, border);
+        }
+    }
+
     /// Render the table to a content stream.
     pub fn render(
         &self,
@@ -1408,6 +1640,95 @@ mod tests {
             "expected {} Tj operations (one per wrapped line), got {}\n--- stream ---\n{}",
             expected_lines, tj_count, text
         );
+    }
+
+    #[test]
+    fn test_to_content_elements_emits_text_per_line() {
+        // The fluent-builder path: to_content_elements must emit one
+        // ContentElement::Text per wrapped line per cell, using the measured
+        // line width for alignment.
+        use crate::elements::ContentElement;
+
+        let long = "alpha beta gamma delta epsilon zeta eta theta";
+        let table = Table::new(vec![
+            vec![TableCell::text(long), TableCell::text("x")],
+        ])
+        .with_column_widths(vec![ColumnWidth::Fixed(40.0), ColumnWidth::Fixed(40.0)]);
+
+        let metrics = SimpleFontMetrics::default();
+        let layout = table.calculate_layout(80.0, &metrics);
+        let expected_lines_col0 = layout.cell_layouts[0][0].lines.len();
+        assert!(expected_lines_col0 >= 2, "fixture must wrap >=2 lines");
+
+        let elements = table.to_content_elements(0.0, 800.0, &layout);
+        let texts: Vec<_> = elements
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Text(t) => Some(t),
+                _ => None,
+            })
+            .collect();
+
+        // One Text per non-empty line per cell (cell 0 wraps, cell 1 is 1 line).
+        assert_eq!(texts.len(), expected_lines_col0 + 1);
+
+        // Every text bbox must stay inside the table horizontally.
+        for t in &texts {
+            assert!(t.bbox.x >= 0.0 - 0.01);
+            assert!(t.bbox.x + t.bbox.width <= 80.0 + 0.01);
+        }
+
+        // Lines within a cell stack top-down (y decreasing).
+        let col0_lines: Vec<_> = texts.iter().take(expected_lines_col0).collect();
+        for pair in col0_lines.windows(2) {
+            assert!(
+                pair[1].bbox.y < pair[0].bbox.y,
+                "multi-line cell lines must move down: {} then {}",
+                pair[0].bbox.y,
+                pair[1].bbox.y
+            );
+        }
+    }
+
+    #[test]
+    fn test_to_content_elements_path_for_backgrounds_and_borders() {
+        use crate::elements::ContentElement;
+
+        let mut style = TableStyle::new().striped(0.9, 0.9, 0.9);
+        style.outer_border = Some(TableBorderStyle::medium());
+
+        let table = Table::new(vec![
+            vec![TableCell::text("a"), TableCell::text("b")],
+            vec![TableCell::text("c"), TableCell::text("d")],
+        ])
+        .with_style(style)
+        .with_column_widths(vec![ColumnWidth::Fixed(60.0), ColumnWidth::Fixed(60.0)]);
+
+        let metrics = SimpleFontMetrics::default();
+        let layout = table.calculate_layout(120.0, &metrics);
+        let elements = table.to_content_elements(0.0, 800.0, &layout);
+
+        let paths: Vec<_> = elements
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Path(p) => Some(p),
+                _ => None,
+            })
+            .collect();
+
+        // At least one stripe fill on row 1 + 4 cell borders per cell ×
+        // 4 cells + outer border. Check the fill/stroke mix is plausible.
+        let fills = paths.iter().filter(|p| p.fill_color.is_some()).count();
+        let strokes = paths.iter().filter(|p| p.stroke_color.is_some()).count();
+        assert!(fills >= 2, "expected stripe fills on row 1 cells, got {}", fills);
+        assert!(strokes >= 1, "expected at least outer border stroke, got {}", strokes);
+
+        // Reading order must be monotone — tables are emitted in drawing
+        // order so later overlays paint on top of earlier ones.
+        let orders: Vec<_> = elements.iter().filter_map(|e| e.reading_order()).collect();
+        for pair in orders.windows(2) {
+            assert!(pair[1] > pair[0], "reading_order must increase: {:?}", orders);
+        }
     }
 
     #[test]
