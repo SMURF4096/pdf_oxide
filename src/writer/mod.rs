@@ -78,6 +78,7 @@ mod shape_annotations;
 mod sound;
 mod special_annotations;
 mod stamp;
+mod streaming_table;
 mod table_renderer;
 mod text_annotations;
 mod text_markup;
@@ -164,6 +165,7 @@ pub use special_annotations::{
     RedactAnnotation,
 };
 pub use stamp::{StampAnnotation, StampType};
+pub use streaming_table::{StreamingColumn, StreamingRow, StreamingTable, StreamingTableConfig};
 pub use table_renderer::{
     Borders, CellAlign, CellPadding, CellPosition, CellVAlign, ColumnWidth, FontMetrics,
     SimpleFontMetrics, Table, TableBorderStyle, TableCell, TableLayout, TableRow, TableStyle,

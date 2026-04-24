@@ -261,20 +261,99 @@ impl<'a> FluentPageBuilder<'a> {
     /// committed before the new page is opened. Does not re-draw any
     /// header / footer — callers that want header-repeat-on-break (tables,
     /// long documents) must redraw explicitly.
-    pub fn new_page_same_size(self) -> FluentPageBuilder<'a> {
-        let page_data = &self.builder.pages[self.page_index];
-        let width = page_data.width;
-        let height = page_data.height;
+    pub fn new_page_same_size(mut self) -> FluentPageBuilder<'a> {
+        self.new_page_same_size_inplace();
+        self
+    }
 
-        // Carry text_config across the page transition.
-        let carried_config = self.text_config.clone();
+    /// In-place page break: same semantics as `new_page_same_size` but
+    /// mutates `self` rather than consuming it. Used by `StreamingTable`
+    /// (which borrows its `FluentPageBuilder` and can't consume).
+    pub(crate) fn new_page_same_size_inplace(&mut self) {
+        let current = &self.builder.pages[self.page_index];
+        let width = current.width;
+        let height = current.height;
 
-        // done() commits pending annotations and returns the document
-        // borrow; then we open a new page of the same size.
-        let doc = self.done();
-        let mut new_page = doc.page(PageSize::Custom(width, height));
-        new_page.text_config = carried_config;
-        new_page
+        // Commit pending annotations to the current page before switching.
+        let annotations = std::mem::take(&mut self.pending_annotations);
+        self.builder.pages[self.page_index]
+            .annotations
+            .extend(annotations);
+
+        // Append a fresh PageData with matching dimensions.
+        self.page_index = self.builder.pages.len();
+        self.builder.pages.push(PageData {
+            width,
+            height,
+            elements: Vec::new(),
+            annotations: Vec::new(),
+            form_fields: Vec::new(),
+        });
+
+        // Reset cursor to top-left (mirrors DocumentBuilder::page).
+        self.cursor_x = 72.0;
+        self.cursor_y = height - 72.0;
+        self.last_text_rect = None;
+        // text_config, text_layout, pending_annotations (now empty)
+        // carry over automatically.
+    }
+
+    /// Current cursor X (points from left edge). Used by
+    /// `StreamingTable` to anchor column offsets.
+    pub(crate) fn cursor_x(&self) -> f32 {
+        self.cursor_x
+    }
+    /// Current cursor Y (points from bottom edge, PDF convention).
+    pub(crate) fn cursor_y(&self) -> f32 {
+        self.cursor_y
+    }
+    /// Move the cursor down to `y`. Internal use — public callers should
+    /// use `at()` which takes (x, y).
+    pub(crate) fn set_cursor_y(&mut self, y: f32) {
+        self.cursor_y = y;
+    }
+    /// Font name from the builder's current text_config.
+    pub(crate) fn text_config_font_name(&self) -> &str {
+        &self.text_config.font
+    }
+    /// Font size in points.
+    pub(crate) fn text_config_font_size(&self) -> f32 {
+        self.text_config.size
+    }
+    /// Line-height multiplier (multiplied with font size to get baseline
+    /// step).
+    pub(crate) fn text_config_line_height(&self) -> f32 {
+        self.text_config.line_height
+    }
+    /// Wrap `text` to `max_width` using the builder's TextLayout engine.
+    /// Returns one `(line, measured_width)` per visual line.
+    pub(crate) fn wrap_cell_text(&self, text: &str, max_width: f32) -> Vec<(String, f32)> {
+        self.text_layout.wrap_text(
+            text,
+            &self.text_config.font,
+            self.text_config.size,
+            max_width,
+        )
+    }
+    /// Push a `ContentElement` into the current page's element list.
+    pub(crate) fn push_element(&mut self, element: ContentElement) {
+        self.builder.pages[self.page_index].elements.push(element);
+    }
+    /// Number of elements already on the current page — used to seed
+    /// monotone reading_order values.
+    pub(crate) fn page_element_count(&self) -> usize {
+        self.builder.pages[self.page_index].elements.len()
+    }
+
+    /// Open a streaming table that consumes this page builder. See
+    /// [`super::streaming_table::StreamingTable`] for the full API and
+    /// [issue #393](https://github.com/yfedoseev/pdf_oxide/issues/393)
+    /// for design rationale.
+    pub fn streaming_table(
+        self,
+        config: super::streaming_table::StreamingTableConfig,
+    ) -> super::streaming_table::StreamingTable<'a> {
+        super::streaming_table::StreamingTable::open(self, config)
     }
 
     /// Measure the rendered width of `text` in the builder's current font
@@ -1252,6 +1331,17 @@ impl DocumentBuilder {
     pub fn template(mut self, template: PageTemplate) -> Self {
         self.template = Some(template);
         self
+    }
+
+    /// Number of pages in this document so far. Primarily for tests.
+    pub(crate) fn page_count(&self) -> usize {
+        self.pages.len()
+    }
+
+    /// Elements already queued on page `idx`. Primarily for tests in
+    /// sibling modules that can't see the private `pages` field.
+    pub(crate) fn page_elements(&self, idx: usize) -> &[ContentElement] {
+        &self.pages[idx].elements
     }
 
     /// Add a page with the specified size and return a page builder.
