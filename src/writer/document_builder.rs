@@ -190,6 +190,22 @@ impl<'a> FluentPageBuilder<'a> {
         self
     }
 
+    /// Measure the rendered width of `text` in the builder's current font
+    /// and size, in PDF points. Pure query — does not advance the cursor or
+    /// emit any content.
+    ///
+    /// Use this to pick explicit column widths before calling
+    /// `streaming_table` (see #393) or to right-align custom labels. For
+    /// embedded fonts, the measure honours the face's horizontal advances
+    /// (HMTX). For base-14 fonts, it uses the AFM width tables.
+    pub fn measure(&self, text: &str) -> f32 {
+        self.text_layout.font_manager().text_width(
+            text,
+            &self.text_config.font,
+            self.text_config.size,
+        )
+    }
+
     /// Add text at the current cursor position.
     pub fn text(mut self, text: &str) -> Self {
         let text_width = self.text_layout.font_manager().text_width(
@@ -1482,6 +1498,33 @@ mod tests {
 
         let bytes = builder.build().unwrap();
         assert!(!bytes.is_empty());
+    }
+
+    #[test]
+    fn test_fluent_page_builder_measure() {
+        // `measure` is a pure query: no cursor advance, no content emission.
+        // Width must scale with font size and character count.
+        let mut doc = DocumentBuilder::new();
+        let page = doc.letter_page().at(72.0, 720.0);
+
+        let short = page.measure("AB");
+        let long = page.measure("ABCDEFGH");
+        assert!(long > short, "longer string must measure wider");
+        assert!(short > 0.0, "non-empty string must have positive width");
+
+        // Empty string is zero width.
+        assert_eq!(page.measure(""), 0.0);
+
+        // Switching font size scales the measure.
+        let small_page = page.font("Helvetica", 10.0);
+        let small = small_page.measure("ABC");
+        let big = small_page.font("Helvetica", 20.0).measure("ABC");
+        assert!(
+            (big - 2.0 * small).abs() < 0.5,
+            "doubling font size should ~double measured width: {} vs 2*{}",
+            big,
+            small
+        );
     }
 
     #[test]
