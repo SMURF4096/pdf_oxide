@@ -976,6 +976,37 @@ impl<'a> FluentPageBuilder<'a> {
         self
     }
 
+    /// Add a scrollable list-box form field — same options shape as
+    /// [`Self::combo_box`] but the user sees a scrollable list rather
+    /// than a dropdown. `multi_select` toggles whether multiple
+    /// entries can be selected simultaneously. `selected` is the
+    /// initial value (or values; a comma-separated list is treated as
+    /// multiple selections when `multi_select` is true).
+    ///
+    /// #393 Bundle D-1 — wires the existing `ListBoxWidget` through
+    /// the fluent surface.
+    pub fn list_box(
+        self,
+        name: impl Into<String>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        options: Vec<String>,
+        selected: Option<String>,
+        multi_select: bool,
+    ) -> Self {
+        let page = &mut self.builder.pages[self.page_index];
+        page.form_fields.push(PendingFormField::ListBox {
+            name: name.into(),
+            rect: Rect::new(x, y, w, h),
+            options,
+            selected,
+            multi_select,
+        });
+        self
+    }
+
     /// Add a radio-button group. Each entry of `buttons` is an
     /// `(export_value, x, y, w, h)` tuple describing one option's
     /// submitted value and its visible bounding rectangle. `selected`
@@ -1557,6 +1588,14 @@ enum PendingFormField {
         name: String,
         rect: Rect,
         caption: String,
+    },
+    /// A scrollable list-box (#393 D-1).
+    ListBox {
+        name: String,
+        rect: Rect,
+        options: Vec<String>,
+        selected: Option<String>,
+        multi_select: bool,
     },
 }
 
@@ -2159,6 +2198,24 @@ impl DocumentBuilder {
                             .with_caption(caption.clone());
                         page.add_push_button(widget);
                     },
+                    PendingFormField::ListBox {
+                        name,
+                        rect,
+                        options,
+                        selected,
+                        multi_select,
+                    } => {
+                        use super::form_fields::ListBoxWidget;
+                        let mut widget =
+                            ListBoxWidget::new(name.clone(), *rect).with_options(options.clone());
+                        if *multi_select {
+                            widget = widget.multi_select();
+                        }
+                        if let Some(v) = selected {
+                            widget = widget.with_value(v.clone());
+                        }
+                        page.add_list_box(widget);
+                    },
                 }
             }
 
@@ -2673,6 +2730,30 @@ mod tests {
 
         // Bezier: stroke only (fill None).
         assert!(paths[4].stroke_color.is_some() && paths[4].fill_color.is_none());
+    }
+
+    #[test]
+    fn test_list_box_form_field_emits_in_pdf() {
+        let mut doc = DocumentBuilder::new();
+        doc.letter_page()
+            .list_box(
+                "interests",
+                72.0,
+                600.0,
+                200.0,
+                80.0,
+                vec!["Hiking".into(), "Reading".into(), "Coding".into()],
+                Some("Coding".into()),
+                true, // multi-select
+            )
+            .done();
+        let bytes = doc.build().expect("build");
+        let s = String::from_utf8_lossy(&bytes);
+        // ListBox options must appear somewhere in the PDF.
+        assert!(s.contains("(Hiking)") || s.contains("Hiking"));
+        assert!(s.contains("(Reading)") || s.contains("Reading"));
+        // Field type Ch (choice) present for the list_box.
+        assert!(s.contains("/Ch") || s.contains("Choice"));
     }
 
     #[test]
