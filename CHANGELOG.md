@@ -203,7 +203,6 @@ page.list_box("interests", 72, 600, 200, 80,
 - Signature-field form widget (coordinates with #208 signing half).
 - Barcode-bound form field (auto-generate from another field's value at fill time).
 - Field validation — regex mask, numeric range, JavaScript actions.
-- Per-widget-type extension of `.required()` / `.read_only()` / `.tooltip` beyond TextField + Checkbox (mechanical; widget-level builder methods already exist).
 
 **Layout (Bundle E) — blocked on E-0 RFC which ships in v0.3.39**
 - Inline rich-text styling (`ParagraphBuilder` with `.bold()` / `.italic()` / `.color()`).
