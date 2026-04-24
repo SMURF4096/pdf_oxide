@@ -47,6 +47,10 @@ pub struct ImageContent {
     /// `FluentPageBuilder::{rotated, scaled, translated, with_transform}`
     /// closures. #393 Bundle A-2 follow-up.
     pub matrix: Option<[f32; 6]>,
+    /// When `true` the image is purely decorative and must be marked as an
+    /// `/Artifact` in the content stream so assistive technology ignores it.
+    /// PDF/UA-1 §7.1 (F-3). Mutually exclusive with `alt_text`.
+    pub is_artifact: bool,
 }
 
 impl ImageContent {
@@ -66,9 +70,19 @@ impl ImageContent {
             vertical_dpi: None,
             soft_mask: None,
             matrix: None,
+            is_artifact: false,
         };
         image.calculate_dpi();
         image
+    }
+
+    /// Mark this image as a decorative artifact (PDF/UA-1 §7.1). The image
+    /// will be wrapped in `/Artifact BDC`/`EMC` so assistive technology
+    /// skips it. Clears any `alt_text` that was previously set.
+    pub fn as_artifact(mut self) -> Self {
+        self.is_artifact = true;
+        self.alt_text = None;
+        self
     }
 
     /// Attach a pre-compressed soft-mask (alpha) channel. The bytes are
@@ -192,6 +206,7 @@ impl Default for ImageContent {
             vertical_dpi: None,
             soft_mask: None,
             matrix: None,
+            is_artifact: false,
         }
     }
 }

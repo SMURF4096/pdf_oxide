@@ -136,6 +136,14 @@ extern int   pdf_page_builder_barcode_1d(void* page, int barcode_type, const cha
 extern int   pdf_page_builder_barcode_qr(void* page, const char* data,
                                          float x, float y, float size,
                                          int* error_code);
+extern int   pdf_page_builder_image_with_alt(void* page,
+                                             const uint8_t* bytes, size_t len,
+                                             float x, float y, float w, float h,
+                                             const char* alt_text, int* error_code);
+extern int   pdf_page_builder_image_artifact(void* page,
+                                             const uint8_t* bytes, size_t len,
+                                             float x, float y, float w, float h,
+                                             int* error_code);
 extern int   pdf_page_builder_table(void* page,
                                     size_t n_columns,
                                     const float* widths,
@@ -1101,6 +1109,35 @@ func (p *PageBuilder) BarcodeQr(data string, x, y, size float32) *PageBuilder {
 		defer C.free(unsafe.Pointer(cd))
 		return C.pdf_page_builder_barcode_qr(hp, cd,
 			C.float(x), C.float(y), C.float(size), ec)
+	})
+}
+
+// ImageWithAlt embeds an image (JPEG/PNG/WebP bytes) with an accessibility alt text.
+func (p *PageBuilder) ImageWithAlt(bytes []byte, x, y, w, h float32, altText string) *PageBuilder {
+	if len(bytes) == 0 {
+		p.err = ffiError(-1)
+		return p
+	}
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		cAlt := C.CString(altText)
+		defer C.free(unsafe.Pointer(cAlt))
+		return C.pdf_page_builder_image_with_alt(hp,
+			(*C.uint8_t)(unsafe.Pointer(&bytes[0])), C.size_t(len(bytes)),
+			C.float(x), C.float(y), C.float(w), C.float(h),
+			cAlt, ec)
+	})
+}
+
+// ImageArtifact embeds a decorative image (JPEG/PNG/WebP bytes) as an /Artifact (no alt text).
+func (p *PageBuilder) ImageArtifact(bytes []byte, x, y, w, h float32) *PageBuilder {
+	if len(bytes) == 0 {
+		p.err = ffiError(-1)
+		return p
+	}
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		return C.pdf_page_builder_image_artifact(hp,
+			(*C.uint8_t)(unsafe.Pointer(&bytes[0])), C.size_t(len(bytes)),
+			C.float(x), C.float(y), C.float(w), C.float(h), ec)
 	})
 }
 

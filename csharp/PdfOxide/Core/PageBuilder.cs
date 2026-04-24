@@ -554,6 +554,39 @@ namespace PdfOxide.Core
             return this;
         }
 
+        /// <summary>
+        /// Embed an image with an accessibility alt text (PDF/UA-1 Figure element).
+        /// <paramref name="imageBytes"/> must contain raw JPEG/PNG/WebP data.
+        /// </summary>
+        public unsafe PageBuilder ImageWithAlt(byte[] imageBytes, float x, float y, float w, float h, string altText)
+        {
+            ArgumentNullException.ThrowIfNull(imageBytes);
+            ArgumentNullException.ThrowIfNull(altText);
+            if (imageBytes.Length == 0) throw new ArgumentException("imageBytes must not be empty", nameof(imageBytes));
+            fixed (byte* p = imageBytes)
+            {
+                NativeMethods.PdfPageBuilderImageWithAlt(Handle, p, (nuint)imageBytes.Length, x, y, w, h, altText, out var ec);
+                ExceptionMapper.ThrowIfError(ec);
+            }
+            return this;
+        }
+
+        /// <summary>
+        /// Embed a decorative image as an /Artifact (no alt text, PDF/UA-1).
+        /// <paramref name="imageBytes"/> must contain raw JPEG/PNG/WebP data.
+        /// </summary>
+        public unsafe PageBuilder ImageArtifact(byte[] imageBytes, float x, float y, float w, float h)
+        {
+            ArgumentNullException.ThrowIfNull(imageBytes);
+            if (imageBytes.Length == 0) throw new ArgumentException("imageBytes must not be empty", nameof(imageBytes));
+            fixed (byte* p = imageBytes)
+            {
+                NativeMethods.PdfPageBuilderImageArtifact(Handle, p, (nuint)imageBytes.Length, x, y, w, h, out var ec);
+                ExceptionMapper.ThrowIfError(ec);
+            }
+            return this;
+        }
+
         // --- Low-level graphics primitives (PdfWriter exposure) -------------
 
         /// <summary>Draw a stroked rectangle outline (1pt black).</summary>

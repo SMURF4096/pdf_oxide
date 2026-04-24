@@ -520,6 +520,14 @@ extern "C" {
                                             float x, float y, float w, float h, int* error_code);
   extern int   pdf_page_builder_barcode_qr(void* page, const char* data,
                                             float x, float y, float size, int* error_code);
+  extern int   pdf_page_builder_image_with_alt(void* page,
+                                               const uint8_t* bytes, size_t len,
+                                               float x, float y, float w, float h,
+                                               const char* alt_text, int* error_code);
+  extern int   pdf_page_builder_image_artifact(void* page,
+                                               const uint8_t* bytes, size_t len,
+                                               float x, float y, float w, float h,
+                                               int* error_code);
 
   extern int   pdf_page_builder_rect(void* page, float x, float y, float w, float h, int* error_code);
   extern int   pdf_page_builder_filled_rect(void* page, float x, float y, float w, float h,
@@ -3352,6 +3360,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   extern Napi::Value PageBuilderNewline(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderBarcode1d(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderBarcodeQr(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderImageWithAlt(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderImageArtifact(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderRect(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderFilledRect(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderLine(const Napi::CallbackInfo&);
@@ -3430,6 +3440,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("pageBuilderNewline", Napi::Function::New(env, PageBuilderNewline));
   exports.Set("pageBuilderBarcode1d", Napi::Function::New(env, PageBuilderBarcode1d));
   exports.Set("pageBuilderBarcodeQr", Napi::Function::New(env, PageBuilderBarcodeQr));
+  exports.Set("pageBuilderImageWithAlt", Napi::Function::New(env, PageBuilderImageWithAlt));
+  exports.Set("pageBuilderImageArtifact", Napi::Function::New(env, PageBuilderImageArtifact));
   exports.Set("pageBuilderRect", Napi::Function::New(env, PageBuilderRect));
   exports.Set("pageBuilderFilledRect", Napi::Function::New(env, PageBuilderFilledRect));
   exports.Set("pageBuilderLine", Napi::Function::New(env, PageBuilderLine));
@@ -4024,6 +4036,61 @@ Napi::Value PageBuilderBarcodeQr(const Napi::CallbackInfo& info) {
   int errorCode = 0;
   pdf_page_builder_barcode_qr(p, data.c_str(), x, y, size, &errorCode);
   throwOnError(env, errorCode, "PageBuilder.barcodeQr");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderImageWithAlt(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  if (!info[1].IsBuffer() && !info[1].IsTypedArray()) {
+    throw Napi::TypeError::New(env, "imageWithAlt: bytes must be a Buffer or Uint8Array");
+  }
+  uint8_t* data;
+  size_t len;
+  if (info[1].IsBuffer()) {
+    auto buf = info[1].As<Napi::Buffer<uint8_t>>();
+    data = buf.Data(); len = buf.ByteLength();
+  } else {
+    auto ta = info[1].As<Napi::TypedArray>();
+    data = reinterpret_cast<uint8_t*>(
+      static_cast<char*>(ta.ArrayBuffer().Data()) + ta.ByteOffset());
+    len = ta.ByteLength();
+  }
+  float x = static_cast<float>(requireNumber(info, 2, "x"));
+  float y = static_cast<float>(requireNumber(info, 3, "y"));
+  float w = static_cast<float>(requireNumber(info, 4, "w"));
+  float h = static_cast<float>(requireNumber(info, 5, "h"));
+  std::string alt = requireString(info, 6, "altText");
+  int errorCode = 0;
+  pdf_page_builder_image_with_alt(p, data, len, x, y, w, h, alt.c_str(), &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.imageWithAlt");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderImageArtifact(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  if (!info[1].IsBuffer() && !info[1].IsTypedArray()) {
+    throw Napi::TypeError::New(env, "imageArtifact: bytes must be a Buffer or Uint8Array");
+  }
+  uint8_t* data;
+  size_t len;
+  if (info[1].IsBuffer()) {
+    auto buf = info[1].As<Napi::Buffer<uint8_t>>();
+    data = buf.Data(); len = buf.ByteLength();
+  } else {
+    auto ta = info[1].As<Napi::TypedArray>();
+    data = reinterpret_cast<uint8_t*>(
+      static_cast<char*>(ta.ArrayBuffer().Data()) + ta.ByteOffset());
+    len = ta.ByteLength();
+  }
+  float x = static_cast<float>(requireNumber(info, 2, "x"));
+  float y = static_cast<float>(requireNumber(info, 3, "y"));
+  float w = static_cast<float>(requireNumber(info, 4, "w"));
+  float h = static_cast<float>(requireNumber(info, 5, "h"));
+  int errorCode = 0;
+  pdf_page_builder_image_artifact(p, data, len, x, y, w, h, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.imageArtifact");
   return env.Undefined();
 }
 

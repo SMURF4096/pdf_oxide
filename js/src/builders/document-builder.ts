@@ -628,6 +628,24 @@ export class PageBuilder {
     return this;
   }
 
+  /**
+   * Embed an image with an accessibility alt text (PDF/UA-1 §Figure).
+   * `bytes` must contain raw JPEG/PNG/WebP image data.
+   */
+  imageWithAlt(bytes: Buffer | Uint8Array, x: number, y: number, w: number, h: number, altText: string): this {
+    native.pageBuilderImageWithAlt(this.h(), bytes, x, y, w, h, altText);
+    return this;
+  }
+
+  /**
+   * Embed a decorative image as an /Artifact (no alt text, PDF/UA-1 §Artifact).
+   * `bytes` must contain raw JPEG/PNG/WebP image data.
+   */
+  imageArtifact(bytes: Buffer | Uint8Array, x: number, y: number, w: number, h: number): this {
+    native.pageBuilderImageArtifact(this.h(), bytes, x, y, w, h);
+    return this;
+  }
+
   // --- Low-level graphics primitives ---------------------------------
 
   /** Draw a stroked rectangle outline (1pt black). */

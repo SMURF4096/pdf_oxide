@@ -472,6 +472,16 @@ int   pdf_page_builder_barcode_qr(void* page, const char* data,
                                   float x, float y, float size,
                                   int* error_code);
 
+/* PDF/UA-1 image accessibility */
+int   pdf_page_builder_image_with_alt(void* page,
+                                      const uint8_t* bytes, size_t len,
+                                      float x, float y, float w, float h,
+                                      const char* alt_text, int* error_code);
+int   pdf_page_builder_image_artifact(void* page,
+                                      const uint8_t* bytes, size_t len,
+                                      float x, float y, float w, float h,
+                                      int* error_code);
+
 /* Low-level graphics primitives (PdfWriter exposure) */
 int   pdf_page_builder_rect(void* page, float x, float y, float w, float h,
                             int* error_code);

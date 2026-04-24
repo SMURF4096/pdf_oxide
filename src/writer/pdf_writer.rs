@@ -1779,6 +1779,8 @@ impl PdfWriter {
             catalog_entries.push(("OpenAction", action));
         }
         // F-1/F-2: Tagged PDF catalog entries
+        // Build XMP metadata stream for pdfuaid:part (PDF/UA-1 ISO 14289-1 §6.7.11).
+        let xmp_metadata_id: Option<u32>;
         if self.config.tagged {
             // /MarkInfo << /Marked true >>
             let mark_info = Object::Dictionary(HashMap::from([(
@@ -1807,6 +1809,31 @@ impl PdfWriter {
                 Object::Boolean(true),
             )]));
             catalog_entries.push(("ViewerPreferences", viewer_prefs));
+
+            // ISO 14289-1 §6.7.11: PDF/UA documents must carry an XMP metadata
+            // stream in the document catalog with pdfuaid:part set to 1 (UA-1).
+            let title    = self.config.title.as_deref().unwrap_or("").to_string();
+            let creator  = self.config.creator.as_deref().unwrap_or("pdf_oxide").to_string();
+            let xmp = build_pdfua_xmp(&title, &creator, &lang);
+            let xmp_id = self.alloc_obj_id();
+            let mut xmp_dict: HashMap<String, Object> = HashMap::new();
+            xmp_dict.insert("Type".to_string(), Object::Name("Metadata".to_string()));
+            xmp_dict.insert("Subtype".to_string(), Object::Name("XML".to_string()));
+            xmp_dict.insert(
+                "Length".to_string(),
+                Object::Integer(xmp.len() as i64),
+            );
+            self.objects.insert(
+                xmp_id,
+                Object::Stream {
+                    dict: xmp_dict,
+                    data: bytes::Bytes::from(xmp),
+                },
+            );
+            catalog_entries.push(("Metadata", ObjectSerializer::reference(xmp_id, 0)));
+            xmp_metadata_id = Some(xmp_id);
+        } else {
+            xmp_metadata_id = None;
         }
         let catalog_obj = ObjectSerializer::dict(catalog_entries);
 
@@ -1915,6 +1942,14 @@ impl PdfWriter {
             }
         }
 
+        // ISO 14289-1 §6.7.11: XMP metadata stream (tagged PDF only).
+        if let Some(xmp_id) = xmp_metadata_id {
+            if let Some(obj) = self.objects.get(&xmp_id) {
+                xref_offsets.push((xmp_id, output.len()));
+                output.extend_from_slice(&serializer.serialize_indirect(xmp_id, 0, obj));
+            }
+        }
+
         // Info object
         xref_offsets.push((info_id, output.len()));
         output.extend_from_slice(&serializer.serialize_indirect(info_id, 0, &info_obj));
@@ -1963,6 +1998,46 @@ impl Default for PdfWriter {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Build a minimal XMP packet that satisfies ISO 14289-1 §6.7.11 (PDF/UA-1).
+/// Returns raw UTF-8 bytes (no BOM, no padding).
+fn build_pdfua_xmp(title: &str, creator: &str, lang: &str) -> Vec<u8> {
+    // Escape the three free-text fields for XML attribute/element contexts.
+    fn xml_escape(s: &str) -> String {
+        s.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+    }
+    let title_e = xml_escape(title);
+    let creator_e = xml_escape(creator);
+    let lang_e = xml_escape(lang);
+
+    let xmp = format!(
+        r#"<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+      xmlns:dc="http://purl.org/dc/elements/1.1/"
+      xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+      xmlns:pdf="http://ns.adobe.com/pdf/1.3/"
+      xmlns:pdfuaid="http://www.aiim.org/pdfua/ns/id/">
+   <dc:title><rdf:Alt><rdf:li xml:lang="{lang}">{title}</rdf:li></rdf:Alt></dc:title>
+   <dc:creator><rdf:Seq><rdf:li>{creator}</rdf:li></rdf:Seq></dc:creator>
+   <xmp:CreatorTool>{creator}</xmp:CreatorTool>
+   <pdf:Producer>{creator}</pdf:Producer>
+   <pdfuaid:part>1</pdfuaid:part>
+   <pdfuaid:amd>2005</pdfuaid:amd>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>"#,
+        lang = lang_e,
+        title = title_e,
+        creator = creator_e,
+    );
+    xmp.into_bytes()
 }
 
 /// Convert an [`elements::ImageContent`] (what `PageBuilder::add_element`

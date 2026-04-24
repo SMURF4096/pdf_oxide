@@ -3649,6 +3649,21 @@ enum WasmPageOp {
         w: f32,
         h: f32,
     },
+    ImageWithAlt {
+        bytes: Vec<u8>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        alt_text: String,
+    },
+    ImageArtifact {
+        bytes: Vec<u8>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    },
     LinkJavaScript(String),
     OnOpen(String),
     OnClose(String),
@@ -4044,6 +4059,23 @@ impl WasmDocumentBuilder {
                 WasmPageOp::BarcodeImage { bytes, x, y, w, h } => {
                     rust_page
                         .image_from_bytes(&bytes, crate::geometry::Rect::new(x, y, w, h))
+                        .map_err(|e| JsValue::from_str(&e.to_string()))?
+                },
+                WasmPageOp::ImageWithAlt { bytes, x, y, w, h, alt_text } => {
+                    rust_page
+                        .image_from_bytes_with_alt(
+                            &bytes,
+                            crate::geometry::Rect::new(x, y, w, h),
+                            &alt_text,
+                        )
+                        .map_err(|e| JsValue::from_str(&e.to_string()))?
+                },
+                WasmPageOp::ImageArtifact { bytes, x, y, w, h } => {
+                    rust_page
+                        .image_from_bytes_as_artifact(
+                            &bytes,
+                            crate::geometry::Rect::new(x, y, w, h),
+                        )
                         .map_err(|e| JsValue::from_str(&e.to_string()))?
                 },
                 WasmPageOp::StreamingTableBlock {
@@ -4530,6 +4562,33 @@ impl WasmFluentPageBuilder {
         let bytes = crate::writer::BarcodeGenerator::generate_qr(&data, &opts)
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
         self.push(WasmPageOp::BarcodeImage { bytes, x, y, w: size, h: size })
+    }
+
+    /// Embed an image (JPEG/PNG/WebP bytes) with an accessibility alt text.
+    #[wasm_bindgen(js_name = "imageWithAlt")]
+    pub fn image_with_alt(
+        &mut self,
+        bytes: Vec<u8>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        alt_text: String,
+    ) -> Result<(), JsValue> {
+        self.push(WasmPageOp::ImageWithAlt { bytes, x, y, w, h, alt_text })
+    }
+
+    /// Embed a decorative image (JPEG/PNG/WebP bytes) as an /Artifact (no alt text).
+    #[wasm_bindgen(js_name = "imageArtifact")]
+    pub fn image_artifact(
+        &mut self,
+        bytes: Vec<u8>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    ) -> Result<(), JsValue> {
+        self.push(WasmPageOp::ImageArtifact { bytes, x, y, w, h })
     }
 
     /// Draw a stroked rectangle outline (1pt black).

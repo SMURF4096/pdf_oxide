@@ -2144,6 +2144,51 @@ impl<'a> FluentPageBuilder<'a> {
         Ok(self.image_with(data, rect))
     }
 
+    /// Embed an image with alternative text for accessibility (PDF/UA-1 §7.1).
+    /// The image is wrapped in a `/Figure` structure element carrying `/Alt`
+    /// so assistive technology can describe it. Requires `tagged_pdf_ua1()` on
+    /// the `DocumentBuilder` for the alt text to be wired into the StructTree.
+    pub fn image_from_bytes_with_alt(
+        self,
+        bytes: &[u8],
+        rect: Rect,
+        alt_text: impl Into<String>,
+    ) -> Result<Self> {
+        use crate::writer::image_handler::ImageData;
+        let data =
+            ImageData::from_bytes(bytes).map_err(|e| crate::error::Error::Image(e.to_string()))?;
+        Ok(self.image_with_alt(data, rect, alt_text))
+    }
+
+    /// Embed a decorative image marked as an `/Artifact` (PDF/UA-1 §7.1).
+    /// Assistive technology ignores artifact images; do not attach alt text.
+    pub fn image_from_bytes_as_artifact(self, bytes: &[u8], rect: Rect) -> Result<Self> {
+        use crate::writer::image_handler::ImageData;
+        let data =
+            ImageData::from_bytes(bytes).map_err(|e| crate::error::Error::Image(e.to_string()))?;
+        Ok(self.image_with_artifact(data, rect))
+    }
+
+    /// Embed a pre-decoded image with alternative text (PDF/UA-1 §7.1).
+    pub fn image_with_alt(
+        self,
+        data: crate::writer::image_handler::ImageData,
+        rect: Rect,
+        alt_text: impl Into<String>,
+    ) -> Self {
+        let alt = alt_text.into();
+        self.image_with_options(data, rect, Some(alt), false)
+    }
+
+    /// Embed a pre-decoded decorative image as an `/Artifact` (PDF/UA-1 §7.1).
+    pub fn image_with_artifact(
+        self,
+        data: crate::writer::image_handler::ImageData,
+        rect: Rect,
+    ) -> Self {
+        self.image_with_options(data, rect, None, true)
+    }
+
     /// Embed a pre-decoded [`crate::writer::ImageData`] at `rect`. Useful
     /// when a caller has already loaded the image (e.g. for reuse across
     /// multiple placements) and doesn't need the IO / parse step again.
@@ -2151,6 +2196,16 @@ impl<'a> FluentPageBuilder<'a> {
         self,
         data: crate::writer::image_handler::ImageData,
         rect: Rect,
+    ) -> Self {
+        self.image_with_options(data, rect, None, false)
+    }
+
+    fn image_with_options(
+        self,
+        data: crate::writer::image_handler::ImageData,
+        rect: Rect,
+        alt_text: Option<String>,
+        is_artifact: bool,
     ) -> Self {
         use crate::elements::{
             ColorSpace as EColorSpace, ImageContent, ImageFormat as EImageFormat,
@@ -2175,6 +2230,10 @@ impl<'a> FluentPageBuilder<'a> {
         if let Some(mask) = data.soft_mask {
             content = content.with_soft_mask(mask);
         }
+        if let Some(alt) = alt_text {
+            content = content.with_alt_text(alt);
+        }
+        content.is_artifact = is_artifact;
 
         // Propagate the active transform so images inside `.rotated()`
         // etc. scopes render under that matrix. #393 Bundle A-2 follow-up.
@@ -5055,6 +5114,92 @@ mod tests {
         assert!(
             !content.contains("/StructTreeRoot"),
             "untagged PDF must NOT contain /StructTreeRoot"
+        );
+    }
+
+    #[test]
+    fn test_tagged_pdf_ua1_emits_xmp_metadata() {
+        let mut builder = DocumentBuilder::new();
+        builder = builder.metadata(
+            DocumentMetadata::new()
+                .title("XMP Test")
+                .tagged_pdf_ua1()
+                .language("en-US"),
+        );
+        builder.letter_page().at(72.0, 720.0).text("hello").done();
+        let bytes = builder.build().unwrap();
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(
+            content.contains("/Metadata"),
+            "catalog must reference /Metadata stream"
+        );
+        assert!(
+            content.contains("pdfuaid:part"),
+            "XMP stream must contain pdfuaid:part"
+        );
+        assert!(
+            content.contains("<pdfuaid:part>1</pdfuaid:part>"),
+            "XMP stream must declare pdfuaid:part = 1"
+        );
+        assert!(
+            content.contains("XMP Test"),
+            "XMP stream must include document title"
+        );
+    }
+
+    #[test]
+    fn test_untagged_pdf_has_no_xmp_metadata() {
+        let mut builder = DocumentBuilder::new();
+        builder.letter_page().at(72.0, 720.0).text("plain").done();
+        let bytes = builder.build().unwrap();
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(
+            !content.contains("pdfuaid:part"),
+            "untagged PDF must NOT contain XMP pdfuaid namespace"
+        );
+    }
+
+    #[test]
+    fn test_image_with_alt_emits_figure_bdc() {
+        use crate::geometry::Rect;
+        let img_bytes = std::fs::read("tests/fixtures/adobe_cmyk_10x11_white.jpg")
+            .expect("fixture must exist");
+        let mut builder = DocumentBuilder::new();
+        builder = builder.metadata(DocumentMetadata::new().tagged_pdf_ua1());
+        let page = builder.letter_page();
+        let _page = page
+            .image_from_bytes_with_alt(&img_bytes, Rect::new(72.0, 600.0, 100.0, 100.0), "Logo")
+            .unwrap()
+            .done();
+        let bytes = builder.build().unwrap();
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(
+            content.contains("/Figure <</MCID"),
+            "image with alt text must be wrapped in /Figure BDC"
+        );
+        assert!(
+            content.contains("Logo"),
+            "alt text must appear in the /Alt entry"
+        );
+    }
+
+    #[test]
+    fn test_image_as_artifact_emits_artifact_bdc() {
+        use crate::geometry::Rect;
+        let img_bytes = std::fs::read("tests/fixtures/adobe_cmyk_10x11_white.jpg")
+            .expect("fixture must exist");
+        let mut builder = DocumentBuilder::new();
+        builder = builder.metadata(DocumentMetadata::new().tagged_pdf_ua1());
+        let page = builder.letter_page();
+        let _page = page
+            .image_from_bytes_as_artifact(&img_bytes, Rect::new(72.0, 600.0, 100.0, 100.0))
+            .unwrap()
+            .done();
+        let bytes = builder.build().unwrap();
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(
+            content.contains("/Artifact <<"),
+            "decorative image must be wrapped in /Artifact BDC"
         );
     }
 }

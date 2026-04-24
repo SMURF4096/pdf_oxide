@@ -4135,6 +4135,21 @@ enum PendingPageOp {
         w: f32,
         h: f32,
     },
+    ImageWithAlt {
+        bytes: Vec<u8>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        alt_text: String,
+    },
+    ImageArtifact {
+        bytes: Vec<u8>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    },
     LinkJavaScript(String),
     OnOpen(String),
     OnClose(String),
@@ -5097,6 +5112,33 @@ impl PyFluentPageBuilder {
         Ok(slf)
     }
 
+    /// Embed an image (JPEG/PNG/WebP bytes) with an accessibility alt text.
+    fn image_with_alt<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        bytes: Vec<u8>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        alt_text: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::ImageWithAlt { bytes, x, y, w, h, alt_text })?;
+        Ok(slf)
+    }
+
+    /// Embed a decorative image (JPEG/PNG/WebP bytes) as an /Artifact (no alt text).
+    fn image_artifact<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        bytes: Vec<u8>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::ImageArtifact { bytes, x, y, w, h })?;
+        Ok(slf)
+    }
+
     /// Draw a stroked rectangle outline (1pt black).
     fn rect<'a>(
         mut slf: PyRefMut<'a, Self>,
@@ -5477,6 +5519,21 @@ impl PyFluentPageBuilder {
                 PendingPageOp::BarcodeImage { bytes, x, y, w, h } => {
                     page.image_from_bytes(&bytes, crate::geometry::Rect::new(x, y, w, h))
                         .map_err(|e| PyRuntimeError::new_err(e.to_string()))?
+                },
+                PendingPageOp::ImageWithAlt { bytes, x, y, w, h, alt_text } => {
+                    page.image_from_bytes_with_alt(
+                        &bytes,
+                        crate::geometry::Rect::new(x, y, w, h),
+                        &alt_text,
+                    )
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?
+                },
+                PendingPageOp::ImageArtifact { bytes, x, y, w, h } => {
+                    page.image_from_bytes_as_artifact(
+                        &bytes,
+                        crate::geometry::Rect::new(x, y, w, h),
+                    )
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?
                 },
                 PendingPageOp::Table {
                     widths,

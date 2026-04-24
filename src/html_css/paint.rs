@@ -353,6 +353,7 @@ fn paint_page<'sty>(
                     // this the transparency is silently dropped.
                     soft_mask: img.data.soft_mask.clone(),
             matrix: None,
+                    is_artifact: false,
                 };
                 page_builder.add_element(&ContentElement::Image(content));
             }

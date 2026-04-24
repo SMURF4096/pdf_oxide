@@ -1178,6 +1178,28 @@ impl ContentStreamBuilder {
         // End any text object first
         self.end_text();
 
+        // PDF/UA-1 F-3: decorative images → /Artifact BDC/EMC.
+        // PDF/UA-1 F-1: images with alt text → /Figure BDC/EMC + StructElemRecord.
+        let is_artifact = image.is_artifact;
+        let has_alt     = image.alt_text.is_some() && !is_artifact;
+
+        let mcid = if has_alt {
+            let mcid = self.next_mcid();
+            self.op(ContentStreamOp::BeginMarkedContentDict {
+                tag:  "Figure".to_string(),
+                mcid,
+            });
+            Some(mcid)
+        } else if is_artifact {
+            self.op(ContentStreamOp::BeginArtifact {
+                artifact_type: "Layout".to_string(),
+                subtype:       None,
+            });
+            None
+        } else {
+            None
+        };
+
         // If the image carries a 2D affine transform, bracket it in
         // `q cm ... Q`. #393 Bundle A-2 follow-up.
         let had_matrix = if let Some(m) = image.matrix {
@@ -1211,6 +1233,21 @@ impl ContentStreamBuilder {
 
         if had_matrix {
             self.op(ContentStreamOp::RestoreState);
+        }
+
+        if has_alt {
+            self.op(ContentStreamOp::EndMarkedContent);
+            // Push a StructElemRecord so pdf_writer.rs builds the /Figure
+            // StructElem with /Alt when assembling the StructTreeRoot.
+            self.struct_records.push(StructElemRecord {
+                structure_type: "Figure".to_string(),
+                mcid: mcid.unwrap(),
+                alt_text: image.alt_text.clone(),
+                language: None,
+                children: Vec::new(),
+            });
+        } else if is_artifact {
+            self.op(ContentStreamOp::EndArtifact);
         }
 
         self
@@ -1836,6 +1873,7 @@ mod tests {
             vertical_dpi: None,
             soft_mask: None,
             matrix: None,
+            is_artifact: false,
         };
 
         let mut builder = ContentStreamBuilder::new();
@@ -1903,6 +1941,7 @@ mod tests {
             vertical_dpi: None,
             soft_mask: None,
             matrix: None,
+            is_artifact: false,
         };
         builder.add_element(&ContentElement::Image(image));
 
@@ -1936,6 +1975,7 @@ mod tests {
             vertical_dpi: None,
             soft_mask: None,
             matrix: None,
+            is_artifact: false,
         };
 
         let mut builder = ContentStreamBuilder::new();

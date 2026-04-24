@@ -7135,6 +7135,21 @@ namespace PdfOxide.Internal
         public static partial int PdfPageBuilderBarcodeQr(
             IntPtr page, string data, float x, float y, float size, out int errorCode);
 
+        /// <summary>Embed an image with accessibility alt text (PDF/UA-1 Figure).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_image_with_alt", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial int PdfPageBuilderImageWithAlt(
+            IntPtr page, byte* bytes, nuint len,
+            float x, float y, float w, float h,
+            string altText, out int errorCode);
+
+        /// <summary>Embed a decorative image as an /Artifact (no alt text, PDF/UA-1).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_image_artifact", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial int PdfPageBuilderImageArtifact(
+            IntPtr page, byte* bytes, nuint len,
+            float x, float y, float w, float h, out int errorCode);
+
         /// <summary>Draw a stroked rectangle outline.</summary>
         [LibraryImport(LibName, EntryPoint = "pdf_page_builder_rect", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
