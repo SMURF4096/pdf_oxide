@@ -2212,17 +2212,143 @@ pub extern "C" fn pdf_certificate_load_from_bytes(
     }
 }
 
+/// Load signing credentials (certificate + private key) from PEM-encoded strings.
+/// `cert_pem` and `key_pem` are NUL-terminated UTF-8 strings.
+/// Returns an opaque handle on success, NULL on failure.
+#[no_mangle]
+pub unsafe extern "C" fn pdf_certificate_load_from_pem(
+    cert_pem: *const c_char,
+    key_pem: *const c_char,
+    error_code: *mut i32,
+) -> *mut std::ffi::c_void {
+    #[cfg(feature = "signatures")]
+    {
+        let Some(cert_str) = read_cstr_or_fail(cert_pem, error_code) else {
+            return ptr::null_mut();
+        };
+        let Some(key_str) = read_cstr_or_fail(key_pem, error_code) else {
+            return ptr::null_mut();
+        };
+        match crate::signatures::SigningCredentials::from_pem(&cert_str, &key_str) {
+            Ok(creds) => {
+                set_error(error_code, ERR_SUCCESS);
+                Box::into_raw(Box::new(creds)) as *mut std::ffi::c_void
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = (cert_pem, key_pem);
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
+}
+
+/// Sign the document loaded at `document_handle` in-place. The signature is
+/// appended as a PDF incremental update so that subsequent saves (via
+/// `pdf_save` / `pdf_save_to_bytes`) emit the signed file.
+///
+/// `certificate_handle` must be a `SigningCredentials` pointer obtained from
+/// one of the `pdf_certificate_load_*` functions.
+///
+/// Returns 0 on success, -1 on failure (check `*error_code`).
 #[no_mangle]
 pub extern "C" fn pdf_document_sign(
-    _document_handle: *mut std::ffi::c_void,
-    _certificate_handle: *const std::ffi::c_void,
-    _reason: *const c_char,
-    _location: *const c_char,
+    document_handle: *mut std::ffi::c_void,
+    certificate_handle: *const std::ffi::c_void,
+    reason: *const c_char,
+    location: *const c_char,
     error_code: *mut i32,
 ) -> i32 {
-    // Full signing requires file-level operations beyond this FFI scope
-    set_error(error_code, _ERR_UNSUPPORTED);
-    -1
+    #[cfg(feature = "signatures")]
+    {
+        use crate::signatures::{sign_pdf_bytes, SignOptions};
+        if document_handle.is_null() || certificate_handle.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return -1;
+        }
+        let doc = unsafe { &mut *(document_handle as *mut PdfDocument) };
+        let creds = unsafe { &*(certificate_handle as *const crate::signatures::SigningCredentials) };
+        if doc.source_bytes.is_empty() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return -1;
+        }
+        let reason_str = if reason.is_null() { None } else {
+            Some(unsafe { std::ffi::CStr::from_ptr(reason).to_string_lossy().into_owned() })
+        };
+        let location_str = if location.is_null() { None } else {
+            Some(unsafe { std::ffi::CStr::from_ptr(location).to_string_lossy().into_owned() })
+        };
+        let opts = SignOptions { reason: reason_str, location: location_str, ..Default::default() };
+        match sign_pdf_bytes(&doc.source_bytes.clone(), creds, opts) {
+            Ok(signed) => {
+                doc.source_bytes = signed;
+                set_error(error_code, ERR_SUCCESS);
+                0
+            },
+            Err(e) => { set_error(error_code, classify_error(&e)); -1 },
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = (document_handle, certificate_handle, reason, location);
+        set_error(error_code, _ERR_UNSUPPORTED);
+        -1
+    }
+}
+
+/// Sign raw PDF bytes and return the signed PDF as a newly allocated buffer.
+///
+/// The caller is responsible for freeing the returned buffer via `free_bytes`.
+/// `*out_len` is set to the number of bytes in the returned buffer.
+///
+/// Returns `NULL` on failure (check `*error_code`).
+#[no_mangle]
+pub unsafe extern "C" fn pdf_sign_bytes(
+    pdf_data: *const u8,
+    pdf_len: usize,
+    certificate_handle: *const std::ffi::c_void,
+    reason: *const c_char,
+    location: *const c_char,
+    out_len: *mut usize,
+    error_code: *mut i32,
+) -> *mut u8 {
+    #[cfg(feature = "signatures")]
+    {
+        use crate::signatures::{sign_pdf_bytes, SignOptions};
+        if pdf_data.is_null() || certificate_handle.is_null() || out_len.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        }
+        let data = unsafe { std::slice::from_raw_parts(pdf_data, pdf_len) };
+        let creds = unsafe { &*(certificate_handle as *const crate::signatures::SigningCredentials) };
+        let reason_str = if reason.is_null() { None } else {
+            Some(unsafe { std::ffi::CStr::from_ptr(reason).to_string_lossy().into_owned() })
+        };
+        let location_str = if location.is_null() { None } else {
+            Some(unsafe { std::ffi::CStr::from_ptr(location).to_string_lossy().into_owned() })
+        };
+        let opts = SignOptions { reason: reason_str, location: location_str, ..Default::default() };
+        match sign_pdf_bytes(data, creds, opts) {
+            Ok(signed) => {
+                set_error(error_code, ERR_SUCCESS);
+                unsafe { *out_len = signed.len(); }
+                let boxed = signed.into_boxed_slice();
+                Box::into_raw(boxed) as *mut u8
+            },
+            Err(e) => { set_error(error_code, classify_error(&e)); ptr::null_mut() },
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = (pdf_data, pdf_len, certificate_handle, reason, location, out_len);
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]

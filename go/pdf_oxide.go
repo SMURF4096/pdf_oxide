@@ -160,6 +160,7 @@ extern void pdf_barcode_free(void* handle);
 
 // Signatures FFI declarations (19 functions)
 extern void* pdf_certificate_load_from_bytes(const uint8_t* cert_bytes, int32_t cert_len, const char* password, int* error_code);
+extern void* pdf_certificate_load_from_pem(const char* cert_pem, const char* key_pem, int* error_code);
 extern int pdf_document_sign(void* document_handle, const void* certificate_handle, const char* reason, const char* location, int* error_code);
 extern int32_t pdf_document_get_signature_count(const void* document_handle, int* error_code);
 extern void* pdf_document_get_signature(const void* document_handle, int32_t index, int* error_code);
@@ -178,6 +179,7 @@ extern void pdf_certificate_get_validity(const void* certificate_handle, int64_t
 extern int pdf_certificate_is_valid(const void* certificate_handle, int* error_code);
 extern void pdf_signature_free(void* handle);
 extern void pdf_certificate_free(void* handle);
+extern uint8_t* pdf_sign_bytes(const uint8_t* pdf_data, size_t pdf_len, const void* certificate_handle, const char* reason, const char* location, size_t* out_len, int* error_code);
 
 // Rendering FFI declarations (21 functions)
 extern int32_t pdf_estimate_render_time(const void* document_handle, int32_t page_index, int* error_code);
@@ -362,11 +364,13 @@ extern void pdf_barcode_free(void* handle);
 
 // Signatures
 extern void* pdf_certificate_load_from_bytes(const uint8_t* cert_bytes, int32_t cert_len, const char* password, int* error_code);
+extern void* pdf_certificate_load_from_pem(const char* cert_pem, const char* key_pem, int* error_code);
 extern void pdf_certificate_free(void* handle);
 extern char* pdf_signature_get_signer_name(const void* sig, int* error_code);
 extern char* pdf_signature_get_signing_reason(const void* sig, int* error_code);
 extern char* pdf_signature_get_signing_location(const void* sig, int* error_code);
 extern void pdf_signature_free(void* handle);
+extern uint8_t* pdf_sign_bytes(const uint8_t* pdf_data, size_t pdf_len, const void* certificate_handle, const char* reason, const char* location, size_t* out_len, int* error_code);
 
 // Form mutation + flatten
 extern int32_t document_editor_set_form_field_value(void* handle, const char* name, const char* value, int* error_code);
@@ -2850,12 +2854,72 @@ func LoadCertificate(data []byte, password string) (*Certificate, error) {
 	return &Certificate{handle: handle}, nil
 }
 
+// LoadCertificateFromPem loads signing credentials from PEM-encoded certificate and private key strings.
+// certPem must begin "-----BEGIN CERTIFICATE-----"; keyPem must begin
+// "-----BEGIN PRIVATE KEY-----" (PKCS#8) or "-----BEGIN RSA PRIVATE KEY-----" (PKCS#1).
+func LoadCertificateFromPem(certPem, keyPem string) (*Certificate, error) {
+	cCert := C.CString(certPem)
+	defer C.free(unsafe.Pointer(cCert))
+	cKey := C.CString(keyPem)
+	defer C.free(unsafe.Pointer(cKey))
+	var errorCode C.int
+	handle := C.pdf_certificate_load_from_pem(cCert, cKey, &errorCode)
+	if errorCode != 0 {
+		return nil, ffiError(errorCode)
+	}
+	return &Certificate{handle: handle}, nil
+}
+
 // Close releases certificate resources
 func (cert *Certificate) Close() {
 	if cert.handle != nil {
 		C.pdf_certificate_free(cert.handle)
 		cert.handle = nil
 	}
+}
+
+// SignPdfBytes applies a CMS/PKCS#7 detached signature to pdfData and returns
+// the signed PDF as a new byte slice. The Certificate must have been loaded
+// with a private key (e.g. via LoadCertificateFromPem or LoadCertificateFromBytes).
+// reason and location are optional; pass empty strings to omit them.
+func SignPdfBytes(pdfData []byte, cert *Certificate, reason, location string) ([]byte, error) {
+	if cert == nil || cert.handle == nil {
+		return nil, ErrInternal
+	}
+	if len(pdfData) == 0 {
+		return nil, ErrEmptyContent
+	}
+	var reasonPtr, locationPtr *C.char
+	if reason != "" {
+		cs := C.CString(reason)
+		defer C.free(unsafe.Pointer(cs))
+		reasonPtr = cs
+	}
+	if location != "" {
+		cs := C.CString(location)
+		defer C.free(unsafe.Pointer(cs))
+		locationPtr = cs
+	}
+	var outLen C.size_t
+	var errorCode C.int
+	out := C.pdf_sign_bytes(
+		(*C.uint8_t)(unsafe.Pointer(&pdfData[0])),
+		C.size_t(len(pdfData)),
+		cert.handle,
+		reasonPtr,
+		locationPtr,
+		&outLen,
+		&errorCode,
+	)
+	if errorCode != 0 {
+		return nil, ffiError(errorCode)
+	}
+	if out == nil {
+		return nil, ErrInternal
+	}
+	result := C.GoBytes(unsafe.Pointer(out), C.int(outLen))
+	C.free_bytes(unsafe.Pointer(out))
+	return result, nil
 }
 
 // certReadString is the shared body for Subject / Issuer / Serial — each FFI

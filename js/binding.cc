@@ -355,6 +355,8 @@ extern "C" {
   // Timestamp/TSA
   extern void pdf_certificate_get_validity(const void* cert, int64_t* not_before, int64_t* not_after, int* error_code);
   extern void* pdf_certificate_load_from_bytes(const uint8_t* data, int32_t len, const char* password, int* error_code);
+  extern void* pdf_certificate_load_from_pem(const char* cert_pem, const char* key_pem, int* error_code);
+  extern uint8_t* pdf_sign_bytes(const uint8_t* pdf_data, size_t pdf_len, const void* cert, const char* reason, const char* location, size_t* out_len, int* error_code);
   extern bool pdf_signature_add_timestamp(const void* signature, const void* timestamp, int* error_code);
   extern void* pdf_signature_get_timestamp(const void* signature, int* error_code);
   extern bool pdf_signature_has_timestamp(const void* signature, int* error_code);
@@ -2675,6 +2677,49 @@ Napi::Value CertificateLoadFromBytes(const Napi::CallbackInfo& info) {
   return Napi::External<void>::New(env, cert);
 }
 
+Napi::Value CertificateLoadFromPem(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  std::string certPem = requireString(info, 0, "certPem");
+  std::string keyPem  = requireString(info, 1, "keyPem");
+  int errorCode = 0;
+  void* cert = pdf_certificate_load_from_pem(certPem.c_str(), keyPem.c_str(), &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, "Failed to load PEM credentials: " + getErrorMessage(errorCode));
+  if (!cert) return env.Null();
+  return Napi::External<void>::New(env, cert);
+}
+
+Napi::Value SignPdfBytes(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 2) throw Napi::TypeError::New(env, "Expected (pdfData, certificate, [reason], [location])");
+
+  uint8_t* data;
+  size_t len;
+  if (info[0].IsBuffer()) {
+    auto buf = info[0].As<Napi::Buffer<uint8_t>>();
+    data = buf.Data();
+    len = buf.ByteLength();
+  } else {
+    auto ta = info[0].As<Napi::TypedArray>();
+    data = reinterpret_cast<uint8_t*>(ta.ArrayBuffer().Data()) + ta.ByteOffset();
+    len = ta.ByteLength();
+  }
+
+  void* cert = info[1].As<Napi::External<void>>().Data();
+  std::string reason   = (info.Length() > 2 && info[2].IsString()) ? info[2].As<Napi::String>().Utf8Value() : "";
+  std::string location = (info.Length() > 3 && info[3].IsString()) ? info[3].As<Napi::String>().Utf8Value() : "";
+  const char* reasonPtr   = (info.Length() > 2 && !info[2].IsNull() && !info[2].IsUndefined()) ? reason.c_str()   : nullptr;
+  const char* locationPtr = (info.Length() > 3 && !info[3].IsNull() && !info[3].IsUndefined()) ? location.c_str() : nullptr;
+
+  int errorCode = 0;
+  size_t outLen = 0;
+  uint8_t* out = pdf_sign_bytes(data, len, cert, reasonPtr, locationPtr, &outLen, &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, "pdf_sign_bytes failed: " + getErrorMessage(errorCode));
+  if (!out) return env.Null();
+  auto buf = Napi::Buffer<uint8_t>::New(env, out, outLen,
+    [](Napi::Env, uint8_t* p) { free_bytes(p); });
+  return buf;
+}
+
 Napi::Value SignatureAddTimestamp(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   void* sig = info[0].As<Napi::External<void>>().Data();
@@ -3189,6 +3234,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("documentRemoveFooters", Napi::Function::New(env, DocumentRemoveFooters));
   exports.Set("documentRemoveHeaders", Napi::Function::New(env, DocumentRemoveHeaders));
   exports.Set("documentSign", Napi::Function::New(env, DocumentSign));
+  exports.Set("signPdfBytes", Napi::Function::New(env, SignPdfBytes));
 
   // Regional Extraction
   exports.Set("extractImagesInRect", Napi::Function::New(env, ExtractImagesInRect));
@@ -3245,6 +3291,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   // Timestamp/TSA
   exports.Set("certificateGetValidity", Napi::Function::New(env, CertificateGetValidity));
   exports.Set("certificateLoadFromBytes", Napi::Function::New(env, CertificateLoadFromBytes));
+  exports.Set("certificateLoadFromPem", Napi::Function::New(env, CertificateLoadFromPem));
   exports.Set("signatureAddTimestamp", Napi::Function::New(env, SignatureAddTimestamp));
   exports.Set("signatureGetTimestamp", Napi::Function::New(env, SignatureGetTimestamp));
   exports.Set("signatureHasTimestamp", Napi::Function::New(env, SignatureHasTimestamp));

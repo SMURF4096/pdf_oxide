@@ -189,7 +189,9 @@ void  pdf_barcode_free(void* handle);
 /* ─── Signatures (feature-gated, stubs return UNSUPPORTED) ──────────────── */
 
 void* pdf_certificate_load_from_bytes(const uint8_t* cert_bytes, int32_t cert_len, const char* password, int* error_code);
-int   pdf_document_sign(void* document_handle, const void* certificate_handle, const char* reason, const char* location, int* error_code);
+void* pdf_certificate_load_from_pem(const char* cert_pem, const char* key_pem, int* error_code);
+int      pdf_document_sign(void* document_handle, const void* certificate_handle, const char* reason, const char* location, int* error_code);
+uint8_t* pdf_sign_bytes(const uint8_t* pdf_data, size_t pdf_len, const void* certificate_handle, const char* reason, const char* location, size_t* out_len, int* error_code);
 int32_t pdf_document_get_signature_count(const void* document_handle, int* error_code);
 void* pdf_document_get_signature(const void* document_handle, int32_t index, int* error_code);
 int   pdf_signature_verify(const void* signature_handle, int* error_code);

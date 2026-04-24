@@ -6170,6 +6170,50 @@ impl PyCertificate {
         }
     }
 
+    /// Load a signer certificate + private key from separate PEM strings.
+    /// `cert_pem` must begin with `-----BEGIN CERTIFICATE-----`.
+    /// `key_pem` must begin with `-----BEGIN PRIVATE KEY-----` (PKCS#8) or
+    /// `-----BEGIN RSA PRIVATE KEY-----` (PKCS#1).
+    #[staticmethod]
+    fn load_pem(cert_pem: &str, key_pem: &str) -> PyResult<Self> {
+        #[cfg(feature = "signatures")]
+        {
+            let creds = crate::signatures::SigningCredentials::from_pem(cert_pem, key_pem)
+                .map_err(|e| PyValueError::new_err(format!("Failed to load PEM credentials: {e}")))?;
+            Ok(Self { creds })
+        }
+        #[cfg(not(feature = "signatures"))]
+        {
+            let _ = (cert_pem, key_pem);
+            Err(PyNotImplementedError::new_err(
+                "Certificate.load_pem(): pdf_oxide was built without --features signatures",
+            ))
+        }
+    }
+
+    /// Load a signer certificate + private key from a PKCS#12 (.p12/.pfx) blob.
+    /// `password` is the passphrase protecting the key bag.
+    #[staticmethod]
+    fn load_pkcs12(data: &Bound<'_, PyBytes>, password: &str) -> PyResult<Self> {
+        #[cfg(feature = "signatures")]
+        {
+            let bytes = data.as_bytes();
+            if bytes.is_empty() {
+                return Err(PyValueError::new_err("PKCS#12 data must not be empty"));
+            }
+            let creds = crate::signatures::SigningCredentials::from_pkcs12(bytes, password)
+                .map_err(|e| PyValueError::new_err(format!("Failed to load PKCS#12: {e}")))?;
+            Ok(Self { creds })
+        }
+        #[cfg(not(feature = "signatures"))]
+        {
+            let _ = (data, password);
+            Err(PyNotImplementedError::new_err(
+                "Certificate.load_pkcs12(): pdf_oxide was built without --features signatures",
+            ))
+        }
+    }
+
     /// Subject distinguished name (e.g. `CN=pdfoxide-test, O=pdf_oxide, C=US`).
     #[getter]
     fn subject(&self) -> PyResult<String> {
@@ -6502,6 +6546,54 @@ fn pdf_oxide(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyCertificate>()?;
     m.add_class::<PyTimestamp>()?;
     m.add_class::<PyTsaClient>()?;
+    m.add_function(pyo3::wrap_pyfunction!(py_sign_pdf_bytes, m)?)?;
     m.add("VERSION", env!("CARGO_PKG_VERSION"))?;
     Ok(())
+}
+
+/// Sign raw PDF bytes and return the signed PDF as `bytes`.
+///
+/// `cert` must be a :class:`Certificate` loaded via
+/// :meth:`Certificate.load_pem` or :meth:`Certificate.load_pkcs12`
+/// (i.e. it must carry a private key, not just a certificate).
+///
+/// # Example
+///
+/// ```python
+/// from pdf_oxide import Certificate, sign_pdf_bytes
+///
+/// cert = Certificate.load_pem(open("cert.pem").read(), open("key.pem").read())
+/// with open("input.pdf", "rb") as f:
+///     signed = sign_pdf_bytes(f.read(), cert, reason="Approved", location="HQ")
+/// with open("signed.pdf", "wb") as f:
+///     f.write(signed)
+/// ```
+#[pyo3::pyfunction]
+#[pyo3(signature = (pdf_data, cert, reason=None, location=None))]
+pub fn py_sign_pdf_bytes<'py>(
+    py: pyo3::Python<'py>,
+    pdf_data: &Bound<'py, PyBytes>,
+    cert: &PyCertificate,
+    reason: Option<&str>,
+    location: Option<&str>,
+) -> PyResult<Bound<'py, PyBytes>> {
+    #[cfg(feature = "signatures")]
+    {
+        use crate::signatures::{sign_pdf_bytes, SignOptions};
+        let opts = SignOptions {
+            reason: reason.map(str::to_owned),
+            location: location.map(str::to_owned),
+            ..Default::default()
+        };
+        let signed = sign_pdf_bytes(pdf_data.as_bytes(), &cert.creds, opts)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("sign_pdf_bytes failed: {e}")))?;
+        Ok(PyBytes::new(py, &signed))
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = (pdf_data, cert, reason, location);
+        Err(pyo3::exceptions::PyNotImplementedError::new_err(
+            "sign_pdf_bytes(): pdf_oxide was built without --features signatures",
+        ))
+    }
 }

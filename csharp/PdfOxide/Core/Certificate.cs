@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using PdfOxide.Exceptions;
 using PdfOxide.Internal;
 
@@ -22,6 +23,25 @@ namespace PdfOxide.Core
         }
 
         internal static Certificate FromHandle(NativeHandle handle) => new(handle);
+
+        /// <summary>
+        /// Load a signing credential from PEM-encoded certificate and private key strings.
+        /// Both <paramref name="certPem"/> and <paramref name="keyPem"/> must be PEM text
+        /// (-----BEGIN CERTIFICATE----- / -----BEGIN PRIVATE KEY-----).
+        /// </summary>
+        public static Certificate LoadFromPem(string certPem, string keyPem)
+        {
+            ArgumentNullException.ThrowIfNull(certPem);
+            ArgumentNullException.ThrowIfNull(keyPem);
+
+            var handle = NativeMethods.PdfCertificateLoadFromPem(certPem, keyPem, out int err);
+            if (handle == IntPtr.Zero)
+            {
+                ExceptionMapper.ThrowIfError(err);
+                throw new PdfException("pdf_certificate_load_from_pem returned null with no error code");
+            }
+            return new Certificate(new NativeHandle(handle, NativeMethods.pdf_certificate_free));
+        }
 
         /// <summary>
         /// Load a certificate from raw DER-encoded X.509 bytes. If the
@@ -113,6 +133,46 @@ namespace PdfOxide.Core
                 bool valid = NativeMethods.pdf_certificate_is_valid(_handle, out int err);
                 ExceptionMapper.ThrowIfError(err);
                 return valid;
+            }
+        }
+
+        /// <summary>
+        /// Applies a CMS/PKCS#7 detached signature to <paramref name="pdfData"/> and returns
+        /// the signed PDF bytes. The certificate must have been loaded with a private key
+        /// (e.g. via <see cref="LoadFromPem"/>).
+        /// </summary>
+        /// <param name="pdfData">Raw bytes of the PDF to sign.</param>
+        /// <param name="reason">Optional signature reason (e.g. "Approved"). Pass null to omit.</param>
+        /// <param name="location">Optional signing location (e.g. "Berlin"). Pass null to omit.</param>
+        /// <returns>New byte array containing the signed PDF.</returns>
+        public unsafe byte[] SignPdfBytes(byte[] pdfData, string? reason = null, string? location = null)
+        {
+            ThrowIfDisposed();
+            ArgumentNullException.ThrowIfNull(pdfData);
+            if (pdfData.Length == 0)
+                throw new ArgumentException("PDF data must not be empty.", nameof(pdfData));
+
+            IntPtr certPtr = _handle.Ptr;
+            fixed (byte* pdfPtr = pdfData)
+            {
+                byte* outPtr = NativeMethods.PdfSignBytes(
+                    pdfPtr, (nuint)pdfData.Length,
+                    certPtr,
+                    reason, location,
+                    out nuint outLen, out int err);
+                ExceptionMapper.ThrowIfError(err);
+                if (outPtr == null)
+                    throw new PdfException("pdf_sign_bytes returned null with no error code");
+                try
+                {
+                    var result = new byte[(int)outLen];
+                    Marshal.Copy((IntPtr)outPtr, result, 0, (int)outLen);
+                    return result;
+                }
+                finally
+                {
+                    NativeMethods.FreeBytes((IntPtr)outPtr);
+                }
             }
         }
 

@@ -1268,6 +1268,28 @@ impl WasmCertificate {
         Ok(Self { creds })
     }
 
+    /// Load a signer certificate + private key from PEM strings.
+    /// `certPem` must begin `-----BEGIN CERTIFICATE-----`.
+    /// `keyPem` must begin `-----BEGIN PRIVATE KEY-----` or `-----BEGIN RSA PRIVATE KEY-----`.
+    #[wasm_bindgen(js_name = "loadPem")]
+    pub fn load_pem(cert_pem: &str, key_pem: &str) -> Result<WasmCertificate, JsValue> {
+        let creds = crate::signatures::SigningCredentials::from_pem(cert_pem, key_pem)
+            .map_err(|e| JsValue::from_str(&format!("Failed to load PEM credentials: {e}")))?;
+        Ok(Self { creds })
+    }
+
+    /// Load a signer certificate + private key from a PKCS#12 (.p12/.pfx) blob.
+    /// `password` is the passphrase protecting the key bag.
+    #[wasm_bindgen(js_name = "loadPkcs12")]
+    pub fn load_pkcs12(data: &[u8], password: &str) -> Result<WasmCertificate, JsValue> {
+        if data.is_empty() {
+            return Err(JsValue::from_str("PKCS#12 data must not be empty"));
+        }
+        let creds = crate::signatures::SigningCredentials::from_pkcs12(data, password)
+            .map_err(|e| JsValue::from_str(&format!("Failed to load PKCS#12: {e}")))?;
+        Ok(Self { creds })
+    }
+
     /// Subject distinguished name.
     #[wasm_bindgen(getter)]
     pub fn subject(&self) -> Result<String, JsValue> {
@@ -1311,6 +1333,28 @@ impl WasmCertificate {
             .is_valid()
             .map_err(|e| JsValue::from_str(&format!("{e}")))
     }
+}
+
+/// Sign raw PDF bytes and return the signed PDF as a `Uint8Array`.
+///
+/// `cert` must carry a private key (loaded via `Certificate.loadPem` or
+/// `Certificate.loadPkcs12`).
+#[cfg(feature = "signatures")]
+#[wasm_bindgen(js_name = "signPdfBytes")]
+pub fn wasm_sign_pdf_bytes(
+    pdf_data: &[u8],
+    cert: &WasmCertificate,
+    reason: Option<String>,
+    location: Option<String>,
+) -> Result<Vec<u8>, JsValue> {
+    use crate::signatures::{sign_pdf_bytes, SignOptions};
+    let opts = SignOptions {
+        reason,
+        location,
+        ..Default::default()
+    };
+    sign_pdf_bytes(pdf_data, &cert.creds, opts)
+        .map_err(|e| JsValue::from_str(&format!("signPdfBytes failed: {e}")))
 }
 
 /// RFC 3161 timestamp parsed from a DER TimeStampToken or bare

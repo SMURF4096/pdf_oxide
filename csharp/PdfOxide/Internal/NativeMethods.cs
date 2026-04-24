@@ -4564,6 +4564,24 @@ namespace PdfOxide.Internal
             UIntPtr certSize,
             out int errorCode);
 
+        /// <summary>Load signing credentials from PEM-encoded certificate and private key strings.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_certificate_load_from_pem", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr PdfCertificateLoadFromPem(
+            string certPem, string keyPem, out int errorCode);
+
+        /// <summary>
+        /// Applies a CMS/PKCS#7 detached signature to raw PDF bytes and returns the signed PDF.
+        /// The caller must free the returned buffer with <see cref="FreeBytes"/>.
+        /// </summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_sign_bytes", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial byte* PdfSignBytes(
+            byte* pdfData, nuint pdfLen,
+            IntPtr certificateHandle,
+            string? reason, string? location,
+            out nuint outLen, out int errorCode);
+
         /// <summary>
         /// Gets the common name (CN) from a certificate handle.
         /// </summary>

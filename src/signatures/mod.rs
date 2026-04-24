@@ -50,6 +50,8 @@ mod cms_verify;
 mod crypto;
 mod enumerate;
 mod pdf_date;
+#[cfg(feature = "signatures")]
+mod sign_bytes;
 mod signer;
 #[cfg(feature = "signatures")]
 mod timestamp;
@@ -63,6 +65,8 @@ pub use byterange::ByteRangeCalculator;
 pub use cms::extract_signer_certificate_der;
 #[cfg(feature = "signatures")]
 pub use cms_verify::{verify_signer, verify_signer_detached, SignerVerify};
+#[cfg(feature = "signatures")]
+pub use sign_bytes::sign_pdf_bytes;
 pub use enumerate::{count_signatures, enumerate_signatures};
 pub use pdf_date::parse_pdf_date_to_epoch;
 pub use signer::PdfSigner;
