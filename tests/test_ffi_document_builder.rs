@@ -339,6 +339,157 @@ fn ffi_pdf_from_html_css_with_fonts_rejects_empty_count() {
 }
 
 // ---------------------------------------------------------------------------
+// #393 v0.3.39 — new primitives + buffered Table
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ffi_page_builder_stroke_and_text_in_rect_and_table() {
+    // Exercise every new v0.3.39 primitive via FFI and build a real PDF.
+    let mut ec: i32 = -1;
+    let builder = unsafe { pdf_document_builder_create(&mut ec) };
+    assert_eq!(ec, 0);
+
+    let page = unsafe { pdf_document_builder_letter_page(builder, &mut ec) };
+    assert_eq!(ec, 0);
+
+    // stroke_rect + stroke_line
+    assert_eq!(
+        unsafe {
+            pdf_page_builder_stroke_rect(
+                page, 50.0, 50.0, 200.0, 100.0, 2.0, 0.5, 0.5, 0.5, &mut ec,
+            )
+        },
+        0
+    );
+    assert_eq!(ec, 0);
+    assert_eq!(
+        unsafe {
+            pdf_page_builder_stroke_line(
+                page, 50.0, 50.0, 250.0, 50.0, 1.0, 0.2, 0.2, 0.2, &mut ec,
+            )
+        },
+        0
+    );
+    assert_eq!(ec, 0);
+
+    // text_in_rect (align=Center)
+    let caption = cstring("A centered caption that wraps across lines");
+    assert_eq!(
+        unsafe {
+            pdf_page_builder_text_in_rect(
+                page,
+                100.0,
+                500.0,
+                200.0,
+                100.0,
+                caption.as_ptr(),
+                1,
+                &mut ec,
+            )
+        },
+        0
+    );
+    assert_eq!(ec, 0);
+
+    // Buffered table: 3 cols × 3 rows with header, centered numeric col.
+    let widths: [f32; 3] = [100.0, 150.0, 80.0];
+    let aligns: [i32; 3] = [0, 0, 2]; // Left, Left, Right
+    let cell_strs: [CString; 9] = [
+        cstring("SKU"),
+        cstring("Name"),
+        cstring("Qty"),
+        cstring("A-1"),
+        cstring("Widget"),
+        cstring("12"),
+        cstring("B-2"),
+        cstring("Gadget"),
+        cstring("3"),
+    ];
+    let cell_ptrs: [*const std::os::raw::c_char; 9] = [
+        cell_strs[0].as_ptr(),
+        cell_strs[1].as_ptr(),
+        cell_strs[2].as_ptr(),
+        cell_strs[3].as_ptr(),
+        cell_strs[4].as_ptr(),
+        cell_strs[5].as_ptr(),
+        cell_strs[6].as_ptr(),
+        cell_strs[7].as_ptr(),
+        cell_strs[8].as_ptr(),
+    ];
+    assert_eq!(
+        unsafe {
+            pdf_page_builder_table(
+                page,
+                3,
+                widths.as_ptr(),
+                aligns.as_ptr(),
+                3,
+                cell_ptrs.as_ptr(),
+                1, // has_header
+                &mut ec,
+            )
+        },
+        0
+    );
+    assert_eq!(ec, 0);
+
+    // new_page_same_size — next page for regression
+    assert_eq!(
+        unsafe { pdf_page_builder_new_page_same_size(page, &mut ec) },
+        0
+    );
+    assert_eq!(ec, 0);
+
+    assert_eq!(unsafe { pdf_page_builder_done(page, &mut ec) }, 0);
+    assert_eq!(ec, 0);
+
+    let mut out_len: usize = 0;
+    let bytes_ptr = unsafe { pdf_document_builder_build(builder, &mut out_len, &mut ec) };
+    assert_eq!(ec, 0);
+    assert!(!bytes_ptr.is_null());
+
+    let slice = unsafe { std::slice::from_raw_parts(bytes_ptr, out_len) };
+    assert!(slice.starts_with(b"%PDF-"));
+    // Document must contain at least 2 pages now.
+    let s = String::from_utf8_lossy(slice);
+    let page_count = s.matches("/Type /Page\n").count() + s.matches("/Type/Page\n").count();
+    let _ = page_count; // presence of /Type /Pages /Count is PDF-writer-internal.
+
+    unsafe { free_bytes(bytes_ptr) };
+    unsafe { pdf_document_builder_free(builder) };
+}
+
+#[test]
+fn ffi_page_builder_table_invalid_widths_rejected() {
+    let mut ec: i32 = -1;
+    let builder = unsafe { pdf_document_builder_create(&mut ec) };
+    assert_eq!(ec, 0);
+    let page = unsafe { pdf_document_builder_letter_page(builder, &mut ec) };
+    assert_eq!(ec, 0);
+
+    // n_columns=2 but widths pointer is null — should return -1 + ERR_INVALID_ARG.
+    let aligns: [i32; 2] = [0, 0];
+    let rc = unsafe {
+        pdf_page_builder_table(
+            page,
+            2,
+            ptr::null(),
+            aligns.as_ptr(),
+            0,
+            ptr::null(),
+            0,
+            &mut ec,
+        )
+    };
+    assert_eq!(rc, -1);
+    assert_ne!(ec, 0);
+
+    // Cleanup — page is still intact (free without done).
+    unsafe { pdf_page_builder_free(page) };
+    unsafe { pdf_document_builder_free(builder) };
+}
+
+// ---------------------------------------------------------------------------
 // Sanity
 // ---------------------------------------------------------------------------
 

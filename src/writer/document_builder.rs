@@ -1334,12 +1334,14 @@ impl DocumentBuilder {
     }
 
     /// Number of pages in this document so far. Primarily for tests.
+    #[allow(dead_code)]
     pub(crate) fn page_count(&self) -> usize {
         self.pages.len()
     }
 
     /// Elements already queued on page `idx`. Primarily for tests in
     /// sibling modules that can't see the private `pages` field.
+    #[allow(dead_code)]
     pub(crate) fn page_elements(&self, idx: usize) -> &[ContentElement] {
         &self.pages[idx].elements
     }

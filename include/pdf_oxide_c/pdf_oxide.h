@@ -426,6 +426,55 @@ int   pdf_page_builder_filled_rect(void* page, float x, float y, float w, float 
 int   pdf_page_builder_line(void* page, float x1, float y1, float x2, float y2,
                             int* error_code);
 
+/* v0.3.39 primitives for the buffered Table surface (#393). */
+
+/* Stroked rectangle outline with caller-supplied width + colour. */
+int   pdf_page_builder_stroke_rect(void* page, float x, float y, float w, float h,
+                                   float width, float r, float g, float b,
+                                   int* error_code);
+/* Straight line with caller-supplied width + colour. */
+int   pdf_page_builder_stroke_line(void* page, float x1, float y1, float x2, float y2,
+                                   float width, float r, float g, float b,
+                                   int* error_code);
+
+/* Place wrapped text inside a rectangle with horizontal alignment.
+ * `align`: 0=Left, 1=Center, 2=Right. Anything else treated as Left. */
+int   pdf_page_builder_text_in_rect(void* page, float x, float y, float w, float h,
+                                    const char* text, int align,
+                                    int* error_code);
+
+/* Transition to a new page with the SAME dimensions. text_config
+ * carries over; cursor resets to the top-left margin. Does not
+ * re-draw any header — callers wanting header-repeat-on-break must
+ * re-emit explicitly. */
+int   pdf_page_builder_new_page_same_size(void* page, int* error_code);
+
+/* Place a buffered table at the current cursor.
+ *
+ *  n_columns:    column count.
+ *  widths:       array of length n_columns — column width in points.
+ *  aligns:       array of length n_columns — per-column alignment
+ *                (0=Left, 1=Center, 2=Right).
+ *  n_rows:       number of rows (not counting the header implicitly
+ *                — if has_header != 0 the first row in `cell_strings`
+ *                becomes the header).
+ *  cell_strings: row-major array of C strings, length n_rows * n_columns.
+ *                Each pointer must be a valid UTF-8 C string. NULL
+ *                pointers are treated as empty strings.
+ *  has_header:   0 = body-only, non-0 = promote first row to header
+ *                (bold + default header background).
+ *
+ * Returns 0 on success, -1 on failure. Streaming (O(cols) memory)
+ * is tracked separately; this buffers the whole row matrix. */
+int   pdf_page_builder_table(void* page,
+                             size_t n_columns,
+                             const float* widths,
+                             const int* aligns,
+                             size_t n_rows,
+                             const char* const* cell_strings,
+                             int has_header,
+                             int* error_code);
+
 /* PageBuilder — commit / drop */
 int   pdf_page_builder_done(void* page, int* error_code);
 void  pdf_page_builder_free(void* page);

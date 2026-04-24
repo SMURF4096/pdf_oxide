@@ -6796,6 +6796,43 @@ enum FfiPageOp {
     Rect(f32, f32, f32, f32),
     FilledRect(f32, f32, f32, f32, f32, f32, f32),
     Line(f32, f32, f32, f32),
+    StrokeRect {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        width: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+    },
+    StrokeLine {
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        width: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+    },
+    TextInRect {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        text: String,
+        align: i32, // 0=Left 1=Center 2=Right
+    },
+    NewPageSameSize,
+    /// Buffered `Table` — n_cells = n_rows × n_cols. Cells are stored as
+    /// a flat row-major `Vec<String>`; aligns is per column.
+    Table {
+        widths: Vec<f32>,
+        aligns: Vec<i32>, // per column: 0=Left 1=Center 2=Right
+        rows: Vec<Vec<String>>,
+        has_header: bool,
+    },
 }
 
 /// Parse a stamp-type name into the Rust `StampType` enum. Unknown names
@@ -7722,6 +7759,190 @@ pub extern "C" fn pdf_page_builder_line(
     push_page_op(handle, error_code, FfiPageOp::Line(x1, y1, x2, y2))
 }
 
+/// Buffer a `stroke_rect(x, y, w, h, LineStyle)` call. `width` is the
+/// stroke width in points; `r`/`g`/`b` are 0..1 colour channels.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_stroke_rect(
+    handle: *mut FfiPageBuilder,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    width: f32,
+    r: f32,
+    g: f32,
+    b: f32,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::StrokeRect {
+            x,
+            y,
+            w,
+            h,
+            width,
+            r,
+            g,
+            b,
+        },
+    )
+}
+
+/// Buffer a `stroke_line(p1, p2, LineStyle)` call.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_stroke_line(
+    handle: *mut FfiPageBuilder,
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    width: f32,
+    r: f32,
+    g: f32,
+    b: f32,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::StrokeLine {
+            x1,
+            y1,
+            x2,
+            y2,
+            width,
+            r,
+            g,
+            b,
+        },
+    )
+}
+
+/// Buffer a `text_in_rect(rect, text, align)` call. `align` encodes
+/// 0=Left, 1=Center, 2=Right — anything else is treated as Left.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_text_in_rect(
+    handle: *mut FfiPageBuilder,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    text: *const c_char,
+    align: i32,
+    error_code: *mut i32,
+) -> i32 {
+    if text.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let text_s = match unsafe { CStr::from_ptr(text) }.to_str() {
+        Ok(s) => s.to_string(),
+        Err(_) => {
+            set_error(error_code, ERR_INVALID_ARG);
+            return -1;
+        },
+    };
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::TextInRect {
+            x,
+            y,
+            w,
+            h,
+            text: text_s,
+            align,
+        },
+    )
+}
+
+/// Buffer a `new_page_same_size` transition. Subsequent ops buffered on
+/// this same page handle land on the new page.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_new_page_same_size(
+    handle: *mut FfiPageBuilder,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::NewPageSameSize)
+}
+
+/// Buffer a buffered `table(Table)` call — the whole row matrix is
+/// stored in memory until `pdf_page_builder_done` replays it against the
+/// real FluentPageBuilder.
+///
+/// Cell array is row-major: `cell_strings[row * n_columns + col]`. Each
+/// pointer must be a valid null-terminated UTF-8 C string. `widths` and
+/// `aligns` are both length `n_columns`; `aligns` encodes 0/1/2 (see
+/// `pdf_page_builder_text_in_rect`). `has_header != 0` promotes the
+/// first row to a header (bold + default background).
+///
+/// The streaming variant (row-at-a-time, O(cols) memory) is tracked
+/// separately — see issue #393 step 6.5.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_table(
+    handle: *mut FfiPageBuilder,
+    n_columns: usize,
+    widths: *const f32,
+    aligns: *const i32,
+    n_rows: usize,
+    cell_strings: *const *const c_char,
+    has_header: i32,
+    error_code: *mut i32,
+) -> i32 {
+    if n_columns == 0 {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    if (widths.is_null() && n_columns > 0)
+        || (aligns.is_null() && n_columns > 0)
+        || (cell_strings.is_null() && n_rows > 0)
+    {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let widths_vec: Vec<f32> =
+        unsafe { std::slice::from_raw_parts(widths, n_columns) }.to_vec();
+    let aligns_vec: Vec<i32> =
+        unsafe { std::slice::from_raw_parts(aligns, n_columns) }.to_vec();
+
+    let total = n_rows.saturating_mul(n_columns);
+    let mut rows: Vec<Vec<String>> = Vec::with_capacity(n_rows);
+    if total > 0 {
+        let strings = unsafe { std::slice::from_raw_parts(cell_strings, total) };
+        for row_idx in 0..n_rows {
+            let mut row = Vec::with_capacity(n_columns);
+            for col_idx in 0..n_columns {
+                let ptr = strings[row_idx * n_columns + col_idx];
+                if ptr.is_null() {
+                    row.push(String::new());
+                    continue;
+                }
+                match unsafe { CStr::from_ptr(ptr) }.to_str() {
+                    Ok(s) => row.push(s.to_string()),
+                    Err(_) => {
+                        set_error(error_code, ERR_INVALID_ARG);
+                        return -1;
+                    },
+                }
+            }
+            rows.push(row);
+        }
+    }
+
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::Table {
+            widths: widths_vec,
+            aligns: aligns_vec,
+            rows,
+            has_header: has_header != 0,
+        },
+    )
+}
+
 /// Commit this page's buffered operations to its parent builder and
 /// **consume** the page handle. After a successful call the handle is
 /// invalid; do not call `_free`.
@@ -7827,6 +8048,84 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
                 rust_page.filled_rect(x, y, w, h, r, g, b)
             },
             FfiPageOp::Line(x1, y1, x2, y2) => rust_page.line(x1, y1, x2, y2),
+            FfiPageOp::StrokeRect {
+                x,
+                y,
+                w,
+                h,
+                width,
+                r,
+                g,
+                b,
+            } => rust_page.stroke_rect(
+                x,
+                y,
+                w,
+                h,
+                crate::writer::LineStyle::new(width, r, g, b),
+            ),
+            FfiPageOp::StrokeLine {
+                x1,
+                y1,
+                x2,
+                y2,
+                width,
+                r,
+                g,
+                b,
+            } => rust_page.stroke_line(
+                x1,
+                y1,
+                x2,
+                y2,
+                crate::writer::LineStyle::new(width, r, g, b),
+            ),
+            FfiPageOp::TextInRect {
+                x,
+                y,
+                w,
+                h,
+                text,
+                align,
+            } => {
+                let align_e = match align {
+                    1 => crate::writer::TextAlign::Center,
+                    2 => crate::writer::TextAlign::Right,
+                    _ => crate::writer::TextAlign::Left,
+                };
+                rust_page.text_in_rect(crate::geometry::Rect::new(x, y, w, h), &text, align_e)
+            },
+            FfiPageOp::NewPageSameSize => rust_page.new_page_same_size(),
+            FfiPageOp::Table {
+                widths,
+                aligns,
+                rows,
+                has_header,
+            } => {
+                let cells: Vec<Vec<crate::writer::TableCell>> = rows
+                    .into_iter()
+                    .map(|row| row.into_iter().map(crate::writer::TableCell::text).collect())
+                    .collect();
+                let mut table = crate::writer::Table::new(cells);
+                let col_widths: Vec<crate::writer::ColumnWidth> = widths
+                    .iter()
+                    .map(|&w| crate::writer::ColumnWidth::Fixed(w))
+                    .collect();
+                table = table.with_column_widths(col_widths);
+                let col_aligns: Vec<crate::writer::CellAlign> = aligns
+                    .iter()
+                    .map(|&a| match a {
+                        1 => crate::writer::CellAlign::Center,
+                        2 => crate::writer::CellAlign::Right,
+                        _ => crate::writer::CellAlign::Left,
+                    })
+                    .collect();
+                table.column_aligns = col_aligns;
+                if has_header {
+                    table = table.with_header_row();
+                }
+                rust_page.table(table)
+            },
         };
     }
     rust_page.done();
