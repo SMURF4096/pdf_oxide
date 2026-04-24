@@ -312,6 +312,7 @@ impl<'a> FluentPageBuilder<'a> {
             elements: Vec::new(),
             annotations: Vec::new(),
             form_fields: Vec::new(),
+            form_field_meta: Vec::new(),
         });
 
         // Reset cursor to top-left (mirrors DocumentBuilder::page).
@@ -929,6 +930,7 @@ impl<'a> FluentPageBuilder<'a> {
             rect: Rect::new(x, y, w, h),
             default_value,
         });
+        page.form_field_meta.push(PendingFieldMeta::default());
         self
     }
 
@@ -949,6 +951,7 @@ impl<'a> FluentPageBuilder<'a> {
             rect: Rect::new(x, y, w, h),
             checked,
         });
+        page.form_field_meta.push(PendingFieldMeta::default());
         self
     }
 
@@ -973,6 +976,7 @@ impl<'a> FluentPageBuilder<'a> {
             options,
             selected,
         });
+        page.form_field_meta.push(PendingFieldMeta::default());
         self
     }
 
@@ -1004,6 +1008,7 @@ impl<'a> FluentPageBuilder<'a> {
             selected,
             multi_select,
         });
+        page.form_field_meta.push(PendingFieldMeta::default());
         self
     }
 
@@ -1027,6 +1032,7 @@ impl<'a> FluentPageBuilder<'a> {
             buttons,
             selected,
         });
+        page.form_field_meta.push(PendingFieldMeta::default());
         self
     }
 
@@ -1046,6 +1052,40 @@ impl<'a> FluentPageBuilder<'a> {
             rect: Rect::new(x, y, w, h),
             caption: caption.into(),
         });
+        page.form_field_meta.push(PendingFieldMeta::default());
+        self
+    }
+
+    /// Mark the most-recently-added form field on this page as
+    /// **required**. Chainable after any `text_field` / `checkbox` /
+    /// `combo_box` / `list_box` / `radio_group` / `push_button` /
+    /// (future) `signature_field` call. No-op if no field has been
+    /// added yet. #393 Bundle D-3.
+    pub fn required(self) -> Self {
+        let page = &mut self.builder.pages[self.page_index];
+        if let Some(meta) = page.form_field_meta.last_mut() {
+            meta.required = true;
+        }
+        self
+    }
+
+    /// Mark the most-recently-added form field as **read-only**
+    /// (displayed but not editable in the reader).
+    pub fn read_only(self) -> Self {
+        let page = &mut self.builder.pages[self.page_index];
+        if let Some(meta) = page.form_field_meta.last_mut() {
+            meta.read_only = true;
+        }
+        self
+    }
+
+    /// Attach a **tooltip** (hover text, `/TU` in the field dict) to
+    /// the most-recently-added form field.
+    pub fn tooltip(self, text: impl Into<String>) -> Self {
+        let page = &mut self.builder.pages[self.page_index];
+        if let Some(meta) = page.form_field_meta.last_mut() {
+            meta.tooltip = Some(text.into());
+        }
         self
     }
 
@@ -1554,6 +1594,18 @@ impl<'a> FluentPageBuilder<'a> {
 /// Buffered form-field widget added by `FluentPageBuilder::text_field`
 /// etc. Applied to the underlying `pdf_writer::PageBuilder` inside
 /// `DocumentBuilder::build`.
+/// Metadata flags that apply to any form-field widget. Attached to
+/// each `PendingFormField` at push time; mutated after-the-fact by
+/// the fluent `.required()` / `.read_only()` / `.tooltip(s)` methods,
+/// which target the most-recently-added field on the current page.
+/// #393 Bundle D-3.
+#[derive(Debug, Clone, Default)]
+struct PendingFieldMeta {
+    required: bool,
+    read_only: bool,
+    tooltip: Option<String>,
+}
+
 enum PendingFormField {
     /// A simple single-line text field.
     TextField {
@@ -1606,6 +1658,9 @@ struct PageData {
     elements: Vec<ContentElement>,
     annotations: Vec<Annotation>,
     form_fields: Vec<PendingFormField>,
+    /// Per-field metadata, parallel to `form_fields`. Index i applies
+    /// to form_fields[i]. #393 Bundle D-3.
+    form_field_meta: Vec<PendingFieldMeta>,
 }
 
 /// High-level document builder with fluent API.
@@ -1727,6 +1782,7 @@ impl DocumentBuilder {
                 elements: Vec::new(),
                 annotations: Vec::new(),
                 form_fields: Vec::new(),
+            form_field_meta: Vec::new(),
             },
         );
 
@@ -1927,6 +1983,7 @@ impl DocumentBuilder {
             elements: Vec::new(),
             annotations: Vec::new(),
             form_fields: Vec::new(),
+            form_field_meta: Vec::new(),
         });
         FluentPageBuilder {
             builder: self,
@@ -2130,20 +2187,35 @@ impl DocumentBuilder {
             // 4. Emit form-field widgets. Each pending entry translates
             //    into the appropriate `pdf_writer::PageBuilder::add_*`
             //    call so the field lands in /AcroForm at finalize time.
-            for field in &page_data.form_fields {
+            //    Metadata (required / read_only / tooltip) from the
+            //    parallel `form_field_meta` vec is applied to each
+            //    widget before the `add_*` call — #393 Bundle D-3.
+            for (field_idx, field) in page_data.form_fields.iter().enumerate() {
                 use super::form_fields::{CheckboxWidget, TextFieldWidget};
+                let meta = page_data
+                    .form_field_meta
+                    .get(field_idx)
+                    .cloned()
+                    .unwrap_or_default();
                 match field {
                     PendingFormField::TextField {
                         name,
                         rect,
                         default_value,
                     } => {
-                        let widget = TextFieldWidget::new(name.clone(), *rect);
-                        let widget = if let Some(default) = default_value {
-                            widget.with_default_value(default.clone())
-                        } else {
-                            widget
-                        };
+                        let mut widget = TextFieldWidget::new(name.clone(), *rect);
+                        if let Some(default) = default_value {
+                            widget = widget.with_default_value(default.clone());
+                        }
+                        if meta.required {
+                            widget = widget.required();
+                        }
+                        if meta.read_only {
+                            widget = widget.read_only();
+                        }
+                        if let Some(tip) = &meta.tooltip {
+                            widget = widget.with_tooltip(tip.clone());
+                        }
                         page.add_text_field(widget);
                     },
                     PendingFormField::Checkbox {
@@ -2151,8 +2223,19 @@ impl DocumentBuilder {
                         rect,
                         checked,
                     } => {
-                        let widget = CheckboxWidget::new(name.clone(), *rect);
-                        let widget = if *checked { widget.checked() } else { widget };
+                        let mut widget = CheckboxWidget::new(name.clone(), *rect);
+                        if *checked {
+                            widget = widget.checked();
+                        }
+                        if meta.required {
+                            widget = widget.required();
+                        }
+                        if meta.read_only {
+                            widget = widget.read_only();
+                        }
+                        if let Some(tip) = &meta.tooltip {
+                            widget = widget.with_tooltip(tip.clone());
+                        }
                         page.add_checkbox(widget);
                     },
                     PendingFormField::ComboBox {
@@ -2730,6 +2813,29 @@ mod tests {
 
         // Bezier: stroke only (fill None).
         assert!(paths[4].stroke_color.is_some() && paths[4].fill_color.is_none());
+    }
+
+    #[test]
+    fn test_field_metadata_required_readonly_tooltip() {
+        let mut doc = DocumentBuilder::new();
+        doc.letter_page()
+            .text_field("email", 72.0, 600.0, 200.0, 20.0, None)
+            .required()
+            .tooltip("Your email address")
+            .checkbox("terms", 72.0, 570.0, 15.0, 15.0, false)
+            .read_only()
+            .done();
+        let bytes = doc.build().expect("build");
+        let s = String::from_utf8_lossy(&bytes);
+        assert!(s.contains("/TU"), "tooltip (/TU) missing");
+        assert!(s.contains("/Ff"), "field flag (/Ff) missing");
+    }
+
+    #[test]
+    fn test_field_metadata_methods_are_no_ops_before_any_field() {
+        let mut doc = DocumentBuilder::new();
+        doc.letter_page().required().read_only().tooltip("x").done();
+        let _ = doc.build().expect("build");
     }
 
     #[test]
