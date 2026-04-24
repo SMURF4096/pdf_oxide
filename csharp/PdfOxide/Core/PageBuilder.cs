@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
 using PdfOxide.Exceptions;
 using PdfOxide.Internal;
 
@@ -21,6 +24,14 @@ namespace PdfOxide.Core
         private readonly DocumentBuilder _parent;
         private IntPtr _handle;
         private bool _done;
+        // Mirror of the last Font(name, size) set on this page and the
+        // last At(y) cursor, used by the heuristic Measure /
+        // RemainingSpace helpers. Kept in managed state because
+        // v0.3.39 has no FFI for font-metric queries or cursor
+        // readback (tracked as follow-up; see the Measure docstring).
+        private string _lastFontName = "Helvetica";
+        private float _lastFontSize = 12f;
+        private float _lastCursorY = float.NaN;
 
         internal PageBuilder(DocumentBuilder parent, IntPtr handle)
         {
@@ -45,6 +56,8 @@ namespace PdfOxide.Core
             ArgumentNullException.ThrowIfNull(name);
             NativeMethods.PdfPageBuilderFont(Handle, name, size, out var ec);
             ExceptionMapper.ThrowIfError(ec);
+            _lastFontName = name;
+            _lastFontSize = size;
             return this;
         }
 
@@ -53,6 +66,7 @@ namespace PdfOxide.Core
         {
             NativeMethods.PdfPageBuilderAt(Handle, x, y, out var ec);
             ExceptionMapper.ThrowIfError(ec);
+            _lastCursorY = y;
             return this;
         }
 
@@ -394,6 +408,242 @@ namespace PdfOxide.Core
             NativeMethods.PdfPageBuilderLine(Handle, x1, y1, x2, y2, out var ec);
             ExceptionMapper.ThrowIfError(ec);
             return this;
+        }
+
+        // --- v0.3.39 primitives (#393) -------------------------------------
+
+        /// <summary>
+        /// Draw a stroked rectangle with caller-supplied line width
+        /// and RGB colour (channels 0–1).
+        /// </summary>
+        public PageBuilder StrokeRect(float x, float y, float w, float h,
+            float width = 1f, float r = 0f, float g = 0f, float b = 0f)
+        {
+            NativeMethods.PdfPageBuilderStrokeRect(Handle, x, y, w, h, width, r, g, b, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
+        /// <summary>
+        /// Draw a line from (x1, y1) to (x2, y2) with caller-supplied
+        /// line width and RGB colour (channels 0–1).
+        /// </summary>
+        public PageBuilder StrokeLine(float x1, float y1, float x2, float y2,
+            float width = 1f, float r = 0f, float g = 0f, float b = 0f)
+        {
+            NativeMethods.PdfPageBuilderStrokeLine(Handle, x1, y1, x2, y2, width, r, g, b, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
+        /// <summary>
+        /// Place word-wrapped text inside the rectangle (x, y, w, h)
+        /// with the given horizontal alignment.
+        /// </summary>
+        /// <remarks>
+        /// Text is flowed using the current font; overflow past the
+        /// rectangle's lower edge is clipped (not auto-paginated —
+        /// pair with <see cref="NewPageSameSize"/> if you need manual
+        /// pagination).
+        /// </remarks>
+        public PageBuilder TextInRect(float x, float y, float w, float h,
+            string text, Alignment align = Alignment.Left)
+        {
+            ArgumentNullException.ThrowIfNull(text);
+            NativeMethods.PdfPageBuilderTextInRect(Handle, x, y, w, h, text, (int)align, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
+        /// <summary>
+        /// Transition to a new page with the same dimensions and font
+        /// configuration as the current one.
+        /// </summary>
+        /// <remarks>
+        /// Cursor resets to the top-left margin. Any repeating header
+        /// must be re-emitted explicitly by the caller.
+        /// </remarks>
+        public PageBuilder NewPageSameSize()
+        {
+            NativeMethods.PdfPageBuilderNewPageSameSize(Handle, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            _lastCursorY = float.NaN;
+            return this;
+        }
+
+        /// <summary>
+        /// Approximate the width in points required to render
+        /// <paramref name="text"/> at the current font + size.
+        /// </summary>
+        /// <remarks>
+        /// <strong>v0.3.39 limitation:</strong> no font-metric FFI is
+        /// available yet, so this returns a heuristic estimate using
+        /// the current <see cref="Font(string, float)"/> size and an
+        /// average-glyph-width factor of 0.5 (0.6 for monospaced
+        /// font names). Accurate per-glyph measurement is tracked as
+        /// a follow-up to #393. The signature is stable — consuming
+        /// code will transparently get exact measurements once the
+        /// FFI lands.
+        /// </remarks>
+        public float Measure(string text)
+        {
+            ArgumentNullException.ThrowIfNull(text);
+            float factor = IsMonospace(_lastFontName) ? 0.6f : 0.5f;
+            return text.Length * _lastFontSize * factor;
+        }
+
+        /// <summary>
+        /// Approximate the vertical space remaining between the last
+        /// cursor position set via <see cref="At(float, float)"/> and
+        /// the bottom-of-page margin (72 pt default).
+        /// </summary>
+        /// <remarks>
+        /// <strong>v0.3.39 limitation:</strong> the cursor value is
+        /// mirrored in managed state from the most recent
+        /// <see cref="At(float, float)"/> call — layout-advancing ops
+        /// (<see cref="Text(string)"/>, <see cref="Paragraph(string)"/>,
+        /// etc.) are NOT tracked. Returns <c>float.NaN</c> if the
+        /// caller has not invoked <see cref="At(float, float)"/> yet.
+        /// A precise FFI query is planned alongside the streaming
+        /// Table surface (#393 step 6.5).
+        /// </remarks>
+        public float RemainingSpace()
+        {
+            if (float.IsNaN(_lastCursorY)) return float.NaN;
+            const float bottomMargin = 72f;
+            return _lastCursorY - bottomMargin;
+        }
+
+        private static bool IsMonospace(string fontName)
+        {
+            if (string.IsNullOrEmpty(fontName)) return false;
+            return fontName.Contains("Courier", StringComparison.OrdinalIgnoreCase)
+                || fontName.Contains("Mono", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Place a buffered table at the current cursor position.
+        /// Column widths, alignments, and cell contents are taken from
+        /// <paramref name="spec"/>.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Every row in <see cref="TableSpec.Rows"/> must have exactly
+        /// <c>Columns.Count</c> cells. <see langword="null"/> cells
+        /// render as empty strings.
+        /// </para>
+        /// <para>
+        /// Memory is <c>O(rows * columns)</c>. Use
+        /// <see cref="StreamingTable(System.Collections.Generic.IReadOnlyList{Column}, bool)"/>
+        /// when you'd rather append rows one at a time; note that the
+        /// streaming adapter still buffers internally in v0.3.39.
+        /// </para>
+        /// </remarks>
+        public unsafe PageBuilder Table(TableSpec spec)
+        {
+            ArgumentNullException.ThrowIfNull(spec);
+            ArgumentNullException.ThrowIfNull(spec.Columns);
+            if (spec.Columns.Count == 0)
+                throw new ArgumentException("spec.Columns must be non-empty", nameof(spec));
+            if (spec.Rows == null)
+                throw new ArgumentException("spec.Rows must not be null", nameof(spec));
+
+            int nCols = spec.Columns.Count;
+            int nRows = spec.Rows.Count;
+
+            // Validate row widths up front so we don't leak half-encoded buffers.
+            for (int r = 0; r < nRows; r++)
+            {
+                var row = spec.Rows[r];
+                if (row == null || row.Count != nCols)
+                    throw new ArgumentException(
+                        $"row {r} has {row?.Count ?? 0} cells, expected {nCols}",
+                        nameof(spec));
+            }
+
+            var widths = new float[nCols];
+            var aligns = new int[nCols];
+            for (int c = 0; c < nCols; c++)
+            {
+                widths[c] = spec.Columns[c].Width;
+                aligns[c] = (int)spec.Columns[c].Align;
+            }
+
+            // If HasHeader, the first logical row in cell_strings is the
+            // header — synthesise it from the column labels.
+            int totalRows = spec.HasHeader ? nRows + 1 : nRows;
+            int totalCells = totalRows * nCols;
+
+            var cellBytes = new byte[totalCells][];
+            int idx = 0;
+            if (spec.HasHeader)
+            {
+                for (int c = 0; c < nCols; c++)
+                    cellBytes[idx++] = Encoding.UTF8.GetBytes((spec.Columns[c].Header ?? string.Empty) + "\0");
+            }
+            for (int r = 0; r < nRows; r++)
+            {
+                var row = spec.Rows[r];
+                for (int c = 0; c < nCols; c++)
+                    cellBytes[idx++] = Encoding.UTF8.GetBytes((row[c] ?? string.Empty) + "\0");
+            }
+
+            var handles = new GCHandle[totalCells];
+            var pointers = new IntPtr[totalCells];
+            GCHandle ptrsH = default, widthsH = default, alignsH = default;
+            try
+            {
+                for (int i = 0; i < totalCells; i++)
+                {
+                    handles[i] = GCHandle.Alloc(cellBytes[i], GCHandleType.Pinned);
+                    pointers[i] = handles[i].AddrOfPinnedObject();
+                }
+                ptrsH = GCHandle.Alloc(pointers, GCHandleType.Pinned);
+                widthsH = GCHandle.Alloc(widths, GCHandleType.Pinned);
+                alignsH = GCHandle.Alloc(aligns, GCHandleType.Pinned);
+
+                NativeMethods.PdfPageBuilderTable(
+                    Handle,
+                    (nuint)nCols,
+                    (float*)widthsH.AddrOfPinnedObject(),
+                    (int*)alignsH.AddrOfPinnedObject(),
+                    (nuint)totalRows,
+                    (byte**)ptrsH.AddrOfPinnedObject(),
+                    spec.HasHeader ? 1 : 0,
+                    out var ec);
+                ExceptionMapper.ThrowIfError(ec);
+            }
+            finally
+            {
+                if (ptrsH.IsAllocated) ptrsH.Free();
+                if (widthsH.IsAllocated) widthsH.Free();
+                if (alignsH.IsAllocated) alignsH.Free();
+                for (int i = 0; i < totalCells; i++)
+                    if (handles[i].IsAllocated) handles[i].Free();
+            }
+            return this;
+        }
+
+        /// <summary>
+        /// Open a streaming-table handle for the given columns. Rows
+        /// are appended one at a time via
+        /// <see cref="StreamingTable.AddRow(string[])"/> and flushed
+        /// to the page on <see cref="StreamingTable.Build"/>.
+        /// </summary>
+        /// <param name="columns">Column specifications.</param>
+        /// <param name="repeatHeader">Draw the header row on every
+        /// page break (currently always <see langword="true"/> at the
+        /// FFI level — accepted for forward compatibility).</param>
+        /// <remarks>
+        /// See <see cref="StreamingTable"/> for the v0.3.39 buffering
+        /// caveat.
+        /// </remarks>
+        public StreamingTable StreamingTable(IReadOnlyList<Column> columns, bool repeatHeader = true)
+        {
+            ArgumentNullException.ThrowIfNull(columns);
+            if (columns.Count == 0)
+                throw new ArgumentException("columns must be non-empty", nameof(columns));
+            return new StreamingTable(this, columns, repeatHeader);
         }
 
         /// <summary>

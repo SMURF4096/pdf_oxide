@@ -7020,6 +7020,52 @@ namespace PdfOxide.Internal
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial int PdfPageBuilderLine(IntPtr page, float x1, float y1, float x2, float y2, out int errorCode);
 
+        // v0.3.39 primitives (#393) — buffered Table surface ------------------
+
+        /// <summary>Draw a stroked rectangle with caller-supplied width + RGB colour.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_stroke_rect", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderStrokeRect(
+            IntPtr page, float x, float y, float w, float h,
+            float width, float r, float g, float b,
+            out int errorCode);
+
+        /// <summary>Draw a straight line with caller-supplied width + RGB colour.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_stroke_line", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderStrokeLine(
+            IntPtr page, float x1, float y1, float x2, float y2,
+            float width, float r, float g, float b,
+            out int errorCode);
+
+        /// <summary>Place wrapped text inside a rectangle with horizontal alignment (0=Left,1=Center,2=Right).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_text_in_rect", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderTextInRect(
+            IntPtr page, float x, float y, float w, float h,
+            string text, int align, out int errorCode);
+
+        /// <summary>Transition to a new page with the same dimensions as the current one.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_new_page_same_size", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderNewPageSameSize(IntPtr page, out int errorCode);
+
+        /// <summary>
+        /// Place a buffered table at the current cursor. <c>cellStrings</c>
+        /// is a row-major array of UTF-8 C strings of length <c>nRows * nColumns</c>.
+        /// </summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_table", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial int PdfPageBuilderTable(
+            IntPtr page,
+            nuint nColumns,
+            float* widths,
+            int* aligns,
+            nuint nRows,
+            byte** cellStrings,
+            int hasHeader,
+            out int errorCode);
+
         /// <summary>Commit the page and CONSUME the page handle.</summary>
         [LibraryImport(LibName, EntryPoint = "pdf_page_builder_done", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
