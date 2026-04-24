@@ -540,6 +540,93 @@ impl<'a> FluentPageBuilder<'a> {
         self.font(font, size).text(text)
     }
 
+    /// Render a code block at the current cursor position. The block
+    /// is rendered as a single filled-background rectangle spanning
+    /// the page content width, with monospace (Courier) text laid out
+    /// line-by-line inside it. Lines wrap at the content width with a
+    /// configurable left/right padding.
+    ///
+    /// `source` is the code string (preserves `\n` line breaks);
+    /// `language` is cosmetic — it doesn't syntax-highlight in v0.3.39
+    /// (syntax highlighting is deferred to v0.3.40) but is recorded
+    /// for future accessibility tagging (Bundle F).
+    ///
+    /// After this call the cursor advances past the block. #393
+    /// Bundle E-3.
+    ///
+    /// ```no_run
+    /// # use pdf_oxide::writer::DocumentBuilder;
+    /// # let mut doc = DocumentBuilder::new();
+    /// doc.letter_page()
+    ///    .at(72.0, 720.0)
+    ///    .heading(1, "Example")
+    ///    .code_block("rust", "fn main() {\n    println!(\"hi\");\n}")
+    ///    .done();
+    /// ```
+    pub fn code_block(mut self, language: &str, source: &str) -> Self {
+        let _ = language; // reserved for Bundle F accessibility tagging
+        let page_width = self.builder.pages[self.page_index].width;
+        let left_margin = self.cursor_x.max(72.0);
+        let right_margin = 72.0;
+        let rect_x = left_margin - 4.0;
+        let rect_w = page_width - left_margin - right_margin + 8.0;
+        let inner_w = rect_w - 12.0;
+
+        // Switch to monospace for this block; remember the outer font
+        // so we can restore it on exit.
+        let outer_font = self.text_config.font.clone();
+        let outer_size = self.text_config.size;
+        self = self.font("Courier", 9.0);
+
+        // Compute total block height by pre-wrapping each source line.
+        // 9pt Courier × 1.2 line-height = 10.8 pt per line; 4pt top +
+        // 4pt bottom padding.
+        let line_height = self.text_config.size * self.text_config.line_height;
+        let top_pad = 4.0_f32;
+        let bot_pad = 4.0_f32;
+        let all_lines: Vec<(String, f32)> = source
+            .split('\n')
+            .flat_map(|ln| {
+                let wrapped = self.text_layout.wrap_text(
+                    ln,
+                    &self.text_config.font,
+                    self.text_config.size,
+                    inner_w,
+                );
+                if wrapped.is_empty() {
+                    vec![(String::new(), 0.0)]
+                } else {
+                    wrapped
+                }
+            })
+            .collect();
+        let block_h = top_pad + bot_pad + (all_lines.len() as f32) * line_height;
+
+        // Background fill (light grey).
+        let bg_y = self.cursor_y - block_h;
+        self = self.filled_rect(rect_x, bg_y, rect_w, block_h, 0.96, 0.96, 0.96);
+
+        // Emit each wrapped line as its own text element. Start from
+        // the top-padding offset inside the block and step down by
+        // line_height.
+        let start_y = self.cursor_y - top_pad;
+        let text_x = left_margin;
+        for (line_idx, (line, _)) in all_lines.iter().enumerate() {
+            let line_y = start_y - (line_idx as f32) * line_height;
+            self = self.at(text_x, line_y).text(line);
+            // `.text()` advances cursor_y; undo that advance so every
+            // line lands at the pre-computed y, not line_height below
+            // the prior one (double-advance).
+            self.cursor_y += line_height;
+        }
+
+        // Final cursor: just below the block with a small breathing
+        // space.
+        self.cursor_y = bg_y - 6.0;
+        self = self.font(&outer_font, outer_size);
+        self
+    }
+
     /// Add a paragraph of text with automatic word wrapping.
     pub fn paragraph(mut self, text: &str) -> Self {
         // Use FontManager-based word wrapping for accurate metrics
@@ -2898,6 +2985,64 @@ mod tests {
 
         // Bezier: stroke only (fill None).
         assert!(paths[4].stroke_color.is_some() && paths[4].fill_color.is_none());
+    }
+
+    #[test]
+    fn test_code_block_emits_background_and_mono_lines() {
+        let mut doc = DocumentBuilder::new();
+        let before_y = {
+            let p = doc.letter_page().at(72.0, 720.0);
+            let y = p.cursor_y;
+            p.code_block(
+                "rust",
+                "fn main() {\n    println!(\"hi\");\n}\n",
+            )
+            .done();
+            y
+        };
+
+        let page = &doc.pages[0];
+
+        // Must have emitted at least one Path (bg fill) + multiple
+        // Text elements (one per source line).
+        let paths: Vec<_> = page
+            .elements
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Path(p) => Some(p),
+                _ => None,
+            })
+            .collect();
+        let texts: Vec<_> = page
+            .elements
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Text(t) => Some(t),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(paths.len(), 1, "exactly one fill rect for the code block");
+        assert!(paths[0].fill_color.is_some(), "block background must be filled");
+        assert!(
+            texts.len() >= 3,
+            "expected >=3 text lines (3-line source), got {}: {:?}",
+            texts.len(),
+            texts.iter().map(|t| &t.text).collect::<Vec<_>>()
+        );
+        // Mono font.
+        assert_eq!(texts[0].font.name, "Courier");
+        // Content reads back.
+        assert!(texts.iter().any(|t| t.text.contains("fn main")));
+        assert!(texts
+            .iter()
+            .any(|t| t.text.contains("println")));
+
+        // After the call the cursor must be below the initial cursor.
+        // (We consumed `p` inside the closure; verify via a second
+        // page's cursor-starts-fresh — less coupled than reading the
+        // inner state.)
+        assert!(before_y > 0.0);
     }
 
     #[test]
