@@ -155,6 +155,43 @@ impl Default for TextConfig {
     }
 }
 
+/// Stroke style for line-drawing primitives (`stroke_rect`, `stroke_line`).
+///
+/// Introduced alongside the buffered `Table` surface so cell borders and
+/// row rules can have explicit thickness and colour without forcing users
+/// through the lower-level `ContentElement::Path` builder.
+///
+/// **Dash patterns are not in scope for v0.3.39** — the content-stream
+/// writer does not yet emit `d` (set-dash) ops. Track: issue #400 v0.3.40
+/// follow-ups.
+#[derive(Debug, Clone, Copy)]
+pub struct LineStyle {
+    /// Stroke width in points. Must be > 0.
+    pub width: f32,
+    /// RGB colour, each channel in `0.0..=1.0`.
+    pub color: (f32, f32, f32),
+}
+
+impl Default for LineStyle {
+    fn default() -> Self {
+        Self {
+            width: 1.0,
+            color: (0.0, 0.0, 0.0),
+        }
+    }
+}
+
+impl LineStyle {
+    /// Construct a `LineStyle` from a width (points) and RGB colour
+    /// channels (each `0.0..=1.0`).
+    pub fn new(width: f32, r: f32, g: f32, b: f32) -> Self {
+        Self {
+            width,
+            color: (r, g, b),
+        }
+    }
+}
+
 /// Page builder for adding content to a page with fluent API.
 pub struct FluentPageBuilder<'a> {
     builder: &'a mut DocumentBuilder,
@@ -837,6 +874,58 @@ impl<'a> FluentPageBuilder<'a> {
     // `ContentElement::Path` builder is ergonomically bad across 6
     // bindings.
     // ───────────────────────────────────────────────────────────────────
+
+    /// Draw a stroked rectangle with a caller-supplied `LineStyle`.
+    /// Unlike [`Self::rect`] (1pt black default), this exposes width and
+    /// colour. Used by the upcoming buffered `Table` surface for per-side
+    /// coloured / variable-thickness cell borders (#393 D-P1.3).
+    pub fn stroke_rect(self, x: f32, y: f32, w: f32, h: f32, style: LineStyle) -> Self {
+        use crate::elements::PathContent;
+        use crate::elements::PathOperation;
+        let mut path = PathContent::new(Rect::new(x, y, w, h));
+        path.operations.push(PathOperation::Rectangle(x, y, w, h));
+        path.stroke_color = Some(crate::layout::Color {
+            r: style.color.0,
+            g: style.color.1,
+            b: style.color.2,
+        });
+        path.fill_color = None;
+        path.stroke_width = style.width;
+        let page = &mut self.builder.pages[self.page_index];
+        page.elements.push(ContentElement::Path(path));
+        self
+    }
+
+    /// Draw a straight line with a caller-supplied `LineStyle`. Variable-
+    /// thickness / coloured rules — e.g. a 0.5pt grey rule between rows.
+    pub fn stroke_line(
+        self,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        style: LineStyle,
+    ) -> Self {
+        use crate::elements::PathContent;
+        use crate::elements::PathOperation;
+        let min_x = x1.min(x2);
+        let min_y = y1.min(y2);
+        let w = (x2 - x1).abs().max(1.0);
+        let h = (y2 - y1).abs().max(1.0);
+        let mut path = PathContent::new(Rect::new(min_x, min_y, w, h));
+        path.operations.push(PathOperation::MoveTo(x1, y1));
+        path.operations.push(PathOperation::LineTo(x2, y2));
+        path.stroke_color = Some(crate::layout::Color {
+            r: style.color.0,
+            g: style.color.1,
+            b: style.color.2,
+        });
+        path.fill_color = None;
+        path.stroke_width = style.width;
+        let page = &mut self.builder.pages[self.page_index];
+        page.elements.push(ContentElement::Path(path));
+        self
+    }
 
     /// Draw a stroked rectangle outline at `(x, y)` with size `w × h`
     /// using the default 1pt black stroke. For a filled rectangle with
@@ -1594,6 +1683,66 @@ mod tests {
             big,
             small
         );
+    }
+
+    #[test]
+    fn test_stroke_rect_emits_path_with_style() {
+        // stroke_rect must push a Path element with the supplied width and
+        // colour, fill unset, so downstream PDF emission does `S` (stroke
+        // only) not `B` (stroke + fill).
+        let mut doc = DocumentBuilder::new();
+        doc.letter_page()
+            .stroke_rect(50.0, 50.0, 200.0, 100.0, LineStyle::new(2.5, 0.8, 0.2, 0.1))
+            .done();
+
+        let page = &doc.pages[0];
+        let paths: Vec<_> = page
+            .elements
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Path(p) => Some(p),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(paths.len(), 1);
+        let p = paths[0];
+        assert_eq!(p.stroke_width, 2.5);
+        let c = p.stroke_color.expect("stroke color must be set");
+        assert!((c.r - 0.8).abs() < 1e-6 && (c.g - 0.2).abs() < 1e-6 && (c.b - 0.1).abs() < 1e-6);
+        assert!(p.fill_color.is_none(), "stroke_rect must not fill");
+    }
+
+    #[test]
+    fn test_stroke_line_emits_path_with_style() {
+        let mut doc = DocumentBuilder::new();
+        doc.letter_page()
+            .stroke_line(10.0, 100.0, 500.0, 100.0, LineStyle::new(0.5, 0.5, 0.5, 0.5))
+            .done();
+
+        let page = &doc.pages[0];
+        let paths: Vec<_> = page
+            .elements
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Path(p) => Some(p),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(paths.len(), 1);
+        let p = paths[0];
+        assert_eq!(p.stroke_width, 0.5);
+        let c = p.stroke_color.expect("stroke color must be set");
+        assert!(
+            (c.r - 0.5).abs() < 1e-6 && (c.g - 0.5).abs() < 1e-6 && (c.b - 0.5).abs() < 1e-6
+        );
+        assert!(p.fill_color.is_none());
+    }
+
+    #[test]
+    fn test_line_style_default() {
+        let s = LineStyle::default();
+        assert_eq!(s.width, 1.0);
+        assert_eq!(s.color, (0.0, 0.0, 0.0));
     }
 
     #[test]
