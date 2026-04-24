@@ -4044,6 +4044,10 @@ enum PendingPageOp {
         w: f32,
         h: f32,
     },
+    Footnote {
+        ref_mark: String,
+        note_text: String,
+    },
     Rect(f32, f32, f32, f32),
     FilledRect(f32, f32, f32, f32, f32, f32, f32),
     Line(f32, f32, f32, f32),
@@ -4941,6 +4945,17 @@ impl PyFluentPageBuilder {
         Ok(slf)
     }
 
+    /// Add a footnote: inline `ref_mark` at the cursor + `note_text` body
+    /// placed near the page bottom with a separator artifact line.
+    fn footnote<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        ref_mark: String,
+        note_text: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::Footnote { ref_mark, note_text })?;
+        Ok(slf)
+    }
+
     /// Place a 1-D barcode image at `(x, y, w, h)` on the page.
     /// `barcode_type`: 0=Code128 1=Code39 2=EAN13 3=EAN8 4=UPCA 5=ITF
     /// 6=Code93 7=Codabar. Errors surface here (at call time), not at
@@ -5309,6 +5324,9 @@ impl PyFluentPageBuilder {
                 } => page.push_button(name, x, y, w, h, caption),
                 PendingPageOp::SignatureField { name, x, y, w, h } => {
                     page.signature_field(name, x, y, w, h)
+                },
+                PendingPageOp::Footnote { ref_mark, note_text } => {
+                    page.footnote(&ref_mark, &note_text)
                 },
                 PendingPageOp::Rect(x, y, w, h) => page.rect(x, y, w, h),
                 PendingPageOp::FilledRect(x, y, w, h, r, g, b) => {

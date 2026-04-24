@@ -435,6 +435,7 @@ impl<'a> FluentPageBuilder<'a> {
             tab_order: None,
             page_open_script: None,
             page_close_script: None,
+            pending_footnotes: Vec::new(),
         });
 
         // Reset cursor to top-left (mirrors DocumentBuilder::page).
@@ -869,6 +870,7 @@ impl<'a> FluentPageBuilder<'a> {
                 dash_pattern: None,
                 matrix: None,
                 reading_order: None,
+                artifact_type: None,
             }));
         self.cursor_y -= self.text_config.size;
         self
@@ -885,6 +887,57 @@ impl<'a> FluentPageBuilder<'a> {
     pub fn elements(self, elements: Vec<ContentElement>) -> Self {
         let page = &mut self.builder.pages[self.page_index];
         page.elements.extend(elements);
+        self
+    }
+
+    /// Add a footnote reference mark at the current cursor position and
+    /// record the corresponding footnote body for page-end placement.
+    ///
+    /// The `ref_mark` (e.g. `"¹"` or `"[1]"`) is emitted inline at 65 %
+    /// of the current font size. The `note_text` body is collected and
+    /// rendered below a separator line near the page bottom when the page
+    /// is finalised in `DocumentBuilder::build`. In tagged PDF/UA mode the
+    /// body is automatically wrapped in a `<Note>` structure element.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// page.at(72.0, 700.0)
+    ///     .text("Important claim")
+    ///     .footnote("¹", "Source: Annual report 2025.")
+    ///     .text(" continued here.")
+    ///     .done()
+    /// ```
+    pub fn footnote(mut self, ref_mark: &str, note_text: &str) -> Self {
+        let base_size = self.text_config.size;
+        let ref_size = (base_size * 0.65).max(6.0);
+
+        let ref_w = self.text_layout.font_manager().text_width(
+            ref_mark,
+            &self.text_config.font,
+            ref_size,
+        );
+
+        let page = &mut self.builder.pages[self.page_index];
+        let reading_order = page.elements.len();
+        page.elements.push(ContentElement::Text(TextContent {
+            text: ref_mark.to_string(),
+            bbox: Rect::new(self.cursor_x, self.cursor_y, ref_w, ref_size),
+            font: crate::elements::FontSpec {
+                name: self.text_config.font.clone(),
+                size: ref_size,
+            },
+            style: Default::default(),
+            reading_order: Some(reading_order),
+            artifact_type: None,
+            origin: None,
+            rotation_degrees: None,
+            matrix: self.current_matrix,
+        }));
+        page.pending_footnotes.push((ref_mark.to_string(), note_text.to_string()));
+
+        // Advance cursor_x past the ref mark; don't advance cursor_y (inline).
+        self.cursor_x += ref_w;
         self
     }
 
@@ -2116,6 +2169,10 @@ struct PageData {
     page_open_script: Option<String>,
     /// JavaScript to run when this page is closed (`/AA /C`).
     page_close_script: Option<String>,
+    /// Footnote bodies collected during page building. Each entry is
+    /// `(ref_mark, note_text)`. Emitted as a separator + Note elements
+    /// at the bottom of the page in `DocumentBuilder::build`.
+    pending_footnotes: Vec<(String, String)>,
 }
 
 /// High-level document builder with fluent API.
@@ -2244,6 +2301,7 @@ impl DocumentBuilder {
                 tab_order: None,
                 page_open_script: None,
                 page_close_script: None,
+                pending_footnotes: Vec::new(),
             },
         );
 
@@ -2480,6 +2538,7 @@ impl DocumentBuilder {
             tab_order: None,
             page_open_script: None,
             page_close_script: None,
+            pending_footnotes: Vec::new(),
         });
         FluentPageBuilder {
             builder: self,
@@ -2525,6 +2584,7 @@ impl DocumentBuilder {
         if let Some(script) = self.open_action_script {
             config.open_action_script = Some(script);
         }
+        let tagged = config.tagged;
 
         let mut writer = PdfWriter::with_config(config);
 
@@ -2881,6 +2941,82 @@ impl DocumentBuilder {
                         }
                         page.add_signature_field(widget);
                     },
+                }
+            }
+
+            // 5. Emit footnotes: separator artifact + Note elements at page bottom.
+            if !page_data.pending_footnotes.is_empty() {
+                use crate::elements::{
+                    FontSpec, PathContent, PathOperation, StructureElement, TextStyle,
+                };
+                use crate::extractors::text::ArtifactType;
+
+                let font_size = 8.0_f32;
+                let line_height = font_size * 1.2;
+                let bottom_y = 72.0_f32; // bottom margin
+                let fn_count = page_data.pending_footnotes.len() as f32;
+                // Stack: gap (4 pt) + one line per footnote, all above sep_y.
+                let total_h = 4.0 + fn_count * line_height;
+                let sep_y = bottom_y + total_h;
+                let sep_x0 = 72.0_f32;
+                let sep_x1 = (page_data.width / 3.0).min(page_data.width - 72.0);
+
+                // Separator line — marked as Layout artifact.
+                page.add_element(&ContentElement::Path(PathContent {
+                    operations: vec![
+                        PathOperation::MoveTo(sep_x0, sep_y),
+                        PathOperation::LineTo(sep_x1, sep_y),
+                    ],
+                    bbox: Rect::new(sep_x0, sep_y, sep_x1 - sep_x0, 0.5),
+                    stroke_color: Some(crate::layout::Color {
+                        r: 0.3,
+                        g: 0.3,
+                        b: 0.3,
+                    }),
+                    fill_color: None,
+                    stroke_width: 0.5,
+                    line_cap: crate::elements::LineCap::Butt,
+                    line_join: crate::elements::LineJoin::Miter,
+                    dash_pattern: None,
+                    matrix: None,
+                    reading_order: None,
+                    artifact_type: Some(ArtifactType::Layout),
+                }));
+
+                // Footnote bodies, stacked from sep_y downward.
+                let text_w = page_data.width - 144.0;
+                let mut fn_y = sep_y - 4.0 - font_size;
+                for (ref_mark, note_text) in &page_data.pending_footnotes {
+                    let label = format!("{} {}", ref_mark, note_text);
+                    let body = ContentElement::Text(TextContent {
+                        text: label,
+                        bbox: Rect::new(sep_x0, fn_y, text_w, font_size),
+                        font: FontSpec {
+                            name: "Helvetica".to_string(),
+                            size: font_size,
+                        },
+                        style: TextStyle::default(),
+                        reading_order: None,
+                        artifact_type: None,
+                        origin: None,
+                        rotation_degrees: None,
+                        matrix: None,
+                    });
+
+                    if tagged {
+                        // Wrap in <Note> structure element for PDF/UA.
+                        page.add_element(&ContentElement::Structure(StructureElement {
+                            structure_type: "Note".to_string(),
+                            bbox: Rect::new(sep_x0, fn_y, text_w, font_size),
+                            children: vec![body],
+                            reading_order: None,
+                            alt_text: Some(format!("Footnote {}", ref_mark)),
+                            language: None,
+                        }));
+                    } else {
+                        page.add_element(&body);
+                    }
+                    fn_y -= line_height;
                 }
             }
 

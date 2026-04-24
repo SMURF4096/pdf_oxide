@@ -6800,6 +6800,10 @@ enum FfiPageOp {
         w: f32,
         h: f32,
     },
+    Footnote {
+        ref_mark: String,
+        note_text: String,
+    },
     Rect(f32, f32, f32, f32),
     FilledRect(f32, f32, f32, f32, f32, f32, f32),
     Line(f32, f32, f32, f32),
@@ -7936,6 +7940,34 @@ pub extern "C" fn pdf_page_builder_signature_field(
     )
 }
 
+/// Add a footnote reference mark at the current cursor position and record the
+/// note body for page-end placement.
+///
+/// `ref_mark` — superscript label emitted inline (e.g. "¹" or "[1]").
+/// `note_text` — body text placed near the page bottom with a separator line.
+///
+/// # Safety
+/// `handle`, `ref_mark`, and `note_text` must be valid non-null pointers.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_footnote(
+    handle: *mut FfiPageBuilder,
+    ref_mark: *const c_char,
+    note_text: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(ref_mark_s) = read_cstr_or_fail(ref_mark, error_code) else {
+        return -1;
+    };
+    let Some(note_text_s) = read_cstr_or_fail(note_text, error_code) else {
+        return -1;
+    };
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::Footnote { ref_mark: ref_mark_s, note_text: note_text_s },
+    )
+}
+
 // ── Barcode helpers ───────────────────────────────────────────────────
 
 /// Map FFI barcode-type integer to the Rust enum.
@@ -8541,6 +8573,9 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
             } => rust_page.push_button(name, x, y, w, h, caption),
             FfiPageOp::SignatureField { name, x, y, w, h } => {
                 rust_page.signature_field(name, x, y, w, h)
+            },
+            FfiPageOp::Footnote { ref_mark, note_text } => {
+                rust_page.footnote(&ref_mark, &note_text)
             },
             FfiPageOp::Rect(x, y, w, h) => rust_page.rect(x, y, w, h),
             FfiPageOp::FilledRect(x, y, w, h, r, g, b) => {

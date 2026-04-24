@@ -503,6 +503,8 @@ extern "C" {
   extern int   pdf_page_builder_signature_field(void* page, const char* name,
                                                 float x, float y, float w, float h,
                                                 int* error_code);
+  extern int   pdf_page_builder_footnote(void* page, const char* ref_mark,
+                                         const char* note_text, int* error_code);
 
   extern int   pdf_page_builder_barcode_1d(void* page, int barcode_type, const char* data,
                                             float x, float y, float w, float h, int* error_code);
@@ -3282,6 +3284,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   extern Napi::Value PageBuilderRadioGroup(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderPushButton(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderSignatureField(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderFootnote(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderBarcode1d(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderBarcodeQr(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderRect(const Napi::CallbackInfo&);
@@ -3353,6 +3356,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("pageBuilderRadioGroup", Napi::Function::New(env, PageBuilderRadioGroup));
   exports.Set("pageBuilderPushButton", Napi::Function::New(env, PageBuilderPushButton));
   exports.Set("pageBuilderSignatureField", Napi::Function::New(env, PageBuilderSignatureField));
+  exports.Set("pageBuilderFootnote", Napi::Function::New(env, PageBuilderFootnote));
   exports.Set("pageBuilderBarcode1d", Napi::Function::New(env, PageBuilderBarcode1d));
   exports.Set("pageBuilderBarcodeQr", Napi::Function::New(env, PageBuilderBarcodeQr));
   exports.Set("pageBuilderRect", Napi::Function::New(env, PageBuilderRect));
@@ -3841,6 +3845,17 @@ Napi::Value PageBuilderSignatureField(const Napi::CallbackInfo& info) {
   int errorCode = 0;
   pdf_page_builder_signature_field(p, name.c_str(), x, y, w, h, &errorCode);
   throwOnError(env, errorCode, "PageBuilder.signatureField");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderFootnote(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  std::string refMark = requireString(info, 1, "refMark");
+  std::string noteText = requireString(info, 2, "noteText");
+  int errorCode = 0;
+  pdf_page_builder_footnote(p, refMark.c_str(), noteText.c_str(), &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.footnote");
   return env.Undefined();
 }
 

@@ -557,6 +557,15 @@ export class PageBuilder {
     return this;
   }
 
+  /**
+   * Add a footnote: inline `refMark` emitted at the cursor position, and
+   * `noteText` placed near the page bottom with a separator artifact line.
+   */
+  footnote(refMark: string, noteText: string): this {
+    native.pageBuilderFootnote(this.h(), refMark, noteText);
+    return this;
+  }
+
   // --- Barcode / QR-code placement ------------------------------------
 
   /**

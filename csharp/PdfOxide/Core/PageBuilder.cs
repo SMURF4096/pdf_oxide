@@ -456,6 +456,19 @@ namespace PdfOxide.Core
             return this;
         }
 
+        /// <summary>
+        /// Add a footnote reference mark inline at the cursor and record
+        /// <paramref name="noteText"/> for page-end placement with a separator line.
+        /// </summary>
+        public PageBuilder Footnote(string refMark, string noteText)
+        {
+            ArgumentNullException.ThrowIfNull(refMark);
+            ArgumentNullException.ThrowIfNull(noteText);
+            NativeMethods.PdfPageBuilderFootnote(Handle, refMark, noteText, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
         // --- Barcode / QR-code placement ------------------------------------
 
         /// <summary>

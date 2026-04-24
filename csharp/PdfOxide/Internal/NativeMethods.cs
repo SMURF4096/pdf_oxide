@@ -7066,6 +7066,12 @@ namespace PdfOxide.Internal
         public static partial int PdfPageBuilderSignatureField(
             IntPtr page, string name, float x, float y, float w, float h, out int errorCode);
 
+        /// <summary>Add a footnote reference mark inline and record the body for page-end placement.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_footnote", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderFootnote(
+            IntPtr page, string refMark, string noteText, out int errorCode);
+
         /// <summary>Place a 1-D barcode image on the page.
         /// barcodeType: 0=Code128 1=Code39 2=EAN13 3=EAN8 4=UPCA 5=ITF 6=Code93 7=Codabar.</summary>
         [LibraryImport(LibName, EntryPoint = "pdf_page_builder_barcode_1d", StringMarshalling = StringMarshalling.Utf8)]

@@ -3,6 +3,7 @@
 //! This module provides the `PathContent` type for representing
 //! vector graphics in PDFs.
 
+use crate::extractors::text::ArtifactType;
 use crate::geometry::Rect;
 use crate::layout::Color;
 
@@ -42,6 +43,11 @@ pub struct PathContent {
     pub matrix: Option<[f32; 6]>,
     /// Reading order index
     pub reading_order: Option<usize>,
+    /// When set, this path is wrapped in `/Artifact <</Type /T>>  BDC … EMC`
+    /// markers so accessibility tools can skip it. Useful for decorative
+    /// separator lines (footnote rules, header/footer rules).
+    #[serde(skip)]
+    pub artifact_type: Option<ArtifactType>,
 }
 
 impl PathContent {
@@ -58,6 +64,7 @@ impl PathContent {
             dash_pattern: None,
             matrix: None,
             reading_order: None,
+            artifact_type: None,
         }
     }
 
@@ -75,6 +82,7 @@ impl PathContent {
             dash_pattern: None,
             matrix: None,
             reading_order: None,
+            artifact_type: None,
         }
     }
 
@@ -388,6 +396,7 @@ impl Default for PathContent {
             dash_pattern: None,
             matrix: None,
             reading_order: None,
+            artifact_type: None,
         }
     }
 }

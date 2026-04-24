@@ -436,6 +436,10 @@ int   pdf_page_builder_signature_field(void* page, const char* name,
                                        float x, float y, float w, float h,
                                        int* error_code);
 
+/* Footnote: inline ref mark + page-end body text with separator line. */
+int   pdf_page_builder_footnote(void* page, const char* ref_mark,
+                                const char* note_text, int* error_code);
+
 /* Barcode / QR-code image placement.
  * barcode_type: 0=Code128 1=Code39 2=EAN13 3=EAN8 4=UPCA 5=ITF 6=Code93 7=Codabar */
 int   pdf_page_builder_barcode_1d(void* page, int barcode_type, const char* data,

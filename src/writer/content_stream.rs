@@ -889,6 +889,30 @@ impl ContentStreamBuilder {
         // End any text object first
         self.end_text();
 
+        // Artifact wrapping (e.g. footnote separator line).
+        let is_artifact = path.artifact_type.is_some();
+        if is_artifact {
+            use crate::extractors::text::ArtifactType;
+            let (artifact_type, subtype) = match &path.artifact_type {
+                Some(ArtifactType::Pagination(sub)) => {
+                    use crate::extractors::text::PaginationSubtype;
+                    let sub_str = match sub {
+                        PaginationSubtype::Header => Some("Header".to_string()),
+                        PaginationSubtype::Footer => Some("Footer".to_string()),
+                        PaginationSubtype::PageNumber => Some("PageNum".to_string()),
+                        PaginationSubtype::Watermark => Some("Watermark".to_string()),
+                        PaginationSubtype::Other => None,
+                    };
+                    ("Pagination".to_string(), sub_str)
+                },
+                Some(ArtifactType::Layout) => ("Layout".to_string(), None),
+                Some(ArtifactType::Page) => ("Page".to_string(), None),
+                Some(ArtifactType::Background) => ("Background".to_string(), None),
+                None => unreachable!(),
+            };
+            self.op(ContentStreamOp::BeginArtifact { artifact_type, subtype });
+        }
+
         // If the path carries a 2D affine transform, bracket it in
         // `q cm ... Q` so graphics state stays scoped to this path
         // (#393 Bundle A-2 follow-up). The `had_matrix` flag drives
@@ -964,6 +988,10 @@ impl ContentStreamBuilder {
         // reader doesn't think we're leaking dash state on transforms.
         if had_matrix {
             self.op(ContentStreamOp::RestoreState);
+        }
+
+        if is_artifact {
+            self.op(ContentStreamOp::EndArtifact);
         }
 
         self
@@ -2810,6 +2838,7 @@ mod tests {
             dash_pattern: None,
             matrix: None,
             reading_order: None,
+            artifact_type: None,
         };
 
         let mut builder = ContentStreamBuilder::new();
@@ -2838,6 +2867,7 @@ mod tests {
             dash_pattern: None,
             matrix: None,
             reading_order: None,
+            artifact_type: None,
         };
 
         let mut builder = ContentStreamBuilder::new();
@@ -2867,6 +2897,7 @@ mod tests {
             dash_pattern: None,
             matrix: None,
             reading_order: None,
+            artifact_type: None,
         };
 
         let mut builder = ContentStreamBuilder::new();
@@ -2895,6 +2926,7 @@ mod tests {
             dash_pattern: None,
             matrix: None,
             reading_order: None,
+            artifact_type: None,
         };
 
         let mut builder = ContentStreamBuilder::new();

@@ -93,6 +93,8 @@ extern int   pdf_page_builder_push_button(void* page, const char* name,
 extern int   pdf_page_builder_signature_field(void* page, const char* name,
                                               float x, float y, float w, float h,
                                               int* error_code);
+extern int   pdf_page_builder_footnote(void* page, const char* ref_mark,
+                                       const char* note_text, int* error_code);
 extern int   pdf_page_builder_rect(void* page, float x, float y, float w, float h, int* error_code);
 extern int   pdf_page_builder_filled_rect(void* page, float x, float y, float w, float h,
                                           float r, float g, float b, int* error_code);
@@ -958,6 +960,18 @@ func (p *PageBuilder) SignatureField(name string, x, y, w, h float32) *PageBuild
 		cn := C.CString(name)
 		defer C.free(unsafe.Pointer(cn))
 		return C.pdf_page_builder_signature_field(hp, cn, C.float(x), C.float(y), C.float(w), C.float(h), ec)
+	})
+}
+
+// Footnote adds an inline refMark at the current cursor and records noteText
+// for page-end placement with a separator artifact line.
+func (p *PageBuilder) Footnote(refMark, noteText string) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		cm := C.CString(refMark)
+		defer C.free(unsafe.Pointer(cm))
+		cn := C.CString(noteText)
+		defer C.free(unsafe.Pointer(cn))
+		return C.pdf_page_builder_footnote(hp, cm, cn, ec)
 	})
 }
 

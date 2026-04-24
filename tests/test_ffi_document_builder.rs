@@ -884,6 +884,51 @@ fn ffi_tagged_pdf_ua1_basic() {
 }
 
 #[test]
+fn ffi_footnote_in_pdf() {
+    let mut ec: i32 = -1;
+    let builder = unsafe { pdf_document_builder_create(&mut ec) };
+    assert_eq!(ec, 0);
+    assert!(!builder.is_null());
+
+    let page = unsafe { pdf_document_builder_letter_page(builder, &mut ec) };
+    assert_eq!(ec, 0);
+    assert!(!page.is_null());
+
+    // Place some body text then a footnote ref mark
+    assert_eq!(unsafe { pdf_page_builder_at(page, 72.0, 700.0, &mut ec) }, 0);
+    let body = cstring("Important claim");
+    assert_eq!(unsafe { pdf_page_builder_text(page, body.as_ptr(), &mut ec) }, 0);
+
+    let ref_mark = cstring("[1]");
+    let note_text = cstring("Source: Annual report 2025.");
+    let rc = unsafe {
+        pdf_page_builder_footnote(page, ref_mark.as_ptr(), note_text.as_ptr(), &mut ec)
+    };
+    assert_eq!(rc, 0, "footnote failed");
+    assert_eq!(ec, 0);
+
+    assert_eq!(unsafe { pdf_page_builder_done(page, &mut ec) }, 0);
+
+    let mut out_len: usize = 0;
+    let bytes_ptr = unsafe { pdf_document_builder_build(builder, &mut out_len, &mut ec) };
+    assert_eq!(ec, 0, "build failed");
+    assert!(!bytes_ptr.is_null());
+    assert!(out_len > 0);
+
+    let bytes = unsafe { std::slice::from_raw_parts(bytes_ptr as *const u8, out_len) };
+    let content = String::from_utf8_lossy(bytes);
+
+    // The footnote note text must appear somewhere in the PDF stream.
+    assert!(
+        content.contains("Annual report 2025"),
+        "footnote body text not found in PDF output"
+    );
+
+    unsafe { pdf_document_builder_free(builder) };
+    unsafe { free_bytes(bytes_ptr) };
+}
+
+#[test]
 fn ffi_fixture_font_exists() {
     assert!(
         Path::new(DEJAVU_PATH).exists(),

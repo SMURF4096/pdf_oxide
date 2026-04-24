@@ -3538,6 +3538,10 @@ enum WasmPageOp {
         w: f32,
         h: f32,
     },
+    Footnote {
+        ref_mark: String,
+        note_text: String,
+    },
     Rect(f32, f32, f32, f32),
     FilledRect(f32, f32, f32, f32, f32, f32, f32),
     Line(f32, f32, f32, f32),
@@ -3880,6 +3884,9 @@ impl WasmDocumentBuilder {
                 } => rust_page.push_button(name, x, y, w, h, caption),
                 WasmPageOp::SignatureField { name, x, y, w, h } => {
                     rust_page.signature_field(name, x, y, w, h)
+                },
+                WasmPageOp::Footnote { ref_mark, note_text } => {
+                    rust_page.footnote(&ref_mark, &note_text)
                 },
                 WasmPageOp::Rect(x, y, w, h) => rust_page.rect(x, y, w, h),
                 WasmPageOp::FilledRect(x, y, w, h, r, g, b) => {
@@ -4356,6 +4363,13 @@ impl WasmFluentPageBuilder {
         h: f32,
     ) -> Result<(), JsValue> {
         self.push(WasmPageOp::SignatureField { name, x, y, w, h })
+    }
+
+    /// Add a footnote: inline `refMark` at the cursor and `noteText` body
+    /// near the page bottom with a separator artifact line.
+    #[wasm_bindgen(js_name = "footnote")]
+    pub fn footnote(&mut self, ref_mark: String, note_text: String) -> Result<(), JsValue> {
+        self.push(WasmPageOp::Footnote { ref_mark, note_text })
     }
 
     /// Place a 1-D barcode image at `(x, y, w, h)` on the page.
