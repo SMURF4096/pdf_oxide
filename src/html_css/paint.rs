@@ -352,6 +352,7 @@ fn paint_page<'sty>(
                     // writer can emit a real /SMask XObject; without
                     // this the transparency is silently dropped.
                     soft_mask: img.data.soft_mask.clone(),
+            matrix: None,
                 };
                 page_builder.add_element(&ContentElement::Image(content));
             }

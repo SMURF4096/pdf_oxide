@@ -814,6 +814,20 @@ impl ContentStreamBuilder {
         // End any text object first
         self.end_text();
 
+        // If the path carries a 2D affine transform, bracket it in
+        // `q cm ... Q` so graphics state stays scoped to this path
+        // (#393 Bundle A-2 follow-up). The `had_matrix` flag drives
+        // the matching `Q` after the stroke/fill op below.
+        let had_matrix = if let Some(m) = path.matrix {
+            self.op(ContentStreamOp::SaveState);
+            self.op(ContentStreamOp::Transform(
+                m[0], m[1], m[2], m[3], m[4], m[5],
+            ));
+            true
+        } else {
+            false
+        };
+
         // Set stroke properties
         if let Some(color) = path.stroke_color {
             self.stroke_color(color);
@@ -866,6 +880,15 @@ impl ContentStreamBuilder {
         // Restore solid strokes for subsequent paths.
         if had_dash {
             self.set_dash_pattern(Vec::new(), 0.0);
+        }
+
+        // Close the `q cm` bracket if we opened one above. RestoreState
+        // also rolls back the line-width + colours + dash pattern, so
+        // the explicit `set_dash_pattern([], 0)` above is redundant in
+        // the had_matrix case — harmless, but documented here so a
+        // reader doesn't think we're leaking dash state on transforms.
+        if had_matrix {
+            self.op(ContentStreamOp::RestoreState);
         }
 
         self
@@ -1052,6 +1075,18 @@ impl ContentStreamBuilder {
         // End any text object first
         self.end_text();
 
+        // If the image carries a 2D affine transform, bracket it in
+        // `q cm ... Q`. #393 Bundle A-2 follow-up.
+        let had_matrix = if let Some(m) = image.matrix {
+            self.op(ContentStreamOp::SaveState);
+            self.op(ContentStreamOp::Transform(
+                m[0], m[1], m[2], m[3], m[4], m[5],
+            ));
+            true
+        } else {
+            false
+        };
+
         // Allocate resource ID for this image
         self.next_image_id += 1;
         let resource_id = format!("Im{}", self.next_image_id);
@@ -1070,6 +1105,10 @@ impl ContentStreamBuilder {
             image.bbox.width,
             image.bbox.height,
         );
+
+        if had_matrix {
+            self.op(ContentStreamOp::RestoreState);
+        }
 
         self
     }
@@ -1649,6 +1688,7 @@ mod tests {
             horizontal_dpi: None,
             vertical_dpi: None,
             soft_mask: None,
+            matrix: None,
         };
 
         let mut builder = ContentStreamBuilder::new();
@@ -1715,6 +1755,7 @@ mod tests {
             horizontal_dpi: None,
             vertical_dpi: None,
             soft_mask: None,
+            matrix: None,
         };
         builder.add_element(&ContentElement::Image(image));
 
@@ -1747,6 +1788,7 @@ mod tests {
             horizontal_dpi: None,
             vertical_dpi: None,
             soft_mask: None,
+            matrix: None,
         };
 
         let mut builder = ContentStreamBuilder::new();
@@ -2658,6 +2700,7 @@ mod tests {
             line_cap: Default::default(),
             line_join: Default::default(),
             dash_pattern: None,
+            matrix: None,
             reading_order: None,
         };
 
@@ -2685,6 +2728,7 @@ mod tests {
             line_cap: Default::default(),
             line_join: Default::default(),
             dash_pattern: None,
+            matrix: None,
             reading_order: None,
         };
 
@@ -2713,6 +2757,7 @@ mod tests {
             line_cap: Default::default(),
             line_join: Default::default(),
             dash_pattern: None,
+            matrix: None,
             reading_order: None,
         };
 
@@ -2740,6 +2785,7 @@ mod tests {
             line_cap: Default::default(),
             line_join: Default::default(),
             dash_pattern: None,
+            matrix: None,
             reading_order: None,
         };
 

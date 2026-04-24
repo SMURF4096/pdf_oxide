@@ -41,6 +41,12 @@ pub struct ImageContent {
     /// render with their alpha preserved. `None` for opaque images
     /// and for formats that don't carry transparency (JPEG, CMYK).
     pub soft_mask: Option<Vec<u8>>,
+    /// Optional 2D affine transform in PDF row order `[a b c d e f]`.
+    /// When set, the image is wrapped in `q ... cm ... Q` on emission
+    /// so graphics-state stays scoped. Populated by
+    /// `FluentPageBuilder::{rotated, scaled, translated, with_transform}`
+    /// closures. #393 Bundle A-2 follow-up.
+    pub matrix: Option<[f32; 6]>,
 }
 
 impl ImageContent {
@@ -59,6 +65,7 @@ impl ImageContent {
             horizontal_dpi: None,
             vertical_dpi: None,
             soft_mask: None,
+            matrix: None,
         };
         image.calculate_dpi();
         image
@@ -184,6 +191,7 @@ impl Default for ImageContent {
             horizontal_dpi: None,
             vertical_dpi: None,
             soft_mask: None,
+            matrix: None,
         }
     }
 }

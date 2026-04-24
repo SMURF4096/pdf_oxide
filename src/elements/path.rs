@@ -32,6 +32,14 @@ pub struct PathContent {
     /// line solid.
     #[serde(default)]
     pub dash_pattern: Option<(Vec<f32>, f32)>,
+    /// Optional 2D affine transform in PDF row order `[a b c d e f]`.
+    /// When set, the path is wrapped in `q ... cm ... Q` on emission
+    /// so graphics-state stays scoped. Populated by
+    /// `FluentPageBuilder::{rotated, scaled, translated, with_transform}`
+    /// closures — v0.3.39 (text-only) extended here to cover paths.
+    /// #393 Bundle A-2 follow-up.
+    #[serde(default)]
+    pub matrix: Option<[f32; 6]>,
     /// Reading order index
     pub reading_order: Option<usize>,
 }
@@ -48,6 +56,7 @@ impl PathContent {
             line_cap: LineCap::Butt,
             line_join: LineJoin::Miter,
             dash_pattern: None,
+            matrix: None,
             reading_order: None,
         }
     }
@@ -64,6 +73,7 @@ impl PathContent {
             line_cap: LineCap::Butt,
             line_join: LineJoin::Miter,
             dash_pattern: None,
+            matrix: None,
             reading_order: None,
         }
     }
@@ -376,6 +386,7 @@ impl Default for PathContent {
             line_cap: LineCap::Butt,
             line_join: LineJoin::Miter,
             dash_pattern: None,
+            matrix: None,
             reading_order: None,
         }
     }

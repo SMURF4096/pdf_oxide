@@ -834,6 +834,7 @@ impl<'a> FluentPageBuilder<'a> {
                 line_cap: crate::elements::LineCap::Butt,
                 line_join: crate::elements::LineJoin::Miter,
                 dash_pattern: None,
+                matrix: None,
                 reading_order: None,
             }));
         self.cursor_y -= self.text_config.size;
@@ -1436,6 +1437,7 @@ impl<'a> FluentPageBuilder<'a> {
         path.fill_color = None;
         path.stroke_width = style.width;
         path.dash_pattern = style.dash;
+        path.matrix = self.current_matrix;
         let page = &mut self.builder.pages[self.page_index];
         page.elements.push(ContentElement::Path(path));
         self
@@ -1468,6 +1470,7 @@ impl<'a> FluentPageBuilder<'a> {
         path.fill_color = None;
         path.stroke_width = style.width;
         path.dash_pattern = style.dash;
+        path.matrix = self.current_matrix;
         let page = &mut self.builder.pages[self.page_index];
         page.elements.push(ContentElement::Path(path));
         self
@@ -1476,13 +1479,13 @@ impl<'a> FluentPageBuilder<'a> {
     // ───────────────────────────────────────────────────────────────────
     // Transforms (rotate / scale / translate + arbitrary 2D matrix)
     //
-    // v0.3.39 scope: transforms apply to TextContent emitted inside the
-    // closure — `TextContent.matrix` is honoured by the writer. Path /
-    // Image / Table elements DO NOT yet carry a matrix field; adding
-    // one is a coordinated change tracked as a v0.3.40 follow-up
-    // (see `docs/v0.3.39/design/builder_gaps_plan.md` Bundle A-2
-    // "Open questions"). Until then, rotated/scaled shapes + images
-    // render at their un-transformed coordinates.
+    // Applies to TextContent, PathContent (shapes + stroke primitives),
+    // and ImageContent elements emitted inside the closure. `TableContent`
+    // is **not yet** transformed — it's rendered via
+    // `Table::to_content_elements` whose inner elements already carry
+    // their own matrix field and compose naturally, but the
+    // Table-as-a-whole matrix remains a v0.3.40 item. Extended from
+    // text-only to cover paths + images in #393 Bundle A-2 follow-up.
     // ───────────────────────────────────────────────────────────────────
 
     /// Evaluate `f` inside a scope where every text element is drawn
@@ -1609,6 +1612,10 @@ impl<'a> FluentPageBuilder<'a> {
         if let Some(mask) = data.soft_mask {
             content = content.with_soft_mask(mask);
         }
+
+        // Propagate the active transform so images inside `.rotated()`
+        // etc. scopes render under that matrix. #393 Bundle A-2 follow-up.
+        content.matrix = self.current_matrix;
 
         let page = &mut self.builder.pages[self.page_index];
         content.reading_order = Some(page.elements.len());
@@ -1789,6 +1796,10 @@ impl<'a> FluentPageBuilder<'a> {
         } else {
             path.fill_color = None;
         }
+        // Propagate the active transform so paths inside `.rotated()` /
+        // `.scaled()` / `.translated()` scopes render under that matrix.
+        // #393 Bundle A-2 follow-up.
+        path.matrix = self.current_matrix;
         let page = &mut self.builder.pages[self.page_index];
         page.elements.push(ContentElement::Path(path));
         self
@@ -3129,6 +3140,59 @@ mod tests {
 
         // Bezier: stroke only (fill None).
         assert!(paths[4].stroke_color.is_some() && paths[4].fill_color.is_none());
+    }
+
+    #[test]
+    fn test_transforms_extend_to_path_and_image() {
+        // Inside a rotated scope, both a shape (Path) and an image
+        // (Image) must carry the composed matrix, AND the emitted PDF
+        // must wrap them in `q ... cm ... Q` brackets.
+        let mut doc = DocumentBuilder::new();
+        doc.letter_page()
+            .rotated(30.0, |p| {
+                p.circle(200.0, 500.0, 30.0, Some(LineStyle::default()), None)
+                    .image_from_file(
+                        "tests/fixtures/adobe_cmyk_10x11_white.jpg",
+                        Rect::new(100.0, 400.0, 50.0, 55.0),
+                    )
+                    .expect("load image")
+            })
+            .done();
+
+        // Check element-level matrices
+        let page = &doc.pages[0];
+        let paths: Vec<_> = page
+            .elements
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Path(p) => Some(p),
+                _ => None,
+            })
+            .collect();
+        let images: Vec<_> = page
+            .elements
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Image(i) => Some(i),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(paths.len(), 1);
+        assert_eq!(images.len(), 1);
+        // Both must carry the same matrix (the outer rotation).
+        assert!(paths[0].matrix.is_some(), "path must carry matrix");
+        assert!(images[0].matrix.is_some(), "image must carry matrix");
+        // 30° rotation: cos ≈ 0.866, sin = 0.5
+        let pm = paths[0].matrix.unwrap();
+        assert!((pm[0] - 30_f32.to_radians().cos()).abs() < 0.01);
+        assert!((pm[1] - 30_f32.to_radians().sin()).abs() < 0.01);
+
+        // Emitted PDF must contain the q / cm / Q operators.
+        let bytes = doc.build().expect("build");
+        let s = String::from_utf8_lossy(&bytes);
+        // `cm` operator appears when a matrix is set.
+        assert!(s.contains(" cm"), "expected cm operator in output");
     }
 
     #[test]
