@@ -971,6 +971,62 @@ fn ffi_columns_in_pdf() {
 }
 
 #[test]
+fn ffi_rich_text_inline_in_pdf() {
+    let mut ec: i32 = -1;
+    let builder = unsafe { pdf_document_builder_create(&mut ec) };
+    assert_eq!(ec, 0);
+    assert!(!builder.is_null());
+
+    let page = unsafe { pdf_document_builder_letter_page(builder, &mut ec) };
+    assert_eq!(ec, 0);
+    assert!(!page.is_null());
+
+    assert_eq!(unsafe { pdf_page_builder_at(page, 72.0, 700.0, &mut ec) }, 0);
+
+    // normal + bold + italic + colored + newline
+    let normal = cstring("Hello ");
+    let rc = unsafe { pdf_page_builder_inline(page, normal.as_ptr(), &mut ec) };
+    assert_eq!(rc, 0, "inline failed");
+    assert_eq!(ec, 0);
+
+    let bold = cstring("world");
+    let rc = unsafe { pdf_page_builder_inline_bold(page, bold.as_ptr(), &mut ec) };
+    assert_eq!(rc, 0, "inline_bold failed");
+    assert_eq!(ec, 0);
+
+    let rc = unsafe { pdf_page_builder_newline(page, &mut ec) };
+    assert_eq!(rc, 0, "newline failed");
+    assert_eq!(ec, 0);
+
+    let italic = cstring("italic run");
+    let rc = unsafe { pdf_page_builder_inline_italic(page, italic.as_ptr(), &mut ec) };
+    assert_eq!(rc, 0, "inline_italic failed");
+    assert_eq!(ec, 0);
+
+    let colored = cstring("red text");
+    let rc = unsafe { pdf_page_builder_inline_color(page, 1.0, 0.0, 0.0, colored.as_ptr(), &mut ec) };
+    assert_eq!(rc, 0, "inline_color failed");
+    assert_eq!(ec, 0);
+
+    assert_eq!(unsafe { pdf_page_builder_done(page, &mut ec) }, 0);
+
+    let mut out_len: usize = 0;
+    let bytes_ptr = unsafe { pdf_document_builder_build(builder, &mut out_len, &mut ec) };
+    assert_eq!(ec, 0, "build failed");
+    assert!(!bytes_ptr.is_null());
+    assert!(out_len > 0);
+
+    let bytes = unsafe { std::slice::from_raw_parts(bytes_ptr as *const u8, out_len) };
+    assert!(bytes.starts_with(b"%PDF-"), "output is not a PDF");
+
+    let content = String::from_utf8_lossy(bytes);
+    assert!(content.contains("Hello"), "inline text not found in PDF output");
+
+    unsafe { pdf_document_builder_free(builder) };
+    unsafe { free_bytes(bytes_ptr) };
+}
+
+#[test]
 fn ffi_fixture_font_exists() {
     assert!(
         Path::new(DEJAVU_PATH).exists(),

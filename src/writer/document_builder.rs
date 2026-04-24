@@ -326,6 +326,69 @@ impl LineStyle {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Rich text support
+// ---------------------------------------------------------------------------
+
+/// Style applied to a single run in [`FluentPageBuilder::rich_paragraph`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum TextRunStyle {
+    Normal,
+    Bold,
+    Italic,
+    /// RGB color 0.0–1.0, normal weight.
+    Color { r: f32, g: f32, b: f32 },
+}
+
+/// A single styled text run for [`FluentPageBuilder::rich_paragraph`].
+#[derive(Debug, Clone)]
+pub struct TextRun {
+    pub text: String,
+    pub style: TextRunStyle,
+}
+
+impl TextRun {
+    pub fn normal(text: impl Into<String>) -> Self {
+        Self { text: text.into(), style: TextRunStyle::Normal }
+    }
+    pub fn bold(text: impl Into<String>) -> Self {
+        Self { text: text.into(), style: TextRunStyle::Bold }
+    }
+    pub fn italic(text: impl Into<String>) -> Self {
+        Self { text: text.into(), style: TextRunStyle::Italic }
+    }
+    pub fn color(r: f32, g: f32, b: f32, text: impl Into<String>) -> Self {
+        Self { text: text.into(), style: TextRunStyle::Color { r, g, b } }
+    }
+}
+
+/// Return the bold variant of a base font name.
+fn bold_font_name(base: &str) -> String {
+    if base.contains("Bold") || base.contains("bold") {
+        return base.to_string();
+    }
+    match base {
+        "Helvetica" => "Helvetica-Bold".to_string(),
+        "Times-Roman" | "Times" => "Times-Bold".to_string(),
+        "Courier" => "Courier-Bold".to_string(),
+        other => format!("{}-Bold", other),
+    }
+}
+
+/// Return the italic variant of a base font name.
+fn italic_font_name(base: &str) -> String {
+    if base.contains("Italic") || base.contains("italic") || base.contains("Oblique") {
+        return base.to_string();
+    }
+    match base {
+        "Helvetica" => "Helvetica-Oblique".to_string(),
+        "Helvetica-Bold" => "Helvetica-BoldOblique".to_string(),
+        "Times-Roman" | "Times" => "Times-Italic".to_string(),
+        "Courier" => "Courier-Oblique".to_string(),
+        other => format!("{}-Italic", other),
+    }
+}
+
 /// Page builder for adding content to a page with fluent API.
 pub struct FluentPageBuilder<'a> {
     builder: &'a mut DocumentBuilder,
@@ -1046,6 +1109,221 @@ impl<'a> FluentPageBuilder<'a> {
 
         self.cursor_y = start_y - max_drop - font_size * 0.5;
         self
+    }
+
+    // ==========================================================================
+    // Rich text (inline runs)
+    // ==========================================================================
+
+    /// Emit `text` inline at the current cursor — advances `cursor_x` by the
+    /// measured text width but does **not** advance `cursor_y`.  Call
+    /// [`Self::newline`] after a sequence of inline calls to move to the next
+    /// line, or use [`Self::rich_paragraph`] for an all-in-one API.
+    pub fn inline(mut self, text: &str) -> Self {
+        self.emit_inline_run(text, None, None);
+        self
+    }
+
+    /// Inline bold run (Helvetica-Bold / embedded font "-Bold" suffix).
+    pub fn inline_bold(mut self, text: &str) -> Self {
+        let bold_font = bold_font_name(&self.text_config.font);
+        self.emit_inline_run(text, Some(bold_font), None);
+        self
+    }
+
+    /// Inline italic run (Helvetica-Oblique / embedded font "-Oblique" suffix).
+    pub fn inline_italic(mut self, text: &str) -> Self {
+        let italic_font = italic_font_name(&self.text_config.font);
+        self.emit_inline_run(text, Some(italic_font), None);
+        self
+    }
+
+    /// Inline run with a custom RGB color (values 0.0–1.0).
+    pub fn inline_color(mut self, r: f32, g: f32, b: f32, text: &str) -> Self {
+        self.emit_inline_run(text, None, Some(crate::layout::Color { r, g, b }));
+        self
+    }
+
+    /// Advance cursor_y by one line-height and reset cursor_x to the left
+    /// margin (72 pt). Used after a run of [`Self::inline`] calls.
+    pub fn newline(mut self) -> Self {
+        self.cursor_y -= self.text_config.size * self.text_config.line_height;
+        self.cursor_x = 72.0;
+        self
+    }
+
+    /// A single text run for [`Self::rich_paragraph`].
+    ///
+    /// Construct with the associated helper functions:
+    /// [`TextRun::normal`], [`TextRun::bold`], [`TextRun::italic`],
+    /// [`TextRun::color`].
+    pub fn rich_paragraph(mut self, runs: &[TextRun]) -> Self {
+        let left_margin = self.cursor_x;
+        let right_margin = 72.0_f32;
+        let page_width = self.builder.pages[self.page_index].width;
+        let max_right = page_width - right_margin;
+
+        for run in runs {
+            let font_name = match run.style {
+                TextRunStyle::Bold => bold_font_name(&self.text_config.font),
+                TextRunStyle::Italic => italic_font_name(&self.text_config.font),
+                TextRunStyle::Normal | TextRunStyle::Color { .. } => {
+                    self.text_config.font.clone()
+                },
+            };
+            let color = match run.style {
+                TextRunStyle::Color { r, g, b } => {
+                    Some(crate::layout::Color { r, g, b })
+                },
+                _ => None,
+            };
+
+            // Wrap run text to available line width
+            let words: Vec<&str> = run.text.split_whitespace().collect();
+            let mut buf = String::new();
+            for word in words {
+                let candidate = if buf.is_empty() {
+                    word.to_string()
+                } else {
+                    format!("{} {}", buf, word)
+                };
+                let cw = self.text_layout.font_manager().text_width(
+                    &candidate,
+                    &font_name,
+                    self.text_config.size,
+                );
+                if self.cursor_x + cw > max_right && !buf.is_empty() {
+                    // Emit buf as a line
+                    let bw = self.text_layout.font_manager().text_width(
+                        &buf,
+                        &font_name,
+                        self.text_config.size,
+                    );
+                    let reading_order =
+                        self.builder.pages[self.page_index].elements.len();
+                    self.builder.pages[self.page_index].elements.push(
+                        ContentElement::Text(TextContent {
+                            text: buf.clone(),
+                            bbox: Rect::new(
+                                self.cursor_x,
+                                self.cursor_y,
+                                bw,
+                                self.text_config.size,
+                            ),
+                            font: crate::elements::FontSpec {
+                                name: font_name.clone(),
+                                size: self.text_config.size,
+                            },
+                            style: crate::elements::TextStyle {
+                                color: color.unwrap_or(crate::layout::Color {
+                                    r: 0.0,
+                                    g: 0.0,
+                                    b: 0.0,
+                                }),
+                                ..Default::default()
+                            },
+                            reading_order: Some(reading_order),
+                            artifact_type: None,
+                            origin: None,
+                            rotation_degrees: None,
+                            matrix: self.current_matrix,
+                        }),
+                    );
+                    self.cursor_y -=
+                        self.text_config.size * self.text_config.line_height;
+                    self.cursor_x = left_margin;
+                    buf = word.to_string();
+                } else {
+                    buf = candidate;
+                }
+            }
+            // Emit any remaining words
+            if !buf.is_empty() {
+                let bw = self.text_layout.font_manager().text_width(
+                    &buf,
+                    &font_name,
+                    self.text_config.size,
+                );
+                let reading_order =
+                    self.builder.pages[self.page_index].elements.len();
+                self.builder.pages[self.page_index].elements.push(
+                    ContentElement::Text(TextContent {
+                        text: buf,
+                        bbox: Rect::new(
+                            self.cursor_x,
+                            self.cursor_y,
+                            bw,
+                            self.text_config.size,
+                        ),
+                        font: crate::elements::FontSpec {
+                            name: font_name.clone(),
+                            size: self.text_config.size,
+                        },
+                        style: crate::elements::TextStyle {
+                            color: color.unwrap_or(crate::layout::Color {
+                                r: 0.0,
+                                g: 0.0,
+                                b: 0.0,
+                            }),
+                            ..Default::default()
+                        },
+                        reading_order: Some(reading_order),
+                        artifact_type: None,
+                        origin: None,
+                        rotation_degrees: None,
+                        matrix: self.current_matrix,
+                    }),
+                );
+                self.cursor_x += bw;
+            }
+        }
+        // Finish the paragraph
+        self.cursor_y -= self.text_config.size * self.text_config.line_height;
+        self.cursor_x = left_margin;
+        self.cursor_y -= self.text_config.size * 0.5; // trailing gap
+        self
+    }
+
+    /// Internal: emit one inline text run advancing cursor_x only.
+    fn emit_inline_run(
+        &mut self,
+        text: &str,
+        font_override: Option<String>,
+        color: Option<crate::layout::Color>,
+    ) {
+        let font_name = font_override.unwrap_or_else(|| self.text_config.font.clone());
+        let w = self.text_layout.font_manager().text_width(
+            text,
+            &font_name,
+            self.text_config.size,
+        );
+        let reading_order = self.builder.pages[self.page_index].elements.len();
+        self.builder.pages[self.page_index].elements.push(
+            ContentElement::Text(TextContent {
+                text: text.to_string(),
+                bbox: Rect::new(self.cursor_x, self.cursor_y, w, self.text_config.size),
+                font: crate::elements::FontSpec {
+                    name: font_name,
+                    size: self.text_config.size,
+                },
+                style: crate::elements::TextStyle {
+                    color: color.unwrap_or(crate::layout::Color {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                    }),
+                    ..Default::default()
+                },
+                reading_order: Some(reading_order),
+                artifact_type: None,
+                origin: None,
+                rotation_degrees: None,
+                matrix: self.current_matrix,
+            }),
+        );
+        self.cursor_x += w;
+        self.last_text_rect =
+            Some(Rect::new(self.cursor_x - w, self.cursor_y, w, self.text_config.size));
     }
 
     // ==========================================================================

@@ -576,6 +576,40 @@ export class PageBuilder {
     return this;
   }
 
+  /**
+   * Emit `text` inline at the current cursor position without advancing
+   * to a new line. The cursor advances horizontally so the next `inline`
+   * call follows on the same line.
+   */
+  inline(text: string): this {
+    native.pageBuilderInline(this.h(), text);
+    return this;
+  }
+
+  /** Emit `text` inline in bold weight. */
+  inlineBold(text: string): this {
+    native.pageBuilderInlineBold(this.h(), text);
+    return this;
+  }
+
+  /** Emit `text` inline in italic style. */
+  inlineItalic(text: string): this {
+    native.pageBuilderInlineItalic(this.h(), text);
+    return this;
+  }
+
+  /** Emit `text` inline in an RGB colour (channels 0–1). */
+  inlineColor(r: number, g: number, b: number, text: string): this {
+    native.pageBuilderInlineColor(this.h(), r, g, b, text);
+    return this;
+  }
+
+  /** Advance the cursor to the start of the next line. */
+  newline(): this {
+    native.pageBuilderNewline(this.h());
+    return this;
+  }
+
   // --- Barcode / QR-code placement ------------------------------------
 
   /**

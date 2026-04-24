@@ -97,6 +97,12 @@ extern int   pdf_page_builder_footnote(void* page, const char* ref_mark,
                                        const char* note_text, int* error_code);
 extern int   pdf_page_builder_columns(void* page, unsigned int column_count,
                                       float gap_pt, const char* text, int* error_code);
+extern int   pdf_page_builder_inline(void* page, const char* text, int* error_code);
+extern int   pdf_page_builder_inline_bold(void* page, const char* text, int* error_code);
+extern int   pdf_page_builder_inline_italic(void* page, const char* text, int* error_code);
+extern int   pdf_page_builder_inline_color(void* page, float r, float g, float b,
+                                           const char* text, int* error_code);
+extern int   pdf_page_builder_newline(void* page, int* error_code);
 extern int   pdf_page_builder_rect(void* page, float x, float y, float w, float h, int* error_code);
 extern int   pdf_page_builder_filled_rect(void* page, float x, float y, float w, float h,
                                           float r, float g, float b, int* error_code);
@@ -984,6 +990,49 @@ func (p *PageBuilder) Columns(columnCount uint, gapPt float32, text string) *Pag
 		ct := C.CString(text)
 		defer C.free(unsafe.Pointer(ct))
 		return C.pdf_page_builder_columns(hp, C.uint(columnCount), C.float(gapPt), ct, ec)
+	})
+}
+
+// Inline emits text inline at the cursor (advances cursorX only, not cursorY).
+func (p *PageBuilder) Inline(text string) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		ct := C.CString(text)
+		defer C.free(unsafe.Pointer(ct))
+		return C.pdf_page_builder_inline(hp, ct, ec)
+	})
+}
+
+// InlineBold emits a bold text run inline.
+func (p *PageBuilder) InlineBold(text string) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		ct := C.CString(text)
+		defer C.free(unsafe.Pointer(ct))
+		return C.pdf_page_builder_inline_bold(hp, ct, ec)
+	})
+}
+
+// InlineItalic emits an italic text run inline.
+func (p *PageBuilder) InlineItalic(text string) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		ct := C.CString(text)
+		defer C.free(unsafe.Pointer(ct))
+		return C.pdf_page_builder_inline_italic(hp, ct, ec)
+	})
+}
+
+// InlineColor emits a colored text run inline (RGB 0.0–1.0).
+func (p *PageBuilder) InlineColor(r, g, b float32, text string) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		ct := C.CString(text)
+		defer C.free(unsafe.Pointer(ct))
+		return C.pdf_page_builder_inline_color(hp, C.float(r), C.float(g), C.float(b), ct, ec)
+	})
+}
+
+// Newline advances cursorY by one line-height and resets cursorX to 72 pt.
+func (p *PageBuilder) Newline() *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		return C.pdf_page_builder_newline(hp, ec)
 	})
 }
 

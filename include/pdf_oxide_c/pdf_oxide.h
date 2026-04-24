@@ -446,6 +446,15 @@ int   pdf_page_builder_columns(void* page, unsigned int column_count,
                                float gap_pt, const char* text,
                                int* error_code);
 
+/* Rich text inline runs — advance cursor_x only (no y-advance). */
+int   pdf_page_builder_inline(void* page, const char* text, int* error_code);
+int   pdf_page_builder_inline_bold(void* page, const char* text, int* error_code);
+int   pdf_page_builder_inline_italic(void* page, const char* text, int* error_code);
+int   pdf_page_builder_inline_color(void* page, float r, float g, float b,
+                                    const char* text, int* error_code);
+/* Advance cursor_y one line-height and reset cursor_x to 72 pt. */
+int   pdf_page_builder_newline(void* page, int* error_code);
+
 /* Barcode / QR-code image placement.
  * barcode_type: 0=Code128 1=Code39 2=EAN13 3=EAN8 4=UPCA 5=ITF 6=Code93 7=Codabar */
 int   pdf_page_builder_barcode_1d(void* page, int barcode_type, const char* data,

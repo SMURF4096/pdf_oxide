@@ -4053,6 +4053,16 @@ enum PendingPageOp {
         gap_pt: f32,
         text: String,
     },
+    Inline(String),
+    InlineBold(String),
+    InlineItalic(String),
+    InlineColor {
+        r: f32,
+        g: f32,
+        b: f32,
+        text: String,
+    },
+    Newline,
     Rect(f32, f32, f32, f32),
     FilledRect(f32, f32, f32, f32, f32, f32, f32),
     Line(f32, f32, f32, f32),
@@ -4974,6 +4984,48 @@ impl PyFluentPageBuilder {
         Ok(slf)
     }
 
+    /// Emit `text` inline at the cursor (advances cursor_x, not cursor_y).
+    fn inline<'a>(mut slf: PyRefMut<'a, Self>, text: String) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::Inline(text))?;
+        Ok(slf)
+    }
+
+    /// Inline bold run.
+    fn inline_bold<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        text: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::InlineBold(text))?;
+        Ok(slf)
+    }
+
+    /// Inline italic run.
+    fn inline_italic<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        text: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::InlineItalic(text))?;
+        Ok(slf)
+    }
+
+    /// Inline colored run (RGB 0.0–1.0).
+    fn inline_color<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        r: f32,
+        g: f32,
+        b: f32,
+        text: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::InlineColor { r, g, b, text })?;
+        Ok(slf)
+    }
+
+    /// Advance cursor_y by one line-height and reset cursor_x to 72 pt.
+    fn newline<'a>(mut slf: PyRefMut<'a, Self>) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::Newline)?;
+        Ok(slf)
+    }
+
     /// Place a 1-D barcode image at `(x, y, w, h)` on the page.
     /// `barcode_type`: 0=Code128 1=Code39 2=EAN13 3=EAN8 4=UPCA 5=ITF
     /// 6=Code93 7=Codabar. Errors surface here (at call time), not at
@@ -5349,6 +5401,13 @@ impl PyFluentPageBuilder {
                 PendingPageOp::Columns { count, gap_pt, text } => {
                     page.columns(count, gap_pt, &text)
                 },
+                PendingPageOp::Inline(text) => page.inline(&text),
+                PendingPageOp::InlineBold(text) => page.inline_bold(&text),
+                PendingPageOp::InlineItalic(text) => page.inline_italic(&text),
+                PendingPageOp::InlineColor { r, g, b, text } => {
+                    page.inline_color(r, g, b, &text)
+                },
+                PendingPageOp::Newline => page.newline(),
                 PendingPageOp::Rect(x, y, w, h) => page.rect(x, y, w, h),
                 PendingPageOp::FilledRect(x, y, w, h, r, g, b) => {
                     page.filled_rect(x, y, w, h, r, g, b)

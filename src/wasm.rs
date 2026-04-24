@@ -3547,6 +3547,16 @@ enum WasmPageOp {
         gap_pt: f32,
         text: String,
     },
+    Inline(String),
+    InlineBold(String),
+    InlineItalic(String),
+    InlineColor {
+        r: f32,
+        g: f32,
+        b: f32,
+        text: String,
+    },
+    Newline,
     Rect(f32, f32, f32, f32),
     FilledRect(f32, f32, f32, f32, f32, f32, f32),
     Line(f32, f32, f32, f32),
@@ -3896,6 +3906,13 @@ impl WasmDocumentBuilder {
                 WasmPageOp::Columns { count, gap_pt, text } => {
                     rust_page.columns(count, gap_pt, &text)
                 },
+                WasmPageOp::Inline(text) => rust_page.inline(&text),
+                WasmPageOp::InlineBold(text) => rust_page.inline_bold(&text),
+                WasmPageOp::InlineItalic(text) => rust_page.inline_italic(&text),
+                WasmPageOp::InlineColor { r, g, b, text } => {
+                    rust_page.inline_color(r, g, b, &text)
+                },
+                WasmPageOp::Newline => rust_page.newline(),
                 WasmPageOp::Rect(x, y, w, h) => rust_page.rect(x, y, w, h),
                 WasmPageOp::FilledRect(x, y, w, h, r, g, b) => {
                     rust_page.filled_rect(x, y, w, h, r, g, b)
@@ -4385,6 +4402,36 @@ impl WasmFluentPageBuilder {
     #[wasm_bindgen(js_name = "columns")]
     pub fn columns(&mut self, column_count: u32, gap_pt: f32, text: String) -> Result<(), JsValue> {
         self.push(WasmPageOp::Columns { count: column_count, gap_pt, text })
+    }
+
+    /// Emit `text` inline (advances cursorX only, not cursorY).
+    #[wasm_bindgen(js_name = "inline")]
+    pub fn inline(&mut self, text: String) -> Result<(), JsValue> {
+        self.push(WasmPageOp::Inline(text))
+    }
+
+    /// Inline bold run.
+    #[wasm_bindgen(js_name = "inlineBold")]
+    pub fn inline_bold(&mut self, text: String) -> Result<(), JsValue> {
+        self.push(WasmPageOp::InlineBold(text))
+    }
+
+    /// Inline italic run.
+    #[wasm_bindgen(js_name = "inlineItalic")]
+    pub fn inline_italic(&mut self, text: String) -> Result<(), JsValue> {
+        self.push(WasmPageOp::InlineItalic(text))
+    }
+
+    /// Inline colored run (RGB 0.0–1.0).
+    #[wasm_bindgen(js_name = "inlineColor")]
+    pub fn inline_color(&mut self, r: f32, g: f32, b: f32, text: String) -> Result<(), JsValue> {
+        self.push(WasmPageOp::InlineColor { r, g, b, text })
+    }
+
+    /// Advance cursorY by one line-height and reset cursorX to 72 pt.
+    #[wasm_bindgen(js_name = "newline")]
+    pub fn newline(&mut self) -> Result<(), JsValue> {
+        self.push(WasmPageOp::Newline)
     }
 
     /// Place a 1-D barcode image at `(x, y, w, h)` on the page.

@@ -481,6 +481,52 @@ namespace PdfOxide.Core
             return this;
         }
 
+        // --- Rich text inline runs ------------------------------------------
+
+        /// <summary>Emit <paramref name="text"/> inline (advances cursorX only).</summary>
+        public PageBuilder Inline(string text)
+        {
+            ArgumentNullException.ThrowIfNull(text);
+            NativeMethods.PdfPageBuilderInline(Handle, text, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
+        /// <summary>Inline bold run.</summary>
+        public PageBuilder InlineBold(string text)
+        {
+            ArgumentNullException.ThrowIfNull(text);
+            NativeMethods.PdfPageBuilderInlineBold(Handle, text, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
+        /// <summary>Inline italic run.</summary>
+        public PageBuilder InlineItalic(string text)
+        {
+            ArgumentNullException.ThrowIfNull(text);
+            NativeMethods.PdfPageBuilderInlineItalic(Handle, text, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
+        /// <summary>Inline colored run (RGB 0.0–1.0).</summary>
+        public PageBuilder InlineColor(float r, float g, float b, string text)
+        {
+            ArgumentNullException.ThrowIfNull(text);
+            NativeMethods.PdfPageBuilderInlineColor(Handle, r, g, b, text, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
+        /// <summary>Advance cursorY one line-height and reset cursorX to 72 pt.</summary>
+        public PageBuilder Newline()
+        {
+            NativeMethods.PdfPageBuilderNewline(Handle, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
         // --- Barcode / QR-code placement ------------------------------------
 
         /// <summary>

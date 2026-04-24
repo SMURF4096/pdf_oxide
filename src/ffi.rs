@@ -6809,6 +6809,16 @@ enum FfiPageOp {
         gap_pt: f32,
         text: String,
     },
+    Inline(String),
+    InlineBold(String),
+    InlineItalic(String),
+    InlineColor {
+        r: f32,
+        g: f32,
+        b: f32,
+        text: String,
+    },
+    Newline,
     Rect(f32, f32, f32, f32),
     FilledRect(f32, f32, f32, f32, f32, f32, f32),
     Line(f32, f32, f32, f32),
@@ -7996,6 +8006,80 @@ pub extern "C" fn pdf_page_builder_columns(
     )
 }
 
+// ── Rich text inline runs ─────────────────────────────────────────────
+
+/// Emit `text` inline at the cursor — advances cursor_x, not cursor_y.
+/// Call `pdf_page_builder_newline` to advance to the next line.
+///
+/// # Safety
+/// `handle` and `text` must be valid non-null pointers.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_inline(
+    handle: *mut FfiPageBuilder,
+    text: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(s) = read_cstr_or_fail(text, error_code) else { return -1; };
+    push_page_op(handle, error_code, FfiPageOp::Inline(s))
+}
+
+/// Inline bold run.
+///
+/// # Safety
+/// `handle` and `text` must be valid non-null pointers.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_inline_bold(
+    handle: *mut FfiPageBuilder,
+    text: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(s) = read_cstr_or_fail(text, error_code) else { return -1; };
+    push_page_op(handle, error_code, FfiPageOp::InlineBold(s))
+}
+
+/// Inline italic run.
+///
+/// # Safety
+/// `handle` and `text` must be valid non-null pointers.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_inline_italic(
+    handle: *mut FfiPageBuilder,
+    text: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(s) = read_cstr_or_fail(text, error_code) else { return -1; };
+    push_page_op(handle, error_code, FfiPageOp::InlineItalic(s))
+}
+
+/// Inline colored run (RGB 0.0–1.0).
+///
+/// # Safety
+/// `handle` and `text` must be valid non-null pointers.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_inline_color(
+    handle: *mut FfiPageBuilder,
+    r: f32,
+    g: f32,
+    b: f32,
+    text: *const c_char,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(s) = read_cstr_or_fail(text, error_code) else { return -1; };
+    push_page_op(handle, error_code, FfiPageOp::InlineColor { r, g, b, text: s })
+}
+
+/// Advance cursor_y by one line-height and reset cursor_x to 72 pt.
+///
+/// # Safety
+/// `handle` must be a valid non-null pointer.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_newline(
+    handle: *mut FfiPageBuilder,
+    error_code: *mut i32,
+) -> i32 {
+    push_page_op(handle, error_code, FfiPageOp::Newline)
+}
+
 // ── Barcode helpers ───────────────────────────────────────────────────
 
 /// Map FFI barcode-type integer to the Rust enum.
@@ -8608,6 +8692,13 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
             FfiPageOp::Columns { count, gap_pt, text } => {
                 rust_page.columns(count, gap_pt, &text)
             },
+            FfiPageOp::Inline(text) => rust_page.inline(&text),
+            FfiPageOp::InlineBold(text) => rust_page.inline_bold(&text),
+            FfiPageOp::InlineItalic(text) => rust_page.inline_italic(&text),
+            FfiPageOp::InlineColor { r, g, b, text } => {
+                rust_page.inline_color(r, g, b, &text)
+            },
+            FfiPageOp::Newline => rust_page.newline(),
             FfiPageOp::Rect(x, y, w, h) => rust_page.rect(x, y, w, h),
             FfiPageOp::FilledRect(x, y, w, h, r, g, b) => {
                 rust_page.filled_rect(x, y, w, h, r, g, b)
