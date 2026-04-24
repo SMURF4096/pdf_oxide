@@ -115,8 +115,8 @@ pub use font_shaping::{shape as shape_text, Direction as ShapeDirection, ShapedG
 pub use form_fields::{
     ButtonFieldFlags, CheckboxWidget, ChoiceFieldFlags, ChoiceOption, ComboBoxWidget, FieldFlags,
     FormAction, FormAppearanceGenerator, FormFieldEntry, FormFieldWidget, ListBoxWidget,
-    PushButtonWidget, RadioButtonGroup, RadioButtonWidget, SubmitFormFlags, TextAlignment,
-    TextFieldFlags, TextFieldWidget,
+    PushButtonWidget, RadioButtonGroup, RadioButtonWidget, SignatureWidget, SubmitFormFlags,
+    TextAlignment, TextFieldFlags, TextFieldWidget,
 };
 pub use freetext::FreeTextAnnotation;
 pub use graphics_state::{ExtGStateBuilder, SoftMask, SoftMaskSubtype};

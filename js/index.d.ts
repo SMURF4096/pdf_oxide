@@ -1966,6 +1966,8 @@ export class PageBuilder {
     selected?: string
   ): this;
   pushButton(name: string, x: number, y: number, w: number, h: number, caption: string): this;
+  /** Add an unsigned signature placeholder field (/FT /Sig) at the given bounds. */
+  signatureField(name: string, x: number, y: number, w: number, h: number): this;
 
   // --- Barcode / QR-code placement ----------------------------------
   /** Place a 1-D barcode image on the page. barcodeType: 0=Code128 1=Code39 2=EAN13 3=EAN8 4=UPCA 5=ITF 6=Code93 7=Codabar. */

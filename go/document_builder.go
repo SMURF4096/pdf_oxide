@@ -90,6 +90,9 @@ extern int   pdf_page_builder_radio_group(void* page, const char* name,
 extern int   pdf_page_builder_push_button(void* page, const char* name,
                                           float x, float y, float w, float h,
                                           const char* caption, int* error_code);
+extern int   pdf_page_builder_signature_field(void* page, const char* name,
+                                              float x, float y, float w, float h,
+                                              int* error_code);
 extern int   pdf_page_builder_rect(void* page, float x, float y, float w, float h, int* error_code);
 extern int   pdf_page_builder_filled_rect(void* page, float x, float y, float w, float h,
                                           float r, float g, float b, int* error_code);
@@ -899,6 +902,15 @@ func (p *PageBuilder) PushButton(name string, x, y, w, h float32, caption string
 		defer C.free(unsafe.Pointer(cn))
 		defer C.free(unsafe.Pointer(cc))
 		return C.pdf_page_builder_push_button(hp, cn, C.float(x), C.float(y), C.float(w), C.float(h), cc, ec)
+	})
+}
+
+// SignatureField adds an unsigned signature placeholder field (/FT /Sig) at the given bounds.
+func (p *PageBuilder) SignatureField(name string, x, y, w, h float32) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		cn := C.CString(name)
+		defer C.free(unsafe.Pointer(cn))
+		return C.pdf_page_builder_signature_field(hp, cn, C.float(x), C.float(y), C.float(w), C.float(h), ec)
 	})
 }
 

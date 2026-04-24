@@ -8,7 +8,7 @@ use super::annotation_builder::{AnnotationBuilder, LinkAnnotation};
 use super::content_stream::ContentStreamBuilder;
 use super::form_fields::{
     CheckboxWidget, ComboBoxWidget, FormFieldEntry, ListBoxWidget, PushButtonWidget,
-    RadioButtonGroup, TextFieldWidget,
+    RadioButtonGroup, SignatureWidget, TextFieldWidget,
 };
 use super::freetext::FreeTextAnnotation;
 use super::ink::InkAnnotation;
@@ -885,6 +885,21 @@ impl<'a> PageBuilder<'a> {
         self
     }
 
+    /// Add an unsigned signature placeholder field to the page.
+    pub fn add_signature_field(&mut self, widget: SignatureWidget) -> &mut Self {
+        let page_ref = ObjectRef::new(0, 0);
+        let entry = widget.build_entry(page_ref);
+        let page = &mut self.writer.pages[self.page_index];
+        page.form_fields.push(entry);
+        self.writer.has_signature_fields = true;
+        self
+    }
+
+    /// Convenience method: add an unsigned signature placeholder by name and rect.
+    pub fn signature_field(&mut self, name: impl Into<String>, rect: Rect) -> &mut Self {
+        self.add_signature_field(SignatureWidget::new(name, rect))
+    }
+
     // ===== Generic Annotation Method =====
 
     /// Add any annotation type to the page.
@@ -978,6 +993,9 @@ pub struct PdfWriter {
     next_embedded_font_id: u32,
     /// AcroForm builder for interactive forms
     acroform: Option<AcroFormBuilder>,
+    /// Set to true when at least one SignatureWidget is added; triggers
+    /// SigFlags bit 1 (SignaturesExist) in the AcroForm dictionary.
+    has_signature_fields: bool,
     /// Document outline (bookmarks). When set, `finish()` builds the
     /// outline tree against the emitted page refs and links it as
     /// `/Outlines` on the catalog. #393 Bundle B-1.
@@ -1007,6 +1025,7 @@ impl PdfWriter {
             user_font_to_resource: HashMap::new(),
             next_embedded_font_id: 1,
             acroform: None,
+            has_signature_fields: false,
             outline: None,
             page_labels: None,
         }
@@ -1479,6 +1498,9 @@ impl PdfWriter {
             let id = self.alloc_obj_id();
             let mut acroform = self.acroform.take().unwrap_or_default();
             acroform.add_fields(all_field_refs);
+            if self.has_signature_fields {
+                acroform = acroform.signatures_exist();
+            }
             let acroform_dict = acroform.build_with_resources();
             self.objects.insert(id, Object::Dictionary(acroform_dict));
             Some(id)

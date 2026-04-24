@@ -1348,10 +1348,31 @@ impl<'a> FluentPageBuilder<'a> {
         self
     }
 
+    /// Add an unsigned signature placeholder field to the page.
+    ///
+    /// The field is created with `/FT /Sig` and `/V null` (unsigned).
+    /// A signing application can fill it in via incremental update.
+    pub fn signature_field(
+        self,
+        name: impl Into<String>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    ) -> Self {
+        let page = &mut self.builder.pages[self.page_index];
+        page.form_fields.push(PendingFormField::SignatureField {
+            name: name.into(),
+            rect: Rect::new(x, y, w, h),
+        });
+        page.form_field_meta.push(PendingFieldMeta::default());
+        self
+    }
+
     /// Mark the most-recently-added form field on this page as
     /// **required**. Chainable after any `text_field` / `checkbox` /
     /// `combo_box` / `list_box` / `radio_group` / `push_button` /
-    /// (future) `signature_field` call. No-op if no field has been
+    /// `signature_field` call. No-op if no field has been
     /// added yet. #393 Bundle D-3.
     pub fn required(self) -> Self {
         let page = &mut self.builder.pages[self.page_index];
@@ -2039,6 +2060,11 @@ enum PendingFormField {
         options: Vec<String>,
         selected: Option<String>,
         multi_select: bool,
+    },
+    /// An unsigned signature placeholder field (/FT /Sig).
+    SignatureField {
+        name: String,
+        rect: Rect,
     },
 }
 
@@ -2783,6 +2809,17 @@ impl DocumentBuilder {
                             widget = widget.with_validate(s.clone());
                         }
                         page.add_list_box(widget);
+                    },
+                    PendingFormField::SignatureField { name, rect } => {
+                        use super::form_fields::SignatureWidget;
+                        let mut widget = SignatureWidget::new(name.clone(), *rect);
+                        if meta.read_only {
+                            widget = widget.read_only();
+                        }
+                        if let Some(tip) = &meta.tooltip {
+                            widget = widget.with_tooltip(tip.clone());
+                        }
+                        page.add_signature_field(widget);
                     },
                 }
             }

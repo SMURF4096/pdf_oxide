@@ -4037,6 +4037,13 @@ enum PendingPageOp {
         h: f32,
         caption: String,
     },
+    SignatureField {
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    },
     Rect(f32, f32, f32, f32),
     FilledRect(f32, f32, f32, f32, f32, f32, f32),
     Line(f32, f32, f32, f32),
@@ -4890,6 +4897,19 @@ impl PyFluentPageBuilder {
         Ok(slf)
     }
 
+    /// Add an unsigned signature placeholder field at the given bounds.
+    fn signature_field<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::SignatureField { name, x, y, w, h })?;
+        Ok(slf)
+    }
+
     /// Place a 1-D barcode image at `(x, y, w, h)` on the page.
     /// `barcode_type`: 0=Code128 1=Code39 2=EAN13 3=EAN8 4=UPCA 5=ITF
     /// 6=Code93 7=Codabar. Errors surface here (at call time), not at
@@ -5256,6 +5276,9 @@ impl PyFluentPageBuilder {
                     h,
                     caption,
                 } => page.push_button(name, x, y, w, h, caption),
+                PendingPageOp::SignatureField { name, x, y, w, h } => {
+                    page.signature_field(name, x, y, w, h)
+                },
                 PendingPageOp::Rect(x, y, w, h) => page.rect(x, y, w, h),
                 PendingPageOp::FilledRect(x, y, w, h, r, g, b) => {
                     page.filled_rect(x, y, w, h, r, g, b)

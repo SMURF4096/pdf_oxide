@@ -518,6 +518,12 @@ export class PageBuilder {
     return this;
   }
 
+  /** Add an unsigned signature placeholder field (/FT /Sig) at the given bounds. */
+  signatureField(name: string, x: number, y: number, w: number, h: number): this {
+    native.pageBuilderSignatureField(this.h(), name, x, y, w, h);
+    return this;
+  }
+
   // --- Barcode / QR-code placement ------------------------------------
 
   /**

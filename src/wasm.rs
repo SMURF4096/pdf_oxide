@@ -3531,6 +3531,13 @@ enum WasmPageOp {
         h: f32,
         caption: String,
     },
+    SignatureField {
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    },
     Rect(f32, f32, f32, f32),
     FilledRect(f32, f32, f32, f32, f32, f32, f32),
     Line(f32, f32, f32, f32),
@@ -3845,6 +3852,9 @@ impl WasmDocumentBuilder {
                     h,
                     caption,
                 } => rust_page.push_button(name, x, y, w, h, caption),
+                WasmPageOp::SignatureField { name, x, y, w, h } => {
+                    rust_page.signature_field(name, x, y, w, h)
+                },
                 WasmPageOp::Rect(x, y, w, h) => rust_page.rect(x, y, w, h),
                 WasmPageOp::FilledRect(x, y, w, h, r, g, b) => {
                     rust_page.filled_rect(x, y, w, h, r, g, b)
@@ -4307,6 +4317,19 @@ impl WasmFluentPageBuilder {
             h,
             caption,
         })
+    }
+
+    /// Add an unsigned signature placeholder field at the given bounds.
+    #[wasm_bindgen(js_name = "signatureField")]
+    pub fn signature_field(
+        &mut self,
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    ) -> Result<(), JsValue> {
+        self.push(WasmPageOp::SignatureField { name, x, y, w, h })
     }
 
     /// Place a 1-D barcode image at `(x, y, w, h)` on the page.

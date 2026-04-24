@@ -416,6 +416,42 @@ fn ffi_field_validation_aa_dict_in_pdf() {
 }
 
 // ---------------------------------------------------------------------------
+// Signature field placeholder through FFI
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ffi_signature_field_in_pdf() {
+    let mut ec = 0i32;
+    let builder = unsafe { pdf_document_builder_create(&mut ec) };
+    assert_eq!(ec, 0);
+
+    let page = unsafe { pdf_document_builder_a4_page(builder, &mut ec) };
+    assert_eq!(ec, 0);
+
+    let name = cstring("signature1");
+    let ret = unsafe {
+        pdf_page_builder_signature_field(page, name.as_ptr(), 72., 100., 200., 60., &mut ec)
+    };
+    assert_eq!(ret, 0, "signature_field failed: {ec}");
+
+    let ret = unsafe { pdf_page_builder_done(page, &mut ec) };
+    assert_eq!(ret, 0, "done failed: {ec}");
+
+    let mut out_len = 0usize;
+    let pdf_bytes = unsafe { pdf_document_builder_build(builder, &mut out_len, &mut ec) };
+    assert_eq!(ec, 0, "build failed: {ec}");
+    assert!(!pdf_bytes.is_null());
+
+    let slice = unsafe { std::slice::from_raw_parts(pdf_bytes, out_len) };
+    assert!(slice.starts_with(b"%PDF-"), "output is not a PDF");
+    let s = String::from_utf8_lossy(slice);
+    assert!(s.contains("/Sig"), "missing /Sig field type in PDF");
+    assert!(s.contains("/SigFlags"), "missing /SigFlags in AcroForm");
+
+    unsafe { free_bytes(pdf_bytes) };
+}
+
+// ---------------------------------------------------------------------------
 // Phase 2 — HTML+CSS pipeline through the C FFI
 // ---------------------------------------------------------------------------
 

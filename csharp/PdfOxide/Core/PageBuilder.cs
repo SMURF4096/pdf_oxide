@@ -447,6 +447,15 @@ namespace PdfOxide.Core
             return this;
         }
 
+        /// <summary>Add an unsigned signature placeholder field (/FT /Sig).</summary>
+        public PageBuilder SignatureField(string name, float x, float y, float w, float h)
+        {
+            ArgumentNullException.ThrowIfNull(name);
+            NativeMethods.PdfPageBuilderSignatureField(Handle, name, x, y, w, h, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
         // --- Barcode / QR-code placement ------------------------------------
 
         /// <summary>

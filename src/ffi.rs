@@ -6793,6 +6793,13 @@ enum FfiPageOp {
         h: f32,
         caption: String,
     },
+    SignatureField {
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    },
     Rect(f32, f32, f32, f32),
     FilledRect(f32, f32, f32, f32, f32, f32, f32),
     Line(f32, f32, f32, f32),
@@ -7857,6 +7864,27 @@ pub extern "C" fn pdf_page_builder_push_button(
     )
 }
 
+/// Add an unsigned signature placeholder field to the page.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_signature_field(
+    handle: *mut FfiPageBuilder,
+    name: *const c_char,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(name_s) = read_cstr_or_fail(name, error_code) else {
+        return -1;
+    };
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::SignatureField { name: name_s, x, y, w, h },
+    )
+}
+
 // ── Barcode helpers ───────────────────────────────────────────────────
 
 /// Map FFI barcode-type integer to the Rust enum.
@@ -8460,6 +8488,9 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
                 h,
                 caption,
             } => rust_page.push_button(name, x, y, w, h, caption),
+            FfiPageOp::SignatureField { name, x, y, w, h } => {
+                rust_page.signature_field(name, x, y, w, h)
+            },
             FfiPageOp::Rect(x, y, w, h) => rust_page.rect(x, y, w, h),
             FfiPageOp::FilledRect(x, y, w, h, r, g, b) => {
                 rust_page.filled_rect(x, y, w, h, r, g, b)
