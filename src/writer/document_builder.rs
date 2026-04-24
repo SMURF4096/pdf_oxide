@@ -4924,4 +4924,137 @@ mod tests {
         // Should NOT contain a link annotation since there was no text to link
         assert!(!content.contains("/Subtype /Link"));
     }
+
+    // ─── Tagged PDF / PDF/UA catalog wiring tests (F-1, F-2, F-4) ───────────
+
+    #[test]
+    fn test_tagged_pdf_ua1_emits_mark_info() {
+        let mut builder = DocumentBuilder::new();
+        builder = builder.metadata(
+            DocumentMetadata::new()
+                .title("Test")
+                .tagged_pdf_ua1()
+                .language("en-US"),
+        );
+        builder.letter_page().at(72.0, 720.0).text("Hello").done();
+        let bytes = builder.build().unwrap();
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(
+            content.contains("/MarkInfo"),
+            "catalog must contain /MarkInfo"
+        );
+        assert!(
+            content.contains("/Marked true"),
+            "/MarkInfo must have /Marked true"
+        );
+    }
+
+    #[test]
+    fn test_tagged_pdf_ua1_emits_struct_tree_root() {
+        let mut builder = DocumentBuilder::new();
+        builder = builder.metadata(
+            DocumentMetadata::new()
+                .title("Test")
+                .tagged_pdf_ua1()
+                .language("en-US"),
+        );
+        builder.letter_page().at(72.0, 720.0).text("Hello").done();
+        let bytes = builder.build().unwrap();
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(
+            content.contains("/StructTreeRoot"),
+            "catalog must contain /StructTreeRoot"
+        );
+        assert!(
+            content.contains("/ParentTree"),
+            "StructTreeRoot must contain /ParentTree"
+        );
+        assert!(
+            content.contains("/ParentTreeNextKey"),
+            "StructTreeRoot must contain /ParentTreeNextKey"
+        );
+    }
+
+    #[test]
+    fn test_tagged_pdf_ua1_emits_lang_and_viewer_prefs() {
+        let mut builder = DocumentBuilder::new();
+        builder = builder.metadata(
+            DocumentMetadata::new()
+                .title("Tagged Test")
+                .tagged_pdf_ua1()
+                .language("fr-CA"),
+        );
+        builder.letter_page().at(72.0, 720.0).text("Bonjour").done();
+        let bytes = builder.build().unwrap();
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(content.contains("/Lang"), "catalog must contain /Lang");
+        assert!(
+            content.contains("fr-CA"),
+            "/Lang must carry the configured language"
+        );
+        assert!(
+            content.contains("/ViewerPreferences"),
+            "catalog must contain /ViewerPreferences"
+        );
+        assert!(
+            content.contains("/DisplayDocTitle true"),
+            "/ViewerPreferences must set /DisplayDocTitle true"
+        );
+    }
+
+    #[test]
+    fn test_tagged_pdf_ua1_emits_struct_parents_on_pages() {
+        let mut builder = DocumentBuilder::new();
+        builder = builder.metadata(
+            DocumentMetadata::new().tagged_pdf_ua1().language("en"),
+        );
+        // Two-page document so we can verify both pages get /StructParents.
+        builder.letter_page().at(72.0, 720.0).text("Page 1").done();
+        builder.letter_page().at(72.0, 720.0).text("Page 2").done();
+        let bytes = builder.build().unwrap();
+        let content = String::from_utf8_lossy(&bytes);
+        // Each page dict should carry /StructParents.
+        let count = content.matches("/StructParents").count();
+        assert_eq!(
+            count, 2,
+            "each page must carry /StructParents; found {count} occurrences"
+        );
+    }
+
+    #[test]
+    fn test_tagged_pdf_ua1_role_map() {
+        let mut builder = DocumentBuilder::new();
+        builder = builder.metadata(
+            DocumentMetadata::new()
+                .tagged_pdf_ua1()
+                .language("en")
+                .role_map("Note", "P")
+                .role_map("Caption", "P"),
+        );
+        builder.letter_page().at(72.0, 720.0).text("hello").done();
+        let bytes = builder.build().unwrap();
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(
+            content.contains("/RoleMap"),
+            "StructTreeRoot must contain /RoleMap when role mappings are set"
+        );
+        assert!(content.contains("/Note"), "RoleMap must contain /Note");
+        assert!(content.contains("/Caption"), "RoleMap must contain /Caption");
+    }
+
+    #[test]
+    fn test_untagged_pdf_has_no_mark_info_or_struct_tree() {
+        let mut builder = DocumentBuilder::new();
+        builder.letter_page().at(72.0, 720.0).text("plain").done();
+        let bytes = builder.build().unwrap();
+        let content = String::from_utf8_lossy(&bytes);
+        assert!(
+            !content.contains("/MarkInfo"),
+            "untagged PDF must NOT contain /MarkInfo"
+        );
+        assert!(
+            !content.contains("/StructTreeRoot"),
+            "untagged PDF must NOT contain /StructTreeRoot"
+        );
+    }
 }

@@ -1725,6 +1725,12 @@ impl PdfWriter {
                 "ParentTree".to_string(),
                 Object::Reference(ObjectRef::new(parent_tree_id, 0)),
             );
+            // ISO 14289-1 §7.1 / PDF Ref §10.6.6: ParentTreeNextKey must equal
+            // the next key that would be assigned (i.e. the page count).
+            str_dict.insert(
+                "ParentTreeNextKey".to_string(),
+                Object::Integer(page_count as i64),
+            );
 
             // F-4: /RoleMap
             if !self.config.role_map.is_empty() {
