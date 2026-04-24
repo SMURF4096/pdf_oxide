@@ -222,6 +222,13 @@ pub struct FluentPageBuilder<'a> {
     last_text_rect: Option<Rect>,
     /// Pending annotations for this page
     pending_annotations: Vec<Annotation>,
+    /// Active 2D affine transform (PDF row order: `[a b c d e f]`).
+    /// `None` = identity. Populated by [`Self::with_transform`] /
+    /// [`Self::rotated`] / [`Self::scaled`] / [`Self::translated`] and
+    /// applied to `TextContent.matrix` on emission. v0.3.39 scope:
+    /// text only — see inline comment in the transforms section for
+    /// the Path / Image / Table follow-up.
+    current_matrix: Option<[f32; 6]>,
 }
 
 impl<'a> FluentPageBuilder<'a> {
@@ -414,7 +421,7 @@ impl<'a> FluentPageBuilder<'a> {
             artifact_type: None,
             origin: None,
             rotation_degrees: None,
-            matrix: None,
+            matrix: self.current_matrix,
         }));
         // Move cursor down for next line
         self.cursor_y -= self.text_config.size * self.text_config.line_height;
@@ -1128,6 +1135,76 @@ impl<'a> FluentPageBuilder<'a> {
     }
 
     // ───────────────────────────────────────────────────────────────────
+    // Transforms (rotate / scale / translate + arbitrary 2D matrix)
+    //
+    // v0.3.39 scope: transforms apply to TextContent emitted inside the
+    // closure — `TextContent.matrix` is honoured by the writer. Path /
+    // Image / Table elements DO NOT yet carry a matrix field; adding
+    // one is a coordinated change tracked as a v0.3.40 follow-up
+    // (see `docs/v0.3.39/design/builder_gaps_plan.md` Bundle A-2
+    // "Open questions"). Until then, rotated/scaled shapes + images
+    // render at their un-transformed coordinates.
+    // ───────────────────────────────────────────────────────────────────
+
+    /// Evaluate `f` inside a scope where every text element is drawn
+    /// under the 2D affine transform `matrix` (PDF convention:
+    /// `[a b c d e f]`, applied as `(x' y') = (x y) · M`). The transform
+    /// composes with any outer transform; on exit, the outer transform
+    /// is restored.
+    ///
+    /// ```no_run
+    /// # use pdf_oxide::writer::DocumentBuilder;
+    /// # let mut doc = DocumentBuilder::new();
+    /// # let page = doc.letter_page();
+    /// let page = page.with_transform([1.0, 0.0, 0.0, 1.0, 50.0, 50.0], |p| {
+    ///     p.at(0.0, 0.0).text("drawn at page (50, 50)")
+    /// });
+    /// ```
+    pub fn with_transform<F>(self, matrix: [f32; 6], f: F) -> Self
+    where
+        F: FnOnce(Self) -> Self,
+    {
+        let outer = self.current_matrix;
+        let composed = compose_affine(outer.unwrap_or(IDENTITY), matrix);
+        let mut page = Self {
+            current_matrix: Some(composed),
+            ..self
+        };
+        page = f(page);
+        page.current_matrix = outer;
+        page
+    }
+
+    /// Evaluate `f` in a scope where text is rotated by `degrees` about
+    /// the origin. To rotate about a point `(cx, cy)`, compose with
+    /// `.translated(cx, cy, |p| p.rotated(deg, |p| p.translated(-cx, -cy, f)))`.
+    pub fn rotated<F>(self, degrees: f32, f: F) -> Self
+    where
+        F: FnOnce(Self) -> Self,
+    {
+        let r = degrees.to_radians();
+        let (c, s) = (r.cos(), r.sin());
+        // PDF matrix row order: [a b c d e f] = [cos sin -sin cos 0 0]
+        self.with_transform([c, s, -s, c, 0.0, 0.0], f)
+    }
+
+    /// Evaluate `f` scaled by `(sx, sy)` about the origin.
+    pub fn scaled<F>(self, sx: f32, sy: f32, f: F) -> Self
+    where
+        F: FnOnce(Self) -> Self,
+    {
+        self.with_transform([sx, 0.0, 0.0, sy, 0.0, 0.0], f)
+    }
+
+    /// Evaluate `f` translated by `(tx, ty)`.
+    pub fn translated<F>(self, tx: f32, ty: f32, f: F) -> Self
+    where
+        F: FnOnce(Self) -> Self,
+    {
+        self.with_transform([1.0, 0.0, 0.0, 1.0, tx, ty], f)
+    }
+
+    // ───────────────────────────────────────────────────────────────────
     // Image placement
     // ───────────────────────────────────────────────────────────────────
 
@@ -1637,6 +1714,7 @@ impl DocumentBuilder {
             text_layout: TextLayout::new(),
             last_text_rect: None,
             pending_annotations: Vec::new(),
+            current_matrix: None,
         }
     }
 
@@ -1987,6 +2065,34 @@ impl Default for DocumentBuilder {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// PDF identity matrix `[1 0 0 1 0 0]`.
+const IDENTITY: [f32; 6] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+
+/// Compose two PDF affine matrices in row-order (`[a b c d e f]`).
+///
+/// `outer` is an already-set transform (from an enclosing `q M cm`
+/// scope); `inner` is a newly-applied transform. PDF uses row vectors
+/// `v · M`, so transforming first by `inner` then by `outer` is
+/// `v · inner · outer`; returned matrix equals `inner · outer`.
+///
+/// Matches PDF's `q M_outer cm q M_inner cm ... Q Q` behaviour: a
+/// point drawn at (0, 0) inside `translated(tx, ty, rotated(θ, ...))`
+/// lands at `(tx, ty)` — rotation about origin preserves it, then the
+/// translation shifts it.
+fn compose_affine(outer: [f32; 6], inner: [f32; 6]) -> [f32; 6] {
+    // Row-major matrix multiply: (inner * outer)_{ij} = Σ_k inner_{ik} * outer_{kj}
+    let [a1, b1, c1, d1, e1, f1] = inner;
+    let [a2, b2, c2, d2, e2, f2] = outer;
+    [
+        a1 * a2 + b1 * c2,
+        a1 * b2 + b1 * d2,
+        c1 * a2 + d1 * c2,
+        c1 * b2 + d1 * d2,
+        e1 * a2 + f1 * c2 + e2,
+        e1 * b2 + f1 * d2 + f2,
+    ]
 }
 
 /// Adapter that projects `FontManager` into the `table_renderer::FontMetrics`
@@ -2373,6 +2479,79 @@ mod tests {
 
         // Bezier: stroke only (fill None).
         assert!(paths[4].stroke_color.is_some() && paths[4].fill_color.is_none());
+    }
+
+    #[test]
+    fn test_transforms_apply_matrix_to_text_and_restore_on_exit() {
+        // Inside a rotated/scaled/translated scope, TextContent must
+        // carry the composed matrix. After the scope exits, the next
+        // text emission must be back at identity.
+        let mut doc = DocumentBuilder::new();
+        doc.letter_page()
+            .font("Helvetica", 12.0)
+            .rotated(90.0, |p| p.at(100.0, 500.0).text("rotated"))
+            .at(50.0, 50.0)
+            .text("after")
+            .done();
+
+        let texts: Vec<_> = doc.pages[0]
+            .elements
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Text(t) => Some(t),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(texts.len(), 2);
+
+        // Rotated text must carry a matrix.
+        let m = texts[0]
+            .matrix
+            .expect("first text inside rotated scope must carry matrix");
+        // 90° rotation: [cos sin -sin cos 0 0] ≈ [0 1 -1 0 0 0].
+        assert!((m[0] - 0.0).abs() < 1e-4 && (m[1] - 1.0).abs() < 1e-4);
+        assert!((m[2] - -1.0).abs() < 1e-4 && (m[3] - 0.0).abs() < 1e-4);
+
+        // After scope exit, no matrix.
+        assert!(texts[1].matrix.is_none());
+    }
+
+    #[test]
+    fn test_transforms_compose_translated_rotated() {
+        // translated + rotated must compose; the composed matrix
+        // should have both a rotation and a translation component.
+        let mut doc = DocumentBuilder::new();
+        doc.letter_page()
+            .font("Helvetica", 12.0)
+            .translated(50.0, 100.0, |p| p.rotated(45.0, |p| p.text("tilted")))
+            .done();
+
+        let texts: Vec<_> = doc.pages[0]
+            .elements
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Text(t) => Some(t),
+                _ => None,
+            })
+            .collect();
+        let m = texts[0].matrix.expect("composed matrix must be set");
+
+        // Translation component must be (50, 100).
+        assert!((m[4] - 50.0).abs() < 0.01, "tx expected 50, got {}", m[4]);
+        assert!((m[5] - 100.0).abs() < 0.01, "ty expected 100, got {}", m[5]);
+
+        // Rotation component: 45° → cos = sin ≈ 0.7071.
+        let r45 = std::f32::consts::FRAC_1_SQRT_2;
+        assert!((m[0] - r45).abs() < 0.01);
+        assert!((m[1] - r45).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_compose_affine_identity_round_trip() {
+        // Composing with identity is a no-op on either side.
+        let m = [1.5, 0.3, -0.2, 0.9, 10.0, 20.0];
+        assert_eq!(compose_affine(IDENTITY, m), m);
+        assert_eq!(compose_affine(m, IDENTITY), m);
     }
 
     #[test]
