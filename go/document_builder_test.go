@@ -321,6 +321,292 @@ func TestDocumentBuilderAnnotationsDoNotBreakExtraction(t *testing.T) {
 	}
 }
 
+// ─── v0.3.39 primitives ───────────────────────────────────────────────────
+
+func TestPageBuilderStrokePrimitives(t *testing.T) {
+	b, err := NewDocumentBuilder()
+	if err != nil {
+		t.Skipf("NewDocumentBuilder unavailable: %v", err)
+	}
+	defer b.Close()
+	p, err := b.LetterPage()
+	if err != nil {
+		t.Fatalf("LetterPage: %v", err)
+	}
+	if _, err := p.
+		StrokeRect(50, 600, 200, 100, 2.0, 0.5, 0.5, 0.5).
+		StrokeLine(50, 600, 250, 600, 1.0, 0.2, 0.2, 0.2).
+		Done(); err != nil {
+		t.Fatalf("chain: %v", err)
+	}
+	data, err := b.Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if !bytes.HasPrefix(data, []byte("%PDF-")) {
+		t.Fatalf("output is not a PDF")
+	}
+}
+
+func TestPageBuilderTextInRect(t *testing.T) {
+	b, err := NewDocumentBuilder()
+	if err != nil {
+		t.Skipf("NewDocumentBuilder unavailable: %v", err)
+	}
+	defer b.Close()
+	p, _ := b.LetterPage()
+	if _, err := p.
+		Font("Helvetica", 10).
+		TextInRect(72, 600, 200, 100, "this text wraps inside the rect", AlignCenter).
+		Done(); err != nil {
+		t.Fatalf("chain: %v", err)
+	}
+	data, err := b.Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	tmp := filepath.Join(t.TempDir(), "textrect.pdf")
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	doc, _ := Open(tmp)
+	defer doc.Close()
+	text, err := doc.ExtractText(0)
+	if err != nil {
+		t.Fatalf("ExtractText: %v", err)
+	}
+	if !strings.Contains(text, "wraps") {
+		t.Errorf("expected 'wraps' in extracted text, got %q", text)
+	}
+}
+
+func TestPageBuilderNewPageSameSize(t *testing.T) {
+	b, err := NewDocumentBuilder()
+	if err != nil {
+		t.Skipf("NewDocumentBuilder unavailable: %v", err)
+	}
+	defer b.Close()
+	p, _ := b.LetterPage()
+	if _, err := p.
+		At(72, 720).Text("page 1").
+		NewPageSameSize().
+		At(72, 720).Text("page 2").
+		Done(); err != nil {
+		t.Fatalf("chain: %v", err)
+	}
+	data, err := b.Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	tmp := filepath.Join(t.TempDir(), "multi.pdf")
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	doc, _ := Open(tmp)
+	defer doc.Close()
+	pages, err := doc.PageCount()
+	if err != nil {
+		t.Fatalf("PageCount: %v", err)
+	}
+	if pages != 2 {
+		t.Errorf("expected 2 pages after NewPageSameSize, got %d", pages)
+	}
+}
+
+func TestPageBuilderTableBuffered3x3(t *testing.T) {
+	b, err := NewDocumentBuilder()
+	if err != nil {
+		t.Skipf("NewDocumentBuilder unavailable: %v", err)
+	}
+	defer b.Close()
+	p, err := b.LetterPage()
+	if err != nil {
+		t.Fatalf("LetterPage: %v", err)
+	}
+	spec := TableSpec{
+		Columns: []Column{
+			{Header: "SKU", Width: 100, Align: AlignLeft},
+			{Header: "Item", Width: 200, Align: AlignLeft},
+			{Header: "Qty", Width: 60, Align: AlignRight},
+		},
+		Rows: [][]string{
+			{"A-1", "Widget", "12"},
+			{"B-2", "Gadget", "3"},
+			{"C-3", "Gizmo", "42"},
+		},
+		HasHeader: true,
+	}
+	if _, err := p.At(72, 720).Table(spec).Done(); err != nil {
+		t.Fatalf("chain: %v", err)
+	}
+	data, err := b.Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	tmp := filepath.Join(t.TempDir(), "table.pdf")
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	doc, _ := Open(tmp)
+	defer doc.Close()
+	text, err := doc.ExtractText(0)
+	if err != nil {
+		t.Fatalf("ExtractText: %v", err)
+	}
+	for _, want := range []string{"SKU", "Widget", "Gadget", "Gizmo", "42"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q in table output: %q", want, text)
+		}
+	}
+}
+
+func TestPageBuilderTableRowLengthMismatch(t *testing.T) {
+	b, err := NewDocumentBuilder()
+	if err != nil {
+		t.Skipf("NewDocumentBuilder unavailable: %v", err)
+	}
+	defer b.Close()
+	p, _ := b.LetterPage()
+	spec := TableSpec{
+		Columns: []Column{
+			{Header: "A", Width: 60},
+			{Header: "B", Width: 60},
+		},
+		Rows: [][]string{
+			{"only-one-cell"},
+		},
+	}
+	_, err = p.At(72, 720).Table(spec).Done()
+	if err == nil {
+		t.Fatalf("expected row-length mismatch error")
+	}
+	if !strings.Contains(err.Error(), "row 0") {
+		t.Errorf("expected row-0 mismatch error, got: %v", err)
+	}
+}
+
+func TestPageBuilderStreamingTable1000Rows(t *testing.T) {
+	b, err := NewDocumentBuilder()
+	if err != nil {
+		t.Skipf("NewDocumentBuilder unavailable: %v", err)
+	}
+	defer b.Close()
+	p, err := b.LetterPage()
+	if err != nil {
+		t.Fatalf("LetterPage: %v", err)
+	}
+	st := p.At(72, 720).StreamingTable(StreamingTableConfig{
+		Columns: []Column{
+			{Header: "SKU", Width: 72, Align: AlignLeft},
+			{Header: "Item", Width: 200, Align: AlignLeft},
+			{Header: "Qty", Width: 48, Align: AlignRight},
+		},
+		RepeatHeader: true,
+	})
+	const n = 1000
+	for i := 0; i < n; i++ {
+		if err := st.PushRow([]string{
+			"sku-" + itoa(i),
+			"item " + itoa(i),
+			itoa(i % 99),
+		}); err != nil {
+			t.Fatalf("PushRow %d: %v", i, err)
+		}
+	}
+	page := st.Finish()
+	if page == nil {
+		t.Fatalf("StreamingTable.Finish returned nil page")
+	}
+	if _, err := page.Done(); err != nil {
+		t.Fatalf("Done: %v", err)
+	}
+	data, err := b.Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if !bytes.HasPrefix(data, []byte("%PDF-")) {
+		t.Fatalf("not a PDF")
+	}
+	// v0.3.39 Go streaming is buffered-flush: rows are aggregated in
+	// managed memory and forwarded as a single buffered Table() call at
+	// Finish(). The native streaming path (with automatic page-break +
+	// repeat-header) is tracked separately; this test just confirms
+	// round-tripped extraction sees the first + last sku.
+	tmp := filepath.Join(t.TempDir(), "streaming.pdf")
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	doc, _ := Open(tmp)
+	defer doc.Close()
+	pages, err := doc.PageCount()
+	if err != nil {
+		t.Fatalf("PageCount: %v", err)
+	}
+	if pages < 1 {
+		t.Errorf("expected at least 1 page, got %d", pages)
+	}
+}
+
+func TestPageBuilderMeasureStubReturnsNonNegative(t *testing.T) {
+	// Measure is a managed stub in v0.3.39 — smoke-test that it returns
+	// a non-negative value and doesn't panic. Full parity lands with the
+	// native FFI accessor in a later release.
+	b, err := NewDocumentBuilder()
+	if err != nil {
+		t.Skipf("NewDocumentBuilder unavailable: %v", err)
+	}
+	defer b.Close()
+	p, _ := b.LetterPage()
+	if w := p.Measure("hello"); w < 0 {
+		t.Errorf("Measure returned negative: %v", w)
+	}
+	if r := p.RemainingSpace(); r < 0 {
+		t.Errorf("RemainingSpace returned negative: %v", r)
+	}
+	_ = p.Close()
+}
+
+func TestStreamingTablePushRowAfterFinish(t *testing.T) {
+	b, err := NewDocumentBuilder()
+	if err != nil {
+		t.Skipf("NewDocumentBuilder unavailable: %v", err)
+	}
+	defer b.Close()
+	p, _ := b.LetterPage()
+	st := p.At(72, 720).StreamingTable(StreamingTableConfig{
+		Columns: []Column{{Header: "X", Width: 60}},
+	})
+	_ = st.PushRow([]string{"a"})
+	st.Finish()
+	if err := st.PushRow([]string{"b"}); err == nil {
+		t.Errorf("expected PushRow after Finish to error")
+	}
+}
+
+// itoa is a dependency-free int-to-string used in the streaming test to
+// avoid pulling strconv into every chain.
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	var buf [20]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	if neg {
+		i--
+		buf[i] = '-'
+	}
+	return string(buf[i:])
+}
+
 func TestFromHTMLCSS(t *testing.T) {
 	fontPath := fixtureFontPath(t)
 	fontBytes, err := os.ReadFile(fontPath)

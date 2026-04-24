@@ -95,6 +95,25 @@ extern int   pdf_page_builder_filled_rect(void* page, float x, float y, float w,
                                           float r, float g, float b, int* error_code);
 extern int   pdf_page_builder_line(void* page, float x1, float y1, float x2, float y2, int* error_code);
 
+// v0.3.39 primitives backing Go's Table / StreamingTable + friends.
+extern int   pdf_page_builder_stroke_rect(void* page, float x, float y, float w, float h,
+                                          float width, float r, float g, float b,
+                                          int* error_code);
+extern int   pdf_page_builder_stroke_line(void* page, float x1, float y1, float x2, float y2,
+                                          float width, float r, float g, float b,
+                                          int* error_code);
+extern int   pdf_page_builder_text_in_rect(void* page, float x, float y, float w, float h,
+                                           const char* text, int align, int* error_code);
+extern int   pdf_page_builder_new_page_same_size(void* page, int* error_code);
+extern int   pdf_page_builder_table(void* page,
+                                    size_t n_columns,
+                                    const float* widths,
+                                    const int* aligns,
+                                    size_t n_rows,
+                                    const char* const* cell_strings,
+                                    int has_header,
+                                    int* error_code);
+
 extern int   pdf_page_builder_done(void* page, int* error_code);
 extern void  pdf_page_builder_free(void* page);
 
@@ -832,6 +851,255 @@ func (p *PageBuilder) Line(x1, y1, x2, y2 float32) *PageBuilder {
 	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
 		return C.pdf_page_builder_line(hp, C.float(x1), C.float(y1), C.float(x2), C.float(y2), ec)
 	})
+}
+
+// StrokeRect draws a stroked rectangle outline with the given line
+// width and RGB colour (channels 0-1). Unlike Rect (which uses the
+// writer's 1pt default), this primitive exposes full line style so it
+// can back Table borders, highlight boxes, etc.
+func (p *PageBuilder) StrokeRect(x, y, w, h, width, r, g, b float32) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		return C.pdf_page_builder_stroke_rect(hp, C.float(x), C.float(y), C.float(w), C.float(h),
+			C.float(width), C.float(r), C.float(g), C.float(b), ec)
+	})
+}
+
+// StrokeLine draws a straight line from (x1, y1) to (x2, y2) with the
+// given width and RGB colour.
+func (p *PageBuilder) StrokeLine(x1, y1, x2, y2, width, r, g, b float32) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		return C.pdf_page_builder_stroke_line(hp, C.float(x1), C.float(y1), C.float(x2), C.float(y2),
+			C.float(width), C.float(r), C.float(g), C.float(b), ec)
+	})
+}
+
+// TextInRect places wrapped text inside (x, y, w, h) with the given
+// horizontal alignment. Unknown Alignment values fall back to AlignLeft
+// on the writer side.
+func (p *PageBuilder) TextInRect(x, y, w, h float32, text string, align Alignment) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		cs := C.CString(text)
+		defer C.free(unsafe.Pointer(cs))
+		return C.pdf_page_builder_text_in_rect(hp, C.float(x), C.float(y), C.float(w), C.float(h),
+			cs, C.int(align), ec)
+	})
+}
+
+// NewPageSameSize starts a fresh page with identical dimensions. The
+// text configuration carries over; the cursor resets to the top-left
+// margin. Callers wanting header-repeat-on-break must re-emit the
+// header explicitly — this primitive does not do it automatically.
+func (p *PageBuilder) NewPageSameSize() *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		return C.pdf_page_builder_new_page_same_size(hp, ec)
+	})
+}
+
+// Measure returns an estimated rendered width for text at the current
+// font + size. v0.3.39 does not yet expose the Rust measure() method
+// through the FFI, so this is a managed-side approximation using a
+// conservative average glyph width in ems. It exists to match the
+// binding surface documented in the v0.3.39 research doc; a native FFI
+// path will replace it in a later release without changing the shape.
+//
+// The returned value is a rough estimate only — do not rely on it for
+// precise layout; prefer TextInRect / Table for wrapped output.
+func (p *PageBuilder) Measure(text string) float32 {
+	// 0.5em per glyph is a safe upper bound for proportional fonts; the
+	// caller usually just wants a sanity-check baseline.
+	if !p.checkUsable() {
+		return 0
+	}
+	// Without an FFI accessor we can't read the current font size back;
+	// callers who need real measurement should wait for the native path.
+	return float32(len(text)) * 0.5
+}
+
+// RemainingSpace is a placeholder for the managed height-budget
+// accessor described in the v0.3.39 research doc. No FFI surface yet;
+// returns 0 so callers written against the documented shape still
+// compile. Replace with the native accessor when it lands.
+func (p *PageBuilder) RemainingSpace() float32 {
+	return 0
+}
+
+// Table places a buffered table at the current cursor. The whole row
+// matrix is shipped to native in one FFI call; for very large tables
+// (10k+ rows) prefer StreamingTable.
+//
+// Returns the same *PageBuilder so callers can chain further output
+// below the table. Errors are deferred to Done like every other
+// PageBuilder method; a nil/empty TableSpec or a row whose length
+// disagrees with len(Columns) stops the chain with an error.
+func (p *PageBuilder) Table(spec TableSpec) *PageBuilder {
+	if !p.checkUsable() {
+		return p
+	}
+	nCols := len(spec.Columns)
+	if nCols == 0 {
+		p.err = errors.New("pdf_oxide: Table: at least one column required")
+		return p
+	}
+	for i, row := range spec.Rows {
+		if len(row) != nCols {
+			p.err = fmt.Errorf(
+				"pdf_oxide: Table: row %d has %d cells, expected %d",
+				i, len(row), nCols)
+			return p
+		}
+	}
+
+	// Build widths + aligns parallel arrays.
+	widths := make([]C.float, nCols)
+	aligns := make([]C.int, nCols)
+	for i, c := range spec.Columns {
+		widths[i] = C.float(c.Width)
+		aligns[i] = C.int(c.Align)
+	}
+
+	// Build row-major cell-string matrix. If HasHeader is true the
+	// first native row is the header, synthesised from Columns[i].Header.
+	var nRows int
+	if spec.HasHeader {
+		nRows = 1 + len(spec.Rows)
+	} else {
+		nRows = len(spec.Rows)
+	}
+	total := nRows * nCols
+	cStrs := make([]*C.char, total)
+	defer func() {
+		for _, s := range cStrs {
+			if s != nil {
+				C.free(unsafe.Pointer(s))
+			}
+		}
+	}()
+	off := 0
+	if spec.HasHeader {
+		for i, c := range spec.Columns {
+			cStrs[off+i] = C.CString(c.Header)
+		}
+		off += nCols
+	}
+	for _, row := range spec.Rows {
+		for i, cell := range row {
+			cStrs[off+i] = C.CString(cell)
+		}
+		off += nCols
+	}
+
+	var widthsPtr *C.float
+	var alignsPtr *C.int
+	var cellsPtr **C.char
+	if nCols > 0 {
+		widthsPtr = (*C.float)(unsafe.Pointer(&widths[0]))
+		alignsPtr = (*C.int)(unsafe.Pointer(&aligns[0]))
+	}
+	if total > 0 {
+		cellsPtr = (**C.char)(unsafe.Pointer(&cStrs[0]))
+	}
+	var hasHeader C.int
+	if spec.HasHeader {
+		hasHeader = 1
+	}
+	var ec C.int
+	if C.pdf_page_builder_table(
+		p.handle,
+		C.size_t(nCols),
+		widthsPtr,
+		alignsPtr,
+		C.size_t(nRows),
+		cellsPtr,
+		hasHeader,
+		&ec,
+	) != 0 {
+		p.err = ffiError(ec)
+	}
+	return p
+}
+
+// StreamingTable opens a row-at-a-time table adapter on this page.
+//
+// In v0.3.39 the Go adapter is managed-buffered: PushRow appends to an
+// in-memory slice and Finish flushes a single Table() call. It exists
+// so consumer code written against the streaming shape today keeps
+// working when the native streaming FFI lands.
+func (p *PageBuilder) StreamingTable(cfg StreamingTableConfig) *StreamingTable {
+	return &StreamingTable{
+		page:    p,
+		columns: append([]Column(nil), cfg.Columns...),
+	}
+}
+
+// StreamingTable is a row-at-a-time table adapter. Obtain one from
+// PageBuilder.StreamingTable, feed rows with PushRow, and finalise with
+// Finish to resume the page chain.
+//
+// The v0.3.39 implementation buffers rows in Go memory and flushes a
+// single Table() call at Finish(). Finish is idempotent; subsequent
+// calls return the same parent PageBuilder without re-emitting.
+type StreamingTable struct {
+	page     *PageBuilder
+	columns  []Column
+	rows     [][]string
+	finished bool
+}
+
+// PushRow appends a row. len(cells) must equal the column count the
+// adapter was opened with. Errors surface through the returned value
+// AND through the parent PageBuilder (visible at Done()).
+func (t *StreamingTable) PushRow(cells []string) error {
+	if t == nil {
+		return errors.New("pdf_oxide: PushRow on nil StreamingTable")
+	}
+	if t.finished {
+		return errors.New("pdf_oxide: PushRow on finished StreamingTable")
+	}
+	if t.page == nil {
+		return errors.New("pdf_oxide: StreamingTable has no parent page")
+	}
+	if len(cells) != len(t.columns) {
+		return fmt.Errorf(
+			"pdf_oxide: StreamingTable.PushRow: got %d cells, expected %d",
+			len(cells), len(t.columns))
+	}
+	// Store a defensive copy so callers can reuse their row slice.
+	row := make([]string, len(cells))
+	copy(row, cells)
+	t.rows = append(t.rows, row)
+	return nil
+}
+
+// Finish flushes the buffered rows as a Table() call and returns the
+// parent PageBuilder so callers can continue chaining. If the table
+// was never populated Finish is a no-op (it still returns the parent).
+func (t *StreamingTable) Finish() *PageBuilder {
+	if t == nil || t.page == nil {
+		return nil
+	}
+	if t.finished {
+		return t.page
+	}
+	t.finished = true
+	// Empty streaming tables emit nothing.
+	if len(t.columns) == 0 && len(t.rows) == 0 {
+		return t.page
+	}
+	spec := TableSpec{
+		Columns:   t.columns,
+		Rows:      t.rows,
+		HasHeader: hasAnyHeader(t.columns),
+	}
+	return t.page.Table(spec)
+}
+
+func hasAnyHeader(cols []Column) bool {
+	for _, c := range cols {
+		if c.Header != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // Done commits the page to the parent DocumentBuilder and returns any

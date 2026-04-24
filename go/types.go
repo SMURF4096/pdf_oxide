@@ -178,6 +178,73 @@ type Element struct {
 	Height float32 `json:"height"`
 }
 
+// ─── DocumentBuilder write-side value types ──────────────────────────────
+//
+// These types are pure data + tag-agnostic so both backends see them even
+// though only the cgo backend currently wires them to the FFI. The purego
+// backend lacks DocumentBuilder entirely (the types here are therefore
+// just field carriers until purego parity lands).
+
+// Alignment encodes the horizontal alignment of text inside a rectangle
+// or column. Values mirror the FFI encoding (0/1/2).
+type Alignment int
+
+const (
+	// AlignLeft left-aligns text within the rect or column (default).
+	AlignLeft Alignment = 0
+	// AlignCenter horizontally centers text within the rect or column.
+	AlignCenter Alignment = 1
+	// AlignRight right-aligns text within the rect or column.
+	AlignRight Alignment = 2
+)
+
+// Column describes one column of a Table or StreamingTable.
+//
+//   - Header is the header-row label. For Table with HasHeader=false, the
+//     field is ignored. For StreamingTable, the header row is emitted at
+//     the top of each new page when RepeatHeader is true.
+//   - Width is the column width in PDF points.
+//   - Align is the per-column body alignment. Headers always center by
+//     default in the underlying writer.
+type Column struct {
+	Header string
+	Width  float32
+	Align  Alignment
+}
+
+// TableSpec is the buffered-table surface consumed by PageBuilder.Table.
+// The whole row matrix is held in managed memory until the page commits.
+//
+//   - Columns drive column widths + alignments. If HasHeader is true the
+//     column headers are promoted into a bold header row.
+//   - Rows is a row-major matrix of cell strings; len(row) must equal
+//     len(Columns) for each row.
+//   - HasHeader toggles the header row synthesized from Columns[i].Header.
+type TableSpec struct {
+	Columns   []Column
+	Rows      [][]string
+	HasHeader bool
+}
+
+// StreamingTableConfig configures a StreamingTable — the row-at-a-time
+// adapter returned by PageBuilder.StreamingTable.
+//
+// In v0.3.39 the Go streaming surface is managed-only: rows are buffered
+// in Go memory and flushed as a single Table FFI call at .Finish(). A
+// native streaming FFI path is planned for a later release; when it
+// lands the public shape here will still be source-compatible.
+//
+//   - Columns drives widths, alignments, and the header labels.
+//   - RepeatHeader is accepted but is a no-op in the managed adapter —
+//     the buffered Table call always emits a single header at the top.
+//     When the native streaming path arrives it will honour this flag on
+//     each page break. Present now so consumer code written today keeps
+//     working after the upgrade.
+type StreamingTableConfig struct {
+	Columns      []Column
+	RepeatHeader bool
+}
+
 // LogLevel represents the log verbosity level.
 type LogLevel int
 
