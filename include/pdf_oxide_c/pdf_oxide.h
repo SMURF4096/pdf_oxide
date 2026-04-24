@@ -78,6 +78,14 @@ char* document_editor_get_creation_date(const void* handle, int* error_code);
 int   document_editor_set_creation_date(void* handle, const char* date_str, int* error_code);
 int   document_editor_save(void* handle, const char* path, int* error_code);
 
+/* Form flattening */
+int   document_editor_flatten_forms(void* handle, int* error_code);
+int   document_editor_flatten_forms_on_page(void* handle, int32_t page_index, int* error_code);
+/* Returns number of warnings from the last flatten save; -1 if handle is null */
+int32_t document_editor_flatten_warnings_count(const void* handle);
+/* Returns the index-th warning as a C string (free with free_string); null on error */
+char* document_editor_flatten_warning(const void* handle, int32_t index, int* error_code);
+
 /* ─── PDF Creator ────────────────────────────────────────────────────────── */
 
 void* pdf_from_markdown(const char* markdown, int* error_code);

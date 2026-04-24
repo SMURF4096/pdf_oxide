@@ -1639,6 +1639,17 @@ impl PyPdfDocument {
         Ok(())
     }
 
+    /// Return warnings collected during the last form-flattening save.
+    ///
+    /// Each entry names a widget field that had no ``/AP`` appearance stream;
+    /// flattening such a field produces a blank rectangle.
+    fn flatten_warnings(&self) -> Vec<String> {
+        self.editor
+            .as_ref()
+            .map(|e| e.flatten_warnings().to_vec())
+            .unwrap_or_default()
+    }
+
     /// Merge from source.
     fn merge_from(&mut self, source: &Bound<'_, PyAny>) -> PyResult<usize> {
         self.ensure_editor()?;

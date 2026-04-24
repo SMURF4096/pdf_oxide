@@ -1963,6 +1963,25 @@ impl WasmPdfDocument {
             .map_err(|e| JsValue::from_str(&format!("Failed to flatten forms on page: {}", e)))
     }
 
+    /// Return warnings collected during the last form-flattening save.
+    ///
+    /// Each entry names a widget field that had no `/AP` appearance stream;
+    /// flattening such a field produces a blank rectangle.
+    ///
+    /// @returns Array of warning strings
+    #[wasm_bindgen(js_name = "flattenWarnings")]
+    pub fn flatten_warnings(&self) -> Vec<String> {
+        let Ok(editor) = self
+            .editor
+            .as_ref()
+            .ok_or(())
+            .and_then(|arc| arc.lock().map_err(|_| ()))
+        else {
+            return Vec::new();
+        };
+        editor.flatten_warnings().to_vec()
+    }
+
     // ========================================================================
     // Group 6g: PDF Merging
     // ========================================================================

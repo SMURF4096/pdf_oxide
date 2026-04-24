@@ -483,6 +483,8 @@ pub struct DocumentEditor {
     flatten_forms_pages: std::collections::HashSet<usize>,
     /// Flag to remove AcroForm from catalog after form flattening
     remove_acroform: bool,
+    /// Warnings collected during form flattening (e.g. widgets with no /AP stream)
+    flatten_warnings: Vec<String>,
     /// Embedded files to add to the document
     embedded_files: Vec<crate::writer::EmbeddedFile>,
     /// Modified or new form fields (field name → wrapper)
@@ -602,6 +604,7 @@ impl DocumentEditor {
             image_modifications: HashMap::new(),
             flatten_forms_pages: std::collections::HashSet::new(),
             remove_acroform: false,
+            flatten_warnings: Vec::new(),
             embedded_files: Vec::new(),
             modified_form_fields: HashMap::new(),
             deleted_form_fields: HashSet::new(),
@@ -637,6 +640,7 @@ impl DocumentEditor {
             image_modifications: HashMap::new(),
             flatten_forms_pages: std::collections::HashSet::new(),
             remove_acroform: false,
+            flatten_warnings: Vec::new(),
             embedded_files: Vec::new(),
             modified_form_fields: HashMap::new(),
             deleted_form_fields: HashSet::new(),
@@ -676,6 +680,7 @@ impl DocumentEditor {
             image_modifications: HashMap::new(),
             flatten_forms_pages: std::collections::HashSet::new(),
             remove_acroform: false,
+            flatten_warnings: Vec::new(),
             embedded_files: Vec::new(),
             modified_form_fields: HashMap::new(),
             deleted_form_fields: HashSet::new(),
@@ -1578,12 +1583,23 @@ impl DocumentEditor {
             .cloned()
             .unwrap_or(catalog);
 
-        // Remove AcroForm from catalog if form flattening was requested
+        // Remove or rebuild AcroForm after form flattening
         if self.remove_acroform {
+            // All pages flattened — drop the entire AcroForm
             if let Some(catalog_dict) = catalog_obj.as_dict() {
                 let mut new_catalog = catalog_dict.clone();
                 new_catalog.remove("AcroForm");
                 catalog_obj = Object::Dictionary(new_catalog);
+            }
+        } else if !self.flatten_forms_pages.is_empty() {
+            // Partial flatten — rebuild AcroForm keeping only fields whose widgets
+            // remain on non-flattened pages (ISO 32000-1 §12.7.2).
+            if let Some(catalog_dict) = catalog_obj.as_dict() {
+                if let Some(rebuilt) = self.rebuild_partial_acroform(catalog_dict)? {
+                    let mut new_catalog = catalog_dict.clone();
+                    new_catalog.insert("AcroForm".to_string(), rebuilt);
+                    catalog_obj = Object::Dictionary(new_catalog);
+                }
             }
         }
 
@@ -3893,6 +3909,127 @@ impl DocumentEditor {
         self.remove_acroform
     }
 
+    /// Warnings collected during the last form-flattening save.
+    ///
+    /// Each entry names a widget field that had no `/AP` appearance stream and
+    /// could not have one generated — flattening it produces a blank rectangle.
+    pub fn flatten_warnings(&self) -> &[String] {
+        &self.flatten_warnings
+    }
+
+    /// Rebuild an AcroForm dict containing only root fields that still have at
+    /// least one widget on a non-flattened page.
+    ///
+    /// Returns `None` if the original catalog has no AcroForm, or if the AcroForm
+    /// contains `/XFA` (in which case we leave it untouched and emit a warning).
+    fn rebuild_partial_acroform(
+        &mut self,
+        catalog_dict: &HashMap<String, Object>,
+    ) -> Result<Option<Object>> {
+        let acroform_obj = match catalog_dict.get("AcroForm") {
+            Some(o) => o.clone(),
+            None => return Ok(None),
+        };
+
+        let acroform_dict: HashMap<String, Object> = match acroform_obj {
+            Object::Dictionary(d) => d,
+            Object::Reference(r) => match self.source.load_object(r)? {
+                Object::Dictionary(d) => d,
+                _ => return Ok(None),
+            },
+            _ => return Ok(None),
+        };
+
+        // XFA forms use a completely different field-addressing model; rebuilding
+        // the /Fields array would break SOM expressions inside the XFA stream.
+        // Leave the AcroForm as-is and warn the caller (ISO 32000-1 §12.7.8).
+        if acroform_dict.contains_key("XFA") {
+            self.flatten_warnings.push(
+                "XFA form detected — AcroForm not rebuilt after partial flatten; \
+                 XFA SOM expressions may reference flattened widgets"
+                    .to_string(),
+            );
+            return Ok(None);
+        }
+
+        let fields_array = match acroform_dict.get("Fields") {
+            Some(Object::Array(arr)) => arr.clone(),
+            _ => return Ok(None),
+        };
+
+        // Build page-ref → page-index map once
+        let page_count = self.source.page_count().unwrap_or(0);
+        let mut page_ref_to_index: HashMap<u32, usize> = HashMap::new();
+        for i in 0..page_count {
+            if let Ok(pr) = self.source.get_page_ref(i) {
+                page_ref_to_index.insert(pr.id, i);
+            }
+        }
+
+        // Collect root field refs that survive the partial flatten
+        let flattened = self.flatten_forms_pages.clone();
+        let mut surviving: Vec<Object> = Vec::new();
+        for field_entry in &fields_array {
+            if let Object::Reference(field_ref) = field_entry {
+                if self.field_has_surviving_widgets(field_ref, &flattened, &page_ref_to_index)? {
+                    surviving.push(Object::Reference(*field_ref));
+                }
+            }
+        }
+
+        // Preserve all original top-level AcroForm keys; replace only /Fields.
+        let mut new_acroform = acroform_dict.clone();
+        new_acroform.insert("Fields".to_string(), Object::Array(surviving));
+        Ok(Some(Object::Dictionary(new_acroform)))
+    }
+
+    /// Returns true if `field_ref` or any of its descendants has a widget whose
+    /// `/P` page reference maps to a page that was NOT flattened.
+    fn field_has_surviving_widgets(
+        &mut self,
+        field_ref: &ObjectRef,
+        flattened_pages: &HashSet<usize>,
+        page_ref_to_index: &HashMap<u32, usize>,
+    ) -> Result<bool> {
+        let field_obj = match self.source.load_object(*field_ref) {
+            Ok(o) => o,
+            Err(_) => return Ok(true), // can't load → keep to be safe
+        };
+        let dict = match field_obj.as_dict() {
+            Some(d) => d.clone(),
+            None => return Ok(true),
+        };
+
+        if let Some(Object::Array(kids)) = dict.get("Kids").cloned() {
+            // Non-terminal field — recurse into kids
+            for kid in &kids {
+                if let Object::Reference(kid_ref) = kid {
+                    if self.field_has_surviving_widgets(
+                        kid_ref,
+                        flattened_pages,
+                        page_ref_to_index,
+                    )? {
+                        return Ok(true);
+                    }
+                }
+            }
+            Ok(false)
+        } else {
+            // Terminal field / merged field+widget — check /P (page ref)
+            match dict.get("P") {
+                Some(Object::Reference(page_ref)) => {
+                    match page_ref_to_index.get(&page_ref.id) {
+                        Some(idx) => Ok(!flattened_pages.contains(idx)),
+                        // Page ref not in map — keep the field (unknown page)
+                        None => Ok(true),
+                    }
+                },
+                // No /P — keep the field
+                _ => Ok(true),
+            }
+        }
+    }
+
     // =========================================================================
     // File Attachments (Embedded Files)
     // =========================================================================
@@ -4901,6 +5038,24 @@ impl DocumentEditor {
                     // No appearance stream - try to generate one
                     if let Some(generated) = self.generate_widget_appearance(&annotation)? {
                         appearances.push(generated);
+                    } else {
+                        // Widget has neither /AP nor a generatable appearance — flattening
+                        // it produces a blank rectangle. Record field name as a warning.
+                        let field_name = annotation
+                            .raw_dict
+                            .as_ref()
+                            .and_then(|d| d.get("T"))
+                            .and_then(|t| match t {
+                                Object::String(s) => {
+                                    String::from_utf8(s.clone()).ok()
+                                },
+                                _ => None,
+                            })
+                            .unwrap_or_else(|| format!("widget@page{}", page));
+                        self.flatten_warnings.push(format!(
+                            "field '{}' has no /AP appearance stream — flattening produces blank rectangle",
+                            field_name
+                        ));
                     }
                 },
                 Err(_) => continue,

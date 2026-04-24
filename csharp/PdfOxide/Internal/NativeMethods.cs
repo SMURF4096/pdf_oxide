@@ -6008,6 +6008,23 @@ namespace PdfOxide.Internal
             int pageIndex,
             out int errorCode);
 
+        /// <summary>
+        /// Returns the number of flatten warnings from the last save.
+        /// </summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_flatten_warnings_count")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_flatten_warnings_count(NativeHandle handle);
+
+        /// <summary>
+        /// Returns the index-th flatten warning as a native string (must be freed with free_string).
+        /// </summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_flatten_warning")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr document_editor_flatten_warning(
+            NativeHandle handle,
+            int index,
+            out int errorCode);
+
         #endregion
 
         #region PdfDocument Extended Operations (8 functions)

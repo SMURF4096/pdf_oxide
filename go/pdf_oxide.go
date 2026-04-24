@@ -372,6 +372,8 @@ extern void pdf_signature_free(void* handle);
 extern int32_t document_editor_set_form_field_value(void* handle, const char* name, const char* value, int* error_code);
 extern int32_t document_editor_flatten_forms(void* handle, int* error_code);
 extern int32_t document_editor_flatten_forms_on_page(void* handle, int32_t page_index, int* error_code);
+extern int32_t document_editor_flatten_warnings_count(const void* handle);
+extern char*   document_editor_flatten_warning(const void* handle, int32_t index, int* error_code);
 
 // Region extraction extras
 extern void* pdf_document_extract_lines_in_rect(void* handle, int32_t page_index, float x, float y, float w, float h, int* error_code);
@@ -2504,6 +2506,30 @@ func (editor *DocumentEditor) FlattenFormsOnPage(pageIndex int) error {
 		return ffiError(errorCode)
 	}
 	return nil
+}
+
+// FlattenWarnings returns warnings collected during the last form-flattening
+// save. Each entry names a widget that had no /AP appearance stream; flattening
+// it produces a blank rectangle.
+func (editor *DocumentEditor) FlattenWarnings() []string {
+	if err := editor.acquireRead(); err != nil {
+		return nil
+	}
+	defer editor.mu.RUnlock()
+	count := int(C.document_editor_flatten_warnings_count(editor.handle))
+	if count <= 0 {
+		return nil
+	}
+	result := make([]string, 0, count)
+	for i := 0; i < count; i++ {
+		var errorCode C.int
+		ptr := C.document_editor_flatten_warning(editor.handle, C.int32_t(i), &errorCode)
+		if ptr != nil {
+			result = append(result, C.GoString(ptr))
+			C.free_string(ptr)
+		}
+	}
+	return result
 }
 
 // ================================================================

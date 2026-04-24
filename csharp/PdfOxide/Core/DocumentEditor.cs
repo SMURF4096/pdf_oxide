@@ -444,6 +444,32 @@ namespace PdfOxide.Core
         }
 
         /// <summary>
+        /// Returns warnings collected during the last form-flattening save.
+        /// Each entry names a widget field that had no <c>/AP</c> appearance
+        /// stream; flattening it produces a blank rectangle.
+        /// </summary>
+        public string[] FlattenWarnings
+        {
+            get
+            {
+                ThrowIfDisposed();
+                int count = NativeMethods.document_editor_flatten_warnings_count(_handle);
+                if (count <= 0) return Array.Empty<string>();
+                var result = new string[count];
+                for (int i = 0; i < count; i++)
+                {
+                    IntPtr ptr = NativeMethods.document_editor_flatten_warning(_handle, i, out int _);
+                    if (ptr != IntPtr.Zero)
+                    {
+                        result[i] = System.Runtime.InteropServices.Marshal.PtrToStringUTF8(ptr) ?? string.Empty;
+                        NativeMethods.free_string(ptr);
+                    }
+                }
+                return result;
+            }
+        }
+
+        /// <summary>
         /// Save the document with AES-256 encryption using the supplied
         /// user and owner passwords.
         /// </summary>

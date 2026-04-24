@@ -159,6 +159,16 @@ export class DocumentEditor {
     native.editorFlattenForms(this._handle);
   }
 
+  /**
+   * Return warnings collected during the last form-flattening save.
+   * Each entry names a widget field that had no `/AP` appearance stream;
+   * flattening it produces a blank rectangle.
+   */
+  flattenWarnings(): string[] {
+    this._throwIfClosed();
+    return native.editorFlattenWarnings(this._handle) as string[];
+  }
+
   /** Flatten annotations. If `pageIndex` is omitted, flattens all pages. */
   flattenAnnotations(pageIndex?: number): void {
     this._throwIfClosed();

@@ -207,6 +207,8 @@ extern "C" {
   extern int document_editor_merge_from(void* handle, const char* source_path, int* error_code);
   extern int document_editor_flatten_forms(void* handle, int* error_code);
   extern int document_editor_flatten_forms_on_page(void* handle, int32_t page, int* error_code);
+  extern int32_t document_editor_flatten_warnings_count(const void* handle);
+  extern char* document_editor_flatten_warning(const void* handle, int32_t index, int* error_code);
   // Missing document editor functions
   extern char* document_editor_get_creation_date(const void* handle, int* error_code);
   extern char* document_editor_get_producer(const void* handle, int* error_code);
@@ -1472,6 +1474,22 @@ Napi::Value EditorFlattenForms(const Napi::CallbackInfo& info) {
   document_editor_flatten_forms(handle, &errorCode);
   if (errorCode != 0) throw Napi::Error::New(env, getErrorMessage(errorCode));
   return env.Undefined();
+}
+
+Napi::Value EditorFlattenWarnings(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  const void* handle = info[0].As<Napi::External<void>>().Data();
+  int32_t count = document_editor_flatten_warnings_count(handle);
+  auto arr = Napi::Array::New(env, count > 0 ? static_cast<size_t>(count) : 0);
+  for (int32_t i = 0; i < count; i++) {
+    int errorCode = 0;
+    char* ptr = document_editor_flatten_warning(handle, i, &errorCode);
+    if (ptr) {
+      arr.Set(static_cast<uint32_t>(i), Napi::String::New(env, ptr));
+      free_string(ptr);
+    }
+  }
+  return arr;
 }
 
 Napi::Value EditorFlattenAnnotations(const Napi::CallbackInfo& info) {
@@ -3114,6 +3132,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("editorSetPageRotation", Napi::Function::New(env, EditorSetPageRotation));
   exports.Set("editorMergeFrom", Napi::Function::New(env, EditorMergeFrom));
   exports.Set("editorFlattenForms", Napi::Function::New(env, EditorFlattenForms));
+  exports.Set("editorFlattenWarnings", Napi::Function::New(env, EditorFlattenWarnings));
   exports.Set("editorFlattenAnnotations", Napi::Function::New(env, EditorFlattenAnnotations));
   // Missing Document Editor
   exports.Set("editorGetCreationDate", Napi::Function::New(env, EditorGetCreationDate));

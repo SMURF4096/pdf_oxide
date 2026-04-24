@@ -6081,6 +6081,55 @@ pub extern "C" fn document_editor_flatten_forms_on_page(
     }
 }
 
+/// Return the number of warnings collected during the last form-flattening save.
+///
+/// Each warning names a widget field that had no `/AP` appearance stream.
+/// Returns -1 if `handle` is null.
+#[no_mangle]
+pub extern "C" fn document_editor_flatten_warnings_count(
+    handle: *const DocumentEditor,
+) -> i32 {
+    if handle.is_null() {
+        return -1;
+    }
+    let editor = unsafe { &*handle };
+    editor.flatten_warnings().len() as i32
+}
+
+/// Return the `index`-th flatten warning as a C string owned by the caller.
+///
+/// The returned string must be freed with `free_string`. Returns null if
+/// `handle` is null or `index` is out of range.
+#[no_mangle]
+pub extern "C" fn document_editor_flatten_warning(
+    handle: *const DocumentEditor,
+    index: i32,
+    error_code: *mut i32,
+) -> *mut c_char {
+    if handle.is_null() || index < 0 {
+        set_error(error_code, ERR_INVALID_ARG);
+        return std::ptr::null_mut();
+    }
+    let editor = unsafe { &*handle };
+    let warnings = editor.flatten_warnings();
+    match warnings.get(index as usize) {
+        Some(w) => match CString::new(w.as_str()) {
+            Ok(cs) => {
+                set_error(error_code, ERR_SUCCESS);
+                cs.into_raw()
+            },
+            Err(_) => {
+                set_error(error_code, ERR_INVALID_ARG);
+                std::ptr::null_mut()
+            },
+        },
+        None => {
+            set_error(error_code, ERR_INVALID_ARG);
+            std::ptr::null_mut()
+        },
+    }
+}
+
 // ─── C# compatibility aliases ──────────────────────────────────────────────
 // C# P/Invoke uses PascalCase names. These re-export the snake_case functions.
 
