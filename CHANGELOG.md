@@ -171,6 +171,30 @@ page.list_box("interests", 72, 600, 200, 80,
 - `.required()` / `.read_only()` / `.tooltip(text)` — chainable metadata that mutates the most-recently-added form field on the current page (no-op if no field has been added yet).
 - `page.tab_order(TabOrder::{Row, Column, Structure})` — emits `/Tabs` on the page dict for reader tab-navigation order. `Structure` requires tagged PDF (Bundle F) to be meaningful.
 
+#### Bundle E (partial) — layout primitives
+
+```rust
+page.heading(1, "Shopping list")
+    .bullet_list(&["Apples", "Bananas", "Cherries"])
+    .space(12.0)
+    .numbered_list(&["First chapter", "Second chapter"], ListStyle::Decimal)
+    .code_block("rust", "fn main() {\n    println!(\"hi\");\n}");
+```
+
+- `page.bullet_list(items)` — bullets (•) with indent + per-item
+  wrapping.
+- `page.numbered_list(items, ListStyle::{Decimal, RomanLower, AlphaLower})`
+  — Arabic, lowercase Roman, or lowercase alpha markers.
+- `page.code_block(language, source)` — monospace text over a
+  light-grey filled rectangle. `language` reserved for Bundle F
+  accessibility tagging; no syntax highlighting in v0.3.39.
+- Helpers: `to_roman_lower(n)` and `to_alpha_lower(n)` exposed
+  internally.
+
+Inline rich text (`ParagraphBuilder` with `.bold()` / `.italic()` /
+`.color()`), multi-column flow, and footnotes remain deferred to
+v0.3.40 — see the E-0 RFC at `docs/v0.3.39/design/e_rich_text_rfc.md`.
+
 #### Bundles E + F — RFC + research only
 
 - `docs/v0.3.39/design/e_rich_text_rfc.md` — RFC for v0.3.40 inline-styling `ParagraphBuilder` with `.bold()` / `.italic()` / `.color(rgb, text)` cascading runs. ~770 LOC estimated for v0.3.40.
@@ -197,7 +221,10 @@ page.list_box("interests", 72, 600, 200, 80,
 - Pandas DataFrame first-class adapter in Python.
 
 **Transforms**
-- Matrix field on `PathContent` / `ImageContent` / `TableContent` (v0.3.39 scoped transforms to text only).
+- `TableContent`-as-a-whole matrix (individual cells compose naturally
+  through their own `TextContent` / `PathContent` matrix fields, which
+  now ship — but wrapping an entire Table in one transform needs a new
+  field on `TableContent` itself).
 
 **Forms (rest of Bundle D)**
 - Signature-field form widget (coordinates with #208 signing half).
@@ -206,8 +233,6 @@ page.list_box("interests", 72, 600, 200, 80,
 
 **Layout (Bundle E) — blocked on E-0 RFC which ships in v0.3.39**
 - Inline rich-text styling (`ParagraphBuilder` with `.bold()` / `.italic()` / `.color()`).
-- Bullet + numbered lists.
-- Code blocks with mono font + background fill.
 - Multi-column flow on `DocumentBuilder` (currently only available through `Pdf::from_html_css`).
 - Footnotes / endnotes.
 
