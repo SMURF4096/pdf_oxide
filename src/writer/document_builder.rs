@@ -238,6 +238,75 @@ impl<'a> FluentPageBuilder<'a> {
         self
     }
 
+    /// Place wrapped text inside a rectangle with horizontal alignment.
+    ///
+    /// Wraps `text` to `rect.width` using the builder's current font and
+    /// size, emits one content-stream line per wrapped line, and positions
+    /// each line within the rect per `align`:
+    ///
+    /// - `Left`:   line left edge at `rect.x`
+    /// - `Center`: line centered within `rect.x .. rect.x + rect.width`
+    /// - `Right`:  line right edge at `rect.x + rect.width`
+    ///
+    /// Vertical layout is top-anchored: the first line's top sits at
+    /// `rect.y`, subsequent lines drop by `size * line_height`. The cursor
+    /// is **not** advanced — the rect has its own geometry and the caller
+    /// owns the cursor. Use `measure()` or `text_layout.text_bounds()` to
+    /// pre-compute rect dimensions if needed.
+    ///
+    /// This is the cell-text primitive the buffered `Table` surface
+    /// (research #393) consumes. It is also usable standalone for
+    /// box-constrained captions, labels, and pull-quotes.
+    pub fn text_in_rect(mut self, rect: Rect, text: &str, align: TextAlign) -> Self {
+        let lines = self.text_layout.wrap_text(
+            text,
+            &self.text_config.font,
+            self.text_config.size,
+            rect.width,
+        );
+
+        let line_height = self.text_config.size * self.text_config.line_height;
+        let mut line_top = rect.y;
+
+        for (line_text, line_width) in lines {
+            if line_text.is_empty() {
+                line_top -= line_height;
+                continue;
+            }
+
+            let line_x = match align {
+                TextAlign::Left => rect.x,
+                TextAlign::Center => rect.x + (rect.width - line_width) / 2.0,
+                TextAlign::Right => rect.x + rect.width - line_width,
+            };
+
+            let bbox = Rect::new(line_x, line_top, line_width, self.text_config.size);
+            let page = &mut self.builder.pages[self.page_index];
+            page.elements.push(ContentElement::Text(TextContent {
+                text: line_text,
+                bbox,
+                font: crate::elements::FontSpec {
+                    name: self.text_config.font.clone(),
+                    size: self.text_config.size,
+                },
+                style: Default::default(),
+                reading_order: Some(page.elements.len()),
+                artifact_type: None,
+                origin: None,
+                rotation_degrees: None,
+                matrix: None,
+            }));
+
+            line_top -= line_height;
+        }
+
+        // Track only the last emitted line for potential markup annotations.
+        // Table callers typically set markup at the whole-cell level, not
+        // per-line; the default matches the behaviour of `.text()`.
+        self.last_text_rect = Some(rect);
+        self
+    }
+
     /// Add a heading (larger, bold text).
     pub fn heading(self, level: u8, text: &str) -> Self {
         let size = match level {
@@ -1524,6 +1593,140 @@ mod tests {
             "doubling font size should ~double measured width: {} vs 2*{}",
             big,
             small
+        );
+    }
+
+    #[test]
+    fn test_text_in_rect_wraps_and_aligns() {
+        // Feed long-enough text into a narrow rect and assert N emitted
+        // TextContent elements with correct per-line placement for each
+        // alignment mode.
+        for (align, anchor) in [
+            (TextAlign::Left, "left"),
+            (TextAlign::Center, "center"),
+            (TextAlign::Right, "right"),
+        ] {
+            let mut doc = DocumentBuilder::new();
+            let rect = Rect::new(100.0, 600.0, 60.0, 200.0);
+            doc.letter_page()
+                .font("Helvetica", 10.0)
+                .text_in_rect(rect, "alpha beta gamma delta epsilon", align)
+                .done();
+
+            let page = &doc.pages[0];
+            let elements: Vec<_> = page
+                .elements
+                .iter()
+                .filter_map(|e| match e {
+                    ContentElement::Text(t) => Some(t),
+                    _ => None,
+                })
+                .collect();
+
+            assert!(
+                elements.len() >= 2,
+                "{} align: expected wrap to >= 2 lines, got {}",
+                anchor,
+                elements.len()
+            );
+
+            // Every emitted line must fit inside the rect horizontally.
+            for (idx, tc) in elements.iter().enumerate() {
+                assert!(
+                    tc.bbox.x >= rect.x - 0.01,
+                    "{} line {} starts outside left edge: x={} rect.x={}",
+                    anchor,
+                    idx,
+                    tc.bbox.x,
+                    rect.x
+                );
+                assert!(
+                    tc.bbox.x + tc.bbox.width <= rect.x + rect.width + 0.01,
+                    "{} line {} extends past right edge: end={} rect_end={}",
+                    anchor,
+                    idx,
+                    tc.bbox.x + tc.bbox.width,
+                    rect.x + rect.width
+                );
+            }
+
+            // Per-alignment placement: check the first line specifically.
+            let first = elements[0];
+            match align {
+                TextAlign::Left => {
+                    assert!(
+                        (first.bbox.x - rect.x).abs() < 0.01,
+                        "left align: line x must equal rect.x, got {} vs {}",
+                        first.bbox.x,
+                        rect.x
+                    );
+                },
+                TextAlign::Center => {
+                    let expected = rect.x + (rect.width - first.bbox.width) / 2.0;
+                    assert!(
+                        (first.bbox.x - expected).abs() < 0.01,
+                        "center align: expected x={}, got {}",
+                        expected,
+                        first.bbox.x
+                    );
+                },
+                TextAlign::Right => {
+                    let expected = rect.x + rect.width - first.bbox.width;
+                    assert!(
+                        (first.bbox.x - expected).abs() < 0.01,
+                        "right align: expected x={}, got {}",
+                        expected,
+                        first.bbox.x
+                    );
+                },
+            }
+
+            // Lines are stacked top-down: y decreases monotonically.
+            for pair in elements.windows(2) {
+                assert!(
+                    pair[1].bbox.y < pair[0].bbox.y,
+                    "{} lines must move down (y decreases): {} then {}",
+                    anchor,
+                    pair[0].bbox.y,
+                    pair[1].bbox.y
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_text_in_rect_does_not_advance_cursor() {
+        // Callers track the cursor themselves for text_in_rect; unlike
+        // `.text()` and `.paragraph()`, this primitive must leave cursor_y
+        // untouched so tables can advance their own geometry.
+        let mut doc = DocumentBuilder::new();
+        let rect = Rect::new(100.0, 600.0, 80.0, 100.0);
+        doc.letter_page()
+            .at(200.0, 750.0)
+            .font("Helvetica", 12.0)
+            .text_in_rect(rect, "test", TextAlign::Left)
+            .text("after") // this should land at the untouched cursor
+            .done();
+
+        let page = &doc.pages[0];
+        let texts: Vec<_> = page
+            .elements
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Text(t) => Some(t),
+                _ => None,
+            })
+            .collect();
+
+        // Two text elements: the rect'd one and the "after" one.
+        assert_eq!(texts.len(), 2);
+        // The "after" text sits at y=750 (untouched cursor), not at some
+        // y derived from rect.y - line_height.
+        let after = texts.iter().find(|t| t.text == "after").unwrap();
+        assert!(
+            (after.bbox.y - 750.0).abs() < 0.01,
+            "cursor must be untouched by text_in_rect; got y={}",
+            after.bbox.y
         );
     }
 
