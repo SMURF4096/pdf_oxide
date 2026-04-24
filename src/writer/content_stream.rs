@@ -823,6 +823,17 @@ impl ContentStreamBuilder {
         }
         self.op(ContentStreamOp::SetLineWidth(path.stroke_width));
 
+        // Dash pattern (if any) must come before stroke ops. Reset to
+        // solid afterwards so subsequent paths don't inherit a stale
+        // pattern. (PDF graphics state bleeds across uncontained
+        // operations; this is safer than assuming a surrounding q/Q.)
+        let had_dash = if let Some((dashes, phase)) = path.dash_pattern.as_ref() {
+            self.set_dash_pattern(dashes.clone(), *phase);
+            true
+        } else {
+            false
+        };
+
         // Add path operations
         for op in &path.operations {
             match op {
@@ -851,6 +862,11 @@ impl ContentStreamBuilder {
             (false, true) => self.op(ContentStreamOp::Fill),
             (false, false) => self.op(ContentStreamOp::EndPath),
         };
+
+        // Restore solid strokes for subsequent paths.
+        if had_dash {
+            self.set_dash_pattern(Vec::new(), 0.0);
+        }
 
         self
     }
@@ -2641,6 +2657,7 @@ mod tests {
             bbox: Rect::new(0.0, 0.0, 100.0, 100.0),
             line_cap: Default::default(),
             line_join: Default::default(),
+            dash_pattern: None,
             reading_order: None,
         };
 
@@ -2667,6 +2684,7 @@ mod tests {
             bbox: Rect::new(0.0, 0.0, 100.0, 100.0),
             line_cap: Default::default(),
             line_join: Default::default(),
+            dash_pattern: None,
             reading_order: None,
         };
 
@@ -2694,6 +2712,7 @@ mod tests {
             bbox: Rect::new(0.0, 0.0, 100.0, 100.0),
             line_cap: Default::default(),
             line_join: Default::default(),
+            dash_pattern: None,
             reading_order: None,
         };
 
@@ -2720,6 +2739,7 @@ mod tests {
             bbox: Rect::new(0.0, 0.0, 50.0, 60.0),
             line_cap: Default::default(),
             line_join: Default::default(),
+            dash_pattern: None,
             reading_order: None,
         };
 

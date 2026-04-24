@@ -25,6 +25,13 @@ pub struct PathContent {
     pub line_cap: LineCap,
     /// Line join style
     pub line_join: LineJoin,
+    /// Optional dash pattern: `Some((dashes, phase))` emits a
+    /// `[dashes...] phase d` operator before stroking. `dashes` is on/
+    /// off lengths in points (e.g. `[3.0, 2.0]` = dash 3 pt, gap 2 pt,
+    /// repeating); `phase` is the starting offset. `None` leaves the
+    /// line solid.
+    #[serde(default)]
+    pub dash_pattern: Option<(Vec<f32>, f32)>,
     /// Reading order index
     pub reading_order: Option<usize>,
 }
@@ -40,6 +47,7 @@ impl PathContent {
             stroke_width: 1.0,
             line_cap: LineCap::Butt,
             line_join: LineJoin::Miter,
+            dash_pattern: None,
             reading_order: None,
         }
     }
@@ -55,6 +63,7 @@ impl PathContent {
             stroke_width: 1.0,
             line_cap: LineCap::Butt,
             line_join: LineJoin::Miter,
+            dash_pattern: None,
             reading_order: None,
         }
     }
@@ -366,6 +375,7 @@ impl Default for PathContent {
             stroke_width: 1.0,
             line_cap: LineCap::Butt,
             line_join: LineJoin::Miter,
+            dash_pattern: None,
             reading_order: None,
         }
     }

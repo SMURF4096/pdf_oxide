@@ -156,21 +156,23 @@ impl Default for TextConfig {
     }
 }
 
-/// Stroke style for line-drawing primitives (`stroke_rect`, `stroke_line`).
+/// Stroke style for line-drawing primitives (`stroke_rect`, `stroke_line`,
+/// shape primitives).
 ///
 /// Introduced alongside the buffered `Table` surface so cell borders and
 /// row rules can have explicit thickness and colour without forcing users
 /// through the lower-level `ContentElement::Path` builder.
-///
-/// **Dash patterns are not in scope for v0.3.39** — the content-stream
-/// writer does not yet emit `d` (set-dash) ops. Track: issue #400 v0.3.40
-/// follow-ups.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct LineStyle {
     /// Stroke width in points. Must be > 0.
     pub width: f32,
     /// RGB colour, each channel in `0.0..=1.0`.
     pub color: (f32, f32, f32),
+    /// Optional dash pattern: `Some((dashes, phase))` emits a
+    /// `[dashes...] phase d` graphics-state op before stroking. Each
+    /// entry in `dashes` is an on/off length in points (e.g.
+    /// `[3.0, 2.0]` = 3 pt dash, 2 pt gap, repeating). `None` is solid.
+    pub dash: Option<(Vec<f32>, f32)>,
 }
 
 impl Default for LineStyle {
@@ -178,6 +180,7 @@ impl Default for LineStyle {
         Self {
             width: 1.0,
             color: (0.0, 0.0, 0.0),
+            dash: None,
         }
     }
 }
@@ -189,7 +192,21 @@ impl LineStyle {
         Self {
             width,
             color: (r, g, b),
+            dash: None,
         }
+    }
+
+    /// Builder: set a dash pattern. `dashes` is on/off lengths in
+    /// points, `phase` is the starting offset.
+    pub fn with_dash(mut self, dashes: &[f32], phase: f32) -> Self {
+        self.dash = Some((dashes.to_vec(), phase));
+        self
+    }
+
+    /// Builder: clear the dash pattern (return to solid).
+    pub fn solid(mut self) -> Self {
+        self.dash = None;
+        self
     }
 }
 
@@ -550,6 +567,7 @@ impl<'a> FluentPageBuilder<'a> {
                 stroke_width: 0.5,
                 line_cap: crate::elements::LineCap::Butt,
                 line_join: crate::elements::LineJoin::Miter,
+                dash_pattern: None,
                 reading_order: None,
             }));
         self.cursor_y -= self.text_config.size;
@@ -1071,6 +1089,7 @@ impl<'a> FluentPageBuilder<'a> {
         });
         path.fill_color = None;
         path.stroke_width = style.width;
+        path.dash_pattern = style.dash;
         let page = &mut self.builder.pages[self.page_index];
         page.elements.push(ContentElement::Path(path));
         self
@@ -1102,6 +1121,7 @@ impl<'a> FluentPageBuilder<'a> {
         });
         path.fill_color = None;
         path.stroke_width = style.width;
+        path.dash_pattern = style.dash;
         let page = &mut self.builder.pages[self.page_index];
         page.elements.push(ContentElement::Path(path));
         self
@@ -1255,9 +1275,9 @@ impl<'a> FluentPageBuilder<'a> {
 
     /// Internal helper: apply optional stroke + fill to a `PathContent`
     /// and push it as a `ContentElement::Path` on the current page.
-    /// Shared by all shape primitives so stroke/fill semantics stay
-    /// consistent across `circle` / `ellipse` / `polygon` / `arc` /
-    /// `bezier_curve`.
+    /// Shared by all shape primitives so stroke/fill semantics — and
+    /// dash patterns — stay consistent across `circle` / `ellipse` /
+    /// `polygon` / `arc` / `bezier_curve`.
     fn push_shaped_path(
         self,
         mut path: crate::elements::PathContent,
@@ -1271,6 +1291,7 @@ impl<'a> FluentPageBuilder<'a> {
                 b: style.color.2,
             });
             path.stroke_width = style.width;
+            path.dash_pattern = style.dash;
         } else {
             path.stroke_color = None;
         }
@@ -2215,6 +2236,36 @@ mod tests {
 
         // Bezier: stroke only (fill None).
         assert!(paths[4].stroke_color.is_some() && paths[4].fill_color.is_none());
+    }
+
+    #[test]
+    fn test_line_style_dash_round_trip() {
+        // LineStyle accepts a dash pattern via .with_dash(); the value
+        // propagates into PathContent.dash_pattern on both stroke_line
+        // and shape primitives; .solid() clears it.
+        let dashed = LineStyle::new(1.5, 0.1, 0.2, 0.3).with_dash(&[3.0, 2.0], 0.0);
+        assert_eq!(dashed.dash, Some((vec![3.0, 2.0], 0.0)));
+        let solid = dashed.clone().solid();
+        assert!(solid.dash.is_none());
+
+        let mut doc = DocumentBuilder::new();
+        doc.letter_page()
+            .stroke_line(10.0, 100.0, 100.0, 100.0, dashed.clone())
+            .circle(200.0, 100.0, 30.0, Some(dashed), None)
+            .done();
+
+        let paths: Vec<_> = doc.pages[0]
+            .elements
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Path(p) => Some(p),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(paths.len(), 2);
+        // Dash pattern must have been plumbed through to both paths.
+        assert_eq!(paths[0].dash_pattern, Some((vec![3.0, 2.0], 0.0)));
+        assert_eq!(paths[1].dash_pattern, Some((vec![3.0, 2.0], 0.0)));
     }
 
     #[test]
