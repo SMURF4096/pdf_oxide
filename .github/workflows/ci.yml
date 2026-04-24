@@ -626,6 +626,21 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # Free ~15 GB of disk before cargo-llvm-cov runs. The instrumented
+      # build writes a second full target tree (target/llvm-cov-target/)
+      # with much larger object files; ubuntu-latest starts with ~14 GB
+      # free and has hit "No space left on device" on the v0.3.38
+      # post-merge run — see #399 Case B.
+      - name: Free disk space before coverage
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: true
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -637,7 +652,16 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
+      # Drop the regular target/ before the instrumented build so only
+      # one target/* tree is alive at a time. #399 mitigation.
+      - name: Clean target before instrumented build
+        run: rm -rf target/
+
       - name: Generate coverage
+        env:
+          # Cap parallel link-worker spawns to avoid rust-lld SIGBUS
+          # on the instrumented path (object files are larger). #399.
+          CARGO_BUILD_JOBS: "2"
         run: |
           cargo llvm-cov --lib --tests --lcov --output-path lcov.info \
             --ignore-filename-regex '(cid_mappings/|adobe_glyph_list\.rs|python\.rs|wasm\.rs|ffi\.rs|ocr/|rendering/|bin/)'
