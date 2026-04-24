@@ -4,9 +4,27 @@ All notable changes to PDFOxide are documented here.
 
 ## [0.3.39] - 2026-04-23
 
-> DocumentBuilder tables — buffered `Table` + row-at-a-time `StreamingTable`
-> across every binding, plus four new `FluentPageBuilder` primitives that
-> make tables compose.
+> DocumentBuilder tables + the programmatic-PDF gap pass — buffered
+> `Table` + row-at-a-time `StreamingTable`, images + transforms,
+> bookmarks + page labels + ToC, shape primitives, list_box + field
+> metadata + tab order.
+
+### Scope at-a-glance
+
+v0.3.39 originally shipped as a single release themed around table
+generation (issue #393). Mid-release we expanded the scope to close
+the broader post-#393 programmatic-builder gap audit
+(docs/v0.3.39/design/builder_gaps_plan.md, 26 items in 4 tiers).
+The release now delivers:
+
+- **Bundle C** — shape primitives (`circle`, `ellipse`, `polygon`, `arc`, `bezier_curve`) + dash patterns on `LineStyle`.
+- **Bundle A** — image placement (`image_from_file` / `_from_bytes` / `_with`) + 2D affine transforms (`rotated`, `scaled`, `translated`, `with_transform`; v0.3.39 scope text-only, path/image/table in v0.3.40).
+- **Bundle B** — document outline (`bookmark`, `bookmark_tree`), page labels (`with_page_labels`), ToC auto-generator (`insert_toc`).
+- **Bundle D (partial)** — `list_box` form widget, fluent field metadata (`required` / `read_only` / `tooltip`), page `tab_order` (`TabOrder::{Row, Column, Structure}`).
+- **Bundle E + F (research)** — RFCs for rich-text accumulator (`docs/v0.3.39/design/e_rich_text_rfc.md`) and PDF/UA compliance (`docs/v0.3.39/research/e_pdf_ua_compliance.md`). Implementation deferred to v0.3.40 (#400).
+- **Bundle D (deferred)** — signature_field widget, barcode-bound fields, JS-action field validation, calculated fields, XFA write-side → v0.3.40 (#400).
+
+### DocumentBuilder tables (original #393 scope)
 
 This release closes issue [#393](https://github.com/yfedoseev/pdf_oxide/issues/393).
 Users who previously had to build giant HTML strings or drop to PdfSharp
@@ -88,6 +106,76 @@ A criterion benchmark at `benches/streaming_table_scaling.rs` runs `StreamingTab
 - **Multi-line cell rendering.** The existing `src/writer/table_renderer.rs` computed row heights from wrapped text (`wrap_text` at `:817`) but only emitted the first line on render (`:968-969` — flagged as `// Simple single-line rendering for now`). Fixed by pre-computing wrapped lines + per-line widths once inside `TableLayout.cell_layouts` and looping them at render time.
 - **Per-line alignment.** `Center` and `Right` alignment used `cell_x + content_width / 2` and `cell_x + content_width` as the drawn-from x, which placed the text's left edge at the centre or right edge of the cell (so centre text was offset, right text was pushed off-cell). Fixed by using each wrapped line's measured width: `cell_x + (content_width - line_width) / 2` for Centre, `cell_x + content_width - line_width` for Right.
 
+### Expansion bundles — builder-gap closure
+
+#### Bundle A — images + transforms
+
+```rust
+page.image_from_file("logo.png", Rect::new(72.0, 720.0, 120.0, 40.0))?
+    .rotated(15.0, |p| p.text("tilted caption"))
+    .scaled(1.5, 1.5, |p| p.text("enlarged footnote"));
+```
+
+- `image_from_file(path, rect)` / `image_from_bytes(&[u8], rect)` / `image_with(ImageData, rect)` — auto-detect JPEG + PNG, alpha channels become `/SMask` XObjects for transparent placement.
+- `rotated(deg, |p| ...)`, `scaled(sx, sy, |p| ...)`, `translated(tx, ty, |p| ...)`, `with_transform([a b c d e f], |p| ...)` — closure-scoped 2D affine transforms. Compose naturally (`translated(50, 100, |p| p.rotated(45, |p| p.text("tilted")))` produces the expected composed matrix). **v0.3.39 scope is text-only** — Path / Image / Table elements gain a matrix field in v0.3.40. Rotated watermarks + stamps + captions are the common-case target today.
+
+#### Bundle B — navigation + document structure
+
+```rust
+doc.bookmark("Intro", 0)
+   .bookmark_tree(|o| {
+       o.add_item(OutlineItem::new("Chapter 1", 1));
+       o.add_child(OutlineItem::new("Section 1.1", 2));
+   })
+   .with_page_labels(
+       PageLabelsBuilder::new()
+           .add_range(PageLabelRange::new(0).with_style(PageLabelStyle::RomanLower))
+           .add_range(PageLabelRange::new(4).with_style(PageLabelStyle::Decimal)),
+   )
+   .insert_toc(0, "Table of Contents");
+```
+
+- `bookmark(title, page_index)` + `bookmark_tree(|b| ...)` — outline / bookmarks emitted as the catalog `/Outlines` tree. Pre-existing `OutlineBuilder` was unused; this release is the fluent wiring + the end-to-end catalog emission it was missing.
+- `with_page_labels(PageLabelsBuilder)` — Roman preface + Arabic body or any PageLabelStyle mix, emitted as `/PageLabels` number-tree.
+- `insert_toc(insert_at, title)` — walks the bookmark tree and renders an indented ToC page with right-aligned page numbers. v0.3.39 limitation: doesn't auto-renumber existing bookmark targets (call before further bookmarks, or re-issue after).
+
+#### Bundle C — shapes + dash patterns
+
+```rust
+page.circle(cx, cy, r, Some(LineStyle::new(1.5, 0.1, 0.2, 0.3)), None)
+    .ellipse(cx, cy, rx, ry, None, Some((0.9, 0.1, 0.1)))
+    .polygon(&points, Some(LineStyle::default()), Some((0.5, 0.5, 0.9)))
+    .arc(cx, cy, r, start, end, LineStyle::new(1.0, 0.0, 0.0, 0.0))
+    .bezier_curve(x0, y0, c1x, c1y, c2x, c2y, x3, y3, style, None)
+    .stroke_line(10, 100, 500, 100, LineStyle::new(0.5, 0, 0, 0).with_dash(&[3.0, 2.0], 0.0));
+```
+
+- `circle`, `ellipse`, `polygon`, `arc`, `bezier_curve` — five fluent shape primitives, each emitting one `ContentElement::Path` with optional stroke + fill. `circle` reuses `PathContent::circle`; `ellipse` / `arc` / `bezier_curve` build their quarter-Bezier approximations inline.
+- `LineStyle::with_dash(&[f32], phase)` / `.solid()` — dash patterns propagate into `PathContent.dash_pattern`, emitted as `[...] phase d` before stroke and reset to solid after.
+
+#### Bundle D — form fields (partial)
+
+```rust
+page.list_box("interests", 72, 600, 200, 80,
+              vec!["Hiking".into(), "Reading".into(), "Coding".into()],
+              Some("Coding".into()), true /* multi_select */)
+    .required()
+    .tooltip("Pick one or more")
+    .text_field("email", 72, 500, 200, 20, None)
+    .required()
+    .read_only()
+    .tab_order(TabOrder::Column);
+```
+
+- `list_box(name, x, y, w, h, options, selected, multi_select)` — wires the existing `ListBoxWidget` (fully implemented in `form_fields/choice_fields.rs`) through the public fluent surface.
+- `.required()` / `.read_only()` / `.tooltip(text)` — chainable metadata that mutates the most-recently-added form field on the current page (no-op if no field has been added yet).
+- `page.tab_order(TabOrder::{Row, Column, Structure})` — emits `/Tabs` on the page dict for reader tab-navigation order. `Structure` requires tagged PDF (Bundle F) to be meaningful.
+
+#### Bundles E + F — RFC + research only
+
+- `docs/v0.3.39/design/e_rich_text_rfc.md` — RFC for v0.3.40 inline-styling `ParagraphBuilder` with `.bold()` / `.italic()` / `.color(rgb, text)` cascading runs. ~770 LOC estimated for v0.3.40.
+- `docs/v0.3.39/research/e_pdf_ua_compliance.md` — PDF/UA-1 compliance audit. Repo has ~40 % of the plumbing (StructureElement, MCID counter, ArtifactType) but MCIDs are orphaned — no StructTreeRoot emission. Bundle F lands in v0.3.40 as ~490 Rust LoC + 1,450 across 6 bindings.
+
 ### FFI / bindings
 
 - **C FFI (`include/pdf_oxide_c/pdf_oxide.h`)** — six new entry points: `pdf_page_builder_stroke_rect`, `_stroke_line`, `_text_in_rect`, `_new_page_same_size`, `_table` (buffered), and the streaming trio `_streaming_table_begin` / `_push_row` / `_finish`. Handle-lifetime contract documented inline.
@@ -99,6 +187,7 @@ A criterion benchmark at `benches/streaming_table_scaling.rs` runs `StreamingTab
 
 ### Scope deferred to v0.3.40 (tracked in #400)
 
+**Tables**
 - `TableMode::Sample` — measure first N rows, freeze widths, stream the rest.
 - `TableMode::AutoAll` — opt-in O(rows × cols) with documentation warning.
 - Cross-page cell splitting for tall rich cells.
@@ -106,7 +195,32 @@ A criterion benchmark at `benches/streaming_table_scaling.rs` runs `StreamingTab
 - Arrow-style bounded batching on binding StreamingTables (current impl buffers all rows managed-side between `begin` and `finish`).
 - Mixed-font exact metrics inside a single table (currently measures against the table default font).
 - Pandas DataFrame first-class adapter in Python.
-- Dash-pattern support on `LineStyle`.
+
+**Transforms**
+- Matrix field on `PathContent` / `ImageContent` / `TableContent` (v0.3.39 scoped transforms to text only).
+
+**Forms (rest of Bundle D)**
+- Signature-field form widget (coordinates with #208 signing half).
+- Barcode-bound form field (auto-generate from another field's value at fill time).
+- Field validation — regex mask, numeric range, JavaScript actions.
+- Per-widget-type extension of `.required()` / `.read_only()` / `.tooltip` beyond TextField + Checkbox (mechanical; widget-level builder methods already exist).
+
+**Layout (Bundle E) — blocked on E-0 RFC which ships in v0.3.39**
+- Inline rich-text styling (`ParagraphBuilder` with `.bold()` / `.italic()` / `.color()`).
+- Bullet + numbered lists.
+- Code blocks with mono font + background fill.
+- Multi-column flow on `DocumentBuilder` (currently only available through `Pdf::from_html_css`).
+- Footnotes / endnotes.
+
+**Accessibility (Bundle F) — blocked on F-0 research which ships in v0.3.39**
+- Tagged PDF / logical structure tree emission.
+- `/Lang` per content run.
+- `/Artifact` marking for headers/footers on the write side.
+- `/RoleMap` for non-standard structure types.
+
+**Advanced forms (Bundle G) — pick up on concrete customer demand**
+- Calculated fields / JavaScript actions.
+- XFA write-side.
 
 ### Related
 
