@@ -642,6 +642,9 @@ pub struct TableLayout {
     pub total_height: f32,
     /// Cell positions (row, col) -> (x, y, width, height)
     pub cell_positions: Vec<Vec<CellPosition>>,
+    /// Wrapped lines and per-line widths for each cell, parallel to
+    /// `cell_positions`. Consumed by `render` to emit one text op per line.
+    pub cell_layouts: Vec<Vec<CellLayout>>,
 }
 
 /// Position and size of a cell.
@@ -655,6 +658,18 @@ pub struct CellPosition {
     pub width: f32,
     /// Cell height
     pub height: f32,
+}
+
+/// Pre-computed text layout for a single cell: the wrapped lines and each
+/// line's measured width. Produced once by `calculate_layout` so `render`
+/// can emit per-line text with correct alignment without needing font
+/// metrics at render time.
+#[derive(Debug, Clone, Default)]
+pub struct CellLayout {
+    /// Content wrapped to the cell's content width.
+    pub lines: Vec<String>,
+    /// Measured width of each corresponding line, in points.
+    pub line_widths: Vec<f32>,
 }
 
 impl Table {
@@ -672,6 +687,7 @@ impl Table {
                 total_width: 0.0,
                 total_height: 0.0,
                 cell_positions: vec![],
+                cell_layouts: vec![],
             };
         }
 
@@ -680,8 +696,12 @@ impl Table {
         // Calculate column widths
         let column_widths = self.calculate_column_widths(table_width, num_cols, font_metrics);
 
-        // Calculate row heights
-        let row_heights = self.calculate_row_heights(&column_widths, font_metrics);
+        // Wrap every cell once, measuring each wrapped line's width. Consumed
+        // by row-height aggregation below and by `render` later.
+        let cell_layouts = self.wrap_all_cells(&column_widths, font_metrics);
+
+        // Calculate row heights from the pre-wrapped layouts
+        let row_heights = self.calculate_row_heights(&cell_layouts);
 
         // Calculate cell positions
         let cell_positions = self.calculate_cell_positions(&column_widths, &row_heights);
@@ -695,6 +715,7 @@ impl Table {
             total_width,
             total_height,
             cell_positions,
+            cell_layouts,
         }
     }
 
@@ -787,40 +808,67 @@ impl Table {
         widths
     }
 
-    fn calculate_row_heights(
+    /// Wrap every cell's content to its resolved column width and measure
+    /// each resulting line. Returns a per-row, per-cell matrix of
+    /// `CellLayout` indexed identically to `self.rows[row].cells[cell]`.
+    fn wrap_all_cells(
         &self,
         column_widths: &[f32],
         font_metrics: &dyn FontMetrics,
-    ) -> Vec<f32> {
+    ) -> Vec<Vec<CellLayout>> {
         let padding = &self.style.cell_padding;
-        let mut heights = Vec::with_capacity(self.rows.len());
+        let mut out = Vec::with_capacity(self.rows.len());
 
         for row in &self.rows {
-            let mut max_height = 0.0f32;
+            let mut row_out = Vec::with_capacity(row.cells.len());
             let mut col_idx = 0;
 
             for cell in &row.cells {
+                let cell_width: f32 = if cell.colspan == 1 {
+                    column_widths.get(col_idx).copied().unwrap_or(100.0)
+                } else {
+                    column_widths[col_idx..col_idx + cell.colspan].iter().sum()
+                };
+
+                let cell_padding = cell.padding.as_ref().unwrap_or(padding);
+                let content_width = cell_width - cell_padding.horizontal();
+                let font_size = cell.font_size.unwrap_or(self.style.font_size);
+
+                let lines = wrap_text(&cell.content, content_width, font_size, font_metrics);
+                let line_widths = lines
+                    .iter()
+                    .map(|l| font_metrics.text_width(l, font_size))
+                    .collect();
+
+                row_out.push(CellLayout { lines, line_widths });
+                col_idx += cell.colspan;
+            }
+
+            out.push(row_out);
+        }
+
+        out
+    }
+
+    fn calculate_row_heights(&self, cell_layouts: &[Vec<CellLayout>]) -> Vec<f32> {
+        let padding = &self.style.cell_padding;
+        let mut heights = Vec::with_capacity(self.rows.len());
+
+        for (row_idx, row) in self.rows.iter().enumerate() {
+            let mut max_height = 0.0f32;
+
+            for (cell_idx, cell) in row.cells.iter().enumerate() {
                 if cell.rowspan == 1 {
-                    let cell_width = if cell.colspan == 1 {
-                        column_widths.get(col_idx).copied().unwrap_or(100.0)
-                    } else {
-                        column_widths[col_idx..col_idx + cell.colspan].iter().sum()
-                    };
-
                     let cell_padding = cell.padding.as_ref().unwrap_or(padding);
-                    let content_width = cell_width - cell_padding.horizontal();
-
                     let font_size = cell.font_size.unwrap_or(self.style.font_size);
                     let line_height = font_size * 1.2;
 
-                    // Calculate wrapped text height
-                    let lines = wrap_text(&cell.content, content_width, font_size, font_metrics);
-                    let text_height = lines.len() as f32 * line_height;
+                    let n_lines = cell_layouts[row_idx][cell_idx].lines.len() as f32;
+                    let text_height = n_lines * line_height;
 
                     let cell_height = text_height + cell_padding.vertical();
                     max_height = max_height.max(cell_height);
                 }
-                col_idx += cell.colspan;
             }
 
             // Apply minimum height if specified
@@ -955,18 +1003,35 @@ impl Table {
 
                 builder.begin_text().set_font(&actual_font, font_size);
 
-                // Calculate text position based on alignment
-                let text_x = match align {
-                    CellAlign::Left => cell_x,
-                    CellAlign::Center => cell_x + content_width / 2.0,
-                    CellAlign::Right => cell_x + content_width,
-                };
+                let line_height = font_size * 1.2;
+                let cell_layout = &layout.cell_layouts[row_idx][cell_idx];
 
-                let _line_height = font_size * 1.2;
-                let text_y = cell_y - font_size;
+                for (line_idx, (line, line_width)) in cell_layout
+                    .lines
+                    .iter()
+                    .zip(cell_layout.line_widths.iter())
+                    .enumerate()
+                {
+                    if line.is_empty() {
+                        continue;
+                    }
 
-                // Simple single-line rendering for now
-                builder.text(&cell.content, text_x, text_y);
+                    // Per-line x placement: each line aligns independently.
+                    // `text` places its first glyph at the given x, so Center
+                    // and Right must offset by this line's measured width.
+                    let text_x = match align {
+                        CellAlign::Left => cell_x,
+                        CellAlign::Center => cell_x + (content_width - line_width) / 2.0,
+                        CellAlign::Right => cell_x + content_width - line_width,
+                    };
+
+                    // Baseline: first line sits `font_size` below the cell
+                    // top; each subsequent line drops by `line_height`.
+                    let text_y = cell_y - font_size - (line_idx as f32) * line_height;
+
+                    builder.text(line, text_x, text_y);
+                }
+
                 builder.end_text();
             }
         }
@@ -1265,5 +1330,145 @@ mod tests {
     fn test_striped_table() {
         let style = TableStyle::new().striped(0.95, 0.95, 0.95);
         assert!(style.stripe_color.is_some());
+    }
+
+    #[test]
+    fn test_multi_line_cell_layout_stores_wrapped_lines() {
+        // A cell with content that must wrap into multiple lines.
+        let long = "The quick brown fox jumps over the lazy dog";
+        let table = Table::new(vec![vec![
+            TableCell::text(long),
+            TableCell::text("short"),
+        ]])
+        .with_column_widths(vec![ColumnWidth::Fixed(60.0), ColumnWidth::Fixed(80.0)]);
+
+        let metrics = SimpleFontMetrics::default();
+        let layout = table.calculate_layout(140.0, &metrics);
+
+        // cell_layouts must mirror the cells grid.
+        assert_eq!(layout.cell_layouts.len(), 1);
+        assert_eq!(layout.cell_layouts[0].len(), 2);
+
+        // First cell should wrap to > 1 line; second cell stays on 1 line.
+        assert!(
+            layout.cell_layouts[0][0].lines.len() > 1,
+            "expected multi-line wrap, got {} lines: {:?}",
+            layout.cell_layouts[0][0].lines.len(),
+            layout.cell_layouts[0][0].lines
+        );
+        assert_eq!(layout.cell_layouts[0][1].lines.len(), 1);
+
+        // Line widths must match the line count for every cell.
+        for row in &layout.cell_layouts {
+            for cell in row {
+                assert_eq!(
+                    cell.lines.len(),
+                    cell.line_widths.len(),
+                    "lines and line_widths must be parallel"
+                );
+            }
+        }
+
+        // Row height must scale with the wrapped line count.
+        // With >=2 lines and font_size 10 (default style), text_height alone
+        // exceeds the minimum `font_size * 1.5` floor.
+        let expected_min = 2.0 * (layout.cell_layouts[0][0].lines.len() as f32) * 0.5;
+        assert!(layout.row_heights[0] > expected_min);
+    }
+
+    #[test]
+    fn test_multi_line_render_emits_one_tj_per_line() {
+        use super::super::content_stream::ContentStreamBuilder;
+
+        // Force wrap by choosing a narrow column.
+        let long = "alpha beta gamma delta epsilon zeta eta theta";
+        let table = Table::new(vec![vec![TableCell::text(long)]])
+            .with_column_widths(vec![ColumnWidth::Fixed(40.0)]);
+
+        let metrics = SimpleFontMetrics::default();
+        let layout = table.calculate_layout(40.0, &metrics);
+        let expected_lines = layout.cell_layouts[0][0].lines.len();
+        assert!(
+            expected_lines >= 3,
+            "fixture must wrap to >=3 lines to be meaningful"
+        );
+
+        // Render to a content stream and count `Tj` text-show operations.
+        let mut builder = ContentStreamBuilder::new();
+        table
+            .render(&mut builder, 0.0, 800.0, &layout)
+            .expect("render");
+
+        let bytes = builder.build().expect("build content stream");
+        let text = String::from_utf8_lossy(&bytes);
+        let tj_count = text.matches(" Tj").count();
+
+        assert_eq!(
+            tj_count, expected_lines,
+            "expected {} Tj operations (one per wrapped line), got {}\n--- stream ---\n{}",
+            expected_lines, tj_count, text
+        );
+    }
+
+    #[test]
+    fn test_alignment_offsets_per_line_width() {
+        // Single-line cells in a single row, each with its own alignment.
+        // Verify the emitted Tm x-offset matches cell_x + alignment maths
+        // applied to the MEASURED line width, not the column content width.
+        use super::super::content_stream::ContentStreamBuilder;
+
+        let table = Table::new(vec![vec![
+            TableCell::text("L").align(CellAlign::Left),
+            TableCell::text("C").align(CellAlign::Center),
+            TableCell::text("R").align(CellAlign::Right),
+        ]])
+        .with_column_widths(vec![
+            ColumnWidth::Fixed(60.0),
+            ColumnWidth::Fixed(60.0),
+            ColumnWidth::Fixed(60.0),
+        ])
+        .with_style(TableStyle::new().cell_padding(CellPadding::uniform(0.0)));
+
+        let metrics = SimpleFontMetrics::default();
+        let layout = table.calculate_layout(180.0, &metrics);
+
+        let mut builder = ContentStreamBuilder::new();
+        table
+            .render(&mut builder, 0.0, 800.0, &layout)
+            .expect("render");
+        let bytes = builder.build().expect("build");
+        let text = String::from_utf8_lossy(&bytes);
+
+        // Extract all `a b c d e f Tm` operations and grab the e component
+        // (x-offset). We expect three, corresponding to the three cells in
+        // left→center→right order.
+        let tm_xs: Vec<f32> = text
+            .lines()
+            .filter_map(|l| l.strip_suffix(" Tm"))
+            .filter_map(|prefix| {
+                let parts: Vec<&str> = prefix.split_whitespace().collect();
+                if parts.len() == 6 {
+                    parts[4].parse::<f32>().ok()
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert_eq!(tm_xs.len(), 3, "expected 3 Tm ops, got {}: {:?}", tm_xs.len(), tm_xs);
+
+        // Column widths all 60.0, padding zero, single-char content.
+        // Left:  x = 0
+        // Center: x = 60 + (60 - line_width) / 2  = 60 + (60 - 5) / 2 = 87.5
+        // Right:  x = 120 + (60 - line_width)     = 120 + 55 = 175
+        // Single char "L"/"C"/"R" at default metrics = 1 * 10 * 0.5 = 5.0
+        let char_w = 5.0f32;
+        let left_expected = 0.0;
+        let center_expected = 60.0 + (60.0 - char_w) / 2.0;
+        let right_expected = 120.0 + 60.0 - char_w;
+
+        assert!((tm_xs[0] - left_expected).abs() < 0.01, "left x={}", tm_xs[0]);
+        assert!((tm_xs[1] - center_expected).abs() < 0.01, "center x={}", tm_xs[1]);
+        assert!((tm_xs[2] - right_expected).abs() < 0.01, "right x={}", tm_xs[2]);
     }
 }
