@@ -19,17 +19,31 @@ var (
 	ErrInvalidPath = errors.New("pdf_oxide: invalid path")
 	// ErrDocumentNotFound indicates the document could not be opened. FFI code 2.
 	ErrDocumentNotFound = errors.New("pdf_oxide: document not found")
-	// ErrInvalidFormat indicates the PDF could not be parsed. FFI code 3.
+	// ErrInvalidFormat indicates the PDF could not be parsed. FFI code 3
+	// (ERR_PARSE). Historically documented as "FFI code 3" with the
+	// aliased ErrParseError also matching code 5 — see below.
 	ErrInvalidFormat = errors.New("pdf_oxide: invalid PDF format")
 	// ErrExtractionFailed indicates extraction failed. FFI code 4.
 	ErrExtractionFailed = errors.New("pdf_oxide: extraction failed")
-	// ErrParseError indicates a parse failure. FFI code 5.
-	ErrParseError = errors.New("pdf_oxide: parse error")
+	// ErrParseError is a legacy alias for parse-time failures. Kept for
+	// backward compatibility with v0.3.38 code that matched against
+	// `errors.Is(err, ErrParseError)` when Rust emitted ERR_INTERNAL
+	// (code 5) — the v0.3.38 behaviour. As of v0.3.39 the canonical
+	// sentinel for code 5 is ErrInternal; code-3 failures match both
+	// ErrInvalidFormat (new canonical) and ErrParseError (alias).
+	//
+	// Deprecated: use ErrInvalidFormat for parse failures or ErrInternal
+	// for native-layer failures.
+	ErrParseError = ErrInvalidFormat
 	// ErrInvalidPageIndex indicates an out-of-range page index. FFI code 6.
 	ErrInvalidPageIndex = errors.New("pdf_oxide: invalid page index")
 	// ErrSearchFailed indicates a search operation failed. FFI code 7.
 	ErrSearchFailed = errors.New("pdf_oxide: search failed")
-	// ErrInternal indicates an internal/unknown error. FFI code 8.
+	// ErrInternal indicates an internal/unknown error. FFI code 5
+	// (ERR_INTERNAL). Fixed in v0.3.39 per #398 — previously
+	// misreported as "FFI code 8" in the docstring and `sentinelForCode`
+	// mapped code 5 to ErrParseError, masking native-layer races
+	// behind a misleading parse-error message.
 	ErrInternal = errors.New("pdf_oxide: internal error")
 
 	// ErrDocumentClosed indicates the document has been closed.
@@ -95,7 +109,26 @@ func ffiErrorFromInt(code int) error {
 	}
 }
 
-// sentinelForCode returns the canonical sentinel for an FFI error code.
+// sentinelForCode returns the canonical sentinel for an FFI error code,
+// matching the Rust-side table at `src/ffi.rs:48-56`:
+//
+//	0 ERR_SUCCESS       — no sentinel
+//	1 ERR_INVALID_ARG   — ErrInvalidPath (historical name; is really
+//	                     "invalid argument", not path-specific)
+//	2 ERR_IO            — ErrDocumentNotFound (historical name; is
+//	                     really generic IO)
+//	3 ERR_PARSE         — ErrInvalidFormat
+//	4 ERR_EXTRACTION    — ErrExtractionFailed
+//	5 ERR_INTERNAL      — ErrInternal (fixed in v0.3.39 per #398;
+//	                     previously mapped to ErrParseError, which
+//	                     masked native-layer races as "parse error")
+//	6 ERR_INVALID_PAGE  — ErrInvalidPageIndex
+//	7 ERR_SEARCH        — ErrSearchFailed
+//	8 _ERR_UNSUPPORTED  — ErrInternal (no dedicated sentinel yet)
+//
+// The historical names at codes 1, 2, and the former code-5/8 swap are
+// legacy API commitments kept for backward compatibility. Renaming to
+// accurate labels is tracked as a v0.3.40 cleanup.
 func sentinelForCode(code int) error {
 	switch code {
 	case 1:
@@ -107,7 +140,7 @@ func sentinelForCode(code int) error {
 	case 4:
 		return ErrExtractionFailed
 	case 5:
-		return ErrParseError
+		return ErrInternal
 	case 6:
 		return ErrInvalidPageIndex
 	case 7:
