@@ -470,6 +470,24 @@ export class PageBuilder {
     return this;
   }
 
+  // --- Barcode / QR-code placement ------------------------------------
+
+  /**
+   * Place a 1-D barcode image on the page at `(x, y, w, h)`.
+   * `barcodeType`: 0=Code128 1=Code39 2=EAN13 3=EAN8 4=UPCA 5=ITF
+   * 6=Code93 7=Codabar.
+   */
+  barcode1d(barcodeType: number, data: string, x: number, y: number, w: number, h: number): this {
+    native.pageBuilderBarcode1d(this.h(), barcodeType, data, x, y, w, h);
+    return this;
+  }
+
+  /** Place a QR-code image on the page (square: `size × size` pt). */
+  barcodeQr(data: string, x: number, y: number, size: number): this {
+    native.pageBuilderBarcodeQr(this.h(), data, x, y, size);
+    return this;
+  }
+
   // --- Low-level graphics primitives ---------------------------------
 
   /** Draw a stroked rectangle outline (1pt black). */

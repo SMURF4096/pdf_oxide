@@ -489,6 +489,11 @@ extern "C" {
                                             float x, float y, float w, float h,
                                             const char* caption, int* error_code);
 
+  extern int   pdf_page_builder_barcode_1d(void* page, int barcode_type, const char* data,
+                                            float x, float y, float w, float h, int* error_code);
+  extern int   pdf_page_builder_barcode_qr(void* page, const char* data,
+                                            float x, float y, float size, int* error_code);
+
   extern int   pdf_page_builder_rect(void* page, float x, float y, float w, float h, int* error_code);
   extern int   pdf_page_builder_filled_rect(void* page, float x, float y, float w, float h,
                                             float r, float g, float b, int* error_code);
@@ -3253,6 +3258,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   extern Napi::Value PageBuilderComboBox(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderRadioGroup(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderPushButton(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderBarcode1d(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderBarcodeQr(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderRect(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderFilledRect(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderLine(const Napi::CallbackInfo&);
@@ -3310,6 +3317,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("pageBuilderComboBox", Napi::Function::New(env, PageBuilderComboBox));
   exports.Set("pageBuilderRadioGroup", Napi::Function::New(env, PageBuilderRadioGroup));
   exports.Set("pageBuilderPushButton", Napi::Function::New(env, PageBuilderPushButton));
+  exports.Set("pageBuilderBarcode1d", Napi::Function::New(env, PageBuilderBarcode1d));
+  exports.Set("pageBuilderBarcodeQr", Napi::Function::New(env, PageBuilderBarcodeQr));
   exports.Set("pageBuilderRect", Napi::Function::New(env, PageBuilderRect));
   exports.Set("pageBuilderFilledRect", Napi::Function::New(env, PageBuilderFilledRect));
   exports.Set("pageBuilderLine", Napi::Function::New(env, PageBuilderLine));
@@ -3751,6 +3760,35 @@ Napi::Value PageBuilderPushButton(const Napi::CallbackInfo& info) {
   int errorCode = 0;
   pdf_page_builder_push_button(p, name.c_str(), x, y, w, h, caption.c_str(), &errorCode);
   throwOnError(env, errorCode, "PageBuilder.pushButton");
+  return env.Undefined();
+}
+
+// Barcode / QR-code placement
+Napi::Value PageBuilderBarcode1d(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  int barcodeType = static_cast<int>(requireNumber(info, 1, "barcodeType"));
+  std::string data = requireString(info, 2, "data");
+  float x = static_cast<float>(requireNumber(info, 3, "x"));
+  float y = static_cast<float>(requireNumber(info, 4, "y"));
+  float w = static_cast<float>(requireNumber(info, 5, "w"));
+  float h = static_cast<float>(requireNumber(info, 6, "h"));
+  int errorCode = 0;
+  pdf_page_builder_barcode_1d(p, barcodeType, data.c_str(), x, y, w, h, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.barcode1d");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderBarcodeQr(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  std::string data = requireString(info, 1, "data");
+  float x = static_cast<float>(requireNumber(info, 2, "x"));
+  float y = static_cast<float>(requireNumber(info, 3, "y"));
+  float size = static_cast<float>(requireNumber(info, 4, "size"));
+  int errorCode = 0;
+  pdf_page_builder_barcode_qr(p, data.c_str(), x, y, size, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.barcodeQr");
   return env.Undefined();
 }
 

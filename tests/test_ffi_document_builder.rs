@@ -249,6 +249,67 @@ fn ffi_embedded_font_from_bytes_with_name_override() {
 }
 
 // ---------------------------------------------------------------------------
+// Barcode placement
+// ---------------------------------------------------------------------------
+
+#[test]
+#[cfg(feature = "barcodes")]
+fn ffi_barcode_1d_and_qr_produce_valid_pdf() {
+    let mut ec = 0;
+    let builder = unsafe { pdf_document_builder_create(&mut ec) };
+    assert_eq!(ec, 0);
+    assert!(!builder.is_null());
+
+    let page = unsafe { pdf_document_builder_a4_page(builder, &mut ec) };
+    assert_eq!(ec, 0);
+    assert!(!page.is_null());
+
+    // Code128 barcode (type 0)
+    let data = cstring("HELLO-123");
+    let ret = unsafe {
+        pdf_page_builder_barcode_1d(page, 0, data.as_ptr(), 72.0, 680.0, 200.0, 60.0, &mut ec)
+    };
+    assert_eq!(ec, 0, "barcode_1d failed: {ret}");
+
+    // QR code
+    let data = cstring("https://example.com");
+    let ret = unsafe {
+        pdf_page_builder_barcode_qr(page, data.as_ptr(), 72.0, 580.0, 100.0, &mut ec)
+    };
+    assert_eq!(ec, 0, "barcode_qr failed: {ret}");
+
+    let done = unsafe { pdf_page_builder_done(page, &mut ec) };
+    assert_eq!(ec, 0, "done failed: {done}");
+
+    let mut out_len = 0usize;
+    let bytes_ptr = unsafe { pdf_document_builder_build(builder, &mut out_len, &mut ec) };
+    assert_eq!(ec, 0);
+    assert!(!bytes_ptr.is_null());
+    assert!(out_len > 0);
+    unsafe { free_bytes(bytes_ptr) };
+    unsafe { pdf_document_builder_free(builder) };
+}
+
+#[test]
+#[cfg(feature = "barcodes")]
+fn ffi_barcode_unknown_type_errors() {
+    let mut ec = 0;
+    let builder = unsafe { pdf_document_builder_create(&mut ec) };
+    assert_eq!(ec, 0);
+
+    let page = unsafe { pdf_document_builder_a4_page(builder, &mut ec) };
+    assert_eq!(ec, 0);
+
+    let data = cstring("test");
+    let ret =
+        unsafe { pdf_page_builder_barcode_1d(page, 99, data.as_ptr(), 0., 0., 100., 50., &mut ec) };
+    assert_ne!(ec, 0, "expected error for unknown type, got {ret}");
+
+    unsafe { pdf_page_builder_free(page) };
+    unsafe { pdf_document_builder_free(builder) };
+}
+
+// ---------------------------------------------------------------------------
 // Phase 2 — HTML+CSS pipeline through the C FFI
 // ---------------------------------------------------------------------------
 

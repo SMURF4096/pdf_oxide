@@ -384,6 +384,30 @@ namespace PdfOxide.Core
             return this;
         }
 
+        // --- Barcode / QR-code placement ------------------------------------
+
+        /// <summary>
+        /// Place a 1-D barcode image on the page.
+        /// <paramref name="barcodeType"/>: 0=Code128 1=Code39 2=EAN13 3=EAN8
+        /// 4=UPCA 5=ITF 6=Code93 7=Codabar.
+        /// </summary>
+        public PageBuilder Barcode1d(int barcodeType, string data, float x, float y, float w, float h)
+        {
+            ArgumentNullException.ThrowIfNull(data);
+            NativeMethods.PdfPageBuilderBarcode1d(Handle, barcodeType, data, x, y, w, h, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
+        /// <summary>Place a QR-code image on the page (square: <paramref name="size"/> × <paramref name="size"/> pt).</summary>
+        public PageBuilder BarcodeQr(string data, float x, float y, float size)
+        {
+            ArgumentNullException.ThrowIfNull(data);
+            NativeMethods.PdfPageBuilderBarcodeQr(Handle, data, x, y, size, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
         // --- Low-level graphics primitives (PdfWriter exposure) -------------
 
         /// <summary>Draw a stroked rectangle outline (1pt black).</summary>

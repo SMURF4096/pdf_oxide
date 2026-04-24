@@ -1623,6 +1623,34 @@ impl<'a> FluentPageBuilder<'a> {
         self
     }
 
+    /// Place a 1-D barcode (Code 128, EAN-13, QR, …) at `(x, y, w, h)`.
+    /// The barcode is rendered to PNG at the given pixel dimensions and
+    /// embedded as an image. `barcode_type` selects the symbology;
+    /// `data` is the content to encode.
+    pub fn barcode_1d(
+        self,
+        barcode_type: crate::writer::BarcodeType,
+        data: &str,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    ) -> Result<Self> {
+        let opts = crate::writer::BarcodeOptions::new()
+            .width(w as u32)
+            .height(h as u32);
+        let png = crate::writer::BarcodeGenerator::generate_1d(barcode_type, data, &opts)?;
+        self.image_from_bytes(&png, crate::geometry::Rect::new(x, y, w, h))
+    }
+
+    /// Place a QR code at `(x, y, size, size)` (square).
+    /// `data` is the content to encode (URL, text, etc.).
+    pub fn barcode_qr(self, data: &str, x: f32, y: f32, size: f32) -> Result<Self> {
+        let opts = crate::writer::QrCodeOptions::new().size(size as u32);
+        let png = crate::writer::BarcodeGenerator::generate_qr(data, &opts)?;
+        self.image_from_bytes(&png, crate::geometry::Rect::new(x, y, size, size))
+    }
+
     // ───────────────────────────────────────────────────────────────────
     // Shape primitives (circle / ellipse / polygon / arc / bezier_curve)
     // ───────────────────────────────────────────────────────────────────

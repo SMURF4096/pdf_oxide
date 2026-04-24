@@ -6848,6 +6848,15 @@ enum FfiPageOp {
     /// Close the current streaming table. Subsequent ops are normal
     /// page ops again.
     StreamingTableFinish,
+    /// Pre-rendered barcode PNG bytes (generated at record time so errors
+    /// surface at the caller, not during replay).
+    BarcodeImage {
+        bytes: Vec<u8>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    },
 }
 
 /// Parse a stamp-type name into the Rust `StampType` enum. Unknown names
@@ -7730,6 +7739,81 @@ pub extern "C" fn pdf_page_builder_push_button(
     )
 }
 
+// ── Barcode helpers ───────────────────────────────────────────────────
+
+/// Map FFI barcode-type integer to the Rust enum.
+fn ffi_barcode_type(n: i32) -> Option<crate::writer::BarcodeType> {
+    use crate::writer::BarcodeType;
+    match n {
+        0 => Some(BarcodeType::Code128),
+        1 => Some(BarcodeType::Code39),
+        2 => Some(BarcodeType::Ean13),
+        3 => Some(BarcodeType::Ean8),
+        4 => Some(BarcodeType::UpcA),
+        5 => Some(BarcodeType::Itf),
+        6 => Some(BarcodeType::Code93),
+        7 => Some(BarcodeType::Codabar),
+        _ => None,
+    }
+}
+
+/// Place a 1-D barcode image on the page.
+/// `barcode_type`: 0=Code128 1=Code39 2=EAN13 3=EAN8 4=UPCA 5=ITF 6=Code93 7=Codabar.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_barcode_1d(
+    handle: *mut FfiPageBuilder,
+    barcode_type: i32,
+    data: *const c_char,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(bt) = ffi_barcode_type(barcode_type) else {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    };
+    let Some(data_s) = read_cstr_or_fail(data, error_code) else {
+        return -1;
+    };
+    let opts = crate::writer::BarcodeOptions::new()
+        .width(w as u32)
+        .height(h as u32);
+    let bytes = match crate::writer::BarcodeGenerator::generate_1d(bt, &data_s, &opts) {
+        Ok(b) => b,
+        Err(_) => {
+            set_error(error_code, ERR_INVALID_ARG);
+            return -1;
+        },
+    };
+    push_page_op(handle, error_code, FfiPageOp::BarcodeImage { bytes, x, y, w, h })
+}
+
+/// Place a QR-code image on the page (square: `size × size` points).
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_barcode_qr(
+    handle: *mut FfiPageBuilder,
+    data: *const c_char,
+    x: f32,
+    y: f32,
+    size: f32,
+    error_code: *mut i32,
+) -> i32 {
+    let Some(data_s) = read_cstr_or_fail(data, error_code) else {
+        return -1;
+    };
+    let opts = crate::writer::QrCodeOptions::new().size(size as u32);
+    let bytes = match crate::writer::BarcodeGenerator::generate_qr(&data_s, &opts) {
+        Ok(b) => b,
+        Err(_) => {
+            set_error(error_code, ERR_INVALID_ARG);
+            return -1;
+        },
+    };
+    push_page_op(handle, error_code, FfiPageOp::BarcodeImage { bytes, x, y, w: size, h: size })
+}
+
 // ── Low-level graphics primitives (PdfWriter exposure) ────────────────
 
 /// Draw a stroked rectangle outline (1pt black).
@@ -8159,6 +8243,23 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
                 rust_page_opt = Some(st.finish());
                 continue;
             },
+            FfiPageOp::BarcodeImage { bytes, x, y, w, h } => {
+                let rp = match rust_page_opt.take() {
+                    Some(p) => p,
+                    None => {
+                        set_error(error_code, ERR_INVALID_ARG);
+                        return -1;
+                    },
+                };
+                match rp.image_from_bytes(&bytes, crate::geometry::Rect::new(x, y, w, h)) {
+                    Ok(p) => rust_page_opt = Some(p),
+                    Err(_) => {
+                        set_error(error_code, ERR_INTERNAL);
+                        return -1;
+                    },
+                }
+                continue;
+            },
             _ => {},
         }
 
@@ -8319,7 +8420,8 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
             },
             FfiPageOp::StreamingTableOpen { .. }
             | FfiPageOp::StreamingTableRow(_)
-            | FfiPageOp::StreamingTableFinish => unreachable!(
+            | FfiPageOp::StreamingTableFinish
+            | FfiPageOp::BarcodeImage { .. } => unreachable!(
                 "streaming ops handled above; reaching here is a replay-loop bug"
             ),
         });

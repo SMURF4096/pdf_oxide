@@ -3578,6 +3578,14 @@ enum WasmPageOp {
         repeat_header: bool,
         rows: Vec<Vec<String>>,
     },
+    /// Pre-rendered barcode PNG bytes (generated at record time).
+    BarcodeImage {
+        bytes: Vec<u8>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    },
 }
 
 /// Embedded TTF/OTF font usable by `WasmDocumentBuilder`. Single-use: once
@@ -3907,6 +3915,11 @@ impl WasmDocumentBuilder {
                     table = table.with_column_widths(widths).with_column_aligns(aligns);
 
                     rust_page.table(table)
+                },
+                WasmPageOp::BarcodeImage { bytes, x, y, w, h } => {
+                    rust_page
+                        .image_from_bytes(&bytes, crate::geometry::Rect::new(x, y, w, h))
+                        .map_err(|e| JsValue::from_str(&e.to_string()))?
                 },
                 WasmPageOp::StreamingTableBlock {
                     config_columns,
@@ -4239,6 +4252,55 @@ impl WasmFluentPageBuilder {
             h,
             caption,
         })
+    }
+
+    /// Place a 1-D barcode image at `(x, y, w, h)` on the page.
+    /// `barcodeType`: 0=Code128 1=Code39 2=EAN13 3=EAN8 4=UPCA 5=ITF
+    /// 6=Code93 7=Codabar.
+    #[wasm_bindgen(js_name = "barcode1d")]
+    pub fn barcode_1d(
+        &mut self,
+        barcode_type: i32,
+        data: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    ) -> Result<(), JsValue> {
+        let bt = match barcode_type {
+            0 => crate::writer::BarcodeType::Code128,
+            1 => crate::writer::BarcodeType::Code39,
+            2 => crate::writer::BarcodeType::Ean13,
+            3 => crate::writer::BarcodeType::Ean8,
+            4 => crate::writer::BarcodeType::UpcA,
+            5 => crate::writer::BarcodeType::Itf,
+            6 => crate::writer::BarcodeType::Code93,
+            7 => crate::writer::BarcodeType::Codabar,
+            _ => return Err(JsValue::from_str(&format!(
+                "unknown barcodeType {barcode_type}; valid values are 0–7"
+            ))),
+        };
+        let opts = crate::writer::BarcodeOptions::new()
+            .width(w as u32)
+            .height(h as u32);
+        let bytes = crate::writer::BarcodeGenerator::generate_1d(bt, &data, &opts)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        self.push(WasmPageOp::BarcodeImage { bytes, x, y, w, h })
+    }
+
+    /// Place a QR-code image at `(x, y, size, size)` on the page.
+    #[wasm_bindgen(js_name = "barcodeQr")]
+    pub fn barcode_qr(
+        &mut self,
+        data: String,
+        x: f32,
+        y: f32,
+        size: f32,
+    ) -> Result<(), JsValue> {
+        let opts = crate::writer::QrCodeOptions::new().size(size as u32);
+        let bytes = crate::writer::BarcodeGenerator::generate_qr(&data, &opts)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        self.push(WasmPageOp::BarcodeImage { bytes, x, y, w: size, h: size })
     }
 
     /// Draw a stroked rectangle outline (1pt black).

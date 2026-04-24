@@ -4082,6 +4082,15 @@ enum PendingPageOp {
         repeat_header: bool,
         rows: Vec<Vec<String>>,
     },
+    /// Pre-rendered barcode PNG (generated at record time so errors
+    /// surface at the Python call site, not during replay).
+    BarcodeImage {
+        bytes: Vec<u8>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    },
 }
 
 fn parse_align_to_cell(i: i32) -> crate::writer::CellAlign {
@@ -4813,6 +4822,59 @@ impl PyFluentPageBuilder {
         Ok(slf)
     }
 
+    /// Place a 1-D barcode image at `(x, y, w, h)` on the page.
+    /// `barcode_type`: 0=Code128 1=Code39 2=EAN13 3=EAN8 4=UPCA 5=ITF
+    /// 6=Code93 7=Codabar. Errors surface here (at call time), not at
+    /// `done()`.
+    fn barcode_1d<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        barcode_type: i32,
+        data: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        let bt = match barcode_type {
+            0 => crate::writer::BarcodeType::Code128,
+            1 => crate::writer::BarcodeType::Code39,
+            2 => crate::writer::BarcodeType::Ean13,
+            3 => crate::writer::BarcodeType::Ean8,
+            4 => crate::writer::BarcodeType::UpcA,
+            5 => crate::writer::BarcodeType::Itf,
+            6 => crate::writer::BarcodeType::Code93,
+            7 => crate::writer::BarcodeType::Codabar,
+            _ => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown barcode_type {barcode_type}; valid values are 0–7"
+                )))
+            },
+        };
+        let opts = crate::writer::BarcodeOptions::new()
+            .width(w as u32)
+            .height(h as u32);
+        let bytes = crate::writer::BarcodeGenerator::generate_1d(bt, &data, &opts)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        slf.push(PendingPageOp::BarcodeImage { bytes, x, y, w, h })?;
+        Ok(slf)
+    }
+
+    /// Place a QR-code image at `(x, y, size, size)` on the page.
+    /// Errors surface here (at call time), not at `done()`.
+    fn barcode_qr<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        data: String,
+        x: f32,
+        y: f32,
+        size: f32,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        let opts = crate::writer::QrCodeOptions::new().size(size as u32);
+        let bytes = crate::writer::BarcodeGenerator::generate_qr(&data, &opts)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        slf.push(PendingPageOp::BarcodeImage { bytes, x, y, w: size, h: size })?;
+        Ok(slf)
+    }
+
     /// Draw a stroked rectangle outline (1pt black).
     fn rect<'a>(
         mut slf: PyRefMut<'a, Self>,
@@ -5157,6 +5219,10 @@ impl PyFluentPageBuilder {
                     parse_align_to_text(align),
                 ),
                 PendingPageOp::NewPageSameSize => page.new_page_same_size(),
+                PendingPageOp::BarcodeImage { bytes, x, y, w, h } => {
+                    page.image_from_bytes(&bytes, crate::geometry::Rect::new(x, y, w, h))
+                        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?
+                },
                 PendingPageOp::Table {
                     widths,
                     aligns,

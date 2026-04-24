@@ -418,6 +418,15 @@ int   pdf_page_builder_push_button(void* page, const char* name,
                                    const char* caption,
                                    int* error_code);
 
+/* Barcode / QR-code image placement.
+ * barcode_type: 0=Code128 1=Code39 2=EAN13 3=EAN8 4=UPCA 5=ITF 6=Code93 7=Codabar */
+int   pdf_page_builder_barcode_1d(void* page, int barcode_type, const char* data,
+                                  float x, float y, float w, float h,
+                                  int* error_code);
+int   pdf_page_builder_barcode_qr(void* page, const char* data,
+                                  float x, float y, float size,
+                                  int* error_code);
+
 /* Low-level graphics primitives (PdfWriter exposure) */
 int   pdf_page_builder_rect(void* page, float x, float y, float w, float h,
                             int* error_code);

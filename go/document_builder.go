@@ -831,6 +831,27 @@ func (p *PageBuilder) PushButton(name string, x, y, w, h float32, caption string
 	})
 }
 
+// Barcode1d places a 1-D barcode image on the page.
+// barcodeType: 0=Code128 1=Code39 2=EAN13 3=EAN8 4=UPCA 5=ITF 6=Code93 7=Codabar.
+func (p *PageBuilder) Barcode1d(barcodeType int, data string, x, y, w, h float32) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		cd := C.CString(data)
+		defer C.free(unsafe.Pointer(cd))
+		return C.pdf_page_builder_barcode_1d(hp, C.int(barcodeType), cd,
+			C.float(x), C.float(y), C.float(w), C.float(h), ec)
+	})
+}
+
+// BarcodeQr places a QR-code image on the page (square: size × size pt).
+func (p *PageBuilder) BarcodeQr(data string, x, y, size float32) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		cd := C.CString(data)
+		defer C.free(unsafe.Pointer(cd))
+		return C.pdf_page_builder_barcode_qr(hp, cd,
+			C.float(x), C.float(y), C.float(size), ec)
+	})
+}
+
 // Rect draws a stroked rectangle outline (1pt black).
 func (p *PageBuilder) Rect(x, y, w, h float32) *PageBuilder {
 	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
