@@ -224,7 +224,7 @@ namespace PdfOxide.Tests
             var fontBytes = File.ReadAllBytes(FixtureFontPath);
             const string html = "<p>text</p>";
             var black = Pdf.FromHtmlCss(html, "p { color: black; }", fontBytes).SaveToBytes();
-            var red   = Pdf.FromHtmlCss(html, "p { color: red; }",   fontBytes).SaveToBytes();
+            var red = Pdf.FromHtmlCss(html, "p { color: red; }", fontBytes).SaveToBytes();
             Assert.False(black.SequenceEqual(red), "CSS color had no effect on output");
         }
 
@@ -233,7 +233,7 @@ namespace PdfOxide.Tests
         {
             var fontBytes = File.ReadAllBytes(FixtureFontPath);
             const string html = "<p>text</p>";
-            var none   = Pdf.FromHtmlCss(html, "",                                   fontBytes).SaveToBytes();
+            var none = Pdf.FromHtmlCss(html, "", fontBytes).SaveToBytes();
             var yellow = Pdf.FromHtmlCss(html, "body { background-color: yellow; }", fontBytes).SaveToBytes();
             Assert.False(none.SequenceEqual(yellow), "CSS background-color had no effect on output");
         }
@@ -243,7 +243,7 @@ namespace PdfOxide.Tests
         {
             var fontBytes = File.ReadAllBytes(FixtureFontPath);
             const string html = "<p>text</p>";
-            var none      = Pdf.FromHtmlCss(html, "",                                  fontBytes).SaveToBytes();
+            var none = Pdf.FromHtmlCss(html, "", fontBytes).SaveToBytes();
             var underline = Pdf.FromHtmlCss(html, "p { text-decoration: underline; }", fontBytes).SaveToBytes();
             Assert.False(none.SequenceEqual(underline), "CSS text-decoration had no effect on output");
         }
