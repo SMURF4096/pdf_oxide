@@ -27,9 +27,9 @@ var whitePng = new byte[]
     0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
     0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
     0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41,
-    0x54, 0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
-    0x00, 0x00, 0x02, 0x00, 0x01, 0xE2, 0x21, 0xBC,
-    0x33, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
+    0x54, 0x78, 0x9C, 0x63, 0xF8, 0xFF, 0xFF, 0x3F,
+    0x00, 0x05, 0xFE, 0x02, 0xFE, 0x0D, 0xEF, 0x46,
+    0xB8, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
     0x44, 0xAE, 0x42, 0x60, 0x82,
 };
 
@@ -52,10 +52,10 @@ void FeatureStreamingTableRowspan()
     {
         new Column("Category", 120),
         new Column("Item",     160),
-        new Column("Notes",    150, ColumnAlign.Right),
+        new Column("Notes",    150, Alignment.Right),
     };
 
-    using var builder = new DocumentBuilder();
+    using var builder = DocumentBuilder.Create();
     builder.Title("StreamingTable Demo");
     var page = builder.LetterPage();
     page.Font("Helvetica", 10).At(72, 700).Heading(1, "Product Catalogue").At(72, 660);
@@ -65,7 +65,7 @@ void FeatureStreamingTableRowspan()
         tbl.AddRowSpan(("Fruits", 2), ("Apple", 1),   ("crisp",  1));  // Fruits spans 2 rows
         tbl.AddRowSpan(("",       1), ("Banana", 1),  ("sweet",  1));  // continuation
         tbl.AddRowSpan(("Vegetables", 1), ("Carrot", 1), ("earthy", 1));
-        tbl.Build(); // finalise and return control to page
+        tbl.Build().Done(); // finalise table then close the page
     }
 
     var path = Path.Combine(OutDir, "streaming_table_rowspan.pdf");
@@ -79,7 +79,7 @@ void FeaturePdfUaAccessibleImage()
 {
     Console.WriteLine("Building PDF/UA document with accessible image...");
 
-    using var builder = new DocumentBuilder();
+    using var builder = DocumentBuilder.Create();
     builder
         .Title("Accessible PDF Demo")
         .TaggedPdfUa1()
@@ -112,7 +112,7 @@ void FeatureSaveToBytesRoundtrip()
 {
     Console.WriteLine("Demonstrating in-memory round-trip (Build + PdfDocument.Open(bytes))...");
 
-    using var builder = new DocumentBuilder();
+    using var builder = DocumentBuilder.Create();
     builder.Title("In-Memory Round-Trip Demo");
     builder.LetterPage()
         .Font("Helvetica", 12)
@@ -212,7 +212,7 @@ void FeaturePkcs12Signing()
         using var cert = Certificate.Load(p12Data, "testpass");
         Console.WriteLine($"  Certificate subject: {cert.Subject}");
 
-        using var builder = new DocumentBuilder();
+        using var builder = DocumentBuilder.Create();
         builder.Title("Signed Invoice");
         builder.LetterPage()
             .Font("Helvetica", 12)

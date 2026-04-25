@@ -403,6 +403,10 @@ harness = false
 name = "rust_bench"
 path = "bench/rust_bench.rs"
 
+[[example]]
+name = "showcase_new_features"
+path = "examples/rust/09-new-features/main.rs"
+
 [package.metadata.docs.rs]
 # Document with safe features only (tesseract-rs fails on docs.rs sandbox)
 features = ["python", "logging", "debug-span-merging", "parallel"]

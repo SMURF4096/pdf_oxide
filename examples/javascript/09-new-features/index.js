@@ -11,9 +11,10 @@
 //
 // Run: node index.js
 
-const fs = require("node:fs");
-const path = require("node:path");
-const {
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
   DocumentBuilder,
   PdfDocument,
   Timestamp,
@@ -22,7 +23,10 @@ const {
   SignatureManager,
   SignatureException,
   Align,
-} = require("pdf-oxide");
+} from "pdf-oxide";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const OUT_DIR = "output_new_features";
 
@@ -33,9 +37,9 @@ const WHITE_PNG = Buffer.from([
   0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
   0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
   0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41,
-  0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
-  0x00, 0x00, 0x02, 0x00, 0x01, 0xe2, 0x21, 0xbc,
-  0x33, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
+  0x54, 0x78, 0x9c, 0x63, 0xf8, 0xff, 0xff, 0x3f,
+  0x00, 0x05, 0xfe, 0x02, 0xfe, 0x0d, 0xef, 0x46,
+  0xb8, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
   0x44, 0xae, 0x42, 0x60, 0x82,
 ]);
 
@@ -73,7 +77,7 @@ async function featureStreamingTableRowspan() {
   tbl.pushRowSpan([{ text: "Fruits",     rowspan: 2 }, { text: "Apple",  rowspan: 1 }, { text: "crisp",  rowspan: 1 }]);
   tbl.pushRowSpan([{ text: "",           rowspan: 1 }, { text: "Banana", rowspan: 1 }, { text: "sweet",  rowspan: 1 }]);
   tbl.pushRowSpan([{ text: "Vegetables", rowspan: 1 }, { text: "Carrot", rowspan: 1 }, { text: "earthy", rowspan: 1 }]);
-  await tbl.finish();
+  (await tbl.finish()).done();
 
   const outPath = path.join(OUT_DIR, "streaming_table_rowspan.pdf");
   builder.save(outPath);
@@ -171,7 +175,7 @@ function featureTimestampParsing() {
     console.log("  Timestamp fields verified.");
     ts.close();
   } catch (err) {
-    if (err instanceof Error && err.message.includes("not available")) {
+    if (err instanceof Error && (err.message.includes("not available") || err.message.includes("error code 8"))) {
       console.log(`  SKIP: signatures feature not compiled in.`);
     } else {
       throw err;
@@ -194,7 +198,7 @@ function featureTsaClientConstruction() {
     console.log("  TsaClient created (no network call).");
     client.close();
   } catch (err) {
-    if (err instanceof Error && err.message.includes("not available")) {
+    if (err instanceof Error && (err.message.includes("not available") || err.message.includes("error code 8"))) {
       console.log("  SKIP: signatures feature not compiled in.");
     } else {
       throw err;
