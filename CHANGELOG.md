@@ -253,6 +253,11 @@ v0.3.40 — see the E-0 RFC at `docs/v0.3.39/design/e_rich_text_rfc.md`.
 - **#395** — `SignatureException` on `PdfDocument.open()` for PDFs containing digital signatures. Fixed as a side-effect of the signing infrastructure (#208). Reported by [@gevorgter](https://github.com/gevorgter).
 - **#398** — Native PDF parser was non-reentrant: concurrent FFI reads on the same handle returned spurious parse errors. Resolved by the interior-mutability refactor (`Mutex<…>` on internal caches).
 - **#409** — Python (and all bindings) lacked `to_bytes()` / in-memory output; `compress` and `garbage_collect` were not wired into the write path. Reported by [@potatochipcoconut](https://github.com/potatochipcoconut).
+- **#411** — `p12 = "0.6"` (yanked / unmaintained) replaced with `p12-keystore = "0.2.1"` (RustCrypto-ecosystem, pure Rust, actively maintained). No public API change; `SigningCredentials::from_pkcs12` behaviour is unchanged.
+- **StreamingTable rowspan flush** — `finish()` was silently dropping the in-progress rowspan group if the table ended mid-span. Added a flush of any partial `rowspan_buf` before finalising the page.
+- **`draw_rowspan_group` bounds guard** — accessing `rows[0][col_idx].rowspan` was not guarded against `col_idx ≥ rows[0].len()`, causing a panic on narrow tables with rowspan cells. Added the bounds check `col_idx < rows[0].len()`.
+- **`scan_root_ref` anchoring** — the digital-signature helper scanned the entire document for `/Root`, so a `/Root` reference embedded inside an annotation value or stream body could silently win over the real XRef `/Root` at the end of the file. Now mirrors `scan_startxref` by restricting the search to the last 4 KB of the file.
+- **Signature reason/location PDFDocEncoding** — `/Reason` and `/Location` entries in CMS-signature dictionaries were written as raw UTF-8 bytes, bypassing the `encode_pdf_text_string` path. Non-ASCII characters (accents, CJK, etc.) were stored as illegal UTF-8 sequences in the PDF string. Now uses the same hex-encoded PDFDocEncoding/UTF-16BE path as all other string objects, closing the last #402-class gap in the signing path.
 
 ### CI / test-suite fixes
 
