@@ -28,7 +28,14 @@
 // against `prebuilds/<triple>/pdf_oxide.node` in the published
 // package and the in-tree `build/Release/` output in dev mode.
 import { loadNative } from '../native.js';
-import { Align, type Column, type StreamingTableConfig, type TableSpec, type TableMode, type SpanCell } from '../types/common.js';
+import {
+  Align,
+  type Column,
+  type SpanCell,
+  type StreamingTableConfig,
+  type TableMode,
+  type TableSpec,
+} from '../types/common.js';
 import { StreamingTable } from './streaming-table.js';
 
 const native = loadNative();
@@ -632,7 +639,14 @@ export class PageBuilder {
    * Embed an image with an accessibility alt text (PDF/UA-1 §Figure).
    * `bytes` must contain raw JPEG/PNG/WebP image data.
    */
-  imageWithAlt(bytes: Buffer | Uint8Array, x: number, y: number, w: number, h: number, altText: string): this {
+  imageWithAlt(
+    bytes: Buffer | Uint8Array,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    altText: string
+  ): this {
     native.pageBuilderImageWithAlt(this.h(), bytes, x, y, w, h, altText);
     return this;
   }
@@ -775,9 +789,7 @@ export class PageBuilder {
     const bodyRowCount = rows.length;
     for (const row of rows) {
       if (row.length !== columns.length) {
-        throw new Error(
-          `row width ${row.length} does not match column count ${columns.length}`
-        );
+        throw new Error(`row width ${row.length} does not match column count ${columns.length}`);
       }
       for (const cell of row) cells.push(cell ?? null);
     }
@@ -802,7 +814,7 @@ export class PageBuilder {
     aligns: number[],
     repeatHeader: boolean,
     mode: TableMode | undefined,
-    maxRowspan: number,
+    maxRowspan: number
   ): void {
     let modeInt = 0;
     let sampleRows = 20;
@@ -815,7 +827,16 @@ export class PageBuilder {
       if (mode.maxColWidthPt != null) maxW = mode.maxColWidthPt;
     }
     native.pageBuilderStreamingTableBeginV2(
-      this.h(), headers, widths, aligns, repeatHeader, modeInt, sampleRows, minW, maxW, maxRowspan
+      this.h(),
+      headers,
+      widths,
+      aligns,
+      repeatHeader,
+      modeInt,
+      sampleRows,
+      minW,
+      maxW,
+      maxRowspan
     );
   }
 
@@ -872,8 +893,15 @@ export class PageBuilder {
   }
 }
 
+export { StreamingTable } from './streaming-table.js';
 // Re-export the v0.3.39 table surface so users can `import { Align,
 // StreamingTable } from 'pdf-oxide'` without reaching into ./types or
 // ./builders/streaming-table.
-export { Align, type Column, type StreamingTableConfig, type TableMode, type TableSpec, type SpanCell };
-export { StreamingTable } from './streaming-table.js';
+export {
+  Align,
+  type Column,
+  type SpanCell,
+  type StreamingTableConfig,
+  type TableMode,
+  type TableSpec,
+};

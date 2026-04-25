@@ -20,8 +20,8 @@
  * ```
  */
 
-import type { PageBuilder } from './document-builder.js';
 import type { Column, SpanCell, StreamingTableConfig } from '../types/common.js';
+import type { PageBuilder } from './document-builder.js';
 
 export class StreamingTable {
   private _page: PageBuilder;
@@ -37,11 +37,11 @@ export class StreamingTable {
     this._page = page;
     this._columns = config.columns;
 
-    const headers    = config.columns.map((c) => c.header ?? '');
-    const widths     = config.columns.map((c) => c.width);
-    const aligns     = config.columns.map((c) => (c.align ?? 0) as number);
-    const repeat     = config.repeatHeader !== false;
-    const maxRowspan = (config.maxRowspan != null && config.maxRowspan >= 2) ? config.maxRowspan : 1;
+    const headers = config.columns.map((c) => c.header ?? '');
+    const widths = config.columns.map((c) => c.width);
+    const aligns = config.columns.map((c) => (c.align ?? 0) as number);
+    const repeat = config.repeatHeader !== false;
+    const maxRowspan = config.maxRowspan != null && config.maxRowspan >= 2 ? config.maxRowspan : 1;
 
     this._page._streamingTableBeginV2(headers, widths, aligns, repeat, config.mode, maxRowspan);
     this._opened = true;
@@ -88,14 +88,15 @@ export class StreamingTable {
    * Convenience: consume a sync or async iterable and push each row.
    */
   async pushAll(
-    rows: Iterable<Array<string | null | undefined>> | AsyncIterable<Array<string | null | undefined>>
+    rows:
+      | Iterable<Array<string | null | undefined>>
+      | AsyncIterable<Array<string | null | undefined>>
   ): Promise<this> {
     if (this._finished) {
       throw new Error('StreamingTable already finished');
     }
-    const anyRows = rows as
-      | (Iterable<Array<string | null | undefined>> &
-          Partial<AsyncIterable<Array<string | null | undefined>>>);
+    const anyRows = rows as Iterable<Array<string | null | undefined>> &
+      Partial<AsyncIterable<Array<string | null | undefined>>>;
     if (typeof anyRows[Symbol.asyncIterator] === 'function') {
       for await (const row of rows as AsyncIterable<Array<string | null | undefined>>) {
         this.pushRow(row);

@@ -1989,7 +1989,9 @@ export class SignatureManager extends EventEmitter {
     location?: string
   ): Promise<Buffer> {
     if (!this.native?.certificateLoadFromPem) {
-      throw new SignatureException('Native signing not available: certificateLoadFromPem not found');
+      throw new SignatureException(
+        'Native signing not available: certificateLoadFromPem not found'
+      );
     }
     if (!this.native?.signPdfBytes) {
       throw new SignatureException('Native signing not available: signPdfBytes not found');

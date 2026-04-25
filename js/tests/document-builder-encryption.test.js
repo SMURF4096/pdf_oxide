@@ -11,11 +11,11 @@
  * PDF. With the fix, the embedded-font PDF must be ≥10 KB larger.
  */
 
-import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import fs from 'node:fs';
-import path from 'node:path';
 import os from 'node:os';
+import path from 'node:path';
+import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 // Walk up from this file's directory to the repo root.
@@ -30,7 +30,13 @@ function findRepoRoot() {
 
 const repoRoot = findRepoRoot();
 const fixtureFontPath = path.join(repoRoot, 'tests', 'fixtures', 'fonts', 'DejaVuSans.ttf');
-const fixtureFontBoldPath = path.join(repoRoot, 'tests', 'fixtures', 'fonts', 'DejaVuSans-Bold.ttf');
+const fixtureFontBoldPath = path.join(
+  repoRoot,
+  'tests',
+  'fixtures',
+  'fonts',
+  'DejaVuSans-Bold.ttf'
+);
 
 function skip(reason) {
   console.log(`  SKIPPED: ${reason}`);
@@ -41,7 +47,7 @@ describe('DocumentBuilder encryption — issue #401 regression', () => {
     let DocumentBuilder, EmbeddedFont;
     try {
       ({ DocumentBuilder, EmbeddedFont } = await import('../lib/index.js').catch(
-        () => import('../src/index.ts'),
+        () => import('../src/index.ts')
       ));
     } catch {
       skip('DocumentBuilder / EmbeddedFont not available in this build');
@@ -64,18 +70,13 @@ describe('DocumentBuilder encryption — issue #401 regression', () => {
       const simpleSize = fs.statSync(simplePath).size;
       assert.ok(
         fs.readFileSync(simplePath).includes('/Encrypt'),
-        'simple encrypted PDF must contain /Encrypt',
+        'simple encrypted PDF must contain /Encrypt'
       );
 
       // ── embedded-font PDF, encrypted ─────────────────────────────────
       const font = EmbeddedFont.fromFile(fixtureFontPath);
       const ttfBuilder = DocumentBuilder.create().registerEmbeddedFont('DejaVu', font);
-      ttfBuilder
-        .a4Page()
-        .font('DejaVu', 12)
-        .at(72, 720)
-        .text('Hello from embedded font')
-        .done();
+      ttfBuilder.a4Page().font('DejaVu', 12).at(72, 720).text('Hello from embedded font').done();
       const ttfPath = path.join(tmpDir, 'ttf_enc.pdf');
       ttfBuilder.saveEncrypted(ttfPath, 'userpw', 'ownerpw');
       const ttfRaw = fs.readFileSync(ttfPath);
@@ -88,7 +89,7 @@ describe('DocumentBuilder encryption — issue #401 regression', () => {
         diff >= 10_000,
         `issue #401: embedded-font encrypted PDF (${ttfSize} B) is not substantially ` +
           `larger than simple encrypted PDF (${simpleSize} B); diff=${diff} B — ` +
-          `font sub-objects (FontFile2, DescendantFonts, etc.) are likely missing`,
+          `font sub-objects (FontFile2, DescendantFonts, etc.) are likely missing`
       );
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -99,7 +100,7 @@ describe('DocumentBuilder encryption — issue #401 regression', () => {
     let DocumentBuilder, EmbeddedFont;
     try {
       ({ DocumentBuilder, EmbeddedFont } = await import('../lib/index.js').catch(
-        () => import('../src/index.ts'),
+        () => import('../src/index.ts')
       ));
     } catch {
       skip('DocumentBuilder / EmbeddedFont not available in this build');
@@ -125,7 +126,7 @@ describe('DocumentBuilder encryption — issue #401 regression', () => {
     assert.ok(
       bytes.length > 15_000,
       `issue #401: toBytesEncrypted embedded-font result (${bytes.length} B) is too small; ` +
-        'font sub-objects likely missing from encrypted output',
+        'font sub-objects likely missing from encrypted output'
     );
   });
 
@@ -133,7 +134,7 @@ describe('DocumentBuilder encryption — issue #401 regression', () => {
     let DocumentBuilder, EmbeddedFont;
     try {
       ({ DocumentBuilder, EmbeddedFont } = await import('../lib/index.js').catch(
-        () => import('../src/index.ts'),
+        () => import('../src/index.ts')
       ));
     } catch {
       skip('DocumentBuilder / EmbeddedFont not available in this build');
@@ -175,7 +176,7 @@ describe('DocumentBuilder encryption — issue #401 regression', () => {
       assert.ok(
         raw.length > 25_000,
         `issue #401: two-font encrypted PDF (${raw.length} B) is too small; ` +
-          'font sub-objects for both fonts are likely missing',
+          'font sub-objects for both fonts are likely missing'
       );
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });

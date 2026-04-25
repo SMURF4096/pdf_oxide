@@ -279,7 +279,7 @@ export class PdfBuilder {
     html: string,
     css: string,
     families: string[],
-    fonts: (Buffer | Uint8Array)[],
+    fonts: (Buffer | Uint8Array)[]
   ): any {
     const { Pdf } = require('../index.js');
     const pdf = Pdf.fromHtmlCssWithFonts(html, css, families, fonts);

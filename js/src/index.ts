@@ -65,7 +65,14 @@ import {
   SearchStream,
   SecurityManager,
 } from './managers/index';
-import type { Column, SpanCell, StreamingTableConfig, Table, TableMode, TableSpec } from './types/common.js';
+import type {
+  Column,
+  SpanCell,
+  StreamingTableConfig,
+  Table,
+  TableMode,
+  TableSpec,
+} from './types/common.js';
 import type { WorkerResult, WorkerTask } from './workers/index';
 import { WorkerPool, workerPool } from './workers/index';
 
@@ -622,11 +629,11 @@ class PdfImpl {
     html: string,
     css: string,
     families: string[],
-    fonts: (Buffer | Uint8Array)[],
+    fonts: (Buffer | Uint8Array)[]
   ): PdfImpl {
     if (families.length !== fonts.length) {
       throw new Error(
-        `fromHtmlCssWithFonts: families.length (${families.length}) must equal fonts.length (${fonts.length})`,
+        `fromHtmlCssWithFonts: families.length (${families.length}) must equal fonts.length (${fonts.length})`
       );
     }
     return new PdfImpl(native.pdfFromHtmlCssWithFonts(html, css, families, fonts));

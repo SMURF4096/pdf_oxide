@@ -179,7 +179,10 @@ test('setPageCropBox does not throw', () => {
 
 test('eraseRegions does not throw', () => {
   withEditor('# eraseRegions', (editor) => {
-    editor.eraseRegions(0, [[10, 10, 100, 50], [200, 200, 80, 40]]);
+    editor.eraseRegions(0, [
+      [10, 10, 100, 50],
+      [200, 200, 80, 40],
+    ]);
   });
 });
 

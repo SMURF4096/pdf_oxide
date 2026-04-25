@@ -3,7 +3,7 @@
 // All tests are self-contained — they generate PDFs from Markdown.
 
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, statSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -18,8 +18,14 @@ try {
 const skip = !Pdf;
 
 function isPdf(buf) {
-  return buf && buf.length > 4 &&
-    buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46;
+  return (
+    buf &&
+    buf.length > 4 &&
+    buf[0] === 0x25 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x44 &&
+    buf[3] === 0x46
+  );
 }
 
 // Creates a temp directory, returns { dir, cleanup() }
@@ -67,7 +73,7 @@ test('extractWords returns non-empty array with text field', { skip }, () => {
     const doc = PdfDocument.open(path);
     const words = doc.extractWords(0);
     assert.ok(Array.isArray(words) && words.length > 0, 'expected words array');
-    const found = words.some(w => (w.text || w.Text || '').includes('WORDTOKEN'));
+    const found = words.some((w) => (w.text || w.Text || '').includes('WORDTOKEN'));
     assert.ok(found, `WORDTOKEN not found in: ${JSON.stringify(words.slice(0, 3))}`);
     doc.close();
   } finally {
@@ -82,7 +88,7 @@ test('extractTextLines returns non-empty array with text field', { skip }, () =>
     const doc = PdfDocument.open(path);
     const lines = doc.extractTextLines(0);
     assert.ok(Array.isArray(lines) && lines.length > 0, 'expected lines array');
-    const found = lines.some(l => (l.text || l.Text || '').includes('LINETOKEN'));
+    const found = lines.some((l) => (l.text || l.Text || '').includes('LINETOKEN'));
     assert.ok(found, `LINETOKEN not found in: ${JSON.stringify(lines.slice(0, 3))}`);
     doc.close();
   } finally {
@@ -202,15 +208,11 @@ test('Pdf.fromImage produces a valid PDF', { skip }, () => {
   const { dir, cleanup } = tempDir();
   try {
     const png = Buffer.from([
-      0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,
-      0x00,0x00,0x00,0x0d,0x49,0x48,0x44,0x52,
-      0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x01,
-      0x08,0x02,0x00,0x00,0x00,0x90,0x77,0x53,
-      0xde,0x00,0x00,0x00,0x0c,0x49,0x44,0x41,
-      0x54,0x78,0xda,0x63,0xf8,0xff,0xff,0x3f,
-      0x00,0x05,0xfe,0x02,0xfe,0x33,0x12,0x95,
-      0x14,0x00,0x00,0x00,0x00,0x49,0x45,0x4e,
-      0x44,0xae,0x42,0x60,0x82,
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
+      0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90,
+      0x77, 0x53, 0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0xf8,
+      0xff, 0xff, 0x3f, 0x00, 0x05, 0xfe, 0x02, 0xfe, 0x33, 0x12, 0x95, 0x14, 0x00, 0x00, 0x00,
+      0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
     ]);
     const imgPath = join(dir, 'img.png');
     writeFileSync(imgPath, png);
@@ -229,15 +231,11 @@ test('Pdf.fromImage produces a valid PDF', { skip }, () => {
 
 test('Pdf.fromImageBytes produces a valid PDF', { skip }, () => {
   const png = Buffer.from([
-    0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,
-    0x00,0x00,0x00,0x0d,0x49,0x48,0x44,0x52,
-    0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x01,
-    0x08,0x02,0x00,0x00,0x00,0x90,0x77,0x53,
-    0xde,0x00,0x00,0x00,0x0c,0x49,0x44,0x41,
-    0x54,0x78,0xda,0x63,0xf8,0xff,0xff,0x3f,
-    0x00,0x05,0xfe,0x02,0xfe,0x33,0x12,0x95,
-    0x14,0x00,0x00,0x00,0x00,0x49,0x45,0x4e,
-    0x44,0xae,0x42,0x60,0x82,
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+    0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0xf8, 0xff, 0xff, 0x3f,
+    0x00, 0x05, 0xfe, 0x02, 0xfe, 0x33, 0x12, 0x95, 0x14, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
+    0x44, 0xae, 0x42, 0x60, 0x82,
   ]);
   try {
     const pdf = Pdf.fromImageBytes(png);
@@ -255,11 +253,7 @@ test('DocumentBuilder.save (non-encrypted) writes a PDF file', { skip: !Document
   const { dir, cleanup } = tempDir();
   try {
     const path = join(dir, 'plain.pdf');
-    DocumentBuilder.create()
-      .a4Page()
-      .paragraph('plain save')
-      .done()
-      .save(path);
+    DocumentBuilder.create().a4Page().paragraph('plain save').done().save(path);
     assert.ok(statSync(path).size > 100);
   } finally {
     cleanup();
@@ -267,20 +261,12 @@ test('DocumentBuilder.save (non-encrypted) writes a PDF file', { skip: !Document
 });
 
 test('DocumentBuilder.letterPage produces a PDF', { skip: !DocumentBuilder }, () => {
-  const buf = DocumentBuilder.create()
-    .letterPage()
-    .paragraph('US Letter')
-    .done()
-    .build();
+  const buf = DocumentBuilder.create().letterPage().paragraph('US Letter').done().build();
   assert.ok(isPdf(buf));
 });
 
 test('DocumentBuilder.page (custom size) produces a PDF', { skip: !DocumentBuilder }, () => {
-  const buf = DocumentBuilder.create()
-    .page(300, 400)
-    .paragraph('custom size')
-    .done()
-    .build();
+  const buf = DocumentBuilder.create().page(300, 400).paragraph('custom size').done().build();
   assert.ok(isPdf(buf));
 });
 
@@ -335,19 +321,25 @@ test('DocumentEditor.movePage changes page order', { skip: !DocumentEditor }, ()
     const multiPath = join(dir, 'multi.pdf');
     const outPath = join(dir, 'out.pdf');
     const multiBytes = DocumentBuilder.create()
-      .a4Page().at(72, 720).text('PAGEFIRST').done()
-      .a4Page().at(72, 720).text('PAGESECOND').done()
+      .a4Page()
+      .at(72, 720)
+      .text('PAGEFIRST')
+      .done()
+      .a4Page()
+      .at(72, 720)
+      .text('PAGESECOND')
+      .done()
       .build();
     writeFileSync(multiPath, multiBytes);
 
     const editor = DocumentEditor.open(multiPath);
-    editor.movePage(1, 0);  // [PAGESECOND, PAGEFIRST]
+    editor.movePage(1, 0); // [PAGESECOND, PAGEFIRST]
     editor.save(outPath);
     editor.close();
 
     const doc = PdfDocument.open(outPath);
     const words = doc.extractWords(0);
-    const text = words.map(w => w.text || w.Text || '').join(' ');
+    const text = words.map((w) => w.text || w.Text || '').join(' ');
     assert.ok(text.includes('PAGESECOND'), `expected PAGESECOND on page 0, got: ${text}`);
     doc.close();
   } finally {
@@ -398,9 +390,8 @@ test('signatureCount returns 0 for unsigned PDF', { skip }, () => {
   try {
     // signatureCount may be a property, a function, or absent depending on build
     if (doc.signatureCount === undefined) return; // feature not exposed
-    const count = typeof doc.signatureCount === 'function'
-      ? doc.signatureCount()
-      : doc.signatureCount;
+    const count =
+      typeof doc.signatureCount === 'function' ? doc.signatureCount() : doc.signatureCount;
     assert.equal(typeof count, 'number');
     assert.ok(count >= 0);
   } catch (e) {

@@ -1000,7 +1000,7 @@ export class Pdf {
     html: string,
     css: string,
     families: string[],
-    fonts: (Buffer | Uint8Array)[],
+    fonts: (Buffer | Uint8Array)[]
   ): Pdf;
 
   /**
@@ -1280,7 +1280,7 @@ export class PdfBuilder {
     html: string,
     css: string,
     families: string[],
-    fonts: (Buffer | Uint8Array)[],
+    fonts: (Buffer | Uint8Array)[]
   ): Pdf;
 
   fromMarkdownAsync(markdown: string): Promise<Pdf>;
@@ -1992,14 +1992,7 @@ export class PageBuilder {
   freeText(x: number, y: number, w: number, h: number, text: string): this;
 
   // --- Form fields ---------------------------------------------------
-  textField(
-    name: string,
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-    defaultValue?: string
-  ): this;
+  textField(name: string, x: number, y: number, w: number, h: number, defaultValue?: string): this;
   checkbox(name: string, x: number, y: number, w: number, h: number, checked?: boolean): this;
   comboBox(
     name: string,
@@ -2059,14 +2052,7 @@ export class PageBuilder {
     y2: number,
     style?: { width?: number; color?: [number, number, number] }
   ): this;
-  textInRect(
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-    text: string,
-    align?: Align
-  ): this;
+  textInRect(x: number, y: number, w: number, h: number, text: string, align?: Align): this;
   newPageSameSize(): this;
   /** Approximate width of `text` in the current font (JS-side in v0.3.39). */
   measure(text: string): number;

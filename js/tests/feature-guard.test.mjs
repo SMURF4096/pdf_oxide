@@ -14,9 +14,8 @@
 // full-features CI job exercises the "feature ON" path.
 
 import assert from 'node:assert/strict';
+import { dirname } from 'node:path';
 import { test } from 'node:test';
-import { readFile } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -25,7 +24,11 @@ let Pdf, PdfDocument, PdfError;
 try {
   ({ Pdf, PdfDocument } = await import('../lib/index.js'));
   // PdfError may be exported under different names — try both
-  try { ({ PdfError } = await import('../lib/index.js')); } catch { PdfError = null; }
+  try {
+    ({ PdfError } = await import('../lib/index.js'));
+  } catch {
+    PdfError = null;
+  }
 } catch {
   console.warn('[feature-guard] skipping — compiled library not available');
 }
@@ -91,13 +94,14 @@ test('Pdf.fromBarcode: succeeds or throws UnsupportedFeature', { skip: !Pdf }, (
 
 // ── Signatures ─────────────────────────────────────────────────────────────
 
-test('PdfDocument.signatureCount: succeeds or throws UnsupportedFeature', { skip: !PdfDocument }, () => {
+test('PdfDocument.signatureCount: succeeds or throws UnsupportedFeature', {
+  skip: !PdfDocument,
+}, () => {
   const doc = makeDoc();
   if (typeof doc.signatureCount !== 'function' && doc.signatureCount === undefined) return;
   try {
-    const count = typeof doc.signatureCount === 'function'
-      ? doc.signatureCount()
-      : doc.signatureCount;
+    const count =
+      typeof doc.signatureCount === 'function' ? doc.signatureCount() : doc.signatureCount;
     assert.equal(typeof count, 'number');
     assert.ok(count >= 0);
   } catch (err) {
@@ -109,7 +113,9 @@ test('PdfDocument.signatureCount: succeeds or throws UnsupportedFeature', { skip
 // The existing render-options.test.mjs assumes rendering is always available.
 // Verify the key assertions also tolerate the feature-off path.
 
-test('estimateRenderTime: returns number or throws UnsupportedFeature', { skip: !PdfDocument }, () => {
+test('estimateRenderTime: returns number or throws UnsupportedFeature', {
+  skip: !PdfDocument,
+}, () => {
   const doc = makeDoc();
   try {
     const ms = doc.estimateRenderTime(0, 150);
