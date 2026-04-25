@@ -347,10 +347,10 @@ pub struct PdfDocument {
     /// Name-based font set cache keyed by hash of sorted font names.
     /// Catches pages with different font ObjectRefs but the same font name→base font
     /// mapping (common in PDFs that create new font objects per page).
-    /// Stores the resolved font set (Arc-wrapped to avoid cloning) plus a spot-check
-    /// (font_name, content_hash) pair for verification before reuse. Bounded at 256 entries.
+    /// Stores the resolved font set (Arc-wrapped to avoid cloning) plus a combined
+    /// identity hash over ALL fonts for verification before reuse. Bounded at 256 entries.
     font_name_set_cache: Mutex<
-        BoundedEntryCache<u64, (Arc<Vec<(String, Arc<crate::fonts::FontInfo>)>>, String, u64)>,
+        BoundedEntryCache<u64, (Arc<Vec<(String, Arc<crate::fonts::FontInfo>)>>, u64)>,
     >,
     /// Per-font identity cache keyed by font_identity_hash (BaseFont + Subtype + Encoding +
     /// ToUnicode + FontDescriptor + DescendantFonts references). Skips expensive
@@ -8992,6 +8992,7 @@ impl PdfDocument {
                     for (name, font_arc) in &cached_set {
                         extractor.add_font_shared(name.clone(), Arc::clone(font_arc));
                     }
+                    extractor.share_truetype_cmaps();
                     return Ok(());
                 }
             }
@@ -9029,6 +9030,7 @@ impl PdfDocument {
                     for (name, font_arc) in &cached_set {
                         extractor.add_font_shared(name.clone(), Arc::clone(font_arc));
                     }
+                    extractor.share_truetype_cmaps();
                     return Ok(());
                 }
 
@@ -9052,35 +9054,6 @@ impl PdfDocument {
                     .lock_or_recover()
                     .get(&name_hash)
                     .cloned();
-                if let Some((cached_set, check_name, check_hash)) = cached_name_set {
-                    // Spot-check: load ONE font and compare its identity hash
-                    // (includes ToUnicode ObjectRef) to verify the font mapping
-                    // is the same as when the cache was populated. This catches
-                    // PDFs (e.g. Acrobat Pro, Antenna House) that recycle font
-                    // key names across pages but embed per-page subsets with
-                    // distinct ToUnicode CMaps. See issue #407.
-                    let mut verified = false;
-                    if let Some(check_obj) = font_dict.get(check_name.as_str()) {
-                        if let Some(check_ref) = check_obj.as_reference() {
-                            if let Ok(check_font) = self.load_object(check_ref) {
-                                verified =
-                                    Self::font_identity_hash_cheap(&check_font) == check_hash;
-                            }
-                        }
-                    }
-                    if verified {
-                        for (name, font_arc) in cached_set.iter() {
-                            extractor.add_font_shared(name.clone(), Arc::clone(font_arc));
-                        }
-                        return Ok(());
-                    }
-                    // Hash mismatch: fonts differ — fall through to full load.
-                }
-
-                let mut all_from_cache = true;
-                // Track spot-check data: first font name and its content hash
-                let mut spot_check: Option<(String, u64)> = None;
-
                 // Sort font entries by name for deterministic processing order.
                 // HashMap iteration order is randomized per-process, which causes
                 // non-deterministic text extraction when font CMap sharing depends
@@ -9088,13 +9061,53 @@ impl PdfDocument {
                 let mut sorted_font_entries: Vec<(&String, &Object)> = font_dict.iter().collect();
                 sorted_font_entries.sort_by_key(|(name, _)| name.as_str());
 
-                for (name, font_obj) in sorted_font_entries {
+                if let Some((cached_set, check_hash)) = cached_name_set {
+                    // Verify the cached font set by computing a combined identity hash
+                    // over ALL reference fonts in the current Resources dict (sorted by
+                    // name). This prevents false cache hits when pages reuse the same
+                    // font key names but embed different per-page subsets — a single-font
+                    // spot-check is insufficient because it only guards one entry and
+                    // lets differing sibling fonts (F2, F3 …) slip through unchecked.
+                    // Fixes the regression described in issue #408.
+                    let current_combined = {
+                        use std::hash::{Hash, Hasher};
+                        let mut h = std::collections::hash_map::DefaultHasher::new();
+                        for (name, font_obj) in &sorted_font_entries {
+                            if let Some(font_ref) = font_obj.as_reference() {
+                                if let Ok(font) = self.load_object(font_ref) {
+                                    name.as_str().hash(&mut h);
+                                    Self::font_identity_hash_cheap(&font).hash(&mut h);
+                                }
+                            }
+                        }
+                        h.finish()
+                    };
+                    if current_combined == check_hash {
+                        for (name, font_arc) in cached_set.iter() {
+                            extractor.add_font_shared(name.clone(), Arc::clone(font_arc));
+                        }
+                        extractor.share_truetype_cmaps();
+                        return Ok(());
+                    }
+                    // Hash mismatch: fonts differ — fall through to full load.
+                }
+
+                // Snapshot names already in the extractor before this load_fonts call.
+                // Layer 4 must store only the delta so that a cache hit never injects
+                // parent-page fonts into a different page's extractor context, which
+                // would overwrite correctly-loaded fonts with wrong versions.
+                let extractor_names_before: std::collections::HashSet<String> =
+                    extractor.get_font_set().into_iter().map(|(k, _)| k).collect();
+
+                let mut all_from_cache = true;
+
+                for (name, font_obj) in &sorted_font_entries {
                     // If font is a reference, check per-font cache first
                     if let Some(font_ref) = font_obj.as_reference() {
                         let cached_font_opt =
                             self.font_cache.lock_or_recover().get(&font_ref).cloned();
                         if let Some(cached) = cached_font_opt {
-                            extractor.add_font_shared(name.clone(), cached);
+                            extractor.add_font_shared((*name).clone(), cached);
                             continue;
                         }
                         all_from_cache = false;
@@ -9102,11 +9115,6 @@ impl PdfDocument {
 
                         // Compute identity hash (cheap: 3-6 dict lookups, ~200ns)
                         let id_hash = Self::font_identity_hash_cheap(&font);
-
-                        // Collect spot-check data (first font only) for name cache
-                        if spot_check.is_none() {
-                            spot_check = Some((name.clone(), id_hash));
-                        }
 
                         // Layer 5: Per-font identity cache — skip from_dict when a
                         // structurally identical font was already parsed elsewhere.
@@ -9119,7 +9127,7 @@ impl PdfDocument {
                             self.font_cache
                                 .lock_or_recover()
                                 .insert(font_ref, Arc::clone(&cached));
-                            extractor.add_font_shared(name.clone(), cached);
+                            extractor.add_font_shared((*name).clone(), cached);
                             continue;
                         }
 
@@ -9134,7 +9142,7 @@ impl PdfDocument {
                             self.font_cache
                                 .lock_or_recover()
                                 .insert(font_ref, Arc::clone(&cached));
-                            extractor.add_font_shared(name.clone(), cached);
+                            extractor.add_font_shared((*name).clone(), cached);
                             continue;
                         }
 
@@ -9152,7 +9160,7 @@ impl PdfDocument {
                                 self.font_cache
                                     .lock_or_recover()
                                     .insert(font_ref, Arc::clone(&arc));
-                                extractor.add_font_shared(name.clone(), arc);
+                                extractor.add_font_shared((*name).clone(), arc);
                             },
                             Err(e) => {
                                 log::error!(
@@ -9169,7 +9177,7 @@ impl PdfDocument {
                         let font = font_obj.clone();
                         match FontInfo::from_dict(&font, self) {
                             Ok(font_info) => {
-                                extractor.add_font(name.clone(), font_info);
+                                extractor.add_font((*name).clone(), font_info);
                             },
                             Err(e) => {
                                 log::error!(
@@ -9183,11 +9191,13 @@ impl PdfDocument {
                     }
                 }
 
-                // Only call share_truetype_cmaps when new fonts were parsed
-                // (cached fonts already had sharing applied)
-                if !all_from_cache {
-                    extractor.share_truetype_cmaps();
-                }
+                // Always re-share TrueType CMaps after loading fonts. Cached fonts
+                // may lack donated CMaps because Arc::make_mut creates a per-extractor
+                // clone that is not written back to per-font cache. A donor font added
+                // in a later load_fonts call (e.g. an XObject font donating to a
+                // page-level font already in the extractor) requires sharing to run
+                // again even when all fonts came from cache.
+                extractor.share_truetype_cmaps();
 
                 // Cache font set by both ObjectRef and fingerprint
                 let font_set = extractor.get_font_set();
@@ -9200,11 +9210,35 @@ impl PdfDocument {
                     .lock_or_recover()
                     .insert(fingerprint, font_set.clone());
 
-                // Cache by font names with spot-check data for Layer 4
-                if let Some((check_name, check_hash)) = spot_check {
+                // Cache by font names for Layer 4. Store only the delta — fonts
+                // added by THIS load_fonts call — so that a cache hit never pollutes
+                // a different page's extractor with stale parent-page fonts.
+                // The combined identity hash covers ALL reference fonts (sorted by
+                // name), so a hit requires every font in the Resources dict to match,
+                // not just one. This prevents false positives when pages reuse the
+                // same font key names with different per-page subsets (issue #408).
+                if !all_from_cache {
+                    let combined_check_hash = {
+                        use std::hash::{Hash, Hasher};
+                        let mut h = std::collections::hash_map::DefaultHasher::new();
+                        for (name, font_obj) in &sorted_font_entries {
+                            if let Some(font_ref) = font_obj.as_reference() {
+                                if let Ok(font) = self.load_object(font_ref) {
+                                    name.as_str().hash(&mut h);
+                                    Self::font_identity_hash_cheap(&font).hash(&mut h);
+                                }
+                            }
+                        }
+                        h.finish()
+                    };
+                    let l4_set: Vec<(String, Arc<FontInfo>)> = font_set
+                        .iter()
+                        .filter(|(k, _)| !extractor_names_before.contains(k.as_str()))
+                        .map(|(k, v)| (k.clone(), Arc::clone(v)))
+                        .collect();
                     self.font_name_set_cache
                         .lock_or_recover()
-                        .insert(name_hash, (Arc::new(font_set), check_name, check_hash));
+                        .insert(name_hash, (Arc::new(l4_set), combined_check_hash));
                 }
 
                 return Ok(());
