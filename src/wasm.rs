@@ -852,7 +852,7 @@ impl WasmPdfDocument {
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
-        let results = TextSearcher::search(&*inner, pattern, &options)
+        let results = TextSearcher::search(&inner, pattern, &options)
             .map_err(|e| JsValue::from_str(&format!("Search failed: {}", e)))?;
         serde_wasm_bindgen::to_value(&results)
             .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))
@@ -880,7 +880,7 @@ impl WasmPdfDocument {
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
-        let results = TextSearcher::search(&*inner, pattern, &options)
+        let results = TextSearcher::search(&inner, pattern, &options)
             .map_err(|e| JsValue::from_str(&format!("Search failed: {}", e)))?;
         serde_wasm_bindgen::to_value(&results)
             .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))
@@ -1774,7 +1774,7 @@ impl WasmPdfDocument {
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
-        let fields = FormExtractor::extract_fields(&*inner)
+        let fields = FormExtractor::extract_fields(&inner)
             .map_err(|e| JsValue::from_str(&format!("Failed to extract form fields: {}", e)))?;
 
         let result: Vec<serde_json::Value> = fields
@@ -2079,7 +2079,7 @@ impl WasmPdfDocument {
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
-        let labels = PageLabelExtractor::extract(&*inner)
+        let labels = PageLabelExtractor::extract(&inner)
             .map_err(|e| JsValue::from_str(&format!("Failed to get page labels: {}", e)))?;
 
         let result: Vec<serde_json::Value> = labels
@@ -2116,7 +2116,7 @@ impl WasmPdfDocument {
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
-        let metadata = XmpExtractor::extract(&*inner)
+        let metadata = XmpExtractor::extract(&inner)
             .map_err(|e| JsValue::from_str(&format!("Failed to get XMP metadata: {}", e)))?;
 
         match metadata {

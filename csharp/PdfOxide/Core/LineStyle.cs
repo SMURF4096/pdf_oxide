@@ -167,13 +167,13 @@ namespace PdfOxide.Core
 
             // Encode headers, widths, aligns.
             var headers = new byte[_nCols][];
-            var widths  = new float[_nCols];
-            var aligns  = new int[_nCols];
+            var widths = new float[_nCols];
+            var aligns = new int[_nCols];
             for (int i = 0; i < _nCols; i++)
             {
                 headers[i] = Encoding.UTF8.GetBytes((columns[i].Header ?? string.Empty) + "\0");
-                widths[i]  = columns[i].Width;
-                aligns[i]  = (int)columns[i].Align;
+                widths[i] = columns[i].Width;
+                aligns[i] = (int)columns[i].Align;
             }
 
             int modeInt = 0;
@@ -181,23 +181,23 @@ namespace PdfOxide.Core
             float minW = 0f, maxW = 9999f;
             if (mode is TableMode.Sample s)
             {
-                modeInt    = 1;
+                modeInt = 1;
                 sampleRows = s.SampleRows;
-                minW       = s.MinColWidthPt;
-                maxW       = s.MaxColWidthPt;
+                minW = s.MinColWidthPt;
+                maxW = s.MaxColWidthPt;
             }
 
             var hHandles = new GCHandle[_nCols];
-            var hPtrs    = new IntPtr[_nCols];
+            var hPtrs = new IntPtr[_nCols];
             GCHandle hPtrsH = default, widthsH = default, alignsH = default;
             try
             {
                 for (int i = 0; i < _nCols; i++)
                 {
                     hHandles[i] = GCHandle.Alloc(headers[i], GCHandleType.Pinned);
-                    hPtrs[i]    = hHandles[i].AddrOfPinnedObject();
+                    hPtrs[i] = hHandles[i].AddrOfPinnedObject();
                 }
-                hPtrsH  = GCHandle.Alloc(hPtrs, GCHandleType.Pinned);
+                hPtrsH = GCHandle.Alloc(hPtrs, GCHandleType.Pinned);
                 widthsH = GCHandle.Alloc(widths, GCHandleType.Pinned);
                 alignsH = GCHandle.Alloc(aligns, GCHandleType.Pinned);
 
@@ -217,7 +217,7 @@ namespace PdfOxide.Core
             }
             finally
             {
-                if (hPtrsH.IsAllocated)  hPtrsH.Free();
+                if (hPtrsH.IsAllocated) hPtrsH.Free();
                 if (widthsH.IsAllocated) widthsH.Free();
                 if (alignsH.IsAllocated) alignsH.Free();
                 for (int i = 0; i < _nCols; i++)
@@ -246,14 +246,14 @@ namespace PdfOxide.Core
                 cellBytes[i] = Encoding.UTF8.GetBytes((cells[i] ?? string.Empty) + "\0");
 
             var handles = new GCHandle[_nCols];
-            var ptrs    = new IntPtr[_nCols];
+            var ptrs = new IntPtr[_nCols];
             GCHandle ptrsH = default;
             try
             {
                 for (int i = 0; i < _nCols; i++)
                 {
                     handles[i] = GCHandle.Alloc(cellBytes[i], GCHandleType.Pinned);
-                    ptrs[i]    = handles[i].AddrOfPinnedObject();
+                    ptrs[i] = handles[i].AddrOfPinnedObject();
                 }
                 ptrsH = GCHandle.Alloc(ptrs, GCHandleType.Pinned);
                 NativeMethods.PdfPageBuilderStreamingTablePushRow(
@@ -289,24 +289,24 @@ namespace PdfOxide.Core
                     nameof(cells));
 
             var cellBytes = new byte[_nCols][];
-            var rowspans  = new nuint[_nCols];
+            var rowspans = new nuint[_nCols];
             for (int i = 0; i < _nCols; i++)
             {
                 cellBytes[i] = Encoding.UTF8.GetBytes((cells[i].Text ?? string.Empty) + "\0");
-                rowspans[i]  = (nuint)Math.Max(1, cells[i].Rowspan);
+                rowspans[i] = (nuint)Math.Max(1, cells[i].Rowspan);
             }
 
             var handles = new GCHandle[_nCols];
-            var ptrs    = new IntPtr[_nCols];
+            var ptrs = new IntPtr[_nCols];
             GCHandle ptrsH = default, rowspansH = default;
             try
             {
                 for (int i = 0; i < _nCols; i++)
                 {
                     handles[i] = GCHandle.Alloc(cellBytes[i], GCHandleType.Pinned);
-                    ptrs[i]    = handles[i].AddrOfPinnedObject();
+                    ptrs[i] = handles[i].AddrOfPinnedObject();
                 }
-                ptrsH     = GCHandle.Alloc(ptrs,    GCHandleType.Pinned);
+                ptrsH = GCHandle.Alloc(ptrs, GCHandleType.Pinned);
                 rowspansH = GCHandle.Alloc(rowspans, GCHandleType.Pinned);
                 NativeMethods.PdfPageBuilderStreamingTablePushRowV2(
                     _page.InternalHandle,
@@ -318,7 +318,7 @@ namespace PdfOxide.Core
             }
             finally
             {
-                if (ptrsH.IsAllocated)     ptrsH.Free();
+                if (ptrsH.IsAllocated) ptrsH.Free();
                 if (rowspansH.IsAllocated) rowspansH.Free();
                 for (int i = 0; i < _nCols; i++)
                     if (handles[i].IsAllocated) handles[i].Free();
