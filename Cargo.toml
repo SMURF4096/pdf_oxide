@@ -170,7 +170,7 @@ der = { version = "0.7", optional = true }          # DER encoding — pinned to
 spki = { version = "0.7", optional = true }         # SubjectPublicKeyInfo — matches der 0.7
 pkcs1 = { version = "0.7", optional = true }        # PKCS#1 RSA format
 pkcs8 = { version = "0.10", optional = true }       # PKCS#8 private keys
-p12 = { version = "0.6", optional = true }          # PKCS#12 (.p12/.pfx) parsing
+p12-keystore = { version = "0.2.1", optional = true } # PKCS#12 (.p12/.pfx) parsing
 signature = { version = "2.2", optional = true }    # Signature traits
 sha1 = { version = "0.11", optional = true }        # SHA-1 for legacy signatures
 
@@ -317,7 +317,7 @@ signatures = [
     "dep:spki",
     "dep:pkcs1",
     "dep:pkcs8",
-    "dep:p12",
+    "dep:p12-keystore",
     "dep:signature",
     "dep:sha1",
     "dep:x509-tsp",

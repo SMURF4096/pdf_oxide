@@ -107,32 +107,28 @@ impl SigningCredentials {
 
     /// Load credentials from a PKCS#12 (.p12/.pfx) file.
     ///
-    /// Parses the DER-encoded PFX container using the `p12` crate. Both the
+    /// Parses the DER-encoded PFX container using `p12-keystore`. Both the
     /// end-entity certificate and the PKCS#8 private key are extracted; any
     /// additional certificates in the bag become the chain.
     #[cfg(feature = "signatures")]
     pub fn from_pkcs12(data: &[u8], password: &str) -> Result<Self> {
-        let pfx = p12::PFX::parse(data)
-            .map_err(|e| Error::InvalidPdf(format!("PKCS#12 parse error: {e:?}")))?;
+        let ks = p12_keystore::KeyStore::from_pkcs12(data, password)
+            .map_err(|e| Error::InvalidPdf(format!("PKCS#12 parse error: {e}")))?;
 
-        // Extract private key (PKCS#8 DER)
-        let keys = pfx
-            .key_bags(password)
-            .map_err(|e| Error::InvalidPdf(format!("PKCS#12 key extraction failed: {e:?}")))?;
-        let private_key = keys
-            .into_iter()
-            .next()
+        let (_, pkc) = ks
+            .private_key_chain()
             .ok_or_else(|| Error::InvalidPdf("PKCS#12 contains no private key".into()))?;
 
-        // Extract all X.509 certificates (DER)
-        let certs = pfx
-            .cert_x509_bags(password)
-            .map_err(|e| Error::InvalidPdf(format!("PKCS#12 cert extraction failed: {e:?}")))?;
-        let mut cert_iter = certs.into_iter();
+        let private_key = pkc.key().to_vec();
+
+        // chain(): first entry is the entity cert, subsequent entries are intermediates/root.
+        let mut cert_iter = pkc.chain().iter();
         let certificate = cert_iter
             .next()
-            .ok_or_else(|| Error::InvalidPdf("PKCS#12 contains no certificate".into()))?;
-        let chain: Vec<Vec<u8>> = cert_iter.collect();
+            .ok_or_else(|| Error::InvalidPdf("PKCS#12 contains no certificate".into()))?
+            .as_der()
+            .to_vec();
+        let chain: Vec<Vec<u8>> = cert_iter.map(|c| c.as_der().to_vec()).collect();
 
         Ok(Self {
             certificate,
