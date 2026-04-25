@@ -14,6 +14,7 @@ straight success-path assertions.
 """
 
 import pytest
+
 from pdf_oxide import Pdf, PdfDocument
 
 
@@ -77,7 +78,7 @@ def test_render_page_higher_dpi_bigger():
 
 def test_render_page_invalid_dpi_raises():
     doc = _make_doc()
-    with pytest.raises(Exception):
+    with pytest.raises(Exception):  # noqa: B017
         doc.render_page(0, dpi=-1)
 
 
@@ -110,7 +111,7 @@ def test_from_html_css_with_fonts_produces_pdf(tmp_path):
 
 
 def test_from_html_css_no_fonts_raises():
-    with pytest.raises(Exception):
+    with pytest.raises(Exception):  # noqa: B017
         Pdf.from_html_css_with_fonts("<p>x</p>", "", [])
 
 

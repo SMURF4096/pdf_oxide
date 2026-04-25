@@ -304,6 +304,24 @@ fn format_pdf_date() -> String {
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
+/// Parse the total byte length of a DER SEQUENCE from its hex encoding.
+/// Handles the definite long form (0x82 two-byte length) used by CMS blobs.
+#[cfg(test)]
+fn der_sequence_len_from_hex(hex: &str) -> usize {
+    let lb = u8::from_str_radix(&hex[2..4], 16).expect("DER len byte");
+    if lb < 0x80 {
+        (lb as usize) + 2
+    } else {
+        let n = (lb & 0x7f) as usize;
+        let mut len = 0usize;
+        for i in 0..n {
+            let b = u8::from_str_radix(&hex[(4 + i * 2)..(6 + i * 2)], 16).expect("DER len");
+            len = (len << 8) | (b as usize);
+        }
+        len + 2 + n
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -416,16 +434,11 @@ mod tests {
         let after_ct = &tail_str[ct_pos + 11..]; // skip "/Contents <"
         let close = after_ct.find('>').expect("> must follow /Contents <");
         let hex_str = &after_ct[..close];
-        // The hex string is zero-padded on the right; find the actual CMS end:
-        // the CMS DER always starts with 0x30, which is "30" in hex.
-        // Trim trailing zero pairs.
-        let trimmed = hex_str.trim_end_matches('0');
-        let clean = if !trimmed.len().is_multiple_of(2) {
-            format!("{}0", trimmed)
-        } else {
-            trimmed.to_string()
-        };
-        let cms_blob = hex_decode(&clean);
+        // Use the DER length field to find the exact CMS byte count rather than
+        // trimming trailing '0' characters — a CMS whose last real byte is 0x00
+        // would be silently truncated by the naive trim approach.
+        let cms_len = der_sequence_len_from_hex(hex_str);
+        let cms_blob = hex_decode(&hex_str[..cms_len * 2]);
 
         // ── Extract the signed bytes and verify ───────────────────────
         let signed_content = ByteRangeCalculator::extract_signed_bytes(&signed, &byte_range)

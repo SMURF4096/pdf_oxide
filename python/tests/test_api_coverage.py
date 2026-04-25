@@ -12,7 +12,9 @@ Design principles:
 """
 
 import pytest
+
 from pdf_oxide import Pdf, PdfDocument
+
 
 _PDF_MAGIC = b"%PDF-"
 
@@ -56,7 +58,7 @@ class TestPdfDocumentOpen:
         assert doc is not None
 
     def test_from_bytes_bad_data_raises(self):
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             PdfDocument.from_bytes(b"not a pdf")
 
     def test_context_manager(self):
@@ -99,7 +101,7 @@ class TestTextExtraction:
 
     def test_extract_text_invalid_page_raises(self):
         doc = _make_simple_doc()
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             doc.extract_text(999)
 
     def test_extract_chars_returns_list(self):
@@ -237,12 +239,12 @@ class TestRendering:
 
     def test_render_invalid_page_raises(self):
         doc = _make_simple_doc()
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             doc.render_page(999)
 
     def test_render_negative_dpi_raises(self):
         doc = _make_simple_doc()
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             doc.render_page(0, dpi=-1)
 
 
@@ -362,11 +364,11 @@ class TestHtmlCssCreation:
     def test_from_html_css_null_html_raises(self):
         if self.font is None:
             pytest.skip("no TTF font on system")
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             Pdf.from_html_css(None, "", self.font)
 
     def test_from_html_css_null_font_raises(self):
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             Pdf.from_html_css("<p>x</p>", "", None)
 
     def test_from_html_css_with_fonts_produces_pdf(self):
@@ -376,7 +378,7 @@ class TestHtmlCssCreation:
         assert pdf.to_bytes()[:5] == _PDF_MAGIC
 
     def test_from_html_css_with_fonts_empty_list_raises(self):
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             Pdf.from_html_css_with_fonts("<p>x</p>", "", [])
 
     def test_inline_style_attribute_works(self):
@@ -426,8 +428,9 @@ class TestDocumentBuilder:
         assert doc.page_count() == 3
 
     def test_builder_save_encrypted_produces_pdf(self, tmp_path):
-        from pdf_oxide import DocumentBuilder
         import os
+
+        from pdf_oxide import DocumentBuilder
         out = str(tmp_path / "enc.pdf")
         (
             DocumentBuilder()
@@ -480,17 +483,14 @@ class TestPdfFromOther:
         assert data[:5] == _PDF_MAGIC
 
     def test_from_image_bytes_produces_pdf(self):
-        import struct, zlib
+        import struct
+        import zlib
         # minimal 1x1 white PNG
         def _png():
             hdr = b"\x89PNG\r\n\x1a\n"
             ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
-            ihdr_chunk = b"IHDR" + ihdr
-            ihdr_crc = struct.pack(">I", zlib.crc32(ihdr_chunk) & 0xFFFFFFFF)
+            ihdr_chunk = b"IHDR" + ihdr  # noqa: F841 (used in chunk() call below)
             idat_data = zlib.compress(b"\x00\xff\xff\xff")
-            idat_chunk = b"IDAT" + idat_data
-            idat_crc = struct.pack(">I", zlib.crc32(idat_chunk) & 0xFFFFFFFF)
-            iend_crc = struct.pack(">I", zlib.crc32(b"IEND") & 0xFFFFFFFF)
             def chunk(name, data):
                 return struct.pack(">I", len(data)) + name + data + struct.pack(">I", zlib.crc32(name + data) & 0xFFFFFFFF)
             return hdr + chunk(b"IHDR", ihdr) + chunk(b"IDAT", idat_data) + chunk(b"IEND", b"")
