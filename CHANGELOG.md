@@ -246,9 +246,45 @@ v0.3.40 — see the E-0 RFC at `docs/v0.3.39/design/e_rich_text_rfc.md`.
 - Calculated fields / JavaScript actions.
 - XFA write-side.
 
+### Bug fixes
+
+- **#401** — Encrypted PDFs were missing embedded-font sub-objects (`/Widths`, `/FontDescriptor`, `/FontFile2`); they are now included and referenced correctly. Reported by [@sparkyandrew](https://github.com/sparkyandrew).
+- **#402 / #406** — Systemic UTF-8 encoding loss: every PDF string object (metadata titles, annotation contents, bookmark titles, content streams) was written as raw UTF-8 bytes instead of PDFDocEncoding (Latin-1 code point for chars ≤ U+00FF) or UTF-16BE with BOM (for chars > U+00FF). Reported by [@AngeloBestetti](https://github.com/AngeloBestetti) (#402) and internally audited as #406.
+- **#407** — L4 font cache cross-contamination: when two pages share the same `/Font` resource key (e.g. both use key `F1`), the CMap of the first-loaded face silently overwrote the second's glyph mapping, causing glyphs to be dropped or mis-decoded. Fixed by keying the combined-font hash over all font objects. Reported by [@ChadThackray](https://github.com/ChadThackray).
+- **#395** — `SignatureException` on `PdfDocument.open()` for PDFs containing digital signatures. Fixed as a side-effect of the signing infrastructure (#208). Reported by [@gevorgter](https://github.com/gevorgter).
+- **#398** — Native PDF parser was non-reentrant: concurrent FFI reads on the same handle returned spurious parse errors. Resolved by the interior-mutability refactor (`Arc<RwLock<…>>`).
+- **#409** — Python (and all bindings) lacked `to_bytes()` / in-memory output; `compress` and `garbage_collect` were not wired into the write path. Reported by [@potatochipcoconut](https://github.com/potatochipcoconut).
+
+### CI / test-suite fixes
+
+- Resolved all Clippy, `rustfmt`, and `cargo check` failures that were blocking CI (`fix(ci)` commit `6c95bada`): unused-mut across 80+ files after the interior-mutability refactor, late-init variables, doc-comment ordering, non-minimal boolean conditions, deprecated function references.
+- Renamed six test files from issue-number / benchmark-code names to functional descriptive names (`refactor(tests)` commit `fa071380`): `test_b1_*` → `test_shared_form_xobject_per_page_ctm`, `test_b3_*` → `test_running_header_first_occurrence_kept`, `test_b4_*` → `test_two_column_reading_order`, `test_b7_*` → `test_stroke_fill_duplicate_text_dedup`, `test_issue_346_*` → `test_extract_text_sort_comparator_stability`, `test_issue_395_*` → `test_signed_pdf_opens_and_renders`.
+
+### Community contributors
+
+These issues were reported or shaped by community members — thank you:
+
+| Contributor | Issue | Description |
+|---|---|---|
+| [@AngeloBestetti](https://github.com/AngeloBestetti) | [#402](https://github.com/yfedoseev/pdf_oxide/issues/402) | Reported UTF-8 encoding loss for accented Portuguese characters |
+| [@sparkyandrew](https://github.com/sparkyandrew) | [#401](https://github.com/yfedoseev/pdf_oxide/issues/401) | Reported embedded-font sub-objects missing from encrypted PDFs |
+| [@ChadThackray](https://github.com/ChadThackray) | [#407](https://github.com/yfedoseev/pdf_oxide/issues/407) | Reported L4 font cache cross-contamination / glyph-drop regression |
+| [@gevorgter](https://github.com/gevorgter) | [#395](https://github.com/yfedoseev/pdf_oxide/issues/395) | Reported SignatureException on open for PDFs containing digital signatures |
+| [@potatochipcoconut](https://github.com/potatochipcoconut) | [#409](https://github.com/yfedoseev/pdf_oxide/issues/409) | Asked for `to_bytes()` / in-memory output + compress/garbage_collect in Python |
+
 ### Related
 
-- Closes #393 (DocumentBuilder tables — Rust core + idiomatic API in every binding).
+- Closes #393 — DocumentBuilder tables (Rust core + all 7 bindings)
+- Closes #234 — PDF/UA-1 (StructTreeRoot, image alt-text, XMP `pdfuaid:part` metadata)
+- Closes #208 — PDF digital signing (CMS/PKCS#7 detached, two-pass ByteRange writer)
+- Closes #209 — AcroForm partial flatten (rebuild `/AcroForm`, pre-flatten warning count)
+- Closes #395 — SignatureException on signed-PDF open/render
+- Closes #398 — Thread-safety / non-reentrancy (interior mutability refactor)
+- Closes #401 — Encrypted PDFs missing embedded-font sub-objects
+- Closes #402 — Accents / UTF-8 encoding loss in Portuguese and other Latin scripts
+- Closes #406 — Systemic UTF-8 encoding loss across all PDF string objects
+- Closes #407 — L4 font cache cross-contamination (glyphs dropped on shared `/Font` keys)
+- Closes #409 — `to_bytes()` + compress/garbage_collect across all bindings
 - Follow-ups tracked in #400.
 
 ## [0.3.38] - 2026-04-23
