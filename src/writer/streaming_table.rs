@@ -801,7 +801,8 @@ impl<'a> StreamingTable<'a> {
             for (col_idx, cell) in row_cells.iter().enumerate() {
                 // For continuation rows (row_idx > 0), cells whose column was
                 // claimed by a rowspan in row 0 are rendered empty.
-                let is_spanned_slot = row_idx > 0 && col_idx < rows[0].len() && rows[0][col_idx].rowspan > 1;
+                let is_spanned_slot =
+                    row_idx > 0 && col_idx < rows[0].len() && rows[0][col_idx].rowspan > 1;
                 let text = if is_spanned_slot { "" } else { &cell.text };
                 let col_w = self.config.columns[col_idx].width;
                 let content_w = (col_w - 2.0 * h_pad).max(1.0);

@@ -4266,7 +4266,13 @@ fn extract_align(py: Python<'_>, obj: &Bound<'_, PyAny>) -> PyResult<i32> {
 /// `TextAlign` in the Rust core. Values are plain ints so the class can
 /// be used interchangeably with the string form ("left"/"center"/"right")
 /// anywhere the Python bindings accept alignment.
-#[pyclass(module = "pdf_oxide.pdf_oxide", name = "Align", eq, eq_int, skip_from_py_object)]
+#[pyclass(
+    module = "pdf_oxide.pdf_oxide",
+    name = "Align",
+    eq,
+    eq_int,
+    skip_from_py_object
+)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PyAlign {
     Left = 0,

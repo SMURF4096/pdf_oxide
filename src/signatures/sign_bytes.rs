@@ -455,9 +455,7 @@ mod tests {
             "must return trailer /Root, not body occurrence; got: {root}"
         );
         // Confirm that there really IS a misleading /Root earlier in the data.
-        let first = data
-            .windows(b"/Root ".len())
-            .position(|w| w == b"/Root ");
+        let first = data.windows(b"/Root ".len()).position(|w| w == b"/Root ");
         assert!(first.unwrap() < data.len() - 4096, "misleading /Root is before the 4 KB window");
 
         // Drop pdf from outer scope warning
@@ -490,8 +488,11 @@ mod tests {
         let h = pdf_text_hex("Aprovado Lógico");
         let bytes = hex_decode(&h[1..h.len() - 1]);
         // PDFDocEncoding: ó → 0xF3 (single byte), not 0xC3 0xB3 (UTF-8).
-        assert!(!bytes.windows(2).any(|w| w == [0xC3, 0xB3]),
-            "raw UTF-8 bytes for ó must not appear; got {:X?}", bytes);
+        assert!(
+            !bytes.windows(2).any(|w| w == [0xC3, 0xB3]),
+            "raw UTF-8 bytes for ó must not appear; got {:X?}",
+            bytes
+        );
         // ó must appear as its PDFDocEncoding byte 0xF3.
         assert!(bytes.contains(&0xF3), "PDFDocEncoding 0xF3 for ó must be present");
     }
@@ -511,8 +512,8 @@ mod tests {
         let pdf = minimal_pdf();
         let creds = load_test_creds();
         let opts = SignOptions {
-            reason: Some("Aprovado Lógico".to_string()),   // ó = U+00F3
-            location: Some("São Paulo".to_string()),        // ã = U+00E3, ~ ã
+            reason: Some("Aprovado Lógico".to_string()), // ó = U+00F3
+            location: Some("São Paulo".to_string()),     // ã = U+00E3, ~ ã
             name: Some("中文签名人".to_string()),
             estimated_size: 8192,
             ..Default::default()
