@@ -17,7 +17,7 @@ use pdf_oxide::{
     writer::{CellAlign, DocumentBuilder, DocumentMetadata, StreamingColumn, StreamingTableConfig},
     PdfDocument,
 };
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[cfg(feature = "signatures")]
 use pdf_oxide::signatures::{sign_pdf_bytes, SignOptions, SigningCredentials};
@@ -39,7 +39,7 @@ fn main() -> Result<()> {
 
 // ── 1. StreamingTable with rowspan ───────────────────────────────────────────
 
-fn feature_streaming_table_rowspan(out_dir: &PathBuf) -> Result<()> {
+fn feature_streaming_table_rowspan(out_dir: &Path) -> Result<()> {
     println!("Building streaming table with rowspan...");
 
     let cfg = StreamingTableConfig::new()
@@ -89,7 +89,7 @@ fn feature_streaming_table_rowspan(out_dir: &PathBuf) -> Result<()> {
 
 // ── 2. PDF/UA accessible image ───────────────────────────────────────────────
 
-fn feature_pdf_ua_accessible_image(out_dir: &PathBuf) -> Result<()> {
+fn feature_pdf_ua_accessible_image(out_dir: &Path) -> Result<()> {
     println!("Building PDF/UA document with accessible image...");
 
     // Minimal 1×1 white PNG (no external fixture needed).
@@ -132,7 +132,7 @@ fn feature_pdf_ua_accessible_image(out_dir: &PathBuf) -> Result<()> {
 
 // ── 3. save_to_bytes / open_from_bytes round-trip ────────────────────────────
 
-fn feature_save_to_bytes_roundtrip(out_dir: &PathBuf) -> Result<()> {
+fn feature_save_to_bytes_roundtrip(out_dir: &Path) -> Result<()> {
     println!("Demonstrating in-memory round-trip (build → bytes → open_from_bytes)...");
 
     let mut builder = DocumentBuilder::new();
@@ -161,7 +161,7 @@ fn feature_save_to_bytes_roundtrip(out_dir: &PathBuf) -> Result<()> {
 // ── 4. PKCS#12 signing (requires --features signatures) ──────────────────────
 
 #[cfg(feature = "signatures")]
-fn feature_pkcs12_signing(out_dir: &PathBuf) -> Result<()> {
+fn feature_pkcs12_signing(out_dir: &Path) -> Result<()> {
     println!("Signing PDF with PKCS#12 certificate...");
 
     let p12_path = "tests/fixtures/test_signing.p12";
