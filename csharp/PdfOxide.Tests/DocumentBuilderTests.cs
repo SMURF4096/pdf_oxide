@@ -204,6 +204,50 @@ namespace PdfOxide.Tests
             }
         }
 
+        // --- CSS property correctness -----------------------------------------
+        // Each test generates two PDFs that differ only in one CSS property and
+        // asserts the byte output is different — proving the property is applied.
+
+        [Fact]
+        public void Pdf_FromHtmlCss_FontSize_ChangesOutput()
+        {
+            var fontBytes = File.ReadAllBytes(FixtureFontPath);
+            const string html = "<p>text</p>";
+            var small = Pdf.FromHtmlCss(html, "p { font-size: 12px; }", fontBytes).SaveToBytes();
+            var large = Pdf.FromHtmlCss(html, "p { font-size: 48px; }", fontBytes).SaveToBytes();
+            Assert.False(small.SequenceEqual(large), "CSS font-size had no effect on output");
+        }
+
+        [Fact]
+        public void Pdf_FromHtmlCss_Color_ChangesOutput()
+        {
+            var fontBytes = File.ReadAllBytes(FixtureFontPath);
+            const string html = "<p>text</p>";
+            var black = Pdf.FromHtmlCss(html, "p { color: black; }", fontBytes).SaveToBytes();
+            var red   = Pdf.FromHtmlCss(html, "p { color: red; }",   fontBytes).SaveToBytes();
+            Assert.False(black.SequenceEqual(red), "CSS color had no effect on output");
+        }
+
+        [Fact]
+        public void Pdf_FromHtmlCss_BackgroundColor_ChangesOutput()
+        {
+            var fontBytes = File.ReadAllBytes(FixtureFontPath);
+            const string html = "<p>text</p>";
+            var none   = Pdf.FromHtmlCss(html, "",                                   fontBytes).SaveToBytes();
+            var yellow = Pdf.FromHtmlCss(html, "body { background-color: yellow; }", fontBytes).SaveToBytes();
+            Assert.False(none.SequenceEqual(yellow), "CSS background-color had no effect on output");
+        }
+
+        [Fact]
+        public void Pdf_FromHtmlCss_TextDecoration_ChangesOutput()
+        {
+            var fontBytes = File.ReadAllBytes(FixtureFontPath);
+            const string html = "<p>text</p>";
+            var none      = Pdf.FromHtmlCss(html, "",                                  fontBytes).SaveToBytes();
+            var underline = Pdf.FromHtmlCss(html, "p { text-decoration: underline; }", fontBytes).SaveToBytes();
+            Assert.False(none.SequenceEqual(underline), "CSS text-decoration had no effect on output");
+        }
+
         // --- Helpers ---------------------------------------------------------
 
         /// <summary>

@@ -748,3 +748,71 @@ func TestDocumentBuilderToBytesEncrypted_EmbeddedFont_ContentObjects_Preserved(t
 		)
 	}
 }
+
+// ── CSS property correctness ──────────────────────────────────────────────────
+// Each test generates two PDFs that differ only in one CSS property and asserts
+// the byte output differs — proving the property is actually applied.
+
+func fixtureFontBytes(t *testing.T) []byte {
+	t.Helper()
+	fontPath := fixtureFontPath(t)
+	data, err := os.ReadFile(fontPath)
+	if err != nil {
+		t.Skipf("could not read font fixture: %v", err)
+	}
+	return data
+}
+
+func htmlCSS(t *testing.T, html, css string, fontBytes []byte) []byte {
+	t.Helper()
+	pdf, err := FromHTMLCSS(html, css, fontBytes)
+	if err != nil {
+		t.Fatalf("FromHTMLCSS: %v", err)
+	}
+	defer pdf.Close()
+	data, err := pdf.SaveToBytes()
+	if err != nil {
+		t.Fatalf("SaveToBytes: %v", err)
+	}
+	return data
+}
+
+func TestCSSFontSizeChangesOutput(t *testing.T) {
+	fontBytes := fixtureFontBytes(t)
+	const html = "<p>text</p>"
+	small := htmlCSS(t, html, "p { font-size: 12px; }", fontBytes)
+	large := htmlCSS(t, html, "p { font-size: 48px; }", fontBytes)
+	if bytes.Equal(small, large) {
+		t.Fatal("CSS font-size had no effect on output")
+	}
+}
+
+func TestCSSColorChangesOutput(t *testing.T) {
+	fontBytes := fixtureFontBytes(t)
+	const html = "<p>text</p>"
+	black := htmlCSS(t, html, "p { color: black; }", fontBytes)
+	red := htmlCSS(t, html, "p { color: red; }", fontBytes)
+	if bytes.Equal(black, red) {
+		t.Fatal("CSS color had no effect on output")
+	}
+}
+
+func TestCSSBackgroundColorChangesOutput(t *testing.T) {
+	fontBytes := fixtureFontBytes(t)
+	const html = "<p>text</p>"
+	none := htmlCSS(t, html, "", fontBytes)
+	yellow := htmlCSS(t, html, "body { background-color: yellow; }", fontBytes)
+	if bytes.Equal(none, yellow) {
+		t.Fatal("CSS background-color had no effect on output")
+	}
+}
+
+func TestCSSTextDecorationChangesOutput(t *testing.T) {
+	fontBytes := fixtureFontBytes(t)
+	const html = "<p>text</p>"
+	none := htmlCSS(t, html, "", fontBytes)
+	underline := htmlCSS(t, html, "p { text-decoration: underline; }", fontBytes)
+	if bytes.Equal(none, underline) {
+		t.Fatal("CSS text-decoration had no effect on output")
+	}
+}
