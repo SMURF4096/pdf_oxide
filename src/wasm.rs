@@ -261,7 +261,7 @@ impl WasmPdfDocument {
         page_index: usize,
         region: JsValue, // Use JsValue to allow optional/undefined from JS
     ) -> Result<String, JsValue> {
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
@@ -425,7 +425,7 @@ impl WasmPdfDocument {
     #[wasm_bindgen(js_name = "renderPage")]
     pub fn render_page(&mut self, page_index: usize, dpi: Option<u32>) -> Result<Vec<u8>, JsValue> {
         let opts = crate::rendering::RenderOptions::with_dpi(dpi.unwrap_or(150));
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
@@ -587,7 +587,7 @@ impl WasmPdfDocument {
         page_index: usize,
         region: Option<Vec<f32>>,
     ) -> Result<JsValue, JsValue> {
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
@@ -637,7 +637,7 @@ impl WasmPdfDocument {
             },
         };
 
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
@@ -684,7 +684,7 @@ impl WasmPdfDocument {
             },
         };
 
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
@@ -707,7 +707,7 @@ impl WasmPdfDocument {
         page_index: usize,
         region: Option<Vec<f32>>,
     ) -> Result<JsValue, JsValue> {
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
@@ -739,7 +739,7 @@ impl WasmPdfDocument {
         page_index: usize,
         region: Option<Vec<f32>>,
     ) -> Result<JsValue, JsValue> {
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
@@ -772,7 +772,7 @@ impl WasmPdfDocument {
         page_index: usize,
         region: Option<Vec<f32>>,
     ) -> Result<JsValue, JsValue> {
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
@@ -848,7 +848,7 @@ impl WasmPdfDocument {
             max_results: max_results.unwrap_or(0),
             page_range: None,
         };
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
@@ -876,7 +876,7 @@ impl WasmPdfDocument {
             max_results: max_results.unwrap_or(0),
             page_range: Some((page_index, page_index)),
         };
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
@@ -903,7 +903,7 @@ impl WasmPdfDocument {
         page_index: usize,
         region: Option<Vec<f32>>,
     ) -> Result<JsValue, JsValue> {
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
@@ -1068,7 +1068,7 @@ impl WasmPdfDocument {
         page_index: usize,
         region: Option<Vec<f32>>,
     ) -> Result<JsValue, JsValue> {
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
@@ -1180,7 +1180,7 @@ impl WasmPdfDocument {
         page_index: usize,
         region: Option<Vec<f32>>,
     ) -> Result<JsValue, JsValue> {
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
@@ -1218,7 +1218,7 @@ impl WasmPdfDocument {
         page_index: usize,
         region: Option<Vec<f32>>,
     ) -> Result<JsValue, JsValue> {
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
@@ -1770,7 +1770,7 @@ impl WasmPdfDocument {
     pub fn get_form_fields(&mut self) -> Result<JsValue, JsValue> {
         use crate::extractors::forms::{field_flags, FieldType, FieldValue, FormExtractor};
 
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
@@ -1857,7 +1857,7 @@ impl WasmPdfDocument {
     pub fn has_xfa(&mut self) -> Result<bool, JsValue> {
         use crate::xfa::XfaExtractor;
 
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
@@ -1950,7 +1950,7 @@ impl WasmPdfDocument {
     /// Returns an array of objects with: width, height, data (Uint8Array of PNG bytes), format ("png").
     #[wasm_bindgen(js_name = "extractImageBytes")]
     pub fn extract_image_bytes(&mut self, page_index: usize) -> Result<JsValue, JsValue> {
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
@@ -2075,7 +2075,7 @@ impl WasmPdfDocument {
     pub fn page_labels(&mut self) -> Result<JsValue, JsValue> {
         use crate::extractors::page_labels::PageLabelExtractor;
 
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
@@ -2112,7 +2112,7 @@ impl WasmPdfDocument {
     pub fn xmp_metadata(&mut self) -> Result<JsValue, JsValue> {
         use crate::extractors::xmp::XmpExtractor;
 
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
@@ -2403,7 +2403,7 @@ impl WasmPdfDocument {
         }
 
         // Mark all regions in inner document
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
@@ -2944,7 +2944,7 @@ impl WasmPdfDocument {
             "3u" => PdfALevel::A3u,
             _ => return Err(JsValue::from_str(&format!("Unknown PDF/A level: {}", level))),
         };
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Lock failed"))?;
@@ -2969,7 +2969,7 @@ impl WasmPdfDocument {
             Some("2") => PdfUaLevel::Ua2,
             _ => PdfUaLevel::Ua1,
         };
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Lock failed"))?;
@@ -3001,7 +3001,7 @@ impl WasmPdfDocument {
             Some("4") => PdfXLevel::X4,
             _ => PdfXLevel::X4,
         };
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Lock failed"))?;
@@ -3039,7 +3039,7 @@ impl WasmPdfDocument {
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
         let new_doc = crate::document::PdfDocument::from_bytes(new_bytes.clone())
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Lock failed"))?;
@@ -3066,7 +3066,7 @@ impl WasmPdfDocument {
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
         let new_doc = crate::document::PdfDocument::from_bytes(new_bytes.clone())
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Lock failed"))?;
@@ -3103,7 +3103,7 @@ impl WasmPdfDocument {
     #[wasm_bindgen(js_name = "flattenToImages")]
     pub fn flatten_to_images(&mut self, dpi: Option<u32>) -> Result<Vec<u8>, JsValue> {
         let dpi = dpi.unwrap_or(150);
-        let mut inner = self
+        let inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Lock failed"))?;
