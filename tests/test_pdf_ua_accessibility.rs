@@ -6,8 +6,8 @@
 #![allow(clippy::missing_safety_doc)]
 #![allow(unused_unsafe)]
 
-use std::ffi::CString;
 use pdf_oxide::ffi::*;
+use std::ffi::CString;
 
 fn cstring(s: &str) -> CString {
     CString::new(s).unwrap()
@@ -25,10 +25,7 @@ fn image_with_alt_writes_alt_into_structure_tree() {
         "tagged_pdf_ua1 failed"
     );
     let lang = cstring("en-US");
-    assert_eq!(
-        unsafe { pdf_document_builder_language(builder, lang.as_ptr(), &mut ec) },
-        0
-    );
+    assert_eq!(unsafe { pdf_document_builder_language(builder, lang.as_ptr(), &mut ec) }, 0);
 
     let page = unsafe { pdf_document_builder_a4_page(builder, &mut ec) };
     assert_eq!(ec, 0);
@@ -39,10 +36,7 @@ fn image_with_alt_writes_alt_into_structure_tree() {
     );
     assert_eq!(unsafe { pdf_page_builder_at(page, 72.0, 720.0, &mut ec) }, 0);
     let heading = cstring("Document with accessible image");
-    assert_eq!(
-        unsafe { pdf_page_builder_heading(page, 1, heading.as_ptr(), &mut ec) },
-        0
-    );
+    assert_eq!(unsafe { pdf_page_builder_heading(page, 1, heading.as_ptr(), &mut ec) }, 0);
 
     let jpeg_data =
         std::fs::read("tests/fixtures/adobe_cmyk_10x11_white.jpg").expect("JPEG fixture");
@@ -88,15 +82,9 @@ fn image_artifact_marks_decorative_image_as_artifact() {
     let mut ec: i32 = -1;
     let builder = unsafe { pdf_document_builder_create(&mut ec) };
     assert_eq!(ec, 0);
-    assert_eq!(
-        unsafe { pdf_document_builder_tagged_pdf_ua1(builder, &mut ec) },
-        0
-    );
+    assert_eq!(unsafe { pdf_document_builder_tagged_pdf_ua1(builder, &mut ec) }, 0);
     let lang = cstring("en-US");
-    assert_eq!(
-        unsafe { pdf_document_builder_language(builder, lang.as_ptr(), &mut ec) },
-        0
-    );
+    assert_eq!(unsafe { pdf_document_builder_language(builder, lang.as_ptr(), &mut ec) }, 0);
     let page = unsafe { pdf_document_builder_a4_page(builder, &mut ec) };
     assert_eq!(ec, 0);
     assert_eq!(

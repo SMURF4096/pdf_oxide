@@ -3,8 +3,8 @@
 #![allow(clippy::missing_safety_doc)]
 #![allow(unused_unsafe)]
 
-use std::ffi::CString;
 use pdf_oxide::ffi::*;
+use std::ffi::CString;
 
 fn cstring(s: &str) -> CString {
     CString::new(s).unwrap()
@@ -43,17 +43,14 @@ fn concurrent_document_reads_no_panic() {
                 let doc =
                     unsafe { pdf_document_open_from_bytes(bytes.as_ptr(), bytes.len(), &mut ec) };
                 assert_eq!(ec, 0, "open failed in thread");
-                let text_ptr = unsafe { pdf_document_extract_text(doc, -1, &mut ec) };
+                let text_ptr = unsafe { pdf_document_extract_text(doc, 0, &mut ec) };
                 assert_eq!(ec, 0, "extract_text failed in thread");
                 let text = unsafe { std::ffi::CStr::from_ptr(text_ptr) }
                     .to_string_lossy()
                     .to_string();
                 unsafe { free_string(text_ptr) };
                 unsafe { pdf_document_free(doc) };
-                assert!(
-                    text.contains("Concurrent"),
-                    "unexpected text content: {text:.100}"
-                );
+                assert!(text.contains("Concurrent"), "unexpected text content: {text:.100}");
             })
         })
         .collect();

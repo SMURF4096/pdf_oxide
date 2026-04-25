@@ -84,6 +84,21 @@ fn classify_error(e: &crate::error::Error) -> i32 {
     }
 }
 
+/// Copy `bytes` into a `malloc`-allocated buffer so callers can free it with
+/// `free_bytes(ptr)` using no length argument.  All FFI byte-buffer returns
+/// go through this helper.
+fn vec_to_ffi_bytes(bytes: Vec<u8>) -> *mut u8 {
+    let len = bytes.len();
+    if len == 0 {
+        return ptr::null_mut();
+    }
+    let ptr = unsafe { libc::malloc(len) as *mut u8 };
+    if !ptr.is_null() {
+        unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, len) };
+    }
+    ptr
+}
+
 fn to_c_string(s: &str) -> *mut c_char {
     match CString::new(s) {
         Ok(cs) => cs.into_raw(),
@@ -147,12 +162,16 @@ pub extern "C" fn free_string(ptr: *mut c_char) {
 }
 
 /// Free a byte buffer returned by any FFI function.
+///
+/// Byte buffers are allocated with the C system allocator (malloc) so that
+/// callers can free them with a plain pointer and no length argument.
 #[no_mangle]
 pub extern "C" fn free_bytes(ptr: *mut u8) {
-    // Byte buffers are leaked via Box::into_raw(Box::new(vec.into_boxed_slice()))
-    // We can't reconstruct the exact Vec, so we just leak for now.
-    // In practice, callers should use the specific *_free functions.
-    let _ = ptr;
+    if !ptr.is_null() {
+        unsafe {
+            libc::free(ptr as *mut libc::c_void);
+        }
+    }
 }
 
 // ─── PdfDocument ────────────────────────────────────────────────────────────
@@ -715,8 +734,7 @@ pub extern "C" fn document_editor_save_to_bytes(
             unsafe {
                 *out_len = bytes.len();
             }
-            let boxed = bytes.into_boxed_slice();
-            Box::into_raw(boxed) as *mut u8
+            vec_to_ffi_bytes(bytes)
         },
         Err(e) => {
             set_error(error_code, classify_error(&e));
@@ -750,8 +768,7 @@ pub extern "C" fn document_editor_save_to_bytes_with_options(
             unsafe {
                 *out_len = bytes.len();
             }
-            let boxed = bytes.into_boxed_slice();
-            Box::into_raw(boxed) as *mut u8
+            vec_to_ffi_bytes(bytes)
         },
         Err(e) => {
             set_error(error_code, classify_error(&e));
@@ -1292,8 +1309,7 @@ pub extern "C" fn pdf_save_to_bytes(
             unsafe {
                 *data_len = bytes.len() as i32;
             }
-            let boxed = bytes.into_boxed_slice();
-            Box::into_raw(boxed) as *mut u8
+            vec_to_ffi_bytes(bytes)
         },
         Err(e) => {
             set_error(error_code, classify_error(&e));
@@ -1831,8 +1847,7 @@ pub extern "C" fn pdf_oxide_image_get_data(
         *data_len = data.len() as i32;
     }
     set_error(error_code, ERR_SUCCESS);
-    let boxed = data.into_boxed_slice();
-    Box::into_raw(boxed) as *mut u8
+    vec_to_ffi_bytes(data)
 }
 
 #[no_mangle]
@@ -2587,8 +2602,7 @@ pub extern "C" fn pdf_barcode_get_image_png(
     let len = data.len() as i32;
     unsafe { *out_len = len }
     set_error(error_code, ERR_SUCCESS);
-    let boxed = data.into_boxed_slice();
-    Box::into_raw(boxed) as *mut u8
+    vec_to_ffi_bytes(data)
 }
 
 #[no_mangle]
@@ -2885,8 +2899,7 @@ pub unsafe extern "C" fn pdf_sign_bytes(
                 unsafe {
                     *out_len = signed.len();
                 }
-                let boxed = signed.into_boxed_slice();
-                Box::into_raw(boxed) as *mut u8
+                vec_to_ffi_bytes(signed)
             },
             Err(e) => {
                 set_error(error_code, classify_error(&e));
@@ -3858,8 +3871,7 @@ pub extern "C" fn pdf_get_rendered_image_data(
             *data_len = bytes.len() as i32;
         }
         set_error(error_code, ERR_SUCCESS);
-        let boxed = bytes.into_boxed_slice();
-        Box::into_raw(boxed) as *mut u8
+        vec_to_ffi_bytes(bytes)
     }
     #[cfg(not(feature = "rendering"))]
     {
@@ -4611,8 +4623,7 @@ pub extern "C" fn pdf_document_export_form_data_to_bytes(
         *out_len = bytes.len();
     }
     set_error(error_code, ERR_SUCCESS);
-    let boxed = bytes.into_boxed_slice();
-    Box::into_raw(boxed) as *mut u8
+    vec_to_ffi_bytes(bytes)
 }
 
 // ─── Open from bytes / password ─────────────────────────────────────────────
@@ -6093,8 +6104,7 @@ pub extern "C" fn pdf_merge(
             unsafe {
                 *data_len = bytes.len() as i32;
             }
-            let boxed = bytes.into_boxed_slice();
-            Box::into_raw(boxed) as *mut u8
+            vec_to_ffi_bytes(bytes)
         },
         Err(e) => {
             set_error(error_code, classify_error(&e));
@@ -9841,8 +9851,7 @@ fn bytes_to_ffi(bytes: Vec<u8>, out_len: *mut usize, error_code: *mut i32) -> *m
         *out_len = bytes.len();
     }
     set_error(error_code, ERR_SUCCESS);
-    let boxed = bytes.into_boxed_slice();
-    Box::into_raw(boxed) as *mut u8
+    vec_to_ffi_bytes(bytes)
 }
 
 /// Build the PDF and return the bytes. Consumes the builder *state*

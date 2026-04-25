@@ -5,8 +5,8 @@
 #![allow(clippy::missing_safety_doc)]
 #![allow(unused_unsafe)]
 
-use std::ffi::CString;
 use pdf_oxide::ffi::*;
+use std::ffi::CString;
 
 fn cstring(s: &str) -> CString {
     CString::new(s).unwrap()
@@ -25,10 +25,7 @@ fn save_to_bytes_round_trip() {
     );
     assert_eq!(unsafe { pdf_page_builder_at(page, 72.0, 720.0, &mut ec) }, 0);
     let content_text = cstring("In-memory round-trip content");
-    assert_eq!(
-        unsafe { pdf_page_builder_text(page, content_text.as_ptr(), &mut ec) },
-        0
-    );
+    assert_eq!(unsafe { pdf_page_builder_text(page, content_text.as_ptr(), &mut ec) }, 0);
     assert_eq!(unsafe { pdf_page_builder_done(page, &mut ec) }, 0);
 
     let mut out_len: usize = 0;
@@ -44,7 +41,7 @@ fn save_to_bytes_round_trip() {
     assert_eq!(ec, 0, "open_from_bytes failed");
     assert!(!doc.is_null());
 
-    let text_ptr = unsafe { pdf_document_extract_text(doc, -1, &mut ec) };
+    let text_ptr = unsafe { pdf_document_extract_text(doc, 0, &mut ec) };
     assert_eq!(ec, 0);
     let extracted = unsafe { std::ffi::CStr::from_ptr(text_ptr) }
         .to_string_lossy()

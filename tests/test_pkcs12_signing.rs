@@ -7,8 +7,8 @@
 #![allow(clippy::missing_safety_doc)]
 #![allow(unused_unsafe)]
 
-use std::ffi::CString;
 use pdf_oxide::ffi::*;
+use std::ffi::CString;
 
 fn cstring(s: &str) -> CString {
     CString::new(s).unwrap()

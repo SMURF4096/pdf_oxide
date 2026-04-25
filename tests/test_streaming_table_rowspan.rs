@@ -6,8 +6,8 @@
 #![allow(clippy::missing_safety_doc)]
 #![allow(unused_unsafe)]
 
-use std::ffi::CString;
 use pdf_oxide::ffi::*;
+use std::ffi::CString;
 
 fn cstring(s: &str) -> CString {
     CString::new(s).unwrap()
@@ -28,8 +28,11 @@ fn streaming_table_rowspan_produces_valid_pdf() {
     assert_eq!(unsafe { pdf_page_builder_at(page, 72.0, 720.0, &mut ec) }, 0);
 
     let headers: [CString; 3] = [cstring("Category"), cstring("Item"), cstring("Notes")];
-    let header_ptrs: [*const std::os::raw::c_char; 3] =
-        [headers[0].as_ptr(), headers[1].as_ptr(), headers[2].as_ptr()];
+    let header_ptrs: [*const std::os::raw::c_char; 3] = [
+        headers[0].as_ptr(),
+        headers[1].as_ptr(),
+        headers[2].as_ptr(),
+    ];
     let widths: [f32; 3] = [100.0, 150.0, 150.0];
     let aligns: [i32; 3] = [0, 0, 0];
 
@@ -111,10 +114,7 @@ fn streaming_table_rowspan_produces_valid_pdf() {
         "push_row_v2 row3 failed ec={ec}"
     );
 
-    assert_eq!(
-        unsafe { pdf_page_builder_streaming_table_finish(page, &mut ec) },
-        0
-    );
+    assert_eq!(unsafe { pdf_page_builder_streaming_table_finish(page, &mut ec) }, 0);
     assert_eq!(unsafe { pdf_page_builder_done(page, &mut ec) }, 0);
 
     let mut out_len: usize = 0;
@@ -127,7 +127,7 @@ fn streaming_table_rowspan_produces_valid_pdf() {
 
     let doc_handle = unsafe { pdf_document_open_from_bytes(bytes.as_ptr(), bytes.len(), &mut ec) };
     assert_eq!(ec, 0, "re-open failed");
-    let text_ptr = unsafe { pdf_document_extract_text(doc_handle, -1, &mut ec) };
+    let text_ptr = unsafe { pdf_document_extract_text(doc_handle, 0, &mut ec) };
     assert_eq!(ec, 0, "extract_text failed");
 
     let extracted = unsafe { std::ffi::CStr::from_ptr(text_ptr) }

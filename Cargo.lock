@@ -2768,6 +2768,7 @@ dependencies = [
  "jpeg-decoder",
  "js-sys",
  "lazy_static",
+ "libc",
  "linfa",
  "linfa-clustering",
  "log",
