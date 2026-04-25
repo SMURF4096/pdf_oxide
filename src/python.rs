@@ -690,14 +690,70 @@ impl PyPdfDocument {
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to save page: {}", e)))
     }
 
-    /// Save document to path.
-    fn save(&mut self, path: &str) -> PyResult<()> {
-        use crate::editor::EditableDocument;
+    /// Save document to *path* with optional compression and garbage-collection.
+    ///
+    /// Args:
+    ///     path (str): Destination file path.
+    ///     compress (bool): Compress unfiltered streams with FlateDecode. Default ``True``.
+    ///     garbage_collect (bool): Remove unreachable objects. Default ``True``.
+    ///     linearize (bool): Linearize for fast web view (no-op, reserved). Default ``False``.
+    #[pyo3(signature = (path, compress=true, garbage_collect=true, linearize=false))]
+    fn save(
+        &mut self,
+        path: &str,
+        compress: bool,
+        garbage_collect: bool,
+        linearize: bool,
+    ) -> PyResult<()> {
+        use crate::editor::{EditableDocument, SaveOptions};
         self.ensure_editor()?;
         if let Some(ref mut editor) = self.editor {
+            let options = SaveOptions {
+                compress,
+                garbage_collect,
+                linearize,
+                incremental: false,
+                encryption: None,
+            };
             editor
-                .save(path)
+                .save_with_options(path, options)
                 .map_err(|e| PyIOError::new_err(format!("Failed to save PDF: {}", e)))
+        } else {
+            Err(PyRuntimeError::new_err("No editor initialized."))
+        }
+    }
+
+    /// Save document to bytes with optional compression and garbage-collection.
+    ///
+    /// Returns:
+    ///     bytes: The serialized PDF as a byte string.
+    ///
+    /// Args:
+    ///     compress (bool): Compress unfiltered streams with FlateDecode. Default ``True``.
+    ///     garbage_collect (bool): Remove unreachable objects. Default ``True``.
+    ///     linearize (bool): Linearize for fast web view (no-op, reserved). Default ``False``.
+    #[pyo3(signature = (compress=true, garbage_collect=true, linearize=false))]
+    fn to_bytes<'py>(
+        &mut self,
+        py: Python<'py>,
+        compress: bool,
+        garbage_collect: bool,
+        linearize: bool,
+    ) -> PyResult<Py<PyBytes>> {
+        use crate::editor::SaveOptions;
+        self.ensure_editor()?;
+        if let Some(ref mut editor) = self.editor {
+            let options = SaveOptions {
+                compress,
+                garbage_collect,
+                linearize,
+                incremental: false,
+                encryption: None,
+            };
+            let bytes = editor
+                .save_to_bytes_with_options(options)
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to save PDF to bytes: {}", e)))?;
+            Ok(PyBytes::new(py, &bytes).unbind())
         } else {
             Err(PyRuntimeError::new_err("No editor initialized."))
         }

@@ -697,3 +697,87 @@ class TestSignatureProperties:
     def test_signature_count_is_zero_for_unsigned(self):
         doc = _make_simple_doc()
         assert doc.signature_count() == 0
+
+
+# ── PdfDocument: to_bytes() and save() with options ───────────────────────────
+
+class TestSaveOptions:
+    def test_to_bytes_default_returns_valid_pdf(self):
+        doc = _make_simple_doc()
+        data = doc.to_bytes()
+        assert data[:5] == _PDF_MAGIC
+        assert len(data) > 100
+
+    def test_to_bytes_compress_true(self):
+        doc = _make_simple_doc()
+        data = doc.to_bytes(compress=True)
+        assert data[:5] == _PDF_MAGIC
+
+    def test_to_bytes_compress_false(self):
+        doc = _make_simple_doc()
+        data = doc.to_bytes(compress=False)
+        assert data[:5] == _PDF_MAGIC
+
+    def test_to_bytes_garbage_collect_true(self):
+        doc = _make_simple_doc()
+        data = doc.to_bytes(garbage_collect=True)
+        assert data[:5] == _PDF_MAGIC
+
+    def test_to_bytes_garbage_collect_false(self):
+        doc = _make_simple_doc()
+        data = doc.to_bytes(garbage_collect=False)
+        assert data[:5] == _PDF_MAGIC
+
+    def test_to_bytes_all_options(self):
+        doc = _make_simple_doc()
+        data = doc.to_bytes(compress=True, garbage_collect=True, linearize=False)
+        assert data[:5] == _PDF_MAGIC
+
+    def test_to_bytes_round_trips_content(self):
+        doc = _make_simple_doc()
+        data = doc.to_bytes()
+        doc2 = PdfDocument.from_bytes(data)
+        assert doc2.page_count() >= 1
+
+    def test_to_bytes_compress_smaller_or_equal(self):
+        doc1 = _make_simple_doc()
+        doc2 = _make_simple_doc()
+        uncompressed = doc1.to_bytes(compress=False, garbage_collect=False)
+        compressed = doc2.to_bytes(compress=True, garbage_collect=False)
+        assert len(compressed) <= len(uncompressed), (
+            f"Compressed ({len(compressed)}) should be <= uncompressed ({len(uncompressed)})"
+        )
+
+    def test_save_with_compress_option(self, tmp_path):
+        import os
+        doc = _make_simple_doc()
+        path = str(tmp_path / "compressed.pdf")
+        doc.save(path, compress=True)
+        assert os.path.getsize(path) > 100
+        # Round-trip
+        doc2 = PdfDocument(path)
+        assert doc2.page_count() >= 1
+
+    def test_save_with_garbage_collect_option(self, tmp_path):
+        import os
+        doc = _make_simple_doc()
+        path = str(tmp_path / "gc.pdf")
+        doc.save(path, garbage_collect=True)
+        assert os.path.getsize(path) > 100
+
+    def test_save_with_all_options(self, tmp_path):
+        import os
+        doc = _make_simple_doc()
+        path = str(tmp_path / "all_opts.pdf")
+        doc.save(path, compress=True, garbage_collect=True, linearize=False)
+        assert os.path.getsize(path) > 100
+        doc2 = PdfDocument(path)
+        assert doc2.page_count() >= 1
+
+    def test_save_no_options_still_works(self, tmp_path):
+        """Ensure calling save(path) with no kwargs still works."""
+        import os
+        doc = _make_simple_doc()
+        path = str(tmp_path / "plain.pdf")
+        doc.save(path)
+        assert os.path.getsize(path) > 100

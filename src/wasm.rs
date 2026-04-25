@@ -2856,6 +2856,36 @@ impl WasmPdfDocument {
             .map_err(|e| JsValue::from_str(&format!("Failed to save PDF: {}", e)))
     }
 
+    /// Save with options (compress, garbage_collect, linearize) and return bytes.
+    ///
+    /// @param {Object} [options] - Optional save options.
+    /// @param {boolean} [options.compress=true] - Compress raw streams with FlateDecode.
+    /// @param {boolean} [options.garbageCollect=true] - Remove unreachable objects.
+    /// @param {boolean} [options.linearize=false] - Linearize (reserved, no-op).
+    /// @returns Uint8Array containing the modified PDF
+    #[wasm_bindgen(js_name = "saveWithOptions")]
+    pub fn save_with_options_js(
+        &mut self,
+        compress: Option<bool>,
+        garbage_collect: Option<bool>,
+        linearize: Option<bool>,
+    ) -> Result<Vec<u8>, JsValue> {
+        let options = SaveOptions {
+            compress: compress.unwrap_or(true),
+            garbage_collect: garbage_collect.unwrap_or(true),
+            linearize: linearize.unwrap_or(false),
+            incremental: false,
+            encryption: None,
+        };
+        let editor_arc = self.ensure_editor()?;
+        let mut editor = editor_arc
+            .lock()
+            .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
+        editor
+            .save_to_bytes_with_options(options)
+            .map_err(|e| JsValue::from_str(&format!("Failed to save PDF: {}", e)))
+    }
+
     /// Save with encryption and return the resulting PDF as bytes.
     #[wasm_bindgen(js_name = "saveEncryptedToBytes")]
     pub fn save_encrypted_to_bytes(
@@ -6078,5 +6108,69 @@ mod tests {
         );
         let has_encrypt = bytes.windows(8).any(|w| w == b"/Encrypt");
         assert!(has_encrypt, "encrypted PDF must contain /Encrypt");
+    }
+
+    // ========================================================================
+    // Group: saveWithOptions
+    // ========================================================================
+
+    #[test]
+    fn test_save_with_options_compress_true() {
+        let mut doc = doc_from_text("Compress test");
+        let bytes = doc.save_with_options_js(Some(true), None, None).unwrap();
+        assert!(bytes.starts_with(b"%PDF"));
+        assert!(!bytes.is_empty());
+    }
+
+    #[test]
+    fn test_save_with_options_compress_false() {
+        let mut doc = doc_from_text("No compress test");
+        let bytes = doc.save_with_options_js(Some(false), None, None).unwrap();
+        assert!(bytes.starts_with(b"%PDF"));
+    }
+
+    #[test]
+    fn test_save_with_options_gc_true() {
+        let mut doc = doc_from_text("GC test");
+        let bytes = doc.save_with_options_js(None, Some(true), None).unwrap();
+        assert!(bytes.starts_with(b"%PDF"));
+    }
+
+    #[test]
+    fn test_save_with_options_gc_false() {
+        let mut doc = doc_from_text("No GC test");
+        let bytes = doc.save_with_options_js(None, Some(false), None).unwrap();
+        assert!(bytes.starts_with(b"%PDF"));
+    }
+
+    #[test]
+    fn test_save_with_options_all_defaults() {
+        let mut doc = doc_from_text("All defaults");
+        let bytes = doc.save_with_options_js(None, None, None).unwrap();
+        assert!(bytes.starts_with(b"%PDF"));
+    }
+
+    #[test]
+    fn test_save_with_options_compress_smaller_or_equal() {
+        let mut doc1 = doc_from_text("Compress size comparison test for WASM");
+        let mut doc2 = doc_from_text("Compress size comparison test for WASM");
+        let uncompressed = doc1.save_with_options_js(Some(false), Some(false), None).unwrap();
+        let compressed = doc2.save_with_options_js(Some(true), Some(false), None).unwrap();
+        assert!(
+            compressed.len() <= uncompressed.len(),
+            "compressed ({}) should be <= uncompressed ({})",
+            compressed.len(),
+            uncompressed.len()
+        );
+    }
+
+    #[test]
+    fn test_save_with_options_round_trips() {
+        let mut doc = doc_from_text("Round-trip via saveWithOptions");
+        let bytes = doc.save_with_options_js(Some(true), Some(true), Some(false)).unwrap();
+        // Load the saved bytes back into a new document
+        let mut doc2 = WasmPdfDocument::new(&bytes, None).unwrap();
+        let pages = doc2.page_count().unwrap();
+        assert!(pages >= 1);
     }
 }
