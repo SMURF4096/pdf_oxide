@@ -1,4 +1,4 @@
-//! Regression test for B7: stroke + fill renders produce doubled words.
+//! Tests that stroke + fill renders produce doubled words.
 //!
 //! Maps, posters, and marketing collateral render every label twice:
 //! once stroked for the outline effect, once filled for the glyph. Each

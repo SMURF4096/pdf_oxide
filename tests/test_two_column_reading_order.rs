@@ -1,4 +1,4 @@
-//! Regression test for B4: two-column reading order.
+//! Tests that two-column reading order.
 //!
 //! Pre-fix, `extract_text` used a row-aware Y-band sort (Y descending
 //! within bands, X ascending within a row). On a two-column layout that

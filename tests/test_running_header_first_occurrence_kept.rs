@@ -1,4 +1,4 @@
-//! Regression test for B3: running-artifact detector was removing a
+//! Tests that the running-artifact detector was removing a
 //! document's cover-page title when that title also happened to repeat
 //! as the per-page running header.
 //!
@@ -96,7 +96,7 @@ fn first_occurrence_of_running_header_kept_on_page_one() {
     // title. Pre-fix behaviour would strip it.
     assert!(
         p0.contains("Universal Title"),
-        "B3 regression: first page should keep the running-header text \
+        "first page should keep the running-header text \
          as it also serves as the cover-page title; got {p0:?}"
     );
 

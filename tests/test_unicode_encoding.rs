@@ -24,7 +24,7 @@ fn encode_ascii_is_identity() {
 }
 
 #[test]
-fn encode_issue_402_logico() {
+fn encode_latin1_extended_char_preserves_bytes() {
     // The exact example from issue #402
     let bytes = encode_pdf_text_string("Lógico");
     // L=0x4C ó=0xF3 g=0x67 i=0x69 c=0x63 o=0x6F

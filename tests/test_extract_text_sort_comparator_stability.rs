@@ -1,4 +1,5 @@
-//! Regression test for issue #346.
+//! Tests that `extract_text` does not panic when span positions contain NaN
+//! values that would violate total-order constraints in sort comparators.
 //!
 //! `extract_text` on page 15 (0-indexed: 14) of `1008.3918v2.pdf`
 //! panicked with "user-provided comparison function does not correctly
@@ -16,7 +17,7 @@ use pdf_oxide::PdfDocument;
 const FIXTURE: &str = "tests/fixtures/1008.3918v2.pdf";
 
 #[test]
-fn issue_346_extract_text_page_15_does_not_panic_on_total_order() {
+fn extract_text_does_not_panic_on_nan_span_positions() {
     let doc = PdfDocument::open(FIXTURE).expect("open fixture");
     let page_count = doc.page_count().expect("page_count");
     assert!(page_count >= 15, "fixture should have at least 15 pages, got {}", page_count);
