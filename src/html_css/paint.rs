@@ -286,18 +286,42 @@ fn paint_page<'sty>(
         let box_font = font_for_box(pb.box_id);
         let box_font_name: &str = box_font.as_deref().unwrap_or(font_resource_name);
 
+        // Per-element font size: walk up to the nearest ancestor (or
+        // self) with a CSS `font-size` declaration and resolve it to px.
+        // Falls back to the document-level default when no rule matches.
+        let box_font_size_px: f32 = {
+            let mut cur = Some(pb.box_id);
+            let mut resolved = font_size_px;
+            while let Some(bid) = cur {
+                if let Some(styles) = style_for(bid) {
+                    if let Some(rv) = styles.get("font-size") {
+                        if let Ok(Value::Length(l)) = parse_property("font-size", &rv.value) {
+                            if let Some(px) =
+                                l.resolve(&crate::html_css::css::CalcContext::default())
+                            {
+                                resolved = px;
+                                break;
+                            }
+                        }
+                    }
+                }
+                cur = tree.get(bid).parent;
+            }
+            resolved
+        };
+
         // List marker — bullet or number drawn at the top-left of the
         // <li> box, offset into the gutter to the left of the content.
         if let Some(marker) = marker_for(pb.box_id) {
             if !marker.is_empty() {
-                let marker_pdf_y = page_height_px - abs_top_y - font_size_px;
-                let marker_x = (abs_x - font_size_px * 1.2).max(0.0);
+                let marker_pdf_y = page_height_px - abs_top_y - box_font_size_px;
+                let marker_x = (abs_x - box_font_size_px * 1.2).max(0.0);
                 page_builder.add_embedded_text(
                     &marker,
                     marker_x,
                     marker_pdf_y,
                     box_font_name,
-                    font_size_px,
+                    box_font_size_px,
                 );
             }
         }
@@ -368,14 +392,26 @@ fn paint_page<'sty>(
         if node.element.is_some() {
             if let Some(before) = pseudo_before_for(pb.box_id) {
                 if !before.is_empty() {
-                    let y = page_height_px - abs_top_y - font_size_px;
-                    page_builder.add_embedded_text(&before, abs_x, y, box_font_name, font_size_px);
+                    let y = page_height_px - abs_top_y - box_font_size_px;
+                    page_builder.add_embedded_text(
+                        &before,
+                        abs_x,
+                        y,
+                        box_font_name,
+                        box_font_size_px,
+                    );
                 }
             }
             if let Some(after) = pseudo_after_for(pb.box_id) {
                 if !after.is_empty() {
                     let y = page_height_px - abs_top_y - pb.local.height;
-                    page_builder.add_embedded_text(&after, abs_x, y, box_font_name, font_size_px);
+                    page_builder.add_embedded_text(
+                        &after,
+                        abs_x,
+                        y,
+                        box_font_name,
+                        box_font_size_px,
+                    );
                 }
             }
         }
@@ -387,7 +423,7 @@ fn paint_page<'sty>(
                 // approx 0.8 of font_size). We place at top-left for
                 // simplicity; LAYOUT-3's inline formatter will
                 // produce per-glyph positions in a future commit.
-                let text_pdf_y = page_height_px - abs_top_y - font_size_px;
+                let text_pdf_y = page_height_px - abs_top_y - box_font_size_px;
                 #[cfg(feature = "system-fonts")]
                 let routed_shaped = crate::text::bidi::paragraph_is_rtl(s) && {
                     page_builder.add_shaped_embedded_text(
@@ -395,7 +431,7 @@ fn paint_page<'sty>(
                         abs_x,
                         text_pdf_y,
                         box_font_name,
-                        font_size_px,
+                        box_font_size_px,
                         crate::writer::ShapeDirection::Rtl,
                     );
                     true
@@ -408,7 +444,7 @@ fn paint_page<'sty>(
                         abs_x,
                         text_pdf_y,
                         box_font_name,
-                        font_size_px,
+                        box_font_size_px,
                     );
                 }
             }
@@ -589,5 +625,71 @@ mod tests {
         let src = "data:text/plain,%48%69";
         let bytes = decode_image_src(src).expect("decode");
         assert_eq!(&bytes[..], b"Hi");
+    }
+
+    /// Regression: CSS `font-size` rules must affect the painted PDF.
+    /// Previously `paint_page` used a single global `font_size_px = 12`
+    /// for every box, so `h1 { font-size: 72pt }` had no effect.
+    #[test]
+    fn css_font_size_rule_changes_output() {
+        use crate::html_css::css::{cascade, parse_stylesheet};
+        use crate::html_css::paginate::paginate;
+
+        fn make_pdf(css: &'static str) -> Vec<u8> {
+            let html = "<html><body><h1>Big</h1><p>Small</p></body></html>";
+            let dom: &'static _ =
+                Box::leak(Box::new(crate::html_css::html::parse_document(html)));
+            let ss: &'static _ = Box::leak(Box::new(parse_stylesheet(css).unwrap()));
+            let tree = crate::html_css::layout::build_box_tree(dom, ss).unwrap();
+            let layout = crate::html_css::layout::run_layout(
+                &tree,
+                |id| {
+                    let node = tree.get(id);
+                    let Some(elem_id) = node.element else {
+                        return ComputedStyles::default();
+                    };
+                    cascade(ss, dom.element(elem_id).unwrap(), None)
+                },
+                taffy::prelude::Size { width: 600.0, height: 800.0 },
+                &crate::html_css::css::CalcContext::default(),
+                12.0,
+            );
+            let doc = paginate(&tree, &layout, crate::html_css::paginate::PageConfig::a4());
+            let mut writer = PdfWriter::new();
+            let font =
+                EmbeddedFont::from_data(Some("DejaVuSans".to_string()), DEJAVU.to_vec())
+                    .unwrap();
+            let rn = writer.register_embedded_font(font);
+            paint_document(
+                &mut writer,
+                &doc,
+                &tree,
+                |id| {
+                    let node = tree.get(id);
+                    let elem_id = node.element?;
+                    Some(cascade(ss, dom.element(elem_id).unwrap(), None))
+                },
+                &rn,
+                12.0,
+                |_| None,
+                |_| None,
+                |_| None,
+                |_| None,
+                |_| None,
+                |_| None,
+            );
+            writer.finish().unwrap()
+        }
+
+        let no_css = make_pdf("");
+        let with_css = make_pdf("h1 { font-size: 72pt; } p { font-size: 6pt; }");
+
+        // The PDFs must differ: different font sizes produce different
+        // content streams. Before the fix both were identical because
+        // the global 12pt was used for every box.
+        assert_ne!(
+            no_css, with_css,
+            "CSS font-size had no effect on output — paint_page is ignoring style_for"
+        );
     }
 }
