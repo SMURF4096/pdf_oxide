@@ -852,7 +852,7 @@ impl WasmPdfDocument {
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
-        let results = TextSearcher::search(&mut inner, pattern, &options)
+        let results = TextSearcher::search(&*inner, pattern, &options)
             .map_err(|e| JsValue::from_str(&format!("Search failed: {}", e)))?;
         serde_wasm_bindgen::to_value(&results)
             .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))
@@ -880,7 +880,7 @@ impl WasmPdfDocument {
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
-        let results = TextSearcher::search(&mut inner, pattern, &options)
+        let results = TextSearcher::search(&*inner, pattern, &options)
             .map_err(|e| JsValue::from_str(&format!("Search failed: {}", e)))?;
         serde_wasm_bindgen::to_value(&results)
             .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))
@@ -1774,7 +1774,7 @@ impl WasmPdfDocument {
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
-        let fields = FormExtractor::extract_fields(&mut inner)
+        let fields = FormExtractor::extract_fields(&*inner)
             .map_err(|e| JsValue::from_str(&format!("Failed to extract form fields: {}", e)))?;
 
         let result: Vec<serde_json::Value> = fields
@@ -1857,7 +1857,7 @@ impl WasmPdfDocument {
     pub fn has_xfa(&mut self) -> Result<bool, JsValue> {
         use crate::xfa::XfaExtractor;
 
-        let inner = self
+        let mut inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
@@ -2079,7 +2079,7 @@ impl WasmPdfDocument {
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
-        let labels = PageLabelExtractor::extract(&mut inner)
+        let labels = PageLabelExtractor::extract(&*inner)
             .map_err(|e| JsValue::from_str(&format!("Failed to get page labels: {}", e)))?;
 
         let result: Vec<serde_json::Value> = labels
@@ -2116,7 +2116,7 @@ impl WasmPdfDocument {
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
-        let metadata = XmpExtractor::extract(&mut inner)
+        let metadata = XmpExtractor::extract(&*inner)
             .map_err(|e| JsValue::from_str(&format!("Failed to get XMP metadata: {}", e)))?;
 
         match metadata {
@@ -2944,7 +2944,7 @@ impl WasmPdfDocument {
             "3u" => PdfALevel::A3u,
             _ => return Err(JsValue::from_str(&format!("Unknown PDF/A level: {}", level))),
         };
-        let inner = self
+        let mut inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Lock failed"))?;
@@ -2969,7 +2969,7 @@ impl WasmPdfDocument {
             Some("2") => PdfUaLevel::Ua2,
             _ => PdfUaLevel::Ua1,
         };
-        let inner = self
+        let mut inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Lock failed"))?;
@@ -3001,7 +3001,7 @@ impl WasmPdfDocument {
             Some("4") => PdfXLevel::X4,
             _ => PdfXLevel::X4,
         };
-        let inner = self
+        let mut inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Lock failed"))?;
@@ -3039,7 +3039,7 @@ impl WasmPdfDocument {
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
         let new_doc = crate::document::PdfDocument::from_bytes(new_bytes.clone())
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
-        let inner = self
+        let mut inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Lock failed"))?;
@@ -3066,7 +3066,7 @@ impl WasmPdfDocument {
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
         let new_doc = crate::document::PdfDocument::from_bytes(new_bytes.clone())
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
-        let inner = self
+        let mut inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Lock failed"))?;
