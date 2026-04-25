@@ -1342,12 +1342,12 @@ func (p *PageBuilder) StreamingTable(cfg StreamingTableConfig) *StreamingTable {
 
 	// Build parallel arrays for headers, widths, aligns.
 	headers := make([]*C.char, nCols)
-	widths  := make([]C.float, nCols)
-	aligns  := make([]C.int, nCols)
+	widths := make([]C.float, nCols)
+	aligns := make([]C.int, nCols)
 	for i, col := range cfg.Columns {
 		headers[i] = C.CString(col.Header)
-		widths[i]  = C.float(col.Width)
-		aligns[i]  = C.int(col.Align)
+		widths[i] = C.float(col.Width)
+		aligns[i] = C.int(col.Align)
 	}
 	defer func() {
 		for _, h := range headers {
@@ -1485,7 +1485,7 @@ func (t *StreamingTable) PushRowSpan(cells []SpanCell) error {
 		return t.page.err
 	}
 
-	cStrs    := make([]*C.char, t.nCols)
+	cStrs := make([]*C.char, t.nCols)
 	rowspans := make([]C.size_t, t.nCols)
 	for i, c := range cells {
 		cStrs[i] = C.CString(c.Text)

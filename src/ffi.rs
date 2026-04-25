@@ -8711,7 +8711,7 @@ pub extern "C" fn pdf_page_builder_signature_field(
 /// Add a footnote reference mark at the current cursor position and record the
 /// note body for page-end placement.
 ///
-/// `ref_mark` — superscript label emitted inline (e.g. "¹" or "[1]").
+/// `ref_mark` — superscript label emitted inline (e.g. "¹" or `[1]`).
 /// `note_text` — body text placed near the page bottom with a separator line.
 ///
 /// # Safety

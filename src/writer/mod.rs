@@ -100,7 +100,7 @@ pub use content_stream::{
 };
 pub use document_builder::{
     DocumentBuilder, DocumentMetadata, FluentPageBuilder, LineStyle, PageSize, TextAlign,
-    TextConfig,
+    TextConfig, TextRun, TextRunStyle,
 };
 pub use embedded_files::{AFRelationship, EmbeddedFile, EmbeddedFilesBuilder};
 pub use font_manager::{

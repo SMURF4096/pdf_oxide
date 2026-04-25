@@ -90,7 +90,7 @@ impl ParallelExtractor {
         let batch_results: std::result::Result<Vec<Vec<(usize, String)>>, Error> = batches
             .into_par_iter()
             .map(|(start, end)| {
-                let mut doc = PdfDocument::open(&path_buf)?;
+                let doc = PdfDocument::open(&path_buf)?;
                 let mut results = Vec::with_capacity(end - start);
                 for page_index in start..end {
                     let text = doc.extract_text(page_index)?;
@@ -148,7 +148,7 @@ impl ParallelExtractor {
         let batch_results: std::result::Result<Vec<Vec<(usize, String)>>, Error> = batches
             .into_par_iter()
             .map(|(start, end)| {
-                let mut doc = PdfDocument::open(&path_buf)?;
+                let doc = PdfDocument::open(&path_buf)?;
                 let mut results = Vec::with_capacity(end - start);
                 for page_index in start..end {
                     let md = doc.to_markdown(page_index, &options)?;
@@ -165,7 +165,7 @@ impl ParallelExtractor {
 
     /// Determine the page count by opening the document once.
     fn get_page_count(path: &Path) -> Result<usize> {
-        let mut doc = PdfDocument::open(path)?;
+        let doc = PdfDocument::open(path)?;
         doc.page_count()
     }
 }

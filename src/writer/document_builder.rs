@@ -333,43 +333,58 @@ impl LineStyle {
 /// Style applied to a single run in [`FluentPageBuilder::rich_paragraph`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum TextRunStyle {
+    /// Normal weight, current font color.
     Normal,
+    /// Bold weight using the bold variant of the current font.
     Bold,
+    /// Italic using the italic variant of the current font.
     Italic,
-    /// RGB color 0.0–1.0, normal weight.
+    /// RGB color override (0.0–1.0 per channel), normal weight.
     Color {
+        /// Red channel (0.0–1.0).
         r: f32,
+        /// Green channel (0.0–1.0).
         g: f32,
+        /// Blue channel (0.0–1.0).
         b: f32,
     },
 }
 
 /// A single styled text run for [`FluentPageBuilder::rich_paragraph`].
+///
+/// Construct with the helper functions [`TextRun::normal`], [`TextRun::bold`],
+/// [`TextRun::italic`], or [`TextRun::color`].
 #[derive(Debug, Clone)]
 pub struct TextRun {
+    /// The text content of this run.
     pub text: String,
+    /// Visual style applied to this run.
     pub style: TextRunStyle,
 }
 
 impl TextRun {
+    /// Create a normal-weight run.
     pub fn normal(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
             style: TextRunStyle::Normal,
         }
     }
+    /// Create a bold run.
     pub fn bold(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
             style: TextRunStyle::Bold,
         }
     }
+    /// Create an italic run.
     pub fn italic(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
             style: TextRunStyle::Italic,
         }
     }
+    /// Create a color-overridden run. Channels are in 0.0–1.0 range.
     pub fn color(r: f32, g: f32, b: f32, text: impl Into<String>) -> Self {
         Self {
             text: text.into(),

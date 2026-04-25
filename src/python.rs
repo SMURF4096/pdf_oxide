@@ -2680,7 +2680,7 @@ impl PyPdfPageRegion {
         d.extract_images(py, self.page_index, Some(self.bbox()))
     }
     fn extract_paths(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        let mut d = self.doc.bind(py).borrow_mut();
+        let d = self.doc.bind(py).borrow_mut();
         let res = d
             .inner
             .extract_paths_in_rect(self.page_index, self.region)
