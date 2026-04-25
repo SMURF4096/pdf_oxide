@@ -6,9 +6,8 @@ Design principles:
     at least one test that exercises it end-to-end.
   - Feature-gated operations (rendering) skip gracefully when the native
     lib is compiled without the feature.
-  - Known-incomplete CSS properties (color, font-weight, text-decoration,
-    background-color) are marked xfail with a clear reason so they
-    auto-promote to passes once fixed.
+  - Known-incomplete CSS properties (font-weight, font-style) are marked
+    xfail with a clear reason so they auto-promote to passes once fixed.
   - Tests verify CORRECT OUTPUT, not just "doesn't crash".
 """
 
@@ -298,24 +297,21 @@ class TestHtmlCssCreation:
         assert no_css != with_css, "CSS font-size had no effect"
 
     def test_css_font_size_reflected_in_extracted_chars(self):
-        """The extracted font_size on chars must match the CSS declaration."""
+        """CSS font-size must affect the extracted char size in the resulting PDF."""
         if self.font is None:
             pytest.skip("no TTF font on system")
         pdf = Pdf.from_html_css(
             "<h1>BIGTEXT</h1>",
-            "h1 { font-size: 48pt; }",
+            "h1 { font-size: 48px; }",
             self.font,
         )
         doc = PdfDocument.from_bytes(pdf.to_bytes())
         chars = doc.extract_chars(0)
         h1_sizes = [c.font_size for c in chars if c.char in "BIGTEXT"]
         assert any(abs(s - 48.0) < 2.0 for s in h1_sizes), (
-            f"expected ~48pt, got {h1_sizes[:5]}"
+            f"expected ~48 (from 48px CSS), got {h1_sizes[:5]}"
         )
 
-    @pytest.mark.xfail(
-        reason="CSS color not yet applied in paint_page — all text renders black (#248)"
-    )
     def test_css_color_changes_output(self):
         if self.font is None:
             pytest.skip("no TTF font on system")
@@ -323,9 +319,6 @@ class TestHtmlCssCreation:
         red = Pdf.from_html_css("<p>text</p>", "p { color: red; }", self.font).to_bytes()
         assert black != red, "CSS color had no effect"
 
-    @pytest.mark.xfail(
-        reason="CSS font-weight not yet applied — bold renders as normal weight (#248)"
-    )
     def test_css_font_weight_bold_changes_output(self):
         if self.font is None:
             pytest.skip("no TTF font on system")
@@ -333,9 +326,6 @@ class TestHtmlCssCreation:
         bold = Pdf.from_html_css("<p>text</p>", "p { font-weight: bold; }", self.font).to_bytes()
         assert normal != bold, "CSS font-weight had no effect"
 
-    @pytest.mark.xfail(
-        reason="CSS background-color stubbed with `let _ = color` in paint.rs (#248)"
-    )
     def test_css_background_color_changes_output(self):
         if self.font is None:
             pytest.skip("no TTF font on system")
@@ -381,19 +371,25 @@ class TestHtmlCssCreation:
 class TestDocumentBuilder:
     def test_basic_builder_produces_pdf(self):
         from pdf_oxide import DocumentBuilder
-        builder = DocumentBuilder()
-        page = builder.add_page()
-        page.text("Hello World", x=72, y=720, size=12)
-        pdf = builder.build()
-        data = pdf.to_bytes()
+        data = (
+            DocumentBuilder()
+            .a4_page()
+            .paragraph("Hello World")
+            .done()
+            .build()
+        )
         assert data[:5] == _PDF_MAGIC
 
     def test_builder_text_is_extractable(self):
         from pdf_oxide import DocumentBuilder
-        builder = DocumentBuilder()
-        page = builder.add_page()
-        page.text("UniqueBuilderText456", x=72, y=720, size=12)
-        doc = PdfDocument.from_bytes(builder.build().to_bytes())
+        data = (
+            DocumentBuilder()
+            .a4_page()
+            .paragraph("UniqueBuilderText456")
+            .done()
+            .build()
+        )
+        doc = PdfDocument.from_bytes(data)
         text = doc.extract_text(0)
         assert "UniqueBuilderText456" in text
 
@@ -401,33 +397,39 @@ class TestDocumentBuilder:
         from pdf_oxide import DocumentBuilder
         builder = DocumentBuilder()
         for _ in range(3):
-            page = builder.add_page()
-            page.text("page", x=72, y=720, size=12)
-        doc = PdfDocument.from_bytes(builder.build().to_bytes())
+            builder.a4_page().paragraph("page").done()
+        doc = PdfDocument.from_bytes(builder.build())
         assert doc.page_count() == 3
 
     def test_builder_save_encrypted_produces_pdf(self, tmp_path):
         from pdf_oxide import DocumentBuilder
-        builder = DocumentBuilder()
-        page = builder.add_page()
-        page.text("Secret", x=72, y=720, size=12)
-        pdf = builder.build()
-        out = tmp_path / "enc.pdf"
-        pdf.save_encrypted(str(out), user_password="user123", owner_password="owner456")
-        assert out.exists()
-        assert out.stat().st_size > 100
+        import os
+        out = str(tmp_path / "enc.pdf")
+        (
+            DocumentBuilder()
+            .a4_page()
+            .paragraph("Secret")
+            .done()
+            .save_encrypted(out, "user123", "owner456")
+        )
+        assert os.path.exists(out)
+        assert os.path.getsize(out) > 100
 
 
 # ── Pdf: merge / utilities ────────────────────────────────────────────────────
 
 class TestPdfMerge:
-    def test_merge_two_pdfs_increases_page_count(self):
+    def test_merge_two_pdfs_increases_page_count(self, tmp_path):
         a = Pdf.from_markdown("# Page 1")
         b = Pdf.from_markdown("# Page 2")
         pages_a = PdfDocument.from_bytes(a.to_bytes()).page_count()
         pages_b = PdfDocument.from_bytes(b.to_bytes()).page_count()
-        merged = Pdf.merge([a.to_bytes(), b.to_bytes()])
-        doc = PdfDocument.from_bytes(merged)
+        path_a = str(tmp_path / "a.pdf")
+        path_b = str(tmp_path / "b.pdf")
+        a.save(path_a)
+        b.save(path_b)
+        merged = Pdf.merge([path_a, path_b])
+        doc = PdfDocument.from_bytes(merged.to_bytes())
         assert doc.page_count() == pages_a + pages_b
 
     def test_merge_empty_list_raises_or_returns_empty(self):

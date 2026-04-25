@@ -291,6 +291,59 @@ impl<'a> PageBuilder<'a> {
         self
     }
 
+    /// Fill a rectangle with the given RGB color, then restore the fill color to black.
+    pub fn fill_rect_colored(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+    ) -> &mut Self {
+        let page = &mut self.writer.pages[self.page_index];
+        page.content_builder.end_text();
+        page.content_builder
+            .set_fill_color(r, g, b)
+            .rect(x, y, width, height)
+            .fill()
+            .set_fill_color(0.0, 0.0, 0.0);
+        self
+    }
+
+    /// Set the current fill (non-stroking) color. Affects subsequent text and fill ops.
+    pub fn set_fill_color(&mut self, r: f32, g: f32, b: f32) -> &mut Self {
+        let page = &mut self.writer.pages[self.page_index];
+        page.content_builder.end_text();
+        page.content_builder.set_fill_color(r, g, b);
+        self
+    }
+
+    /// Draw a horizontal line segment with the given RGB stroke color and thickness.
+    pub fn draw_hline_colored(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        thickness: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+    ) -> &mut Self {
+        let page = &mut self.writer.pages[self.page_index];
+        page.content_builder.end_text();
+        page.content_builder
+            .set_stroke_color(r, g, b)
+            .set_line_width(thickness)
+            .move_to(x, y)
+            .line_to(x + width, y)
+            .stroke()
+            .set_stroke_color(0.0, 0.0, 0.0)
+            .set_line_width(1.0);
+        self
+    }
+
     /// Add a link annotation to the page.
     ///
     /// # Arguments

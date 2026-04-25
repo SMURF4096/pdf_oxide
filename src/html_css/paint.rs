@@ -261,15 +261,11 @@ fn paint_page<'sty>(
         if let Some(styles) = node.element.and_then(|_| style_for(pb.box_id)) {
             if let Some(rv) = styles.get("background-color") {
                 if let Ok(color) = parse_color(&rv.value, "background-color") {
-                    if color.a > 0.0 {
-                        // For v0.3.35 we paint the fill via direct
-                        // ContentStreamBuilder access — but PageBuilder
-                        // currently only exposes draw_rect (which
-                        // strokes). Use it as a stub; the writer's
-                        // shading/path APIs aren't piped through
-                        // PageBuilder yet (PAINT-2b). For now this is
-                        // a no-op visible only when borders show.
-                        let _ = color;
+                    if color.a > 0.01 && pb.local.width > 0.0 && pb.local.height > 0.0 {
+                        page_builder.fill_rect_colored(
+                            abs_x, pdf_y, pb.local.width, pb.local.height,
+                            color.r, color.g, color.b,
+                        );
                     }
                 }
             }
@@ -286,9 +282,9 @@ fn paint_page<'sty>(
         let box_font = font_for_box(pb.box_id);
         let box_font_name: &str = box_font.as_deref().unwrap_or(font_resource_name);
 
-        // Per-element font size: walk up to the nearest ancestor (or
-        // self) with a CSS `font-size` declaration and resolve it to px.
-        // Falls back to the document-level default when no rule matches.
+        // Per-element CSS properties — walk up to the nearest ancestor
+        // with each declaration, falling back to sensible defaults.
+        // font-size
         let box_font_size_px: f32 = {
             let mut cur = Some(pb.box_id);
             let mut resolved = font_size_px;
@@ -308,6 +304,56 @@ fn paint_page<'sty>(
                 cur = tree.get(bid).parent;
             }
             resolved
+        };
+        // color (RGB, default black)
+        let box_text_color: Option<[f32; 3]> = {
+            let mut cur = Some(pb.box_id);
+            let mut found = None;
+            while let Some(bid) = cur {
+                if let Some(styles) = style_for(bid) {
+                    if let Some(rv) = styles.get("color") {
+                        if let Ok(c) = parse_color(&rv.value, "color") {
+                            // Only override when not plain black (avoid no-op ops)
+                            if c.r != 0.0 || c.g != 0.0 || c.b != 0.0 {
+                                found = Some([c.r, c.g, c.b]);
+                            }
+                            break;
+                        }
+                    }
+                }
+                cur = tree.get(bid).parent;
+            }
+            found
+        };
+        // text-decoration-line (underline / line-through / overline)
+        let box_decoration: u8 = {
+            use crate::html_css::css::parser::ComponentValue;
+            use crate::html_css::css::tokenizer::Token;
+            let mut cur = Some(pb.box_id);
+            let mut flags: u8 = 0; // bit0=underline, bit1=line-through, bit2=overline
+            'outer: while let Some(bid) = cur {
+                if let Some(styles) = style_for(bid) {
+                    for prop in &["text-decoration", "text-decoration-line"] {
+                        if let Some(rv) = styles.get(*prop) {
+                            for cv in &rv.value {
+                                if let ComponentValue::Token(Token::Ident(id)) = cv {
+                                    match id.to_lowercase().as_str() {
+                                        "underline" => flags |= 1,
+                                        "line-through" => flags |= 2,
+                                        "overline" => flags |= 4,
+                                        _ => {}
+                                    }
+                                }
+                            }
+                            if flags != 0 {
+                                break 'outer;
+                            }
+                        }
+                    }
+                }
+                cur = tree.get(bid).parent;
+            }
+            flags
         };
 
         // List marker — bullet or number drawn at the top-left of the
@@ -424,6 +470,12 @@ fn paint_page<'sty>(
                 // simplicity; LAYOUT-3's inline formatter will
                 // produce per-glyph positions in a future commit.
                 let text_pdf_y = page_height_px - abs_top_y - box_font_size_px;
+
+                // Apply CSS color before emitting text.
+                if let Some([r, g, b]) = box_text_color {
+                    page_builder.set_fill_color(r, g, b);
+                }
+
                 #[cfg(feature = "system-fonts")]
                 let routed_shaped = crate::text::bidi::paragraph_is_rtl(s) && {
                     page_builder.add_shaped_embedded_text(
@@ -445,6 +497,38 @@ fn paint_page<'sty>(
                         text_pdf_y,
                         box_font_name,
                         box_font_size_px,
+                    );
+                }
+
+                // Reset fill color to black after colored text.
+                if box_text_color.is_some() {
+                    page_builder.set_fill_color(0.0, 0.0, 0.0);
+                }
+
+                // text-decoration: underline / line-through / overline.
+                // Stroke color follows the text color (or black).
+                let [dr, dg, db] = box_text_color.unwrap_or([0.0, 0.0, 0.0]);
+                let line_thickness = (box_font_size_px * 0.07).max(0.5);
+                let text_width = pb.local.width.max(box_font_size_px * 0.5);
+                // underline: ~0.15 em below the baseline
+                if box_decoration & 1 != 0 {
+                    let ul_y = text_pdf_y - box_font_size_px * 0.15;
+                    page_builder.draw_hline_colored(
+                        abs_x, ul_y, text_width, line_thickness, dr, dg, db,
+                    );
+                }
+                // line-through: ~0.35 em above the baseline (≈ mid-x-height)
+                if box_decoration & 2 != 0 {
+                    let lt_y = text_pdf_y + box_font_size_px * 0.35;
+                    page_builder.draw_hline_colored(
+                        abs_x, lt_y, text_width, line_thickness, dr, dg, db,
+                    );
+                }
+                // overline: at the ascender (~0.9 em above baseline)
+                if box_decoration & 4 != 0 {
+                    let ol_y = text_pdf_y + box_font_size_px * 0.9;
+                    page_builder.draw_hline_colored(
+                        abs_x, ol_y, text_width, line_thickness, dr, dg, db,
                     );
                 }
             }
@@ -693,13 +777,7 @@ mod tests {
         );
     }
 
-    // ── xfail stubs: known-broken CSS properties ─────────────────────────
-    // These tests are marked #[ignore] to document what is NOT yet working.
-    // Remove the #[ignore] attribute once the property is implemented.
-    // Each test uses the same pattern as css_font_size_rule_changes_output.
-
     #[test]
-    #[ignore = "CSS color not yet applied in paint_page — all text renders black (#248)"]
     fn css_color_rule_changes_output() {
         use crate::html_css::css::{cascade, parse_stylesheet};
         use crate::html_css::paginate::paginate;
@@ -739,7 +817,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "CSS background-color stubbed with `let _ = color` in paint_page (#248 PAINT-2b)"]
     fn css_background_color_changes_output() {
         use crate::html_css::css::{cascade, parse_stylesheet};
         use crate::html_css::paginate::paginate;
