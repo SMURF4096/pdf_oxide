@@ -542,6 +542,10 @@ jobs:
           npx node-gyp rebuild
           ls -la build/Release/pdf_oxide.node
 
+      - name: Run Node.js tests
+        working-directory: js
+        run: npm test
+
   # C#/.NET bindings build
   csharp:
     name: C# Bindings (${{ matrix.os }})

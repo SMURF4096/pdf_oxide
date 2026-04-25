@@ -20,7 +20,7 @@
     "check:publint": "publint",
     "check:types": "attw --pack . --ignore-rules=cjs-resolves-to-esm",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
-    "test": "node --test tests/smoke.test.mjs"
+    "test": "node --test tests/smoke.test.mjs tests/feature-guard.test.mjs tests/api-coverage.test.mjs tests/html-css.test.mjs tests/document-builder.test.mjs tests/document-editor.test.mjs tests/render-options.test.mjs tests/tables.test.mjs"
   },
   "files": [
     "lib/",
