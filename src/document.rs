@@ -9052,14 +9052,29 @@ impl PdfDocument {
                     .lock_or_recover()
                     .get(&name_hash)
                     .cloned();
-                if let Some((cached_set, _check_name, _check_hash)) = cached_name_set {
-                    // Layer 4: Same font names within a document virtually always map
-                    // to the same underlying fonts. Trust the name-based cache to avoid
-                    // expensive load_object calls for spot-check verification.
-                    for (name, font_arc) in cached_set.iter() {
-                        extractor.add_font_shared(name.clone(), Arc::clone(font_arc));
+                if let Some((cached_set, check_name, check_hash)) = cached_name_set {
+                    // Spot-check: load ONE font and compare its identity hash
+                    // (includes ToUnicode ObjectRef) to verify the font mapping
+                    // is the same as when the cache was populated. This catches
+                    // PDFs (e.g. Acrobat Pro, Antenna House) that recycle font
+                    // key names across pages but embed per-page subsets with
+                    // distinct ToUnicode CMaps. See issue #407.
+                    let mut verified = false;
+                    if let Some(check_obj) = font_dict.get(check_name.as_str()) {
+                        if let Some(check_ref) = check_obj.as_reference() {
+                            if let Ok(check_font) = self.load_object(check_ref) {
+                                verified =
+                                    Self::font_identity_hash_cheap(&check_font) == check_hash;
+                            }
+                        }
                     }
-                    return Ok(());
+                    if verified {
+                        for (name, font_arc) in cached_set.iter() {
+                            extractor.add_font_shared(name.clone(), Arc::clone(font_arc));
+                        }
+                        return Ok(());
+                    }
+                    // Hash mismatch: fonts differ — fall through to full load.
                 }
 
                 let mut all_from_cache = true;
