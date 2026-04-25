@@ -48,7 +48,7 @@ fn write_temp_pdf(data: &[u8], name: &str) -> std::path::PathBuf {
 fn test_page_without_contents_returns_empty() {
     let data = build_pdf_no_contents();
     let path = write_temp_pdf(&data, "no_contents.pdf");
-    let mut doc = PdfDocument::open(&path).expect("Should parse minimal PDF");
+    let doc = PdfDocument::open(&path).expect("Should parse minimal PDF");
     let content = doc
         .get_page_content_data(0)
         .expect("Should not error on missing Contents");
@@ -59,7 +59,7 @@ fn test_page_without_contents_returns_empty() {
 fn test_extract_text_blank_page() {
     let data = build_pdf_no_contents();
     let path = write_temp_pdf(&data, "no_contents_text.pdf");
-    let mut doc = PdfDocument::open(&path).expect("Should parse minimal PDF");
+    let doc = PdfDocument::open(&path).expect("Should parse minimal PDF");
     let text = doc.extract_text(0).expect("Should not error on blank page");
     assert!(text.trim().is_empty(), "Expected empty text for blank page");
 }

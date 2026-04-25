@@ -69,7 +69,7 @@ fn test_tf_buffer_flush_across_three_fonts() {
 #[test]
 fn test_annotation_extraction_no_panic() {
     for fixture in &["tests/fixtures/simple.pdf", "tests/fixtures/outline.pdf"] {
-        let mut doc = PdfDocument::open(fixture).unwrap();
+        let doc = PdfDocument::open(fixture).unwrap();
         let pages = doc.page_count().unwrap();
         for p in 0..pages {
             let _text = doc.extract_text(p).unwrap();
@@ -79,7 +79,7 @@ fn test_annotation_extraction_no_panic() {
 
 #[test]
 fn test_space_ratio_below_threshold() {
-    let mut doc = PdfDocument::open("tests/fixtures/outline.pdf").unwrap();
+    let doc = PdfDocument::open("tests/fixtures/outline.pdf").unwrap();
     let pages = doc.page_count().unwrap();
 
     for p in 0..pages {
@@ -185,8 +185,8 @@ fn test_brotli_decode_roundtrip() {
 #[test]
 fn test_fixture_deterministic_output() {
     for fixture in &["tests/fixtures/simple.pdf", "tests/fixtures/outline.pdf"] {
-        let mut doc1 = PdfDocument::open(fixture).unwrap();
-        let mut doc2 = PdfDocument::open(fixture).unwrap();
+        let doc1 = PdfDocument::open(fixture).unwrap();
+        let doc2 = PdfDocument::open(fixture).unwrap();
         let pages = doc1.page_count().unwrap();
         for p in 0..pages {
             let t1 = doc1.extract_text(p).unwrap();
@@ -199,7 +199,7 @@ fn test_fixture_deterministic_output() {
 #[test]
 fn test_fixture_no_panic() {
     for fixture in &["tests/fixtures/simple.pdf", "tests/fixtures/outline.pdf"] {
-        let mut doc = PdfDocument::open(fixture).unwrap();
+        let doc = PdfDocument::open(fixture).unwrap();
         let pages = doc.page_count().unwrap();
         assert!(pages > 0, "{} should have at least 1 page", fixture);
         for p in 0..pages {

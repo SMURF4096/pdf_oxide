@@ -20,7 +20,7 @@ use pdf_oxide::document::PdfDocument;
 fn issue_395_user_provided_pdf_opens() {
     let path = "tests/fixtures/issue_regressions/issue_395_render_signature_exception.pdf";
     let bytes = std::fs::read(path).expect("fixture missing");
-    let mut doc = PdfDocument::from_bytes(bytes).expect("open");
+    let doc = PdfDocument::from_bytes(bytes).expect("open");
     let count = doc.page_count().expect("page count");
     assert!(count > 0, "expected at least one page");
 }

@@ -503,7 +503,7 @@ fn try_measure_extraction_mode(
 
     for _ in 0..TIMING_ITERATIONS {
         // Open PDF fresh each iteration to avoid caching effects
-        let mut doc = PdfDocument::open(pdf_path)?;
+        let doc = PdfDocument::open(pdf_path)?;
 
         // Note: mode parameter is for future use when API supports configuration
         let _ = mode;

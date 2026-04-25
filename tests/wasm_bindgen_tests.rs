@@ -917,9 +917,7 @@ fn fluent_page_buffered_table_from_js_object() {
     //     hasHeader: true }
     let spec = js_sys::Object::new();
     let columns = js_sys::Array::new();
-    for (header, width, align) in
-        [("SKU", 100.0_f64, 0_i32), ("Qty", 60.0, 2)].iter()
-    {
+    for (header, width, align) in [("SKU", 100.0_f64, 0_i32), ("Qty", 60.0, 2)].iter() {
         let col = js_sys::Object::new();
         js_sys::Reflect::set(&col, &JsValue::from_str("header"), &JsValue::from_str(header))
             .unwrap();

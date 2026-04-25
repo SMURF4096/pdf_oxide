@@ -113,7 +113,7 @@ fn extract_text_round_trips_post_subsetting_ascii() {
         .done();
 
     let bytes = builder.build().expect("build should succeed");
-    let mut doc = PdfDocument::from_bytes(bytes).expect("parse round-tripped pdf");
+    let doc = PdfDocument::from_bytes(bytes).expect("parse round-tripped pdf");
     let text = doc.extract_text(0).expect("extract_text should succeed");
 
     assert!(
@@ -143,7 +143,7 @@ fn extract_text_round_trips_post_subsetting_cyrillic_and_greek() {
         .done();
 
     let bytes = builder.build().expect("build should succeed");
-    let mut doc = PdfDocument::from_bytes(bytes).expect("parse round-tripped pdf");
+    let doc = PdfDocument::from_bytes(bytes).expect("parse round-tripped pdf");
     let text = doc.extract_text(0).expect("extract_text should succeed");
 
     assert!(
@@ -182,7 +182,7 @@ fn two_embedded_fonts_produce_independent_subsets() {
     // Round-trip sanity: both strings must come back intact, which
     // requires both fonts' remappers to be applied to their respective
     // runs (cross-applying would produce garbled text).
-    let mut doc = PdfDocument::from_bytes(bytes.clone()).expect("parse round-tripped pdf");
+    let doc = PdfDocument::from_bytes(bytes.clone()).expect("parse round-tripped pdf");
     let text = doc.extract_text(0).expect("extract_text should succeed");
     assert!(text.contains("Only-A-text"), "FontA text missing — got {text:?}");
     assert!(text.contains("Different-B-text"), "FontB text missing — got {text:?}");

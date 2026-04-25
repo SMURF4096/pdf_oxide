@@ -61,7 +61,7 @@ fn benchmark_text_extraction(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::from_parameter(&name), &path, |b, path| {
             b.iter(|| {
-                let mut doc = PdfDocument::open(black_box(path)).expect("Failed to open PDF");
+                let doc = PdfDocument::open(black_box(path)).expect("Failed to open PDF");
 
                 let _ = doc
                     .extract_text(black_box(0))
@@ -92,7 +92,7 @@ fn benchmark_markdown_conversion(c: &mut Criterion) {
                     let options = pdf_oxide::converters::ConversionOptions::default();
                     (doc, options)
                 },
-                |(mut doc, options)| {
+                |(doc, options)| {
                     let _ = doc
                         .to_markdown(black_box(0), black_box(&options))
                         .expect("Failed to convert to markdown");
@@ -120,7 +120,7 @@ fn benchmark_full_document(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::from_parameter(&name), &path, |b, path| {
             b.iter_batched(
                 || PdfDocument::open(path.clone()).expect("Failed to open PDF for full processing"),
-                |mut doc| {
+                |doc| {
                     let page_count = doc.page_count().expect("Failed to get page count");
                     for page_idx in 0..page_count {
                         let _ = doc

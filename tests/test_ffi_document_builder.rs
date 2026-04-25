@@ -115,7 +115,7 @@ fn ffi_document_builder_embedded_font_cjk_round_trip() {
 
     // Round-trip via the public (non-FFI) API since the FFI PdfDocument
     // call chain is validated elsewhere.
-    let mut doc = pdf_oxide::PdfDocument::from_bytes(bytes).expect("parse output");
+    let doc = pdf_oxide::PdfDocument::from_bytes(bytes).expect("parse output");
     let text = doc.extract_text(0).expect("extract");
     assert!(text.contains("Привет, мир!"), "Cyrillic missing: {text:?}");
     assert!(text.contains("Καλημέρα κόσμε"), "Greek missing: {text:?}");
@@ -273,9 +273,8 @@ fn ffi_barcode_1d_and_qr_produce_valid_pdf() {
 
     // QR code
     let data = cstring("https://example.com");
-    let ret = unsafe {
-        pdf_page_builder_barcode_qr(page, data.as_ptr(), 72.0, 580.0, 100.0, &mut ec)
-    };
+    let ret =
+        unsafe { pdf_page_builder_barcode_qr(page, data.as_ptr(), 72.0, 580.0, 100.0, &mut ec) };
     assert_eq!(ec, 0, "barcode_qr failed: {ret}");
 
     let done = unsafe { pdf_page_builder_done(page, &mut ec) };
@@ -378,8 +377,9 @@ fn ffi_field_validation_aa_dict_in_pdf() {
 
     let name = cstring("amount");
     let default_v = std::ptr::null();
-    let ret =
-        unsafe { pdf_page_builder_text_field(page, name.as_ptr(), 72., 700., 200., 20., default_v, &mut ec) };
+    let ret = unsafe {
+        pdf_page_builder_text_field(page, name.as_ptr(), 72., 700., 200., 20., default_v, &mut ec)
+    };
     assert_eq!(ret, 0, "text_field failed: {ec}");
 
     let ks = cstring("AFNumber_Keystroke(2,0,0,0,'',true);");
@@ -486,7 +486,7 @@ fn ffi_pdf_from_html_css_single_font() {
     assert!(bytes.starts_with(b"%PDF-"));
 
     // Round-trip the literal words through extract_text.
-    let mut doc = pdf_oxide::PdfDocument::from_bytes(bytes).expect("parse");
+    let doc = pdf_oxide::PdfDocument::from_bytes(bytes).expect("parse");
     let text = doc.extract_text(0).expect("extract");
     assert!(text.contains("Hello"));
     assert!(text.contains("World"));
@@ -567,9 +567,7 @@ fn ffi_page_builder_stroke_and_text_in_rect_and_table() {
     assert_eq!(ec, 0);
     assert_eq!(
         unsafe {
-            pdf_page_builder_stroke_line(
-                page, 50.0, 50.0, 250.0, 50.0, 1.0, 0.2, 0.2, 0.2, &mut ec,
-            )
+            pdf_page_builder_stroke_line(page, 50.0, 50.0, 250.0, 50.0, 1.0, 0.2, 0.2, 0.2, &mut ec)
         },
         0
     );
@@ -637,10 +635,7 @@ fn ffi_page_builder_stroke_and_text_in_rect_and_table() {
     assert_eq!(ec, 0);
 
     // new_page_same_size — next page for regression
-    assert_eq!(
-        unsafe { pdf_page_builder_new_page_same_size(page, &mut ec) },
-        0
-    );
+    assert_eq!(unsafe { pdf_page_builder_new_page_same_size(page, &mut ec) }, 0);
     assert_eq!(ec, 0);
 
     assert_eq!(unsafe { pdf_page_builder_done(page, &mut ec) }, 0);
@@ -677,10 +672,7 @@ fn ffi_streaming_table_end_to_end_thousand_rows() {
         unsafe { pdf_page_builder_font(page, cstring("Helvetica").as_ptr(), 10.0, &mut ec) },
         0
     );
-    assert_eq!(
-        unsafe { pdf_page_builder_at(page, 72.0, 720.0, &mut ec) },
-        0
-    );
+    assert_eq!(unsafe { pdf_page_builder_at(page, 72.0, 720.0, &mut ec) }, 0);
 
     // Begin the streaming table.
     let headers_cstr: [CString; 3] = [cstring("SKU"), cstring("Item"), cstring("Qty")];
@@ -715,21 +707,13 @@ fn ffi_streaming_table_end_to_end_thousand_rows() {
         let cells_ptrs: [*const std::os::raw::c_char; 3] =
             [sku.as_ptr(), item.as_ptr(), qty.as_ptr()];
         let rc = unsafe {
-            pdf_page_builder_streaming_table_push_row(
-                page,
-                3,
-                cells_ptrs.as_ptr(),
-                &mut ec,
-            )
+            pdf_page_builder_streaming_table_push_row(page, 3, cells_ptrs.as_ptr(), &mut ec)
         };
         assert_eq!(rc, 0, "push_row failed at i={}: ec={}", i, ec);
     }
 
     // Close the table explicitly.
-    assert_eq!(
-        unsafe { pdf_page_builder_streaming_table_finish(page, &mut ec) },
-        0
-    );
+    assert_eq!(unsafe { pdf_page_builder_streaming_table_finish(page, &mut ec) }, 0);
     assert_eq!(ec, 0);
 
     // Commit + build.
@@ -761,9 +745,7 @@ fn ffi_streaming_table_push_without_begin_errors() {
     let cell = cstring("orphan");
     let cells_ptrs: [*const std::os::raw::c_char; 1] = [cell.as_ptr()];
     assert_eq!(
-        unsafe {
-            pdf_page_builder_streaming_table_push_row(page, 1, cells_ptrs.as_ptr(), &mut ec)
-        },
+        unsafe { pdf_page_builder_streaming_table_push_row(page, 1, cells_ptrs.as_ptr(), &mut ec) },
         0
     );
     // done() must reject the orphan row.
@@ -784,16 +766,7 @@ fn ffi_page_builder_table_invalid_widths_rejected() {
     // n_columns=2 but widths pointer is null — should return -1 + ERR_INVALID_ARG.
     let aligns: [i32; 2] = [0, 0];
     let rc = unsafe {
-        pdf_page_builder_table(
-            page,
-            2,
-            ptr::null(),
-            aligns.as_ptr(),
-            0,
-            ptr::null(),
-            0,
-            &mut ec,
-        )
+        pdf_page_builder_table(page, 2, ptr::null(), aligns.as_ptr(), 0, ptr::null(), 0, &mut ec)
     };
     assert_eq!(rc, -1);
     assert_ne!(ec, 0);
@@ -835,8 +808,9 @@ fn ffi_tagged_pdf_ua1_basic() {
     // Add a role-map entry
     let custom = cstring("Note");
     let standard = cstring("P");
-    let rc =
-        unsafe { pdf_document_builder_role_map(builder, custom.as_ptr(), standard.as_ptr(), &mut ec) };
+    let rc = unsafe {
+        pdf_document_builder_role_map(builder, custom.as_ptr(), standard.as_ptr(), &mut ec)
+    };
     assert_eq!(rc, 0, "role_map failed");
     assert_eq!(ec, 0);
 
@@ -868,17 +842,11 @@ fn ffi_tagged_pdf_ua1_basic() {
         "missing /MarkInfo in catalog — tagged PDF not enabled"
     );
     // F-1: /StructTreeRoot must appear
-    assert!(
-        content.contains("/StructTreeRoot"),
-        "missing /StructTreeRoot in catalog"
-    );
+    assert!(content.contains("/StructTreeRoot"), "missing /StructTreeRoot in catalog");
     // F-2: /Lang must appear
     assert!(content.contains("/Lang"), "missing /Lang in catalog");
     // /ViewerPreferences must appear
-    assert!(
-        content.contains("/ViewerPreferences"),
-        "missing /ViewerPreferences"
-    );
+    assert!(content.contains("/ViewerPreferences"), "missing /ViewerPreferences");
 
     unsafe { free_bytes(bytes_ptr) };
 }
@@ -901,9 +869,8 @@ fn ffi_footnote_in_pdf() {
 
     let ref_mark = cstring("[1]");
     let note_text = cstring("Source: Annual report 2025.");
-    let rc = unsafe {
-        pdf_page_builder_footnote(page, ref_mark.as_ptr(), note_text.as_ptr(), &mut ec)
-    };
+    let rc =
+        unsafe { pdf_page_builder_footnote(page, ref_mark.as_ptr(), note_text.as_ptr(), &mut ec) };
     assert_eq!(rc, 0, "footnote failed");
     assert_eq!(ec, 0);
 
@@ -961,10 +928,7 @@ fn ffi_columns_in_pdf() {
 
     // The text should appear somewhere in the PDF stream.
     let content = String::from_utf8_lossy(bytes);
-    assert!(
-        content.contains("First paragraph"),
-        "column text not found in PDF output"
-    );
+    assert!(content.contains("First paragraph"), "column text not found in PDF output");
 
     unsafe { pdf_document_builder_free(builder) };
     unsafe { free_bytes(bytes_ptr) };
@@ -1004,7 +968,8 @@ fn ffi_rich_text_inline_in_pdf() {
     assert_eq!(ec, 0);
 
     let colored = cstring("red text");
-    let rc = unsafe { pdf_page_builder_inline_color(page, 1.0, 0.0, 0.0, colored.as_ptr(), &mut ec) };
+    let rc =
+        unsafe { pdf_page_builder_inline_color(page, 1.0, 0.0, 0.0, colored.as_ptr(), &mut ec) };
     assert_eq!(rc, 0, "inline_color failed");
     assert_eq!(ec, 0);
 

@@ -112,7 +112,7 @@ fn validate_pdf(path: &Path, category: &str) -> PdfValidationResult {
     };
 
     match PdfDocument::open(path) {
-        Ok(mut pdf) => {
+        Ok(pdf) => {
             result.success = true;
 
             // Get PDF version

@@ -151,7 +151,7 @@ fn build_sibling_form_collision_pdf() -> Vec<u8> {
 fn sibling_form_xobject_name_collision_does_not_hang() {
     let pdf_bytes = build_sibling_form_collision_pdf();
 
-    let mut doc = PdfDocument::from_bytes(pdf_bytes).expect("doc should open");
+    let doc = PdfDocument::from_bytes(pdf_bytes).expect("doc should open");
     assert_eq!(doc.page_count().unwrap(), 1);
 
     let start = Instant::now();

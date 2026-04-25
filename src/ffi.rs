@@ -79,9 +79,7 @@ fn classify_error(e: &crate::error::Error) -> i32 {
         | Error::Decode(_) => ERR_PARSE,
         Error::LayoutAnalysis(_) => ERR_EXTRACTION,
         Error::InvalidOperation(_) => ERR_INVALID_ARG,
-        Error::Unsupported(_) | Error::UnsupportedFilter(_) | Error::Barcode(_) => {
-            _ERR_UNSUPPORTED
-        },
+        Error::Unsupported(_) | Error::UnsupportedFilter(_) | Error::Barcode(_) => _ERR_UNSUPPORTED,
         _ => ERR_INTERNAL,
     }
 }
@@ -685,7 +683,7 @@ pub extern "C" fn document_editor_open_from_bytes(
         return ptr::null_mut();
     }
     let bytes = unsafe { std::slice::from_raw_parts(data, len) }.to_vec();
-    match DocumentEditor::open_from_bytes(bytes) {
+    match DocumentEditor::from_bytes(bytes) {
         Ok(editor) => {
             set_error(error_code, ERR_SUCCESS);
             Box::into_raw(Box::new(editor))
@@ -714,7 +712,9 @@ pub extern "C" fn document_editor_save_to_bytes(
     match editor.save_to_bytes() {
         Ok(bytes) => {
             set_error(error_code, ERR_SUCCESS);
-            unsafe { *out_len = bytes.len(); }
+            unsafe {
+                *out_len = bytes.len();
+            }
             let boxed = bytes.into_boxed_slice();
             Box::into_raw(boxed) as *mut u8
         },
@@ -747,7 +747,9 @@ pub extern "C" fn document_editor_save_to_bytes_with_options(
     match editor.save_to_bytes_with_options(opts) {
         Ok(bytes) => {
             set_error(error_code, ERR_SUCCESS);
-            unsafe { *out_len = bytes.len(); }
+            unsafe {
+                *out_len = bytes.len();
+            }
             let boxed = bytes.into_boxed_slice();
             Box::into_raw(boxed) as *mut u8
         },
@@ -1005,7 +1007,12 @@ pub extern "C" fn document_editor_get_page_crop_box(
         },
         Ok(None) => {
             set_error(error_code, ERR_SUCCESS);
-            unsafe { *x = 0.0; *y = 0.0; *w = 0.0; *h = 0.0; }
+            unsafe {
+                *x = 0.0;
+                *y = 0.0;
+                *w = 0.0;
+                *h = 0.0;
+            }
             0
         },
         Err(e) => {
@@ -1103,7 +1110,11 @@ pub extern "C" fn document_editor_is_page_marked_for_flatten(
         return -1;
     }
     let editor = unsafe { &*handle };
-    if editor.is_page_marked_for_flatten(page) { 1 } else { 0 }
+    if editor.is_page_marked_for_flatten(page) {
+        1
+    } else {
+        0
+    }
 }
 
 /// Remove the flatten mark from a page.
@@ -1133,7 +1144,11 @@ pub extern "C" fn document_editor_is_page_marked_for_redaction(
         return -1;
     }
     let editor = unsafe { &*handle };
-    if editor.is_page_marked_for_redaction(page) { 1 } else { 0 }
+    if editor.is_page_marked_for_redaction(page) {
+        1
+    } else {
+        0
+    }
 }
 
 /// Remove the redaction mark from a page.
@@ -2766,25 +2781,45 @@ pub extern "C" fn pdf_document_sign(
             return -1;
         }
         let doc = unsafe { &mut *(document_handle as *mut PdfDocument) };
-        let creds = unsafe { &*(certificate_handle as *const crate::signatures::SigningCredentials) };
+        let creds =
+            unsafe { &*(certificate_handle as *const crate::signatures::SigningCredentials) };
         if doc.source_bytes.is_empty() {
             set_error(error_code, ERR_INVALID_ARG);
             return -1;
         }
-        let reason_str = if reason.is_null() { None } else {
-            Some(unsafe { std::ffi::CStr::from_ptr(reason).to_string_lossy().into_owned() })
+        let reason_str = if reason.is_null() {
+            None
+        } else {
+            Some(unsafe {
+                std::ffi::CStr::from_ptr(reason)
+                    .to_string_lossy()
+                    .into_owned()
+            })
         };
-        let location_str = if location.is_null() { None } else {
-            Some(unsafe { std::ffi::CStr::from_ptr(location).to_string_lossy().into_owned() })
+        let location_str = if location.is_null() {
+            None
+        } else {
+            Some(unsafe {
+                std::ffi::CStr::from_ptr(location)
+                    .to_string_lossy()
+                    .into_owned()
+            })
         };
-        let opts = SignOptions { reason: reason_str, location: location_str, ..Default::default() };
+        let opts = SignOptions {
+            reason: reason_str,
+            location: location_str,
+            ..Default::default()
+        };
         match sign_pdf_bytes(&doc.source_bytes.clone(), creds, opts) {
             Ok(signed) => {
                 doc.source_bytes = signed;
                 set_error(error_code, ERR_SUCCESS);
                 0
             },
-            Err(e) => { set_error(error_code, classify_error(&e)); -1 },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                -1
+            },
         }
     }
     #[cfg(not(feature = "signatures"))]
@@ -2819,22 +2854,44 @@ pub unsafe extern "C" fn pdf_sign_bytes(
             return ptr::null_mut();
         }
         let data = unsafe { std::slice::from_raw_parts(pdf_data, pdf_len) };
-        let creds = unsafe { &*(certificate_handle as *const crate::signatures::SigningCredentials) };
-        let reason_str = if reason.is_null() { None } else {
-            Some(unsafe { std::ffi::CStr::from_ptr(reason).to_string_lossy().into_owned() })
+        let creds =
+            unsafe { &*(certificate_handle as *const crate::signatures::SigningCredentials) };
+        let reason_str = if reason.is_null() {
+            None
+        } else {
+            Some(unsafe {
+                std::ffi::CStr::from_ptr(reason)
+                    .to_string_lossy()
+                    .into_owned()
+            })
         };
-        let location_str = if location.is_null() { None } else {
-            Some(unsafe { std::ffi::CStr::from_ptr(location).to_string_lossy().into_owned() })
+        let location_str = if location.is_null() {
+            None
+        } else {
+            Some(unsafe {
+                std::ffi::CStr::from_ptr(location)
+                    .to_string_lossy()
+                    .into_owned()
+            })
         };
-        let opts = SignOptions { reason: reason_str, location: location_str, ..Default::default() };
+        let opts = SignOptions {
+            reason: reason_str,
+            location: location_str,
+            ..Default::default()
+        };
         match sign_pdf_bytes(data, creds, opts) {
             Ok(signed) => {
                 set_error(error_code, ERR_SUCCESS);
-                unsafe { *out_len = signed.len(); }
+                unsafe {
+                    *out_len = signed.len();
+                }
                 let boxed = signed.into_boxed_slice();
                 Box::into_raw(boxed) as *mut u8
             },
-            Err(e) => { set_error(error_code, classify_error(&e)); ptr::null_mut() },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
         }
     }
     #[cfg(not(feature = "signatures"))]
@@ -6706,9 +6763,7 @@ pub extern "C" fn document_editor_flatten_forms_on_page(
 /// Each warning names a widget field that had no `/AP` appearance stream.
 /// Returns -1 if `handle` is null.
 #[no_mangle]
-pub extern "C" fn document_editor_flatten_warnings_count(
-    handle: *const DocumentEditor,
-) -> i32 {
+pub extern "C" fn document_editor_flatten_warnings_count(handle: *const DocumentEditor) -> i32 {
     if handle.is_null() {
         return -1;
     }
@@ -8643,7 +8698,13 @@ pub extern "C" fn pdf_page_builder_signature_field(
     push_page_op(
         handle,
         error_code,
-        FfiPageOp::SignatureField { name: name_s, x, y, w, h },
+        FfiPageOp::SignatureField {
+            name: name_s,
+            x,
+            y,
+            w,
+            h,
+        },
     )
 }
 
@@ -8671,7 +8732,10 @@ pub extern "C" fn pdf_page_builder_footnote(
     push_page_op(
         handle,
         error_code,
-        FfiPageOp::Footnote { ref_mark: ref_mark_s, note_text: note_text_s },
+        FfiPageOp::Footnote {
+            ref_mark: ref_mark_s,
+            note_text: note_text_s,
+        },
     )
 }
 
@@ -8694,7 +8758,11 @@ pub extern "C" fn pdf_page_builder_columns(
     push_page_op(
         handle,
         error_code,
-        FfiPageOp::Columns { count: column_count, gap_pt, text: text_s },
+        FfiPageOp::Columns {
+            count: column_count,
+            gap_pt,
+            text: text_s,
+        },
     )
 }
 
@@ -8711,7 +8779,9 @@ pub extern "C" fn pdf_page_builder_inline(
     text: *const c_char,
     error_code: *mut i32,
 ) -> i32 {
-    let Some(s) = read_cstr_or_fail(text, error_code) else { return -1; };
+    let Some(s) = read_cstr_or_fail(text, error_code) else {
+        return -1;
+    };
     push_page_op(handle, error_code, FfiPageOp::Inline(s))
 }
 
@@ -8725,7 +8795,9 @@ pub extern "C" fn pdf_page_builder_inline_bold(
     text: *const c_char,
     error_code: *mut i32,
 ) -> i32 {
-    let Some(s) = read_cstr_or_fail(text, error_code) else { return -1; };
+    let Some(s) = read_cstr_or_fail(text, error_code) else {
+        return -1;
+    };
     push_page_op(handle, error_code, FfiPageOp::InlineBold(s))
 }
 
@@ -8739,7 +8811,9 @@ pub extern "C" fn pdf_page_builder_inline_italic(
     text: *const c_char,
     error_code: *mut i32,
 ) -> i32 {
-    let Some(s) = read_cstr_or_fail(text, error_code) else { return -1; };
+    let Some(s) = read_cstr_or_fail(text, error_code) else {
+        return -1;
+    };
     push_page_op(handle, error_code, FfiPageOp::InlineItalic(s))
 }
 
@@ -8756,7 +8830,9 @@ pub extern "C" fn pdf_page_builder_inline_color(
     text: *const c_char,
     error_code: *mut i32,
 ) -> i32 {
-    let Some(s) = read_cstr_or_fail(text, error_code) else { return -1; };
+    let Some(s) = read_cstr_or_fail(text, error_code) else {
+        return -1;
+    };
     push_page_op(handle, error_code, FfiPageOp::InlineColor { r, g, b, text: s })
 }
 
@@ -8844,7 +8920,17 @@ pub extern "C" fn pdf_page_builder_barcode_qr(
             return -1;
         },
     };
-    push_page_op(handle, error_code, FfiPageOp::BarcodeImage { bytes, x, y, w: size, h: size })
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::BarcodeImage {
+            bytes,
+            x,
+            y,
+            w: size,
+            h: size,
+        },
+    )
 }
 
 /// Embed an image at `(x, y, w, h)` with an accessibility alt text.
@@ -8874,7 +8960,14 @@ pub unsafe extern "C" fn pdf_page_builder_image_with_alt(
     push_page_op(
         handle,
         error_code,
-        FfiPageOp::ImageWithAlt { bytes: data, x, y, w, h, alt_text: alt },
+        FfiPageOp::ImageWithAlt {
+            bytes: data,
+            x,
+            y,
+            w,
+            h,
+            alt_text: alt,
+        },
     )
 }
 
@@ -8897,7 +8990,17 @@ pub unsafe extern "C" fn pdf_page_builder_image_artifact(
         return -1;
     }
     let data = unsafe { std::slice::from_raw_parts(bytes, len) }.to_vec();
-    push_page_op(handle, error_code, FfiPageOp::ImageArtifact { bytes: data, x, y, w, h })
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::ImageArtifact {
+            bytes: data,
+            x,
+            y,
+            w,
+            h,
+        },
+    )
 }
 
 // ── Low-level graphics primitives (PdfWriter exposure) ────────────────
@@ -9080,17 +9183,14 @@ pub extern "C" fn pdf_page_builder_table(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    if (widths.is_null() && n_columns > 0)
-        || (aligns.is_null() && n_columns > 0)
+    if (aligns.is_null() || widths.is_null()) && n_columns > 0
         || (cell_strings.is_null() && n_rows > 0)
     {
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let widths_vec: Vec<f32> =
-        unsafe { std::slice::from_raw_parts(widths, n_columns) }.to_vec();
-    let aligns_vec: Vec<i32> =
-        unsafe { std::slice::from_raw_parts(aligns, n_columns) }.to_vec();
+    let widths_vec: Vec<f32> = unsafe { std::slice::from_raw_parts(widths, n_columns) }.to_vec();
+    let aligns_vec: Vec<i32> = unsafe { std::slice::from_raw_parts(aligns, n_columns) }.to_vec();
 
     let total = n_rows.saturating_mul(n_columns);
     let mut rows: Vec<Vec<String>> = Vec::with_capacity(n_rows);
@@ -9151,11 +9251,7 @@ pub extern "C" fn pdf_page_builder_streaming_table_begin(
     repeat_header: i32,
     error_code: *mut i32,
 ) -> i32 {
-    if n_columns == 0
-        || headers.is_null()
-        || widths.is_null()
-        || aligns.is_null()
-    {
+    if n_columns == 0 || headers.is_null() || widths.is_null() || aligns.is_null() {
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
@@ -9453,7 +9549,14 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
                 }
                 continue;
             },
-            FfiPageOp::ImageWithAlt { bytes, x, y, w, h, alt_text } => {
+            FfiPageOp::ImageWithAlt {
+                bytes,
+                x,
+                y,
+                w,
+                h,
+                alt_text,
+            } => {
                 let rp = match rust_page_opt.take() {
                     Some(p) => p,
                     None => {
@@ -9482,10 +9585,9 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
                         return -1;
                     },
                 };
-                match rp.image_from_bytes_as_artifact(
-                    &bytes,
-                    crate::geometry::Rect::new(x, y, w, h),
-                ) {
+                match rp
+                    .image_from_bytes_as_artifact(&bytes, crate::geometry::Rect::new(x, y, w, h))
+                {
                     Ok(p) => rust_page_opt = Some(p),
                     Err(_) => {
                         set_error(error_code, ERR_INTERNAL);
@@ -9579,18 +9681,19 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
             FfiPageOp::SignatureField { name, x, y, w, h } => {
                 rust_page.signature_field(name, x, y, w, h)
             },
-            FfiPageOp::Footnote { ref_mark, note_text } => {
-                rust_page.footnote(&ref_mark, &note_text)
-            },
-            FfiPageOp::Columns { count, gap_pt, text } => {
-                rust_page.columns(count, gap_pt, &text)
-            },
+            FfiPageOp::Footnote {
+                ref_mark,
+                note_text,
+            } => rust_page.footnote(&ref_mark, &note_text),
+            FfiPageOp::Columns {
+                count,
+                gap_pt,
+                text,
+            } => rust_page.columns(count, gap_pt, &text),
             FfiPageOp::Inline(text) => rust_page.inline(&text),
             FfiPageOp::InlineBold(text) => rust_page.inline_bold(&text),
             FfiPageOp::InlineItalic(text) => rust_page.inline_italic(&text),
-            FfiPageOp::InlineColor { r, g, b, text } => {
-                rust_page.inline_color(r, g, b, &text)
-            },
+            FfiPageOp::InlineColor { r, g, b, text } => rust_page.inline_color(r, g, b, &text),
             FfiPageOp::Newline => rust_page.newline(),
             FfiPageOp::Rect(x, y, w, h) => rust_page.rect(x, y, w, h),
             FfiPageOp::FilledRect(x, y, w, h, r, g, b) => {
@@ -9606,13 +9709,7 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
                 r,
                 g,
                 b,
-            } => rust_page.stroke_rect(
-                x,
-                y,
-                w,
-                h,
-                crate::writer::LineStyle::new(width, r, g, b),
-            ),
+            } => rust_page.stroke_rect(x, y, w, h, crate::writer::LineStyle::new(width, r, g, b)),
             FfiPageOp::StrokeLine {
                 x1,
                 y1,
@@ -9622,13 +9719,9 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
                 r,
                 g,
                 b,
-            } => rust_page.stroke_line(
-                x1,
-                y1,
-                x2,
-                y2,
-                crate::writer::LineStyle::new(width, r, g, b),
-            ),
+            } => {
+                rust_page.stroke_line(x1, y1, x2, y2, crate::writer::LineStyle::new(width, r, g, b))
+            },
             FfiPageOp::TextInRect {
                 x,
                 y,
@@ -9653,7 +9746,11 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
             } => {
                 let cells: Vec<Vec<crate::writer::TableCell>> = rows
                     .into_iter()
-                    .map(|row| row.into_iter().map(crate::writer::TableCell::text).collect())
+                    .map(|row| {
+                        row.into_iter()
+                            .map(crate::writer::TableCell::text)
+                            .collect()
+                    })
                     .collect();
                 let mut table = crate::writer::Table::new(cells);
                 let col_widths: Vec<crate::writer::ColumnWidth> = widths
@@ -9680,9 +9777,9 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
             | FfiPageOp::StreamingTableFinish
             | FfiPageOp::BarcodeImage { .. }
             | FfiPageOp::ImageWithAlt { .. }
-            | FfiPageOp::ImageArtifact { .. } => unreachable!(
-                "streaming ops handled above; reaching here is a replay-loop bug"
-            ),
+            | FfiPageOp::ImageArtifact { .. } => {
+                unreachable!("streaming ops handled above; reaching here is a replay-loop bug")
+            },
         });
     }
 
@@ -9986,7 +10083,10 @@ mod tests {
 
     #[test]
     fn classify_parse_error_returns_parse() {
-        let e = Error::ParseError { offset: 0, reason: "bad token".into() };
+        let e = Error::ParseError {
+            offset: 0,
+            reason: "bad token".into(),
+        };
         assert_eq!(classify_error(&e), ERR_PARSE);
     }
 

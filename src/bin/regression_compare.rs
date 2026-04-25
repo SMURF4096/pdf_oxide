@@ -5,8 +5,8 @@
 
 use pdf_oxide::PdfDocument;
 use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::env;
+use std::hash::{Hash, Hasher};
 use std::time::Instant;
 
 fn text_hash(s: &str) -> u64 {
@@ -15,34 +15,47 @@ fn text_hash(s: &str) -> u64 {
     h.finish()
 }
 
-fn json_str(s: &str) -> String { format!("\"{}\"", escape(s)) }
+fn json_str(s: &str) -> String {
+    format!("\"{}\"", escape(s))
+}
 fn escape(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n")
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
 }
 
 fn main() {
     let path = match env::args().nth(1) {
         Some(p) => p,
-        None => { eprintln!("usage: regression_compare <pdf>"); std::process::exit(1); }
+        None => {
+            eprintln!("usage: regression_compare <pdf>");
+            std::process::exit(1);
+        },
     };
 
     let t0 = Instant::now();
     let doc = match PdfDocument::open(&path) {
         Ok(d) => d,
         Err(e) => {
-            println!("{{\"type\":\"error\",\"path\":{},\"stage\":\"open\",\"msg\":{}}}",
-                json_str(&path), json_str(&e.to_string()));
+            println!(
+                "{{\"type\":\"error\",\"path\":{},\"stage\":\"open\",\"msg\":{}}}",
+                json_str(&path),
+                json_str(&e.to_string())
+            );
             return;
-        }
+        },
     };
 
     let page_count = match doc.page_count() {
         Ok(n) => n,
         Err(e) => {
-            println!("{{\"type\":\"error\",\"path\":{},\"stage\":\"page_count\",\"msg\":{}}}",
-                json_str(&path), json_str(&e.to_string()));
+            println!(
+                "{{\"type\":\"error\",\"path\":{},\"stage\":\"page_count\",\"msg\":{}}}",
+                json_str(&path),
+                json_str(&e.to_string())
+            );
             return;
-        }
+        },
     };
 
     let mut total_nonws: i64 = 0;
@@ -58,12 +71,16 @@ fn main() {
                 total_nonws += nonws;
                 println!("{{\"type\":\"page\",\"path\":{},\"page\":{},\"nonws\":{},\"hash\":{},\"ms\":{}}}",
                     json_str(&path), i, nonws, hash, ms);
-            }
+            },
             Err(e) => {
                 errors += 1;
-                println!("{{\"type\":\"page_err\",\"path\":{},\"page\":{},\"msg\":{}}}",
-                    json_str(&path), i, json_str(&e.to_string()));
-            }
+                println!(
+                    "{{\"type\":\"page_err\",\"path\":{},\"page\":{},\"msg\":{}}}",
+                    json_str(&path),
+                    i,
+                    json_str(&e.to_string())
+                );
+            },
         }
     }
 

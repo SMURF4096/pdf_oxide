@@ -62,7 +62,7 @@ fn test_recursive_xobject_image_extraction_safety() {
         .as_bytes(),
     );
 
-    let mut doc = PdfDocument::from_bytes(pdf).expect("Failed to parse PDF");
+    let doc = PdfDocument::from_bytes(pdf).expect("Failed to parse PDF");
 
     let options = ConversionOptions {
         include_images: true,

@@ -73,7 +73,7 @@ fn stroke_fill_overlap_does_not_double_text() {
     let tmp = tempfile::NamedTempFile::new().expect("temp");
     std::fs::write(tmp.path(), &pdf).unwrap();
 
-    let mut doc = PdfDocument::open(tmp.path()).expect("open");
+    let doc = PdfDocument::open(tmp.path()).expect("open");
     let text = doc.extract_text(0).expect("extract");
 
     let count = text.matches("Everest").count();

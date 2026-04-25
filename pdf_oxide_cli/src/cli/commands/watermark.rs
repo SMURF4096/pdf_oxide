@@ -17,7 +17,7 @@ pub fn run(
 ) -> pdf_oxide::Result<()> {
     let _ = password;
 
-    let mut doc = super::open_doc(file, None)?;
+    let doc = super::open_doc(file, None)?;
     let page_count = doc.page_count()?;
     drop(doc);
 

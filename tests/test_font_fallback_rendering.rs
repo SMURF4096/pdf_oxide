@@ -53,7 +53,7 @@ fn create_text_pdf() -> Vec<u8> {
 #[test]
 fn test_text_extraction_with_standard_font() {
     let pdf_bytes = create_text_pdf();
-    let mut doc = PdfDocument::from_bytes(pdf_bytes).unwrap();
+    let doc = PdfDocument::from_bytes(pdf_bytes).unwrap();
     let text = doc.extract_text(0).unwrap_or_default();
     assert!(text.contains("Sample text"), "Should extract readable text, got: '{}'", text);
 }
@@ -72,7 +72,7 @@ fn test_text_preserved_after_save_roundtrip() {
         .unwrap();
 
     let saved_bytes = std::fs::read(&saved_path).unwrap();
-    let mut saved_doc = PdfDocument::from_bytes(saved_bytes).unwrap();
+    let saved_doc = PdfDocument::from_bytes(saved_bytes).unwrap();
     let text = saved_doc.extract_text(0).unwrap_or_default();
     assert!(
         text.contains("Sample text"),

@@ -39,7 +39,7 @@ fn document_builder_registered_embedded_font_round_trips_cyrillic() {
 
     let bytes = builder.build().expect("build should succeed");
 
-    let mut doc = PdfDocument::from_bytes(bytes).expect("parse produced pdf");
+    let doc = PdfDocument::from_bytes(bytes).expect("parse produced pdf");
     let text = doc.extract_text(0).expect("extract_text should succeed");
 
     assert!(text.contains("Привет, мир!"), "Cyrillic round-trip failed — got: {text:?}");
@@ -111,7 +111,7 @@ fn document_builder_mixed_base14_and_embedded_on_same_page() {
 
     let bytes = builder.build().expect("build should succeed");
 
-    let mut doc = PdfDocument::from_bytes(bytes).expect("parse produced pdf");
+    let doc = PdfDocument::from_bytes(bytes).expect("parse produced pdf");
     let text = doc.extract_text(0).expect("extract_text should succeed");
 
     assert!(text.contains("English via base-14"), "base-14 text missing: {text:?}");

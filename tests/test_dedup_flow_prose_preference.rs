@@ -99,7 +99,7 @@ fn dedup_prefers_flow_prose_copy_over_positioned_copy() {
     let tmp = tempfile::NamedTempFile::new().expect("temp");
     std::fs::write(tmp.path(), &pdf).unwrap();
 
-    let mut doc = PdfDocument::open(tmp.path()).expect("open");
+    let doc = PdfDocument::open(tmp.path()).expect("open");
     let text = doc.extract_text(0).expect("extract");
 
     // Baseline sanity: the extracted output must contain every word in

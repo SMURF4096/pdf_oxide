@@ -82,7 +82,7 @@ fn two_page_same_font_key_different_cmap(char1: char, char2: char) -> Vec<u8> {
 
     out.extend_from_slice(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n");
 
-    let mut push = |out: &mut Vec<u8>, offsets: &mut Vec<usize>, body: String| {
+    let push = |out: &mut Vec<u8>, offsets: &mut Vec<usize>, body: String| {
         offsets.push(out.len());
         let id = offsets.len() - 1;
         out.extend_from_slice(format!("{id} 0 obj\n{body}\nendobj\n").as_bytes());
@@ -97,19 +97,17 @@ fn two_page_same_font_key_different_cmap(char1: char, char2: char) -> Vec<u8> {
     push(
         &mut out,
         &mut offsets,
-        format!(
-            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] \
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] \
              /Resources << /Font << /F1 10 0 R >> >> /Contents 5 0 R >>"
-        ),
+            .to_string(),
     );
     // 4: Page 2  — font key /F1 → object 20 (different ObjectRef!)
     push(
         &mut out,
         &mut offsets,
-        format!(
-            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] \
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] \
              /Resources << /Font << /F1 20 0 R >> >> /Contents 6 0 R >>"
-        ),
+            .to_string(),
     );
 
     // 5: Content stream for page 1
@@ -279,14 +277,8 @@ fn font_layer4_cache_reuses_when_fonts_are_truly_identical() {
     let p0 = doc.extract_text(0).unwrap();
     let p1 = doc.extract_text(1).unwrap();
 
-    assert!(
-        p0.contains(char1),
-        "page 0 must contain '{char1}', got {p0:?}"
-    );
-    assert!(
-        p1.contains(char1),
-        "page 1 must contain '{char1}', got {p1:?}"
-    );
+    assert!(p0.contains(char1), "page 0 must contain '{char1}', got {p0:?}");
+    assert!(p1.contains(char1), "page 1 must contain '{char1}', got {p1:?}");
 }
 
 /// Regression guard against the IRS Form 1040 reproducer pattern:

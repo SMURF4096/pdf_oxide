@@ -18,7 +18,7 @@ fn test_extract_text_degenerate_ctm_no_oom() {
     // Create a synthetic PDF with a page that has a degenerate CTM
     // producing extremely wide span coordinates.
     let pdf_bytes = create_pdf_with_degenerate_ctm();
-    let mut doc = PdfDocument::from_bytes(pdf_bytes).unwrap();
+    let doc = PdfDocument::from_bytes(pdf_bytes).unwrap();
 
     // This must not panic or SIGABRT — should gracefully fall back
     let result = doc.extract_text(0);

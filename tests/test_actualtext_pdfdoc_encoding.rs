@@ -15,7 +15,10 @@ use pdf_oxide::PdfDocument;
 /// /WinAnsiEncoding), but the extraction should prefer /ActualText when present.
 fn build_pdf_with_actual_text(actual_text_bytes: &[u8]) -> Vec<u8> {
     // Escape the bytes as a PDF hex string <HHHH...>
-    let hex: String = actual_text_bytes.iter().map(|b| format!("{:02X}", b)).collect();
+    let hex: String = actual_text_bytes
+        .iter()
+        .map(|b| format!("{:02X}", b))
+        .collect();
 
     // Content stream: mark content with ActualText, draw a glyph.
     // PDF content stream syntax: operands first, then operator.
@@ -41,18 +44,14 @@ fn build_pdf_with_actual_text(actual_text_bytes: &[u8]) -> Vec<u8> {
         }};
     }
 
-    push!("<< /Type /Catalog /Pages 2 0 R >>");           // 1
-    push!("<< /Type /Pages /Kids [3 0 R] /Count 1 >>");   // 2
+    push!("<< /Type /Catalog /Pages 2 0 R >>"); // 1
+    push!("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"); // 2
     push!(format!(
         "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] \
          /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"
-    ));                                                     // 3
-    push!(font_obj);                                        // 4
-    push!(format!(
-        "<< /Length {} >>\nstream\n{}endstream",
-        content.len(),
-        content
-    ));                                                     // 5
+    )); // 3
+    push!(font_obj); // 4
+    push!(format!("<< /Length {} >>\nstream\n{}endstream", content.len(), content)); // 5
 
     let xref_offset = out.len();
     out.extend_from_slice(format!("xref\n0 {}\n", off.len()).as_bytes());
@@ -60,10 +59,14 @@ fn build_pdf_with_actual_text(actual_text_bytes: &[u8]) -> Vec<u8> {
     for &o in &off[1..] {
         out.extend_from_slice(format!("{:010} 00000 n \n", o).as_bytes());
     }
-    out.extend_from_slice(format!(
-        "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
-        off.len(), xref_offset
-    ).as_bytes());
+    out.extend_from_slice(
+        format!(
+            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
+            off.len(),
+            xref_offset
+        )
+        .as_bytes(),
+    );
     out
 }
 

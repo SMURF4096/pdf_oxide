@@ -1558,7 +1558,10 @@ impl DocumentEditor {
                                 "Length".to_string(),
                                 Object::Integer(compressed.len() as i64),
                             );
-                            Object::Stream { dict, data: compressed.into() }
+                            Object::Stream {
+                                dict,
+                                data: compressed.into(),
+                            }
                         },
                         Err(_) => Object::Stream { dict, data },
                     }
@@ -1578,38 +1581,38 @@ impl DocumentEditor {
         // Set up encryption if configured
         let (file_id, encrypt_dict, encryption_handler) =
             if let Some(config) = options.encryption.as_ref() {
-            let (id1, id2) = generate_file_id();
+                let (id1, id2) = generate_file_id();
 
-            // Convert EncryptionAlgorithm to encryption::Algorithm
-            let algorithm = match config.algorithm {
-                EncryptionAlgorithm::Rc4_40 => Algorithm::RC4_40,
-                EncryptionAlgorithm::Rc4_128 => Algorithm::Rc4_128,
-                EncryptionAlgorithm::Aes128 => Algorithm::Aes128,
-                EncryptionAlgorithm::Aes256 => Algorithm::Aes256,
+                // Convert EncryptionAlgorithm to encryption::Algorithm
+                let algorithm = match config.algorithm {
+                    EncryptionAlgorithm::Rc4_40 => Algorithm::RC4_40,
+                    EncryptionAlgorithm::Rc4_128 => Algorithm::Rc4_128,
+                    EncryptionAlgorithm::Aes128 => Algorithm::Aes128,
+                    EncryptionAlgorithm::Aes256 => Algorithm::Aes256,
+                };
+
+                // Build encryption dictionary
+                let encrypt_dict = EncryptDictBuilder::new(algorithm)
+                    .user_password(config.user_password.as_bytes())
+                    .owner_password(config.owner_password.as_bytes())
+                    .permissions(config.permissions.to_bits())
+                    .encrypt_metadata(true)
+                    .build(&id1);
+
+                // Create encryption handler
+                let handler = EncryptionWriteHandler::new(
+                    config.user_password.as_bytes(),
+                    &encrypt_dict.owner_password,
+                    encrypt_dict.permissions,
+                    &id1,
+                    algorithm,
+                    true,
+                );
+
+                (Some((id1, id2)), Some(encrypt_dict), Some(handler))
+            } else {
+                (None, None, None)
             };
-
-            // Build encryption dictionary
-            let encrypt_dict = EncryptDictBuilder::new(algorithm)
-                .user_password(config.user_password.as_bytes())
-                .owner_password(config.owner_password.as_bytes())
-                .permissions(config.permissions.to_bits())
-                .encrypt_metadata(true)
-                .build(&id1);
-
-            // Create encryption handler
-            let handler = EncryptionWriteHandler::new(
-                config.user_password.as_bytes(),
-                &encrypt_dict.owner_password,
-                encrypt_dict.permissions,
-                &id1,
-                algorithm,
-                true,
-            );
-
-            (Some((id1, id2)), Some(encrypt_dict), Some(handler))
-        } else {
-            (None, None, None)
-        };
 
         // Helper to serialize with or without encryption
         let serialize_obj = |s: &ObjectSerializer,
@@ -3277,10 +3280,7 @@ impl DocumentEditor {
             }
             if let Some(ref reachable) = reachable_ids {
                 if !reachable.contains(&obj_id) {
-                    log::debug!(
-                        "write_full_to_writer: GC dropping unreachable object {}",
-                        obj_id
-                    );
+                    log::debug!("write_full_to_writer: GC dropping unreachable object {}", obj_id);
                     continue;
                 }
             }
@@ -3390,7 +3390,7 @@ impl DocumentEditor {
     /// `Ok(None)` if no structure is available,
     /// `Err` if an error occurs during extraction
     pub fn get_page_content(&mut self, page_index: usize) -> Result<Option<StructureElement>> {
-        HierarchicalExtractor::extract_page(&mut self.source, page_index)
+        HierarchicalExtractor::extract_page(&self.source, page_index)
     }
 
     /// Replace the content of a page with a new structure.
@@ -3477,7 +3477,7 @@ impl DocumentEditor {
             structure
         } else {
             // If no modified content, try to extract from original
-            match HierarchicalExtractor::extract_page(&mut self.source, page_index)? {
+            match HierarchicalExtractor::extract_page(&self.source, page_index)? {
                 Some(structure) => structure,
                 None => {
                     // Create empty structure if extraction fails
@@ -4294,7 +4294,7 @@ impl DocumentEditor {
         use crate::extractors::forms::FormExtractor;
 
         // Extract fields from source document
-        let source_fields = FormExtractor::extract_fields(&mut self.source)?;
+        let source_fields = FormExtractor::extract_fields(&self.source)?;
 
         // Build page ref -> index map for resolving field page indices
         let page_count = self.source.page_count()?;
@@ -4404,7 +4404,7 @@ impl DocumentEditor {
         }
 
         // Look up in original document
-        let source_fields = FormExtractor::extract_fields(&mut self.source)?;
+        let source_fields = FormExtractor::extract_fields(&self.source)?;
 
         for field in source_fields {
             if field.full_name == name {
@@ -4449,7 +4449,7 @@ impl DocumentEditor {
         }
 
         // Look up in original document
-        let source_fields = FormExtractor::extract_fields(&mut self.source)?;
+        let source_fields = FormExtractor::extract_fields(&self.source)?;
 
         for field in source_fields {
             if field.full_name == name {
@@ -4796,7 +4796,7 @@ impl DocumentEditor {
         }
 
         // Look up in original document and create wrapper
-        let source_fields = FormExtractor::extract_fields(&mut self.source)?;
+        let source_fields = FormExtractor::extract_fields(&self.source)?;
 
         for field in source_fields {
             if field.full_name == name {
@@ -5045,7 +5045,7 @@ impl DocumentEditor {
         }
 
         // Look up in original document and create wrapper
-        let source_fields = FormExtractor::extract_fields(&mut self.source)?;
+        let source_fields = FormExtractor::extract_fields(&self.source)?;
 
         for field in source_fields {
             if field.full_name == name {
@@ -5087,7 +5087,7 @@ impl DocumentEditor {
     /// ```
     pub fn export_form_data_fdf(&mut self, output_path: impl AsRef<std::path::Path>) -> Result<()> {
         use crate::extractors::forms::FormExtractor;
-        FormExtractor::export_fdf(&mut self.source, output_path)
+        FormExtractor::export_fdf(&self.source, output_path)
     }
 
     /// Export form field data to XFDF format.
@@ -5112,7 +5112,7 @@ impl DocumentEditor {
         output_path: impl AsRef<std::path::Path>,
     ) -> Result<()> {
         use crate::extractors::forms::FormExtractor;
-        FormExtractor::export_xfdf(&mut self.source, output_path)
+        FormExtractor::export_xfdf(&self.source, output_path)
     }
 
     /// Get widget annotation appearances for form flattening.
@@ -5154,9 +5154,7 @@ impl DocumentEditor {
                             .as_ref()
                             .and_then(|d| d.get("T"))
                             .and_then(|t| match t {
-                                Object::String(s) => {
-                                    String::from_utf8(s.clone()).ok()
-                                },
+                                Object::String(s) => String::from_utf8(s.clone()).ok(),
                                 _ => None,
                             })
                             .unwrap_or_else(|| format!("widget@page{}", page));

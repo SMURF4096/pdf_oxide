@@ -609,11 +609,7 @@ impl FormFieldWidget for ListBoxWidget {
             if self.values.len() == 1 {
                 dict.insert("V".to_string(), Object::text_string(&self.values[0]));
             } else {
-                let v_array: Vec<Object> = self
-                    .values
-                    .iter()
-                    .map(|v| Object::text_string(v))
-                    .collect();
+                let v_array: Vec<Object> = self.values.iter().map(Object::text_string).collect();
                 dict.insert("V".to_string(), Object::Array(v_array));
             }
         }
@@ -621,15 +617,12 @@ impl FormFieldWidget for ListBoxWidget {
         // Default value(s)
         if !self.default_values.is_empty() {
             if self.default_values.len() == 1 {
-                dict.insert(
-                    "DV".to_string(),
-                    Object::text_string(&self.default_values[0]),
-                );
+                dict.insert("DV".to_string(), Object::text_string(&self.default_values[0]));
             } else {
                 let dv_array: Vec<Object> = self
                     .default_values
                     .iter()
-                    .map(|v| Object::text_string(v))
+                    .map(Object::text_string)
                     .collect();
                 dict.insert("DV".to_string(), Object::Array(dv_array));
             }

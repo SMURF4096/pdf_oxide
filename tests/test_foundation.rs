@@ -24,14 +24,14 @@ fn test_pdf_version() {
 
 #[test]
 fn test_page_count() {
-    let mut pdf = PdfDocument::open(SIMPLE_PDF_PATH).expect("Failed to open simple.pdf");
+    let pdf = PdfDocument::open(SIMPLE_PDF_PATH).expect("Failed to open simple.pdf");
     let count = pdf.page_count().expect("Failed to get page count");
     assert_eq!(count, 1, "simple.pdf should have 1 page");
 }
 
 #[test]
 fn test_load_catalog() {
-    let mut pdf = PdfDocument::open(SIMPLE_PDF_PATH).expect("Failed to open simple.pdf");
+    let pdf = PdfDocument::open(SIMPLE_PDF_PATH).expect("Failed to open simple.pdf");
     let catalog = pdf.catalog().expect("Failed to load catalog");
 
     // Catalog should be a dictionary
@@ -124,7 +124,7 @@ fn test_load_nonexistent_object() {
 
 #[test]
 fn test_catalog_to_pages_to_count_flow() {
-    let mut pdf = PdfDocument::open(SIMPLE_PDF_PATH).expect("Failed to open simple.pdf");
+    let pdf = PdfDocument::open(SIMPLE_PDF_PATH).expect("Failed to open simple.pdf");
 
     // Get catalog
     let catalog = pdf.catalog().expect("Failed to load catalog");
@@ -175,7 +175,7 @@ fn test_media_box_array() {
 
 #[test]
 fn test_full_document_structure() {
-    let mut pdf = PdfDocument::open(SIMPLE_PDF_PATH).expect("Failed to open simple.pdf");
+    let pdf = PdfDocument::open(SIMPLE_PDF_PATH).expect("Failed to open simple.pdf");
 
     // Test complete document structure in one go
 

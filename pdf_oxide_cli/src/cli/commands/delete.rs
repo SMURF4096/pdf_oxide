@@ -13,7 +13,7 @@ pub fn run(
         )
     })?;
 
-    let mut doc = super::open_doc(file, password)?;
+    let doc = super::open_doc(file, password)?;
     let page_count = doc.page_count()?;
     drop(doc);
 

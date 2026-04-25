@@ -971,9 +971,8 @@ impl Table {
                 if let Some((r, g, b)) = bg {
                     let mut path =
                         PathContent::new(Rect::new(cell_x, cell_y, pos.width, pos.height));
-                    path.operations.push(PathOperation::Rectangle(
-                        cell_x, cell_y, pos.width, pos.height,
-                    ));
+                    path.operations
+                        .push(PathOperation::Rectangle(cell_x, cell_y, pos.width, pos.height));
                     path.fill_color = Some(Color { r, g, b });
                     path.stroke_color = None;
                     path.reading_order = Some(elements.len());
@@ -1568,11 +1567,8 @@ mod tests {
     fn test_multi_line_cell_layout_stores_wrapped_lines() {
         // A cell with content that must wrap into multiple lines.
         let long = "The quick brown fox jumps over the lazy dog";
-        let table = Table::new(vec![vec![
-            TableCell::text(long),
-            TableCell::text("short"),
-        ]])
-        .with_column_widths(vec![ColumnWidth::Fixed(60.0), ColumnWidth::Fixed(80.0)]);
+        let table = Table::new(vec![vec![TableCell::text(long), TableCell::text("short")]])
+            .with_column_widths(vec![ColumnWidth::Fixed(60.0), ColumnWidth::Fixed(80.0)]);
 
         let metrics = SimpleFontMetrics::default();
         let layout = table.calculate_layout(140.0, &metrics);
@@ -1620,10 +1616,7 @@ mod tests {
         let metrics = SimpleFontMetrics::default();
         let layout = table.calculate_layout(40.0, &metrics);
         let expected_lines = layout.cell_layouts[0][0].lines.len();
-        assert!(
-            expected_lines >= 3,
-            "fixture must wrap to >=3 lines to be meaningful"
-        );
+        assert!(expected_lines >= 3, "fixture must wrap to >=3 lines to be meaningful");
 
         // Render to a content stream and count `Tj` text-show operations.
         let mut builder = ContentStreamBuilder::new();
@@ -1650,10 +1643,8 @@ mod tests {
         use crate::elements::ContentElement;
 
         let long = "alpha beta gamma delta epsilon zeta eta theta";
-        let table = Table::new(vec![
-            vec![TableCell::text(long), TableCell::text("x")],
-        ])
-        .with_column_widths(vec![ColumnWidth::Fixed(40.0), ColumnWidth::Fixed(40.0)]);
+        let table = Table::new(vec![vec![TableCell::text(long), TableCell::text("x")]])
+            .with_column_widths(vec![ColumnWidth::Fixed(40.0), ColumnWidth::Fixed(40.0)]);
 
         let metrics = SimpleFontMetrics::default();
         let layout = table.calculate_layout(80.0, &metrics);

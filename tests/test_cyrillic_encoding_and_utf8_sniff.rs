@@ -99,7 +99,7 @@ fn cyrillic_differences_encoding_yields_unicode_cyrillic() {
     let tmp = tempfile::NamedTempFile::new().expect("temp");
     std::fs::write(tmp.path(), &pdf).unwrap();
 
-    let mut doc = PdfDocument::open(tmp.path()).expect("open");
+    let doc = PdfDocument::open(tmp.path()).expect("open");
     let text = doc.extract_text(0).expect("extract");
 
     // Expected: "ЛиСТ" — capital Л, lowercase и, lowercase с, capital Т.
@@ -204,7 +204,7 @@ fn utf8_bytes_under_winansi_font_decode_as_cyrillic() {
     let tmp = tempfile::NamedTempFile::new().expect("temp");
     std::fs::write(tmp.path(), &pdf).unwrap();
 
-    let mut doc = PdfDocument::open(tmp.path()).expect("open");
+    let doc = PdfDocument::open(tmp.path()).expect("open");
     let text = doc.extract_text(0).expect("extract");
 
     // "Лист" — we should see each Cyrillic codepoint, not its Latin-1

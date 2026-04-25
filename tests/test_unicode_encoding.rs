@@ -12,7 +12,7 @@
 //! file as the single byte 0xE9, not as the two-byte UTF-8 sequence 0xC3 0xA9.
 
 use pdf_oxide::object::encode_pdf_text_string;
-use pdf_oxide::writer::{DocumentBuilder, DocumentMetadata, PageSize};
+use pdf_oxide::writer::{DocumentBuilder, DocumentMetadata};
 
 // ---------------------------------------------------------------------------
 // Unit tests for encode_pdf_text_string
@@ -36,13 +36,7 @@ fn encode_portuguese_sentence() {
     let bytes = encode_pdf_text_string("Ação é lógica");
     // All chars are ≤ U+00FF, so each is its own byte
     for (i, ch) in "Ação é lógica".chars().enumerate() {
-        assert_eq!(
-            bytes[i], ch as u8,
-            "byte {} should be 0x{:02X} for '{}'",
-            i,
-            ch as u8,
-            ch
-        );
+        assert_eq!(bytes[i], ch as u8, "byte {} should be 0x{:02X} for '{}'", i, ch as u8, ch);
     }
 }
 
@@ -137,7 +131,9 @@ fn metadata_title_with_accents_uses_pdfdocencoding_not_utf8() {
     let mut builder = builder;
     builder.a4_page().done();
 
-    let pdf_bytes = builder.build().expect("DocumentBuilder::build should succeed");
+    let pdf_bytes = builder
+        .build()
+        .expect("DocumentBuilder::build should succeed");
 
     // UTF-8 encoding of é is 0xC3 0xA9 — must NOT appear
     let utf8_e_acute: &[u8] = &[0xC3, 0xA9]; // é
@@ -172,11 +168,7 @@ fn content_stream_latin1_text_uses_single_byte_not_utf8() {
     // Build a page that writes "Lógico" (the exact example from issue #402)
     // via the default Helvetica / base-14 font path.
     let mut builder = DocumentBuilder::new();
-    builder
-        .a4_page()
-        .at(72.0, 700.0)
-        .text("Lógico")
-        .done();
+    builder.a4_page().at(72.0, 700.0).text("Lógico").done();
 
     let pdf_bytes = builder.build().expect("build should succeed");
 

@@ -16,7 +16,7 @@ fn test_xobject_path_extraction_no_hang() {
         return;
     }
 
-    let mut doc = match PdfDocument::open(&fixture_path) {
+    let doc = match PdfDocument::open(&fixture_path) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("Failed to open fixture PDF: {}. Skipping test.", e);
@@ -55,7 +55,7 @@ fn test_extract_paths_from_multiple_pages() {
         return;
     }
 
-    let mut doc = match PdfDocument::open(&fixture_path) {
+    let doc = match PdfDocument::open(&fixture_path) {
         Ok(d) => d,
         Err(_) => return,
     };

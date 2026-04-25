@@ -476,7 +476,7 @@ fn test_editor_save_full_rewrite() {
         .unwrap();
 
     // Verify saved file is valid
-    let mut doc = PdfDocument::open(&out_path).unwrap();
+    let doc = PdfDocument::open(&out_path).unwrap();
     assert_eq!(doc.page_count().unwrap(), 1);
 
     let _ = std::fs::remove_file(&path);
@@ -493,7 +493,7 @@ fn test_editor_save_default() {
     let mut editor = DocumentEditor::open(&path).unwrap();
     editor.save(&out_path).unwrap();
 
-    let mut doc = PdfDocument::open(&out_path).unwrap();
+    let doc = PdfDocument::open(&out_path).unwrap();
     assert_eq!(doc.page_count().unwrap(), 1);
 
     let _ = std::fs::remove_file(&path);
@@ -1617,7 +1617,7 @@ fn test_editor_save_with_compression() {
     };
     editor.save_with_options(&out_path, opts).unwrap();
 
-    let mut doc = PdfDocument::open(&out_path).unwrap();
+    let doc = PdfDocument::open(&out_path).unwrap();
     assert_eq!(doc.page_count().unwrap(), 1);
 
     let _ = std::fs::remove_file(&path);
@@ -1640,7 +1640,7 @@ fn test_editor_save_no_compress_no_gc() {
     };
     editor.save_with_options(&out_path, opts).unwrap();
 
-    let mut doc = PdfDocument::open(&out_path).unwrap();
+    let doc = PdfDocument::open(&out_path).unwrap();
     assert_eq!(doc.page_count().unwrap(), 1);
 
     let _ = std::fs::remove_file(&path);
@@ -1822,7 +1822,7 @@ fn test_save_to_bytes_returns_valid_pdf() {
     assert!(bytes.starts_with(b"%PDF-"), "output must start with PDF header");
 
     // Round-trip: open the returned bytes as a new document
-    let mut doc = PdfDocument::from_bytes(bytes.clone()).unwrap();
+    let doc = PdfDocument::from_bytes(bytes.clone()).unwrap();
     assert_eq!(doc.page_count().unwrap(), 1);
 
     let _ = std::fs::remove_file(&path);
@@ -1845,7 +1845,7 @@ fn test_save_to_bytes_with_compress_produces_valid_pdf() {
     assert!(!bytes.is_empty());
     assert!(bytes.starts_with(b"%PDF-"));
 
-    let mut doc = PdfDocument::from_bytes(bytes.clone()).unwrap();
+    let doc = PdfDocument::from_bytes(bytes.clone()).unwrap();
     assert_eq!(doc.page_count().unwrap(), 1);
 
     let _ = std::fs::remove_file(&path);
@@ -1868,7 +1868,7 @@ fn test_save_to_bytes_with_garbage_collect_produces_valid_pdf() {
     assert!(!bytes.is_empty());
     assert!(bytes.starts_with(b"%PDF-"));
 
-    let mut doc = PdfDocument::from_bytes(bytes.clone()).unwrap();
+    let doc = PdfDocument::from_bytes(bytes.clone()).unwrap();
     assert_eq!(doc.page_count().unwrap(), 1);
 
     let _ = std::fs::remove_file(&path);
@@ -1884,7 +1884,7 @@ fn test_save_to_bytes_compress_and_gc_together() {
     let bytes = editor.save_to_bytes().unwrap(); // uses full_rewrite internally
     assert!(bytes.starts_with(b"%PDF-"));
 
-    let mut doc = PdfDocument::from_bytes(bytes.clone()).unwrap();
+    let doc = PdfDocument::from_bytes(bytes.clone()).unwrap();
     assert_eq!(doc.page_count().unwrap(), 1);
 
     let _ = std::fs::remove_file(&path);
@@ -1905,11 +1905,8 @@ fn test_gc_produces_smaller_or_equal_output_than_no_gc() {
     );
     // Orphan object — not referenced from anywhere
     let off4 = pdf.len();
-    let orphan = b"This is a large orphaned stream payload that should be removed by GC"
-        .repeat(20);
-    pdf.extend_from_slice(
-        format!("4 0 obj\n<< /Length {} >>\nstream\n", orphan.len()).as_bytes(),
-    );
+    let orphan = b"This is a large orphaned stream payload that should be removed by GC".repeat(20);
+    pdf.extend_from_slice(format!("4 0 obj\n<< /Length {} >>\nstream\n", orphan.len()).as_bytes());
     pdf.extend_from_slice(&orphan);
     pdf.extend_from_slice(b"\nendstream\nendobj\n");
     finalize_pdf(&mut pdf, &[0, off1, off2, off3, off4]);
@@ -1946,7 +1943,7 @@ fn test_gc_produces_smaller_or_equal_output_than_no_gc() {
     );
 
     // GC output still parses as valid PDF
-    let mut doc = PdfDocument::from_bytes(gc_bytes.clone()).unwrap();
+    let doc = PdfDocument::from_bytes(gc_bytes.clone()).unwrap();
     assert_eq!(doc.page_count().unwrap(), 1);
 
     let _ = std::fs::remove_file(&path);
@@ -1963,15 +1960,11 @@ fn test_compress_produces_smaller_or_equal_output_for_raw_streams() {
     pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
     let off3 = pdf.len();
     pdf.extend_from_slice(
-        format!(
-            "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>\nendobj\n"
-        )
+        "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>\nendobj\n".to_string()
         .as_bytes(),
     );
     let off4 = pdf.len();
-    pdf.extend_from_slice(
-        format!("4 0 obj\n<< /Length {} >>\nstream\n", content.len()).as_bytes(),
-    );
+    pdf.extend_from_slice(format!("4 0 obj\n<< /Length {} >>\nstream\n", content.len()).as_bytes());
     pdf.extend_from_slice(&content);
     pdf.extend_from_slice(b"\nendstream\nendobj\n");
     finalize_pdf(&mut pdf, &[0, off1, off2, off3, off4]);
@@ -2008,7 +2001,7 @@ fn test_compress_produces_smaller_or_equal_output_for_raw_streams() {
     );
 
     // Compressed output parses correctly
-    let mut doc = PdfDocument::from_bytes(compressed_bytes.clone()).unwrap();
+    let doc = PdfDocument::from_bytes(compressed_bytes.clone()).unwrap();
     assert_eq!(doc.page_count().unwrap(), 1);
 
     let _ = std::fs::remove_file(&path);
@@ -2045,7 +2038,7 @@ fn test_save_to_bytes_round_trip_preserves_content() {
     editor2.set_author("Second Pass Author");
     let bytes2 = editor2.save_to_bytes().unwrap();
 
-    let mut doc = PdfDocument::from_bytes(bytes2.clone()).unwrap();
+    let doc = PdfDocument::from_bytes(bytes2.clone()).unwrap();
     assert_eq!(doc.page_count().unwrap(), 1);
 
     let _ = std::fs::remove_file(&path);

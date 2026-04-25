@@ -263,8 +263,13 @@ fn paint_page<'sty>(
                 if let Ok(color) = parse_color(&rv.value, "background-color") {
                     if color.a > 0.01 && pb.local.width > 0.0 && pb.local.height > 0.0 {
                         page_builder.fill_rect_colored(
-                            abs_x, pdf_y, pb.local.width, pb.local.height,
-                            color.r, color.g, color.b,
+                            abs_x,
+                            pdf_y,
+                            pb.local.width,
+                            pb.local.height,
+                            color.r,
+                            color.g,
+                            color.b,
                         );
                     }
                 }
@@ -334,14 +339,14 @@ fn paint_page<'sty>(
             'outer: while let Some(bid) = cur {
                 if let Some(styles) = style_for(bid) {
                     for prop in &["text-decoration", "text-decoration-line"] {
-                        if let Some(rv) = styles.get(*prop) {
+                        if let Some(rv) = styles.get(prop) {
                             for cv in &rv.value {
                                 if let ComponentValue::Token(Token::Ident(id)) = cv {
                                     match id.to_lowercase().as_str() {
                                         "underline" => flags |= 1,
                                         "line-through" => flags |= 2,
                                         "overline" => flags |= 4,
-                                        _ => {}
+                                        _ => {},
                                     }
                                 }
                             }
@@ -422,7 +427,7 @@ fn paint_page<'sty>(
                     // writer can emit a real /SMask XObject; without
                     // this the transparency is silently dropped.
                     soft_mask: img.data.soft_mask.clone(),
-            matrix: None,
+                    matrix: None,
                     is_artifact: false,
                 };
                 page_builder.add_element(&ContentElement::Image(content));
@@ -514,21 +519,39 @@ fn paint_page<'sty>(
                 if box_decoration & 1 != 0 {
                     let ul_y = text_pdf_y - box_font_size_px * 0.15;
                     page_builder.draw_hline_colored(
-                        abs_x, ul_y, text_width, line_thickness, dr, dg, db,
+                        abs_x,
+                        ul_y,
+                        text_width,
+                        line_thickness,
+                        dr,
+                        dg,
+                        db,
                     );
                 }
                 // line-through: ~0.35 em above the baseline (≈ mid-x-height)
                 if box_decoration & 2 != 0 {
                     let lt_y = text_pdf_y + box_font_size_px * 0.35;
                     page_builder.draw_hline_colored(
-                        abs_x, lt_y, text_width, line_thickness, dr, dg, db,
+                        abs_x,
+                        lt_y,
+                        text_width,
+                        line_thickness,
+                        dr,
+                        dg,
+                        db,
                     );
                 }
                 // overline: at the ascender (~0.9 em above baseline)
                 if box_decoration & 4 != 0 {
                     let ol_y = text_pdf_y + box_font_size_px * 0.9;
                     page_builder.draw_hline_colored(
-                        abs_x, ol_y, text_width, line_thickness, dr, dg, db,
+                        abs_x,
+                        ol_y,
+                        text_width,
+                        line_thickness,
+                        dr,
+                        dg,
+                        db,
                     );
                 }
             }
@@ -721,8 +744,7 @@ mod tests {
 
         fn make_pdf(css: &'static str) -> Vec<u8> {
             let html = "<html><body><h1>Big</h1><p>Small</p></body></html>";
-            let dom: &'static _ =
-                Box::leak(Box::new(crate::html_css::html::parse_document(html)));
+            let dom: &'static _ = Box::leak(Box::new(crate::html_css::html::parse_document(html)));
             let ss: &'static _ = Box::leak(Box::new(parse_stylesheet(css).unwrap()));
             let tree = crate::html_css::layout::build_box_tree(dom, ss).unwrap();
             let layout = crate::html_css::layout::run_layout(
@@ -734,15 +756,17 @@ mod tests {
                     };
                     cascade(ss, dom.element(elem_id).unwrap(), None)
                 },
-                taffy::prelude::Size { width: 600.0, height: 800.0 },
+                taffy::prelude::Size {
+                    width: 600.0,
+                    height: 800.0,
+                },
                 &crate::html_css::css::CalcContext::default(),
                 12.0,
             );
             let doc = paginate(&tree, &layout, crate::html_css::paginate::PageConfig::a4());
             let mut writer = PdfWriter::new();
             let font =
-                EmbeddedFont::from_data(Some("DejaVuSans".to_string()), DEJAVU.to_vec())
-                    .unwrap();
+                EmbeddedFont::from_data(Some("DejaVuSans".to_string()), DEJAVU.to_vec()).unwrap();
             let rn = writer.register_embedded_font(font);
             paint_document(
                 &mut writer,
@@ -784,18 +808,22 @@ mod tests {
 
         fn make(css: &'static str) -> Vec<u8> {
             let html = "<html><body><p>text</p></body></html>";
-            let dom: &'static _ =
-                Box::leak(Box::new(crate::html_css::html::parse_document(html)));
+            let dom: &'static _ = Box::leak(Box::new(crate::html_css::html::parse_document(html)));
             let ss: &'static _ = Box::leak(Box::new(parse_stylesheet(css).unwrap()));
             let tree = crate::html_css::layout::build_box_tree(dom, ss).unwrap();
             let layout = crate::html_css::layout::run_layout(
                 &tree,
                 |id| {
                     let node = tree.get(id);
-                    let Some(e) = node.element else { return ComputedStyles::default(); };
+                    let Some(e) = node.element else {
+                        return ComputedStyles::default();
+                    };
                     cascade(ss, dom.element(e).unwrap(), None)
                 },
-                taffy::prelude::Size { width: 600.0, height: 800.0 },
+                taffy::prelude::Size {
+                    width: 600.0,
+                    height: 800.0,
+                },
                 &crate::html_css::css::CalcContext::default(),
                 12.0,
             );
@@ -804,9 +832,23 @@ mod tests {
             let font =
                 EmbeddedFont::from_data(Some("DejaVuSans".to_string()), DEJAVU.to_vec()).unwrap();
             let rn = writer.register_embedded_font(font);
-            paint_document(&mut writer, &doc, &tree,
-                |id| { let n = tree.get(id); let e = n.element?; Some(cascade(ss, dom.element(e).unwrap(), None)) },
-                &rn, 12.0, |_|None, |_|None, |_|None, |_|None, |_|None, |_|None,
+            paint_document(
+                &mut writer,
+                &doc,
+                &tree,
+                |id| {
+                    let n = tree.get(id);
+                    let e = n.element?;
+                    Some(cascade(ss, dom.element(e).unwrap(), None))
+                },
+                &rn,
+                12.0,
+                |_| None,
+                |_| None,
+                |_| None,
+                |_| None,
+                |_| None,
+                |_| None,
             );
             writer.finish().unwrap()
         }
@@ -823,18 +865,22 @@ mod tests {
 
         fn make(css: &'static str) -> Vec<u8> {
             let html = "<html><body><p>text</p></body></html>";
-            let dom: &'static _ =
-                Box::leak(Box::new(crate::html_css::html::parse_document(html)));
+            let dom: &'static _ = Box::leak(Box::new(crate::html_css::html::parse_document(html)));
             let ss: &'static _ = Box::leak(Box::new(parse_stylesheet(css).unwrap()));
             let tree = crate::html_css::layout::build_box_tree(dom, ss).unwrap();
             let layout = crate::html_css::layout::run_layout(
                 &tree,
                 |id| {
                     let node = tree.get(id);
-                    let Some(e) = node.element else { return ComputedStyles::default(); };
+                    let Some(e) = node.element else {
+                        return ComputedStyles::default();
+                    };
                     cascade(ss, dom.element(e).unwrap(), None)
                 },
-                taffy::prelude::Size { width: 600.0, height: 800.0 },
+                taffy::prelude::Size {
+                    width: 600.0,
+                    height: 800.0,
+                },
                 &crate::html_css::css::CalcContext::default(),
                 12.0,
             );
@@ -843,9 +889,23 @@ mod tests {
             let font =
                 EmbeddedFont::from_data(Some("DejaVuSans".to_string()), DEJAVU.to_vec()).unwrap();
             let rn = writer.register_embedded_font(font);
-            paint_document(&mut writer, &doc, &tree,
-                |id| { let n = tree.get(id); let e = n.element?; Some(cascade(ss, dom.element(e).unwrap(), None)) },
-                &rn, 12.0, |_|None, |_|None, |_|None, |_|None, |_|None, |_|None,
+            paint_document(
+                &mut writer,
+                &doc,
+                &tree,
+                |id| {
+                    let n = tree.get(id);
+                    let e = n.element?;
+                    Some(cascade(ss, dom.element(e).unwrap(), None))
+                },
+                &rn,
+                12.0,
+                |_| None,
+                |_| None,
+                |_| None,
+                |_| None,
+                |_| None,
+                |_| None,
             );
             writer.finish().unwrap()
         }

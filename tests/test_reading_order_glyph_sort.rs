@@ -96,7 +96,7 @@ BT /F0 12 Tf 1 0 0 1 100 800 Tm (a) Tj \
     let tmp = tempfile::NamedTempFile::new().expect("temp");
     std::fs::write(tmp.path(), &pdf).unwrap();
 
-    let mut doc = PdfDocument::open(tmp.path()).expect("open");
+    let doc = PdfDocument::open(tmp.path()).expect("open");
     let text = doc.extract_text(0).expect("extract");
     let compact: String = text.chars().filter(|c| !c.is_whitespace()).collect();
     assert_eq!(
@@ -125,7 +125,7 @@ BT /F0 12 Tf 1 0 0 1 128 800 Tm (s) Tj ET\n";
     let tmp = tempfile::NamedTempFile::new().expect("temp");
     std::fs::write(tmp.path(), &pdf).unwrap();
 
-    let mut doc = PdfDocument::open(tmp.path()).expect("open");
+    let doc = PdfDocument::open(tmp.path()).expect("open");
     let text = doc.extract_text(0).expect("extract");
     let compact: String = text.chars().filter(|c| !c.is_whitespace()).collect();
     assert_eq!(

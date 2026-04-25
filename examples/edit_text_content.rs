@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("   Created: text_before.pdf");
 
     // Verify original content
-    let mut doc = PdfDocument::open("text_before.pdf")?;
+    let doc = PdfDocument::open("text_before.pdf")?;
     let original_text = doc.extract_text(0)?;
     println!("   Original text: '{}'", original_text.trim());
 
@@ -64,7 +64,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Step 4: Verify the change by reading back
     println!("\nStep 4: Verification...");
-    let mut edited_doc = PdfDocument::open("text_after.pdf")?;
+    let edited_doc = PdfDocument::open("text_after.pdf")?;
     let edited_text = edited_doc.extract_text(0)?;
     println!("   Before: '{}'", original_text.trim());
     println!("   After:  '{}'", edited_text.trim());

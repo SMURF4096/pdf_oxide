@@ -24,7 +24,7 @@ fn test_open_all_pdfs() {
         println!("\n==> Testing: {}", filename);
 
         match PdfDocument::open(&path) {
-            Ok(mut doc) => {
+            Ok(doc) => {
                 println!("  ✓ Opened successfully");
                 println!("  Version: {}.{}", doc.version().0, doc.version().1);
 

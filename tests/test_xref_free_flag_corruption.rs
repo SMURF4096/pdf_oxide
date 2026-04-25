@@ -101,7 +101,7 @@ fn clean_pdf_baseline_both_pages_load() {
     let entries: Vec<(usize, bool)> = offsets.iter().map(|&o| (o, true)).collect();
     append_xref(&mut pdf, &entries);
 
-    let mut doc = PdfDocument::from_bytes(pdf).expect("open clean baseline PDF");
+    let doc = PdfDocument::from_bytes(pdf).expect("open clean baseline PDF");
     assert_eq!(doc.page_count().expect("page count"), 2);
 
     let t1 = doc.extract_text(0).expect("extract page 1");
@@ -125,7 +125,7 @@ fn xref_marks_real_page_free_still_loads() {
     entries[4].1 = false;
     append_xref(&mut pdf, &entries);
 
-    let mut doc = PdfDocument::from_bytes(pdf).expect("open corrupt PDF");
+    let doc = PdfDocument::from_bytes(pdf).expect("open corrupt PDF");
     assert_eq!(
         doc.page_count().expect("page count"),
         2,
@@ -175,7 +175,7 @@ fn genuinely_free_object_still_treated_as_null() {
 
     // Document must still open and report the real page count. The fix
     // must not turn "genuinely free" into "attempt to parse garbage".
-    let mut doc = PdfDocument::from_bytes(pdf).expect("open PDF with real free slot");
+    let doc = PdfDocument::from_bytes(pdf).expect("open PDF with real free slot");
     assert_eq!(doc.page_count().expect("page count"), 1);
 }
 
@@ -201,7 +201,7 @@ fn xref_offset_off_by_a_few_bytes_recovers_via_scan() {
     entries[4].0 = real_off.saturating_sub(6);
     append_xref(&mut pdf, &entries);
 
-    let mut doc = PdfDocument::from_bytes(pdf).expect("open PDF with shifted xref");
+    let doc = PdfDocument::from_bytes(pdf).expect("open PDF with shifted xref");
     assert_eq!(doc.page_count().expect("page count"), 2);
 
     let t2 = doc

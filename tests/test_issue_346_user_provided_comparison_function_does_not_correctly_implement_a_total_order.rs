@@ -17,7 +17,7 @@ const FIXTURE: &str = "tests/fixtures/1008.3918v2.pdf";
 
 #[test]
 fn issue_346_extract_text_page_15_does_not_panic_on_total_order() {
-    let mut doc = PdfDocument::open(FIXTURE).expect("open fixture");
+    let doc = PdfDocument::open(FIXTURE).expect("open fixture");
     let page_count = doc.page_count().expect("page_count");
     assert!(page_count >= 15, "fixture should have at least 15 pages, got {}", page_count);
 

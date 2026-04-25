@@ -16,7 +16,7 @@ fn test_extract_chars_character_properties() {
         return;
     }
 
-    let mut doc = match PdfDocument::open(&fixture_path) {
+    let doc = match PdfDocument::open(&fixture_path) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("Failed to open fixture PDF: {}. Skipping integration test.", e);
@@ -69,7 +69,7 @@ fn test_extract_chars_bbox_format() {
         return;
     }
 
-    let mut doc = match PdfDocument::open(&fixture_path) {
+    let doc = match PdfDocument::open(&fixture_path) {
         Ok(d) => d,
         Err(_) => return,
     };

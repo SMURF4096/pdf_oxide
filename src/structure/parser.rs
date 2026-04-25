@@ -743,11 +743,11 @@ mod tests {
     fn test_resolve_object_direct() {
         // Direct object should be returned as-is
         let obj = Object::Integer(42);
-        let mut doc = {
+        let doc = {
             let pdf = build_test_pdf();
             PdfDocument::from_bytes(pdf).unwrap()
         };
-        let result = resolve_object(&mut doc, &obj).unwrap();
+        let result = resolve_object(&doc, &obj).unwrap();
         assert_eq!(result, Object::Integer(42));
     }
 
@@ -820,8 +820,8 @@ mod tests {
     #[test]
     fn test_parse_structure_tree_untagged_pdf() {
         let pdf = build_test_pdf();
-        let mut doc = PdfDocument::from_bytes(pdf).unwrap();
-        let result = parse_structure_tree(&mut doc).unwrap();
+        let doc = PdfDocument::from_bytes(pdf).unwrap();
+        let result = parse_structure_tree(&doc).unwrap();
         assert!(result.is_none()); // No StructTreeRoot in minimal PDF
     }
 

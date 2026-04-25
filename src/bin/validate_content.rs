@@ -186,7 +186,7 @@ fn validate_pdf(path: &Path, filename: String, category: String) -> PdfResult {
     };
 
     // Open PDF
-    let mut doc = match PdfDocument::open(path) {
+    let doc = match PdfDocument::open(path) {
         Ok(doc) => doc,
         Err(e) => {
             let parse_time_ms = start_time.elapsed().as_millis() as u64;

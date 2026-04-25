@@ -119,7 +119,7 @@ fn shared_xobject_with_per_page_ctm_yields_distinct_page_text() {
     let tmp = tempfile::NamedTempFile::new().expect("temp");
     std::fs::write(tmp.path(), &pdf).unwrap();
 
-    let mut doc = PdfDocument::open(tmp.path()).expect("open");
+    let doc = PdfDocument::open(tmp.path()).expect("open");
     assert_eq!(doc.page_count().unwrap(), 2, "fixture has 2 pages");
 
     let p0 = doc.extract_text(0).expect("page 0");

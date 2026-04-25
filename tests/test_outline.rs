@@ -11,14 +11,14 @@ const OUTLINE_PDF_PATH: &str = "tests/fixtures/outline.pdf";
 
 #[test]
 fn test_outline_missing() {
-    let mut pdf = PdfDocument::open(SIMPLE_PDF_PATH).expect("Failed to open simple.pdf");
+    let pdf = PdfDocument::open(SIMPLE_PDF_PATH).expect("Failed to open simple.pdf");
     let outline = pdf.get_outline().expect("Failed to get outline");
     assert!(outline.is_none(), "Outline should should not be found");
 }
 
 #[test]
 fn test_outline_present() -> Result<(), Box<dyn std::error::Error>> {
-    let mut pdf = PdfDocument::open(OUTLINE_PDF_PATH).expect("Failed to open outline.pdf");
+    let pdf = PdfDocument::open(OUTLINE_PDF_PATH).expect("Failed to open outline.pdf");
     let outline = pdf
         .get_outline()
         .expect("Failed to get outline")

@@ -2,7 +2,7 @@ use pdf_oxide::editor::{DocumentEditor, EditableDocument};
 use std::path::Path;
 
 pub fn run(file: &Path, password: Option<&str>, json: bool) -> pdf_oxide::Result<()> {
-    let mut doc = super::open_doc(file, password)?;
+    let doc = super::open_doc(file, password)?;
     let page_count = doc.page_count()?;
     let (major, minor) = doc.version();
 

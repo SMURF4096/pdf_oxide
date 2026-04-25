@@ -12277,40 +12277,35 @@ mod tests {
     fn test_decode_pdfdocencoding_latin_byte() {
         // 0xE9 = PDFDocEncoding for é (U+00E9).  Not valid UTF-8 on its own.
         let result = TextExtractor::decode_pdf_text_string(&[0xE9]);
-        assert_eq!(result, "é",
-            "0xE9 must decode as 'é' via PDFDocEncoding, not produce U+FFFD");
+        assert_eq!(result, "é", "0xE9 must decode as 'é' via PDFDocEncoding, not produce U+FFFD");
     }
 
     #[test]
     fn test_decode_pdfdocencoding_bullet() {
         // 0x80 = PDFDocEncoding for • (U+2022 BULLET)
         let result = TextExtractor::decode_pdf_text_string(&[0x80]);
-        assert_eq!(result, "•",
-            "0x80 must decode as bullet '•' via PDFDocEncoding");
+        assert_eq!(result, "•", "0x80 must decode as bullet '•' via PDFDocEncoding");
     }
 
     #[test]
     fn test_decode_pdfdocencoding_emdash() {
         // 0x84 = PDFDocEncoding for — (U+2014 EM DASH)
         let result = TextExtractor::decode_pdf_text_string(&[0x84]);
-        assert_eq!(result, "—",
-            "0x84 must decode as em-dash '—' via PDFDocEncoding");
+        assert_eq!(result, "—", "0x84 must decode as em-dash '—' via PDFDocEncoding");
     }
 
     #[test]
     fn test_decode_pdfdocencoding_trademark() {
         // 0x92 = PDFDocEncoding for ™ (U+2122 TRADE MARK SIGN)
         let result = TextExtractor::decode_pdf_text_string(&[0x92]);
-        assert_eq!(result, "™",
-            "0x92 must decode as trademark '™' via PDFDocEncoding");
+        assert_eq!(result, "™", "0x92 must decode as trademark '™' via PDFDocEncoding");
     }
 
     #[test]
     fn test_decode_pdfdocencoding_undefined_9f_is_dropped() {
         // 0x9F is undefined in PDFDocEncoding — must be silently dropped.
         let result = TextExtractor::decode_pdf_text_string(&[0x41, 0x9F, 0x42]);
-        assert_eq!(result, "AB",
-            "0x9F is undefined in PDFDocEncoding and must be dropped");
+        assert_eq!(result, "AB", "0x9F is undefined in PDFDocEncoding and must be dropped");
     }
 
     #[test]
@@ -12318,8 +12313,7 @@ mod tests {
         // "Hello" followed by 0xE9 (é): 6 bytes → "Helloé"
         let bytes: Vec<u8> = b"Hello".iter().copied().chain([0xE9]).collect();
         let result = TextExtractor::decode_pdf_text_string(&bytes);
-        assert_eq!(result, "Helloé",
-            "Mixed ASCII + PDFDocEncoding bytes must decode correctly");
+        assert_eq!(result, "Helloé", "Mixed ASCII + PDFDocEncoding bytes must decode correctly");
     }
 
     #[test]

@@ -63,8 +63,9 @@ pub fn sign_pdf_bytes(
         .ok_or_else(|| Error::InvalidPdf("cannot find startxref in existing PDF".into()))?;
     let root_ref = scan_root_ref(pdf_data)
         .ok_or_else(|| Error::InvalidPdf("cannot find /Root ref in existing PDF".into()))?;
-    let next_obj_num = scan_next_obj_num(pdf_data)
-        .ok_or_else(|| Error::InvalidPdf("cannot determine next object number from PDF trailer".into()))?;
+    let next_obj_num = scan_next_obj_num(pdf_data).ok_or_else(|| {
+        Error::InvalidPdf("cannot determine next object number from PDF trailer".into())
+    })?;
 
     // ── 2. Build the signature dictionary text (fixed-width placeholders) ─
     let sig_dict_text = build_sig_dict_text(&signer, next_obj_num);
@@ -75,7 +76,7 @@ pub fn sign_pdf_bytes(
         .ok_or_else(|| Error::InvalidPdf("cannot find /Contents in built sig dict".into()))?;
 
     // ── 3. Pre-compute all section offsets ────────────────────────────────
-    let sig_dict_start = pdf_data.len();           // offset of "N 0 obj\n"
+    let sig_dict_start = pdf_data.len(); // offset of "N 0 obj\n"
     let xref_start = sig_dict_start + sig_dict_text.len();
 
     let xref_entry = format!("{:010} 00000 n \r\n", sig_dict_start);
@@ -98,7 +99,7 @@ pub fn sign_pdf_bytes(
 
     // ── 4. Compute actual ByteRange ───────────────────────────────────────
     let contents_abs = sig_dict_start + contents_in_dict; // offset of '<'
-    let contents_size = signer.placeholder_size();         // '<' + hex + '>'
+    let contents_size = signer.placeholder_size(); // '<' + hex + '>'
     let after_contents = contents_abs + contents_size;
     let byte_range: [i64; 4] = [
         0,
@@ -118,13 +119,15 @@ pub fn sign_pdf_bytes(
     output.extend_from_slice(trailer_section.as_bytes());
     output.extend_from_slice(startxref_section.as_bytes());
 
-    debug_assert_eq!(output.len(), total_len,
-        "assembled output length must match pre-computed total_len");
+    debug_assert_eq!(
+        output.len(),
+        total_len,
+        "assembled output length must match pre-computed total_len"
+    );
 
     // ── 7. Extract signed bytes and sign ─────────────────────────────────
-    let signed_bytes = super::byterange::ByteRangeCalculator::extract_signed_bytes(
-        &output, &byte_range,
-    )?;
+    let signed_bytes =
+        super::byterange::ByteRangeCalculator::extract_signed_bytes(&output, &byte_range)?;
     let cms_blob = signer.sign(&signed_bytes)?;
 
     // ── 8. Insert signature ───────────────────────────────────────────────
@@ -182,8 +185,11 @@ fn patch_byterange(mut text: String, br: &[i64; 4]) -> String {
         "{:>BR_FIELD_W$} {:>BR_FIELD_W$} {:>BR_FIELD_W$} {:>BR_FIELD_W$}",
         br[0], br[1], br[2], br[3],
     );
-    assert_eq!(replacement.len(), BR_PLACEHOLDER.len(),
-        "replacement must have the same length as the placeholder");
+    assert_eq!(
+        replacement.len(),
+        BR_PLACEHOLDER.len(),
+        "replacement must have the same length as the placeholder"
+    );
     if let Some(pos) = text.find(BR_PLACEHOLDER) {
         text.replace_range(pos..pos + BR_PLACEHOLDER.len(), &replacement);
     }
@@ -219,7 +225,9 @@ fn scan_startxref(data: &[u8]) -> Option<u64> {
     let after = &window[pos + 9..];
     let s = std::str::from_utf8(after).ok()?;
     let trimmed = s.trim_start_matches(|c: char| matches!(c, ' ' | '\r' | '\n'));
-    let end = trimmed.find(|c: char| !c.is_ascii_digit()).unwrap_or(trimmed.len());
+    let end = trimmed
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(trimmed.len());
     trimmed[..end].parse().ok()
 }
 
@@ -236,7 +244,11 @@ fn scan_root_ref(data: &[u8]) -> Option<String> {
         .position(|&b| b == b'/' || b == b'>' || b == b'\n')
         .unwrap_or(after.len().min(40));
     let s = std::str::from_utf8(&after[..end]).ok()?.trim();
-    if s.is_empty() { None } else { Some(s.to_string()) }
+    if s.is_empty() {
+        None
+    } else {
+        Some(s.to_string())
+    }
 }
 
 /// Find the highest object number in the latest trailer's `/Size` entry.
@@ -249,7 +261,9 @@ fn scan_next_obj_num(data: &[u8]) -> Option<u64> {
     let after = &window[pos + pattern.len()..];
     let s = std::str::from_utf8(after).ok()?;
     let trimmed = s.trim_start_matches(' ');
-    let end = trimmed.find(|c: char| !c.is_ascii_digit()).unwrap_or(trimmed.len());
+    let end = trimmed
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(trimmed.len());
     trimmed[..end].parse().ok()
 }
 
@@ -292,15 +306,15 @@ fn format_pdf_date() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::signatures::cms_verify::SignerVerify;
     use crate::signatures::verify_signer_detached;
     use crate::signatures::ByteRangeCalculator;
-    use crate::signatures::cms_verify::SignerVerify;
 
     fn load_test_creds() -> SigningCredentials {
-        let cert = std::fs::read_to_string("tests/fixtures/test_signing_cert.pem")
-            .expect("cert fixture");
-        let key = std::fs::read_to_string("tests/fixtures/test_signing_key.pem")
-            .expect("key fixture");
+        let cert =
+            std::fs::read_to_string("tests/fixtures/test_signing_cert.pem").expect("cert fixture");
+        let key =
+            std::fs::read_to_string("tests/fixtures/test_signing_key.pem").expect("key fixture");
         SigningCredentials::from_pem(&cert, &key).expect("creds load")
     }
 
@@ -350,19 +364,22 @@ mod tests {
     }
 
     fn hex_decode(s: &str) -> Vec<u8> {
-        s.as_bytes().chunks(2).map(|c| {
-            u8::from_str_radix(std::str::from_utf8(c).unwrap(), 16).unwrap()
-        }).collect()
+        s.as_bytes()
+            .chunks(2)
+            .map(|c| u8::from_str_radix(std::str::from_utf8(c).unwrap(), 16).unwrap())
+            .collect()
     }
 
     #[test]
     fn test_sign_pdf_bytes_roundtrip() {
         let pdf = minimal_pdf();
         let creds = load_test_creds();
-        let opts = SignOptions { estimated_size: 4096, ..Default::default() };
+        let opts = SignOptions {
+            estimated_size: 4096,
+            ..Default::default()
+        };
 
-        let signed = sign_pdf_bytes(&pdf, &creds, opts)
-            .expect("sign_pdf_bytes must succeed");
+        let signed = sign_pdf_bytes(&pdf, &creds, opts).expect("sign_pdf_bytes must succeed");
 
         // ── Parse the appended incremental update ─────────────────────
         // The incremental update is appended after the original PDF bytes.
@@ -370,7 +387,9 @@ mod tests {
         let tail_str = std::str::from_utf8(tail).unwrap();
 
         // Parse /ByteRange [...] from the sig dict text
-        let br_pos = tail_str.find("/ByteRange [").expect("/ByteRange must exist");
+        let br_pos = tail_str
+            .find("/ByteRange [")
+            .expect("/ByteRange must exist");
         let after_br = &tail_str[br_pos + 12..];
         let end = after_br.find(']').expect("] must follow /ByteRange");
         let nums: Vec<i64> = after_br[..end]
@@ -411,9 +430,8 @@ mod tests {
         let signed_content = ByteRangeCalculator::extract_signed_bytes(&signed, &byte_range)
             .expect("extract_signed_bytes must succeed");
 
-        let result = verify_signer_detached(&cms_blob, &signed_content)
-            .expect("verify must not error");
-        assert_eq!(result, SignerVerify::Valid,
-            "end-to-end PDF signature must verify as Valid");
+        let result =
+            verify_signer_detached(&cms_blob, &signed_content).expect("verify must not error");
+        assert_eq!(result, SignerVerify::Valid, "end-to-end PDF signature must verify as Valid");
     }
 }

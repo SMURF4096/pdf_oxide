@@ -98,7 +98,7 @@ fn discover_pdfs(base_dir: &Path) -> Vec<(PathBuf, String)> {
 
 fn extract_pdf(pdf_path: &Path, verbose: bool) -> Result<String, Box<dyn std::error::Error>> {
     // Open PDF document
-    let mut doc = PdfDocument::open(pdf_path)?;
+    let doc = PdfDocument::open(pdf_path)?;
 
     // Extract text from all pages using standard converters
     let mut full_text = String::new();

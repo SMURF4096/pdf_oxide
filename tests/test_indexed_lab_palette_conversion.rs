@@ -111,7 +111,7 @@ fn indexed_lab_mid_gray_yields_srgb_mid_gray() {
     let tmp = tempfile::NamedTempFile::new().expect("temp");
     std::fs::write(tmp.path(), &pdf).unwrap();
 
-    let mut doc = PdfDocument::open(tmp.path()).expect("open");
+    let doc = PdfDocument::open(tmp.path()).expect("open");
     let images = doc.extract_images(0).expect("extract images");
     assert!(!images.is_empty(), "page should yield one image");
     let img = &images[0];

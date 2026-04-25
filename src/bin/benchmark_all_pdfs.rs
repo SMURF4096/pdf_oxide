@@ -230,7 +230,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn process_pdf(path: &Path, category: &str) -> Result<(usize, usize), Box<dyn std::error::Error>> {
-    let mut doc = PdfDocument::open(path.to_str().unwrap())?;
+    let doc = PdfDocument::open(path.to_str().unwrap())?;
 
     // Convert to markdown with default options
     use pdf_oxide::converters::ConversionOptions;

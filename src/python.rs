@@ -750,9 +750,9 @@ impl PyPdfDocument {
                 incremental: false,
                 encryption: None,
             };
-            let bytes = editor
-                .save_to_bytes_with_options(options)
-                .map_err(|e| PyRuntimeError::new_err(format!("Failed to save PDF to bytes: {}", e)))?;
+            let bytes = editor.save_to_bytes_with_options(options).map_err(|e| {
+                PyRuntimeError::new_err(format!("Failed to save PDF to bytes: {}", e))
+            })?;
             Ok(PyBytes::new(py, &bytes).unbind())
         } else {
             Err(PyRuntimeError::new_err("No editor initialized."))
@@ -4340,10 +4340,7 @@ impl PyColumn {
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "Column(header={:?}, width={}, align={})",
-            self.header, self.width, self.align
-        )
+        format!("Column(header={:?}, width={}, align={})", self.header, self.width, self.align)
     }
 }
 
@@ -4789,18 +4786,12 @@ impl PyFluentPageBuilder {
         Ok(slf)
     }
 
-    fn on_open<'a>(
-        mut slf: PyRefMut<'a, Self>,
-        script: String,
-    ) -> PyResult<PyRefMut<'a, Self>> {
+    fn on_open<'a>(mut slf: PyRefMut<'a, Self>, script: String) -> PyResult<PyRefMut<'a, Self>> {
         slf.push(PendingPageOp::OnOpen(script))?;
         Ok(slf)
     }
 
-    fn on_close<'a>(
-        mut slf: PyRefMut<'a, Self>,
-        script: String,
-    ) -> PyResult<PyRefMut<'a, Self>> {
+    fn on_close<'a>(mut slf: PyRefMut<'a, Self>, script: String) -> PyResult<PyRefMut<'a, Self>> {
         slf.push(PendingPageOp::OnClose(script))?;
         Ok(slf)
     }
@@ -5056,7 +5047,10 @@ impl PyFluentPageBuilder {
         ref_mark: String,
         note_text: String,
     ) -> PyResult<PyRefMut<'a, Self>> {
-        slf.push(PendingPageOp::Footnote { ref_mark, note_text })?;
+        slf.push(PendingPageOp::Footnote {
+            ref_mark,
+            note_text,
+        })?;
         Ok(slf)
     }
 
@@ -5069,7 +5063,11 @@ impl PyFluentPageBuilder {
         gap_pt: f32,
         text: String,
     ) -> PyResult<PyRefMut<'a, Self>> {
-        slf.push(PendingPageOp::Columns { count: column_count, gap_pt, text })?;
+        slf.push(PendingPageOp::Columns {
+            count: column_count,
+            gap_pt,
+            text,
+        })?;
         Ok(slf)
     }
 
@@ -5080,10 +5078,7 @@ impl PyFluentPageBuilder {
     }
 
     /// Inline bold run.
-    fn inline_bold<'a>(
-        mut slf: PyRefMut<'a, Self>,
-        text: String,
-    ) -> PyResult<PyRefMut<'a, Self>> {
+    fn inline_bold<'a>(mut slf: PyRefMut<'a, Self>, text: String) -> PyResult<PyRefMut<'a, Self>> {
         slf.push(PendingPageOp::InlineBold(text))?;
         Ok(slf)
     }
@@ -5164,7 +5159,13 @@ impl PyFluentPageBuilder {
         let opts = crate::writer::QrCodeOptions::new().size(size as u32);
         let bytes = crate::writer::BarcodeGenerator::generate_qr(&data, &opts)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        slf.push(PendingPageOp::BarcodeImage { bytes, x, y, w: size, h: size })?;
+        slf.push(PendingPageOp::BarcodeImage {
+            bytes,
+            x,
+            y,
+            w: size,
+            h: size,
+        })?;
         Ok(slf)
     }
 
@@ -5178,7 +5179,14 @@ impl PyFluentPageBuilder {
         h: f32,
         alt_text: String,
     ) -> PyResult<PyRefMut<'a, Self>> {
-        slf.push(PendingPageOp::ImageWithAlt { bytes, x, y, w, h, alt_text })?;
+        slf.push(PendingPageOp::ImageWithAlt {
+            bytes,
+            x,
+            y,
+            w,
+            h,
+            alt_text,
+        })?;
         Ok(slf)
     }
 
@@ -5407,9 +5415,7 @@ impl PyFluentPageBuilder {
         max_rowspan: usize,
     ) -> PyResult<PyStreamingTable> {
         if columns.is_empty() {
-            return Err(PyValueError::new_err(
-                "streaming_table requires at least one Column",
-            ));
+            return Err(PyValueError::new_err("streaming_table requires at least one Column"));
         }
         let cols: Vec<PyColumn> = columns.into_iter().map(|c| (*c).clone()).collect();
         let _ = py;
@@ -5521,18 +5527,19 @@ impl PyFluentPageBuilder {
                 PendingPageOp::SignatureField { name, x, y, w, h } => {
                     page.signature_field(name, x, y, w, h)
                 },
-                PendingPageOp::Footnote { ref_mark, note_text } => {
-                    page.footnote(&ref_mark, &note_text)
-                },
-                PendingPageOp::Columns { count, gap_pt, text } => {
-                    page.columns(count, gap_pt, &text)
-                },
+                PendingPageOp::Footnote {
+                    ref_mark,
+                    note_text,
+                } => page.footnote(&ref_mark, &note_text),
+                PendingPageOp::Columns {
+                    count,
+                    gap_pt,
+                    text,
+                } => page.columns(count, gap_pt, &text),
                 PendingPageOp::Inline(text) => page.inline(&text),
                 PendingPageOp::InlineBold(text) => page.inline_bold(&text),
                 PendingPageOp::InlineItalic(text) => page.inline_italic(&text),
-                PendingPageOp::InlineColor { r, g, b, text } => {
-                    page.inline_color(r, g, b, &text)
-                },
+                PendingPageOp::InlineColor { r, g, b, text } => page.inline_color(r, g, b, &text),
                 PendingPageOp::Newline => page.newline(),
                 PendingPageOp::Rect(x, y, w, h) => page.rect(x, y, w, h),
                 PendingPageOp::FilledRect(x, y, w, h, r, g, b) => {
@@ -5558,7 +5565,9 @@ impl PyFluentPageBuilder {
                     r,
                     g,
                     b,
-                } => page.stroke_line(x1, y1, x2, y2, crate::writer::LineStyle::new(width, r, g, b)),
+                } => {
+                    page.stroke_line(x1, y1, x2, y2, crate::writer::LineStyle::new(width, r, g, b))
+                },
                 PendingPageOp::TextInRect {
                     x,
                     y,
@@ -5572,25 +5581,26 @@ impl PyFluentPageBuilder {
                     parse_align_to_text(align),
                 ),
                 PendingPageOp::NewPageSameSize => page.new_page_same_size(),
-                PendingPageOp::BarcodeImage { bytes, x, y, w, h } => {
-                    page.image_from_bytes(&bytes, crate::geometry::Rect::new(x, y, w, h))
-                        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?
-                },
-                PendingPageOp::ImageWithAlt { bytes, x, y, w, h, alt_text } => {
-                    page.image_from_bytes_with_alt(
+                PendingPageOp::BarcodeImage { bytes, x, y, w, h } => page
+                    .image_from_bytes(&bytes, crate::geometry::Rect::new(x, y, w, h))
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?,
+                PendingPageOp::ImageWithAlt {
+                    bytes,
+                    x,
+                    y,
+                    w,
+                    h,
+                    alt_text,
+                } => page
+                    .image_from_bytes_with_alt(
                         &bytes,
                         crate::geometry::Rect::new(x, y, w, h),
                         &alt_text,
                     )
-                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?
-                },
-                PendingPageOp::ImageArtifact { bytes, x, y, w, h } => {
-                    page.image_from_bytes_as_artifact(
-                        &bytes,
-                        crate::geometry::Rect::new(x, y, w, h),
-                    )
-                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?
-                },
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?,
+                PendingPageOp::ImageArtifact { bytes, x, y, w, h } => page
+                    .image_from_bytes_as_artifact(&bytes, crate::geometry::Rect::new(x, y, w, h))
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?,
                 PendingPageOp::Table {
                     widths,
                     aligns,
@@ -5599,7 +5609,11 @@ impl PyFluentPageBuilder {
                 } => {
                     let cells: Vec<Vec<crate::writer::TableCell>> = rows
                         .into_iter()
-                        .map(|row| row.into_iter().map(crate::writer::TableCell::text).collect())
+                        .map(|row| {
+                            row.into_iter()
+                                .map(crate::writer::TableCell::text)
+                                .collect()
+                        })
                         .collect();
                     let mut tbl = crate::writer::Table::new(cells);
                     let col_widths: Vec<crate::writer::ColumnWidth> = widths
@@ -5631,7 +5645,9 @@ impl PyFluentPageBuilder {
                         .repeat_header(repeat_header)
                         .max_rowspan(max_rowspan);
                     cfg = match mode.as_str() {
-                        "sample" => cfg.mode_sample(sample_rows, min_col_width_pt, max_col_width_pt),
+                        "sample" => {
+                            cfg.mode_sample(sample_rows, min_col_width_pt, max_col_width_pt)
+                        },
                         "auto_all" => cfg.mode_auto_all(),
                         _ => cfg.mode_fixed(),
                     };
@@ -5700,7 +5716,8 @@ impl PyStreamingTable {
                 self.columns.len()
             )));
         }
-        self.rows.push(cells.into_iter().map(|s| (s, 1usize)).collect());
+        self.rows
+            .push(cells.into_iter().map(|s| (s, 1usize)).collect());
         Ok(())
     }
 
@@ -6235,7 +6252,9 @@ impl PyCertificate {
         #[cfg(feature = "signatures")]
         {
             let creds = crate::signatures::SigningCredentials::from_pem(cert_pem, key_pem)
-                .map_err(|e| PyValueError::new_err(format!("Failed to load PEM credentials: {e}")))?;
+                .map_err(|e| {
+                    PyValueError::new_err(format!("Failed to load PEM credentials: {e}"))
+                })?;
             Ok(Self { creds })
         }
         #[cfg(not(feature = "signatures"))]
@@ -6641,8 +6660,9 @@ pub fn py_sign_pdf_bytes<'py>(
             location: location.map(str::to_owned),
             ..Default::default()
         };
-        let signed = sign_pdf_bytes(pdf_data.as_bytes(), &cert.creds, opts)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("sign_pdf_bytes failed: {e}")))?;
+        let signed = sign_pdf_bytes(pdf_data.as_bytes(), &cert.creds, opts).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("sign_pdf_bytes failed: {e}"))
+        })?;
         Ok(PyBytes::new(py, &signed))
     }
     #[cfg(not(feature = "signatures"))]

@@ -128,43 +128,51 @@ impl PdfSigner {
     fn create_pkcs7_signature(&self, signed_bytes: &[u8]) -> Result<Vec<u8>> {
         use super::crypto::digest_info_prefix;
         use cms::cert::x509::Certificate as X509Certificate;
-        use der::{Decode, Encode};
         use der::oid::db::rfc5912::{ID_SHA_1, ID_SHA_256, ID_SHA_384, ID_SHA_512};
-        use rsa::{Pkcs1v15Sign, RsaPrivateKey};
+        use der::{Decode, Encode};
         use rsa::pkcs8::DecodePrivateKey;
+        use rsa::{Pkcs1v15Sign, RsaPrivateKey};
         use sha1::Sha1;
         use sha2::{Digest, Sha256, Sha384, Sha512};
 
         // ── OID byte arrays (pre-encoded, without tag/length) ──────────
-        const OID_SIGNED_DATA:   &[u8] = &[0x2A,0x86,0x48,0x86,0xF7,0x0D,0x01,0x07,0x02];
-        const OID_DATA:          &[u8] = &[0x2A,0x86,0x48,0x86,0xF7,0x0D,0x01,0x07,0x01];
-        const OID_SHA1:          &[u8] = &[0x2B,0x0E,0x03,0x02,0x1A];
-        const OID_SHA256:        &[u8] = &[0x60,0x86,0x48,0x01,0x65,0x03,0x04,0x02,0x01];
-        const OID_SHA384:        &[u8] = &[0x60,0x86,0x48,0x01,0x65,0x03,0x04,0x02,0x02];
-        const OID_SHA512:        &[u8] = &[0x60,0x86,0x48,0x01,0x65,0x03,0x04,0x02,0x03];
-        const OID_RSA_ENC:       &[u8] = &[0x2A,0x86,0x48,0x86,0xF7,0x0D,0x01,0x01,0x01];
-        const OID_CONTENT_TYPE:  &[u8] = &[0x2A,0x86,0x48,0x86,0xF7,0x0D,0x01,0x09,0x03];
-        const OID_MSG_DIGEST:    &[u8] = &[0x2A,0x86,0x48,0x86,0xF7,0x0D,0x01,0x09,0x04];
+        const OID_SIGNED_DATA: &[u8] = &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x02];
+        const OID_DATA: &[u8] = &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x01];
+        const OID_SHA1: &[u8] = &[0x2B, 0x0E, 0x03, 0x02, 0x1A];
+        const OID_SHA256: &[u8] = &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01];
+        const OID_SHA384: &[u8] = &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x02];
+        const OID_SHA512: &[u8] = &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03];
+        const OID_RSA_ENC: &[u8] = &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x01];
+        const OID_CONTENT_TYPE: &[u8] = &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x09, 0x03];
+        const OID_MSG_DIGEST: &[u8] = &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x09, 0x04];
 
         // ── Pick digest algorithm ───────────────────────────────────────
         let (digest_oid_bytes, digest_oid, message_digest): (&[u8], _, Vec<u8>) =
             match self.options.digest_algorithm {
-                DigestAlgorithm::Sha1 =>
-                    (OID_SHA1, ID_SHA_1, Sha1::digest(signed_bytes).to_vec()),
-                DigestAlgorithm::Sha256 =>
-                    (OID_SHA256, ID_SHA_256, Sha256::digest(signed_bytes).to_vec()),
-                DigestAlgorithm::Sha384 =>
-                    (OID_SHA384, ID_SHA_384, Sha384::digest(signed_bytes).to_vec()),
-                DigestAlgorithm::Sha512 =>
-                    (OID_SHA512, ID_SHA_512, Sha512::digest(signed_bytes).to_vec()),
+                DigestAlgorithm::Sha1 => (OID_SHA1, ID_SHA_1, Sha1::digest(signed_bytes).to_vec()),
+                DigestAlgorithm::Sha256 => {
+                    (OID_SHA256, ID_SHA_256, Sha256::digest(signed_bytes).to_vec())
+                },
+                DigestAlgorithm::Sha384 => {
+                    (OID_SHA384, ID_SHA_384, Sha384::digest(signed_bytes).to_vec())
+                },
+                DigestAlgorithm::Sha512 => {
+                    (OID_SHA512, ID_SHA_512, Sha512::digest(signed_bytes).to_vec())
+                },
             };
 
         // ── Parse signer certificate (need issuer + serial for SignerInfo) ──
         let cert = X509Certificate::from_der(&self.credentials.certificate)
             .map_err(|e| Error::InvalidPdf(format!("cannot parse signer certificate: {e}")))?;
-        let issuer_der = cert.tbs_certificate.issuer.to_der()
+        let issuer_der = cert
+            .tbs_certificate
+            .issuer
+            .to_der()
             .map_err(|e| Error::InvalidPdf(format!("cannot DER-encode issuer: {e}")))?;
-        let serial_der = cert.tbs_certificate.serial_number.to_der()
+        let serial_der = cert
+            .tbs_certificate
+            .serial_number
+            .to_der()
             .map_err(|e| Error::InvalidPdf(format!("cannot DER-encode serial: {e}")))?;
 
         // ── Parse RSA private key (PKCS#8, fall back to PKCS#1) ────────
@@ -173,9 +181,9 @@ impl PdfSigner {
                 use pkcs1::DecodeRsaPrivateKey;
                 RsaPrivateKey::from_pkcs1_der(&self.credentials.private_key)
             })
-            .map_err(|_| Error::InvalidPdf(
-                "private key is not valid PKCS#8 or PKCS#1 RSA DER".into()
-            ))?;
+            .map_err(|_| {
+                Error::InvalidPdf("private key is not valid PKCS#8 or PKCS#1 RSA DER".into())
+            })?;
 
         // ── Signed attributes ──────────────────────────────────────────
         // Attribute 1: id-contentType = id-data
@@ -204,7 +212,7 @@ impl PdfSigner {
 
         // ── Sign: hash(signed_attrs SET) → DigestInfo → RSA sign ───────
         let attrs_hash: Vec<u8> = match self.options.digest_algorithm {
-            DigestAlgorithm::Sha1   => Sha1::digest(&attrs_for_hashing).to_vec(),
+            DigestAlgorithm::Sha1 => Sha1::digest(&attrs_for_hashing).to_vec(),
             DigestAlgorithm::Sha256 => Sha256::digest(&attrs_for_hashing).to_vec(),
             DigestAlgorithm::Sha384 => Sha384::digest(&attrs_for_hashing).to_vec(),
             DigestAlgorithm::Sha512 => Sha512::digest(&attrs_for_hashing).to_vec(),
@@ -338,11 +346,21 @@ fn der_tag(tag: u8, content: &[u8]) -> Vec<u8> {
     out
 }
 
-fn der_sequence(content: &[u8]) -> Vec<u8>      { der_tag(0x30, content) }
-fn der_set(content: &[u8]) -> Vec<u8>            { der_tag(0x31, content) }
-fn der_oid(oid_bytes: &[u8]) -> Vec<u8>          { der_tag(0x06, oid_bytes) }
-fn der_octet_string(data: &[u8]) -> Vec<u8>      { der_tag(0x04, data) }
-fn der_integer(n: u8) -> Vec<u8>                 { vec![0x02, 0x01, n] }
+fn der_sequence(content: &[u8]) -> Vec<u8> {
+    der_tag(0x30, content)
+}
+fn der_set(content: &[u8]) -> Vec<u8> {
+    der_tag(0x31, content)
+}
+fn der_oid(oid_bytes: &[u8]) -> Vec<u8> {
+    der_tag(0x06, oid_bytes)
+}
+fn der_octet_string(data: &[u8]) -> Vec<u8> {
+    der_tag(0x04, data)
+}
+fn der_integer(n: u8) -> Vec<u8> {
+    vec![0x02, 0x01, n]
+}
 
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -474,16 +492,16 @@ mod tests {
     #[test]
     #[cfg(feature = "signatures")]
     fn test_sign_produces_valid_cms_blob() {
-        use super::super::{SigningCredentials, verify_signer_detached};
-        use super::super::types::{SignOptions, DigestAlgorithm};
         use super::super::cms_verify::SignerVerify;
+        use super::super::types::{DigestAlgorithm, SignOptions};
+        use super::super::{verify_signer_detached, SigningCredentials};
 
         let cert_pem = std::fs::read_to_string("tests/fixtures/test_signing_cert.pem")
             .expect("test fixture must exist");
         let key_pem = std::fs::read_to_string("tests/fixtures/test_signing_key.pem")
             .expect("test fixture must exist");
-        let creds = SigningCredentials::from_pem(&cert_pem, &key_pem)
-            .expect("credentials must load");
+        let creds =
+            SigningCredentials::from_pem(&cert_pem, &key_pem).expect("credentials must load");
 
         let content = b"hello world this is the signed PDF content";
         let signer = PdfSigner::new(creds, SignOptions::default());
@@ -492,23 +510,26 @@ mod tests {
         // The produced blob must be parseable and verifiable
         let result = verify_signer_detached(&cms_blob, content)
             .expect("verify_signer_detached must not error");
-        assert_eq!(result, SignerVerify::Valid,
-            "signature must verify as Valid with the same content");
+        assert_eq!(
+            result,
+            SignerVerify::Valid,
+            "signature must verify as Valid with the same content"
+        );
     }
 
     #[test]
     #[cfg(feature = "signatures")]
     fn test_sign_detects_tampered_content() {
-        use super::super::{SigningCredentials, verify_signer_detached};
-        use super::super::types::{SignOptions, DigestAlgorithm};
         use super::super::cms_verify::SignerVerify;
+        use super::super::types::{DigestAlgorithm, SignOptions};
+        use super::super::{verify_signer_detached, SigningCredentials};
 
         let cert_pem = std::fs::read_to_string("tests/fixtures/test_signing_cert.pem")
             .expect("test fixture must exist");
         let key_pem = std::fs::read_to_string("tests/fixtures/test_signing_key.pem")
             .expect("test fixture must exist");
-        let creds = SigningCredentials::from_pem(&cert_pem, &key_pem)
-            .expect("credentials must load");
+        let creds =
+            SigningCredentials::from_pem(&cert_pem, &key_pem).expect("credentials must load");
 
         let content = b"original content";
         let tampered = b"tampered content!";
@@ -517,29 +538,26 @@ mod tests {
 
         let result = verify_signer_detached(&cms_blob, tampered)
             .expect("verify must not error on tampered content");
-        assert_eq!(result, SignerVerify::Invalid,
-            "tampered content must verify as Invalid");
+        assert_eq!(result, SignerVerify::Invalid, "tampered content must verify as Invalid");
     }
 
     #[test]
     #[cfg(feature = "signatures")]
     fn test_sign_via_pkcs12() {
-        use super::super::{SigningCredentials, verify_signer_detached};
-        use super::super::types::SignOptions;
         use super::super::cms_verify::SignerVerify;
+        use super::super::types::SignOptions;
+        use super::super::{verify_signer_detached, SigningCredentials};
 
-        let p12_data = std::fs::read("tests/fixtures/test_signing.p12")
-            .expect("test fixture must exist");
-        let creds = SigningCredentials::from_pkcs12(&p12_data, "testpass")
-            .expect("PKCS#12 must load");
+        let p12_data =
+            std::fs::read("tests/fixtures/test_signing.p12").expect("test fixture must exist");
+        let creds =
+            SigningCredentials::from_pkcs12(&p12_data, "testpass").expect("PKCS#12 must load");
 
         let content = b"PDF content for pkcs12 signing test";
         let signer = PdfSigner::new(creds, SignOptions::default());
         let cms_blob = signer.sign(content).expect("sign must succeed");
 
-        let result = verify_signer_detached(&cms_blob, content)
-            .expect("verify must not error");
-        assert_eq!(result, SignerVerify::Valid,
-            "PKCS#12-signed blob must verify as Valid");
+        let result = verify_signer_detached(&cms_blob, content).expect("verify must not error");
+        assert_eq!(result, SignerVerify::Valid, "PKCS#12-signed blob must verify as Valid");
     }
 }

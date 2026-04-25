@@ -108,7 +108,7 @@ fn indexed_4bpc_predictor12_tag0_decodes_raw_rows() {
     let tmp = tempfile::NamedTempFile::new().expect("temp");
     std::fs::write(tmp.path(), &pdf).unwrap();
 
-    let mut doc = PdfDocument::open(tmp.path()).expect("open");
+    let doc = PdfDocument::open(tmp.path()).expect("open");
     let images = doc.extract_images(0).expect("extract images");
     let img = images
         .iter()

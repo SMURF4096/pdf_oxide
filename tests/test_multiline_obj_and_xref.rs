@@ -84,7 +84,7 @@ fn finalize_xref(pdf: &mut Vec<u8>, obj_offsets: &[usize]) {
 #[test]
 fn test_standard_single_line_headers() {
     let pdf = build_pdf_custom_headers(|id, gen| format!("{} {} obj", id, gen));
-    let mut doc = PdfDocument::from_bytes(pdf).expect("should open standard PDF");
+    let doc = PdfDocument::from_bytes(pdf).expect("should open standard PDF");
     assert_eq!(doc.page_count().expect("page count"), 1);
     let text = doc.extract_text(0).expect("extract text");
     assert!(text.contains("Hello World"), "text: {}", text);
@@ -98,8 +98,7 @@ fn test_standard_single_line_headers() {
 fn test_multiline_object_header_full_newline() {
     // "1\n0\nobj" format (each token on its own line)
     let pdf = build_pdf_custom_headers(|id, gen| format!("{}\n{}\nobj", id, gen));
-    let mut doc =
-        PdfDocument::from_bytes(pdf).expect("should open PDF with fully multi-line headers");
+    let doc = PdfDocument::from_bytes(pdf).expect("should open PDF with fully multi-line headers");
     assert_eq!(doc.page_count().expect("page count"), 1);
     let text = doc.extract_text(0).expect("extract text");
     assert!(text.contains("Hello World"), "text: {}", text);
@@ -113,8 +112,7 @@ fn test_multiline_object_header_full_newline() {
 fn test_multiline_object_header_mixed() {
     // "1\n0 obj" format (obj_num on separate line, gen+obj on one line)
     let pdf = build_pdf_custom_headers(|id, gen| format!("{}\n{} obj", id, gen));
-    let mut doc =
-        PdfDocument::from_bytes(pdf).expect("should open PDF with mixed multi-line headers");
+    let doc = PdfDocument::from_bytes(pdf).expect("should open PDF with mixed multi-line headers");
     assert_eq!(doc.page_count().expect("page count"), 1);
 }
 
@@ -125,8 +123,7 @@ fn test_multiline_object_header_mixed() {
 #[test]
 fn test_multiline_object_header_crlf() {
     let pdf = build_pdf_custom_headers(|id, gen| format!("{}\r\n{}\r\nobj", id, gen));
-    let mut doc =
-        PdfDocument::from_bytes(pdf).expect("should open PDF with CRLF multi-line headers");
+    let doc = PdfDocument::from_bytes(pdf).expect("should open PDF with CRLF multi-line headers");
     assert_eq!(doc.page_count().expect("page count"), 1);
 }
 
@@ -145,7 +142,7 @@ fn test_garbage_prefix_offset_adjustment() {
 
     // The xref offsets in this PDF are relative to the start of the valid PDF data,
     // which is now at byte 1024. The header_offset adjustment should fix this.
-    let mut doc = PdfDocument::from_bytes(garbage_pdf).expect("should open garbage-prepended PDF");
+    let doc = PdfDocument::from_bytes(garbage_pdf).expect("should open garbage-prepended PDF");
     assert_eq!(doc.page_count().expect("page count"), 1);
     let text = doc.extract_text(0).expect("extract text");
     assert!(text.contains("Hello World"), "text: {}", text);
@@ -190,7 +187,7 @@ fn test_corrupt_xref_triggers_reconstruction() {
     }
 
     // Should still open via xref reconstruction
-    let mut doc =
+    let doc =
         PdfDocument::from_bytes(pdf).expect("should open PDF with corrupt xref via reconstruction");
     assert_eq!(doc.page_count().expect("page count"), 1);
 }
@@ -208,7 +205,7 @@ fn test_endobj_not_confused_with_obj() {
     // We test this indirectly: a standard PDF should parse correctly even though
     // every object body contains "endobj" (the loop should keep reading past it).
     let pdf = build_pdf_custom_headers(|id, gen| format!("{} {} obj", id, gen));
-    let mut doc = PdfDocument::from_bytes(pdf).expect("standard PDF should open");
+    let doc = PdfDocument::from_bytes(pdf).expect("standard PDF should open");
     assert_eq!(doc.page_count().expect("page count"), 1);
 }
 
@@ -220,7 +217,7 @@ fn test_endobj_not_confused_with_obj() {
 fn test_multiline_header_with_extra_whitespace() {
     // Extra spaces and tabs between tokens
     let pdf = build_pdf_custom_headers(|id, gen| format!("{}  \t {}  \t obj", id, gen));
-    let mut doc = PdfDocument::from_bytes(pdf).expect("should handle extra whitespace in headers");
+    let doc = PdfDocument::from_bytes(pdf).expect("should handle extra whitespace in headers");
     assert_eq!(doc.page_count().expect("page count"), 1);
 }
 
@@ -271,8 +268,7 @@ fn test_isartor_multiline_header() {
         eprintln!("Skipping: {} not found", path.display());
         return;
     }
-    let mut doc =
-        PdfDocument::open(&path).unwrap_or_else(|e| panic!("isartor PDF should open: {}", e));
+    let doc = PdfDocument::open(&path).unwrap_or_else(|e| panic!("isartor PDF should open: {}", e));
     let count = doc.page_count().expect("page count");
     assert!(count > 0, "should have at least 1 page");
 }
@@ -298,8 +294,7 @@ fn test_redhat_corrupt_xref() {
         eprintln!("Skipping: {} not found", path.display());
         return;
     }
-    let mut doc =
-        PdfDocument::open(&path).unwrap_or_else(|e| panic!("REDHAT PDF should open: {}", e));
+    let doc = PdfDocument::open(&path).unwrap_or_else(|e| panic!("REDHAT PDF should open: {}", e));
     let count = doc.page_count().expect("page count");
     assert!(count > 0, "should have at least 1 page");
 }

@@ -58,7 +58,7 @@ fn main() {
         if write_pdfs {
             let _ = fs::write(format!("{out_dir}/{name}.pdf"), &bytes);
         }
-        let mut doc = match PdfDocument::from_bytes(bytes) {
+        let doc = match PdfDocument::from_bytes(bytes) {
             Ok(d) => d,
             Err(err) => {
                 println!("{name}\tREOPEN_ERR\t{nbytes}\t0\t0\t0\t{err}");

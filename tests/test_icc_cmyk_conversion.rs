@@ -95,7 +95,7 @@ fn report_pdf_blue_swatch_matches_icc_reference() {
         eprintln!("skip: {} not present", pdf.display());
         return;
     }
-    let mut doc = pdf_oxide::PdfDocument::open(pdf).expect("open report.pdf");
+    let doc = pdf_oxide::PdfDocument::open(pdf).expect("open report.pdf");
     let images = doc.extract_images(0).expect("extract images");
 
     // Find the 32×12 blue swatch — unique dimensions in the document.

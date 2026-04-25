@@ -22,9 +22,7 @@
 //! 5 k variant for regression gating.
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use pdf_oxide::writer::{
-    CellAlign, DocumentBuilder, StreamingColumn, StreamingTableConfig,
-};
+use pdf_oxide::writer::{CellAlign, DocumentBuilder, StreamingColumn, StreamingTableConfig};
 use std::hint::black_box;
 
 /// Build a 5-column `StreamingTable` with `n` rows, return the produced
@@ -82,16 +80,12 @@ fn bench_streaming_scaling(c: &mut Criterion) {
 
     for size in [1_000usize, 5_000, 10_000, 30_000] {
         group.throughput(Throughput::Elements(size as u64));
-        group.bench_with_input(
-            BenchmarkId::from_parameter(size),
-            &size,
-            |b, &size| {
-                b.iter(|| {
-                    let produced = build_streaming_table_pdf(black_box(size));
-                    black_box(produced);
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, &size| {
+            b.iter(|| {
+                let produced = build_streaming_table_pdf(black_box(size));
+                black_box(produced);
+            });
+        });
     }
     group.finish();
 }

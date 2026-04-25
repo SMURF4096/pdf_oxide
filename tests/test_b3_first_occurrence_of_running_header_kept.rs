@@ -80,7 +80,7 @@ fn first_occurrence_of_running_header_kept_on_page_one() {
     let tmp = tempfile::NamedTempFile::new().expect("temp");
     std::fs::write(tmp.path(), &pdf).unwrap();
 
-    let mut doc = PdfDocument::open(tmp.path()).expect("open");
+    let doc = PdfDocument::open(tmp.path()).expect("open");
     assert_eq!(doc.page_count().unwrap(), 3);
 
     let p0 = doc.extract_text(0).expect("page 0");

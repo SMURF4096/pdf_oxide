@@ -74,7 +74,11 @@ impl FormFieldWidget for SignatureWidget {
     }
 
     fn field_flags(&self) -> u32 {
-        if self.read_only { 1 } else { 0 }
+        if self.read_only {
+            1
+        } else {
+            0
+        }
     }
 
     fn build_field_dict(&self) -> HashMap<String, Object> {

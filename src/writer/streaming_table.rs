@@ -48,7 +48,9 @@
 
 use super::document_builder::{FluentPageBuilder, TextAlign};
 use super::table_renderer::CellAlign;
-use crate::elements::{ContentElement, FontSpec, PathContent, PathOperation, TextContent, TextStyle};
+use crate::elements::{
+    ContentElement, FontSpec, PathContent, PathOperation, TextContent, TextStyle,
+};
 use crate::error::{Error, Result};
 use crate::geometry::Rect;
 use crate::layout::Color;
@@ -68,9 +70,10 @@ fn cell_to_text_align(a: CellAlign) -> TextAlign {
 /// Choose between explicit widths (`Fixed`, the default), measuring the first
 /// N rows to determine widths automatically (`Sample`), or fully-buffered
 /// auto-sizing (`AutoAll`, only valid for the non-streaming `Table`).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum TableMode {
     /// Widths come from [`StreamingColumn::width_pt`]. Default.
+    #[default]
     Fixed,
     /// Buffer the first `rows` rows, measure max content width per column,
     /// clamp to `[min_col_width_pt, max_col_width_pt]`, freeze, then stream.
@@ -86,12 +89,6 @@ pub enum TableMode {
     /// buffered [`table_renderer::Table`]; [`StreamingTable`] rejects this
     /// immediately with [`Error::InvalidOperation`].
     AutoAll,
-}
-
-impl Default for TableMode {
-    fn default() -> Self {
-        TableMode::Fixed
-    }
 }
 
 /// Internal sample-collection state for `TableMode::Sample`.
@@ -204,7 +201,12 @@ impl StreamingTableConfig {
     /// If fewer rows than `sample_rows` are pushed, widths are frozen at
     /// `finish()` from whatever was buffered (or from the column defaults if
     /// zero rows were buffered).
-    pub fn mode_sample(mut self, sample_rows: usize, min_col_width_pt: f32, max_col_width_pt: f32) -> Self {
+    pub fn mode_sample(
+        mut self,
+        sample_rows: usize,
+        min_col_width_pt: f32,
+        max_col_width_pt: f32,
+    ) -> Self {
         self.mode = TableMode::Sample {
             rows: sample_rows.max(1),
             min_col_width_pt: min_col_width_pt.max(1.0),
@@ -275,10 +277,16 @@ pub struct RowCell {
 
 impl RowCell {
     fn new(text: impl Into<String>) -> Self {
-        Self { text: text.into(), rowspan: 1 }
+        Self {
+            text: text.into(),
+            rowspan: 1,
+        }
     }
     fn span(text: impl Into<String>, n: usize) -> Self {
-        Self { text: text.into(), rowspan: n.max(1) }
+        Self {
+            text: text.into(),
+            rowspan: n.max(1),
+        }
     }
 }
 
@@ -351,13 +359,15 @@ impl<'a> StreamingTable<'a> {
 
         let sample_state = match &config.mode {
             TableMode::Fixed => SampleState::Fixed,
-            TableMode::Sample { rows, min_col_width_pt, max_col_width_pt } => {
-                SampleState::Collecting {
-                    buffered: Vec::with_capacity(*rows),
-                    target: *rows,
-                    min_w: *min_col_width_pt,
-                    max_w: *max_col_width_pt,
-                }
+            TableMode::Sample {
+                rows,
+                min_col_width_pt,
+                max_col_width_pt,
+            } => SampleState::Collecting {
+                buffered: Vec::with_capacity(*rows),
+                target: *rows,
+                min_w: *min_col_width_pt,
+                max_w: *max_col_width_pt,
             },
             // AutoAll is detected lazily in push_row and surfaces an error there.
             TableMode::AutoAll => SampleState::Fixed,
@@ -401,9 +411,7 @@ impl<'a> StreamingTable<'a> {
 
         let n_cols = self.config.columns.len();
         if n_cols == 0 {
-            return Err(Error::InvalidOperation(
-                "streaming_table: no columns configured".into(),
-            ));
+            return Err(Error::InvalidOperation("streaming_table: no columns configured".into()));
         }
 
         let mut row = StreamingRow::default();
@@ -458,7 +466,9 @@ impl<'a> StreamingTable<'a> {
         // Sample-mode buffering: accumulate rows until target is reached,
         // then freeze widths and flush all buffered rows before drawing this one.
         let should_flush = match &mut self.sample_state {
-            SampleState::Collecting { buffered, target, .. } => {
+            SampleState::Collecting {
+                buffered, target, ..
+            } => {
                 buffered.push(texts.clone());
                 if buffered.len() >= *target {
                     true // buffer full → freeze now
@@ -507,10 +517,16 @@ impl<'a> StreamingTable<'a> {
     fn freeze_and_flush(&mut self) -> Result<()> {
         // Extract buffer + constraints — replace state with Frozen now so
         // that draw_row calls inside the flush see the updated widths.
-        let (buffered, min_w, max_w) = match std::mem::replace(&mut self.sample_state, SampleState::Frozen) {
-            SampleState::Collecting { buffered, min_w, max_w, .. } => (buffered, min_w, max_w),
-            _ => return Ok(()),
-        };
+        let (buffered, min_w, max_w) =
+            match std::mem::replace(&mut self.sample_state, SampleState::Frozen) {
+                SampleState::Collecting {
+                    buffered,
+                    min_w,
+                    max_w,
+                    ..
+                } => (buffered, min_w, max_w),
+                _ => return Ok(()),
+            };
 
         let h_pad = self.config.horizontal_padding;
         let n_cols = self.config.columns.len();
@@ -550,8 +566,12 @@ impl<'a> StreamingTable<'a> {
     }
 
     fn draw_header(&mut self) {
-        let headers: Vec<String> =
-            self.config.columns.iter().map(|c| c.header.clone()).collect();
+        let headers: Vec<String> = self
+            .config
+            .columns
+            .iter()
+            .map(|c| c.header.clone())
+            .collect();
         self.draw_row(&headers, true).ok();
     }
 
@@ -597,7 +617,15 @@ impl<'a> StreamingTable<'a> {
 
             if avail >= seg_height {
                 // All remaining lines fit on the current page.
-                return self.emit_row_segment(wrapped, is_header, line_start, max_lines, seg_height, top_pad, line_height);
+                return self.emit_row_segment(
+                    wrapped,
+                    is_header,
+                    line_start,
+                    max_lines,
+                    seg_height,
+                    top_pad,
+                    line_height,
+                );
             }
 
             // How many lines fit on the current page (with top_pad)?
@@ -615,7 +643,15 @@ impl<'a> StreamingTable<'a> {
 
             // Draw a partial segment that consumes all available space on
             // the current page.
-            self.emit_row_segment(wrapped, is_header, line_start, line_start + lines_fit, avail, top_pad, line_height)?;
+            self.emit_row_segment(
+                wrapped,
+                is_header,
+                line_start,
+                line_start + lines_fit,
+                avail,
+                top_pad,
+                line_height,
+            )?;
             line_start += lines_fit;
 
             // Page break and continue with the remaining lines.
@@ -662,7 +698,13 @@ impl<'a> StreamingTable<'a> {
         // 1. Header background fill.
         if is_header {
             if let Some((r, g, b)) = self.config.header_fill {
-                self.push_path_fill(self.origin_x, row_top - seg_height, self.total_width, seg_height, (r, g, b));
+                self.push_path_fill(
+                    self.origin_x,
+                    row_top - seg_height,
+                    self.total_width,
+                    seg_height,
+                    (r, g, b),
+                );
             }
         }
 
@@ -701,8 +743,12 @@ impl<'a> StreamingTable<'a> {
             };
 
             for (global_i, (line, line_w)) in lines.iter().enumerate() {
-                if global_i < line_start || global_i >= line_end { continue; }
-                if line.is_empty() { continue; }
+                if global_i < line_start || global_i >= line_end {
+                    continue;
+                }
+                if line.is_empty() {
+                    continue;
+                }
                 let local_i = global_i - line_start;
                 let x = match align {
                     TextAlign::Left => content_left,
@@ -753,7 +799,9 @@ impl<'a> StreamingTable<'a> {
             // Spanning cells in row 0 don't contribute to their own row's height
             // (their height is determined by the combined group height).
             if row_idx == 0 {
-                let non_span_max_lines: usize = rows[0].iter().zip(all_wrapped.last().unwrap_or(&wrapped_row).iter())
+                let non_span_max_lines: usize = rows[0]
+                    .iter()
+                    .zip(all_wrapped.last().unwrap_or(&wrapped_row).iter())
                     .filter(|(cell, _)| cell.rowspan <= 1)
                     .map(|(_, lines)| lines.len().max(1))
                     .max()
@@ -766,7 +814,9 @@ impl<'a> StreamingTable<'a> {
         }
 
         // Recompute row 0's max_lines from non-spanning columns only.
-        let non_span_max_row0 = rows[0].iter().enumerate()
+        let non_span_max_row0 = rows[0]
+            .iter()
+            .enumerate()
             .filter(|(_, cell)| cell.rowspan <= 1)
             .map(|(col_idx, _)| all_wrapped[0][col_idx].len().max(1))
             .max()
@@ -774,7 +824,8 @@ impl<'a> StreamingTable<'a> {
         row_max_lines[0] = non_span_max_row0;
 
         // Individual row heights.
-        let row_heights: Vec<f32> = row_max_lines.iter()
+        let row_heights: Vec<f32> = row_max_lines
+            .iter()
             .map(|&ml| top_pad + bot_pad + (ml as f32) * line_height)
             .collect();
 
@@ -819,7 +870,11 @@ impl<'a> StreamingTable<'a> {
                 for (col_idx, x) in boundaries.iter().enumerate() {
                     let span_col = col_idx < rows[0].len() && rows[0][col_idx].rowspan > 1;
                     let vert_top = if span_col { group_top } else { top_y };
-                    let vert_bot = if span_col && row_idx == 0 { group_top - total_height } else { bot_y };
+                    let vert_bot = if span_col && row_idx == 0 {
+                        group_top - total_height
+                    } else {
+                        bot_y
+                    };
                     if !span_col || row_idx == 0 {
                         self.push_path_stroke_line(*x, vert_top, *x, vert_bot, gc, gw);
                     }
@@ -827,7 +882,11 @@ impl<'a> StreamingTable<'a> {
                 // Right boundary vertical.
                 let right_x_val = self.origin_x + self.total_width;
                 let right_top = if row_idx == 0 { group_top } else { top_y };
-                let right_bot = if row_idx == 0 { group_top - total_height } else { bot_y };
+                let right_bot = if row_idx == 0 {
+                    group_top - total_height
+                } else {
+                    bot_y
+                };
                 let _ = right_x_val; // already in column_x last element
                 let _ = (right_top, right_bot); // handled by column_x loop above
             }
@@ -838,7 +897,9 @@ impl<'a> StreamingTable<'a> {
                 let is_spanning = rows[0][col_idx].rowspan > 1;
                 let is_span_start = is_spanning && row_idx == 0;
                 let is_spanned_continuation = is_spanning && row_idx > 0;
-                if is_spanned_continuation { continue; } // drawn when row_idx == 0
+                if is_spanned_continuation {
+                    continue;
+                } // drawn when row_idx == 0
 
                 let effective_top = if is_span_start { group_top } else { row_top_y };
                 let col_left = self.column_x[col_idx];
@@ -849,7 +910,9 @@ impl<'a> StreamingTable<'a> {
                 let font_name = self.page.text_config_font_name().to_string();
 
                 for (line_i, (line, line_w)) in lines.iter().enumerate() {
-                    if line.is_empty() { continue; }
+                    if line.is_empty() {
+                        continue;
+                    }
                     let x = match align {
                         TextAlign::Left => content_left,
                         TextAlign::Center => content_left + (content_w - *line_w) / 2.0,
@@ -872,7 +935,11 @@ impl<'a> StreamingTable<'a> {
     fn push_path_fill(&mut self, x: f32, y: f32, w: f32, h: f32, color: (f32, f32, f32)) {
         let mut path = PathContent::new(Rect::new(x, y, w, h));
         path.operations.push(PathOperation::Rectangle(x, y, w, h));
-        path.fill_color = Some(Color { r: color.0, g: color.1, b: color.2 });
+        path.fill_color = Some(Color {
+            r: color.0,
+            g: color.1,
+            b: color.2,
+        });
         path.stroke_color = None;
         path.reading_order = Some(self.page.page_element_count());
         self.page.push_element(ContentElement::Path(path));
@@ -894,7 +961,11 @@ impl<'a> StreamingTable<'a> {
         let mut path = PathContent::new(Rect::new(min_x, min_y, w, h));
         path.operations.push(PathOperation::MoveTo(x1, y1));
         path.operations.push(PathOperation::LineTo(x2, y2));
-        path.stroke_color = Some(Color { r: color.0, g: color.1, b: color.2 });
+        path.stroke_color = Some(Color {
+            r: color.0,
+            g: color.1,
+            b: color.2,
+        });
         path.stroke_width = width;
         path.fill_color = None;
         path.reading_order = Some(self.page.page_element_count());
@@ -929,10 +1000,7 @@ mod tests {
     #[test]
     fn test_streaming_table_emits_header_and_rows() {
         let mut doc = DocumentBuilder::new();
-        let page = doc
-            .letter_page()
-            .font("Helvetica", 10.0)
-            .at(72.0, 720.0);
+        let page = doc.letter_page().font("Helvetica", 10.0).at(72.0, 720.0);
 
         let mut t = page.streaming_table(
             StreamingTableConfig::new()
@@ -1154,7 +1222,10 @@ mod tests {
         );
 
         // Push rows that would measure very wide content and very narrow content
-        for content in &["A", "A very long string that would exceed 120 pt if measured"] {
+        for content in &[
+            "A",
+            "A very long string that would exceed 120 pt if measured",
+        ] {
             t.push_row(|r| {
                 r.cell(*content);
             })
@@ -1182,7 +1253,7 @@ mod tests {
         let mut doc = DocumentBuilder::new();
         let page = doc.letter_page().font("Helvetica", 10.0).at(72.0, 720.0);
 
-        let mut t = page.streaming_table(
+        let t = page.streaming_table(
             StreamingTableConfig::new()
                 .column(StreamingColumn::new("Head").width_pt(60.0))
                 .mode_sample(5, 20.0, 300.0),
@@ -1224,10 +1295,7 @@ mod tests {
     fn test_fixed_mode_default_unchanged() {
         // StreamingTableConfig::new() must remain TableMode::Fixed.
         let cfg = StreamingTableConfig::new();
-        assert!(
-            matches!(cfg.mode, TableMode::Fixed),
-            "default mode must be Fixed"
-        );
+        assert!(matches!(cfg.mode, TableMode::Fixed), "default mode must be Fixed");
     }
 
     // ── Cross-page cell splitting (issue #400 item 3) ──────────────────────
@@ -1248,7 +1316,10 @@ mod tests {
                 .column(StreamingColumn::new("Notes").width_pt(100.0))
                 .repeat_header(true),
         );
-        t.push_row(|r| { r.cell("Line A"); }).unwrap();
+        t.push_row(|r| {
+            r.cell("Line A");
+        })
+        .unwrap();
         t.finish().done();
 
         assert!(doc.page_count() >= 2, "expected page break, got {} pages", doc.page_count());
@@ -1271,7 +1342,10 @@ mod tests {
         );
         // Push enough rows to guarantee at least one page break.
         for i in 0..5 {
-            t.push_row(|r| { r.cell(format!("row {i}")); }).unwrap();
+            t.push_row(|r| {
+                r.cell(format!("row {i}"));
+            })
+            .unwrap();
         }
         t.finish().done();
 
@@ -1338,13 +1412,15 @@ mod tests {
             r.span_cell("BIG", 2);
             r.cell("R1C1");
             r.cell("R1C2");
-        }).unwrap();
+        })
+        .unwrap();
         // Row 1: continuation (col 0 slot is spanned).
         t.push_row(|r| {
-            r.cell("");     // continuation placeholder
+            r.cell(""); // continuation placeholder
             r.cell("R2C1");
             r.cell("R2C2");
-        }).unwrap();
+        })
+        .unwrap();
         t.finish().done();
 
         let texts: Vec<String> = doc
@@ -1357,9 +1433,9 @@ mod tests {
             .collect();
 
         // Header + span cell + 4 body cells in rows 1-2.
-        assert!(texts.iter().any(|t| t == "BIG"),   "spanning cell text missing");
-        assert!(texts.iter().any(|t| t == "R1C1"),  "R1C1 missing");
-        assert!(texts.iter().any(|t| t == "R2C1"),  "R2C1 missing");
-        assert!(texts.iter().any(|t| t == "R2C2"),  "R2C2 missing");
+        assert!(texts.iter().any(|t| t == "BIG"), "spanning cell text missing");
+        assert!(texts.iter().any(|t| t == "R1C1"), "R1C1 missing");
+        assert!(texts.iter().any(|t| t == "R2C1"), "R2C1 missing");
+        assert!(texts.iter().any(|t| t == "R2C2"), "R2C2 missing");
     }
 }

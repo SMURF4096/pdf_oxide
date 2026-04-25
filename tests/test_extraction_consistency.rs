@@ -142,7 +142,7 @@ fn test_synthetic_repeated_extraction_consistency() {
     let data = build_test_pdf_with_xobject();
     let path = write_temp_pdf(&data, "consistency_test.pdf");
 
-    let mut doc = PdfDocument::open(&path).unwrap();
+    let doc = PdfDocument::open(&path).unwrap();
 
     // 1. extract_spans
     let spans1 = doc.extract_spans(0).unwrap();
@@ -172,7 +172,7 @@ fn test_synthetic_chars_then_spans_consistency() {
     let data = build_test_pdf_with_xobject();
     let path = write_temp_pdf(&data, "consistency_test_2.pdf");
 
-    let mut doc = PdfDocument::open(&path).unwrap();
+    let doc = PdfDocument::open(&path).unwrap();
 
     // 1. extract_chars
     let chars1 = doc.extract_chars(0).unwrap();

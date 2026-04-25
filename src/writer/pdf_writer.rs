@@ -1665,10 +1665,9 @@ impl PdfWriter {
         //
         // All struct-tree object IDs are tracked in `struct_tree_obj_ids` so
         // the serialisation pass below can emit them in order.
-        let struct_tree_root_id: Option<u32>;
         let mut struct_tree_obj_ids: Vec<u32> = Vec::new();
 
-        if self.config.tagged {
+        let struct_tree_root_id: Option<u32> = if self.config.tagged {
             // Collect all struct elem records into flat StructElem objects.
             // Page refs (for /Pg) come from the pre-built page_ids list.
 
@@ -1696,17 +1695,12 @@ impl PdfWriter {
                 let child_refs: Vec<ObjectRef> = record
                     .children
                     .iter()
-                    .map(|child| {
-                        emit_struct_elems(child, my_ref, page_ref, next_id, obj_ids, out)
-                    })
+                    .map(|child| emit_struct_elems(child, my_ref, page_ref, next_id, obj_ids, out))
                     .collect();
 
                 let mut dict: HashMap<String, Object> = HashMap::new();
                 dict.insert("Type".to_string(), Object::Name("StructElem".to_string()));
-                dict.insert(
-                    "S".to_string(),
-                    Object::Name(record.structure_type.clone()),
-                );
+                dict.insert("S".to_string(), Object::Name(record.structure_type.clone()));
                 dict.insert("P".to_string(), Object::Reference(parent_ref));
                 dict.insert("Pg".to_string(), Object::Reference(page_ref));
                 // /K: either array of MCIDs + child refs, or just the MCID
@@ -1764,11 +1758,10 @@ impl PdfWriter {
             }
 
             // ParentTree number-tree (flat /Nums array form)
-            let parent_tree_dict: HashMap<String, Object> = HashMap::from([(
-                "Nums".to_string(),
-                Object::Array(parent_tree_entries),
-            )]);
-            self.objects.insert(parent_tree_id, Object::Dictionary(parent_tree_dict));
+            let parent_tree_dict: HashMap<String, Object> =
+                HashMap::from([("Nums".to_string(), Object::Array(parent_tree_entries))]);
+            self.objects
+                .insert(parent_tree_id, Object::Dictionary(parent_tree_dict));
 
             // StructTreeRoot dict
             let mut str_dict: HashMap<String, Object> = HashMap::new();
@@ -1780,10 +1773,7 @@ impl PdfWriter {
             );
             // ISO 14289-1 §7.1 / PDF Ref §10.6.6: ParentTreeNextKey must equal
             // the next key that would be assigned (i.e. the page count).
-            str_dict.insert(
-                "ParentTreeNextKey".to_string(),
-                Object::Integer(page_count as i64),
-            );
+            str_dict.insert("ParentTreeNextKey".to_string(), Object::Integer(page_count as i64));
 
             // F-4: /RoleMap
             if !self.config.role_map.is_empty() {
@@ -1794,17 +1784,18 @@ impl PdfWriter {
                 str_dict.insert("RoleMap".to_string(), Object::Dictionary(role_map_dict));
             }
 
-            self.objects.insert(str_root_id, Object::Dictionary(str_dict));
+            self.objects
+                .insert(str_root_id, Object::Dictionary(str_dict));
 
             // Store all StructElem objects
             for (id, obj) in all_struct_elem_objs {
                 self.objects.insert(id, obj);
             }
 
-            struct_tree_root_id = Some(str_root_id);
+            Some(str_root_id)
         } else {
-            struct_tree_root_id = None;
-        }
+            None
+        };
 
         // Catalog object
         let mut catalog_entries = vec![
@@ -1815,10 +1806,8 @@ impl PdfWriter {
             catalog_entries.push(("AcroForm", ObjectSerializer::reference(acroform_id, 0)));
         }
         if let Some(root_ref) = outline_ref {
-            catalog_entries.push((
-                "Outlines",
-                ObjectSerializer::reference(root_ref.id, root_ref.gen),
-            ));
+            catalog_entries
+                .push(("Outlines", ObjectSerializer::reference(root_ref.id, root_ref.gen)));
         }
         if let Some(labels_id) = page_labels_id {
             catalog_entries.push(("PageLabels", ObjectSerializer::reference(labels_id, 0)));
@@ -1833,13 +1822,10 @@ impl PdfWriter {
         }
         // F-1/F-2: Tagged PDF catalog entries
         // Build XMP metadata stream for pdfuaid:part (PDF/UA-1 ISO 14289-1 §6.7.11).
-        let xmp_metadata_id: Option<u32>;
-        if self.config.tagged {
+        let xmp_metadata_id: Option<u32> = if self.config.tagged {
             // /MarkInfo << /Marked true >>
-            let mark_info = Object::Dictionary(HashMap::from([(
-                "Marked".to_string(),
-                Object::Boolean(true),
-            )]));
+            let mark_info =
+                Object::Dictionary(HashMap::from([("Marked".to_string(), Object::Boolean(true))]));
             catalog_entries.push(("MarkInfo", mark_info));
 
             // /StructTreeRoot ref
@@ -1865,17 +1851,19 @@ impl PdfWriter {
 
             // ISO 14289-1 §6.7.11: PDF/UA documents must carry an XMP metadata
             // stream in the document catalog with pdfuaid:part set to 1 (UA-1).
-            let title    = self.config.title.as_deref().unwrap_or("").to_string();
-            let creator  = self.config.creator.as_deref().unwrap_or("pdf_oxide").to_string();
+            let title = self.config.title.as_deref().unwrap_or("").to_string();
+            let creator = self
+                .config
+                .creator
+                .as_deref()
+                .unwrap_or("pdf_oxide")
+                .to_string();
             let xmp = build_pdfua_xmp(&title, &creator, &lang);
             let xmp_id = self.alloc_obj_id();
             let mut xmp_dict: HashMap<String, Object> = HashMap::new();
             xmp_dict.insert("Type".to_string(), Object::Name("Metadata".to_string()));
             xmp_dict.insert("Subtype".to_string(), Object::Name("XML".to_string()));
-            xmp_dict.insert(
-                "Length".to_string(),
-                Object::Integer(xmp.len() as i64),
-            );
+            xmp_dict.insert("Length".to_string(), Object::Integer(xmp.len() as i64));
             self.objects.insert(
                 xmp_id,
                 Object::Stream {
@@ -1884,10 +1872,10 @@ impl PdfWriter {
                 },
             );
             catalog_entries.push(("Metadata", ObjectSerializer::reference(xmp_id, 0)));
-            xmp_metadata_id = Some(xmp_id);
+            Some(xmp_id)
         } else {
-            xmp_metadata_id = None;
-        }
+            None
+        };
         let catalog_obj = ObjectSerializer::dict(catalog_entries);
 
         // Info object (optional metadata)

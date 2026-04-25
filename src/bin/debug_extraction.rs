@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n=== PDF EXTRACTION DEBUG ===");
     println!("File: {}\n", pdf_path);
 
-    let mut doc = PdfDocument::open(pdf_path)?;
+    let doc = PdfDocument::open(pdf_path)?;
     let page_count = doc.page_count()?;
 
     // Analyze spans for first page (or specified page)

@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let pdf_path = &args[1];
-    let mut doc = PdfDocument::open(pdf_path)?;
+    let doc = PdfDocument::open(pdf_path)?;
     let page_count = doc.page_count()?;
     let no_images = env::var("NO_IMAGES").is_ok();
     let options = ConversionOptions {

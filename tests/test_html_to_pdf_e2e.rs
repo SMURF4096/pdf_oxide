@@ -14,7 +14,7 @@ const DEJAVU_MONO: &[u8] = include_bytes!("fixtures/fonts/DejaVuSansMono.ttf");
 fn build_and_extract(html: &str, css: &str) -> String {
     let pdf = Pdf::from_html_css(html, css, DEJAVU.to_vec()).expect("from_html_css");
     let bytes = pdf.into_bytes();
-    let mut doc = PdfDocument::from_bytes(bytes).expect("re-open PDF");
+    let doc = PdfDocument::from_bytes(bytes).expect("re-open PDF");
     let pages = doc.page_count().expect("page count");
     let mut out = String::new();
     for i in 0..pages {
@@ -143,7 +143,7 @@ fn three_paragraphs_have_decreasing_y_baselines() {
         DEJAVU.to_vec(),
     )
     .expect("from_html_css");
-    let mut doc = PdfDocument::from_bytes(pdf.into_bytes()).expect("re-open PDF");
+    let doc = PdfDocument::from_bytes(pdf.into_bytes()).expect("re-open PDF");
     let spans = doc.extract_spans(0).expect("extract_spans");
     let pos = |needle: &str| -> Option<f32> {
         spans
@@ -204,7 +204,7 @@ fn page_break_before_forces_new_page() {
         DEJAVU.to_vec(),
     )
     .expect("from_html_css");
-    let mut doc = PdfDocument::from_bytes(pdf.into_bytes()).expect("re-open");
+    let doc = PdfDocument::from_bytes(pdf.into_bytes()).expect("re-open");
     let pages = doc.page_count().expect("page_count");
     assert!(pages >= 2, "page-break-before should yield ≥2 pages; got {pages}");
     let p0 = doc.extract_text(0).expect("p0");
@@ -227,7 +227,7 @@ fn inline_style_page_break_before_forces_new_page() {
         DEJAVU.to_vec(),
     )
     .expect("from_html_css");
-    let mut doc = PdfDocument::from_bytes(pdf.into_bytes()).expect("re-open");
+    let doc = PdfDocument::from_bytes(pdf.into_bytes()).expect("re-open");
     assert!(doc.page_count().unwrap() >= 2, "inline page-break-before should yield ≥2 pages");
 }
 
@@ -248,7 +248,7 @@ fn multi_font_cascade_selects_registered_family() {
     let font_file_count = String::from_utf8_lossy(&bytes)
         .matches("/FontFile2")
         .count();
-    let mut doc = PdfDocument::from_bytes(bytes).expect("reopen");
+    let doc = PdfDocument::from_bytes(bytes).expect("reopen");
     let text = doc.extract_text(0).expect("extract");
     assert!(text.contains("body"));
     assert!(text.contains("mono"));
@@ -305,7 +305,7 @@ fn arabic_rtl_paragraph_shapes_and_renders() {
     // The rustybuzz path emits a hex-encoded TJ stream; just assert
     // the PDF opens and has one page. Visual correctness is covered by
     // the unit-level font_shaping tests.
-    let mut doc = PdfDocument::from_bytes(bytes).expect("reopen");
+    let doc = PdfDocument::from_bytes(bytes).expect("reopen");
     assert_eq!(doc.page_count().expect("pages"), 1);
 }
 
@@ -323,7 +323,7 @@ fn page_break_after_opens_fresh_page() {
         DEJAVU.to_vec(),
     )
     .expect("from_html_css");
-    let mut doc = PdfDocument::from_bytes(pdf.into_bytes()).expect("reopen");
+    let doc = PdfDocument::from_bytes(pdf.into_bytes()).expect("reopen");
     assert!(doc.page_count().unwrap() >= 2);
     let p0 = doc.extract_text(0).unwrap();
     let p1 = doc.extract_text(1).unwrap();
@@ -343,7 +343,7 @@ fn multiple_page_breaks_accumulate_pages() {
         DEJAVU.to_vec(),
     )
     .expect("from_html_css");
-    let mut doc = PdfDocument::from_bytes(pdf.into_bytes()).expect("reopen");
+    let doc = PdfDocument::from_bytes(pdf.into_bytes()).expect("reopen");
     assert!(doc.page_count().unwrap() >= 3, "two page-breaks should yield ≥3 pages");
 }
 
@@ -450,7 +450,7 @@ fn translate_shifts_text_baseline_in_x() {
         DEJAVU.to_vec(),
     )
     .expect("from_html_css");
-    let mut doc = PdfDocument::from_bytes(pdf.into_bytes()).expect("reopen");
+    let doc = PdfDocument::from_bytes(pdf.into_bytes()).expect("reopen");
     let spans = doc.extract_spans(0).expect("spans");
     let baseline_x = spans
         .iter()
@@ -487,7 +487,7 @@ fn data_uri_png_image_becomes_xobject() {
         "expected an Image XObject in PDF"
     );
     // Text around the image must still round-trip.
-    let mut doc = PdfDocument::from_bytes(bytes.clone()).expect("reopen");
+    let doc = PdfDocument::from_bytes(bytes.clone()).expect("reopen");
     let text = doc.extract_text(0).expect("extract");
     assert!(text.contains("before"));
     assert!(text.contains("after"));
@@ -503,7 +503,7 @@ fn missing_image_src_does_not_panic() {
         DEJAVU.to_vec(),
     )
     .expect("from_html_css");
-    let mut doc = PdfDocument::from_bytes(pdf.into_bytes()).expect("reopen");
+    let doc = PdfDocument::from_bytes(pdf.into_bytes()).expect("reopen");
     let text = doc.extract_text(0).unwrap();
     assert!(text.contains("a"));
     assert!(text.contains("b"));
@@ -561,7 +561,7 @@ fn anchor_without_href_emits_no_link_annotation() {
     let s = String::from_utf8_lossy(&bytes);
     let links = s.matches("/Subtype /Link").count() + s.matches("/Subtype/Link").count();
     assert_eq!(links, 0, "href-less <a> must not emit a /Link");
-    let mut doc = PdfDocument::from_bytes(bytes).expect("reopen");
+    let doc = PdfDocument::from_bytes(bytes).expect("reopen");
     let text = doc.extract_text(0).unwrap();
     assert!(text.contains("plain text"));
 }
@@ -581,7 +581,7 @@ fn unknown_font_family_falls_back_to_default() {
         )
         .expect("from_html_css_with_fonts");
         let bytes = pdf.into_bytes();
-        let mut doc = PdfDocument::from_bytes(bytes).expect("reopen");
+        let doc = PdfDocument::from_bytes(bytes).expect("reopen");
         doc.extract_text(0).expect("extract")
     };
     assert!(extracted.contains("fallback"));
@@ -602,7 +602,7 @@ fn bare_and_quoted_font_family_both_resolve() {
     )
     .expect("from_html_css_with_fonts");
     let bytes = pdf.into_bytes();
-    let mut doc = PdfDocument::from_bytes(bytes).expect("reopen");
+    let doc = PdfDocument::from_bytes(bytes).expect("reopen");
     let text = doc.extract_text(0).unwrap();
     assert!(text.contains("quoted"));
     assert!(text.contains("bare"));
@@ -661,7 +661,7 @@ fn kitchen_sink_document_round_trips_all_features() {
     let bytes = pdf.into_bytes();
 
     // Multi-page via page-break.
-    let mut doc = PdfDocument::from_bytes(bytes.clone()).expect("reopen");
+    let doc = PdfDocument::from_bytes(bytes.clone()).expect("reopen");
     let pages = doc.page_count().unwrap();
     assert!(pages >= 2, "expected ≥2 pages, got {pages}");
 

@@ -681,10 +681,7 @@ impl FormExtractor {
     /// let mut doc = PdfDocument::open("form.pdf")?;
     /// FormExtractor::export_fdf(&mut doc, "form_data.fdf")?;
     /// ```
-    pub fn export_fdf(
-        doc: &PdfDocument,
-        output_path: impl AsRef<std::path::Path>,
-    ) -> Result<()> {
+    pub fn export_fdf(doc: &PdfDocument, output_path: impl AsRef<std::path::Path>) -> Result<()> {
         let fields = Self::extract_fields(doc)?;
         let writer = crate::fdf::FdfWriter::from_fields(fields);
         writer.write_to_file(output_path)
@@ -708,10 +705,7 @@ impl FormExtractor {
     /// let mut doc = PdfDocument::open("form.pdf")?;
     /// FormExtractor::export_xfdf(&mut doc, "form_data.xfdf")?;
     /// ```
-    pub fn export_xfdf(
-        doc: &PdfDocument,
-        output_path: impl AsRef<std::path::Path>,
-    ) -> Result<()> {
+    pub fn export_xfdf(doc: &PdfDocument, output_path: impl AsRef<std::path::Path>) -> Result<()> {
         let fields = Self::extract_fields(doc)?;
         let writer = crate::fdf::XfdfWriter::from_fields(fields);
         writer.write_to_file(output_path)

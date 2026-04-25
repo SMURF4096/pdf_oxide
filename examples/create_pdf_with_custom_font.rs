@@ -75,7 +75,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Wrote {} ({} bytes)", out_path, pdf_bytes.len());
 
     // ── Round-trip via extract_text ─────────────────────────────────
-    let mut doc = PdfDocument::from_bytes(pdf_bytes)?;
+    let doc = PdfDocument::from_bytes(pdf_bytes)?;
     let extracted = doc.extract_text(0)?;
     println!("\nExtracted text from page 0:\n{extracted}");
 

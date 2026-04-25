@@ -684,7 +684,7 @@ pub fn extract_image_from_xobject(
         .get("ColorSpace")
         .ok_or_else(|| Error::Image("Image missing /ColorSpace".to_string()))?;
 
-    let resolved_color_space = if let Some(ref d) = doc {
+    let resolved_color_space = if let Some(d) = doc {
         let res = if let Some(obj_ref) = color_space_obj.as_reference() {
             d.load_object(obj_ref)?
         } else {
@@ -710,7 +710,7 @@ pub fn extract_image_from_xobject(
     // `N = 3` and a CMYK (N = 4) image is labelled as RGB. Resolve the stream
     // reference here so the component count reflects the real profile.
     let resolved_color_space =
-        if let (Some(doc_mut), Object::Array(arr)) = (doc.as_deref(), &resolved_color_space) {
+        if let (Some(doc_mut), Object::Array(arr)) = (doc, &resolved_color_space) {
             if arr.len() > 1 {
                 if let Some(second_ref) = arr[1].as_reference() {
                     if let Ok(resolved_second) = doc_mut.load_object(second_ref) {
@@ -738,7 +738,7 @@ pub fn extract_image_from_xobject(
     // the palette cannot be resolved so the error points at the real root cause
     // instead of the downstream "Invalid RGB image dimensions" symptom.
     let indexed_resolution: Option<IndexedResolution> = if color_space == ColorSpace::Indexed {
-        let resolved = resolve_indexed_palette(doc.as_deref(), &resolved_color_space)?;
+        let resolved = resolve_indexed_palette(doc, &resolved_color_space)?;
         if resolved.is_none() {
             return Err(Error::Image("Unable to resolve Indexed color space palette".to_string()));
         }
@@ -757,10 +757,9 @@ pub fn extract_image_from_xobject(
     // profile if one exists — the standard PDF/X assumption per
     // ISO 32000-1:2008 §14.11.5.
     let direct_icc_profile = if matches!(color_space, ColorSpace::ICCBased(_)) {
-        resolve_icc_profile_from_obj(doc.as_deref(), &resolved_color_space)
+        resolve_icc_profile_from_obj(doc, &resolved_color_space)
     } else if color_space == ColorSpace::DeviceCMYK {
-        doc.as_deref()
-            .and_then(|d| d.output_intent_cmyk_profile())
+        doc.and_then(|d| d.output_intent_cmyk_profile())
     } else {
         None
     };
@@ -974,7 +973,7 @@ fn resolve_indexed_palette(
     // Resolve the base color-space object. When it's an array like
     // [/ICCBased <stream_ref>], resolve inner references so
     // parse_color_space can read /N from the ICC stream dict.
-    let base_obj = if let Some(ref d) = doc {
+    let base_obj = if let Some(d) = doc {
         let outer = if let Some(r) = arr[1].as_reference() {
             d.load_object(r)?
         } else {
@@ -1004,14 +1003,14 @@ fn resolve_indexed_palette(
     // `None` — the decoder then falls back to §10.3.5 CMYK→RGB math as
     // if no profile were present.
     let base_profile = if matches!(base_cs, ColorSpace::ICCBased(_)) {
-        resolve_icc_profile_from_obj(doc.as_deref(), &base_obj)
+        resolve_icc_profile_from_obj(doc, &base_obj)
     } else {
         None
     };
 
     // hival bounds the valid index range. Resolve via indirect reference if
     // needed; treat invalid / missing values as "unknown" and skip truncation.
-    let hival_obj = if let Some(ref d) = doc {
+    let hival_obj = if let Some(d) = doc {
         if let Some(r) = arr[2].as_reference() {
             d.load_object(r)?
         } else {
@@ -1028,7 +1027,7 @@ fn resolve_indexed_palette(
         }
     });
 
-    let lookup_obj = if let Some(ref d) = doc {
+    let lookup_obj = if let Some(d) = doc {
         if let Some(r) = arr[3].as_reference() {
             d.load_object(r)?
         } else {

@@ -415,7 +415,7 @@ fn test_xref_table_trailer() {
 
 #[test]
 fn test_parse_xref_from_fixture() {
-    let mut doc = PdfDocument::open("tests/fixtures/simple.pdf").unwrap();
+    let doc = PdfDocument::open("tests/fixtures/simple.pdf").unwrap();
     let _ = doc.page_count().unwrap();
     // Just verify the xref was parsed correctly by successfully opening
 }
@@ -438,7 +438,7 @@ fn test_structure_tree_untagged_pdf() {
     );
     finalize_pdf(&mut pdf, &[0, off1, off2, off3]);
 
-    let mut doc = PdfDocument::from_bytes(pdf).unwrap();
+    let doc = PdfDocument::from_bytes(pdf).unwrap();
     let tree = doc.structure_tree().unwrap();
     assert!(tree.is_none(), "Untagged PDF should return None");
 }
@@ -467,7 +467,7 @@ fn test_structure_tree_tagged_pdf() {
     pdf.extend_from_slice(b"6 0 obj\n<< /Type /NumberTree /Nums [] >>\nendobj\n");
     finalize_pdf(&mut pdf, &[0, off1, off2, off3, off4, off5, off6]);
 
-    let mut doc = PdfDocument::from_bytes(pdf).unwrap();
+    let doc = PdfDocument::from_bytes(pdf).unwrap();
     let tree = doc.structure_tree().unwrap();
     // May or may not find structure tree depending on parsing strictness
     let _ = tree;
@@ -562,7 +562,7 @@ fn test_mark_info_untagged() {
     );
     finalize_pdf(&mut pdf, &[0, off1, off2, off3]);
 
-    let mut doc = PdfDocument::from_bytes(pdf).unwrap();
+    let doc = PdfDocument::from_bytes(pdf).unwrap();
     let mark_info = doc.mark_info().unwrap();
     assert!(!mark_info.marked);
 }

@@ -148,7 +148,7 @@ fn build_nested_xobject_pdf(depth: usize) -> Vec<u8> {
 fn test_nested_xobject_extraction_does_not_segfault() {
     let _ = env_logger::builder().is_test(true).try_init();
     let pdf_bytes = build_nested_xobject_pdf(4);
-    let mut doc = PdfDocument::from_bytes(pdf_bytes).expect("Failed to parse nested XObject PDF");
+    let doc = PdfDocument::from_bytes(pdf_bytes).expect("Failed to parse nested XObject PDF");
 
     let options = pdf_oxide::converters::ConversionOptions {
         extract_tables: false,
@@ -173,7 +173,7 @@ fn test_nested_xobject_stress() {
     };
 
     for iteration in 0..50 {
-        let mut doc =
+        let doc =
             PdfDocument::from_bytes(pdf_bytes.clone()).expect("Failed to parse nested XObject PDF");
 
         let result = doc.extract_text_with_options(0, &options);
@@ -185,7 +185,7 @@ fn test_nested_xobject_stress() {
 #[test]
 fn test_deeply_nested_xobject_extraction() {
     let pdf_bytes = build_nested_xobject_pdf(8);
-    let mut doc = PdfDocument::from_bytes(pdf_bytes).expect("Failed to parse deep XObject PDF");
+    let doc = PdfDocument::from_bytes(pdf_bytes).expect("Failed to parse deep XObject PDF");
     let options = pdf_oxide::converters::ConversionOptions {
         extract_tables: false,
         ..Default::default()

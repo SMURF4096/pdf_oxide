@@ -337,7 +337,11 @@ pub enum TextRunStyle {
     Bold,
     Italic,
     /// RGB color 0.0–1.0, normal weight.
-    Color { r: f32, g: f32, b: f32 },
+    Color {
+        r: f32,
+        g: f32,
+        b: f32,
+    },
 }
 
 /// A single styled text run for [`FluentPageBuilder::rich_paragraph`].
@@ -349,16 +353,28 @@ pub struct TextRun {
 
 impl TextRun {
     pub fn normal(text: impl Into<String>) -> Self {
-        Self { text: text.into(), style: TextRunStyle::Normal }
+        Self {
+            text: text.into(),
+            style: TextRunStyle::Normal,
+        }
     }
     pub fn bold(text: impl Into<String>) -> Self {
-        Self { text: text.into(), style: TextRunStyle::Bold }
+        Self {
+            text: text.into(),
+            style: TextRunStyle::Bold,
+        }
     }
     pub fn italic(text: impl Into<String>) -> Self {
-        Self { text: text.into(), style: TextRunStyle::Italic }
+        Self {
+            text: text.into(),
+            style: TextRunStyle::Italic,
+        }
     }
     pub fn color(r: f32, g: f32, b: f32, text: impl Into<String>) -> Self {
-        Self { text: text.into(), style: TextRunStyle::Color { r, g, b } }
+        Self {
+            text: text.into(),
+            style: TextRunStyle::Color { r, g, b },
+        }
     }
 }
 
@@ -539,12 +555,8 @@ impl<'a> FluentPageBuilder<'a> {
     /// Wrap `text` to `max_width` using the builder's TextLayout engine.
     /// Returns one `(line, measured_width)` per visual line.
     pub(crate) fn wrap_cell_text(&self, text: &str, max_width: f32) -> Vec<(String, f32)> {
-        self.text_layout.wrap_text(
-            text,
-            &self.text_config.font,
-            self.text_config.size,
-            max_width,
-        )
+        self.text_layout
+            .wrap_text(text, &self.text_config.font, self.text_config.size, max_width)
     }
     /// Push a `ContentElement` into the current page's element list.
     pub(crate) fn push_element(&mut self, element: ContentElement) {
@@ -717,11 +729,7 @@ impl<'a> FluentPageBuilder<'a> {
     /// Render an ordered/numbered list. `style` controls the marker
     /// format (decimal `1. 2. 3.`, lowercase Roman, or lowercase
     /// alphabetic). #393 Bundle E-2.
-    pub fn numbered_list<S: AsRef<str>>(
-        self,
-        items: &[S],
-        style: ListStyle,
-    ) -> Self {
+    pub fn numbered_list<S: AsRef<str>>(self, items: &[S], style: ListStyle) -> Self {
         self.list_inner(items, ListMarker::Numbered(style))
     }
 
@@ -761,7 +769,9 @@ impl<'a> FluentPageBuilder<'a> {
             self.cursor_y += line_height;
 
             // Body: wrap the item text across multiple lines.
-            let wrapped = self.text_layout.wrap_text(item_text, &font, size, content_w);
+            let wrapped = self
+                .text_layout
+                .wrap_text(item_text, &font, size, content_w);
             if wrapped.is_empty() {
                 // Empty item — just drop one blank line.
                 self.cursor_y -= line_height;
@@ -975,11 +985,10 @@ impl<'a> FluentPageBuilder<'a> {
         let base_size = self.text_config.size;
         let ref_size = (base_size * 0.65).max(6.0);
 
-        let ref_w = self.text_layout.font_manager().text_width(
-            ref_mark,
-            &self.text_config.font,
-            ref_size,
-        );
+        let ref_w =
+            self.text_layout
+                .font_manager()
+                .text_width(ref_mark, &self.text_config.font, ref_size);
 
         let page = &mut self.builder.pages[self.page_index];
         let reading_order = page.elements.len();
@@ -997,7 +1006,8 @@ impl<'a> FluentPageBuilder<'a> {
             rotation_degrees: None,
             matrix: self.current_matrix,
         }));
-        page.pending_footnotes.push((ref_mark.to_string(), note_text.to_string()));
+        page.pending_footnotes
+            .push((ref_mark.to_string(), note_text.to_string()));
 
         // Advance cursor_x past the ref mark; don't advance cursor_y (inline).
         self.cursor_x += ref_w;
@@ -1049,12 +1059,9 @@ impl<'a> FluentPageBuilder<'a> {
                 all_lines.push((String::new(), 0.0));
                 line_heights.push(font_size * 0.5);
             }
-            let wrapped = self.text_layout.wrap_text(
-                para,
-                &self.text_config.font,
-                font_size,
-                col_width,
-            );
+            let wrapped =
+                self.text_layout
+                    .wrap_text(para, &self.text_config.font, font_size, col_width);
             for (line_text, line_width) in wrapped {
                 all_lines.push((line_text, line_width));
                 line_heights.push(line_h);
@@ -1085,8 +1092,9 @@ impl<'a> FluentPageBuilder<'a> {
                     let y = start_y - drop;
                     let font_name = self.text_config.font.clone();
                     let reading_order = self.builder.pages[self.page_index].elements.len();
-                    self.builder.pages[self.page_index].elements.push(
-                        ContentElement::Text(TextContent {
+                    self.builder.pages[self.page_index]
+                        .elements
+                        .push(ContentElement::Text(TextContent {
                             text: line_text.clone(),
                             bbox: Rect::new(col_x, y, line_width, font_size),
                             font: crate::elements::FontSpec {
@@ -1099,8 +1107,7 @@ impl<'a> FluentPageBuilder<'a> {
                             origin: None,
                             rotation_degrees: None,
                             matrix: self.current_matrix,
-                        }),
-                    );
+                        }));
                 }
                 drop += lh;
             }
@@ -1167,14 +1174,10 @@ impl<'a> FluentPageBuilder<'a> {
             let font_name = match run.style {
                 TextRunStyle::Bold => bold_font_name(&self.text_config.font),
                 TextRunStyle::Italic => italic_font_name(&self.text_config.font),
-                TextRunStyle::Normal | TextRunStyle::Color { .. } => {
-                    self.text_config.font.clone()
-                },
+                TextRunStyle::Normal | TextRunStyle::Color { .. } => self.text_config.font.clone(),
             };
             let color = match run.style {
-                TextRunStyle::Color { r, g, b } => {
-                    Some(crate::layout::Color { r, g, b })
-                },
+                TextRunStyle::Color { r, g, b } => Some(crate::layout::Color { r, g, b }),
                 _ => None,
             };
 
@@ -1199,10 +1202,10 @@ impl<'a> FluentPageBuilder<'a> {
                         &font_name,
                         self.text_config.size,
                     );
-                    let reading_order =
-                        self.builder.pages[self.page_index].elements.len();
-                    self.builder.pages[self.page_index].elements.push(
-                        ContentElement::Text(TextContent {
+                    let reading_order = self.builder.pages[self.page_index].elements.len();
+                    self.builder.pages[self.page_index]
+                        .elements
+                        .push(ContentElement::Text(TextContent {
                             text: buf.clone(),
                             bbox: Rect::new(
                                 self.cursor_x,
@@ -1227,10 +1230,8 @@ impl<'a> FluentPageBuilder<'a> {
                             origin: None,
                             rotation_degrees: None,
                             matrix: self.current_matrix,
-                        }),
-                    );
-                    self.cursor_y -=
-                        self.text_config.size * self.text_config.line_height;
+                        }));
+                    self.cursor_y -= self.text_config.size * self.text_config.line_height;
                     self.cursor_x = left_margin;
                     buf = word.to_string();
                 } else {
@@ -1244,17 +1245,12 @@ impl<'a> FluentPageBuilder<'a> {
                     &font_name,
                     self.text_config.size,
                 );
-                let reading_order =
-                    self.builder.pages[self.page_index].elements.len();
-                self.builder.pages[self.page_index].elements.push(
-                    ContentElement::Text(TextContent {
+                let reading_order = self.builder.pages[self.page_index].elements.len();
+                self.builder.pages[self.page_index]
+                    .elements
+                    .push(ContentElement::Text(TextContent {
                         text: buf,
-                        bbox: Rect::new(
-                            self.cursor_x,
-                            self.cursor_y,
-                            bw,
-                            self.text_config.size,
-                        ),
+                        bbox: Rect::new(self.cursor_x, self.cursor_y, bw, self.text_config.size),
                         font: crate::elements::FontSpec {
                             name: font_name.clone(),
                             size: self.text_config.size,
@@ -1272,8 +1268,7 @@ impl<'a> FluentPageBuilder<'a> {
                         origin: None,
                         rotation_degrees: None,
                         matrix: self.current_matrix,
-                    }),
-                );
+                    }));
                 self.cursor_x += bw;
             }
         }
@@ -1292,14 +1287,14 @@ impl<'a> FluentPageBuilder<'a> {
         color: Option<crate::layout::Color>,
     ) {
         let font_name = font_override.unwrap_or_else(|| self.text_config.font.clone());
-        let w = self.text_layout.font_manager().text_width(
-            text,
-            &font_name,
-            self.text_config.size,
-        );
+        let w = self
+            .text_layout
+            .font_manager()
+            .text_width(text, &font_name, self.text_config.size);
         let reading_order = self.builder.pages[self.page_index].elements.len();
-        self.builder.pages[self.page_index].elements.push(
-            ContentElement::Text(TextContent {
+        self.builder.pages[self.page_index]
+            .elements
+            .push(ContentElement::Text(TextContent {
                 text: text.to_string(),
                 bbox: Rect::new(self.cursor_x, self.cursor_y, w, self.text_config.size),
                 font: crate::elements::FontSpec {
@@ -1319,8 +1314,7 @@ impl<'a> FluentPageBuilder<'a> {
                 origin: None,
                 rotation_degrees: None,
                 matrix: self.current_matrix,
-            }),
-        );
+            }));
         self.cursor_x += w;
         self.last_text_rect =
             Some(Rect::new(self.cursor_x - w, self.cursor_y, w, self.text_config.size));
@@ -1821,14 +1815,7 @@ impl<'a> FluentPageBuilder<'a> {
     ///
     /// The field is created with `/FT /Sig` and `/V null` (unsigned).
     /// A signing application can fill it in via incremental update.
-    pub fn signature_field(
-        self,
-        name: impl Into<String>,
-        x: f32,
-        y: f32,
-        w: f32,
-        h: f32,
-    ) -> Self {
+    pub fn signature_field(self, name: impl Into<String>, x: f32, y: f32, w: f32, h: f32) -> Self {
         let page = &mut self.builder.pages[self.page_index];
         page.form_fields.push(PendingFormField::SignatureField {
             name: name.into(),
@@ -2008,14 +1995,7 @@ impl<'a> FluentPageBuilder<'a> {
 
     /// Draw a straight line with a caller-supplied `LineStyle`. Variable-
     /// thickness / coloured rules — e.g. a 0.5pt grey rule between rows.
-    pub fn stroke_line(
-        self,
-        x1: f32,
-        y1: f32,
-        x2: f32,
-        y2: f32,
-        style: LineStyle,
-    ) -> Self {
+    pub fn stroke_line(self, x1: f32, y1: f32, x2: f32, y2: f32, style: LineStyle) -> Self {
         use crate::elements::PathContent;
         use crate::elements::PathOperation;
         let min_x = x1.min(x2);
@@ -2124,11 +2104,7 @@ impl<'a> FluentPageBuilder<'a> {
     /// scaled to fit the rect without preserving aspect ratio; use
     /// [`crate::writer::ImageData::fit_to_box`] before calling this
     /// method if you need letterboxing.
-    pub fn image_from_file(
-        self,
-        path: impl AsRef<Path>,
-        rect: Rect,
-    ) -> Result<Self> {
+    pub fn image_from_file(self, path: impl AsRef<Path>, rect: Rect) -> Result<Self> {
         use crate::writer::image_handler::ImageData;
         let data =
             ImageData::from_file(path).map_err(|e| crate::error::Error::Image(e.to_string()))?;
@@ -2192,11 +2168,7 @@ impl<'a> FluentPageBuilder<'a> {
     /// Embed a pre-decoded [`crate::writer::ImageData`] at `rect`. Useful
     /// when a caller has already loaded the image (e.g. for reuse across
     /// multiple placements) and doesn't need the IO / parse step again.
-    pub fn image_with(
-        self,
-        data: crate::writer::image_handler::ImageData,
-        rect: Rect,
-    ) -> Self {
+    pub fn image_with(self, data: crate::writer::image_handler::ImageData, rect: Rect) -> Self {
         self.image_with_options(data, rect, None, false)
     }
 
@@ -2210,7 +2182,9 @@ impl<'a> FluentPageBuilder<'a> {
         use crate::elements::{
             ColorSpace as EColorSpace, ImageContent, ImageFormat as EImageFormat,
         };
-        use crate::writer::image_handler::{ColorSpace as WColorSpace, ImageFormat as WImageFormat};
+        use crate::writer::image_handler::{
+            ColorSpace as WColorSpace, ImageFormat as WImageFormat,
+        };
 
         let format = match data.format {
             WImageFormat::Jpeg => EImageFormat::Jpeg,
@@ -2223,8 +2197,7 @@ impl<'a> FluentPageBuilder<'a> {
             WColorSpace::DeviceCMYK => EColorSpace::CMYK,
         };
 
-        let mut content =
-            ImageContent::new(rect, format, data.data, data.width, data.height);
+        let mut content = ImageContent::new(rect, format, data.data, data.width, data.height);
         content.color_space = color_space;
         content.bits_per_component = data.bits_per_component;
         if let Some(mask) = data.soft_mask {
@@ -2368,8 +2341,10 @@ impl<'a> FluentPageBuilder<'a> {
         const K_Q: f32 = 0.552_284_8;
         let (mut a, b) = (start_angle, end_angle);
         let step = std::f32::consts::FRAC_PI_2;
-        let mut ops: Vec<PathOperation> =
-            vec![PathOperation::MoveTo(cx + radius * a.cos(), cy + radius * a.sin())];
+        let mut ops: Vec<PathOperation> = vec![PathOperation::MoveTo(
+            cx + radius * a.cos(),
+            cy + radius * a.sin(),
+        )];
         while a < b {
             let seg_end = (a + step).min(b);
             let sweep = seg_end - a;
@@ -2590,10 +2565,7 @@ enum PendingFormField {
         multi_select: bool,
     },
     /// An unsigned signature placeholder field (/FT /Sig).
-    SignatureField {
-        name: String,
-        rect: Rect,
-    },
+    SignatureField { name: String, rect: Rect },
 }
 
 /// Internal page data for DocumentBuilder.
@@ -2763,7 +2735,7 @@ impl DocumentBuilder {
                 last_text_rect: None,
                 pending_annotations: Vec::new(),
                 current_matrix: None,
-            pending_tab_order: None,
+                pending_tab_order: None,
             };
 
             // Title: bold + larger.
@@ -2806,10 +2778,7 @@ impl DocumentBuilder {
     ///             .add_range(PageLabelRange::new(4).with_style(PageLabelStyle::Decimal)),
     ///     );
     /// ```
-    pub fn with_page_labels(
-        mut self,
-        labels: super::page_labels::PageLabelsBuilder,
-    ) -> Self {
+    pub fn with_page_labels(mut self, labels: super::page_labels::PageLabelsBuilder) -> Self {
         self.page_labels = Some(labels);
         self
     }
@@ -2827,11 +2796,7 @@ impl DocumentBuilder {
     /// Outline entries are materialised into the PDF `/Outlines`
     /// dictionary at [`Self::build`] time and show up in any reader's
     /// bookmarks panel. #393 Bundle B-1.
-    pub fn bookmark(
-        mut self,
-        title: impl Into<String>,
-        page_index: usize,
-    ) -> Self {
+    pub fn bookmark(mut self, title: impl Into<String>, page_index: usize) -> Self {
         self.outline
             .add_item(super::outline_builder::OutlineItem::new(title, page_index));
         self
@@ -2939,7 +2904,9 @@ impl DocumentBuilder {
     /// Emitted in `/RoleMap` inside the StructTreeRoot when `tagged_pdf_ua1()` is
     /// set. Multiple calls accumulate entries.
     pub fn role_map(mut self, custom: impl Into<String>, standard: impl Into<String>) -> Self {
-        self.metadata.role_map.push((custom.into(), standard.into()));
+        self.metadata
+            .role_map
+            .push((custom.into(), standard.into()));
         self
     }
 
@@ -3818,10 +3785,7 @@ mod tests {
 
         // Header row (first 2 Text elements) must use Helvetica-Bold because
         // TableCell::header and is_header promote the font name.
-        assert_eq!(
-            texts[0].font.name, "Helvetica-Bold",
-            "header cell must use bold font"
-        );
+        assert_eq!(texts[0].font.name, "Helvetica-Bold", "header cell must use bold font");
         assert_eq!(texts[1].font.name, "Helvetica-Bold");
         // Body rows stay on the default Helvetica.
         assert_eq!(texts[2].font.name, "Helvetica");
@@ -3856,11 +3820,7 @@ mod tests {
 
         // Orders must be monotone and start from 0.
         for pair in orders.windows(2) {
-            assert!(
-                pair[1] > pair[0],
-                "reading_order must be strictly monotone: {:?}",
-                orders
-            );
+            assert!(pair[1] > pair[0], "reading_order must be strictly monotone: {:?}", orders);
         }
     }
 
@@ -3897,8 +3857,8 @@ mod tests {
     fn test_image_from_bytes_roundtrip() {
         // Same image loaded via from_bytes must produce an equivalent
         // ContentElement::Image.
-        let bytes = std::fs::read("tests/fixtures/adobe_cmyk_10x11_white.jpg")
-            .expect("fixture must exist");
+        let bytes =
+            std::fs::read("tests/fixtures/adobe_cmyk_10x11_white.jpg").expect("fixture must exist");
 
         let mut doc = DocumentBuilder::new();
         doc.letter_page()
@@ -3937,13 +3897,25 @@ mod tests {
             .circle(100.0, 100.0, 20.0, Some(LineStyle::new(1.5, 0.1, 0.2, 0.3)), None)
             .ellipse(200.0, 100.0, 30.0, 15.0, None, Some((0.9, 0.1, 0.1)))
             .polygon(
-                &[(300.0, 100.0), (320.0, 120.0), (340.0, 100.0), (320.0, 80.0)],
+                &[
+                    (300.0, 100.0),
+                    (320.0, 120.0),
+                    (340.0, 100.0),
+                    (320.0, 80.0),
+                ],
                 Some(LineStyle::default()),
                 Some((0.5, 0.5, 0.9)),
             )
             .arc(400.0, 100.0, 25.0, 0.0, std::f32::consts::PI, LineStyle::default())
             .bezier_curve(
-                500.0, 100.0, 510.0, 140.0, 540.0, 140.0, 550.0, 100.0,
+                500.0,
+                100.0,
+                510.0,
+                140.0,
+                540.0,
+                140.0,
+                550.0,
+                100.0,
                 LineStyle::default(),
                 None,
             )
@@ -4047,7 +4019,12 @@ mod tests {
             })
             .collect();
         // 3 items × 2 text elements each (bullet glyph + body) = 6.
-        assert_eq!(texts.len(), 6, "got texts: {:?}", texts.iter().map(|t| &t.text).collect::<Vec<_>>());
+        assert_eq!(
+            texts.len(),
+            6,
+            "got texts: {:?}",
+            texts.iter().map(|t| &t.text).collect::<Vec<_>>()
+        );
         // Bullet glyph alternates with body text.
         assert_eq!(texts[0].text, "\u{2022}");
         assert_eq!(texts[1].text, "Apples");
@@ -4128,11 +4105,8 @@ mod tests {
         let before_y = {
             let p = doc.letter_page().at(72.0, 720.0);
             let y = p.cursor_y;
-            p.code_block(
-                "rust",
-                "fn main() {\n    println!(\"hi\");\n}\n",
-            )
-            .done();
+            p.code_block("rust", "fn main() {\n    println!(\"hi\");\n}\n")
+                .done();
             y
         };
 
@@ -4169,9 +4143,7 @@ mod tests {
         assert_eq!(texts[0].font.name, "Courier");
         // Content reads back.
         assert!(texts.iter().any(|t| t.text.contains("fn main")));
-        assert!(texts
-            .iter()
-            .any(|t| t.text.contains("println")));
+        assert!(texts.iter().any(|t| t.text.contains("println")));
 
         // After the call the cursor must be below the initial cursor.
         // (We consumed `p` inside the closure; verify via a second
@@ -4490,7 +4462,11 @@ mod tests {
         // Bottom margin convention = 72. So initial remaining = 720 - 72 = 648.
         let mut doc = DocumentBuilder::new();
         let page = doc.letter_page();
-        assert!((page.remaining_space() - 648.0).abs() < 0.01, "initial: {}", page.remaining_space());
+        assert!(
+            (page.remaining_space() - 648.0).abs() < 0.01,
+            "initial: {}",
+            page.remaining_space()
+        );
 
         // After .text(), cursor drops by size * line_height = 12 * 1.2 = 14.4.
         // Remaining should drop by the same.
@@ -4614,9 +4590,7 @@ mod tests {
         let p = paths[0];
         assert_eq!(p.stroke_width, 0.5);
         let c = p.stroke_color.expect("stroke color must be set");
-        assert!(
-            (c.r - 0.5).abs() < 1e-6 && (c.g - 0.5).abs() < 1e-6 && (c.b - 0.5).abs() < 1e-6
-        );
+        assert!((c.r - 0.5).abs() < 1e-6 && (c.g - 0.5).abs() < 1e-6 && (c.b - 0.5).abs() < 1e-6);
         assert!(p.fill_color.is_none());
     }
 
@@ -4998,14 +4972,8 @@ mod tests {
         builder.letter_page().at(72.0, 720.0).text("Hello").done();
         let bytes = builder.build().unwrap();
         let content = String::from_utf8_lossy(&bytes);
-        assert!(
-            content.contains("/MarkInfo"),
-            "catalog must contain /MarkInfo"
-        );
-        assert!(
-            content.contains("/Marked true"),
-            "/MarkInfo must have /Marked true"
-        );
+        assert!(content.contains("/MarkInfo"), "catalog must contain /MarkInfo");
+        assert!(content.contains("/Marked true"), "/MarkInfo must have /Marked true");
     }
 
     #[test]
@@ -5020,14 +4988,8 @@ mod tests {
         builder.letter_page().at(72.0, 720.0).text("Hello").done();
         let bytes = builder.build().unwrap();
         let content = String::from_utf8_lossy(&bytes);
-        assert!(
-            content.contains("/StructTreeRoot"),
-            "catalog must contain /StructTreeRoot"
-        );
-        assert!(
-            content.contains("/ParentTree"),
-            "StructTreeRoot must contain /ParentTree"
-        );
+        assert!(content.contains("/StructTreeRoot"), "catalog must contain /StructTreeRoot");
+        assert!(content.contains("/ParentTree"), "StructTreeRoot must contain /ParentTree");
         assert!(
             content.contains("/ParentTreeNextKey"),
             "StructTreeRoot must contain /ParentTreeNextKey"
@@ -5047,10 +5009,7 @@ mod tests {
         let bytes = builder.build().unwrap();
         let content = String::from_utf8_lossy(&bytes);
         assert!(content.contains("/Lang"), "catalog must contain /Lang");
-        assert!(
-            content.contains("fr-CA"),
-            "/Lang must carry the configured language"
-        );
+        assert!(content.contains("fr-CA"), "/Lang must carry the configured language");
         assert!(
             content.contains("/ViewerPreferences"),
             "catalog must contain /ViewerPreferences"
@@ -5064,9 +5023,7 @@ mod tests {
     #[test]
     fn test_tagged_pdf_ua1_emits_struct_parents_on_pages() {
         let mut builder = DocumentBuilder::new();
-        builder = builder.metadata(
-            DocumentMetadata::new().tagged_pdf_ua1().language("en"),
-        );
+        builder = builder.metadata(DocumentMetadata::new().tagged_pdf_ua1().language("en"));
         // Two-page document so we can verify both pages get /StructParents.
         builder.letter_page().at(72.0, 720.0).text("Page 1").done();
         builder.letter_page().at(72.0, 720.0).text("Page 2").done();
@@ -5074,10 +5031,7 @@ mod tests {
         let content = String::from_utf8_lossy(&bytes);
         // Each page dict should carry /StructParents.
         let count = content.matches("/StructParents").count();
-        assert_eq!(
-            count, 2,
-            "each page must carry /StructParents; found {count} occurrences"
-        );
+        assert_eq!(count, 2, "each page must carry /StructParents; found {count} occurrences");
     }
 
     #[test]
@@ -5107,10 +5061,7 @@ mod tests {
         builder.letter_page().at(72.0, 720.0).text("plain").done();
         let bytes = builder.build().unwrap();
         let content = String::from_utf8_lossy(&bytes);
-        assert!(
-            !content.contains("/MarkInfo"),
-            "untagged PDF must NOT contain /MarkInfo"
-        );
+        assert!(!content.contains("/MarkInfo"), "untagged PDF must NOT contain /MarkInfo");
         assert!(
             !content.contains("/StructTreeRoot"),
             "untagged PDF must NOT contain /StructTreeRoot"
@@ -5129,22 +5080,13 @@ mod tests {
         builder.letter_page().at(72.0, 720.0).text("hello").done();
         let bytes = builder.build().unwrap();
         let content = String::from_utf8_lossy(&bytes);
-        assert!(
-            content.contains("/Metadata"),
-            "catalog must reference /Metadata stream"
-        );
-        assert!(
-            content.contains("pdfuaid:part"),
-            "XMP stream must contain pdfuaid:part"
-        );
+        assert!(content.contains("/Metadata"), "catalog must reference /Metadata stream");
+        assert!(content.contains("pdfuaid:part"), "XMP stream must contain pdfuaid:part");
         assert!(
             content.contains("<pdfuaid:part>1</pdfuaid:part>"),
             "XMP stream must declare pdfuaid:part = 1"
         );
-        assert!(
-            content.contains("XMP Test"),
-            "XMP stream must include document title"
-        );
+        assert!(content.contains("XMP Test"), "XMP stream must include document title");
     }
 
     #[test]
@@ -5162,8 +5104,8 @@ mod tests {
     #[test]
     fn test_image_with_alt_emits_figure_bdc() {
         use crate::geometry::Rect;
-        let img_bytes = std::fs::read("tests/fixtures/adobe_cmyk_10x11_white.jpg")
-            .expect("fixture must exist");
+        let img_bytes =
+            std::fs::read("tests/fixtures/adobe_cmyk_10x11_white.jpg").expect("fixture must exist");
         let mut builder = DocumentBuilder::new();
         builder = builder.metadata(DocumentMetadata::new().tagged_pdf_ua1());
         let page = builder.letter_page();
@@ -5177,17 +5119,14 @@ mod tests {
             content.contains("/Figure <</MCID"),
             "image with alt text must be wrapped in /Figure BDC"
         );
-        assert!(
-            content.contains("Logo"),
-            "alt text must appear in the /Alt entry"
-        );
+        assert!(content.contains("Logo"), "alt text must appear in the /Alt entry");
     }
 
     #[test]
     fn test_image_as_artifact_emits_artifact_bdc() {
         use crate::geometry::Rect;
-        let img_bytes = std::fs::read("tests/fixtures/adobe_cmyk_10x11_white.jpg")
-            .expect("fixture must exist");
+        let img_bytes =
+            std::fs::read("tests/fixtures/adobe_cmyk_10x11_white.jpg").expect("fixture must exist");
         let mut builder = DocumentBuilder::new();
         builder = builder.metadata(DocumentMetadata::new().tagged_pdf_ua1());
         let page = builder.letter_page();

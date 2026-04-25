@@ -4,7 +4,7 @@ use pdf_oxide::structure::spatial_table_detector::{SpatialTableDetector, TableDe
 #[test]
 fn test_table_detection_on_fixtures() {
     for fixture in &["tests/fixtures/simple.pdf", "tests/fixtures/outline.pdf"] {
-        let mut doc = PdfDocument::open(fixture).unwrap();
+        let doc = PdfDocument::open(fixture).unwrap();
         let pages = doc.page_count().unwrap();
         let detector = SpatialTableDetector::with_config(TableDetectionConfig::default());
 
@@ -17,8 +17,8 @@ fn test_table_detection_on_fixtures() {
 
 #[test]
 fn test_table_detection_deterministic() {
-    let mut doc1 = PdfDocument::open("tests/fixtures/outline.pdf").unwrap();
-    let mut doc2 = PdfDocument::open("tests/fixtures/outline.pdf").unwrap();
+    let doc1 = PdfDocument::open("tests/fixtures/outline.pdf").unwrap();
+    let doc2 = PdfDocument::open("tests/fixtures/outline.pdf").unwrap();
 
     let pages = doc1.page_count().unwrap();
     let detector = SpatialTableDetector::with_config(TableDetectionConfig::default());

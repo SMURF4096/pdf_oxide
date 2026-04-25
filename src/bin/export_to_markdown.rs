@@ -326,7 +326,7 @@ fn export_to_markdown(
     markdown.push_str("---\n\n");
 
     // Extract form fields if present (AcroForm)
-    match FormExtractor::extract_fields(&mut pdf) {
+    match FormExtractor::extract_fields(&pdf) {
         Ok(fields) if !fields.is_empty() => {
             markdown.push_str("## Form Fields\n\n");
             markdown

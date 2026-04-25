@@ -196,7 +196,8 @@ fn open_encrypted_and_extract(path: &std::path::Path, password: &str) -> String 
         .authenticate(password.as_bytes())
         .expect("authenticate should not error");
     assert!(authenticated, "password '{password}' should authenticate successfully");
-    doc.extract_text(0).expect("extract_text should succeed after auth")
+    doc.extract_text(0)
+        .expect("extract_text should succeed after auth")
 }
 
 /// Helper: write encrypted bytes to a temp file and open+extract.
@@ -224,10 +225,7 @@ fn save_encrypted_content_preserved_ascii() {
         .expect("save_with_encryption AES-128 should succeed");
 
     let text = open_encrypted_and_extract(&path, "user123");
-    assert!(
-        text.contains(expected),
-        "extracted text {text:?} should contain {expected:?}"
-    );
+    assert!(text.contains(expected), "extracted text {text:?} should contain {expected:?}");
 }
 
 /// to_bytes_with_encryption (AES-128) must also preserve content end-to-end.
@@ -240,10 +238,7 @@ fn to_bytes_encrypted_content_preserved() {
         .expect("to_bytes_with_encryption AES-128 should succeed");
 
     let text = bytes_open_encrypted_and_extract(&bytes, "u");
-    assert!(
-        text.contains(expected),
-        "extracted text {text:?} should contain {expected:?}"
-    );
+    assert!(text.contains(expected), "extracted text {text:?} should contain {expected:?}");
 }
 
 /// AES-128 round-trip preserves content.
@@ -344,12 +339,10 @@ fn issue_401_two_embedded_fonts_aes128_content_preserved() {
     let path = dir.path().join("issue_401.pdf");
 
     // Register two fonts (regular + bold) mirroring the issue report.
-    let font_regular =
-        EmbeddedFont::from_file(Path::new("tests/fixtures/fonts/DejaVuSans.ttf"))
-            .expect("DejaVuSans.ttf fixture must be present");
-    let font_bold =
-        EmbeddedFont::from_file(Path::new("tests/fixtures/fonts/DejaVuSans-Bold.ttf"))
-            .expect("DejaVuSans-Bold.ttf fixture must be present");
+    let font_regular = EmbeddedFont::from_file(Path::new("tests/fixtures/fonts/DejaVuSans.ttf"))
+        .expect("DejaVuSans.ttf fixture must be present");
+    let font_bold = EmbeddedFont::from_file(Path::new("tests/fixtures/fonts/DejaVuSans-Bold.ttf"))
+        .expect("DejaVuSans-Bold.ttf fixture must be present");
 
     let mut builder = DocumentBuilder::new()
         .register_embedded_font("Regular", font_regular)
@@ -424,7 +417,8 @@ fn save_encrypted_aes256_embedded_font_size_check() {
 
     // Baseline: simple text (no embedded font), AES-256
     let simple_path = dir.path().join("simple_aes256.pdf");
-    make_builder("Hello simple").save_encrypted(&simple_path, "u", "o")
+    make_builder("Hello simple")
+        .save_encrypted(&simple_path, "u", "o")
         .expect("simple AES-256 save_encrypted should succeed");
     let simple_size = fs::metadata(&simple_path).unwrap().len() as usize;
 
@@ -434,8 +428,7 @@ fn save_encrypted_aes256_embedded_font_size_check() {
         return; // fixture not available; skip silently
     }
     let font = EmbeddedFont::from_file(font_path).expect("DejaVuSans.ttf must be loadable");
-    let mut ttf_builder = DocumentBuilder::new()
-        .register_embedded_font("DejaVu", font);
+    let mut ttf_builder = DocumentBuilder::new().register_embedded_font("DejaVu", font);
     ttf_builder
         .a4_page()
         .font("DejaVu", 12.0)
@@ -488,13 +481,17 @@ fn save_encrypted_aes256_ffi_sequence_embedded_font() {
     let simple_path = dir.path().join("simple.pdf");
     {
         let mut b2 = DocumentBuilder::new();
-        { b2.page(PageSize::A4).at(72.0, 720.0).text("simple").done(); }
-        b2.save_encrypted(&simple_path, "u", "o").expect("simple save_encrypted");
+        {
+            b2.page(PageSize::A4).at(72.0, 720.0).text("simple").done();
+        }
+        b2.save_encrypted(&simple_path, "u", "o")
+            .expect("simple save_encrypted");
     }
     let simple_size = fs::metadata(&simple_path).unwrap().len() as usize;
 
     let ttf_path = dir.path().join("ttf_ffi_aes256.pdf");
-    builder.save_encrypted(&ttf_path, "u", "o")
+    builder
+        .save_encrypted(&ttf_path, "u", "o")
         .expect("embedded-font AES-256 save_encrypted via FFI sequence");
     let ttf_size = fs::metadata(&ttf_path).unwrap().len() as usize;
 
@@ -527,7 +524,10 @@ fn debug_trace_editor_from_bytes_size() {
     let mut builder = DocumentBuilder::new().register_embedded_font("DejaVu", font);
     {
         let page = builder.page(PageSize::A4);
-        page.font("DejaVu", 12.0).at(72.0, 720.0).text("Hello embedded").done();
+        page.font("DejaVu", 12.0)
+            .at(72.0, 720.0)
+            .text("Hello embedded")
+            .done();
     }
 
     // Step 1: build() to get the plain bytes
@@ -570,7 +570,10 @@ fn all_object_ids_returns_complete_set_for_built_pdf() {
     let mut builder = DocumentBuilder::new().register_embedded_font("DejaVu", font);
     {
         let page = builder.page(PageSize::A4);
-        page.font("DejaVu", 12.0).at(72.0, 720.0).text("Hello embedded").done();
+        page.font("DejaVu", 12.0)
+            .at(72.0, 720.0)
+            .text("Hello embedded")
+            .done();
     }
 
     let plain_bytes = builder.build().expect("build");

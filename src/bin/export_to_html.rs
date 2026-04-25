@@ -112,7 +112,7 @@ fn export_pdf_to_html(
         println!("Processing: {}/{}.pdf", category, file_stem);
     }
 
-    let mut doc = PdfDocument::open(pdf_path)?;
+    let doc = PdfDocument::open(pdf_path)?;
 
     // Create conversion options
     let options = ConversionOptions {

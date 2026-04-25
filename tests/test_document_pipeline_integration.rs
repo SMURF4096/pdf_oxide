@@ -45,7 +45,7 @@ mod document_pipeline_integration {
             return;
         }
 
-        let mut doc = match PdfDocument::open(&pdf_path) {
+        let doc = match PdfDocument::open(&pdf_path) {
             Ok(d) => d,
             Err(_) => {
                 println!("Could not open PDF at {:?}, skipping", pdf_path);
@@ -81,7 +81,7 @@ mod document_pipeline_integration {
             return;
         }
 
-        let mut doc = match PdfDocument::open(&pdf_path) {
+        let doc = match PdfDocument::open(&pdf_path) {
             Ok(d) => d,
             Err(_) => {
                 println!("Could not open PDF at {:?}, skipping", pdf_path);
@@ -117,7 +117,7 @@ mod document_pipeline_integration {
             return;
         }
 
-        let mut doc = match PdfDocument::open(&pdf_path) {
+        let doc = match PdfDocument::open(&pdf_path) {
             Ok(d) => d,
             Err(_) => {
                 println!("Could not open PDF at {:?}, skipping", pdf_path);
@@ -154,7 +154,7 @@ mod document_pipeline_integration {
             return;
         }
 
-        let mut doc = match PdfDocument::open(&pdf_path) {
+        let doc = match PdfDocument::open(&pdf_path) {
             Ok(d) => d,
             Err(_) => {
                 println!("Could not open PDF at {:?}, skipping", pdf_path);
@@ -219,7 +219,7 @@ mod document_pipeline_integration {
             return;
         }
 
-        let mut doc = match PdfDocument::open(&pdf_path) {
+        let doc = match PdfDocument::open(&pdf_path) {
             Ok(d) => d,
             Err(_) => {
                 println!("Could not open PDF at {:?}, skipping", pdf_path);
@@ -278,7 +278,7 @@ mod document_pipeline_integration {
             return;
         }
 
-        let mut doc = match PdfDocument::open(&pdf_path) {
+        let doc = match PdfDocument::open(&pdf_path) {
             Ok(d) => d,
             Err(_) => {
                 println!("Could not open PDF at {:?}, skipping", pdf_path);
@@ -308,7 +308,7 @@ mod document_pipeline_integration {
             return;
         }
 
-        let mut doc = match PdfDocument::open(&pdf_path) {
+        let doc = match PdfDocument::open(&pdf_path) {
             Ok(d) => d,
             Err(_) => {
                 println!("Could not open PDF at {:?}, skipping", pdf_path);
@@ -362,7 +362,7 @@ mod document_pipeline_integration {
             return;
         }
 
-        let mut doc = match PdfDocument::open(&pdf_path) {
+        let doc = match PdfDocument::open(&pdf_path) {
             Ok(d) => d,
             Err(_) => {
                 println!("Could not open PDF at {:?}, skipping", pdf_path);

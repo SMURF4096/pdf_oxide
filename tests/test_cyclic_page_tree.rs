@@ -43,7 +43,7 @@ fn write_temp_pdf(data: &[u8], name: &str) -> std::path::PathBuf {
 fn test_cyclic_page_tree_no_stack_overflow() {
     let data = build_pdf_cyclic_page_tree();
     let path = write_temp_pdf(&data, "cyclic_page_tree.pdf");
-    let mut doc = PdfDocument::open(&path).expect("Should parse PDF structure");
+    let doc = PdfDocument::open(&path).expect("Should parse PDF structure");
     // Attempting to get page 0 should return an error, not stack overflow.
     let result = doc.get_page_content_data(0);
     assert!(result.is_err(), "Expected error for cyclic page tree");

@@ -3,7 +3,7 @@ use pdf_oxide::document::PdfDocument;
 #[test]
 fn test_from_bytes_valid_pdf() {
     let data = std::fs::read("tests/fixtures/simple.pdf").unwrap();
-    let mut doc = PdfDocument::from_bytes(data).unwrap();
+    let doc = PdfDocument::from_bytes(data).unwrap();
     let pages = doc.page_count().unwrap();
     assert!(pages > 0, "Should have at least 1 page");
     let _text = doc.extract_text(0).unwrap();
@@ -13,8 +13,8 @@ fn test_from_bytes_valid_pdf() {
 fn test_from_bytes_matches_file() {
     let data = std::fs::read("tests/fixtures/simple.pdf").unwrap();
 
-    let mut doc_file = PdfDocument::open("tests/fixtures/simple.pdf").unwrap();
-    let mut doc_bytes = PdfDocument::from_bytes(data).unwrap();
+    let doc_file = PdfDocument::open("tests/fixtures/simple.pdf").unwrap();
+    let doc_bytes = PdfDocument::from_bytes(data).unwrap();
 
     let pages = doc_file.page_count().unwrap();
     for p in 0..pages {
@@ -28,8 +28,8 @@ fn test_from_bytes_matches_file() {
 fn test_from_bytes_page_count() {
     let data = std::fs::read("tests/fixtures/outline.pdf").unwrap();
 
-    let mut doc_file = PdfDocument::open("tests/fixtures/outline.pdf").unwrap();
-    let mut doc_bytes = PdfDocument::from_bytes(data).unwrap();
+    let doc_file = PdfDocument::open("tests/fixtures/outline.pdf").unwrap();
+    let doc_bytes = PdfDocument::from_bytes(data).unwrap();
 
     assert_eq!(
         doc_file.page_count().unwrap(),

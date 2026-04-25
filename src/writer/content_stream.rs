@@ -842,7 +842,10 @@ impl ContentStreamBuilder {
                 Some(ArtifactType::Background) => ("Background".to_string(), None),
                 None => unreachable!(),
             };
-            self.op(ContentStreamOp::BeginArtifact { artifact_type, subtype });
+            self.op(ContentStreamOp::BeginArtifact {
+                artifact_type,
+                subtype,
+            });
         }
 
         self.begin_text();
@@ -910,7 +913,10 @@ impl ContentStreamBuilder {
                 Some(ArtifactType::Background) => ("Background".to_string(), None),
                 None => unreachable!(),
             };
-            self.op(ContentStreamOp::BeginArtifact { artifact_type, subtype });
+            self.op(ContentStreamOp::BeginArtifact {
+                artifact_type,
+                subtype,
+            });
         }
 
         // If the path carries a 2D affine transform, bracket it in
@@ -919,9 +925,7 @@ impl ContentStreamBuilder {
         // the matching `Q` after the stroke/fill op below.
         let had_matrix = if let Some(m) = path.matrix {
             self.op(ContentStreamOp::SaveState);
-            self.op(ContentStreamOp::Transform(
-                m[0], m[1], m[2], m[3], m[4], m[5],
-            ));
+            self.op(ContentStreamOp::Transform(m[0], m[1], m[2], m[3], m[4], m[5]));
             true
         } else {
             false
@@ -1181,19 +1185,19 @@ impl ContentStreamBuilder {
         // PDF/UA-1 F-3: decorative images → /Artifact BDC/EMC.
         // PDF/UA-1 F-1: images with alt text → /Figure BDC/EMC + StructElemRecord.
         let is_artifact = image.is_artifact;
-        let has_alt     = image.alt_text.is_some() && !is_artifact;
+        let has_alt = image.alt_text.is_some() && !is_artifact;
 
         let mcid = if has_alt {
             let mcid = self.next_mcid();
             self.op(ContentStreamOp::BeginMarkedContentDict {
-                tag:  "Figure".to_string(),
+                tag: "Figure".to_string(),
                 mcid,
             });
             Some(mcid)
         } else if is_artifact {
             self.op(ContentStreamOp::BeginArtifact {
                 artifact_type: "Layout".to_string(),
-                subtype:       None,
+                subtype: None,
             });
             None
         } else {
@@ -1204,9 +1208,7 @@ impl ContentStreamBuilder {
         // `q cm ... Q`. #393 Bundle A-2 follow-up.
         let had_matrix = if let Some(m) = image.matrix {
             self.op(ContentStreamOp::SaveState);
-            self.op(ContentStreamOp::Transform(
-                m[0], m[1], m[2], m[3], m[4], m[5],
-            ));
+            self.op(ContentStreamOp::Transform(m[0], m[1], m[2], m[3], m[4], m[5]));
             true
         } else {
             false
@@ -1484,7 +1486,10 @@ impl ContentStreamBuilder {
             ContentStreamOp::EndMarkedContent => write!(w, "EMC"),
 
             // Artifact marked content (F-3)
-            ContentStreamOp::BeginArtifact { artifact_type, subtype } => {
+            ContentStreamOp::BeginArtifact {
+                artifact_type,
+                subtype,
+            } => {
                 write!(w, "/Artifact <<")?;
                 write!(w, "/Type /{}", artifact_type)?;
                 if let Some(sub) = subtype {

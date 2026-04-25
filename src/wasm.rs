@@ -3911,9 +3911,7 @@ impl WasmDocumentBuilder {
         if self.inner.is_none() {
             return Err(JsValue::from_str("DocumentBuilder already consumed"));
         }
-        Ok(WasmFluentPageBuilder::new_with_size(
-            crate::writer::PageSize::Letter,
-        ))
+        Ok(WasmFluentPageBuilder::new_with_size(crate::writer::PageSize::Letter))
     }
 
     /// Start a new page with custom dimensions in PDF points
@@ -4026,25 +4024,33 @@ impl WasmDocumentBuilder {
                 WasmPageOp::SignatureField { name, x, y, w, h } => {
                     rust_page.signature_field(name, x, y, w, h)
                 },
-                WasmPageOp::Footnote { ref_mark, note_text } => {
-                    rust_page.footnote(&ref_mark, &note_text)
-                },
-                WasmPageOp::Columns { count, gap_pt, text } => {
-                    rust_page.columns(count, gap_pt, &text)
-                },
+                WasmPageOp::Footnote {
+                    ref_mark,
+                    note_text,
+                } => rust_page.footnote(&ref_mark, &note_text),
+                WasmPageOp::Columns {
+                    count,
+                    gap_pt,
+                    text,
+                } => rust_page.columns(count, gap_pt, &text),
                 WasmPageOp::Inline(text) => rust_page.inline(&text),
                 WasmPageOp::InlineBold(text) => rust_page.inline_bold(&text),
                 WasmPageOp::InlineItalic(text) => rust_page.inline_italic(&text),
-                WasmPageOp::InlineColor { r, g, b, text } => {
-                    rust_page.inline_color(r, g, b, &text)
-                },
+                WasmPageOp::InlineColor { r, g, b, text } => rust_page.inline_color(r, g, b, &text),
                 WasmPageOp::Newline => rust_page.newline(),
                 WasmPageOp::Rect(x, y, w, h) => rust_page.rect(x, y, w, h),
                 WasmPageOp::FilledRect(x, y, w, h, r, g, b) => {
                     rust_page.filled_rect(x, y, w, h, r, g, b)
                 },
                 WasmPageOp::Line(x1, y1, x2, y2) => rust_page.line(x1, y1, x2, y2),
-                WasmPageOp::TextInRect { x, y, w, h, text, align } => rust_page.text_in_rect(
+                WasmPageOp::TextInRect {
+                    x,
+                    y,
+                    w,
+                    h,
+                    text,
+                    align,
+                } => rust_page.text_in_rect(
                     crate::geometry::Rect::new(x, y, w, h),
                     &text,
                     align.into(),
@@ -4058,13 +4064,9 @@ impl WasmDocumentBuilder {
                     r,
                     g,
                     b,
-                } => rust_page.stroke_rect(
-                    x,
-                    y,
-                    w,
-                    h,
-                    crate::writer::LineStyle::new(width, r, g, b),
-                ),
+                } => {
+                    rust_page.stroke_rect(x, y, w, h, crate::writer::LineStyle::new(width, r, g, b))
+                },
                 WasmPageOp::StrokeLine {
                     x1,
                     y1,
@@ -4101,9 +4103,7 @@ impl WasmDocumentBuilder {
                     let cell_rows = if has_header {
                         let header: Vec<crate::writer::TableCell> = columns
                             .iter()
-                            .map(|(h, _, _)| {
-                                crate::writer::TableCell::text(h.clone()).bold()
-                            })
+                            .map(|(h, _, _)| crate::writer::TableCell::text(h.clone()).bold())
                             .collect();
                         let mut out = Vec::with_capacity(cell_rows.len() + 1);
                         out.push(header);
@@ -4130,28 +4130,26 @@ impl WasmDocumentBuilder {
 
                     rust_page.table(table)
                 },
-                WasmPageOp::BarcodeImage { bytes, x, y, w, h } => {
-                    rust_page
-                        .image_from_bytes(&bytes, crate::geometry::Rect::new(x, y, w, h))
-                        .map_err(|e| JsValue::from_str(&e.to_string()))?
-                },
-                WasmPageOp::ImageWithAlt { bytes, x, y, w, h, alt_text } => {
-                    rust_page
-                        .image_from_bytes_with_alt(
-                            &bytes,
-                            crate::geometry::Rect::new(x, y, w, h),
-                            &alt_text,
-                        )
-                        .map_err(|e| JsValue::from_str(&e.to_string()))?
-                },
-                WasmPageOp::ImageArtifact { bytes, x, y, w, h } => {
-                    rust_page
-                        .image_from_bytes_as_artifact(
-                            &bytes,
-                            crate::geometry::Rect::new(x, y, w, h),
-                        )
-                        .map_err(|e| JsValue::from_str(&e.to_string()))?
-                },
+                WasmPageOp::BarcodeImage { bytes, x, y, w, h } => rust_page
+                    .image_from_bytes(&bytes, crate::geometry::Rect::new(x, y, w, h))
+                    .map_err(|e| JsValue::from_str(&e.to_string()))?,
+                WasmPageOp::ImageWithAlt {
+                    bytes,
+                    x,
+                    y,
+                    w,
+                    h,
+                    alt_text,
+                } => rust_page
+                    .image_from_bytes_with_alt(
+                        &bytes,
+                        crate::geometry::Rect::new(x, y, w, h),
+                        &alt_text,
+                    )
+                    .map_err(|e| JsValue::from_str(&e.to_string()))?,
+                WasmPageOp::ImageArtifact { bytes, x, y, w, h } => rust_page
+                    .image_from_bytes_as_artifact(&bytes, crate::geometry::Rect::new(x, y, w, h))
+                    .map_err(|e| JsValue::from_str(&e.to_string()))?,
                 WasmPageOp::StreamingTableBlock {
                     config_columns,
                     repeat_header,
@@ -4166,7 +4164,9 @@ impl WasmDocumentBuilder {
                         .repeat_header(repeat_header)
                         .max_rowspan(max_rowspan);
                     cfg = match mode.as_str() {
-                        "sample" => cfg.mode_sample(sample_rows, min_col_width_pt, max_col_width_pt),
+                        "sample" => {
+                            cfg.mode_sample(sample_rows, min_col_width_pt, max_col_width_pt)
+                        },
                         "auto_all" => cfg.mode_auto_all(),
                         _ => cfg.mode_fixed(),
                     };
@@ -4549,14 +4549,21 @@ impl WasmFluentPageBuilder {
     /// near the page bottom with a separator artifact line.
     #[wasm_bindgen(js_name = "footnote")]
     pub fn footnote(&mut self, ref_mark: String, note_text: String) -> Result<(), JsValue> {
-        self.push(WasmPageOp::Footnote { ref_mark, note_text })
+        self.push(WasmPageOp::Footnote {
+            ref_mark,
+            note_text,
+        })
     }
 
     /// Lay out `text` as balanced multi-column flow (`columnCount` columns,
     /// `gapPt` points between columns). Paragraphs in `text` are separated by `"\n\n"`.
     #[wasm_bindgen(js_name = "columns")]
     pub fn columns(&mut self, column_count: u32, gap_pt: f32, text: String) -> Result<(), JsValue> {
-        self.push(WasmPageOp::Columns { count: column_count, gap_pt, text })
+        self.push(WasmPageOp::Columns {
+            count: column_count,
+            gap_pt,
+            text,
+        })
     }
 
     /// Emit `text` inline (advances cursorX only, not cursorY).
@@ -4611,9 +4618,11 @@ impl WasmFluentPageBuilder {
             5 => crate::writer::BarcodeType::Itf,
             6 => crate::writer::BarcodeType::Code93,
             7 => crate::writer::BarcodeType::Codabar,
-            _ => return Err(JsValue::from_str(&format!(
-                "unknown barcodeType {barcode_type}; valid values are 0–7"
-            ))),
+            _ => {
+                return Err(JsValue::from_str(&format!(
+                    "unknown barcodeType {barcode_type}; valid values are 0–7"
+                )))
+            },
         };
         let opts = crate::writer::BarcodeOptions::new()
             .width(w as u32)
@@ -4625,17 +4634,17 @@ impl WasmFluentPageBuilder {
 
     /// Place a QR-code image at `(x, y, size, size)` on the page.
     #[wasm_bindgen(js_name = "barcodeQr")]
-    pub fn barcode_qr(
-        &mut self,
-        data: String,
-        x: f32,
-        y: f32,
-        size: f32,
-    ) -> Result<(), JsValue> {
+    pub fn barcode_qr(&mut self, data: String, x: f32, y: f32, size: f32) -> Result<(), JsValue> {
         let opts = crate::writer::QrCodeOptions::new().size(size as u32);
         let bytes = crate::writer::BarcodeGenerator::generate_qr(&data, &opts)
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
-        self.push(WasmPageOp::BarcodeImage { bytes, x, y, w: size, h: size })
+        self.push(WasmPageOp::BarcodeImage {
+            bytes,
+            x,
+            y,
+            w: size,
+            h: size,
+        })
     }
 
     /// Embed an image (JPEG/PNG/WebP bytes) with an accessibility alt text.
@@ -4649,7 +4658,14 @@ impl WasmFluentPageBuilder {
         h: f32,
         alt_text: String,
     ) -> Result<(), JsValue> {
-        self.push(WasmPageOp::ImageWithAlt { bytes, x, y, w, h, alt_text })
+        self.push(WasmPageOp::ImageWithAlt {
+            bytes,
+            x,
+            y,
+            w,
+            h,
+            alt_text,
+        })
     }
 
     /// Embed a decorative image (JPEG/PNG/WebP bytes) as an /Artifact (no alt text).
@@ -4835,11 +4851,7 @@ impl WasmFluentPageBuilder {
             .columns
             .into_iter()
             .map(|c| {
-                (
-                    c.header.unwrap_or_default(),
-                    c.width,
-                    WasmAlign::from_i32(c.align.unwrap_or(0)),
-                )
+                (c.header.unwrap_or_default(), c.width, WasmAlign::from_i32(c.align.unwrap_or(0)))
             })
             .collect();
         self.push(WasmPageOp::BufferedTable {
@@ -4858,9 +4870,7 @@ impl WasmFluentPageBuilder {
     #[wasm_bindgen(js_name = "streamingTable")]
     pub fn streaming_table(&mut self, spec: JsValue) -> Result<WasmStreamingTable, JsValue> {
         if self.done_called {
-            return Err(JsValue::from_str(
-                "FluentPageBuilder.done() already called",
-            ));
+            return Err(JsValue::from_str("FluentPageBuilder.done() already called"));
         }
         let parsed: WasmStreamingTableSpec = serde_wasm_bindgen::from_value(spec)
             .map_err(|e| JsValue::from_str(&format!("streamingTable: invalid spec — {e}")))?;
@@ -4868,11 +4878,7 @@ impl WasmFluentPageBuilder {
             .columns
             .into_iter()
             .map(|c| {
-                (
-                    c.header,
-                    c.width.unwrap_or(100.0),
-                    WasmAlign::from_i32(c.align.unwrap_or(0)),
-                )
+                (c.header, c.width.unwrap_or(100.0), WasmAlign::from_i32(c.align.unwrap_or(0)))
             })
             .collect();
         Ok(WasmStreamingTable {
@@ -6092,7 +6098,9 @@ mod tests {
         let mut font = WasmEmbeddedFont::from_bytes(&font_bytes, None).unwrap();
 
         let mut builder = WasmDocumentBuilder::new();
-        builder.register_embedded_font("DejaVu".to_string(), &mut font).unwrap();
+        builder
+            .register_embedded_font("DejaVu".to_string(), &mut font)
+            .unwrap();
         let mut page = builder.a4_page().unwrap();
         page.font("DejaVu".to_string(), 12.0).unwrap();
         page.at(72.0, 720.0).unwrap();
@@ -6154,8 +6162,12 @@ mod tests {
     fn test_save_with_options_compress_smaller_or_equal() {
         let mut doc1 = doc_from_text("Compress size comparison test for WASM");
         let mut doc2 = doc_from_text("Compress size comparison test for WASM");
-        let uncompressed = doc1.save_with_options_js(Some(false), Some(false), None).unwrap();
-        let compressed = doc2.save_with_options_js(Some(true), Some(false), None).unwrap();
+        let uncompressed = doc1
+            .save_with_options_js(Some(false), Some(false), None)
+            .unwrap();
+        let compressed = doc2
+            .save_with_options_js(Some(true), Some(false), None)
+            .unwrap();
         assert!(
             compressed.len() <= uncompressed.len(),
             "compressed ({}) should be <= uncompressed ({})",
@@ -6167,7 +6179,9 @@ mod tests {
     #[test]
     fn test_save_with_options_round_trips() {
         let mut doc = doc_from_text("Round-trip via saveWithOptions");
-        let bytes = doc.save_with_options_js(Some(true), Some(true), Some(false)).unwrap();
+        let bytes = doc
+            .save_with_options_js(Some(true), Some(true), Some(false))
+            .unwrap();
         // Load the saved bytes back into a new document
         let mut doc2 = WasmPdfDocument::new(&bytes, None).unwrap();
         let pages = doc2.page_count().unwrap();
