@@ -64,17 +64,25 @@ fn set_error(ptr: *mut i32, code: i32) {
 }
 
 fn classify_error(e: &crate::error::Error) -> i32 {
-    let msg = format!("{e}");
-    if msg.contains("not found") || msg.contains("No such file") || msg.contains("IO") {
-        ERR_IO
-    } else if msg.contains("parse") || msg.contains("Parse") || msg.contains("Invalid PDF") {
-        ERR_PARSE
-    } else if msg.contains("page") || msg.contains("Page") || msg.contains("index") {
-        ERR_INVALID_PAGE
-    } else if msg.contains("search") || msg.contains("Search") {
-        ERR_SEARCH
-    } else {
-        ERR_INTERNAL
+    use crate::error::Error;
+    match e {
+        Error::Io(_) => ERR_IO,
+        Error::InvalidHeader(_)
+        | Error::UnsupportedVersion(_)
+        | Error::ParseError { .. }
+        | Error::ParseWarning { .. }
+        | Error::InvalidXref
+        | Error::ObjectNotFound(_, _)
+        | Error::InvalidObjectType { .. }
+        | Error::UnexpectedEof
+        | Error::InvalidPdf(_)
+        | Error::Decode(_) => ERR_PARSE,
+        Error::LayoutAnalysis(_) => ERR_EXTRACTION,
+        Error::InvalidOperation(_) => ERR_INVALID_ARG,
+        Error::Unsupported(_) | Error::UnsupportedFilter(_) | Error::Barcode(_) => {
+            _ERR_UNSUPPORTED
+        },
+        _ => ERR_INTERNAL,
     }
 }
 
@@ -9454,5 +9462,63 @@ pub extern "C" fn pdf_from_html_css_with_fonts(
             set_error(error_code, classify_error(&e));
             ptr::null_mut()
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::Error;
+
+    // classify_error must map each error variant to the correct FFI code.
+    // Previously Error::Barcode fell through to ERR_INTERNAL (5) via string
+    // matching; now variant matching guarantees _ERR_UNSUPPORTED (8).
+
+    #[test]
+    fn classify_barcode_error_returns_unsupported() {
+        let e = Error::Barcode("requires barcodes feature".into());
+        assert_eq!(classify_error(&e), _ERR_UNSUPPORTED);
+    }
+
+    #[test]
+    fn classify_unsupported_error_returns_unsupported() {
+        let e = Error::Unsupported("not supported".into());
+        assert_eq!(classify_error(&e), _ERR_UNSUPPORTED);
+    }
+
+    #[test]
+    fn classify_unsupported_filter_returns_unsupported() {
+        let e = Error::UnsupportedFilter("JBIG2".into());
+        assert_eq!(classify_error(&e), _ERR_UNSUPPORTED);
+    }
+
+    #[test]
+    fn classify_io_error_returns_io() {
+        let e = Error::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "missing"));
+        assert_eq!(classify_error(&e), ERR_IO);
+    }
+
+    #[test]
+    fn classify_parse_error_returns_parse() {
+        let e = Error::ParseError { offset: 0, reason: "bad token".into() };
+        assert_eq!(classify_error(&e), ERR_PARSE);
+    }
+
+    #[test]
+    fn classify_invalid_pdf_returns_parse() {
+        let e = Error::InvalidPdf("corrupt".into());
+        assert_eq!(classify_error(&e), ERR_PARSE);
+    }
+
+    #[test]
+    fn classify_invalid_operation_returns_invalid_arg() {
+        let e = Error::InvalidOperation("called on closed doc".into());
+        assert_eq!(classify_error(&e), ERR_INVALID_ARG);
+    }
+
+    #[test]
+    fn classify_layout_analysis_returns_extraction() {
+        let e = Error::LayoutAnalysis("layout failed".into());
+        assert_eq!(classify_error(&e), ERR_EXTRACTION);
     }
 }
