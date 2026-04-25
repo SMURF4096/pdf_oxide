@@ -225,8 +225,11 @@ jobs:
           wheel=$(ls dist/*.whl)
           uv pip install "$wheel"
 
-      - name: Test Python bindings
+      - name: Smoke-test Python bindings
         run: uv run python -c "import pdf_oxide; print(pdf_oxide.VERSION)"
+
+      - name: Run Python feature-guard tests
+        run: uv run pytest python/tests/ -v --tb=short
 
   # WASM build check
   wasm-build:
