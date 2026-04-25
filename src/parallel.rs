@@ -235,7 +235,7 @@ mod tests {
         assert!(!pages.is_empty(), "should extract at least one page");
 
         // Verify page count matches serial extraction
-        let mut doc = PdfDocument::open(&path).unwrap();
+        let doc = PdfDocument::open(&path).unwrap();
         let expected_count = doc.page_count().unwrap();
         assert_eq!(pages.len(), expected_count);
     }
@@ -249,7 +249,7 @@ mod tests {
         }
 
         // Extract serially
-        let mut doc = PdfDocument::open(&path).unwrap();
+        let doc = PdfDocument::open(&path).unwrap();
         let page_count = doc.page_count().unwrap();
         let serial: Vec<String> = (0..page_count)
             .map(|i| doc.extract_text(i).unwrap())
@@ -279,7 +279,7 @@ mod tests {
 
         assert!(!pages.is_empty(), "should extract at least one page");
 
-        let mut doc = PdfDocument::open(&path).unwrap();
+        let doc = PdfDocument::open(&path).unwrap();
         let expected_count = doc.page_count().unwrap();
         assert_eq!(pages.len(), expected_count);
     }
@@ -295,7 +295,7 @@ mod tests {
         let opts = ConversionOptions::default();
 
         // Extract serially
-        let mut doc = PdfDocument::open(&path).unwrap();
+        let doc = PdfDocument::open(&path).unwrap();
         let page_count = doc.page_count().unwrap();
         let serial: Vec<String> = (0..page_count)
             .map(|i| doc.to_markdown(i, &opts).unwrap())
@@ -344,7 +344,7 @@ mod tests {
         }
 
         // Extract serially
-        let mut doc = PdfDocument::open(&path).unwrap();
+        let doc = PdfDocument::open(&path).unwrap();
         let page_count = doc.page_count().unwrap();
         if page_count < 2 {
             eprintln!("Skipping order test: need multi-page PDF");

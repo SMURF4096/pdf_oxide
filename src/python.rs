@@ -1194,7 +1194,7 @@ impl PyPdfDocument {
             .with_literal(literal)
             .with_whole_word(whole_word)
             .with_max_results(max_results);
-        let results = TextSearcher::search(&mut self.inner, pattern, &opts)
+        let results = TextSearcher::search(&self.inner, pattern, &opts)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         let list = pyo3::types::PyList::empty(py);
         for r in results {
@@ -1229,7 +1229,7 @@ impl PyPdfDocument {
             .with_whole_word(whole_word)
             .with_max_results(max_results)
             .with_page_range(page, page);
-        let results = TextSearcher::search(&mut self.inner, pattern, &opts)
+        let results = TextSearcher::search(&self.inner, pattern, &opts)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         let list = pyo3::types::PyList::empty(py);
         for r in results {
@@ -1593,7 +1593,7 @@ impl PyPdfDocument {
     /// Get form fields.
     fn get_form_fields(&mut self) -> PyResult<Vec<PyFormField>> {
         use crate::extractors::forms::FormExtractor;
-        let fields = FormExtractor::extract_fields(&mut self.inner)
+        let fields = FormExtractor::extract_fields(&self.inner)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Ok(fields
             .into_iter()
@@ -1739,7 +1739,7 @@ impl PyPdfDocument {
     /// Get page labels.
     fn page_labels(&mut self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         use crate::extractors::page_labels::PageLabelExtractor;
-        let labels = PageLabelExtractor::extract(&mut self.inner)
+        let labels = PageLabelExtractor::extract(&self.inner)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         let list = pyo3::types::PyList::empty(py);
         for l in &labels {
@@ -1760,7 +1760,7 @@ impl PyPdfDocument {
     /// Get XMP metadata.
     fn xmp_metadata(&mut self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         use crate::extractors::xmp::XmpExtractor;
-        let meta = XmpExtractor::extract(&mut self.inner)
+        let meta = XmpExtractor::extract(&self.inner)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         match meta {
             Some(xmp) => {

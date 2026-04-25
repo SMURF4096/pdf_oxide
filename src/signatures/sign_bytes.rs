@@ -225,7 +225,7 @@ fn scan_startxref(data: &[u8]) -> Option<u64> {
     let pos = window.windows(9).rposition(|w| w == b"startxref")?;
     let after = &window[pos + 9..];
     let s = std::str::from_utf8(after).ok()?;
-    let trimmed = s.trim_start_matches(|c: char| matches!(c, ' ' | '\r' | '\n'));
+    let trimmed = s.trim_start_matches([' ', '\r', '\n']);
     let end = trimmed
         .find(|c: char| !c.is_ascii_digit())
         .unwrap_or(trimmed.len());
@@ -420,7 +420,7 @@ mod tests {
         // the CMS DER always starts with 0x30, which is "30" in hex.
         // Trim trailing zero pairs.
         let trimmed = hex_str.trim_end_matches('0');
-        let clean = if trimmed.len() % 2 != 0 {
+        let clean = if !trimmed.len().is_multiple_of(2) {
             format!("{}0", trimmed)
         } else {
             trimmed.to_string()

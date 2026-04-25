@@ -493,7 +493,7 @@ mod tests {
     #[cfg(feature = "signatures")]
     fn test_sign_produces_valid_cms_blob() {
         use super::super::cms_verify::SignerVerify;
-        use super::super::types::{DigestAlgorithm, SignOptions};
+        use super::super::types::SignOptions;
         use super::super::{verify_signer_detached, SigningCredentials};
 
         let cert_pem = std::fs::read_to_string("tests/fixtures/test_signing_cert.pem")
@@ -521,7 +521,7 @@ mod tests {
     #[cfg(feature = "signatures")]
     fn test_sign_detects_tampered_content() {
         use super::super::cms_verify::SignerVerify;
-        use super::super::types::{DigestAlgorithm, SignOptions};
+        use super::super::types::SignOptions;
         use super::super::{verify_signer_detached, SigningCredentials};
 
         let cert_pem = std::fs::read_to_string("tests/fixtures/test_signing_cert.pem")
