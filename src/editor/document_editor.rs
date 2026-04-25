@@ -712,7 +712,7 @@ impl DocumentEditor {
             ));
         }
         let mut cursor = Cursor::new(Vec::new());
-        self.write_full_to_writer(&mut cursor, options.encryption.as_ref())?;
+        self.write_full_to_writer(&mut cursor, &options)?;
         Ok(cursor.into_inner())
     }
 
@@ -1463,25 +1463,109 @@ impl DocumentEditor {
 
     /// Write a full rewrite of the PDF.
     #[cfg(not(target_arch = "wasm32"))]
-    fn write_full(
-        &mut self,
-        path: impl AsRef<Path>,
-        encryption_config: Option<&EncryptionConfig>,
-    ) -> Result<()> {
+    fn write_full(&mut self, path: impl AsRef<Path>, options: &SaveOptions) -> Result<()> {
         let file = File::create(path.as_ref())?;
         let mut writer = BufWriter::new(file);
-        self.write_full_to_writer(&mut writer, encryption_config)
+        self.write_full_to_writer(&mut writer, options)
+    }
+
+    /// Collect all object IDs reachable from the catalog root via BFS.
+    ///
+    /// Used by garbage collection: any source-document object not in this set is
+    /// an orphan and can be omitted from the output.  Modified objects are
+    /// consulted first so that references introduced by edits are honoured.
+    fn collect_reachable_ids(&self) -> std::collections::HashSet<u32> {
+        use std::collections::{HashSet, VecDeque};
+
+        fn traverse(obj: &Object, queue: &mut VecDeque<u32>) {
+            match obj {
+                Object::Reference(r) => queue.push_back(r.id),
+                Object::Array(arr) => arr.iter().for_each(|o| traverse(o, queue)),
+                Object::Dictionary(d) => d.values().for_each(|o| traverse(o, queue)),
+                Object::Stream { dict, .. } => dict.values().for_each(|o| traverse(o, queue)),
+                _ => {},
+            }
+        }
+
+        let mut reachable: HashSet<u32> = HashSet::new();
+        let mut queue: VecDeque<u32> = VecDeque::new();
+
+        if let Some(r) = self
+            .source
+            .trailer()
+            .as_dict()
+            .and_then(|d| d.get("Root"))
+            .and_then(|v| v.as_reference())
+        {
+            queue.push_back(r.id);
+        }
+        if let Some(r) = self
+            .source
+            .trailer()
+            .as_dict()
+            .and_then(|d| d.get("Info"))
+            .and_then(|v| v.as_reference())
+        {
+            queue.push_back(r.id);
+        }
+
+        while let Some(id) = queue.pop_front() {
+            if !reachable.insert(id) {
+                continue;
+            }
+            let obj = if let Some(m) = self.modified_objects.get(&id) {
+                Some(m.clone())
+            } else {
+                self.source.load_object(ObjectRef { id, gen: 0 }).ok()
+            };
+            if let Some(obj) = obj {
+                traverse(&obj, &mut queue);
+            }
+        }
+
+        reachable
     }
 
     /// Write a full rewrite of the PDF to a generic writer.
     fn write_full_to_writer(
         &mut self,
         writer: &mut (impl Write + Seek),
-        encryption_config: Option<&EncryptionConfig>,
+        options: &SaveOptions,
     ) -> Result<()> {
         use crate::encryption::{
             generate_file_id, Algorithm, EncryptDictBuilder, EncryptionWriteHandler,
         };
+        use flate2::{write::ZlibEncoder, Compression};
+
+        /// Compress a stream object with FlateDecode if it has no filter yet.
+        fn compress_stream_if_raw(obj: Object) -> Object {
+            match obj {
+                Object::Stream { mut dict, data } => {
+                    if dict.contains_key("Filter") {
+                        return Object::Stream { dict, data };
+                    }
+                    let mut enc = ZlibEncoder::new(Vec::new(), Compression::default());
+                    if std::io::Write::write_all(&mut enc, &data).is_err() {
+                        return Object::Stream { dict, data };
+                    }
+                    match enc.finish() {
+                        Ok(compressed) => {
+                            dict.insert(
+                                "Filter".to_string(),
+                                Object::Name("FlateDecode".to_string()),
+                            );
+                            dict.insert(
+                                "Length".to_string(),
+                                Object::Integer(compressed.len() as i64),
+                            );
+                            Object::Stream { dict, data: compressed.into() }
+                        },
+                        Err(_) => Object::Stream { dict, data },
+                    }
+                },
+                other => other,
+            }
+        }
 
         // Write PDF header
         let (major, minor) = self.version();
@@ -1492,7 +1576,8 @@ impl DocumentEditor {
         let serializer = ObjectSerializer::compact();
 
         // Set up encryption if configured
-        let (file_id, encrypt_dict, encryption_handler) = if let Some(config) = encryption_config {
+        let (file_id, encrypt_dict, encryption_handler) =
+            if let Some(config) = options.encryption.as_ref() {
             let (id1, id2) = generate_file_id();
 
             // Convert EncryptionAlgorithm to encryption::Algorithm
@@ -3170,19 +3255,42 @@ impl DocumentEditor {
         // This is safe — written_ids provides O(1) dedup, so already-written
         // objects are skipped; orphaned objects are harmless in a PDF reader.
         //
+        // When garbage_collect=true, only reachable objects are written.
+        // When compress=true, raw (unfiltered) streams are FlateDecode-compressed.
+        //
         // NOTE: `written_ids` must be rebuilt from `xref_entries` here because
         // the merge-page and parent-field loops above push to `xref_entries`
         // without updating `written_ids`.
         written_ids.clear();
         written_ids.extend(xref_entries.iter().map(|(id, _, _, _)| *id));
 
+        let reachable_ids = if options.garbage_collect {
+            Some(self.collect_reachable_ids())
+        } else {
+            None
+        };
+
         let all_source_ids = self.source.all_object_ids();
         for obj_id in all_source_ids {
             if obj_id == 0 || written_ids.contains(&obj_id) {
                 continue;
             }
+            if let Some(ref reachable) = reachable_ids {
+                if !reachable.contains(&obj_id) {
+                    log::debug!(
+                        "write_full_to_writer: GC dropping unreachable object {}",
+                        obj_id
+                    );
+                    continue;
+                }
+            }
             match self.source.load_object(ObjectRef { id: obj_id, gen: 0 }) {
                 Ok(obj) => {
+                    let obj = if options.compress {
+                        compress_stream_if_raw(obj)
+                    } else {
+                        obj
+                    };
                     let offset = writer.stream_position()?;
                     let bytes = serialize_obj(&serializer, obj_id, 0, &obj, &encryption_handler);
                     writer.write_all(&bytes)?;
@@ -6523,7 +6631,7 @@ impl EditableDocument for DocumentEditor {
         if options.incremental {
             self.write_incremental(path)
         } else {
-            self.write_full(path, options.encryption.as_ref())
+            self.write_full(path, &options)
         }
     }
 
