@@ -614,6 +614,24 @@ class PdfImpl {
     return new PdfImpl(native.pdfFromImageBytes(data));
   }
 
+  static fromHtmlCss(html: string, css: string, fontBytes: Buffer | Uint8Array): PdfImpl {
+    return new PdfImpl(native.pdfFromHtmlCss(html, css, fontBytes));
+  }
+
+  static fromHtmlCssWithFonts(
+    html: string,
+    css: string,
+    families: string[],
+    fonts: (Buffer | Uint8Array)[],
+  ): PdfImpl {
+    if (families.length !== fonts.length) {
+      throw new Error(
+        `fromHtmlCssWithFonts: families.length (${families.length}) must equal fonts.length (${fonts.length})`,
+      );
+    }
+    return new PdfImpl(native.pdfFromHtmlCssWithFonts(html, css, families, fonts));
+  }
+
   private ensureOpen(): void {
     if (this._closed) throw new Error('PDF handle is closed');
   }

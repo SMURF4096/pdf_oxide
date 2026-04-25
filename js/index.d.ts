@@ -978,6 +978,32 @@ export class Pdf {
   static fromText(text: string): Pdf;
 
   /**
+   * Creates a PDF from HTML with CSS styling and a single embedded font.
+   * @param html - HTML content string
+   * @param css - CSS stylesheet string
+   * @param fontBytes - Font file bytes (TTF/OTF) used for body text
+   * @returns New Pdf instance
+   */
+  static fromHtmlCss(html: string, css: string, fontBytes: Buffer | Uint8Array): Pdf;
+
+  /**
+   * Creates a PDF from HTML with CSS styling and a multi-font cascade.
+   * `families` and `fonts` are parallel arrays: `families[i]` is the
+   * CSS `font-family` name that resolves to `fonts[i]`.
+   * @param html - HTML content string
+   * @param css - CSS stylesheet string
+   * @param families - Font family names (parallel to `fonts`)
+   * @param fonts - Font file bytes arrays (parallel to `families`)
+   * @returns New Pdf instance
+   */
+  static fromHtmlCssWithFonts(
+    html: string,
+    css: string,
+    families: string[],
+    fonts: (Buffer | Uint8Array)[],
+  ): Pdf;
+
+  /**
    * Adds a new page to the document
    * @param width - Page width in points
    * @param height - Page height in points
@@ -1249,6 +1275,13 @@ export class PdfBuilder {
   fromMarkdown(markdown: string): Pdf;
   fromHtml(html: string): Pdf;
   fromText(text: string): Pdf;
+  fromHtmlCss(html: string, css: string, fontBytes: Buffer | Uint8Array): Pdf;
+  fromHtmlCssWithFonts(
+    html: string,
+    css: string,
+    families: string[],
+    fonts: (Buffer | Uint8Array)[],
+  ): Pdf;
 
   fromMarkdownAsync(markdown: string): Promise<Pdf>;
   fromHtmlAsync(html: string): Promise<Pdf>;
