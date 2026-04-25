@@ -634,6 +634,49 @@ jobs:
         working-directory: csharp/PdfOxide.Tests
         run: dotnet test -c Release --no-build --verbosity normal
 
+  # Regression guard: verify binding tests pass against a bare-features
+  # native lib (only default "icc" feature, same as the old broken release
+  # build). Tests that use feature-gated APIs must catch
+  # UnsupportedFeatureException rather than assuming the feature is present.
+  # If a future test blindly asserts a feature-gated call succeeds, this job
+  # will catch it before the release ships a broken NuGet / .node / .a.
+  csharp-bare-features:
+    name: C# bindings — bare-features native lib (regression guard)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: csharp-bare-ubuntu
+
+      - name: Build native lib — default features only (icc)
+        run: cargo build --release --lib
+
+      - name: Build C# library
+        working-directory: csharp/PdfOxide
+        run: dotnet build -c Release
+
+      - name: Build C# tests
+        working-directory: csharp/PdfOxide.Tests
+        run: dotnet build -c Release
+
+      - name: Stage bare-features native lib
+        run: cp target/release/libpdf_oxide.so csharp/PdfOxide.Tests/bin/Release/net8.0/
+
+      - name: Run C# tests against bare-features lib
+        working-directory: csharp/PdfOxide.Tests
+        run: dotnet test -c Release --no-build --verbosity normal
+
   # Code coverage with enforcement
   coverage:
     name: Code Coverage
