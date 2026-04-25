@@ -1,10 +1,9 @@
 //! Raw-DER Certificate accessor surface.
 //!
-//! `SigningCredentials::from_pkcs12` is still a stub — PKCS#12 parsing
-//! isn't implemented yet — so this test exercises the `from_der` path
-//! that every binding's `Certificate` class relies on. Confirms
-//! subject / issuer / serial / validity / is_valid readers parse
-//! X.509 bytes correctly via `x509-parser`.
+//! Exercises the `from_der` path that every binding's `Certificate` class
+//! relies on. Confirms subject / issuer / serial / validity / is_valid
+//! readers parse X.509 bytes correctly via `x509-parser`.
+//! PKCS#12 round-trip coverage lives in `test_pkcs12_signing.rs`.
 #![cfg(feature = "signatures")]
 
 use pdf_oxide::signatures::SigningCredentials;
