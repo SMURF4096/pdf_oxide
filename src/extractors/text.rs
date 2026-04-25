@@ -2388,6 +2388,13 @@ impl TextExtractor {
     }
 
     /// Decode a PDF text string (handles UTF-16BE/LE with BOM and PDFDocEncoding).
+    ///
+    /// Per ISO 32000 §7.9.2, strings without a UTF-16 BOM are PDFDocEncoding.
+    /// We try UTF-8 first as a lenient path for non-spec-compliant PDFs that
+    /// embed raw UTF-8 without a BOM; if that fails we fall back to the correct
+    /// PDFDocEncoding lookup (which handles the 0x80–0x9E special-char zone and
+    /// maps 0xA0–0xFF as ISO Latin-1, unlike from_utf8_lossy which substitutes
+    /// U+FFFD for any byte that is not valid UTF-8).
     fn decode_pdf_text_string(bytes: &[u8]) -> String {
         if bytes.len() >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF {
             // UTF-16BE with BOM
@@ -2406,9 +2413,14 @@ impl TextExtractor {
             String::from_utf16(&utf16_pairs)
                 .unwrap_or_else(|_| String::from_utf8_lossy(bytes).to_string())
         } else {
-            // PDFDocEncoding — try as UTF-8 first, fall back to lossy
-            String::from_utf8(bytes.to_vec())
-                .unwrap_or_else(|_| String::from_utf8_lossy(bytes).to_string())
+            // Try UTF-8 first (lenient: some PDFs embed raw UTF-8 without a BOM).
+            // Fall back to PDFDocEncoding per ISO 32000 §7.9.2.
+            String::from_utf8(bytes.to_vec()).unwrap_or_else(|_| {
+                bytes
+                    .iter()
+                    .filter_map(|&b| crate::fonts::font_dict::pdfdoc_encoding_lookup(b))
+                    .collect()
+            })
         }
     }
 
@@ -12253,6 +12265,69 @@ mod tests {
         let bytes = vec![0xFF, 0xFE, 0x41]; // odd after BOM
         let result = TextExtractor::decode_pdf_text_string(&bytes);
         // Should handle gracefully
+    }
+
+    // ========================================================================
+    // TDD: decode_pdf_text_string — PDFDocEncoding fallback correctness
+    // Bytes 0xA0–0xFF and the special 0x80–0x9E zone must decode through
+    // PDFDocEncoding, not through from_utf8_lossy (which produces U+FFFD).
+    // ========================================================================
+
+    #[test]
+    fn test_decode_pdfdocencoding_latin_byte() {
+        // 0xE9 = PDFDocEncoding for é (U+00E9).  Not valid UTF-8 on its own.
+        let result = TextExtractor::decode_pdf_text_string(&[0xE9]);
+        assert_eq!(result, "é",
+            "0xE9 must decode as 'é' via PDFDocEncoding, not produce U+FFFD");
+    }
+
+    #[test]
+    fn test_decode_pdfdocencoding_bullet() {
+        // 0x80 = PDFDocEncoding for • (U+2022 BULLET)
+        let result = TextExtractor::decode_pdf_text_string(&[0x80]);
+        assert_eq!(result, "•",
+            "0x80 must decode as bullet '•' via PDFDocEncoding");
+    }
+
+    #[test]
+    fn test_decode_pdfdocencoding_emdash() {
+        // 0x84 = PDFDocEncoding for — (U+2014 EM DASH)
+        let result = TextExtractor::decode_pdf_text_string(&[0x84]);
+        assert_eq!(result, "—",
+            "0x84 must decode as em-dash '—' via PDFDocEncoding");
+    }
+
+    #[test]
+    fn test_decode_pdfdocencoding_trademark() {
+        // 0x92 = PDFDocEncoding for ™ (U+2122 TRADE MARK SIGN)
+        let result = TextExtractor::decode_pdf_text_string(&[0x92]);
+        assert_eq!(result, "™",
+            "0x92 must decode as trademark '™' via PDFDocEncoding");
+    }
+
+    #[test]
+    fn test_decode_pdfdocencoding_undefined_9f_is_dropped() {
+        // 0x9F is undefined in PDFDocEncoding — must be silently dropped.
+        let result = TextExtractor::decode_pdf_text_string(&[0x41, 0x9F, 0x42]);
+        assert_eq!(result, "AB",
+            "0x9F is undefined in PDFDocEncoding and must be dropped");
+    }
+
+    #[test]
+    fn test_decode_pdfdocencoding_mixed_ascii_and_latin() {
+        // "Hello" followed by 0xE9 (é): 6 bytes → "Helloé"
+        let bytes: Vec<u8> = b"Hello".iter().copied().chain([0xE9]).collect();
+        let result = TextExtractor::decode_pdf_text_string(&bytes);
+        assert_eq!(result, "Helloé",
+            "Mixed ASCII + PDFDocEncoding bytes must decode correctly");
+    }
+
+    #[test]
+    fn test_decode_pdfdocencoding_utf8_bytes_still_work() {
+        // Valid UTF-8 without BOM: must still decode correctly (for lenient PDFs).
+        // ASCII is a subset of UTF-8, so this path always works.
+        let result = TextExtractor::decode_pdf_text_string(b"ASCII text");
+        assert_eq!(result, "ASCII text");
     }
 
     // ========================================================================
