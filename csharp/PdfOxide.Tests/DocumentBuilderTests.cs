@@ -330,10 +330,12 @@ namespace PdfOxide.Tests
                 finally { if (File.Exists(path)) File.Delete(path); }
             }
 
-            // The embedded font program (FontFile2) adds ≥10 KB even when subsetted.
+            // With FlateDecode compression (SaveOptions::with_encryption sets compress=true),
+            // a subsetted font adds several KB. A 5 KB floor clearly distinguishes
+            // "font present" from "font missing" (which gives near-zero diff).
             var diff = ttfSize - simpleSize;
             Assert.True(
-                diff >= 10_000,
+                diff >= 5_000,
                 $"issue #401: embedded-font encrypted PDF ({ttfSize} B) is not " +
                 $"substantially larger than simple encrypted PDF ({simpleSize} B); " +
                 $"diff={diff} B — font sub-objects likely missing from encrypted output");
@@ -358,9 +360,12 @@ namespace PdfOxide.Tests
             var raw = System.Text.Encoding.ASCII.GetString(bytes);
             Assert.Contains("/Encrypt", raw);
 
-            // Font program must be present: PDF must be >15 KB.
+            // Font program must be present. With FlateDecode compression
+            // (SaveOptions::with_encryption sets compress=true), a subsetted DejaVu
+            // font adds ~8 KB; an 8 KB total floor clearly distinguishes "present"
+            // from "missing" (no-font output is <2 KB).
             Assert.True(
-                bytes.Length > 15_000,
+                bytes.Length > 8_000,
                 $"issue #401: ToBytesEncrypted embedded-font result ({bytes.Length} B) " +
                 "is too small; font sub-objects likely missing from encrypted output");
         }

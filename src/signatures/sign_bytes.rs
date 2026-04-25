@@ -24,6 +24,7 @@
 use super::signer::PdfSigner;
 use super::types::{SignOptions, SigningCredentials};
 use crate::error::{Error, Result};
+use crate::object::encode_pdf_text_string;
 
 // ─── Width constants ────────────────────────────────────────────────────────
 //
@@ -157,16 +158,16 @@ fn build_sig_dict_text(signer: &PdfSigner, obj_num: u64) -> String {
     dict.push_str(&format!("/Contents {}\n", contents_placeholder));
 
     if let Some(ref r) = opts.reason {
-        dict.push_str(&format!("/Reason ({})\n", escape_pdf_string(r)));
+        dict.push_str(&format!("/Reason {}\n", pdf_text_hex(r)));
     }
     if let Some(ref l) = opts.location {
-        dict.push_str(&format!("/Location ({})\n", escape_pdf_string(l)));
+        dict.push_str(&format!("/Location {}\n", pdf_text_hex(l)));
     }
     if let Some(ref n) = opts.name {
-        dict.push_str(&format!("/Name ({})\n", escape_pdf_string(n)));
+        dict.push_str(&format!("/Name {}\n", pdf_text_hex(n)));
     }
     if let Some(ref c) = opts.contact_info {
-        dict.push_str(&format!("/ContactInfo ({})\n", escape_pdf_string(c)));
+        dict.push_str(&format!("/ContactInfo {}\n", pdf_text_hex(c)));
     }
 
     dict.push_str(&format!("/M ({})\n", format_pdf_date()));
@@ -231,13 +232,14 @@ fn scan_startxref(data: &[u8]) -> Option<u64> {
     trimmed[..end].parse().ok()
 }
 
-/// Find the last `/Root X Y R` reference string in the file (scans full data
-/// so it works even when the last incremental-update trailer omits `/Root`).
+/// Find the last `/Root X Y R` reference string in the file (scans the last
+/// 4 KB only, same as `scan_startxref`, to avoid false-positive matches in
+/// uncompressed content streams or metadata that contain the literal `/Root`).
 fn scan_root_ref(data: &[u8]) -> Option<String> {
-    // Walk backwards through the data looking for b"/Root "
+    let window = &data[data.len().saturating_sub(4096)..];
     let pattern = b"/Root ";
-    let pos = data.windows(pattern.len()).rposition(|w| w == pattern)?;
-    let after = &data[pos + pattern.len()..];
+    let pos = window.windows(pattern.len()).rposition(|w| w == pattern)?;
+    let after = &window[pos + pattern.len()..];
     // Collect up to 40 bytes as ASCII; stop at '/' or '>>'
     let end = after
         .iter()
@@ -267,21 +269,20 @@ fn scan_next_obj_num(data: &[u8]) -> Option<u64> {
     trimmed[..end].parse().ok()
 }
 
-// ─── PDF string helpers (duplicated locally to avoid cross-module import) ───
+// ─── PDF string helper ───────────────────────────────────────────────────────
 
-fn escape_pdf_string(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 10);
-    for c in s.chars() {
-        match c {
-            '\\' => out.push_str("\\\\"),
-            '(' => out.push_str("\\("),
-            ')' => out.push_str("\\)"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            _ => out.push(c),
-        }
+/// Encode `s` as a PDF hex string `<AABB...>` using the same
+/// PDFDocEncoding / UTF-16BE-with-BOM logic as the rest of the library
+/// (`encode_pdf_text_string`).  Hex syntax requires no further escaping and
+/// handles arbitrary byte sequences safely.
+fn pdf_text_hex(s: &str) -> String {
+    let bytes = encode_pdf_text_string(s);
+    let mut out = String::with_capacity(bytes.len() * 2 + 2);
+    out.push('<');
+    for b in &bytes {
+        out.push_str(&format!("{:02X}", b));
     }
+    out.push('>');
     out
 }
 
@@ -433,5 +434,107 @@ mod tests {
         let result =
             verify_signer_detached(&cms_blob, &signed_content).expect("verify must not error");
         assert_eq!(result, SignerVerify::Valid, "end-to-end PDF signature must verify as Valid");
+    }
+
+    // ── Finding 3 regression: scan_root_ref must ignore /Root in body ────────
+
+    #[test]
+    fn test_scan_root_ref_ignores_body_occurrence() {
+        // Embed a fake "/Root " string deep in the body far from the trailer.
+        // The scanner must still return the real trailer reference.
+        let mut pdf = minimal_pdf();
+        // Prepend >4 KB of content containing a misleading /Root occurrence.
+        let filler = b"% /Root 99 0 R this is inside a comment not a trailer\n";
+        let padding = filler.repeat(100); // ~5.4 KB
+        let mut data = padding;
+        data.extend_from_slice(&pdf);
+        // The real /Root is in the last 4 KB (the trailer of minimal_pdf is tiny).
+        let root = scan_root_ref(&data).expect("must find root in last 4 KB");
+        assert!(
+            root.contains("1 0 R"),
+            "must return trailer /Root, not body occurrence; got: {root}"
+        );
+        // Confirm that there really IS a misleading /Root earlier in the data.
+        let first = data
+            .windows(b"/Root ".len())
+            .position(|w| w == b"/Root ");
+        assert!(first.unwrap() < data.len() - 4096, "misleading /Root is before the 4 KB window");
+
+        // Drop pdf from outer scope warning
+        let _ = pdf.drain(..);
+    }
+
+    // ── Finding 7 regression: non-ASCII metadata must not be raw UTF-8 ───────
+
+    #[test]
+    fn test_pdf_text_hex_ascii_roundtrip() {
+        // ASCII stays as PDFDocEncoding bytes (no BOM).
+        let h = pdf_text_hex("Hello");
+        assert!(h.starts_with('<') && h.ends_with('>'));
+        let bytes = hex_decode(&h[1..h.len() - 1]);
+        assert_eq!(bytes, b"Hello");
+    }
+
+    #[test]
+    fn test_pdf_text_hex_latin1_no_bom() {
+        // "é" is U+00E9 — within PDFDocEncoding range → single byte 0xE9, no BOM.
+        let h = pdf_text_hex("é");
+        let bytes = hex_decode(&h[1..h.len() - 1]);
+        assert_eq!(bytes, &[0xE9], "PDFDocEncoding for é must be 0xE9, not multi-byte UTF-8");
+    }
+
+    #[test]
+    fn test_pdf_text_hex_portuguese_reason() {
+        // Regression guard: "Aprovado Lógico" — contains ó (U+00F3).
+        // Must NOT emit the raw UTF-8 bytes 0xC3 0xB3 for ó.
+        let h = pdf_text_hex("Aprovado Lógico");
+        let bytes = hex_decode(&h[1..h.len() - 1]);
+        // PDFDocEncoding: ó → 0xF3 (single byte), not 0xC3 0xB3 (UTF-8).
+        assert!(!bytes.windows(2).any(|w| w == [0xC3, 0xB3]),
+            "raw UTF-8 bytes for ó must not appear; got {:X?}", bytes);
+        // ó must appear as its PDFDocEncoding byte 0xF3.
+        assert!(bytes.contains(&0xF3), "PDFDocEncoding 0xF3 for ó must be present");
+    }
+
+    #[test]
+    fn test_pdf_text_hex_cjk_uses_utf16be_bom() {
+        // CJK characters trigger UTF-16BE with leading BOM 0xFE 0xFF.
+        let h = pdf_text_hex("中文");
+        let bytes = hex_decode(&h[1..h.len() - 1]);
+        assert_eq!(&bytes[..2], &[0xFE, 0xFF], "UTF-16BE BOM must be present for CJK");
+    }
+
+    #[test]
+    fn test_sign_metadata_non_ascii_encoded_in_sig_dict() {
+        // End-to-end: signature dict text must contain hex-encoded metadata,
+        // never raw multi-byte UTF-8 sequences for non-ASCII characters.
+        let pdf = minimal_pdf();
+        let creds = load_test_creds();
+        let opts = SignOptions {
+            reason: Some("Aprovado Lógico".to_string()),   // ó = U+00F3
+            location: Some("São Paulo".to_string()),        // ã = U+00E3, ~ ã
+            name: Some("中文签名人".to_string()),
+            estimated_size: 8192,
+            ..Default::default()
+        };
+
+        let signed = sign_pdf_bytes(&pdf, &creds, opts).expect("sign must succeed");
+        let tail = &signed[pdf.len()..];
+
+        // The sig dict is written as UTF-8 text around hex strings, so we can
+        // search the raw bytes for /Reason <...> etc.
+        let tail_str = std::str::from_utf8(tail).unwrap();
+
+        // Must contain hex string syntax (angle brackets) for /Reason.
+        let reason_hex = tail_str.find("/Reason <").is_some();
+        let location_hex = tail_str.find("/Location <").is_some();
+        let name_hex = tail_str.find("/Name <").is_some();
+        assert!(reason_hex, "/Reason must use hex string syntax");
+        assert!(location_hex, "/Location must use hex string syntax");
+        assert!(name_hex, "/Name must use hex string syntax");
+
+        // Raw UTF-8 encoding of ó is 0xC3 0xB3 — must NOT appear in the dict.
+        let c3b3 = tail.windows(2).any(|w| w == [0xC3, 0xB3]);
+        assert!(!c3b3, "raw UTF-8 bytes for ó must not appear in signed output");
     }
 }

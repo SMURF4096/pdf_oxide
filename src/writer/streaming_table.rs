@@ -503,6 +503,19 @@ impl<'a> StreamingTable<'a> {
     /// from the column defaults if zero rows were buffered), and those rows
     /// are flushed now.
     pub fn finish(mut self) -> FluentPageBuilder<'a> {
+        // Flush a partially-completed rowspan group (stream ended before the
+        // declared rowspan count was satisfied).
+        if self.rowspan_remaining > 0 {
+            self.rowspan_remaining = 0;
+            let group = std::mem::take(&mut self.rowspan_buf);
+            if !group.is_empty() {
+                if !self.header_drawn {
+                    self.draw_header();
+                    self.header_drawn = true;
+                }
+                self.draw_rowspan_group(group).ok();
+            }
+        }
         // Flush any remaining sample buffer (fewer rows than target).
         if matches!(self.sample_state, SampleState::Collecting { .. }) {
             self.freeze_and_flush().ok();
@@ -788,7 +801,7 @@ impl<'a> StreamingTable<'a> {
             for (col_idx, cell) in row_cells.iter().enumerate() {
                 // For continuation rows (row_idx > 0), cells whose column was
                 // claimed by a rowspan in row 0 are rendered empty.
-                let is_spanned_slot = row_idx > 0 && rows[0][col_idx].rowspan > 1;
+                let is_spanned_slot = row_idx > 0 && col_idx < rows[0].len() && rows[0][col_idx].rowspan > 1;
                 let text = if is_spanned_slot { "" } else { &cell.text };
                 let col_w = self.config.columns[col_idx].width;
                 let content_w = (col_w - 2.0 * h_pad).max(1.0);

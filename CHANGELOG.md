@@ -251,7 +251,7 @@ v0.3.40 — see the E-0 RFC at `docs/v0.3.39/design/e_rich_text_rfc.md`.
 - **#402 / #406** — Systemic UTF-8 encoding loss: every PDF string object (metadata titles, annotation contents, bookmark titles, content streams) was written as raw UTF-8 bytes instead of PDFDocEncoding (Latin-1 code point for chars ≤ U+00FF) or UTF-16BE with BOM (for chars > U+00FF). Reported by [@AngeloBestetti](https://github.com/AngeloBestetti) (#402) and internally audited as #406.
 - **#407** — L4 font cache cross-contamination: when two pages share the same `/Font` resource key (e.g. both use key `F1`), the CMap of the first-loaded face silently overwrote the second's glyph mapping, causing glyphs to be dropped or mis-decoded. Fixed by keying the combined-font hash over all font objects. Reported by [@ChadThackray](https://github.com/ChadThackray).
 - **#395** — `SignatureException` on `PdfDocument.open()` for PDFs containing digital signatures. Fixed as a side-effect of the signing infrastructure (#208). Reported by [@gevorgter](https://github.com/gevorgter).
-- **#398** — Native PDF parser was non-reentrant: concurrent FFI reads on the same handle returned spurious parse errors. Resolved by the interior-mutability refactor (`Arc<RwLock<…>>`).
+- **#398** — Native PDF parser was non-reentrant: concurrent FFI reads on the same handle returned spurious parse errors. Resolved by the interior-mutability refactor (`Mutex<…>` on internal caches).
 - **#409** — Python (and all bindings) lacked `to_bytes()` / in-memory output; `compress` and `garbage_collect` were not wired into the write path. Reported by [@potatochipcoconut](https://github.com/potatochipcoconut).
 
 ### CI / test-suite fixes

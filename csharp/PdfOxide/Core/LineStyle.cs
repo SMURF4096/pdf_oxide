@@ -273,7 +273,7 @@ namespace PdfOxide.Core
         }
 
         /// <summary>
-        /// Append a row with per-cell rowspan values. Each <see cref="(string Text, int Rowspan)"/>
+        /// Append a row with per-cell rowspan values. Each <c>(string Text, int Rowspan)</c>
         /// pair specifies the cell text and how many rows it spans (1 = normal).
         /// Requires <c>maxRowspan ≥ 2</c> in the <see cref="PageBuilder.StreamingTable"/> call.
         /// </summary>

@@ -29,7 +29,7 @@
 //!
 //! // Check if page needs OCR
 //! if ocr::needs_ocr(&doc, 0)? {
-//!     let result = engine.ocr_page(&mut doc, 0)?;
+//!     let result = engine.ocr_page(&doc, 0)?;
 //!     for span in result.spans {
 //!         println!("{} at {:?}", span.text, span.bbox);
 //!     }
@@ -112,7 +112,7 @@ pub enum PageType {
 /// # Returns
 ///
 /// The detected [`PageType`].
-pub fn detect_page_type(doc: &mut PdfDocument, page: usize) -> Result<PageType> {
+pub fn detect_page_type(doc: &PdfDocument, page: usize) -> Result<PageType> {
     // IMPORTANT: Use extract_spans() instead of extract_text() to avoid infinite
     // recursion. extract_text() calls needs_ocr() which calls detect_page_type(),
     // creating a stack overflow loop when the OCR feature is enabled.
@@ -170,7 +170,7 @@ pub fn detect_page_type(doc: &mut PdfDocument, page: usize) -> Result<PageType> 
 ///
 /// This is a simplified wrapper around [`detect_page_type`] that returns
 /// `true` for both `ScannedPage` and `HybridPage` types.
-pub fn needs_ocr(doc: &mut PdfDocument, page: usize) -> Result<bool> {
+pub fn needs_ocr(doc: &PdfDocument, page: usize) -> Result<bool> {
     let page_type = detect_page_type(doc, page)?;
     Ok(matches!(page_type, PageType::ScannedPage | PageType::HybridPage))
 }
@@ -234,11 +234,11 @@ impl OcrExtractOptions {
 /// let mut doc = PdfDocument::open("scanned.pdf")?;
 /// let engine = OcrEngine::new("det.onnx", "rec.onnx", "dict.txt", OcrConfig::default())?;
 ///
-/// let text = ocr::ocr_page(&mut doc, 0, &engine, OcrExtractOptions::default())?;
+/// let text = ocr::ocr_page(&doc, 0, &engine, OcrExtractOptions::default())?;
 /// println!("OCR text: {}", text);
 /// ```
 pub fn ocr_page(
-    doc: &mut PdfDocument,
+    doc: &PdfDocument,
     page: usize,
     engine: &OcrEngine,
     options: &OcrExtractOptions,
@@ -287,7 +287,7 @@ pub fn ocr_page(
 ///
 /// Vector of TextSpans from the OCR result.
 pub fn ocr_page_spans(
-    doc: &mut PdfDocument,
+    doc: &PdfDocument,
     page: usize,
     engine: &OcrEngine,
     options: &OcrExtractOptions,
@@ -342,10 +342,10 @@ pub fn ocr_page_spans(
 /// let engine = OcrEngine::new("det.onnx", "rec.onnx", "dict.txt", OcrConfig::default())?;
 ///
 /// // Automatically uses native text or OCR as needed
-/// let text = ocr::extract_text_with_ocr(&mut doc, 0, Some(&engine), OcrExtractOptions::default())?;
+/// let text = ocr::extract_text_with_ocr(&doc, 0, Some(&engine), OcrExtractOptions::default())?;
 /// ```
 pub fn extract_text_with_ocr(
-    doc: &mut PdfDocument,
+    doc: &PdfDocument,
     page: usize,
     engine: Option<&OcrEngine>,
     options: OcrExtractOptions,
