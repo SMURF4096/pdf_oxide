@@ -57,7 +57,7 @@ namespace PdfOxide.Tests
             var words = doc.ExtractWords(0);
             Assert.NotNull(words);
             Assert.True(words.Length > 0);
-            Assert.True(words.Any(w => w.Text.Contains("WORDTEST")));
+            Assert.Contains(words, w => w.Text.Contains("WORDTEST"));
         }
 
         [Fact]
@@ -79,7 +79,7 @@ namespace PdfOxide.Tests
             var lines = doc.ExtractTextLines(0);
             Assert.NotNull(lines);
             Assert.True(lines.Length > 0);
-            Assert.True(lines.Any(l => l.Text.Contains("LINETEST")));
+            Assert.Contains(lines, l => l.Text.Contains("LINETEST"));
         }
 
         [Fact]
