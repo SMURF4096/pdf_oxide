@@ -4,10 +4,9 @@ All notable changes to PDFOxide are documented here.
 
 ## [0.3.39] - 2026-04-23
 
-> DocumentBuilder tables + the programmatic-PDF gap pass — buffered
-> `Table` + row-at-a-time `StreamingTable`, images + transforms,
-> bookmarks + page labels + ToC, shape primitives, list_box + field
-> metadata + tab order.
+> Tables (streaming + buffered), PDF/UA-1, digital signing (CMS/PKCS#7),
+> AcroForm flatten, interior-mutability thread safety, encryption +
+> UTF-8 encoding fixes, L4 font cache, and `to_bytes` — all 7 bindings.
 
 ### Scope at-a-glance
 
@@ -260,32 +259,57 @@ v0.3.40 — see the E-0 RFC at `docs/v0.3.39/design/e_rich_text_rfc.md`.
 - Resolved all Clippy, `rustfmt`, and `cargo check` failures that were blocking CI (`fix(ci)` commit `6c95bada`): unused-mut across 80+ files after the interior-mutability refactor, late-init variables, doc-comment ordering, non-minimal boolean conditions, deprecated function references.
 - Renamed six test files from issue-number / benchmark-code names to functional descriptive names (`refactor(tests)` commit `fa071380`): `test_b1_*` → `test_shared_form_xobject_per_page_ctm`, `test_b3_*` → `test_running_header_first_occurrence_kept`, `test_b4_*` → `test_two_column_reading_order`, `test_b7_*` → `test_stroke_fill_duplicate_text_dedup`, `test_issue_346_*` → `test_extract_text_sort_comparator_stability`, `test_issue_395_*` → `test_signed_pdf_opens_and_renders`.
 
-### Community contributors
+### Community Contributors
 
-These issues were reported or shaped by community members — thank you:
+- **[@AngeloBestetti](https://github.com/AngeloBestetti)** — Filed
+  [#402](https://github.com/yfedoseev/pdf_oxide/issues/402) with the
+  concrete word `"Lógico"`: a Portuguese term that, when saved to PDF,
+  came back as mojibake because every accented byte was being stored as
+  raw UTF-8. That single reproducer uncovered a systemic encoding bug —
+  _all_ PDF string objects (metadata titles, annotation contents,
+  bookmark labels, content-stream text) were silently corrupted for any
+  non-ASCII character. The internal audit that followed produced #406
+  and a full rewrite of `write_escaped_string` +
+  `encode_pdf_text_string` to emit PDFDocEncoding for chars ≤ U+00FF
+  and UTF-16BE with BOM for anything above. Thank you.
 
-| Contributor | Issue | Description |
-|---|---|---|
-| [@AngeloBestetti](https://github.com/AngeloBestetti) | [#402](https://github.com/yfedoseev/pdf_oxide/issues/402) | Reported UTF-8 encoding loss for accented Portuguese characters |
-| [@sparkyandrew](https://github.com/sparkyandrew) | [#401](https://github.com/yfedoseev/pdf_oxide/issues/401) | Reported embedded-font sub-objects missing from encrypted PDFs |
-| [@ChadThackray](https://github.com/ChadThackray) | [#407](https://github.com/yfedoseev/pdf_oxide/issues/407) | Reported L4 font cache cross-contamination / glyph-drop regression |
-| [@gevorgter](https://github.com/gevorgter) | [#395](https://github.com/yfedoseev/pdf_oxide/issues/395) | Reported SignatureException on open for PDFs containing digital signatures |
-| [@potatochipcoconut](https://github.com/potatochipcoconut) | [#409](https://github.com/yfedoseev/pdf_oxide/issues/409) | Asked for `to_bytes()` / in-memory output + compress/garbage_collect in Python |
+- **[@sparkyandrew](https://github.com/sparkyandrew)** — Filed
+  [#401](https://github.com/yfedoseev/pdf_oxide/issues/401) after
+  discovering that AES-256 encrypted PDFs built with `DocumentBuilder`
+  opened successfully but rendered blank — the embedded font was gone.
+  The root cause: `collect_reachable_ids` followed the top-level `Font`
+  dictionary but stopped there, so `/Widths`, `/FontDescriptor`, and
+  `/FontFile2` were garbage-collected as "unreachable" during the
+  encrypted write pass. The fix traces the full font sub-object graph
+  before encryption so the complete font survives. Thank you.
 
-### Related
+- **[@ChadThackray](https://github.com/ChadThackray)** — Filed
+  [#407](https://github.com/yfedoseev/pdf_oxide/issues/407) after
+  noticing that glyphs from one page silently replaced those of another
+  whenever two pages shared the same `/Font` resource-key name (both
+  using key `F1` but mapped to different faces). The L4 cache was
+  keying the combined glyph-map on a spot-check of a single font
+  object; the fix computes a combined hash over the _complete_ font set,
+  so any change to any face invalidates the entry. Thank you.
 
-- Closes #393 — DocumentBuilder tables (Rust core + all 7 bindings)
-- Closes #234 — PDF/UA-1 (StructTreeRoot, image alt-text, XMP `pdfuaid:part` metadata)
-- Closes #208 — PDF digital signing (CMS/PKCS#7 detached, two-pass ByteRange writer)
-- Closes #209 — AcroForm partial flatten (rebuild `/AcroForm`, pre-flatten warning count)
-- Closes #395 — SignatureException on signed-PDF open/render
-- Closes #398 — Thread-safety / non-reentrancy (interior mutability refactor)
-- Closes #401 — Encrypted PDFs missing embedded-font sub-objects
-- Closes #402 — Accents / UTF-8 encoding loss in Portuguese and other Latin scripts
-- Closes #406 — Systemic UTF-8 encoding loss across all PDF string objects
-- Closes #407 — L4 font cache cross-contamination (glyphs dropped on shared `/Font` keys)
-- Closes #409 — `to_bytes()` + compress/garbage_collect across all bindings
-- Follow-ups tracked in #400.
+- **[@gevorgter](https://github.com/gevorgter)** — Filed
+  [#395](https://github.com/yfedoseev/pdf_oxide/issues/395) after a
+  `SignatureException` from `RenderPage` on a 9-page signed PDF — the
+  renderer was propagating a signature-parse failure as the page-render
+  verdict even though no interactive widget lived on that page. The fix
+  treats unparseable signature-field metadata as non-fatal at render
+  time. @gevorgter also supplied the reproducer PDF that became the
+  regression fixture (`tests/test_signed_pdf_opens_and_renders.rs`),
+  ensuring this class of error can never silently return. Thank you.
+
+- **[@potatochipcoconut](https://github.com/potatochipcoconut)** —
+  Asked [#409](https://github.com/yfedoseev/pdf_oxide/issues/409) how
+  to get a `PdfDocument` as raw bytes from Python without writing to
+  disk, and whether `compress` and `garbage_collect` were available.
+  Neither worked. The question drove the `to_bytes()` / `SaveOptions`
+  kwargs work that shipped in-memory output, compression, and
+  garbage-collection across all 7 bindings, plus 18 missing
+  `DocumentEditor` methods. Thank you.
 
 ## [0.3.38] - 2026-04-23
 > DocumentBuilder fluent API across every language binding, real font subsetting, DocumentBuilder encryption, multi-target WASM packaging, and the first cryptographic slice of PDF signature verification
