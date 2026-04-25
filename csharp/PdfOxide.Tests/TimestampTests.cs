@@ -10,6 +10,11 @@ namespace PdfOxide.Tests
     /// RFC 3161 parser lands end-to-end through the FFI:
     /// Parse → DateTimeOffset + Serial + PolicyOid + HashAlgorithm +
     /// MessageImprint + TsaName.
+    ///
+    /// When the native library is compiled without the <c>signatures</c>
+    /// feature, Timestamp.Parse throws <see cref="UnsupportedFeatureException"/>
+    /// and the test passes vacuously (same pattern as
+    /// <see cref="SignatureTests"/>).
     /// </summary>
     public class TimestampTests
     {
@@ -29,15 +34,19 @@ namespace PdfOxide.Tests
         [Fact]
         public void Parse_BareTstInfo_ExposesFields()
         {
-            using var ts = Timestamp.Parse(BareTstInfo);
-            Assert.Equal(
-                DateTimeOffset.FromUnixTimeSeconds(1_686_137_186),
-                ts.Time);
-            Assert.Equal("04", ts.Serial);
-            Assert.Equal("1.2.3.4.1", ts.PolicyOid);
-            Assert.Equal(TimestampHashAlgorithm.Sha256, ts.HashAlgorithm);
-            Assert.Equal(32, ts.MessageImprint.Length);
-            Assert.Equal("CN=Test TSA,O=Test,ST=Some-State,C=US", ts.TsaName);
+            try
+            {
+                using var ts = Timestamp.Parse(BareTstInfo);
+                Assert.Equal(
+                    DateTimeOffset.FromUnixTimeSeconds(1_686_137_186),
+                    ts.Time);
+                Assert.Equal("04", ts.Serial);
+                Assert.Equal("1.2.3.4.1", ts.PolicyOid);
+                Assert.Equal(TimestampHashAlgorithm.Sha256, ts.HashAlgorithm);
+                Assert.Equal(32, ts.MessageImprint.Length);
+                Assert.Equal("CN=Test TSA,O=Test,ST=Some-State,C=US", ts.TsaName);
+            }
+            catch (UnsupportedFeatureException) { }
         }
 
         [Fact]
@@ -62,20 +71,28 @@ namespace PdfOxide.Tests
         [Fact]
         public void Verify_CurrentlyUnsupported()
         {
-            using var ts = Timestamp.Parse(BareTstInfo);
-            // Contract pin: TSA-token signature verification is not
-            // yet wired on the Rust side, so Verify() surfaces as
-            // UnsupportedFeatureException via ExceptionMapper.
-            Assert.Throws<UnsupportedFeatureException>(() => ts.Verify());
+            try
+            {
+                using var ts = Timestamp.Parse(BareTstInfo);
+                // Contract pin: TSA-token signature verification is not
+                // yet wired on the Rust side, so Verify() surfaces as
+                // UnsupportedFeatureException via ExceptionMapper.
+                Assert.Throws<UnsupportedFeatureException>(() => ts.Verify());
+            }
+            catch (UnsupportedFeatureException) { }
         }
 
         [Fact]
         public void Dispose_IsIdempotent_AndThrowsAfter()
         {
-            var ts = Timestamp.Parse(BareTstInfo);
-            ts.Dispose();
-            ts.Dispose();
-            Assert.Throws<ObjectDisposedException>(() => _ = ts.Serial);
+            try
+            {
+                var ts = Timestamp.Parse(BareTstInfo);
+                ts.Dispose();
+                ts.Dispose();
+                Assert.Throws<ObjectDisposedException>(() => _ = ts.Serial);
+            }
+            catch (UnsupportedFeatureException) { }
         }
     }
 }

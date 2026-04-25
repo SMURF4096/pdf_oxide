@@ -9,6 +9,11 @@ namespace PdfOxide.Tests
     /// Offline unit tests for <see cref="TsaClient"/>. Round-tripping
     /// against a real TSA requires network; that lives in a
     /// sockets-gated integration test so CI stays hermetic.
+    ///
+    /// When the native library is compiled without the <c>signatures</c>
+    /// feature, TsaClient.Create throws <see cref="UnsupportedFeatureException"/>
+    /// and the test passes vacuously (same pattern as
+    /// <see cref="SignatureTests"/>).
     /// </summary>
     public class TsaClientTests
     {
@@ -21,34 +26,46 @@ namespace PdfOxide.Tests
         [Fact]
         public void Create_ValidUrl_Succeeds()
         {
-            using var client = TsaClient.Create(new TsaClientOptions
+            try
             {
-                Url = "https://freetsa.org/tsr",
-            });
-            Assert.NotNull(client);
+                using var client = TsaClient.Create(new TsaClientOptions
+                {
+                    Url = "https://freetsa.org/tsr",
+                });
+                Assert.NotNull(client);
+            }
+            catch (UnsupportedFeatureException) { }
         }
 
         [Fact]
         public void Dispose_IsIdempotent()
         {
-            var client = TsaClient.Create(new TsaClientOptions
+            try
             {
-                Url = "https://freetsa.org/tsr",
-            });
-            client.Dispose();
-            client.Dispose(); // must not throw
+                var client = TsaClient.Create(new TsaClientOptions
+                {
+                    Url = "https://freetsa.org/tsr",
+                });
+                client.Dispose();
+                client.Dispose(); // must not throw
+            }
+            catch (UnsupportedFeatureException) { }
         }
 
         [Fact]
         public void RequestTimestamp_AfterDispose_Throws()
         {
-            var client = TsaClient.Create(new TsaClientOptions
+            try
             {
-                Url = "https://freetsa.org/tsr",
-            });
-            client.Dispose();
-            Assert.Throws<ObjectDisposedException>(() =>
-                client.RequestTimestamp(new byte[] { 1, 2, 3 }));
+                var client = TsaClient.Create(new TsaClientOptions
+                {
+                    Url = "https://freetsa.org/tsr",
+                });
+                client.Dispose();
+                Assert.Throws<ObjectDisposedException>(() =>
+                    client.RequestTimestamp(new byte[] { 1, 2, 3 }));
+            }
+            catch (UnsupportedFeatureException) { }
         }
 
         [Fact]

@@ -567,7 +567,7 @@ def test_streaming_table_1000_rows_multi_page():
     """1 000-row streaming table must span multiple pages and preserve
     the header + some sampled cell values. The exact row count is held
     well below the 30 k smoke in the Rust-core test to keep CI fast."""
-    N = 1000
+    n_rows = 1000
     doc = pdf_oxide.DocumentBuilder()
     page = (
         doc.letter_page()
@@ -583,7 +583,7 @@ def test_streaming_table_1000_rows_multi_page():
         repeat_header=True,
     )
     assert st.column_count() == 3
-    for i in range(N):
+    for i in range(n_rows):
         st.push_row([f"S-{i:04d}", f"Item number {i}", str(i % 97)])
     bytes_ = st.finish().done().build()
     pdf = pdf_oxide.PdfDocument.from_bytes(bytes_)
