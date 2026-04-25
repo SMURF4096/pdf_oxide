@@ -692,4 +692,89 @@ mod tests {
             "CSS font-size had no effect on output — paint_page is ignoring style_for"
         );
     }
+
+    // ── xfail stubs: known-broken CSS properties ─────────────────────────
+    // These tests are marked #[ignore] to document what is NOT yet working.
+    // Remove the #[ignore] attribute once the property is implemented.
+    // Each test uses the same pattern as css_font_size_rule_changes_output.
+
+    #[test]
+    #[ignore = "CSS color not yet applied in paint_page — all text renders black (#248)"]
+    fn css_color_rule_changes_output() {
+        use crate::html_css::css::{cascade, parse_stylesheet};
+        use crate::html_css::paginate::paginate;
+
+        fn make(css: &'static str) -> Vec<u8> {
+            let html = "<html><body><p>text</p></body></html>";
+            let dom: &'static _ =
+                Box::leak(Box::new(crate::html_css::html::parse_document(html)));
+            let ss: &'static _ = Box::leak(Box::new(parse_stylesheet(css).unwrap()));
+            let tree = crate::html_css::layout::build_box_tree(dom, ss).unwrap();
+            let layout = crate::html_css::layout::run_layout(
+                &tree,
+                |id| {
+                    let node = tree.get(id);
+                    let Some(e) = node.element else { return ComputedStyles::default(); };
+                    cascade(ss, dom.element(e).unwrap(), None)
+                },
+                taffy::prelude::Size { width: 600.0, height: 800.0 },
+                &crate::html_css::css::CalcContext::default(),
+                12.0,
+            );
+            let doc = paginate(&tree, &layout, crate::html_css::paginate::PageConfig::a4());
+            let mut writer = PdfWriter::new();
+            let font =
+                EmbeddedFont::from_data(Some("DejaVuSans".to_string()), DEJAVU.to_vec()).unwrap();
+            let rn = writer.register_embedded_font(font);
+            paint_document(&mut writer, &doc, &tree,
+                |id| { let n = tree.get(id); let e = n.element?; Some(cascade(ss, dom.element(e).unwrap(), None)) },
+                &rn, 12.0, |_|None, |_|None, |_|None, |_|None, |_|None, |_|None,
+            );
+            writer.finish().unwrap()
+        }
+
+        let black = make("p { color: black; }");
+        let red = make("p { color: red; }");
+        assert_ne!(black, red, "CSS color had no effect");
+    }
+
+    #[test]
+    #[ignore = "CSS background-color stubbed with `let _ = color` in paint_page (#248 PAINT-2b)"]
+    fn css_background_color_changes_output() {
+        use crate::html_css::css::{cascade, parse_stylesheet};
+        use crate::html_css::paginate::paginate;
+
+        fn make(css: &'static str) -> Vec<u8> {
+            let html = "<html><body><p>text</p></body></html>";
+            let dom: &'static _ =
+                Box::leak(Box::new(crate::html_css::html::parse_document(html)));
+            let ss: &'static _ = Box::leak(Box::new(parse_stylesheet(css).unwrap()));
+            let tree = crate::html_css::layout::build_box_tree(dom, ss).unwrap();
+            let layout = crate::html_css::layout::run_layout(
+                &tree,
+                |id| {
+                    let node = tree.get(id);
+                    let Some(e) = node.element else { return ComputedStyles::default(); };
+                    cascade(ss, dom.element(e).unwrap(), None)
+                },
+                taffy::prelude::Size { width: 600.0, height: 800.0 },
+                &crate::html_css::css::CalcContext::default(),
+                12.0,
+            );
+            let doc = paginate(&tree, &layout, crate::html_css::paginate::PageConfig::a4());
+            let mut writer = PdfWriter::new();
+            let font =
+                EmbeddedFont::from_data(Some("DejaVuSans".to_string()), DEJAVU.to_vec()).unwrap();
+            let rn = writer.register_embedded_font(font);
+            paint_document(&mut writer, &doc, &tree,
+                |id| { let n = tree.get(id); let e = n.element?; Some(cascade(ss, dom.element(e).unwrap(), None)) },
+                &rn, 12.0, |_|None, |_|None, |_|None, |_|None, |_|None, |_|None,
+            );
+            writer.finish().unwrap()
+        }
+
+        let no_bg = make("");
+        let yellow_bg = make("body { background-color: yellow; }");
+        assert_ne!(no_bg, yellow_bg, "CSS background-color had no effect");
+    }
 }
