@@ -312,6 +312,29 @@ extern int32_t document_editor_crop_margins(void* handle, float left, float righ
 extern int32_t document_editor_merge_from(void* handle, const char* source_path, int* error_code);
 extern int32_t document_editor_save_encrypted(void* handle, const char* path, const char* user_password, const char* owner_password, int* error_code);
 
+// Editor: new functions (v0.3.39)
+extern void* document_editor_open_from_bytes(const uint8_t* data, size_t len, int* error_code);
+extern uint8_t* document_editor_save_to_bytes(void* handle, size_t* out_len, int* error_code);
+extern uint8_t* document_editor_save_to_bytes_with_options(void* handle, bool compress, bool garbage_collect, bool linearize, size_t* out_len, int* error_code);
+extern char* document_editor_get_keywords(const void* handle, int* error_code);
+extern int   document_editor_set_keywords(void* handle, const char* keywords, int* error_code);
+extern int32_t document_editor_merge_from_bytes(void* handle, const uint8_t* data, size_t len, int* error_code);
+extern int   document_editor_embed_file(void* handle, const char* name, const uint8_t* data, size_t len, int* error_code);
+extern int   document_editor_apply_page_redactions(void* handle, size_t page, int* error_code);
+extern int   document_editor_apply_all_redactions(void* handle, int* error_code);
+extern int   document_editor_rotate_all_pages(void* handle, int32_t degrees, int* error_code);
+extern int   document_editor_rotate_page_by(void* handle, size_t page, int32_t degrees, int* error_code);
+extern int   document_editor_get_page_media_box(void* handle, size_t page, double* x, double* y, double* w, double* h, int* error_code);
+extern int   document_editor_set_page_media_box(void* handle, size_t page, double x, double y, double w, double h, int* error_code);
+extern int   document_editor_get_page_crop_box(void* handle, size_t page, double* x, double* y, double* w, double* h, int* error_code);
+extern int   document_editor_set_page_crop_box(void* handle, size_t page, double x, double y, double w, double h, int* error_code);
+extern int   document_editor_erase_regions(void* handle, size_t page, const double* rects, size_t rects_count, int* error_code);
+extern int   document_editor_clear_erase_regions(void* handle, size_t page, int* error_code);
+extern int32_t document_editor_is_page_marked_for_flatten(const void* handle, size_t page);
+extern int   document_editor_unmark_page_for_flatten(void* handle, size_t page, int* error_code);
+extern int32_t document_editor_is_page_marked_for_redaction(const void* handle, size_t page);
+extern int   document_editor_unmark_page_for_redaction(void* handle, size_t page, int* error_code);
+
 // PDF creation extras
 extern void* pdf_from_image(const char* path, int* error_code);
 extern void* pdf_from_image_bytes(const uint8_t* data, int32_t data_len, int* error_code);
@@ -2150,6 +2173,349 @@ func (editor *DocumentEditor) SaveEncrypted(path, userPassword, ownerPassword st
 	defer C.free(unsafe.Pointer(cOwner))
 	var errorCode C.int
 	C.document_editor_save_encrypted(editor.handle, cPath, cUser, cOwner, &errorCode)
+	if errorCode != 0 {
+		return ffiError(errorCode)
+	}
+	return nil
+}
+
+// OpenEditorFromBytes opens a PDF for editing from an in-memory byte slice.
+func OpenEditorFromBytes(data []byte) (*DocumentEditor, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("pdf_oxide: data must not be empty: %w", ErrInvalidPath)
+	}
+	var errorCode C.int
+	handle := C.document_editor_open_from_bytes((*C.uint8_t)(unsafe.Pointer(&data[0])), C.size_t(len(data)), &errorCode)
+	if errorCode != 0 {
+		return nil, ffiError(errorCode)
+	}
+	if handle == nil {
+		return nil, fmt.Errorf("pdf_oxide: failed to open editor from bytes: %w", ErrInternal)
+	}
+	return &DocumentEditor{
+		handle: handle,
+	}, nil
+}
+
+// SaveToBytes saves the edited document to an in-memory byte slice.
+func (editor *DocumentEditor) SaveToBytes() ([]byte, error) {
+	if err := editor.acquireWrite(); err != nil {
+		return nil, err
+	}
+	defer editor.mu.Unlock()
+	var outLen C.size_t
+	var errorCode C.int
+	ptr := C.document_editor_save_to_bytes(editor.handle, &outLen, &errorCode)
+	if errorCode != 0 {
+		return nil, ffiError(errorCode)
+	}
+	if ptr == nil {
+		return nil, fmt.Errorf("pdf_oxide: failed to save editor to bytes: %w", ErrInternal)
+	}
+	result := C.GoBytes(unsafe.Pointer(ptr), C.int(outLen))
+	C.free_bytes(unsafe.Pointer(ptr))
+	return result, nil
+}
+
+// SaveToBytesWithOptions saves the edited document to bytes with compression / GC / linearize flags.
+func (editor *DocumentEditor) SaveToBytesWithOptions(compress, garbageCollect, linearize bool) ([]byte, error) {
+	if err := editor.acquireWrite(); err != nil {
+		return nil, err
+	}
+	defer editor.mu.Unlock()
+	var outLen C.size_t
+	var errorCode C.int
+	ptr := C.document_editor_save_to_bytes_with_options(
+		editor.handle,
+		C.bool(compress),
+		C.bool(garbageCollect),
+		C.bool(linearize),
+		&outLen,
+		&errorCode,
+	)
+	if errorCode != 0 {
+		return nil, ffiError(errorCode)
+	}
+	if ptr == nil {
+		return nil, fmt.Errorf("pdf_oxide: failed to save editor to bytes with options: %w", ErrInternal)
+	}
+	result := C.GoBytes(unsafe.Pointer(ptr), C.int(outLen))
+	C.free_bytes(unsafe.Pointer(ptr))
+	return result, nil
+}
+
+// Keywords returns the document keywords metadata.
+func (editor *DocumentEditor) Keywords() (string, error) {
+	if err := editor.acquireRead(); err != nil {
+		return "", err
+	}
+	defer editor.mu.Unlock()
+	var errorCode C.int
+	cKw := C.document_editor_get_keywords(editor.handle, &errorCode)
+	if errorCode != 0 {
+		return "", ffiError(errorCode)
+	}
+	if cKw == nil {
+		return "", nil
+	}
+	s := C.GoString(cKw)
+	C.free_string(cKw)
+	return s, nil
+}
+
+// SetKeywords sets the document keywords metadata.
+func (editor *DocumentEditor) SetKeywords(keywords string) error {
+	if err := editor.acquireWrite(); err != nil {
+		return err
+	}
+	defer editor.mu.Unlock()
+	cKw := C.CString(keywords)
+	defer C.free(unsafe.Pointer(cKw))
+	var errorCode C.int
+	C.document_editor_set_keywords(editor.handle, cKw, &errorCode)
+	if errorCode != 0 {
+		return ffiError(errorCode)
+	}
+	return nil
+}
+
+// MergeFromBytes merges pages from an in-memory PDF byte slice. Returns pages added.
+func (editor *DocumentEditor) MergeFromBytes(data []byte) (int, error) {
+	if err := editor.acquireWrite(); err != nil {
+		return 0, err
+	}
+	defer editor.mu.Unlock()
+	if len(data) == 0 {
+		return 0, fmt.Errorf("pdf_oxide: data must not be empty: %w", ErrInvalidPath)
+	}
+	var errorCode C.int
+	n := C.document_editor_merge_from_bytes(
+		editor.handle,
+		(*C.uint8_t)(unsafe.Pointer(&data[0])),
+		C.size_t(len(data)),
+		&errorCode,
+	)
+	if errorCode != 0 {
+		return 0, ffiError(errorCode)
+	}
+	return int(n), nil
+}
+
+// EmbedFile embeds a file attachment into the document.
+func (editor *DocumentEditor) EmbedFile(name string, data []byte) error {
+	if err := editor.acquireWrite(); err != nil {
+		return err
+	}
+	defer editor.mu.Unlock()
+	cName := C.CString(name)
+	defer C.free(unsafe.Pointer(cName))
+	var dataPtr *C.uint8_t
+	if len(data) > 0 {
+		dataPtr = (*C.uint8_t)(unsafe.Pointer(&data[0]))
+	}
+	var errorCode C.int
+	C.document_editor_embed_file(editor.handle, cName, dataPtr, C.size_t(len(data)), &errorCode)
+	if errorCode != 0 {
+		return ffiError(errorCode)
+	}
+	return nil
+}
+
+// ApplyPageRedactions burns in redaction annotations on a single page.
+func (editor *DocumentEditor) ApplyPageRedactions(page int) error {
+	if err := editor.acquireWrite(); err != nil {
+		return err
+	}
+	defer editor.mu.Unlock()
+	var errorCode C.int
+	C.document_editor_apply_page_redactions(editor.handle, C.size_t(page), &errorCode)
+	if errorCode != 0 {
+		return ffiError(errorCode)
+	}
+	return nil
+}
+
+// ApplyAllRedactions burns in all pending redaction annotations across the document.
+func (editor *DocumentEditor) ApplyAllRedactions() error {
+	if err := editor.acquireWrite(); err != nil {
+		return err
+	}
+	defer editor.mu.Unlock()
+	var errorCode C.int
+	C.document_editor_apply_all_redactions(editor.handle, &errorCode)
+	if errorCode != 0 {
+		return ffiError(errorCode)
+	}
+	return nil
+}
+
+// RotateAllPages rotates every page by degrees (additive, not absolute).
+func (editor *DocumentEditor) RotateAllPages(degrees int) error {
+	if err := editor.acquireWrite(); err != nil {
+		return err
+	}
+	defer editor.mu.Unlock()
+	var errorCode C.int
+	C.document_editor_rotate_all_pages(editor.handle, C.int32_t(degrees), &errorCode)
+	if errorCode != 0 {
+		return ffiError(errorCode)
+	}
+	return nil
+}
+
+// RotatePageBy rotates a single page by degrees (additive, not absolute).
+func (editor *DocumentEditor) RotatePageBy(page, degrees int) error {
+	if err := editor.acquireWrite(); err != nil {
+		return err
+	}
+	defer editor.mu.Unlock()
+	var errorCode C.int
+	C.document_editor_rotate_page_by(editor.handle, C.size_t(page), C.int32_t(degrees), &errorCode)
+	if errorCode != 0 {
+		return ffiError(errorCode)
+	}
+	return nil
+}
+
+// GetPageMediaBox returns the MediaBox of a page as [x, y, w, h].
+func (editor *DocumentEditor) GetPageMediaBox(page int) (x, y, w, h float64, err error) {
+	if err = editor.acquireWrite(); err != nil {
+		return
+	}
+	defer editor.mu.Unlock()
+	var cx, cy, cw, ch C.double
+	var errorCode C.int
+	C.document_editor_get_page_media_box(editor.handle, C.size_t(page), &cx, &cy, &cw, &ch, &errorCode)
+	if errorCode != 0 {
+		err = ffiError(errorCode)
+		return
+	}
+	return float64(cx), float64(cy), float64(cw), float64(ch), nil
+}
+
+// SetPageMediaBox sets the MediaBox of a page.
+func (editor *DocumentEditor) SetPageMediaBox(page int, x, y, w, h float64) error {
+	if err := editor.acquireWrite(); err != nil {
+		return err
+	}
+	defer editor.mu.Unlock()
+	var errorCode C.int
+	C.document_editor_set_page_media_box(editor.handle, C.size_t(page), C.double(x), C.double(y), C.double(w), C.double(h), &errorCode)
+	if errorCode != 0 {
+		return ffiError(errorCode)
+	}
+	return nil
+}
+
+// GetPageCropBox returns the CropBox of a page as [x, y, w, h]. Returns zeros if no CropBox is set.
+func (editor *DocumentEditor) GetPageCropBox(page int) (x, y, w, h float64, err error) {
+	if err = editor.acquireWrite(); err != nil {
+		return
+	}
+	defer editor.mu.Unlock()
+	var cx, cy, cw, ch C.double
+	var errorCode C.int
+	C.document_editor_get_page_crop_box(editor.handle, C.size_t(page), &cx, &cy, &cw, &ch, &errorCode)
+	if errorCode != 0 {
+		err = ffiError(errorCode)
+		return
+	}
+	return float64(cx), float64(cy), float64(cw), float64(ch), nil
+}
+
+// SetPageCropBox sets the CropBox of a page.
+func (editor *DocumentEditor) SetPageCropBox(page int, x, y, w, h float64) error {
+	if err := editor.acquireWrite(); err != nil {
+		return err
+	}
+	defer editor.mu.Unlock()
+	var errorCode C.int
+	C.document_editor_set_page_crop_box(editor.handle, C.size_t(page), C.double(x), C.double(y), C.double(w), C.double(h), &errorCode)
+	if errorCode != 0 {
+		return ffiError(errorCode)
+	}
+	return nil
+}
+
+// EraseRegions erases multiple rectangular regions on a page.
+// Each element of rects is [x, y, w, h] in PDF user space.
+func (editor *DocumentEditor) EraseRegions(page int, rects [][4]float64) error {
+	if err := editor.acquireWrite(); err != nil {
+		return err
+	}
+	defer editor.mu.Unlock()
+	if len(rects) == 0 {
+		return nil
+	}
+	flat := make([]C.double, len(rects)*4)
+	for i, r := range rects {
+		flat[i*4+0] = C.double(r[0])
+		flat[i*4+1] = C.double(r[1])
+		flat[i*4+2] = C.double(r[2])
+		flat[i*4+3] = C.double(r[3])
+	}
+	var errorCode C.int
+	C.document_editor_erase_regions(editor.handle, C.size_t(page), &flat[0], C.size_t(len(rects)), &errorCode)
+	if errorCode != 0 {
+		return ffiError(errorCode)
+	}
+	return nil
+}
+
+// ClearEraseRegions removes all pending erase-region entries for a page.
+func (editor *DocumentEditor) ClearEraseRegions(page int) error {
+	if err := editor.acquireWrite(); err != nil {
+		return err
+	}
+	defer editor.mu.Unlock()
+	var errorCode C.int
+	C.document_editor_clear_erase_regions(editor.handle, C.size_t(page), &errorCode)
+	if errorCode != 0 {
+		return ffiError(errorCode)
+	}
+	return nil
+}
+
+// IsPageMarkedForFlatten returns true if the page is marked for annotation-flatten.
+func (editor *DocumentEditor) IsPageMarkedForFlatten(page int) bool {
+	if err := editor.acquireRead(); err != nil {
+		return false
+	}
+	defer editor.mu.Unlock()
+	return C.document_editor_is_page_marked_for_flatten(editor.handle, C.size_t(page)) == 1
+}
+
+// UnmarkPageForFlatten removes the flatten mark from a page.
+func (editor *DocumentEditor) UnmarkPageForFlatten(page int) error {
+	if err := editor.acquireWrite(); err != nil {
+		return err
+	}
+	defer editor.mu.Unlock()
+	var errorCode C.int
+	C.document_editor_unmark_page_for_flatten(editor.handle, C.size_t(page), &errorCode)
+	if errorCode != 0 {
+		return ffiError(errorCode)
+	}
+	return nil
+}
+
+// IsPageMarkedForRedaction returns true if the page is marked for redaction.
+func (editor *DocumentEditor) IsPageMarkedForRedaction(page int) bool {
+	if err := editor.acquireRead(); err != nil {
+		return false
+	}
+	defer editor.mu.Unlock()
+	return C.document_editor_is_page_marked_for_redaction(editor.handle, C.size_t(page)) == 1
+}
+
+// UnmarkPageForRedaction removes the redaction mark from a page.
+func (editor *DocumentEditor) UnmarkPageForRedaction(page int) error {
+	if err := editor.acquireWrite(); err != nil {
+		return err
+	}
+	defer editor.mu.Unlock()
+	var errorCode C.int
+	C.document_editor_unmark_page_for_redaction(editor.handle, C.size_t(page), &errorCode)
 	if errorCode != 0 {
 		return ffiError(errorCode)
 	}

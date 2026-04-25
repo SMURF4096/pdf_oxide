@@ -78,6 +78,49 @@ char* document_editor_get_creation_date(const void* handle, int* error_code);
 int   document_editor_set_creation_date(void* handle, const char* date_str, int* error_code);
 int   document_editor_save(void* handle, const char* path, int* error_code);
 
+/* Open from bytes */
+void* document_editor_open_from_bytes(const uint8_t* data, size_t len, int* error_code);
+
+/* Save to bytes (returns buffer freed with free_bytes; *out_len receives size) */
+uint8_t* document_editor_save_to_bytes(void* handle, size_t* out_len, int* error_code);
+uint8_t* document_editor_save_to_bytes_with_options(void* handle, bool compress, bool garbage_collect, bool linearize, size_t* out_len, int* error_code);
+
+/* Keywords */
+char* document_editor_get_keywords(const void* handle, int* error_code);
+int   document_editor_set_keywords(void* handle, const char* keywords, int* error_code);
+
+/* Merge from bytes */
+int   document_editor_merge_from_bytes(void* handle, const uint8_t* data, size_t len, int* error_code);
+
+/* Embed file attachment */
+int   document_editor_embed_file(void* handle, const char* name, const uint8_t* data, size_t len, int* error_code);
+
+/* Redactions */
+int   document_editor_apply_page_redactions(void* handle, size_t page, int* error_code);
+int   document_editor_apply_all_redactions(void* handle, int* error_code);
+
+/* Rotation helpers */
+int   document_editor_rotate_all_pages(void* handle, int32_t degrees, int* error_code);
+int   document_editor_rotate_page_by(void* handle, size_t page, int32_t degrees, int* error_code);
+
+/* MediaBox editor variants */
+int   document_editor_get_page_media_box(void* handle, size_t page, double* x, double* y, double* w, double* h, int* error_code);
+int   document_editor_set_page_media_box(void* handle, size_t page, double x, double y, double w, double h, int* error_code);
+
+/* CropBox editor variants */
+int   document_editor_get_page_crop_box(void* handle, size_t page, double* x, double* y, double* w, double* h, int* error_code);
+int   document_editor_set_page_crop_box(void* handle, size_t page, double x, double y, double w, double h, int* error_code);
+
+/* Bulk erase regions (rects is flat [x,y,w,h,...] array; rects_count = number of rects) */
+int   document_editor_erase_regions(void* handle, size_t page, const double* rects, size_t rects_count, int* error_code);
+int   document_editor_clear_erase_regions(void* handle, size_t page, int* error_code);
+
+/* Page-mark state queries */
+int32_t document_editor_is_page_marked_for_flatten(const void* handle, size_t page);
+int   document_editor_unmark_page_for_flatten(void* handle, size_t page, int* error_code);
+int32_t document_editor_is_page_marked_for_redaction(const void* handle, size_t page);
+int   document_editor_unmark_page_for_redaction(void* handle, size_t page, int* error_code);
+
 /* Form flattening */
 int   document_editor_flatten_forms(void* handle, int* error_code);
 int   document_editor_flatten_forms_on_page(void* handle, int32_t page_index, int* error_code);

@@ -530,6 +530,274 @@ namespace PdfOxide.Core
             }
         }
 
+        // ================================================================
+        // New methods (v0.3.39)
+        // ================================================================
+
+        /// <summary>
+        /// Opens a DocumentEditor from an in-memory byte array.
+        /// </summary>
+        public static DocumentEditor OpenFromBytes(byte[] data)
+        {
+            ArgumentNullException.ThrowIfNull(data);
+            if (data.Length == 0)
+                throw new ArgumentException("Data must not be empty.", nameof(data));
+            var handle = NativeMethods.document_editor_open_from_bytes(data, (nuint)data.Length, out var errorCode);
+            ExceptionMapper.ThrowIfError(errorCode);
+            return new DocumentEditor(handle);
+        }
+
+        /// <summary>
+        /// Saves the editor contents to an in-memory byte array.
+        /// </summary>
+        public byte[] SaveToBytes()
+        {
+            ThrowIfDisposed();
+            var ptr = NativeMethods.document_editor_save_to_bytes(_handle, out nuint outLen, out int errorCode);
+            ExceptionMapper.ThrowIfError(errorCode);
+            if (ptr == IntPtr.Zero || outLen == 0) return Array.Empty<byte>();
+            try
+            {
+                var bytes = new byte[(int)outLen];
+                System.Runtime.InteropServices.Marshal.Copy(ptr, bytes, 0, (int)outLen);
+                return bytes;
+            }
+            finally
+            {
+                NativeMethods.FreeBytes(ptr);
+            }
+        }
+
+        /// <summary>
+        /// Saves the editor contents to bytes with compression / garbage-collection / linearize flags.
+        /// </summary>
+        public byte[] SaveToBytesWithOptions(bool compress, bool garbageCollect, bool linearize)
+        {
+            ThrowIfDisposed();
+            var ptr = NativeMethods.document_editor_save_to_bytes_with_options(
+                _handle, compress, garbageCollect, linearize, out nuint outLen, out int errorCode);
+            ExceptionMapper.ThrowIfError(errorCode);
+            if (ptr == IntPtr.Zero || outLen == 0) return Array.Empty<byte>();
+            try
+            {
+                var bytes = new byte[(int)outLen];
+                System.Runtime.InteropServices.Marshal.Copy(ptr, bytes, 0, (int)outLen);
+                return bytes;
+            }
+            finally
+            {
+                NativeMethods.FreeBytes(ptr);
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets the document keywords metadata.
+        /// </summary>
+        public string? Keywords
+        {
+            get
+            {
+                ThrowIfDisposed();
+                var ptr = NativeMethods.document_editor_get_keywords(_handle, out int err);
+                ExceptionMapper.ThrowIfError(err);
+                if (ptr == IntPtr.Zero) return null;
+                try { return StringMarshaler.PtrToString(ptr); }
+                finally { NativeMethods.FreeString(ptr); }
+            }
+            set
+            {
+                ThrowIfDisposed();
+                NativeMethods.document_editor_set_keywords(_handle, value ?? string.Empty, out int err);
+                ExceptionMapper.ThrowIfError(err);
+            }
+        }
+
+        /// <summary>
+        /// Merges pages from an in-memory PDF byte array into this document.
+        /// Returns the number of pages added.
+        /// </summary>
+        public int MergeFromBytes(byte[] data)
+        {
+            ArgumentNullException.ThrowIfNull(data);
+            if (data.Length == 0)
+                throw new ArgumentException("Data must not be empty.", nameof(data));
+            ThrowIfDisposed();
+            int n = NativeMethods.document_editor_merge_from_bytes(_handle, data, (nuint)data.Length, out int err);
+            ExceptionMapper.ThrowIfError(err);
+            return n;
+        }
+
+        /// <summary>
+        /// Embeds a file attachment into the document.
+        /// </summary>
+        public void EmbedFile(string name, byte[] data)
+        {
+            ArgumentNullException.ThrowIfNull(name);
+            ArgumentNullException.ThrowIfNull(data);
+            ThrowIfDisposed();
+            NativeMethods.document_editor_embed_file(_handle, name, data, (nuint)data.Length, out int err);
+            ExceptionMapper.ThrowIfError(err);
+        }
+
+        /// <summary>
+        /// Burns in redaction annotations on a single page.
+        /// </summary>
+        public void ApplyPageRedactions(int pageIndex)
+        {
+            ThrowIfDisposed();
+            NativeMethods.document_editor_apply_page_redactions(_handle, (nuint)pageIndex, out int err);
+            ExceptionMapper.ThrowIfError(err);
+        }
+
+        /// <summary>
+        /// Burns in all pending redaction annotations across the document.
+        /// </summary>
+        public void ApplyAllRedactions()
+        {
+            ThrowIfDisposed();
+            NativeMethods.document_editor_apply_all_redactions(_handle, out int err);
+            ExceptionMapper.ThrowIfError(err);
+        }
+
+        /// <summary>
+        /// Rotates all pages by <paramref name="degrees"/> (additive, not absolute).
+        /// </summary>
+        public void RotateAllPages(int degrees)
+        {
+            ThrowIfDisposed();
+            NativeMethods.document_editor_rotate_all_pages(_handle, degrees, out int err);
+            ExceptionMapper.ThrowIfError(err);
+        }
+
+        /// <summary>
+        /// Rotates a single page by <paramref name="degrees"/> (additive, not absolute).
+        /// </summary>
+        public void RotatePageBy(int pageIndex, int degrees)
+        {
+            ThrowIfDisposed();
+            NativeMethods.document_editor_rotate_page_by(_handle, (nuint)pageIndex, degrees, out int err);
+            ExceptionMapper.ThrowIfError(err);
+        }
+
+        /// <summary>
+        /// Gets the MediaBox of a page as (x, y, width, height).
+        /// </summary>
+        public (double X, double Y, double Width, double Height) GetPageMediaBox(int pageIndex)
+        {
+            ThrowIfDisposed();
+            NativeMethods.document_editor_get_page_media_box(
+                _handle, (nuint)pageIndex, out double x, out double y, out double w, out double h, out int err);
+            ExceptionMapper.ThrowIfError(err);
+            return (x, y, w, h);
+        }
+
+        /// <summary>
+        /// Sets the MediaBox of a page.
+        /// </summary>
+        public void SetPageMediaBox(int pageIndex, double x, double y, double width, double height)
+        {
+            ThrowIfDisposed();
+            NativeMethods.document_editor_set_page_media_box(
+                _handle, (nuint)pageIndex, x, y, width, height, out int err);
+            ExceptionMapper.ThrowIfError(err);
+        }
+
+        /// <summary>
+        /// Gets the CropBox of a page as (x, y, width, height).
+        /// Returns (0, 0, 0, 0) if no CropBox is set.
+        /// </summary>
+        public (double X, double Y, double Width, double Height) GetPageCropBox(int pageIndex)
+        {
+            ThrowIfDisposed();
+            NativeMethods.document_editor_get_page_crop_box(
+                _handle, (nuint)pageIndex, out double x, out double y, out double w, out double h, out int err);
+            ExceptionMapper.ThrowIfError(err);
+            return (x, y, w, h);
+        }
+
+        /// <summary>
+        /// Sets the CropBox of a page.
+        /// </summary>
+        public void SetPageCropBox(int pageIndex, double x, double y, double width, double height)
+        {
+            ThrowIfDisposed();
+            NativeMethods.document_editor_set_page_crop_box(
+                _handle, (nuint)pageIndex, x, y, width, height, out int err);
+            ExceptionMapper.ThrowIfError(err);
+        }
+
+        /// <summary>
+        /// Erases multiple rectangular regions on a page.
+        /// Each element of <paramref name="rects"/> is [x, y, w, h].
+        /// </summary>
+        public void EraseRegions(int pageIndex, double[][] rects)
+        {
+            ArgumentNullException.ThrowIfNull(rects);
+            ThrowIfDisposed();
+            if (rects.Length == 0) return;
+            var flat = new double[rects.Length * 4];
+            for (int i = 0; i < rects.Length; i++)
+            {
+                if (rects[i].Length < 4)
+                    throw new ArgumentException($"rects[{i}] must have 4 elements.", nameof(rects));
+                flat[i * 4 + 0] = rects[i][0];
+                flat[i * 4 + 1] = rects[i][1];
+                flat[i * 4 + 2] = rects[i][2];
+                flat[i * 4 + 3] = rects[i][3];
+            }
+            NativeMethods.document_editor_erase_regions(
+                _handle, (nuint)pageIndex, flat, (nuint)rects.Length, out int err);
+            ExceptionMapper.ThrowIfError(err);
+        }
+
+        /// <summary>
+        /// Clears all pending erase-region entries for a page.
+        /// </summary>
+        public void ClearEraseRegions(int pageIndex)
+        {
+            ThrowIfDisposed();
+            NativeMethods.document_editor_clear_erase_regions(_handle, (nuint)pageIndex, out int err);
+            ExceptionMapper.ThrowIfError(err);
+        }
+
+        /// <summary>
+        /// Returns true if the page is marked for annotation-flatten.
+        /// </summary>
+        public bool IsPageMarkedForFlatten(int pageIndex)
+        {
+            ThrowIfDisposed();
+            return NativeMethods.document_editor_is_page_marked_for_flatten(_handle, (nuint)pageIndex) == 1;
+        }
+
+        /// <summary>
+        /// Removes the flatten mark from a page.
+        /// </summary>
+        public void UnmarkPageForFlatten(int pageIndex)
+        {
+            ThrowIfDisposed();
+            NativeMethods.document_editor_unmark_page_for_flatten(_handle, (nuint)pageIndex, out int err);
+            ExceptionMapper.ThrowIfError(err);
+        }
+
+        /// <summary>
+        /// Returns true if the page is marked for redaction.
+        /// </summary>
+        public bool IsPageMarkedForRedaction(int pageIndex)
+        {
+            ThrowIfDisposed();
+            return NativeMethods.document_editor_is_page_marked_for_redaction(_handle, (nuint)pageIndex) == 1;
+        }
+
+        /// <summary>
+        /// Removes the redaction mark from a page.
+        /// </summary>
+        public void UnmarkPageForRedaction(int pageIndex)
+        {
+            ThrowIfDisposed();
+            NativeMethods.document_editor_unmark_page_for_redaction(_handle, (nuint)pageIndex, out int err);
+            ExceptionMapper.ThrowIfError(err);
+        }
+
         /// <summary>
         /// Disposes the DocumentEditor and releases native resources.
         /// </summary>

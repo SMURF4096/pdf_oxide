@@ -216,6 +216,28 @@ extern "C" {
   extern int document_editor_save_encrypted(void* handle, const char* path, const char* user_password, const char* owner_password, int* error_code);
   extern int document_editor_set_creation_date(void* handle, const char* date_str, int* error_code);
   extern int document_editor_set_form_field_value(void* handle, const char* name, const char* value, int* error_code);
+  // New functions (v0.3.39)
+  extern void* document_editor_open_from_bytes(const uint8_t* data, size_t len, int* error_code);
+  extern uint8_t* document_editor_save_to_bytes(void* handle, size_t* out_len, int* error_code);
+  extern uint8_t* document_editor_save_to_bytes_with_options(void* handle, bool compress, bool garbage_collect, bool linearize, size_t* out_len, int* error_code);
+  extern char* document_editor_get_keywords(const void* handle, int* error_code);
+  extern int   document_editor_set_keywords(void* handle, const char* keywords, int* error_code);
+  extern int   document_editor_merge_from_bytes(void* handle, const uint8_t* data, size_t len, int* error_code);
+  extern int   document_editor_embed_file(void* handle, const char* name, const uint8_t* data, size_t len, int* error_code);
+  extern int   document_editor_apply_page_redactions(void* handle, size_t page, int* error_code);
+  extern int   document_editor_apply_all_redactions(void* handle, int* error_code);
+  extern int   document_editor_rotate_all_pages(void* handle, int32_t degrees, int* error_code);
+  extern int   document_editor_rotate_page_by(void* handle, size_t page, int32_t degrees, int* error_code);
+  extern int   document_editor_get_page_media_box(void* handle, size_t page, double* x, double* y, double* w, double* h, int* error_code);
+  extern int   document_editor_set_page_media_box(void* handle, size_t page, double x, double y, double w, double h, int* error_code);
+  extern int   document_editor_get_page_crop_box(void* handle, size_t page, double* x, double* y, double* w, double* h, int* error_code);
+  extern int   document_editor_set_page_crop_box(void* handle, size_t page, double x, double y, double w, double h, int* error_code);
+  extern int   document_editor_erase_regions(void* handle, size_t page, const double* rects, size_t rects_count, int* error_code);
+  extern int   document_editor_clear_erase_regions(void* handle, size_t page, int* error_code);
+  extern int32_t document_editor_is_page_marked_for_flatten(const void* handle, size_t page);
+  extern int   document_editor_unmark_page_for_flatten(void* handle, size_t page, int* error_code);
+  extern int32_t document_editor_is_page_marked_for_redaction(const void* handle, size_t page);
+  extern int   document_editor_unmark_page_for_redaction(void* handle, size_t page, int* error_code);
 
   // Form Fields
   extern void* pdf_document_get_form_fields(void* handle, int32_t page_index, int* error_code);
@@ -2090,6 +2112,321 @@ Napi::Value EditorSetFormFieldValue(const Napi::CallbackInfo& info) {
 }
 
 // ============================================================
+// Document Editor New Methods (v0.3.39)
+// ============================================================
+
+Napi::Value EditorOpenFromBytes(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 1) throw Napi::TypeError::New(env, "Expected a Buffer or Uint8Array");
+  const uint8_t* data;
+  size_t length;
+  if (info[0].IsBuffer()) {
+    auto buf = info[0].As<Napi::Buffer<uint8_t>>();
+    data = buf.Data(); length = buf.Length();
+  } else if (info[0].IsTypedArray()) {
+    auto arr = info[0].As<Napi::Uint8Array>();
+    data = arr.Data(); length = arr.ByteLength();
+  } else {
+    throw Napi::TypeError::New(env, "Argument must be a Buffer or Uint8Array");
+  }
+  if (length == 0) throw Napi::Error::New(env, "Buffer must not be empty");
+  int errorCode = 0;
+  void* handle = document_editor_open_from_bytes(data, length, &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, "Failed to open editor from bytes: " + getErrorMessage(errorCode));
+  if (!handle) throw Napi::Error::New(env, "Failed to open editor from bytes: internal error");
+  return Napi::External<void>::New(env, handle);
+}
+
+Napi::Value EditorSaveToBytes(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* handle = info[0].As<Napi::External<void>>().Data();
+  size_t outLen = 0;
+  int errorCode = 0;
+  uint8_t* data = document_editor_save_to_bytes(handle, &outLen, &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, "Failed to save editor to bytes: " + getErrorMessage(errorCode));
+  if (!data || outLen == 0) return Napi::Buffer<uint8_t>::New(env, 0);
+  auto buf = Napi::Buffer<uint8_t>::Copy(env, data, outLen);
+  free_bytes(data);
+  return buf;
+}
+
+Napi::Value EditorSaveToBytesWithOptions(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 4) throw Napi::TypeError::New(env, "Expected (handle, compress, garbageCollect, linearize)");
+  void* handle = info[0].As<Napi::External<void>>().Data();
+  bool compress      = info[1].As<Napi::Boolean>().Value();
+  bool garbageCollect = info[2].As<Napi::Boolean>().Value();
+  bool linearize     = info[3].As<Napi::Boolean>().Value();
+  size_t outLen = 0;
+  int errorCode = 0;
+  uint8_t* data = document_editor_save_to_bytes_with_options(handle, compress, garbageCollect, linearize, &outLen, &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, "Failed to save editor to bytes: " + getErrorMessage(errorCode));
+  if (!data || outLen == 0) return Napi::Buffer<uint8_t>::New(env, 0);
+  auto buf = Napi::Buffer<uint8_t>::Copy(env, data, outLen);
+  free_bytes(data);
+  return buf;
+}
+
+Napi::Value EditorGetKeywords(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* handle = info[0].As<Napi::External<void>>().Data();
+  int errorCode = 0;
+  char* kw = document_editor_get_keywords(handle, &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, getErrorMessage(errorCode));
+  if (!kw) return env.Null();
+  std::string result(kw);
+  free_string(kw);
+  return Napi::String::New(env, result);
+}
+
+Napi::Value EditorSetKeywords(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* handle = info[0].As<Napi::External<void>>().Data();
+  std::string kw = info[1].As<Napi::String>().Utf8Value();
+  int errorCode = 0;
+  document_editor_set_keywords(handle, kw.c_str(), &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, getErrorMessage(errorCode));
+  return env.Undefined();
+}
+
+Napi::Value EditorSetSubject(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* handle = info[0].As<Napi::External<void>>().Data();
+  std::string val = info[1].As<Napi::String>().Utf8Value();
+  int errorCode = 0;
+  document_editor_set_subject(handle, val.c_str(), &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, getErrorMessage(errorCode));
+  return env.Undefined();
+}
+
+Napi::Value EditorSetProducer(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* handle = info[0].As<Napi::External<void>>().Data();
+  std::string val = info[1].As<Napi::String>().Utf8Value();
+  int errorCode = 0;
+  document_editor_set_producer(handle, val.c_str(), &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, getErrorMessage(errorCode));
+  return env.Undefined();
+}
+
+Napi::Value EditorMergeFromBytes(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* handle = info[0].As<Napi::External<void>>().Data();
+  const uint8_t* data;
+  size_t length;
+  if (info[1].IsBuffer()) {
+    auto buf = info[1].As<Napi::Buffer<uint8_t>>();
+    data = buf.Data(); length = buf.Length();
+  } else {
+    auto arr = info[1].As<Napi::Uint8Array>();
+    data = arr.Data(); length = arr.ByteLength();
+  }
+  int errorCode = 0;
+  int n = document_editor_merge_from_bytes(handle, data, length, &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, "Failed to merge: " + getErrorMessage(errorCode));
+  return Napi::Number::New(env, n);
+}
+
+Napi::Value EditorEmbedFile(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* handle = info[0].As<Napi::External<void>>().Data();
+  std::string name = info[1].As<Napi::String>().Utf8Value();
+  const uint8_t* data;
+  size_t length;
+  if (info[2].IsBuffer()) {
+    auto buf = info[2].As<Napi::Buffer<uint8_t>>();
+    data = buf.Data(); length = buf.Length();
+  } else {
+    auto arr = info[2].As<Napi::Uint8Array>();
+    data = arr.Data(); length = arr.ByteLength();
+  }
+  int errorCode = 0;
+  document_editor_embed_file(handle, name.c_str(), data, length, &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, "Failed to embed file: " + getErrorMessage(errorCode));
+  return env.Undefined();
+}
+
+Napi::Value EditorApplyPageRedactions(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* handle = info[0].As<Napi::External<void>>().Data();
+  size_t page = (size_t)info[1].As<Napi::Number>().Uint32Value();
+  int errorCode = 0;
+  document_editor_apply_page_redactions(handle, page, &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, getErrorMessage(errorCode));
+  return env.Undefined();
+}
+
+Napi::Value EditorApplyAllRedactions(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* handle = info[0].As<Napi::External<void>>().Data();
+  int errorCode = 0;
+  document_editor_apply_all_redactions(handle, &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, getErrorMessage(errorCode));
+  return env.Undefined();
+}
+
+Napi::Value EditorRotateAllPages(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* handle = info[0].As<Napi::External<void>>().Data();
+  int32_t degrees = info[1].As<Napi::Number>().Int32Value();
+  int errorCode = 0;
+  document_editor_rotate_all_pages(handle, degrees, &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, getErrorMessage(errorCode));
+  return env.Undefined();
+}
+
+Napi::Value EditorRotatePageBy(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* handle = info[0].As<Napi::External<void>>().Data();
+  size_t page = (size_t)info[1].As<Napi::Number>().Uint32Value();
+  int32_t degrees = info[2].As<Napi::Number>().Int32Value();
+  int errorCode = 0;
+  document_editor_rotate_page_by(handle, page, degrees, &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, getErrorMessage(errorCode));
+  return env.Undefined();
+}
+
+Napi::Value EditorGetPageMediaBox(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* handle = info[0].As<Napi::External<void>>().Data();
+  size_t page = (size_t)info[1].As<Napi::Number>().Uint32Value();
+  double x = 0, y = 0, w = 0, h = 0;
+  int errorCode = 0;
+  document_editor_get_page_media_box(handle, page, &x, &y, &w, &h, &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, getErrorMessage(errorCode));
+  Napi::Object result = Napi::Object::New(env);
+  result.Set("x", Napi::Number::New(env, x));
+  result.Set("y", Napi::Number::New(env, y));
+  result.Set("width", Napi::Number::New(env, w));
+  result.Set("height", Napi::Number::New(env, h));
+  return result;
+}
+
+Napi::Value EditorSetPageMediaBox(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 6) throw Napi::TypeError::New(env, "Expected (handle, page, x, y, w, h)");
+  void* handle = info[0].As<Napi::External<void>>().Data();
+  size_t page = (size_t)info[1].As<Napi::Number>().Uint32Value();
+  double x = info[2].As<Napi::Number>().DoubleValue();
+  double y = info[3].As<Napi::Number>().DoubleValue();
+  double w = info[4].As<Napi::Number>().DoubleValue();
+  double h = info[5].As<Napi::Number>().DoubleValue();
+  int errorCode = 0;
+  document_editor_set_page_media_box(handle, page, x, y, w, h, &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, getErrorMessage(errorCode));
+  return env.Undefined();
+}
+
+Napi::Value EditorGetPageCropBox(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* handle = info[0].As<Napi::External<void>>().Data();
+  size_t page = (size_t)info[1].As<Napi::Number>().Uint32Value();
+  double x = 0, y = 0, w = 0, h = 0;
+  int errorCode = 0;
+  document_editor_get_page_crop_box(handle, page, &x, &y, &w, &h, &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, getErrorMessage(errorCode));
+  Napi::Object result = Napi::Object::New(env);
+  result.Set("x", Napi::Number::New(env, x));
+  result.Set("y", Napi::Number::New(env, y));
+  result.Set("width", Napi::Number::New(env, w));
+  result.Set("height", Napi::Number::New(env, h));
+  return result;
+}
+
+Napi::Value EditorSetPageCropBox(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 6) throw Napi::TypeError::New(env, "Expected (handle, page, x, y, w, h)");
+  void* handle = info[0].As<Napi::External<void>>().Data();
+  size_t page = (size_t)info[1].As<Napi::Number>().Uint32Value();
+  double x = info[2].As<Napi::Number>().DoubleValue();
+  double y = info[3].As<Napi::Number>().DoubleValue();
+  double w = info[4].As<Napi::Number>().DoubleValue();
+  double h = info[5].As<Napi::Number>().DoubleValue();
+  int errorCode = 0;
+  document_editor_set_page_crop_box(handle, page, x, y, w, h, &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, getErrorMessage(errorCode));
+  return env.Undefined();
+}
+
+Napi::Value EditorEraseRegions(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 3) throw Napi::TypeError::New(env, "Expected (handle, page, rects[])");
+  void* handle = info[0].As<Napi::External<void>>().Data();
+  size_t page = (size_t)info[1].As<Napi::Number>().Uint32Value();
+  Napi::Array rects = info[2].As<Napi::Array>();
+  uint32_t count = rects.Length();
+  std::vector<double> flat;
+  flat.reserve(count * 4);
+  for (uint32_t i = 0; i < count; i++) {
+    Napi::Array r = rects.Get(i).As<Napi::Array>();
+    flat.push_back(r.Get((uint32_t)0).As<Napi::Number>().DoubleValue());
+    flat.push_back(r.Get((uint32_t)1).As<Napi::Number>().DoubleValue());
+    flat.push_back(r.Get((uint32_t)2).As<Napi::Number>().DoubleValue());
+    flat.push_back(r.Get((uint32_t)3).As<Napi::Number>().DoubleValue());
+  }
+  int errorCode = 0;
+  document_editor_erase_regions(handle, page, flat.data(), (size_t)count, &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, getErrorMessage(errorCode));
+  return env.Undefined();
+}
+
+Napi::Value EditorClearEraseRegions(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* handle = info[0].As<Napi::External<void>>().Data();
+  size_t page = (size_t)info[1].As<Napi::Number>().Uint32Value();
+  int errorCode = 0;
+  document_editor_clear_erase_regions(handle, page, &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, getErrorMessage(errorCode));
+  return env.Undefined();
+}
+
+Napi::Value EditorFlattenFormsOnPage(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* handle = info[0].As<Napi::External<void>>().Data();
+  int32_t page = info[1].As<Napi::Number>().Int32Value();
+  int errorCode = 0;
+  document_editor_flatten_forms_on_page(handle, page, &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, getErrorMessage(errorCode));
+  return env.Undefined();
+}
+
+Napi::Value EditorIsPageMarkedForFlatten(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  const void* handle = info[0].As<Napi::External<void>>().Data();
+  size_t page = (size_t)info[1].As<Napi::Number>().Uint32Value();
+  int32_t result = document_editor_is_page_marked_for_flatten(handle, page);
+  return Napi::Boolean::New(env, result == 1);
+}
+
+Napi::Value EditorUnmarkPageForFlatten(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* handle = info[0].As<Napi::External<void>>().Data();
+  size_t page = (size_t)info[1].As<Napi::Number>().Uint32Value();
+  int errorCode = 0;
+  document_editor_unmark_page_for_flatten(handle, page, &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, getErrorMessage(errorCode));
+  return env.Undefined();
+}
+
+Napi::Value EditorIsPageMarkedForRedaction(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  const void* handle = info[0].As<Napi::External<void>>().Data();
+  size_t page = (size_t)info[1].As<Napi::Number>().Uint32Value();
+  int32_t result = document_editor_is_page_marked_for_redaction(handle, page);
+  return Napi::Boolean::New(env, result == 1);
+}
+
+Napi::Value EditorUnmarkPageForRedaction(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* handle = info[0].As<Napi::External<void>>().Data();
+  size_t page = (size_t)info[1].As<Napi::Number>().Uint32Value();
+  int errorCode = 0;
+  document_editor_unmark_page_for_redaction(handle, page, &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, getErrorMessage(errorCode));
+  return env.Undefined();
+}
+
+// ============================================================
 // PDF Document Editing (artifact removal, signing, form data)
 // ============================================================
 
@@ -3223,6 +3560,31 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("editorSaveEncrypted", Napi::Function::New(env, EditorSaveEncrypted));
   exports.Set("editorSetCreationDate", Napi::Function::New(env, EditorSetCreationDate));
   exports.Set("editorSetFormFieldValue", Napi::Function::New(env, EditorSetFormFieldValue));
+  exports.Set("editorSetSubject", Napi::Function::New(env, EditorSetSubject));
+  exports.Set("editorSetProducer", Napi::Function::New(env, EditorSetProducer));
+  exports.Set("editorFlattenFormsOnPage", Napi::Function::New(env, EditorFlattenFormsOnPage));
+  // New methods (v0.3.39)
+  exports.Set("editorOpenFromBytes", Napi::Function::New(env, EditorOpenFromBytes));
+  exports.Set("editorSaveToBytes", Napi::Function::New(env, EditorSaveToBytes));
+  exports.Set("editorSaveToBytesWithOptions", Napi::Function::New(env, EditorSaveToBytesWithOptions));
+  exports.Set("editorGetKeywords", Napi::Function::New(env, EditorGetKeywords));
+  exports.Set("editorSetKeywords", Napi::Function::New(env, EditorSetKeywords));
+  exports.Set("editorMergeFromBytes", Napi::Function::New(env, EditorMergeFromBytes));
+  exports.Set("editorEmbedFile", Napi::Function::New(env, EditorEmbedFile));
+  exports.Set("editorApplyPageRedactions", Napi::Function::New(env, EditorApplyPageRedactions));
+  exports.Set("editorApplyAllRedactions", Napi::Function::New(env, EditorApplyAllRedactions));
+  exports.Set("editorRotateAllPages", Napi::Function::New(env, EditorRotateAllPages));
+  exports.Set("editorRotatePageBy", Napi::Function::New(env, EditorRotatePageBy));
+  exports.Set("editorGetPageMediaBox", Napi::Function::New(env, EditorGetPageMediaBox));
+  exports.Set("editorSetPageMediaBox", Napi::Function::New(env, EditorSetPageMediaBox));
+  exports.Set("editorGetPageCropBox", Napi::Function::New(env, EditorGetPageCropBox));
+  exports.Set("editorSetPageCropBox", Napi::Function::New(env, EditorSetPageCropBox));
+  exports.Set("editorEraseRegions", Napi::Function::New(env, EditorEraseRegions));
+  exports.Set("editorClearEraseRegions", Napi::Function::New(env, EditorClearEraseRegions));
+  exports.Set("editorIsPageMarkedForFlatten", Napi::Function::New(env, EditorIsPageMarkedForFlatten));
+  exports.Set("editorUnmarkPageForFlatten", Napi::Function::New(env, EditorUnmarkPageForFlatten));
+  exports.Set("editorIsPageMarkedForRedaction", Napi::Function::New(env, EditorIsPageMarkedForRedaction));
+  exports.Set("editorUnmarkPageForRedaction", Napi::Function::New(env, EditorUnmarkPageForRedaction));
 
   // PDF Document Editing (artifact removal, signing, form data)
   exports.Set("documentEraseArtifacts", Napi::Function::New(env, DocumentEraseArtifacts));

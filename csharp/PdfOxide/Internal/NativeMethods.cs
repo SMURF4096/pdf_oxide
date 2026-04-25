@@ -6045,6 +6045,190 @@ namespace PdfOxide.Internal
 
         #endregion
 
+        #region DocumentEditor New Methods (v0.3.39)
+
+        /// <summary>Opens a DocumentEditor from an in-memory byte buffer.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_open_from_bytes")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial NativeHandle document_editor_open_from_bytes(
+            [In] byte[] data,
+            nuint length,
+            out int errorCode);
+
+        /// <summary>Saves the editor to an in-memory byte buffer.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_save_to_bytes")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr document_editor_save_to_bytes(
+            NativeHandle handle,
+            out nuint outLen,
+            out int errorCode);
+
+        /// <summary>Saves the editor to bytes with compress / garbage-collect / linearize options.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_save_to_bytes_with_options")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr document_editor_save_to_bytes_with_options(
+            NativeHandle handle,
+            [MarshalAs(UnmanagedType.I1)] bool compress,
+            [MarshalAs(UnmanagedType.I1)] bool garbageCollect,
+            [MarshalAs(UnmanagedType.I1)] bool linearize,
+            out nuint outLen,
+            out int errorCode);
+
+        /// <summary>Gets the keywords metadata from a DocumentEditor.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_get_keywords", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr document_editor_get_keywords(
+            NativeHandle handle,
+            out int errorCode);
+
+        /// <summary>Sets the keywords metadata on a DocumentEditor.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_set_keywords", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_set_keywords(
+            NativeHandle handle,
+            string keywords,
+            out int errorCode);
+
+        /// <summary>Merges pages from an in-memory PDF byte buffer.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_merge_from_bytes")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_merge_from_bytes(
+            NativeHandle handle,
+            [In] byte[] data,
+            nuint length,
+            out int errorCode);
+
+        /// <summary>Embeds a file attachment into the document.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_embed_file", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_embed_file(
+            NativeHandle handle,
+            string name,
+            [In] byte[] data,
+            nuint length,
+            out int errorCode);
+
+        /// <summary>Burns in redaction annotations on a single page.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_apply_page_redactions")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_apply_page_redactions(
+            NativeHandle handle,
+            nuint page,
+            out int errorCode);
+
+        /// <summary>Burns in all pending redaction annotations.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_apply_all_redactions")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_apply_all_redactions(
+            NativeHandle handle,
+            out int errorCode);
+
+        /// <summary>Rotates all pages by degrees (additive).</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_rotate_all_pages")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_rotate_all_pages(
+            NativeHandle handle,
+            int degrees,
+            out int errorCode);
+
+        /// <summary>Rotates a single page by degrees (additive).</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_rotate_page_by")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_rotate_page_by(
+            NativeHandle handle,
+            nuint page,
+            int degrees,
+            out int errorCode);
+
+        /// <summary>Gets the MediaBox of a page.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_get_page_media_box")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_get_page_media_box(
+            NativeHandle handle,
+            nuint page,
+            out double x, out double y, out double w, out double h,
+            out int errorCode);
+
+        /// <summary>Sets the MediaBox of a page.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_set_page_media_box")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_set_page_media_box(
+            NativeHandle handle,
+            nuint page,
+            double x, double y, double w, double h,
+            out int errorCode);
+
+        /// <summary>Gets the CropBox of a page. Returns zeros if no CropBox is set.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_get_page_crop_box")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_get_page_crop_box(
+            NativeHandle handle,
+            nuint page,
+            out double x, out double y, out double w, out double h,
+            out int errorCode);
+
+        /// <summary>Sets the CropBox of a page.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_set_page_crop_box")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_set_page_crop_box(
+            NativeHandle handle,
+            nuint page,
+            double x, double y, double w, double h,
+            out int errorCode);
+
+        /// <summary>
+        /// Erases multiple rectangular regions on a page.
+        /// rects is a flat [x,y,w,h,...] array; rectsCount is the number of rectangles.
+        /// </summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_erase_regions")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_erase_regions(
+            NativeHandle handle,
+            nuint page,
+            [In] double[] rects,
+            nuint rectsCount,
+            out int errorCode);
+
+        /// <summary>Clears all pending erase-region entries for a page.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_clear_erase_regions")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_clear_erase_regions(
+            NativeHandle handle,
+            nuint page,
+            out int errorCode);
+
+        /// <summary>Returns 1 if marked for flatten, 0 if not, -1 on error.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_is_page_marked_for_flatten")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_is_page_marked_for_flatten(
+            NativeHandle handle,
+            nuint page);
+
+        /// <summary>Removes the flatten mark from a page.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_unmark_page_for_flatten")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_unmark_page_for_flatten(
+            NativeHandle handle,
+            nuint page,
+            out int errorCode);
+
+        /// <summary>Returns 1 if marked for redaction, 0 if not, -1 on error.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_is_page_marked_for_redaction")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_is_page_marked_for_redaction(
+            NativeHandle handle,
+            nuint page);
+
+        /// <summary>Removes the redaction mark from a page.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_unmark_page_for_redaction")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_unmark_page_for_redaction(
+            NativeHandle handle,
+            nuint page,
+            out int errorCode);
+
+        #endregion
+
         #region PdfDocument Extended Operations (8 functions)
 
         /// <summary>

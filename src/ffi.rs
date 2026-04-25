@@ -636,6 +636,9 @@ pub extern "C" fn document_editor_set_creation_date(
     0
 }
 
+editor_get_string_field!(document_editor_get_keywords, keywords);
+editor_set_string_field!(document_editor_set_keywords, set_keywords);
+
 /// Save the edited document.
 #[no_mangle]
 pub extern "C" fn document_editor_save(
@@ -665,6 +668,489 @@ pub extern "C" fn document_editor_save(
             -1
         },
     }
+}
+
+// ─── DocumentEditor: new functions ─────────────────────────────────────────
+
+/// Open a DocumentEditor from an in-memory byte buffer.
+/// Returns an opaque handle, or null on error.
+#[no_mangle]
+pub extern "C" fn document_editor_open_from_bytes(
+    data: *const u8,
+    len: usize,
+    error_code: *mut i32,
+) -> *mut DocumentEditor {
+    if data.is_null() || len == 0 {
+        set_error(error_code, ERR_INVALID_ARG);
+        return ptr::null_mut();
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(data, len) }.to_vec();
+    match DocumentEditor::open_from_bytes(bytes) {
+        Ok(editor) => {
+            set_error(error_code, ERR_SUCCESS);
+            Box::into_raw(Box::new(editor))
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            ptr::null_mut()
+        },
+    }
+}
+
+/// Save the editor contents to an in-memory byte buffer.
+/// The returned pointer is a boxed slice; free with `free_bytes`.
+/// `out_len` receives the number of bytes written.
+#[no_mangle]
+pub extern "C" fn document_editor_save_to_bytes(
+    handle: *mut DocumentEditor,
+    out_len: *mut usize,
+    error_code: *mut i32,
+) -> *mut u8 {
+    if handle.is_null() || out_len.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return ptr::null_mut();
+    }
+    let editor = unsafe { &mut *handle };
+    match editor.save_to_bytes() {
+        Ok(bytes) => {
+            set_error(error_code, ERR_SUCCESS);
+            unsafe { *out_len = bytes.len(); }
+            let boxed = bytes.into_boxed_slice();
+            Box::into_raw(boxed) as *mut u8
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            ptr::null_mut()
+        },
+    }
+}
+
+/// Save the editor contents to bytes with compression / GC / linearize options.
+#[no_mangle]
+pub extern "C" fn document_editor_save_to_bytes_with_options(
+    handle: *mut DocumentEditor,
+    compress: bool,
+    garbage_collect: bool,
+    linearize: bool,
+    out_len: *mut usize,
+    error_code: *mut i32,
+) -> *mut u8 {
+    if handle.is_null() || out_len.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return ptr::null_mut();
+    }
+    let editor = unsafe { &mut *handle };
+    let mut opts = crate::editor::SaveOptions::full_rewrite();
+    opts.compress = compress;
+    opts.garbage_collect = garbage_collect;
+    opts.linearize = linearize;
+    match editor.save_to_bytes_with_options(opts) {
+        Ok(bytes) => {
+            set_error(error_code, ERR_SUCCESS);
+            unsafe { *out_len = bytes.len(); }
+            let boxed = bytes.into_boxed_slice();
+            Box::into_raw(boxed) as *mut u8
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            ptr::null_mut()
+        },
+    }
+}
+
+/// Merge pages from an in-memory PDF byte buffer into this document.
+#[no_mangle]
+pub extern "C" fn document_editor_merge_from_bytes(
+    handle: *mut DocumentEditor,
+    data: *const u8,
+    len: usize,
+    error_code: *mut i32,
+) -> i32 {
+    if handle.is_null() || data.is_null() || len == 0 {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let editor = unsafe { &mut *handle };
+    let bytes = unsafe { std::slice::from_raw_parts(data, len) };
+    match editor.merge_from_bytes(bytes) {
+        Ok(n) => {
+            set_error(error_code, ERR_SUCCESS);
+            n as i32
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            -1
+        },
+    }
+}
+
+/// Embed a file attachment into the document.
+#[no_mangle]
+pub extern "C" fn document_editor_embed_file(
+    handle: *mut DocumentEditor,
+    name: *const std::os::raw::c_char,
+    data: *const u8,
+    len: usize,
+    error_code: *mut i32,
+) -> i32 {
+    if handle.is_null() || name.is_null() || data.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let editor = unsafe { &mut *handle };
+    let name_str = match unsafe { std::ffi::CStr::from_ptr(name) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            set_error(error_code, ERR_INVALID_ARG);
+            return -1;
+        },
+    };
+    let bytes = unsafe { std::slice::from_raw_parts(data, len) }.to_vec();
+    match editor.embed_file(name_str, bytes) {
+        Ok(()) => {
+            set_error(error_code, ERR_SUCCESS);
+            0
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            -1
+        },
+    }
+}
+
+/// Apply redactions on a single page (burn them in).
+#[no_mangle]
+pub extern "C" fn document_editor_apply_page_redactions(
+    handle: *mut DocumentEditor,
+    page: usize,
+    error_code: *mut i32,
+) -> i32 {
+    if handle.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let editor = unsafe { &mut *handle };
+    match editor.apply_page_redactions(page) {
+        Ok(()) => {
+            set_error(error_code, ERR_SUCCESS);
+            0
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            -1
+        },
+    }
+}
+
+/// Apply all pending redactions across the entire document.
+#[no_mangle]
+pub extern "C" fn document_editor_apply_all_redactions(
+    handle: *mut DocumentEditor,
+    error_code: *mut i32,
+) -> i32 {
+    if handle.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let editor = unsafe { &mut *handle };
+    match editor.apply_all_redactions() {
+        Ok(()) => {
+            set_error(error_code, ERR_SUCCESS);
+            0
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            -1
+        },
+    }
+}
+
+/// Rotate all pages by `degrees` (relative, added to existing rotation).
+#[no_mangle]
+pub extern "C" fn document_editor_rotate_all_pages(
+    handle: *mut DocumentEditor,
+    degrees: i32,
+    error_code: *mut i32,
+) -> i32 {
+    if handle.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let editor = unsafe { &mut *handle };
+    match editor.rotate_all_pages(degrees) {
+        Ok(()) => {
+            set_error(error_code, ERR_SUCCESS);
+            0
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            -1
+        },
+    }
+}
+
+/// Rotate a single page by `degrees` (additive, not absolute).
+#[no_mangle]
+pub extern "C" fn document_editor_rotate_page_by(
+    handle: *mut DocumentEditor,
+    page: usize,
+    degrees: i32,
+    error_code: *mut i32,
+) -> i32 {
+    if handle.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let editor = unsafe { &mut *handle };
+    match editor.rotate_page_by(page, degrees) {
+        Ok(()) => {
+            set_error(error_code, ERR_SUCCESS);
+            0
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            -1
+        },
+    }
+}
+
+/// Get the MediaBox for a page. Returns [x, y, width, height] in f64.
+#[no_mangle]
+pub extern "C" fn document_editor_get_page_media_box(
+    handle: *mut DocumentEditor,
+    page: usize,
+    x: *mut f64,
+    y: *mut f64,
+    w: *mut f64,
+    h: *mut f64,
+    error_code: *mut i32,
+) -> i32 {
+    if handle.is_null() || x.is_null() || y.is_null() || w.is_null() || h.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let editor = unsafe { &mut *handle };
+    match editor.get_page_media_box(page) {
+        Ok(b) => {
+            set_error(error_code, ERR_SUCCESS);
+            unsafe {
+                *x = b[0] as f64;
+                *y = b[1] as f64;
+                *w = b[2] as f64;
+                *h = b[3] as f64;
+            }
+            0
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            -1
+        },
+    }
+}
+
+/// Set the MediaBox for a page.
+#[no_mangle]
+pub extern "C" fn document_editor_set_page_media_box(
+    handle: *mut DocumentEditor,
+    page: usize,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    error_code: *mut i32,
+) -> i32 {
+    if handle.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let editor = unsafe { &mut *handle };
+    match editor.set_page_media_box(page, [x as f32, y as f32, w as f32, h as f32]) {
+        Ok(()) => {
+            set_error(error_code, ERR_SUCCESS);
+            0
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            -1
+        },
+    }
+}
+
+/// Get the CropBox for a page. Writes 0,0,0,0 if no CropBox is set.
+#[no_mangle]
+pub extern "C" fn document_editor_get_page_crop_box(
+    handle: *mut DocumentEditor,
+    page: usize,
+    x: *mut f64,
+    y: *mut f64,
+    w: *mut f64,
+    h: *mut f64,
+    error_code: *mut i32,
+) -> i32 {
+    if handle.is_null() || x.is_null() || y.is_null() || w.is_null() || h.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let editor = unsafe { &mut *handle };
+    match editor.get_page_crop_box(page) {
+        Ok(Some(b)) => {
+            set_error(error_code, ERR_SUCCESS);
+            unsafe {
+                *x = b[0] as f64;
+                *y = b[1] as f64;
+                *w = b[2] as f64;
+                *h = b[3] as f64;
+            }
+            0
+        },
+        Ok(None) => {
+            set_error(error_code, ERR_SUCCESS);
+            unsafe { *x = 0.0; *y = 0.0; *w = 0.0; *h = 0.0; }
+            0
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            -1
+        },
+    }
+}
+
+/// Set the CropBox for a page.
+#[no_mangle]
+pub extern "C" fn document_editor_set_page_crop_box(
+    handle: *mut DocumentEditor,
+    page: usize,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    error_code: *mut i32,
+) -> i32 {
+    if handle.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let editor = unsafe { &mut *handle };
+    match editor.set_page_crop_box(page, [x as f32, y as f32, w as f32, h as f32]) {
+        Ok(()) => {
+            set_error(error_code, ERR_SUCCESS);
+            0
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            -1
+        },
+    }
+}
+
+/// Erase multiple rectangular regions on a page.
+/// `rects` is a flat array of [x, y, w, h] quads (f64).
+/// `rects_count` is the number of rectangles (not the array length).
+#[no_mangle]
+pub extern "C" fn document_editor_erase_regions(
+    handle: *mut DocumentEditor,
+    page: usize,
+    rects: *const f64,
+    rects_count: usize,
+    error_code: *mut i32,
+) -> i32 {
+    if handle.is_null() || rects.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let editor = unsafe { &mut *handle };
+    let flat = unsafe { std::slice::from_raw_parts(rects, rects_count * 4) };
+    let boxes: Vec<[f32; 4]> = flat
+        .chunks_exact(4)
+        .map(|c| [c[0] as f32, c[1] as f32, c[2] as f32, c[3] as f32])
+        .collect();
+    match editor.erase_regions(page, &boxes) {
+        Ok(()) => {
+            set_error(error_code, ERR_SUCCESS);
+            0
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            -1
+        },
+    }
+}
+
+/// Clear all pending erase-region entries for a page.
+#[no_mangle]
+pub extern "C" fn document_editor_clear_erase_regions(
+    handle: *mut DocumentEditor,
+    page: usize,
+    error_code: *mut i32,
+) -> i32 {
+    if handle.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let editor = unsafe { &mut *handle };
+    editor.clear_erase_regions(page);
+    set_error(error_code, ERR_SUCCESS);
+    0
+}
+
+/// Returns 1 if the page is marked for annotation-flatten, 0 if not, -1 on error.
+#[no_mangle]
+pub extern "C" fn document_editor_is_page_marked_for_flatten(
+    handle: *const DocumentEditor,
+    page: usize,
+) -> i32 {
+    if handle.is_null() {
+        return -1;
+    }
+    let editor = unsafe { &*handle };
+    if editor.is_page_marked_for_flatten(page) { 1 } else { 0 }
+}
+
+/// Remove the flatten mark from a page.
+#[no_mangle]
+pub extern "C" fn document_editor_unmark_page_for_flatten(
+    handle: *mut DocumentEditor,
+    page: usize,
+    error_code: *mut i32,
+) -> i32 {
+    if handle.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let editor = unsafe { &mut *handle };
+    editor.unmark_page_for_flatten(page);
+    set_error(error_code, ERR_SUCCESS);
+    0
+}
+
+/// Returns 1 if the page is marked for redaction, 0 if not, -1 on error.
+#[no_mangle]
+pub extern "C" fn document_editor_is_page_marked_for_redaction(
+    handle: *const DocumentEditor,
+    page: usize,
+) -> i32 {
+    if handle.is_null() {
+        return -1;
+    }
+    let editor = unsafe { &*handle };
+    if editor.is_page_marked_for_redaction(page) { 1 } else { 0 }
+}
+
+/// Remove the redaction mark from a page.
+#[no_mangle]
+pub extern "C" fn document_editor_unmark_page_for_redaction(
+    handle: *mut DocumentEditor,
+    page: usize,
+    error_code: *mut i32,
+) -> i32 {
+    if handle.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let editor = unsafe { &mut *handle };
+    editor.unmark_page_for_redaction(page);
+    set_error(error_code, ERR_SUCCESS);
+    0
 }
 
 // ─── PDF Creator (Pdf type) ────────────────────────────────────────────────
