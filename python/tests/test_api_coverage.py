@@ -44,6 +44,12 @@ def _find_any_ttf():
 # ── PdfDocument: open / metadata ─────────────────────────────────────────────
 
 class TestPdfDocumentOpen:
+    def test_open_from_path(self, tmp_path):
+        path = str(tmp_path / "doc.pdf")
+        Pdf.from_markdown("# Path test").save(path)
+        doc = PdfDocument(path)
+        assert doc.page_count() >= 1
+
     def test_from_bytes_returns_document(self):
         data = Pdf.from_markdown("# Hi").to_bytes()
         doc = PdfDocument.from_bytes(data)
@@ -118,11 +124,29 @@ class TestTextExtraction:
         assert isinstance(words, list)
         assert len(words) > 0
 
+    def test_extract_words_have_text_and_bbox(self):
+        doc = _make_simple_doc()
+        w = doc.extract_words(0)[0]
+        assert hasattr(w, "text") and isinstance(w.text, str) and len(w.text) > 0
+        assert hasattr(w, "bbox") and len(w.bbox) == 4
+
+    def test_extract_words_contain_known_word(self):
+        data = Pdf.from_markdown("UNIQUEWORD").to_bytes()
+        doc = PdfDocument.from_bytes(data)
+        texts = [w.text for w in doc.extract_words(0)]
+        assert any("UNIQUEWORD" in t for t in texts)
+
     def test_extract_text_lines_returns_list(self):
         doc = _make_simple_doc()
         lines = doc.extract_text_lines(0)
         assert isinstance(lines, list)
         assert len(lines) > 0
+
+    def test_extract_text_lines_have_text_and_bbox(self):
+        doc = _make_simple_doc()
+        line = doc.extract_text_lines(0)[0]
+        assert hasattr(line, "text") and isinstance(line.text, str)
+        assert hasattr(line, "bbox") and len(line.bbox) == 4
 
     def test_to_plain_text_returns_string(self):
         doc = _make_simple_doc()
@@ -454,3 +478,222 @@ class TestPdfFromOther:
         pdf = Pdf.from_html("<h1 style='font-size:48pt'>BIG</h1>")
         data = pdf.to_bytes()
         assert data[:5] == _PDF_MAGIC
+
+    def test_from_image_bytes_produces_pdf(self):
+        import struct, zlib
+        # minimal 1x1 white PNG
+        def _png():
+            hdr = b"\x89PNG\r\n\x1a\n"
+            ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+            ihdr_chunk = b"IHDR" + ihdr
+            ihdr_crc = struct.pack(">I", zlib.crc32(ihdr_chunk) & 0xFFFFFFFF)
+            idat_data = zlib.compress(b"\x00\xff\xff\xff")
+            idat_chunk = b"IDAT" + idat_data
+            idat_crc = struct.pack(">I", zlib.crc32(idat_chunk) & 0xFFFFFFFF)
+            iend_crc = struct.pack(">I", zlib.crc32(b"IEND") & 0xFFFFFFFF)
+            def chunk(name, data):
+                return struct.pack(">I", len(data)) + name + data + struct.pack(">I", zlib.crc32(name + data) & 0xFFFFFFFF)
+            return hdr + chunk(b"IHDR", ihdr) + chunk(b"IDAT", idat_data) + chunk(b"IEND", b"")
+        try:
+            pdf = Pdf.from_image_bytes(_png())
+            assert pdf.to_bytes()[:5] == _PDF_MAGIC
+        except Exception as e:
+            if _is_feature_off(e):
+                pytest.skip(f"from_image_bytes not available: {e}")
+            raise
+
+
+# ── PdfDocument: conversion to other formats ─────────────────────────────────
+
+class TestConversion:
+    def test_to_markdown_contains_text(self):
+        data = Pdf.from_markdown("# MARKER_MD").to_bytes()
+        doc = PdfDocument.from_bytes(data)
+        md = doc.to_markdown(0)
+        assert isinstance(md, str) and len(md) > 0
+
+    def test_to_markdown_all_contains_text(self):
+        doc = _make_simple_doc()
+        md = doc.to_markdown_all()
+        assert isinstance(md, str) and len(md) > 0
+
+    def test_to_html_returns_html_tags(self):
+        doc = _make_simple_doc()
+        html = doc.to_html(0)
+        assert isinstance(html, str) and len(html) > 0
+        assert "<" in html
+
+    def test_to_html_all_returns_html_tags(self):
+        doc = _make_simple_doc()
+        html = doc.to_html_all()
+        assert isinstance(html, str)
+        assert "<" in html
+
+    def test_to_plain_text_contains_words(self):
+        data = Pdf.from_markdown("PLAINMARKER").to_bytes()
+        doc = PdfDocument.from_bytes(data)
+        text = doc.to_plain_text(0)
+        assert "PLAINMARKER" in text
+
+    def test_to_plain_text_all_contains_words(self):
+        data = Pdf.from_markdown("ALLMARKER").to_bytes()
+        doc = PdfDocument.from_bytes(data)
+        text = doc.to_plain_text_all()
+        assert "ALLMARKER" in text
+
+
+# ── PdfDocument: search ───────────────────────────────────────────────────────
+
+class TestSearch:
+    def test_search_page_finds_known_term(self):
+        data = Pdf.from_markdown("SEARCHMETOKEN").to_bytes()
+        doc = PdfDocument.from_bytes(data)
+        results = doc.search_page(0, "SEARCHMETOKEN")
+        assert len(results) > 0
+
+    def test_search_all_finds_term_in_document(self):
+        data = Pdf.from_markdown("FINDMEALL").to_bytes()
+        doc = PdfDocument.from_bytes(data)
+        results = doc.search("FINDMEALL")
+        assert len(results) > 0
+
+    def test_search_missing_term_returns_empty(self):
+        doc = _make_simple_doc()
+        results = doc.search("ZZZNOTPRESENTZZZ")
+        assert results == [] or len(results) == 0
+
+
+# ── PdfDocument: page mutations ───────────────────────────────────────────────
+
+class TestMutations:
+    def test_save_to_path(self, tmp_path):
+        doc = _make_simple_doc()
+        path = str(tmp_path / "out.pdf")
+        doc.save(path)
+        import os
+        assert os.path.getsize(path) > 100
+
+    def test_merge_from_increases_page_count(self, tmp_path):
+        a_path = str(tmp_path / "a.pdf")
+        b_path = str(tmp_path / "b.pdf")
+        Pdf.from_markdown("# A").save(a_path)
+        Pdf.from_markdown("# B").save(b_path)
+        doc = PdfDocument(a_path)
+        before = doc.page_count()
+        doc.merge_from(b_path)
+        out = str(tmp_path / "merged.pdf")
+        doc.save(out)
+        doc2 = PdfDocument(out)
+        assert doc2.page_count() == before + 1
+
+    def test_delete_page_reduces_count(self, tmp_path):
+        a_path = str(tmp_path / "a.pdf")
+        b_path = str(tmp_path / "b.pdf")
+        Pdf.from_markdown("# P1").save(a_path)
+        Pdf.from_markdown("# P2").save(b_path)
+        doc = PdfDocument(a_path)
+        doc.merge_from(b_path)
+        out = str(tmp_path / "two.pdf")
+        doc.save(out)
+        doc2 = PdfDocument(out)
+        before = doc2.page_count()
+        if before < 2:
+            pytest.skip("need multi-page PDF")
+        doc2.delete_page(0)
+        out2 = str(tmp_path / "one.pdf")
+        doc2.save(out2)
+        doc3 = PdfDocument(out2)
+        assert doc3.page_count() == before - 1
+
+    def test_rotate_page_sets_rotation(self, tmp_path):
+        path = str(tmp_path / "rot.pdf")
+        Pdf.from_markdown("# Rotate").save(path)
+        doc = PdfDocument(path)
+        doc.rotate_page(0, 90)
+        out = str(tmp_path / "rotated.pdf")
+        doc.save(out)
+        doc2 = PdfDocument(out)
+        assert doc2.page_rotation(0) == 90
+
+    def test_rotate_all_pages(self, tmp_path):
+        path = str(tmp_path / "rotall.pdf")
+        Pdf.from_markdown("# RotAll").save(path)
+        doc = PdfDocument(path)
+        doc.rotate_all_pages(180)
+        out = str(tmp_path / "rotall180.pdf")
+        doc.save(out)
+        doc2 = PdfDocument(out)
+        assert doc2.page_rotation(0) == 180
+
+
+# ── DocumentBuilder extras ────────────────────────────────────────────────────
+
+class TestDocumentBuilderExtras:
+    def test_save_non_encrypted(self, tmp_path):
+        from pdf_oxide import DocumentBuilder
+        path = str(tmp_path / "plain.pdf")
+        DocumentBuilder().a4_page().paragraph("plain save").done().save(path)
+        import os
+        assert os.path.getsize(path) > 100
+
+    def test_letter_page(self):
+        from pdf_oxide import DocumentBuilder
+        data = (
+            DocumentBuilder()
+            .letter_page()
+            .paragraph("US Letter")
+            .done()
+            .build()
+        )
+        assert data[:5] == _PDF_MAGIC
+
+    def test_custom_page_size(self):
+        from pdf_oxide import DocumentBuilder
+        data = (
+            DocumentBuilder()
+            .page(300.0, 400.0)
+            .paragraph("custom")
+            .done()
+            .build()
+        )
+        assert data[:5] == _PDF_MAGIC
+
+    def test_metadata_setters(self):
+        from pdf_oxide import DocumentBuilder
+        data = (
+            DocumentBuilder()
+            .title("My Title")
+            .author("Alice")
+            .subject("Testing")
+            .keywords("pdf, test")
+            .creator("pytest")
+            .a4_page()
+            .paragraph("metadata")
+            .done()
+            .build()
+        )
+        assert data[:5] == _PDF_MAGIC
+
+    def test_to_bytes_encrypted(self):
+        from pdf_oxide import DocumentBuilder
+        data = (
+            DocumentBuilder()
+            .a4_page()
+            .paragraph("secret")
+            .done()
+            .to_bytes_encrypted("user", "owner")
+        )
+        assert data[:5] == _PDF_MAGIC
+
+
+# ── Signature object properties ───────────────────────────────────────────────
+
+class TestSignatureProperties:
+    def test_unsigned_pdf_signatures_list_is_empty(self):
+        doc = _make_simple_doc()
+        sigs = doc.signatures()
+        assert sigs == []
+
+    def test_signature_count_is_zero_for_unsigned(self):
+        doc = _make_simple_doc()
+        assert doc.signature_count() == 0
