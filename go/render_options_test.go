@@ -32,8 +32,19 @@ func makeDocForRender(t *testing.T) *PdfDocument {
 	return doc
 }
 
+// skipIfRenderUnavailable skips the test when the native lib was compiled
+// without the rendering feature. Mirrors the certificate_test.go pattern.
+func skipIfRenderUnavailable(t *testing.T, doc *PdfDocument) {
+	t.Helper()
+	_, err := doc.RenderPageWithOptions(0, RenderOptions{})
+	if err != nil && isUnsupportedError(err) {
+		t.Skipf("RenderPageWithOptions unavailable in this build: %v", err)
+	}
+}
+
 func TestRenderPageWithOptions_DefaultPng(t *testing.T) {
 	doc := makeDocForRender(t)
+	skipIfRenderUnavailable(t, doc)
 	img, err := doc.RenderPageWithOptions(0, RenderOptions{})
 	if err != nil {
 		t.Fatalf("render: %v", err)
@@ -46,6 +57,7 @@ func TestRenderPageWithOptions_DefaultPng(t *testing.T) {
 
 func TestRenderPageWithOptions_JpegFormat(t *testing.T) {
 	doc := makeDocForRender(t)
+	skipIfRenderUnavailable(t, doc)
 	img, err := doc.RenderPageWithOptions(0, RenderOptions{
 		Format: RenderFormatJpeg,
 	})
@@ -60,6 +72,7 @@ func TestRenderPageWithOptions_JpegFormat(t *testing.T) {
 
 func TestRenderPageWithOptions_HigherDpi_Bigger(t *testing.T) {
 	doc := makeDocForRender(t)
+	skipIfRenderUnavailable(t, doc)
 	small, err := doc.RenderPageWithOptions(0, RenderOptions{Dpi: 72})
 	if err != nil {
 		t.Fatalf("small: %v", err)
@@ -88,6 +101,7 @@ func TestRenderPageWithOptions_InvalidDpi_Error(t *testing.T) {
 
 func TestRenderPageWithOptions_TransparentBackground_StillPng(t *testing.T) {
 	doc := makeDocForRender(t)
+	skipIfRenderUnavailable(t, doc)
 	img, err := doc.RenderPageWithOptions(0, RenderOptions{
 		TransparentBackground: true,
 	})
