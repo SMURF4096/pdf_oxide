@@ -409,11 +409,17 @@ def test_v0339_symbols_exported():
     top-level ``pdf_oxide`` namespace."""
     for name in ("Align", "Column", "Table", "StreamingTable"):
         assert hasattr(pdf_oxide, name), f"missing export: {name}"
-    for name in ("measure", "text_in_rect", "stroke_rect", "stroke_line",
-                 "new_page_same_size", "remaining_space", "table",
-                 "streaming_table"):
-        assert hasattr(pdf_oxide.FluentPageBuilder, name), \
-            f"missing FluentPageBuilder.{name}"
+    for name in (
+        "measure",
+        "text_in_rect",
+        "stroke_rect",
+        "stroke_line",
+        "new_page_same_size",
+        "remaining_space",
+        "table",
+        "streaming_table",
+    ):
+        assert hasattr(pdf_oxide.FluentPageBuilder, name), f"missing FluentPageBuilder.{name}"
 
 
 def test_measure_returns_positive_float_for_helvetica():
@@ -455,13 +461,19 @@ def test_text_in_rect_wraps_and_aligns(tmp_path):
         .letter_page()
         .font("Helvetica", 10.0)
         .text_in_rect(
-            72.0, 600.0, 200.0, 80.0,
+            72.0,
+            600.0,
+            200.0,
+            80.0,
             "This is a fairly long sentence that ought to wrap inside "
             "the configured rectangle when rendered by the Rust core.",
             align="center",
         )
         .text_in_rect(
-            72.0, 500.0, 200.0, 40.0,
+            72.0,
+            500.0,
+            200.0,
+            40.0,
             "Right-aligned",
             align=pdf_oxide.Align.RIGHT,
         )
@@ -569,11 +581,7 @@ def test_streaming_table_1000_rows_multi_page():
     well below the 30 k smoke in the Rust-core test to keep CI fast."""
     n_rows = 1000
     doc = pdf_oxide.DocumentBuilder()
-    page = (
-        doc.letter_page()
-        .font("Helvetica", 9.0)
-        .at(72.0, 720.0)
-    )
+    page = doc.letter_page().font("Helvetica", 9.0).at(72.0, 720.0)
     st = page.streaming_table(
         columns=[
             pdf_oxide.Column("SKU", width=72.0),

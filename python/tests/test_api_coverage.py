@@ -21,10 +21,12 @@ _PDF_MAGIC = b"%PDF-"
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
+
 def _is_feature_off(exc: Exception) -> bool:
     msg = str(exc).lower()
-    return any(k in msg for k in ("not enabled", "unsupported", "not compiled",
-                                   "5000", "error code 8"))
+    return any(
+        k in msg for k in ("not enabled", "unsupported", "not compiled", "5000", "error code 8")
+    )
 
 
 def _make_simple_doc() -> PdfDocument:
@@ -34,8 +36,13 @@ def _make_simple_doc() -> PdfDocument:
 
 def _find_any_ttf():
     import pathlib
-    for d in ("/usr/share/fonts", "/usr/local/share/fonts",
-              "/System/Library/Fonts", "C:/Windows/Fonts"):
+
+    for d in (
+        "/usr/share/fonts",
+        "/usr/local/share/fonts",
+        "/System/Library/Fonts",
+        "C:/Windows/Fonts",
+    ):
         p = pathlib.Path(d)
         if p.is_dir():
             for ttf in p.rglob("*.ttf"):
@@ -44,6 +51,7 @@ def _find_any_ttf():
 
 
 # ── PdfDocument: open / metadata ─────────────────────────────────────────────
+
 
 class TestPdfDocumentOpen:
     def test_open_from_path(self, tmp_path):
@@ -84,6 +92,7 @@ class TestPdfDocumentOpen:
 
 
 # ── PdfDocument: text extraction ─────────────────────────────────────────────
+
 
 class TestTextExtraction:
     def test_extract_text_returns_string(self):
@@ -192,6 +201,7 @@ class TestTextExtraction:
 
 # ── PdfDocument: signature operations ────────────────────────────────────────
 
+
 class TestSignatures:
     def test_signature_count_returns_non_negative_int(self):
         doc = _make_simple_doc()
@@ -211,6 +221,7 @@ class TestSignatures:
 
 
 # ── PdfDocument: rendering ───────────────────────────────────────────────────
+
 
 class TestRendering:
     def _try_render(self, doc, **kwargs):
@@ -249,6 +260,7 @@ class TestRendering:
 
 
 # ── Pdf: creation methods ─────────────────────────────────────────────────────
+
 
 class TestPdfCreation:
     def test_from_markdown_produces_pdf(self):
@@ -290,6 +302,7 @@ class TestPdfCreation:
 
 
 # ── Pdf: HTML+CSS creation ───────────────────────────────────────────────────
+
 
 class TestHtmlCssCreation:
     def setup_method(self):
@@ -386,41 +399,31 @@ class TestHtmlCssCreation:
         if self.font is None:
             pytest.skip("no TTF font on system")
         default = Pdf.from_html_css("<p>text</p>", "", self.font).to_bytes()
-        inline = Pdf.from_html_css(
-            '<p style="font-size: 60pt;">text</p>', "", self.font
-        ).to_bytes()
+        inline = Pdf.from_html_css('<p style="font-size: 60pt;">text</p>', "", self.font).to_bytes()
         assert default != inline, "inline style= had no effect"
 
 
 # ── DocumentBuilder ──────────────────────────────────────────────────────────
 
+
 class TestDocumentBuilder:
     def test_basic_builder_produces_pdf(self):
         from pdf_oxide import DocumentBuilder
-        data = (
-            DocumentBuilder()
-            .a4_page()
-            .paragraph("Hello World")
-            .done()
-            .build()
-        )
+
+        data = DocumentBuilder().a4_page().paragraph("Hello World").done().build()
         assert data[:5] == _PDF_MAGIC
 
     def test_builder_text_is_extractable(self):
         from pdf_oxide import DocumentBuilder
-        data = (
-            DocumentBuilder()
-            .a4_page()
-            .paragraph("UniqueBuilderText456")
-            .done()
-            .build()
-        )
+
+        data = DocumentBuilder().a4_page().paragraph("UniqueBuilderText456").done().build()
         doc = PdfDocument.from_bytes(data)
         text = doc.extract_text(0)
         assert "UniqueBuilderText456" in text
 
     def test_builder_multiple_pages(self):
         from pdf_oxide import DocumentBuilder
+
         builder = DocumentBuilder()
         for _ in range(3):
             builder.a4_page().paragraph("page").done()
@@ -431,6 +434,7 @@ class TestDocumentBuilder:
         import os
 
         from pdf_oxide import DocumentBuilder
+
         out = str(tmp_path / "enc.pdf")
         (
             DocumentBuilder()
@@ -444,6 +448,7 @@ class TestDocumentBuilder:
 
 
 # ── Pdf: merge / utilities ────────────────────────────────────────────────────
+
 
 class TestPdfMerge:
     def test_merge_two_pdfs_increases_page_count(self, tmp_path):
@@ -470,6 +475,7 @@ class TestPdfMerge:
 
 # ── Pdf: from_image / from_text ───────────────────────────────────────────────
 
+
 class TestPdfFromOther:
     def test_from_text_produces_pdf(self):
         if not hasattr(Pdf, "from_text"):
@@ -485,15 +491,24 @@ class TestPdfFromOther:
     def test_from_image_bytes_produces_pdf(self):
         import struct
         import zlib
+
         # minimal 1x1 white PNG
         def _png():
             hdr = b"\x89PNG\r\n\x1a\n"
             ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
             ihdr_chunk = b"IHDR" + ihdr  # noqa: F841 (used in chunk() call below)
             idat_data = zlib.compress(b"\x00\xff\xff\xff")
+
             def chunk(name, data):
-                return struct.pack(">I", len(data)) + name + data + struct.pack(">I", zlib.crc32(name + data) & 0xFFFFFFFF)
+                return (
+                    struct.pack(">I", len(data))
+                    + name
+                    + data
+                    + struct.pack(">I", zlib.crc32(name + data) & 0xFFFFFFFF)
+                )
+
             return hdr + chunk(b"IHDR", ihdr) + chunk(b"IDAT", idat_data) + chunk(b"IEND", b"")
+
         try:
             pdf = Pdf.from_image_bytes(_png())
             assert pdf.to_bytes()[:5] == _PDF_MAGIC
@@ -504,6 +519,7 @@ class TestPdfFromOther:
 
 
 # ── PdfDocument: conversion to other formats ─────────────────────────────────
+
 
 class TestConversion:
     def test_to_markdown_contains_text(self):
@@ -544,6 +560,7 @@ class TestConversion:
 
 # ── PdfDocument: search ───────────────────────────────────────────────────────
 
+
 class TestSearch:
     def test_search_page_finds_known_term(self):
         data = Pdf.from_markdown("SEARCHMETOKEN").to_bytes()
@@ -565,12 +582,14 @@ class TestSearch:
 
 # ── PdfDocument: page mutations ───────────────────────────────────────────────
 
+
 class TestMutations:
     def test_save_to_path(self, tmp_path):
         doc = _make_simple_doc()
         path = str(tmp_path / "out.pdf")
         doc.save(path)
         import os
+
         assert os.path.getsize(path) > 100
 
     def test_merge_from_increases_page_count(self, tmp_path):
@@ -628,38 +647,32 @@ class TestMutations:
 
 # ── DocumentBuilder extras ────────────────────────────────────────────────────
 
+
 class TestDocumentBuilderExtras:
     def test_save_non_encrypted(self, tmp_path):
         from pdf_oxide import DocumentBuilder
+
         path = str(tmp_path / "plain.pdf")
         DocumentBuilder().a4_page().paragraph("plain save").done().save(path)
         import os
+
         assert os.path.getsize(path) > 100
 
     def test_letter_page(self):
         from pdf_oxide import DocumentBuilder
-        data = (
-            DocumentBuilder()
-            .letter_page()
-            .paragraph("US Letter")
-            .done()
-            .build()
-        )
+
+        data = DocumentBuilder().letter_page().paragraph("US Letter").done().build()
         assert data[:5] == _PDF_MAGIC
 
     def test_custom_page_size(self):
         from pdf_oxide import DocumentBuilder
-        data = (
-            DocumentBuilder()
-            .page(300.0, 400.0)
-            .paragraph("custom")
-            .done()
-            .build()
-        )
+
+        data = DocumentBuilder().page(300.0, 400.0).paragraph("custom").done().build()
         assert data[:5] == _PDF_MAGIC
 
     def test_metadata_setters(self):
         from pdf_oxide import DocumentBuilder
+
         data = (
             DocumentBuilder()
             .title("My Title")
@@ -676,6 +689,7 @@ class TestDocumentBuilderExtras:
 
     def test_to_bytes_encrypted(self):
         from pdf_oxide import DocumentBuilder
+
         data = (
             DocumentBuilder()
             .a4_page()
@@ -687,6 +701,7 @@ class TestDocumentBuilderExtras:
 
 
 # ── Signature object properties ───────────────────────────────────────────────
+
 
 class TestSignatureProperties:
     def test_unsigned_pdf_signatures_list_is_empty(self):
@@ -700,6 +715,7 @@ class TestSignatureProperties:
 
 
 # ── PdfDocument: to_bytes() and save() with options ───────────────────────────
+
 
 class TestSaveOptions:
     def test_to_bytes_default_returns_valid_pdf(self):
@@ -750,6 +766,7 @@ class TestSaveOptions:
 
     def test_save_with_compress_option(self, tmp_path):
         import os
+
         doc = _make_simple_doc()
         path = str(tmp_path / "compressed.pdf")
         doc.save(path, compress=True)
@@ -760,6 +777,7 @@ class TestSaveOptions:
 
     def test_save_with_garbage_collect_option(self, tmp_path):
         import os
+
         doc = _make_simple_doc()
         path = str(tmp_path / "gc.pdf")
         doc.save(path, garbage_collect=True)
@@ -767,6 +785,7 @@ class TestSaveOptions:
 
     def test_save_with_all_options(self, tmp_path):
         import os
+
         doc = _make_simple_doc()
         path = str(tmp_path / "all_opts.pdf")
         doc.save(path, compress=True, garbage_collect=True, linearize=False)
@@ -777,6 +796,7 @@ class TestSaveOptions:
     def test_save_no_options_still_works(self, tmp_path):
         """Ensure calling save(path) with no kwargs still works."""
         import os
+
         doc = _make_simple_doc()
         path = str(tmp_path / "plain.pdf")
         doc.save(path)
