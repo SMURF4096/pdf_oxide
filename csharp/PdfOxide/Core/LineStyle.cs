@@ -351,7 +351,11 @@ namespace PdfOxide.Core
             if (!_built)
             {
                 _built = true;
-                NativeMethods.PdfPageBuilderStreamingTableFinish(_page.InternalHandle, out _);
+                try
+                {
+                    NativeMethods.PdfPageBuilderStreamingTableFinish(_page.InternalHandle, out _);
+                }
+                catch (ObjectDisposedException) { }
             }
         }
     }

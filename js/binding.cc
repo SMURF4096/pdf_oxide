@@ -3016,8 +3016,10 @@ Napi::Value CertificateLoadFromBytes(const Napi::CallbackInfo& info) {
 
 Napi::Value CertificateLoadFromPem(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  std::string certPem = requireString(info, 0, "certPem");
-  std::string keyPem  = requireString(info, 1, "keyPem");
+  if (info.Length() < 2 || !info[0].IsString() || !info[1].IsString())
+    throw Napi::TypeError::New(env, "certPem and keyPem must be strings");
+  std::string certPem = info[0].As<Napi::String>().Utf8Value();
+  std::string keyPem  = info[1].As<Napi::String>().Utf8Value();
   int errorCode = 0;
   void* cert = pdf_certificate_load_from_pem(certPem.c_str(), keyPem.c_str(), &errorCode);
   if (errorCode != 0) throw Napi::Error::New(env, "Failed to load PEM credentials: " + getErrorMessage(errorCode));
@@ -3779,6 +3781,10 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   extern Napi::Value PageBuilderTextInRect(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderNewPageSameSize(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderTable(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderStreamingTableBeginV2(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderStreamingTablePushRow(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderStreamingTablePushRowV2(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderStreamingTableFinish(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderDone(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderFree(const Napi::CallbackInfo&);
   extern Napi::Value DocumentBuilderBuild(const Napi::CallbackInfo&);

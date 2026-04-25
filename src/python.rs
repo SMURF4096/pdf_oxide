@@ -4248,9 +4248,6 @@ fn extract_align(py: Python<'_>, obj: &Bound<'_, PyAny>) -> PyResult<i32> {
     if let Ok(s) = obj.extract::<String>() {
         return align_str_to_int(&s);
     }
-    if let Ok(a) = obj.extract::<PyAlign>() {
-        return Ok(a as i32);
-    }
     if let Ok(a) = obj.extract::<PyRef<PyAlign>>() {
         return Ok(*a as i32);
     }
