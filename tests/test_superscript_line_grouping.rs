@@ -13,7 +13,7 @@ fn build_and_extract(build_fn: impl FnOnce(&mut PdfWriter)) -> String {
     let mut writer = PdfWriter::new();
     build_fn(&mut writer);
     let bytes = writer.finish().expect("build PDF");
-    let mut doc = PdfDocument::from_bytes(bytes).expect("open PDF");
+    let doc = PdfDocument::from_bytes(bytes).expect("open PDF");
     doc.extract_text(0).expect("extract page 0")
 }
 
