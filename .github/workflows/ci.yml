@@ -524,6 +524,7 @@ jobs:
   nodejs:
     name: Node.js Bindings (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -646,18 +647,18 @@ jobs:
         run: |
           PDF="$GITHUB_WORKSPACE/tests/fixtures/simple.pdf"
           cd "$GITHUB_WORKSPACE/examples/javascript"
-          node 01-extract-text/index.js "$PDF"
-          node 02-convert-formats/index.js "$PDF"
-          node 03-create-pdf/index.js
-          node 04-search-text/index.js "$PDF" "PDF"
-          node 05-extract-structured/index.js "$PDF"
-          node 07-forms-annotations/index.js "$PDF"
-          node 08-batch-processing/index.js "$PDF" "$PDF"
-          node 09-new-features/streaming_table/index.js
-          node 09-new-features/pdf_ua_image/index.js
-          node 09-new-features/in_memory_roundtrip/index.js
-          node 09-new-features/pkcs12_signing/index.js
-          node 09-new-features/rfc3161_timestamp/index.js
+          echo "--- 01-extract-text ---"       && timeout 120 node 01-extract-text/index.js "$PDF"
+          echo "--- 02-convert-formats ---"    && timeout 120 node 02-convert-formats/index.js "$PDF"
+          echo "--- 03-create-pdf ---"         && timeout 120 node 03-create-pdf/index.js
+          echo "--- 04-search-text ---"        && timeout 120 node 04-search-text/index.js "$PDF" "PDF"
+          echo "--- 05-extract-structured ---" && timeout 120 node 05-extract-structured/index.js "$PDF"
+          echo "--- 07-forms-annotations ---"  && timeout 120 node 07-forms-annotations/index.js "$PDF"
+          echo "--- 08-batch-processing ---"   && timeout 120 node 08-batch-processing/index.js "$PDF" "$PDF"
+          echo "--- streaming_table ---"       && timeout 120 node 09-new-features/streaming_table/index.js
+          echo "--- pdf_ua_image ---"          && timeout 120 node 09-new-features/pdf_ua_image/index.js
+          echo "--- in_memory_roundtrip ---"   && timeout 120 node 09-new-features/in_memory_roundtrip/index.js
+          echo "--- pkcs12_signing ---"        && timeout 120 node 09-new-features/pkcs12_signing/index.js
+          echo "--- rfc3161_timestamp ---"     && timeout 120 node 09-new-features/rfc3161_timestamp/index.js
 
       - name: Compile TypeScript examples
         if: matrix.os == 'ubuntu-latest'
