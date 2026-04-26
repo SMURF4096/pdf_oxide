@@ -155,7 +155,7 @@ jobs:
       - name: Build examples (signatures feature)
         run: cargo build --examples --features signatures
 
-      - name: Run tutorial examples (01-08)
+      - name: Run Rust tutorial examples
         shell: bash
         run: |
           PDF=tests/fixtures/simple.pdf
@@ -168,14 +168,14 @@ jobs:
           cargo run --example tutorial_forms_annotations -- "$PDF"
           cargo run --example tutorial_batch_processing -- "$PDF" "$PDF"
 
-      - name: Run showcase examples (09-new-features, default features)
+      - name: Run Rust showcase examples
         shell: bash
         run: |
           cargo run --example showcase_streaming_table
           cargo run --example showcase_pdf_ua_image
           cargo run --example showcase_in_memory_roundtrip
 
-      - name: Run showcase examples (09-new-features, signatures feature)
+      - name: Run Rust showcase examples (signatures)
         shell: bash
         run: |
           cargo run --example showcase_pkcs12_signing --features signatures
@@ -278,7 +278,7 @@ jobs:
       - name: Run Python feature-guard tests
         run: uv run pytest python/tests/ -v --tb=short
 
-      - name: Run Python examples (01-08 + 09-new-features)
+      - name: Run Python examples
         if: matrix.python-version == '3.11'
         shell: bash
         run: |
@@ -504,7 +504,7 @@ jobs:
         working-directory: go
         run: go test -race -count=1 -p 1 -tags pdf_oxide_dev ./...
 
-      - name: Run Go examples (01-08 + 09-new-features)
+      - name: Run Go examples
         if: matrix.os == 'ubuntu-latest'
         shell: bash
         run: |
@@ -646,7 +646,7 @@ jobs:
         working-directory: examples/javascript
         run: npm install --ignore-scripts
 
-      - name: Run JavaScript examples (01-08 + 09-new-features)
+      - name: Run JavaScript examples
         if: matrix.os == 'ubuntu-latest'
         shell: bash
         env:
@@ -767,7 +767,7 @@ jobs:
         working-directory: csharp/PdfOxide.Tests
         run: dotnet test -c Release --no-build --verbosity normal
 
-      - name: Build and run C# examples (01-08 + 09-new-features)
+      - name: Run C# examples
         if: matrix.os == 'ubuntu-latest'
         shell: bash
         env:
