@@ -234,7 +234,7 @@ namespace PdfOxide.Tests
             var fontBytes = File.ReadAllBytes(FixtureFontPath);
             const string html = "<p>text</p>";
             var none = Pdf.FromHtmlCss(html, "", fontBytes).SaveToBytes();
-            var yellow = Pdf.FromHtmlCss(html, "body { background-color: yellow; }", fontBytes).SaveToBytes();
+            var yellow = Pdf.FromHtmlCss(html, "p { background-color: yellow; }", fontBytes).SaveToBytes();
             Assert.False(none.SequenceEqual(yellow), "CSS background-color had no effect on output");
         }
 
