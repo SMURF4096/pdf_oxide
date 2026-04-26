@@ -13,7 +13,7 @@ def main():
 
     input_path, output_path = sys.argv[1], sys.argv[2]
 
-    doc = PdfDocument.open(input_path)
+    doc = PdfDocument(input_path)
     print(f"Opened: {input_path}")
 
     doc.set_title("Edited Document")
