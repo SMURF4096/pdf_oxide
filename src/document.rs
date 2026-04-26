@@ -4126,6 +4126,19 @@ impl PdfDocument {
             // the span list so `reorder_rowspan_labels` below can
             // promote them to the top of their row block.
             if !tables.is_empty() {
+                // Absorb floating-point accumulation error in the
+                // difference between a span's directly-computed
+                // bbox.right (origin + width, small accumulation)
+                // and a table bbox.right (min/max reduction across
+                // many cell edges, larger accumulation). Without
+                // this slack, a span whose real geometry is inside
+                // the table by construction but whose f32 right-edge
+                // exceeds the table's f32 right-edge by ~0.01–0.05pt
+                // gets wrongly kept in the flow stream, producing
+                // duplicated output. 0.1pt is well below any
+                // visually meaningful PDF layout distance.
+                const RETAIN_TOLERANCE: f32 = 0.1;
+
                 // Build the set of cell text strings that every detected
                 // table will render via `table.render_text()`. Labels
                 // whose exact text already appears as a cell in some
@@ -4170,18 +4183,26 @@ impl PdfDocument {
 
                 if preserved_label_indices.is_empty() {
                     spans.retain(|s| {
-                        !tables
-                            .iter()
-                            .any(|t| t.bbox.is_some_and(|b| b.contains_rect(&s.bbox)))
+                        !tables.iter().any(|t| {
+                            t.bbox.is_some_and(|b| {
+                                Self::contains_rect_with_tolerance(&b, &s.bbox, RETAIN_TOLERANCE)
+                            })
+                        })
                     });
                 } else {
                     let kept: Vec<crate::layout::TextSpan> = spans
                         .drain(..)
                         .enumerate()
                         .filter_map(|(i, s)| {
-                            let in_table = tables
-                                .iter()
-                                .any(|t| t.bbox.is_some_and(|b| b.contains_rect(&s.bbox)));
+                            let in_table = tables.iter().any(|t| {
+                                t.bbox.is_some_and(|b| {
+                                    Self::contains_rect_with_tolerance(
+                                        &b,
+                                        &s.bbox,
+                                        RETAIN_TOLERANCE,
+                                    )
+                                })
+                            });
                             if !in_table || preserved_label_indices.contains(&i) {
                                 Some(s)
                             } else {
@@ -5221,6 +5242,22 @@ impl PdfDocument {
     /// absolute tolerance.
     fn same_line_threshold(prev: &TextSpan, current: &TextSpan) -> f32 {
         prev.font_size.max(current.font_size).max(1.0) * 0.5
+    }
+
+    /// Returns `true` if `inner` is contained within `outer`,
+    /// allowing `eps` points of floating-point slack on all four
+    /// edges. Used at the table-retain sites to absorb ~0.02pt drift
+    /// in span right-edges relative to table bboxes computed from
+    /// min/max reductions over many cell edges.
+    fn contains_rect_with_tolerance(
+        outer: &crate::geometry::Rect,
+        inner: &crate::geometry::Rect,
+        eps: f32,
+    ) -> bool {
+        inner.left() >= outer.left() - eps
+            && inner.right() <= outer.right() + eps
+            && inner.top() >= outer.top() - eps
+            && inner.bottom() <= outer.bottom() + eps
     }
 
     /// # Returns
@@ -15578,5 +15615,78 @@ mod tests {
         // Should return a finite value without panicking
         let size = BoundedObjectCache::estimate_size(&obj);
         assert!(size > 0);
+    }
+
+    // -----------------------------------------------------------------
+    // PdfDocument::contains_rect_with_tolerance
+    //
+    // Pins the table-retain tolerance behaviour: spans whose f32
+    // right-edge drifts a fraction of a point past the table bbox
+    // (due to accumulated width-sum error) must still count as
+    // contained, but spans that actually extend beyond the table
+    // must not. Each test's first block is a geometry sanity check
+    // so a Rect::new construction mistake fails loudly rather than
+    // silently exercising the wrong geometry.
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn contains_rect_with_tolerance_absorbs_subpixel_drift() {
+        use crate::geometry::Rect;
+        let table = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let drifted = Rect::new(10.0, 10.0, 90.02, 80.0);
+
+        // Geometry sanity: drifted span right-edge should sit ~0.02pt
+        // past table right-edge. If this fails, the test construction
+        // is wrong, not the tolerance logic. Tolerance is 1e-4pt
+        // because `0.02f32` is not representable exactly — the
+        // observed drift lands within ~4e-6 of 0.02.
+        assert!(
+            (drifted.right() - table.right() - 0.02).abs() < 1e-4,
+            "drifted span right-edge should be 0.02pt past table right-edge; got drift = {}",
+            drifted.right() - table.right()
+        );
+        assert_eq!(drifted.left(), 10.0, "span should start at x=10");
+        assert_eq!(drifted.top(), 10.0, "span should start at y=10");
+        assert_eq!(drifted.bottom(), 90.0, "span should end at y=90");
+
+        // Behavior: 0.02pt drift is absorbed by 0.1pt tolerance.
+        assert!(PdfDocument::contains_rect_with_tolerance(&table, &drifted, 0.1));
+    }
+
+    #[test]
+    fn contains_rect_with_tolerance_rejects_genuinely_outside() {
+        use crate::geometry::Rect;
+        let table = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let outside = Rect::new(10.0, 10.0, 91.0, 80.0);
+
+        // Geometry sanity: outside span right-edge should sit 1.0pt
+        // past table right-edge.
+        assert!(
+            (outside.right() - table.right() - 1.0).abs() < 1e-6,
+            "outside span right-edge should be 1.0pt past table right-edge; got drift = {}",
+            outside.right() - table.right()
+        );
+
+        // Behavior: 1.0pt beyond is outside 0.1pt tolerance.
+        assert!(!PdfDocument::contains_rect_with_tolerance(&table, &outside, 0.1));
+    }
+
+    #[test]
+    fn contains_rect_with_tolerance_accepts_fully_inside() {
+        use crate::geometry::Rect;
+        let table = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let inside = Rect::new(10.0, 10.0, 80.0, 80.0);
+
+        // Geometry sanity: control span should be strictly inside the
+        // table on every edge.
+        assert!(
+            inside.left() > table.left()
+                && inside.right() < table.right()
+                && inside.top() > table.top()
+                && inside.bottom() < table.bottom(),
+            "control span should be strictly inside the table"
+        );
+
+        assert!(PdfDocument::contains_rect_with_tolerance(&table, &inside, 0.1));
     }
 }
