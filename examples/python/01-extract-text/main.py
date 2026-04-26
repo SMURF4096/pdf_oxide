@@ -15,9 +15,9 @@ def main():
     doc = PdfDocument(path)
 
     print(f"Opened: {path}")
-    print(f"Pages: {doc.page_count}\n")
+    print(f"Pages: {doc.page_count()}\n")
 
-    for i in range(doc.page_count):
+    for i in range(doc.page_count()):
         text = doc.extract_text(i)
         print(f"--- Page {i + 1} ---")
         print(f"{text}\n")

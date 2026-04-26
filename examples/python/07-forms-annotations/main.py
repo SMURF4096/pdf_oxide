@@ -15,7 +15,7 @@ def main():
     doc = PdfDocument(path)
     print(f"Opened: {path}")
 
-    for page in range(doc.page_count):
+    for page in range(doc.page_count()):
         # Form fields
         fields = doc.get_form_fields(page)
         if fields:
