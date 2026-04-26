@@ -155,7 +155,7 @@ jobs:
       - name: Build examples (signatures feature)
         run: cargo build --examples --features signatures
 
-      - name: Run Rust tutorial examples
+      - name: Run Rust examples
         shell: bash
         run: |
           PDF=tests/fixtures/simple.pdf
@@ -167,17 +167,9 @@ jobs:
           cargo run --example tutorial_edit_document -- "$PDF" /tmp/edited.pdf
           cargo run --example tutorial_forms_annotations -- "$PDF"
           cargo run --example tutorial_batch_processing -- "$PDF" "$PDF"
-
-      - name: Run Rust showcase examples
-        shell: bash
-        run: |
           cargo run --example showcase_streaming_table
           cargo run --example showcase_pdf_ua_image
           cargo run --example showcase_in_memory_roundtrip
-
-      - name: Run Rust showcase examples (signatures)
-        shell: bash
-        run: |
           cargo run --example showcase_pkcs12_signing --features signatures
           cargo run --example showcase_rfc3161_timestamp --features signatures
 
