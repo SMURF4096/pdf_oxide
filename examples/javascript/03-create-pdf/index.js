@@ -1,45 +1,46 @@
-// Create PDFs from Markdown, HTML, and plain text.
+// Create PDFs using DocumentBuilder.
 // Run: node index.js
 
-const { binding } = require("pdf-oxide");
+import { DocumentBuilder } from "pdf-oxide";
+import { mkdirSync } from "node:fs";
 
-function main() {
-  console.log("Creating PDFs...");
+mkdirSync("output", { recursive: true });
+console.log("Creating PDFs...");
 
-  // From Markdown
-  const markdown = `# Project Report
+const builder = DocumentBuilder.create().title("Project Report");
+builder
+  .a4Page()
+  .font("Helvetica", 12)
+  .at(72, 750)
+  .heading(1, "Project Report")
+  .at(72, 720)
+  .paragraph("Generated from Markdown using pdf_oxide.")
+  .done();
+builder.save("output/from_markdown.pdf");
+console.log("Saved: output/from_markdown.pdf");
 
-## Summary
+const builder2 = DocumentBuilder.create().title("Invoice");
+builder2
+  .a4Page()
+  .font("Helvetica", 12)
+  .at(72, 750)
+  .heading(1, "Invoice #1234")
+  .at(72, 720)
+  .paragraph("Generated from HTML using pdf_oxide.")
+  .done();
+builder2.save("output/from_html.pdf");
+console.log("Saved: output/from_html.pdf");
 
-This document was generated from **Markdown** using pdf_oxide.
+const builder3 = DocumentBuilder.create();
+builder3
+  .a4Page()
+  .font("Helvetica", 12)
+  .at(72, 750)
+  .paragraph(
+    "Hello, World!\n\nThis PDF was created from plain text using pdf_oxide."
+  )
+  .done();
+builder3.save("output/from_text.pdf");
+console.log("Saved: output/from_text.pdf");
 
-- Fast rendering
-- Clean typography
-- Cross-platform
-`;
-  let handle = binding.pdfFromMarkdown(markdown);
-  binding.pdfSave(handle, "from_markdown.pdf");
-  console.log("Saved: from_markdown.pdf");
-
-  // From HTML
-  const html = `<html><body>
-<h1>Invoice #1234</h1>
-<p>Generated from <em>HTML</em> using pdf_oxide.</p>
-<table><tr><th>Item</th><th>Price</th></tr>
-<tr><td>Widget</td><td>$9.99</td></tr></table>
-</body></html>`;
-  handle = binding.pdfFromHtml(html);
-  binding.pdfSave(handle, "from_html.pdf");
-  console.log("Saved: from_html.pdf");
-
-  // From plain text
-  const text =
-    "Hello, World!\n\nThis PDF was created from plain text using pdf_oxide.";
-  handle = binding.pdfFromText(text);
-  binding.pdfSave(handle, "from_text.pdf");
-  console.log("Saved: from_text.pdf");
-
-  console.log("Done. 3 PDFs created.");
-}
-
-main();
+console.log("Done. 3 PDFs created in output/");

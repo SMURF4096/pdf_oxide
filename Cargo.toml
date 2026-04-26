@@ -404,9 +404,61 @@ harness = false
 name = "rust_bench"
 path = "bench/rust_bench.rs"
 
+# ── v0.3.39 per-feature examples (examples/rust/09-new-features/) ─────────────
 [[example]]
-name = "showcase_new_features"
-path = "examples/rust/09-new-features/main.rs"
+name = "showcase_streaming_table"
+path = "examples/rust/09-new-features/streaming_table/main.rs"
+
+[[example]]
+name = "showcase_pdf_ua_image"
+path = "examples/rust/09-new-features/pdf_ua_image/main.rs"
+
+[[example]]
+name = "showcase_in_memory_roundtrip"
+path = "examples/rust/09-new-features/in_memory_roundtrip/main.rs"
+
+[[example]]
+name = "showcase_pkcs12_signing"
+path = "examples/rust/09-new-features/pkcs12_signing/main.rs"
+required-features = ["signatures"]
+
+[[example]]
+name = "showcase_rfc3161_timestamp"
+path = "examples/rust/09-new-features/rfc3161_timestamp/main.rs"
+required-features = ["signatures"]
+
+# ── Tutorial examples 01-08 (examples/rust/) ──────────────────────────────────
+[[example]]
+name = "tutorial_extract_text"
+path = "examples/rust/01-extract-text/main.rs"
+
+[[example]]
+name = "tutorial_convert_formats"
+path = "examples/rust/02-convert-formats/main.rs"
+
+[[example]]
+name = "tutorial_create_pdf"
+path = "examples/rust/03-create-pdf/main.rs"
+
+[[example]]
+name = "tutorial_search_text"
+path = "examples/rust/04-search-text/main.rs"
+
+[[example]]
+name = "tutorial_extract_structured"
+path = "examples/rust/05-extract-structured/main.rs"
+
+[[example]]
+name = "tutorial_edit_document"
+path = "examples/rust/06-edit-document/main.rs"
+
+[[example]]
+name = "tutorial_forms_annotations"
+path = "examples/rust/07-forms-annotations/main.rs"
+
+[[example]]
+name = "tutorial_batch_processing"
+path = "examples/rust/08-batch-processing/main.rs"
 
 [package.metadata.docs.rs]
 # Document with safe features only (tesseract-rs fails on docs.rs sandbox)

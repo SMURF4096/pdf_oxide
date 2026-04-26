@@ -1,7 +1,7 @@
 // Process multiple PDFs concurrently using Promise.all.
 // Run: node index.js file1.pdf file2.pdf ...
 
-const binding = require("pdf-oxide");
+import { PdfDocument } from "pdf-oxide";
 
 const paths = process.argv.slice(2);
 if (paths.length === 0) {
@@ -9,20 +9,17 @@ if (paths.length === 0) {
   process.exit(1);
 }
 
-async function processPdf(path) {
-  const handle = binding.open(path);
-  try {
-    const pages = binding.pageCount(handle);
-    let totalWords = 0;
-    let totalTables = 0;
-    for (let p = 0; p < pages; p++) {
-      totalWords += binding.extractWords(handle, p).length;
-      totalTables += binding.extractTables(handle, p).length;
-    }
-    return { path, pages, words: totalWords, tables: totalTables };
-  } finally {
-    binding.close(handle);
+function processPdf(filePath) {
+  const doc = PdfDocument.open(filePath);
+  const pages = doc.pageCount();
+  let totalWords = 0;
+  let totalTables = 0;
+  for (let p = 0; p < pages; p++) {
+    totalWords += (doc.extractWords(p) || []).length;
+    totalTables += (doc.extractTables(p) || []).length;
   }
+  doc.close();
+  return { path: filePath, pages, words: totalWords, tables: totalTables };
 }
 
 async function main() {
@@ -31,7 +28,9 @@ async function main() {
 
   const results = await Promise.all(
     paths.map((p) =>
-      processPdf(p).catch((err) => ({ path: p, error: err.message }))
+      Promise.resolve()
+        .then(() => processPdf(p))
+        .catch((err) => ({ path: p, error: err.message }))
     )
   );
 

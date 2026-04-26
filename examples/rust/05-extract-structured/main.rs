@@ -1,11 +1,11 @@
 // Extract words with bounding boxes and tables from a PDF page.
-// Run: cargo run --example extract_structured -- document.pdf
+// Run: cargo run --example tutorial_extract_structured -- tests/fixtures/simple.pdf
 
 use pdf_oxide::PdfDocument;
 use std::env;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let path = env::args().nth(1).expect("Usage: extract_structured <file.pdf>");
+    let path = env::args().nth(1).expect("Usage: tutorial_extract_structured <file.pdf>");
     let doc = PdfDocument::open(&path)?;
     println!("Opened: {}", path);
 
@@ -16,9 +16,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Words (page {}) ---", page + 1);
     for w in words.iter().take(20) {
         println!(
-            "{:20} x={:<7.1} y={:<7.1} w={:<7.1} h={:<7.1} font={} size={:.1}",
+            "{:20} x={:<7.1} y={:<7.1} w={:<7.1} h={:<7.1}",
             format!("\"{}\"", w.text),
-            w.x, w.y, w.width, w.height, w.font_name, w.font_size
+            w.bbox.x, w.bbox.y, w.bbox.width, w.bbox.height,
         );
     }
     if words.len() > 20 {
@@ -32,12 +32,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("(no tables found)");
     }
     for (i, table) in tables.iter().enumerate() {
-        println!("Table {}: {} rows x {} cols", i + 1, table.rows, table.cols);
-        for r in 0..table.rows.min(5) {
-            let row_str: Vec<String> = (0..table.cols.min(6))
-                .map(|c| format!("[{},{}] \"{}\"", r, c, table.cells[r][c]))
-                .collect();
-            println!("  {}", row_str.join("  "));
+        println!("Table {}: {} rows", i + 1, table.rows.len());
+        for (ri, row) in table.rows.iter().take(5).enumerate() {
+            let cols: Vec<_> = row.cells.iter().take(6).map(|c| format!("\"{}\"", c.text)).collect();
+            println!("  Row {}: {}", ri, cols.join("  "));
         }
     }
 

@@ -1,4 +1,4 @@
-module example.com/showcase_new_features
+module example.com/tutorial_extract_structured
 
 go 1.21
 

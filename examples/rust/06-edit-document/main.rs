@@ -1,13 +1,13 @@
-// Open a PDF, modify metadata, delete a page, and save.
-// Run: cargo run --example edit_document -- input.pdf output.pdf
+// Open a PDF, modify metadata, and save to a new file.
+// Run: cargo run --example tutorial_edit_document -- tests/fixtures/simple.pdf /tmp/edited.pdf
 
-use pdf_oxide::DocumentEditor;
+use pdf_oxide::editor::DocumentEditor;
 use std::env;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
-        eprintln!("Usage: edit_document <input.pdf> <output.pdf>");
+        eprintln!("Usage: tutorial_edit_document <input.pdf> <output.pdf>");
         std::process::exit(1);
     }
     let input = &args[1];
@@ -22,11 +22,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     editor.set_author("pdf_oxide");
     println!("Set author: \"pdf_oxide\"");
 
-    // Delete page 2 (0-indexed = page index 1)
-    editor.delete_page(1)?;
-    println!("Deleted page 2");
-
-    editor.save(output)?;
+    let bytes = editor.save_to_bytes()?;
+    std::fs::write(output, &bytes)?;
     println!("Saved: {}", output);
 
     Ok(())

@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>PdfOxide.Examples</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../../csharp/PdfOxide/PdfOxide.csproj" />

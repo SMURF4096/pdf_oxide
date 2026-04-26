@@ -6,14 +6,21 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 
-	"github.com/yfedoseev/pdf_oxide/go"
+	pdfoxide "github.com/yfedoseev/pdf_oxide/go"
 )
 
+func must(err error) {
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 func main() {
+	must(os.MkdirAll("output", 0o755))
 	fmt.Println("Creating PDFs...")
 
-	// From Markdown
 	markdown := `# Project Report
 
 ## Summary
@@ -28,10 +35,9 @@ This document was generated from **Markdown** using pdf_oxide.
 	if err != nil {
 		log.Fatalf("Markdown: %v", err)
 	}
-	pdfoxide.PdfSave(pdf, "from_markdown.pdf")
-	fmt.Println("Saved: from_markdown.pdf")
+	must(pdf.Save("output/from_markdown.pdf"))
+	fmt.Println("Saved: output/from_markdown.pdf")
 
-	// From HTML
 	html := `<html><body>
 <h1>Invoice #1234</h1>
 <p>Generated from <em>HTML</em> using pdf_oxide.</p>
@@ -42,17 +48,16 @@ This document was generated from **Markdown** using pdf_oxide.
 	if err != nil {
 		log.Fatalf("HTML: %v", err)
 	}
-	pdfoxide.PdfSave(pdf, "from_html.pdf")
-	fmt.Println("Saved: from_html.pdf")
+	must(pdf.Save("output/from_html.pdf"))
+	fmt.Println("Saved: output/from_html.pdf")
 
-	// From plain text
 	text := "Hello, World!\n\nThis PDF was created from plain text using pdf_oxide."
 	pdf, err = pdfoxide.FromText(text)
 	if err != nil {
 		log.Fatalf("Text: %v", err)
 	}
-	pdfoxide.PdfSave(pdf, "from_text.pdf")
-	fmt.Println("Saved: from_text.pdf")
+	must(pdf.Save("output/from_text.pdf"))
+	fmt.Println("Saved: output/from_text.pdf")
 
-	fmt.Println("Done. 3 PDFs created.")
+	fmt.Println("Done. 3 PDFs created in output/")
 }

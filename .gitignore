@@ -367,3 +367,11 @@ bench_fixtures/
 # .NET build artifacts
 csharp/**/bin/
 csharp/**/obj/
+
+# Example output and build artifacts
+examples/**/output/
+examples/**/output_*/
+examples/**/node_modules/
+examples/**/bin/
+examples/**/obj/
+examples/**/dist/
