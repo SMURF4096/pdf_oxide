@@ -16,7 +16,7 @@ def main():
     doc = PdfDocument(path)
 
     os.makedirs("output", exist_ok=True)
-    pages = doc.page_count
+    pages = doc.page_count()
     print(f"Converting {pages} pages from {path}...")
 
     for i in range(pages):
