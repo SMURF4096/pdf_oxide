@@ -258,6 +258,9 @@ v0.3.40 — see the E-0 RFC at `docs/v0.3.39/design/e_rich_text_rfc.md`.
 - **`draw_rowspan_group` bounds guard** — accessing `rows[0][col_idx].rowspan` was not guarded against `col_idx ≥ rows[0].len()`, causing a panic on narrow tables with rowspan cells. Added the bounds check `col_idx < rows[0].len()`.
 - **`scan_root_ref` anchoring** — the digital-signature helper scanned the entire document for `/Root`, so a `/Root` reference embedded inside an annotation value or stream body could silently win over the real XRef `/Root` at the end of the file. Now mirrors `scan_startxref` by restricting the search to the last 4 KB of the file.
 - **Signature reason/location PDFDocEncoding** — `/Reason` and `/Location` entries in CMS-signature dictionaries were written as raw UTF-8 bytes, bypassing the `encode_pdf_text_string` path. Non-ASCII characters (accents, CJK, etc.) were stored as illegal UTF-8 sequences in the PDF string. Now uses the same hex-encoded PDFDocEncoding/UTF-16BE path as all other string objects, closing the last #402-class gap in the signing path.
+- **#394** — Mixed-size inline runs (superscripts, footnote markers) were incorrectly split onto separate lines because the newline gate used a hard-coded 2 pt Y-tolerance. Replaced with `PdfDocument::same_line_threshold` — a font-size-relative helper (`max(prev_fs, cur_fs) × 0.5`) shared across all seven Tagged-PDF assembly paths and `should_insert_space`. A forward-gap guard was added to prevent the widened threshold from merging spans across column gutters. Contributed by [@RolandWArnold](https://github.com/RolandWArnold) (#394).
+- **#403** — Simple fonts without an explicit `/Widths` array fell back to a uniform 0.55 em default for every glyph. For standard-14 fonts (Helvetica, Times, Courier, etc.) this inflated span widths by up to 40 %, collapsing inter-column gaps from real values (e.g. 47 pt) to near-zero (5 pt) and breaking gap-dependent layout heuristics. The fast path now populates the byte-to-width table from `get_standard_font_width` when `/Widths` is absent; non-standard fonts and unmapped codepoints still fall back to the generic default. Contributed by [@RolandWArnold](https://github.com/RolandWArnold) (#403).
+- **#404** — Span right-edges could drift ~0.02 pt outside the detected table bbox due to float accumulation in upstream width arithmetic. The strict `Rect::contains_rect` check then rejected those spans from the table's retain set, so they were emitted via both the table path and the flow path, producing duplicated text. Introduced a 0.1 pt tolerance at the two retain call sites in `document.rs` via `PdfDocument::contains_rect_with_tolerance`; the geometry primitive itself remains strict. Contributed by [@RolandWArnold](https://github.com/RolandWArnold) (#404).
 
 ### CI / test-suite fixes
 
@@ -267,6 +270,20 @@ v0.3.40 — see the E-0 RFC at `docs/v0.3.39/design/e_rich_text_rfc.md`.
 - **Example restructuring** — the single monolithic `09-new-features` showcase file per language was replaced with one standalone file per feature (`streaming-table`, `pdf-ua-image`, `in-memory-roundtrip`, `pkcs12-signing`, `rfc3161-timestamp`) across all 5 languages. Each file is a self-contained runnable program. The tutorial examples `01-08` were also repaired: Go examples gained `go.mod` + `go.sum` and had three API-drift regressions fixed (`OpenEditor`, `pdf.Save`, `RowCount`/`CellText`); JavaScript examples were migrated from CommonJS `require()` to ESM `import`; C# examples gained `.csproj` files referencing the local `PdfOxide` project.
 
 ### Community Contributors
+
+- **[@RolandWArnold](https://github.com/RolandWArnold)** — First
+  contribution to PDFOxide, and a substantial one at that. Roland
+  identified three independent text-extraction correctness issues, traced
+  each one to its root cause in the Rust source, wrote focused fixes with
+  synthetic `PdfWriter`-based regression tests, and documented the
+  behaviour thoroughly in PR descriptions that made review straightforward.
+  [#394](https://github.com/yfedoseev/pdf_oxide/pull/394) fixes the
+  long-standing mixed-size inline run / superscript line-grouping
+  problem; [#403](https://github.com/yfedoseev/pdf_oxide/pull/403)
+  restores correct span widths for standard-14 fonts without `/Widths`;
+  [#404](https://github.com/yfedoseev/pdf_oxide/pull/404) eliminates
+  duplicate text caused by sub-pixel float drift at the table-retain
+  boundary. Thank you, Roland — we look forward to more! 🚀
 
 - **[@AngeloBestetti](https://github.com/AngeloBestetti)** — Filed
   [#402](https://github.com/yfedoseev/pdf_oxide/issues/402) with the
