@@ -125,6 +125,16 @@ const DEFAULT_OBJECT_CACHE_MAX_BYTES: usize = 64 * 1024 * 1024;
 /// Default maximum number of entries for the XObject span/image caches.
 const DEFAULT_XOBJECT_CACHE_MAX_ENTRIES: usize = 1024;
 
+/// Heuristic multiplier for the forward-gap guard in the main
+/// assembly loop's compound newline predicate
+/// (`y_diff > 2.0 && gap > K * max(fs)`). Visual gap-sweep over
+/// synthetic two-column examples at fs=10 and fs=14 placed the
+/// plausible operating band at roughly 0.7-1.5; 1.25 is a
+/// conservative interim pick. Not corpus-calibrated; a page-level
+/// layout signal would be a stronger long-term replacement for
+/// this pairwise heuristic.
+const FORWARD_GAP_K: f32 = 1.25;
+
 // Re-export BoundedEntryCache from cache module for local use and backward compatibility
 pub(crate) use crate::cache::BoundedEntryCache;
 
@@ -4326,8 +4336,8 @@ impl PdfDocument {
                     let gap = span.bbox.x - prev_end_x;
                     let delta_x = span.bbox.x - prev.bbox.x;
 
-                    if y_diff > 2.0 {
-                        let font_size = span.font_size.max(10.0);
+                    if y_diff > Self::same_line_threshold(prev, span) {
+                        let font_size = prev.font_size.max(span.font_size).max(10.0);
                         let line_height = font_size * 1.2;
                         let num_breaks = (y_diff / line_height).round() as usize;
                         for _ in 0..num_breaks.clamp(1, 3) {
@@ -4340,21 +4350,15 @@ impl PdfDocument {
                                 text.push('\n');
                             }
                         } else if delta_x < -fs * 3.0 {
-                            // Same baseline (y_diff <= 2.0) but the
-                            // current span starts well to the LEFT of
-                            // the previous span's start — i.e., the
-                            // upstream sort handed us spans in
-                            // non-monotonic X order. Common cause: a
-                            // multi-column page whose XY-cut routing
-                            // groups column-side spans across rows so
-                            // adjacent iteration items belong to
-                            // different visual rows that happen to
-                            // share a Y band. Without a separator the
-                            // texts glue together (e.g.
-                            // `instancesinstancesinstances` from three
-                            // table-header cells in a stats grid).
-                            // Treat the backwards jump as a logical
-                            // break and emit a newline.
+                            // Same visual line, but the current span starts well to the LEFT of the
+                            // previous span's start — i.e., the upstream ordering is non-monotonic in X.
+                            // This commonly occurs with multi-column layouts or XY-cut artifacts where
+                            // spans from different visual rows fall within the same Y tolerance band
+                            // (see `same_line_threshold`).
+                            //
+                            // Without inserting a separator, these spans would be concatenated
+                            // (e.g. `instancesinstancesinstances` from adjacent table headers).
+                            // Treat this backward X jump as a logical break and emit a newline.
                             if !text.ends_with('\n') {
                                 text.push('\n');
                             }
@@ -4386,6 +4390,16 @@ impl PdfDocument {
                             // -1.75 pt and -12.75 pt sit alongside
                             // delta_x values of 56 pt and 78 pt.
                             text.push(' ');
+                        }
+                    } else if y_diff > 2.0
+                        && gap > FORWARD_GAP_K * prev.font_size.max(span.font_size).max(1.0)
+                    {
+                        // Forward-gap guard: pairs newly admitted to same-line
+                        // handling by the widened threshold get a column/field-
+                        // boundary check against FORWARD_GAP_K * max(fs). See
+                        // the constant's doc comment for calibration notes.
+                        if !text.ends_with('\n') {
+                            text.push('\n');
                         }
                     } else if Self::should_insert_space(prev, span) {
                         text.push(' ');
@@ -5199,16 +5213,27 @@ impl PdfDocument {
             .collect()
     }
 
+    /// Returns the Y tolerance (in points) for treating two spans as
+    /// belonging to the same visual line during text assembly.
+    ///
+    /// The threshold scales with the larger font size so mixed-size runs
+    /// (for example superscripts and subscripts) are not split by a fixed
+    /// absolute tolerance.
+    fn same_line_threshold(prev: &TextSpan, current: &TextSpan) -> f32 {
+        prev.font_size.max(current.font_size).max(1.0) * 0.5
+    }
+
     /// # Returns
     /// `true` if a space should be inserted between the spans
     fn should_insert_space(prev: &TextSpan, current: &TextSpan) -> bool {
         // Get font size (use the larger of the two)
         let font_size = prev.font_size.max(current.font_size).max(1.0);
 
-        // Check if spans are on the same line
-        // Y difference should be small (< 30% of font size)
+        // Same-line gate. Uses the shared threshold so the assembly
+        // loop's same-line decision and the space-insertion decision
+        // cannot disagree about where a line ends.
         let y_diff = (prev.bbox.y - current.bbox.y).abs();
-        if y_diff > font_size * 0.3 {
+        if y_diff > Self::same_line_threshold(prev, current) {
             return false; // Different lines - no space needed
         }
 
@@ -6261,8 +6286,8 @@ impl PdfDocument {
                     if let Some(prev) = prev_span {
                         let y_diff = (prev.bbox.y - span.bbox.y).abs();
 
-                        if y_diff > 2.0 {
-                            let font_size = span.font_size.max(10.0);
+                        if y_diff > Self::same_line_threshold(prev, span) {
+                            let font_size = prev.font_size.max(span.font_size).max(10.0);
                             let line_height = font_size * 1.2;
                             let num_breaks = (y_diff / line_height).round() as usize;
                             for _ in 0..num_breaks.clamp(1, 3) {
@@ -6310,7 +6335,7 @@ impl PdfDocument {
                 for span in *spans {
                     if let Some(prev) = prev_span {
                         let y_diff = (prev.bbox.y - span.bbox.y).abs();
-                        if y_diff > 2.0 {
+                        if y_diff > Self::same_line_threshold(prev, span) {
                             text.push('\n');
                         } else if Self::should_insert_space(prev, span) {
                             text.push(' ');
@@ -6339,7 +6364,7 @@ impl PdfDocument {
             for span in &spans_without_mcid {
                 if let Some(prev) = prev_span {
                     let y_diff = (prev.bbox.y - span.bbox.y).abs();
-                    if y_diff > 2.0 {
+                    if y_diff > Self::same_line_threshold(prev, span) {
                         text.push('\n');
                     } else if Self::should_insert_space(prev, span) {
                         text.push(' ');
@@ -6446,8 +6471,8 @@ impl PdfDocument {
                 for span in spans {
                     if let Some(prev) = prev_span {
                         let y_diff = (prev.bbox.y - span.bbox.y).abs();
-                        if y_diff > 2.0 {
-                            let font_size = span.font_size.max(10.0);
+                        if y_diff > Self::same_line_threshold(prev, span) {
+                            let font_size = prev.font_size.max(span.font_size).max(10.0);
                             let line_height = font_size * 1.2;
                             let num_breaks = (y_diff / line_height).round() as usize;
                             for _ in 0..num_breaks.clamp(1, 3) {
@@ -6487,7 +6512,7 @@ impl PdfDocument {
                 for span in *spans {
                     if let Some(prev) = prev_span {
                         let y_diff = (prev.bbox.y - span.bbox.y).abs();
-                        if y_diff > 2.0 {
+                        if y_diff > Self::same_line_threshold(prev, span) {
                             text.push('\n');
                         } else if Self::should_insert_space(prev, span) {
                             text.push(' ');
@@ -6521,7 +6546,7 @@ impl PdfDocument {
             for span in &spans_without_mcid {
                 if let Some(prev) = prev_span {
                     let y_diff = (prev.bbox.y - span.bbox.y).abs();
-                    if y_diff > 2.0 {
+                    if y_diff > Self::same_line_threshold(prev, span) {
                         text.push('\n');
                     } else if Self::should_insert_space(prev, span) {
                         text.push(' ');
