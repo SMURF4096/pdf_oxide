@@ -15,10 +15,10 @@ var output = args[1];
 using var editor = DocumentEditor.Open(input);
 Console.WriteLine($"Opened: {input}");
 
-editor.SetTitle("Edited Document");
+editor.Title = "Edited Document";
 Console.WriteLine("Set title: \"Edited Document\"");
 
-editor.SetAuthor("pdf_oxide");
+editor.Author = "pdf_oxide";
 Console.WriteLine("Set author: \"pdf_oxide\"");
 
 if (editor.PageCount > 1)
