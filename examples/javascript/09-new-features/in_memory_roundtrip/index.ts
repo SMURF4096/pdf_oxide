@@ -17,7 +17,7 @@ builder.letterPage()
   .done();
 
 const pdfBytes: Buffer = builder.build();
-const doc: PdfDocument = PdfDocument.openFromBuffer(pdfBytes);
+const doc = PdfDocument.openFromBuffer(pdfBytes);
 let text = "";
 for (let i = 0; i < doc.pageCount(); i++) text += doc.extractText(i);
 console.log(`  Extracted ${text.length} chars`);
