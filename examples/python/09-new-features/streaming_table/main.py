@@ -16,7 +16,13 @@ def main() -> None:
     os.makedirs(OUT_DIR, exist_ok=True)
 
     doc = pdf_oxide.DocumentBuilder().title("StreamingTable Demo")
-    page = doc.letter_page().font("Helvetica", 10).at(72, 700).heading(1, "Product Catalogue").at(72, 660)
+    page = (
+        doc.letter_page()
+        .font("Helvetica", 10)
+        .at(72, 700)
+        .heading(1, "Product Catalogue")
+        .at(72, 660)
+    )
 
     tbl = page.streaming_table(
         columns=[
