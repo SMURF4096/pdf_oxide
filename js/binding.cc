@@ -240,7 +240,7 @@ extern "C" {
   extern int   document_editor_unmark_page_for_redaction(void* handle, size_t page, int* error_code);
 
   // Form Fields
-  extern void* pdf_document_get_form_fields(void* handle, int32_t page_index, int* error_code);
+  extern void* pdf_document_get_form_fields(void* handle, int* error_code);
   extern int32_t pdf_oxide_form_field_count(const void* fields);
   extern char* pdf_oxide_form_field_get_name(const void* fields, int32_t index, int* error_code);
   extern char* pdf_oxide_form_field_get_type(const void* fields, int32_t index, int* error_code);
@@ -1569,9 +1569,8 @@ Napi::Value EditorFlattenAnnotations(const Napi::CallbackInfo& info) {
 Napi::Value GetFormFields(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   void* docHandle = info[0].As<Napi::External<void>>().Data();
-  int32_t pageIndex = info[1].As<Napi::Number>().Int32Value();
   int errorCode = 0;
-  void* fields = pdf_document_get_form_fields(docHandle, pageIndex, &errorCode);
+  void* fields = pdf_document_get_form_fields(docHandle, &errorCode);
   if (errorCode != 0) throw Napi::Error::New(env, getErrorMessage(errorCode));
   if (!fields) return Napi::Array::New(env, 0);
 
