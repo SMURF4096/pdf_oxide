@@ -15,23 +15,23 @@ def main():
     doc = PdfDocument(path)
     print(f"Opened: {path}")
 
-    for page in range(doc.page_count()):
-        # Form fields
-        fields = doc.get_form_fields(page)
-        if fields:
-            print(f"\n--- Form Fields (page {page + 1}) ---")
-            for f in fields:
-                print(
-                    f"  Name: {f.name!r:<20} Type: {f.type:<12} "
-                    f"Value: {f.value!r:<16} Required: {f.required}"
-                )
+    # Form fields are document-wide (not per page)
+    fields = doc.get_form_fields()
+    if fields:
+        print("\n--- Form Fields ---")
+        for f in fields:
+            print(
+                f"  Name: {f.name!r:<20} Type: {f.field_type():<12} "
+                f"Value: {f.value!r:<16} Required: {f.is_required()}"
+            )
 
-        # Annotations
+    # Annotations are per page
+    for page in range(doc.page_count()):
         annotations = doc.get_annotations(page)
         if annotations:
             print(f"\n--- Annotations (page {page + 1}) ---")
             for a in annotations:
-                print(f'  Type: {a.type:<14} Page: {page + 1}   Contents: "{a.contents or ""}"')
+                print(f'  Type: {a.subtype:<14} Page: {page + 1}   Contents: "{a.contents or ""}"')
 
 
 if __name__ == "__main__":
