@@ -10,7 +10,7 @@ from pdf_oxide import PdfDocument
 
 def process_pdf(path):
     doc = PdfDocument(path)
-    pages = doc.page_count
+    pages = doc.page_count()
     total_words = 0
     total_tables = 0
     for p in range(pages):

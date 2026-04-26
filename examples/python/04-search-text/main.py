@@ -15,7 +15,7 @@ def main():
     query = sys.argv[2]
     doc = PdfDocument(path)
 
-    pages = doc.page_count
+    pages = doc.page_count()
     print(f'Searching for "{query}" in {path} ({pages} pages)...\n')
 
     total = 0
