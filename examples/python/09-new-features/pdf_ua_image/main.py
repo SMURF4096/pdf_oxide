@@ -8,6 +8,7 @@ import os
 
 import pdf_oxide
 
+
 OUT_DIR = "output"
 
 WHITE_PNG = bytes([

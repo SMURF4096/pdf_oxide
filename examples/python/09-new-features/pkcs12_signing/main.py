@@ -8,6 +8,7 @@ import os
 
 import pdf_oxide
 
+
 OUT_DIR = "output"
 
 P12_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "tests", "fixtures", "test_signing.p12")
