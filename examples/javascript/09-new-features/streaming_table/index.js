@@ -31,3 +31,4 @@ const outPath = path.join(OUT_DIR, "streaming_table_rowspan.pdf");
 (await tbl.finish()).done();
 builder.save(outPath);
 console.log(`Written: ${outPath}`);
+process.exit(0);

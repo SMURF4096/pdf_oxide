@@ -46,3 +46,4 @@ try {
     console.log("  SKIP: signatures feature not compiled in.");
   } else { throw err; }
 }
+process.exit(0);

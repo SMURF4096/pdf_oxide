@@ -40,3 +40,4 @@ for (let page = 0; page < pages; page++) {
 }
 
 doc.close();
+process.exit(0);

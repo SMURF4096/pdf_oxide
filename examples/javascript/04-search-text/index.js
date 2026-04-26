@@ -39,3 +39,4 @@ for (let i = 0; i < pages; i++) {
 
 doc.close();
 console.log(`Found ${total} total matches across ${pagesWithHits} pages.`);
+process.exit(0);

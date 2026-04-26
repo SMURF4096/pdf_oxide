@@ -32,3 +32,4 @@ builder.a4Page()
 const outPath = path.join(OUT_DIR, "pdf_ua_accessible_images.pdf");
 builder.save(outPath);
 console.log(`Written: ${outPath}`);
+process.exit(0);

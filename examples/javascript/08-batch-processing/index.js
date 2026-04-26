@@ -48,4 +48,4 @@ async function main() {
   console.log(`\nDone: ${paths.length} files processed in ${elapsed}s`);
 }
 
-main();
+main().then(() => process.exit(0));

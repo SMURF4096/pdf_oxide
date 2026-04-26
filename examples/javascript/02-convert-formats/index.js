@@ -32,3 +32,4 @@ for (let i = 0; i < pages; i++) {
 
 doc.close();
 console.log("Done. Files written to output/");
+process.exit(0);

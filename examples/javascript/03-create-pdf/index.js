@@ -44,3 +44,4 @@ builder3.save("output/from_text.pdf");
 console.log("Saved: output/from_text.pdf");
 
 console.log("Done. 3 PDFs created in output/");
+process.exit(0);

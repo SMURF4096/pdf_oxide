@@ -27,3 +27,4 @@ if (!text.includes("In-Memory")) throw new Error("round-trip text missing");
 const outPath = path.join(OUT_DIR, "in_memory_roundtrip.pdf");
 fs.writeFileSync(outPath, pdfBytes);
 console.log(`Written: ${outPath}`);
+process.exit(0);

@@ -44,3 +44,4 @@ try {
     throw err;
   }
 }
+process.exit(0);

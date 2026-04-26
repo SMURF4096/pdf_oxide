@@ -45,3 +45,4 @@ tables.forEach((t, i) => {
 });
 
 doc.close();
+process.exit(0);

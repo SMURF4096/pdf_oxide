@@ -21,3 +21,4 @@ for (let i = 0; i < pages; i++) {
 }
 
 doc.close();
+process.exit(0);
