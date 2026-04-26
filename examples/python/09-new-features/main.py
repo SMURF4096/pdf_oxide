@@ -19,20 +19,83 @@ import os
 
 import pdf_oxide
 
+
 OUT_DIR = "output_new_features"
 
 # Minimal 1×1 white PNG (no external file needed).
-WHITE_PNG = bytes([
-    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
-    0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-    0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
-    0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41,
-    0x54, 0x78, 0x9C, 0x63, 0xF8, 0xFF, 0xFF, 0x3F,
-    0x00, 0x05, 0xFE, 0x02, 0xFE, 0x0D, 0xEF, 0x46,
-    0xB8, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
-    0x44, 0xAE, 0x42, 0x60, 0x82,
-])
+WHITE_PNG = bytes(
+    [
+        0x89,
+        0x50,
+        0x4E,
+        0x47,
+        0x0D,
+        0x0A,
+        0x1A,
+        0x0A,
+        0x00,
+        0x00,
+        0x00,
+        0x0D,
+        0x49,
+        0x48,
+        0x44,
+        0x52,
+        0x00,
+        0x00,
+        0x00,
+        0x01,
+        0x00,
+        0x00,
+        0x00,
+        0x01,
+        0x08,
+        0x02,
+        0x00,
+        0x00,
+        0x00,
+        0x90,
+        0x77,
+        0x53,
+        0xDE,
+        0x00,
+        0x00,
+        0x00,
+        0x0C,
+        0x49,
+        0x44,
+        0x41,
+        0x54,
+        0x78,
+        0x9C,
+        0x63,
+        0xF8,
+        0xFF,
+        0xFF,
+        0x3F,
+        0x00,
+        0x05,
+        0xFE,
+        0x02,
+        0xFE,
+        0x0D,
+        0xEF,
+        0x46,
+        0xB8,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x49,
+        0x45,
+        0x4E,
+        0x44,
+        0xAE,
+        0x42,
+        0x60,
+        0x82,
+    ]
+)
 
 
 def main() -> None:
@@ -50,23 +113,30 @@ def main() -> None:
 
 # ── 1. StreamingTable with rowspan ────────────────────────────────────────────
 
+
 def feature_streaming_table_rowspan() -> None:
     print("Building streaming table with rowspan...")
 
     doc = pdf_oxide.DocumentBuilder().title("StreamingTable Demo")
-    page = doc.letter_page().font("Helvetica", 10).at(72, 700).heading(1, "Product Catalogue").at(72, 660)
+    page = (
+        doc.letter_page()
+        .font("Helvetica", 10)
+        .at(72, 700)
+        .heading(1, "Product Catalogue")
+        .at(72, 660)
+    )
 
     tbl = page.streaming_table(
         columns=[
             pdf_oxide.Column("Category", width=120),
-            pdf_oxide.Column("Item",     width=160),
-            pdf_oxide.Column("Notes",    width=150, align=pdf_oxide.Align.RIGHT),
+            pdf_oxide.Column("Item", width=160),
+            pdf_oxide.Column("Notes", width=150, align=pdf_oxide.Align.RIGHT),
         ],
         repeat_header=True,
         max_rowspan=2,
     )
-    tbl.push_row_span([("Fruits", 2), ("Apple", 1),   ("crisp",  1)])  # Fruits spans 2 rows
-    tbl.push_row_span([("",       1), ("Banana", 1),  ("sweet",  1)])  # continuation
+    tbl.push_row_span([("Fruits", 2), ("Apple", 1), ("crisp", 1)])  # Fruits spans 2 rows
+    tbl.push_row_span([("", 1), ("Banana", 1), ("sweet", 1)])  # continuation
     tbl.push_row_span([("Vegetables", 1), ("Carrot", 1), ("earthy", 1)])
 
     path = os.path.join(OUT_DIR, "streaming_table_rowspan.pdf")
@@ -76,14 +146,12 @@ def feature_streaming_table_rowspan() -> None:
 
 # ── 2. PDF/UA accessible image ────────────────────────────────────────────────
 
+
 def feature_pdf_ua_accessible_image() -> None:
     print("Building PDF/UA document with accessible image...")
 
     doc = (
-        pdf_oxide.DocumentBuilder()
-        .title("Accessible PDF Demo")
-        .tagged_pdf_ua1()
-        .language("en-US")
+        pdf_oxide.DocumentBuilder().title("Accessible PDF Demo").tagged_pdf_ua1().language("en-US")
     )
     page = (
         doc.a4_page()
@@ -93,8 +161,7 @@ def feature_pdf_ua_accessible_image() -> None:
         .at(72, 720)
         .paragraph("The image below has descriptive alt text for screen readers.")
         # PDF/UA accessible image: alt text for screen readers
-        .image_with_alt(WHITE_PNG, 72, 580, 100, 100,
-                        "A white placeholder image for demonstration")
+        .image_with_alt(WHITE_PNG, 72, 580, 100, 100, "A white placeholder image for demonstration")
         .at(72, 545)
         .paragraph("The logo below is purely decorative and marked as an artifact.")
         # Decorative image: marked as /Artifact, no alt text
@@ -107,6 +174,7 @@ def feature_pdf_ua_accessible_image() -> None:
 
 
 # ── 3. build() / from_bytes round-trip ────────────────────────────────────────
+
 
 def feature_save_to_bytes_roundtrip() -> None:
     print("Demonstrating in-memory round-trip (build + PdfDocument.from_bytes)...")
@@ -138,6 +206,7 @@ def feature_save_to_bytes_roundtrip() -> None:
 
 # ── 4. RFC 3161 Timestamp parsing ─────────────────────────────────────────────
 
+
 def feature_timestamp_parsing() -> None:
     print("Parsing RFC 3161 timestamp...")
     bare_tst_info = bytes.fromhex(
@@ -162,6 +231,7 @@ def feature_timestamp_parsing() -> None:
 
 # ── 5. TsaClient construction ─────────────────────────────────────────────────
 
+
 def feature_tsa_client_construction() -> None:
     print("Constructing TsaClient (offline, no network call)...")
     try:
@@ -179,12 +249,18 @@ def feature_tsa_client_construction() -> None:
 
 # ── 6. PKCS#12 signing ────────────────────────────────────────────────────────
 
+
 def feature_pkcs12_signing() -> None:
     print("Signing PDF with PKCS#12 certificate...")
 
     p12_path = os.path.join(
         os.path.dirname(__file__),
-        "..", "..", "..", "tests", "fixtures", "test_signing.p12",
+        "..",
+        "..",
+        "..",
+        "tests",
+        "fixtures",
+        "test_signing.p12",
     )
     if not os.path.exists(p12_path):
         print(f"  SKIP: {p12_path} not found")
@@ -210,9 +286,7 @@ def feature_pkcs12_signing() -> None:
             .build()
         )
 
-        signed: bytes = pdf_oxide.sign_pdf_bytes(
-            pdf_bytes, cert, reason="Approved", location="HQ"
-        )
+        signed: bytes = pdf_oxide.sign_pdf_bytes(pdf_bytes, cert, reason="Approved", location="HQ")
 
         path = os.path.join(OUT_DIR, "signed_document.pdf")
         with open(path, "wb") as f:
