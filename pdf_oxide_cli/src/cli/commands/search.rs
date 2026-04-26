@@ -9,7 +9,7 @@ pub fn run(
     password: Option<&str>,
     json: bool,
 ) -> pdf_oxide::Result<()> {
-    let mut doc = super::open_doc(file, password)?;
+    let doc = super::open_doc(file, password)?;
     let page_count = doc.page_count()?;
 
     let selected_pages = if let Some(ranges) = pages {
@@ -30,7 +30,7 @@ pub fn run(
         ..Default::default()
     };
 
-    let mut results = TextSearcher::search(&mut doc, pattern, &options)?;
+    let mut results = TextSearcher::search(&doc, pattern, &options)?;
 
     // Filter to only the requested pages (page_range is a contiguous min..max
     // but the user may have specified non-contiguous pages like "1,3,7")

@@ -43,7 +43,7 @@ impl HierarchicalExtractor {
     /// - Processes MCID (Marked Content ID) references per §14.7.4
     /// - Generates synthetic structure using geometric analysis for untagged PDFs
     pub fn extract_page(
-        document: &mut PdfDocument,
+        document: &PdfDocument,
         page_index: usize,
     ) -> Result<Option<StructureElement>> {
         // Validate page index
@@ -87,7 +87,7 @@ impl HierarchicalExtractor {
     ///
     /// `Ok(Some(structure))` with synthetic hierarchy, or `Ok(None)` if page is empty
     pub fn generate_synthetic_structure(
-        document: &mut PdfDocument,
+        document: &PdfDocument,
         page_index: usize,
     ) -> Result<Option<StructureElement>> {
         use crate::elements::{ContentElement, TextContent};
@@ -152,7 +152,7 @@ impl HierarchicalExtractor {
     /// - ISO 32000-1:2008, Section 14.7.4 - Marked Content Identification
     /// - MCID defined in property dictionary of BDC operator
     pub fn extract_content_with_mcids(
-        _document: &mut PdfDocument,
+        _document: &PdfDocument,
         _page_index: usize,
     ) -> Result<HashMap<u32, Vec<ContentElement>>> {
         // This will track content by MCID when available

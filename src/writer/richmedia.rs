@@ -150,7 +150,7 @@ impl RichMediaAsset {
         let mut dict = HashMap::new();
 
         // Name
-        dict.insert("Name".to_string(), Object::String(self.name.as_bytes().to_vec()));
+        dict.insert("Name".to_string(), Object::text_string(&self.name));
 
         // EF - embedded file reference (if provided)
         if let Some(ref_obj) = file_spec_ref {
@@ -161,7 +161,7 @@ impl RichMediaAsset {
 
         // Mime type
         if let Some(ref mime) = self.mime_type {
-            dict.insert("Subtype".to_string(), Object::String(mime.as_bytes().to_vec()));
+            dict.insert("Subtype".to_string(), Object::text_string(mime));
         }
 
         dict
@@ -220,7 +220,7 @@ impl RichMediaContent {
             .iter()
             .flat_map(|a| {
                 vec![
-                    Object::String(a.name.as_bytes().to_vec()),
+                    Object::text_string(&a.name),
                     Object::Dictionary(a.build(None)),
                 ]
             })
@@ -236,7 +236,7 @@ impl RichMediaContent {
             config.insert("Type".to_string(), Object::Name("RichMediaConfiguration".to_string()));
             config.insert("Subtype".to_string(), Object::Name("Video".to_string()));
             if let Some(ref name) = self.configuration_name {
-                config.insert("Name".to_string(), Object::String(name.as_bytes().to_vec()));
+                config.insert("Name".to_string(), Object::text_string(name));
             }
             dict.insert(
                 "Configurations".to_string(),
@@ -480,7 +480,7 @@ impl RichMediaAnnotation {
 
         // Title
         if let Some(ref title) = self.title {
-            dict.insert("T".to_string(), Object::String(title.as_bytes().to_vec()));
+            dict.insert("T".to_string(), Object::text_string(title));
         }
 
         // NM - unique name
@@ -500,7 +500,7 @@ impl RichMediaAnnotation {
 
         // Contents
         if let Some(ref contents) = self.contents {
-            dict.insert("Contents".to_string(), Object::String(contents.as_bytes().to_vec()));
+            dict.insert("Contents".to_string(), Object::text_string(contents));
         }
 
         // RichMediaContent - embedded content dictionary

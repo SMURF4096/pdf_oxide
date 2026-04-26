@@ -2320,6 +2320,17 @@ impl FontInfo {
                         }
                     }
                 }
+            } else {
+                // Standard-14 fonts ship without /Widths arrays; per PDF
+                // spec (ISO 32000-1 §9.6.2.2) readers must use built-in
+                // metrics. get_standard_font_width returns Some(w) for
+                // Helvetica/Times/Courier variants and None otherwise,
+                // so non-standard fonts retain the default_width fallback.
+                for byte_code in 0..256u16 {
+                    if let Some(w) = self.get_standard_font_width(byte_code) {
+                        tbl[byte_code as usize] = w;
+                    }
+                }
             }
             tbl
         })
@@ -7279,5 +7290,51 @@ mod tests {
 
         // Unknown font → should fall back to default_width (500)
         assert_eq!(font.get_glyph_width(65), 500.0);
+    }
+
+    /// Pins the standard-14 fallback path in `get_byte_to_width_table`:
+    /// when `widths` is `None`, the table must be populated from
+    /// `get_standard_font_width` (PDF spec Appendix D metrics), not
+    /// from `default_width`. Also pins the fallback-within-the-fallback
+    /// for byte codes that don't appear in the standard-14 table —
+    /// those still use `default_width`.
+    #[test]
+    fn fallback_uses_standard_14_metrics_when_widths_absent() {
+        let font = FontInfo {
+            base_font: "Helvetica".to_string(),
+            subtype: "Type1".to_string(),
+            encoding: Encoding::Standard("WinAnsiEncoding".to_string()),
+            to_unicode: None,
+            font_weight: Some(400),
+            flags: None,
+            stem_v: None,
+            embedded_font_data: None,
+            truetype_cmap: std::sync::OnceLock::new(),
+            is_truetype_font: false,
+            widths: None,
+            first_char: None,
+            last_char: None,
+            default_width: 1000.0,
+            cid_to_gid_map: None,
+            cid_system_info: None,
+            cid_font_type: None,
+            cid_widths: None,
+            cid_default_width: 1000.0,
+            cff_gid_map: None,
+            multi_char_map: HashMap::new(),
+            byte_to_char_table: std::sync::OnceLock::new(),
+            byte_to_width_table: std::sync::OnceLock::new(),
+        };
+
+        let table = font.get_byte_to_width_table();
+
+        // Standard-14 Helvetica metrics (PDF spec Appendix D).
+        assert_eq!(table[32], 278.0, "space");
+        assert_eq!(table[48], 556.0, "digit '0'");
+        assert_eq!(table[65], 667.0, "'A'");
+        assert_eq!(table[87], 944.0, "'W'");
+
+        // Byte codes not in the standard-14 table fall back to default_width.
+        assert_eq!(table[0], 1000.0, "NUL -> default_width fallback");
     }
 }

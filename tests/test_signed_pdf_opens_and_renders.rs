@@ -1,4 +1,4 @@
-//! Regression test for issue #395 — reported by u/gevorgter on GitHub
+//! Tests that a PDF containing digital signatures opens and renders correctly.
 //! on 2026-04-21 (originally as a Reddit comment, same day):
 //!
 //! > This program in c# blows up with error:
@@ -17,17 +17,17 @@
 use pdf_oxide::document::PdfDocument;
 
 #[test]
-fn issue_395_user_provided_pdf_opens() {
+fn signed_pdf_opens_without_error() {
     let path = "tests/fixtures/issue_regressions/issue_395_render_signature_exception.pdf";
     let bytes = std::fs::read(path).expect("fixture missing");
-    let mut doc = PdfDocument::from_bytes(bytes).expect("open");
+    let doc = PdfDocument::from_bytes(bytes).expect("open");
     let count = doc.page_count().expect("page count");
     assert!(count > 0, "expected at least one page");
 }
 
 #[cfg(feature = "rendering")]
 #[test]
-fn issue_395_renders_page_0_without_error() {
+fn signed_pdf_renders_first_page_without_error() {
     use pdf_oxide::rendering::{self, RenderOptions};
 
     let path = "tests/fixtures/issue_regressions/issue_395_render_signature_exception.pdf";

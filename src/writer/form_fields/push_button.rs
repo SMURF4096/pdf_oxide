@@ -287,7 +287,7 @@ impl PushButtonWidget {
             match action {
                 FormAction::SubmitForm { url, flags } => {
                     dict.insert("S".to_string(), Object::Name("SubmitForm".to_string()));
-                    dict.insert("F".to_string(), Object::String(url.as_bytes().to_vec()));
+                    dict.insert("F".to_string(), Object::text_string(url));
                     let flag_bits = flags.to_bits();
                     if flag_bits != 0 {
                         dict.insert("Flags".to_string(), Object::Integer(flag_bits));
@@ -298,11 +298,11 @@ impl PushButtonWidget {
                 },
                 FormAction::JavaScript { script } => {
                     dict.insert("S".to_string(), Object::Name("JavaScript".to_string()));
-                    dict.insert("JS".to_string(), Object::String(script.as_bytes().to_vec()));
+                    dict.insert("JS".to_string(), Object::text_string(script));
                 },
                 FormAction::Uri { uri } => {
                     dict.insert("S".to_string(), Object::Name("URI".to_string()));
-                    dict.insert("URI".to_string(), Object::String(uri.as_bytes().to_vec()));
+                    dict.insert("URI".to_string(), Object::text_string(uri));
                 },
                 FormAction::GoToNamed { name } => {
                     dict.insert("S".to_string(), Object::Name("GoToR".to_string()));
@@ -350,7 +350,7 @@ impl FormFieldWidget for PushButtonWidget {
         dict.insert("FT".to_string(), Object::Name("Btn".to_string()));
 
         // Field name
-        dict.insert("T".to_string(), Object::String(self.name.as_bytes().to_vec()));
+        dict.insert("T".to_string(), Object::text_string(&self.name));
 
         // Field flags - must include PUSHBUTTON
         dict.insert("Ff".to_string(), Object::Integer(self.flags.bits() as i64));
@@ -389,7 +389,7 @@ impl FormFieldWidget for PushButtonWidget {
 
         // Tooltip
         if let Some(ref tip) = self.tooltip {
-            dict.insert("TU".to_string(), Object::String(tip.as_bytes().to_vec()));
+            dict.insert("TU".to_string(), Object::text_string(tip));
         }
 
         // Border style
@@ -427,7 +427,7 @@ impl FormFieldWidget for PushButtonWidget {
 
         // Caption
         if !self.caption.is_empty() {
-            mk.insert("CA".to_string(), Object::String(self.caption.as_bytes().to_vec()));
+            mk.insert("CA".to_string(), Object::text_string(&self.caption));
         }
 
         if !mk.is_empty() {

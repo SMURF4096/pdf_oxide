@@ -13,8 +13,8 @@ fn write_temp_pdf(data: &[u8], name: &str) -> std::path::PathBuf {
 
 #[test]
 fn test_extraction_identical_regardless_of_stream_size() {
-    let mut doc1 = PdfDocument::open("tests/fixtures/simple.pdf").unwrap();
-    let mut doc2 = PdfDocument::open("tests/fixtures/simple.pdf").unwrap();
+    let doc1 = PdfDocument::open("tests/fixtures/simple.pdf").unwrap();
+    let doc2 = PdfDocument::open("tests/fixtures/simple.pdf").unwrap();
 
     let pages = doc1.page_count().unwrap();
     for p in 0..pages {
@@ -66,7 +66,7 @@ fn test_large_stream_with_no_text_extracts_empty() {
     pdf.extend_from_slice(trailer.as_bytes());
 
     let path = write_temp_pdf(&pdf, "large_no_text.pdf");
-    let mut doc = PdfDocument::open(&path).expect("Should open");
+    let doc = PdfDocument::open(&path).expect("Should open");
     let text = doc.extract_text(0).unwrap();
     assert!(
         text.trim().is_empty(),
@@ -77,7 +77,7 @@ fn test_large_stream_with_no_text_extracts_empty() {
 
 #[test]
 fn test_repeated_extraction_deterministic() {
-    let mut doc = PdfDocument::open("tests/fixtures/outline.pdf").unwrap();
+    let doc = PdfDocument::open("tests/fixtures/outline.pdf").unwrap();
     let t1 = doc.extract_text(0).unwrap();
     let t2 = doc.extract_text(0).unwrap();
     assert_eq!(t1, t2, "Repeated extraction of page 0 should be identical");
@@ -85,7 +85,7 @@ fn test_repeated_extraction_deterministic() {
 
 #[test]
 fn test_all_pages_twice_deterministic() {
-    let mut doc = PdfDocument::open("tests/fixtures/outline.pdf").unwrap();
+    let doc = PdfDocument::open("tests/fixtures/outline.pdf").unwrap();
     let pages = doc.page_count().unwrap();
 
     let mut first_pass: Vec<String> = Vec::new();
@@ -147,7 +147,7 @@ fn test_text_page_not_skipped() {
     pdf.extend_from_slice(trailer.as_bytes());
 
     let path = write_temp_pdf(&pdf, "text_not_skipped.pdf");
-    let mut doc = PdfDocument::open(&path).expect("Should open");
+    let doc = PdfDocument::open(&path).expect("Should open");
     let text = doc.extract_text(0).unwrap();
     assert!(
         text.contains("NotSkipped"),
@@ -160,7 +160,7 @@ fn test_text_page_not_skipped() {
 fn test_global_cache_populated_after_extraction() {
     clear_global_font_cache();
 
-    let mut doc = PdfDocument::open("tests/fixtures/simple.pdf").unwrap();
+    let doc = PdfDocument::open("tests/fixtures/simple.pdf").unwrap();
     let _text = doc.extract_text(0).unwrap();
 
     let (size, _capacity) = global_font_cache_stats();
@@ -169,7 +169,7 @@ fn test_global_cache_populated_after_extraction() {
 
 #[test]
 fn test_global_cache_clear_works() {
-    let mut doc = PdfDocument::open("tests/fixtures/simple.pdf").unwrap();
+    let doc = PdfDocument::open("tests/fixtures/simple.pdf").unwrap();
     let _text = doc.extract_text(0).unwrap();
     drop(doc);
 
@@ -183,7 +183,7 @@ fn test_global_cache_capacity_limit() {
     clear_global_font_cache();
     set_global_font_cache_capacity(1);
 
-    let mut doc = PdfDocument::open("tests/fixtures/outline.pdf").unwrap();
+    let doc = PdfDocument::open("tests/fixtures/outline.pdf").unwrap();
     let pages = doc.page_count().unwrap();
     for p in 0..pages {
         let _text = doc.extract_text(p).unwrap();
@@ -205,7 +205,7 @@ fn test_three_independent_runs_identical() {
     let mut results: Vec<Vec<String>> = Vec::new();
 
     for _ in 0..3 {
-        let mut doc = PdfDocument::open("tests/fixtures/simple.pdf").unwrap();
+        let doc = PdfDocument::open("tests/fixtures/simple.pdf").unwrap();
         let pages = doc.page_count().unwrap();
         let mut page_texts = Vec::new();
         for p in 0..pages {
@@ -227,8 +227,8 @@ fn test_file_vs_bytes_extraction_identical() {
     let path = "tests/fixtures/simple.pdf";
     let data = std::fs::read(path).unwrap();
 
-    let mut doc_file = PdfDocument::open(path).unwrap();
-    let mut doc_bytes = PdfDocument::from_bytes(data).unwrap();
+    let doc_file = PdfDocument::open(path).unwrap();
+    let doc_bytes = PdfDocument::from_bytes(data).unwrap();
 
     let pages = doc_file.page_count().unwrap();
     for p in 0..pages {

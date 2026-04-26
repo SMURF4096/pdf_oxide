@@ -195,6 +195,9 @@ mod svg_conversion_tests {
             stroke_width: 2.0,
             line_cap: LineCap::Butt,
             line_join: LineJoin::Miter,
+            dash_pattern: None,
+            matrix: None,
+            artifact_type: None,
             reading_order: None,
         }
     }
@@ -257,6 +260,9 @@ mod svg_conversion_tests {
             stroke_width: 1.0,
             line_cap: LineCap::Butt,
             line_join: LineJoin::Miter,
+            dash_pattern: None,
+            matrix: None,
+            artifact_type: None,
             reading_order: None,
         };
 
@@ -286,6 +292,9 @@ mod svg_conversion_tests {
             stroke_width: 1.0,
             line_cap: LineCap::Butt,
             line_join: LineJoin::Miter,
+            dash_pattern: None,
+            matrix: None,
+            artifact_type: None,
             reading_order: None,
         };
 
@@ -310,6 +319,9 @@ mod svg_conversion_tests {
             stroke_width: 10.0,
             line_cap: LineCap::Round,
             line_join: LineJoin::Miter,
+            dash_pattern: None,
+            matrix: None,
+            artifact_type: None,
             reading_order: None,
         };
 
@@ -330,6 +342,9 @@ mod svg_conversion_tests {
             stroke_width: 5.0,
             line_cap: LineCap::Butt,
             line_join: LineJoin::Bevel,
+            dash_pattern: None,
+            matrix: None,
+            artifact_type: None,
             reading_order: None,
         };
 
@@ -450,7 +465,7 @@ mod integration_tests {
             return;
         }
 
-        let mut doc = PdfDocument::open(&path).expect("Failed to open PDF");
+        let doc = PdfDocument::open(&path).expect("Failed to open PDF");
         let paths = doc.extract_paths(0).expect("Failed to extract paths");
 
         // Should find some paths
@@ -471,7 +486,7 @@ mod integration_tests {
             return;
         }
 
-        let mut doc = PdfDocument::open(&path).expect("Failed to open PDF");
+        let doc = PdfDocument::open(&path).expect("Failed to open PDF");
 
         // Extract only paths in a specific region
         let region = Rect::new(0.0, 0.0, 300.0, 300.0);
@@ -503,7 +518,7 @@ mod integration_tests {
             let path = Path::new(pdf_path);
             if path.exists() {
                 let result = PdfDocument::open(path);
-                if let Ok(mut doc) = result {
+                if let Ok(doc) = result {
                     if let Ok(paths) = doc.extract_paths(0) {
                         // Just verify we can call the API without crashing
                         eprintln!("Extracted {} paths from {:?}", paths.len(), path);

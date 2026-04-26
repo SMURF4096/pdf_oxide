@@ -3,6 +3,7 @@
 //! This module provides the `PathContent` type for representing
 //! vector graphics in PDFs.
 
+use crate::extractors::text::ArtifactType;
 use crate::geometry::Rect;
 use crate::layout::Color;
 
@@ -25,8 +26,28 @@ pub struct PathContent {
     pub line_cap: LineCap,
     /// Line join style
     pub line_join: LineJoin,
+    /// Optional dash pattern: `Some((dashes, phase))` emits a
+    /// `[dashes...] phase d` operator before stroking. `dashes` is on/
+    /// off lengths in points (e.g. `[3.0, 2.0]` = dash 3 pt, gap 2 pt,
+    /// repeating); `phase` is the starting offset. `None` leaves the
+    /// line solid.
+    #[serde(default)]
+    pub dash_pattern: Option<(Vec<f32>, f32)>,
+    /// Optional 2D affine transform in PDF row order `[a b c d e f]`.
+    /// When set, the path is wrapped in `q ... cm ... Q` on emission
+    /// so graphics-state stays scoped. Populated by
+    /// `FluentPageBuilder::{rotated, scaled, translated, with_transform}`
+    /// closures — v0.3.39 (text-only) extended here to cover paths.
+    /// #393 Bundle A-2 follow-up.
+    #[serde(default)]
+    pub matrix: Option<[f32; 6]>,
     /// Reading order index
     pub reading_order: Option<usize>,
+    /// When set, this path is wrapped in `/Artifact <</Type /T>>  BDC … EMC`
+    /// markers so accessibility tools can skip it. Useful for decorative
+    /// separator lines (footnote rules, header/footer rules).
+    #[serde(skip)]
+    pub artifact_type: Option<ArtifactType>,
 }
 
 impl PathContent {
@@ -40,7 +61,10 @@ impl PathContent {
             stroke_width: 1.0,
             line_cap: LineCap::Butt,
             line_join: LineJoin::Miter,
+            dash_pattern: None,
+            matrix: None,
             reading_order: None,
+            artifact_type: None,
         }
     }
 
@@ -55,7 +79,10 @@ impl PathContent {
             stroke_width: 1.0,
             line_cap: LineCap::Butt,
             line_join: LineJoin::Miter,
+            dash_pattern: None,
+            matrix: None,
             reading_order: None,
+            artifact_type: None,
         }
     }
 
@@ -366,7 +393,10 @@ impl Default for PathContent {
             stroke_width: 1.0,
             line_cap: LineCap::Butt,
             line_join: LineJoin::Miter,
+            dash_pattern: None,
+            matrix: None,
             reading_order: None,
+            artifact_type: None,
         }
     }
 }

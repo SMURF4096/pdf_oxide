@@ -5,10 +5,10 @@
 
 use super::acroform::AcroFormBuilder;
 use super::annotation_builder::{AnnotationBuilder, LinkAnnotation};
-use super::content_stream::ContentStreamBuilder;
+use super::content_stream::{ContentStreamBuilder, StructElemRecord};
 use super::form_fields::{
     CheckboxWidget, ComboBoxWidget, FormFieldEntry, ListBoxWidget, PushButtonWidget,
-    RadioButtonGroup, TextFieldWidget,
+    RadioButtonGroup, SignatureWidget, TextFieldWidget,
 };
 use super::freetext::FreeTextAnnotation;
 use super::ink::InkAnnotation;
@@ -46,6 +46,20 @@ pub struct PdfWriterConfig {
     pub creator: Option<String>,
     /// Whether to compress streams
     pub compress: bool,
+    /// Document-level `/OpenAction` JavaScript — runs when the PDF is
+    /// opened. None → no action dict in the catalog.
+    pub open_action_script: Option<String>,
+    /// When true, emit PDF/UA-1 tagged-PDF catalog entries:
+    /// `/MarkInfo << /Marked true >>`, `/StructTreeRoot`, `/Lang`,
+    /// `/ViewerPreferences << /DisplayDocTitle true >>`. F-1/F-2.
+    pub tagged: bool,
+    /// Natural language for the document catalog `/Lang` entry (e.g. "en-US").
+    /// Emitted only when `tagged` is true. F-2.
+    pub language: Option<String>,
+    /// Custom-type → standard-type role mappings. Emitted in the
+    /// StructTreeRoot `/RoleMap` dict when non-empty and `tagged` is true.
+    /// Each entry is `(custom_tag, standard_tag)`. F-4.
+    pub role_map: Vec<(String, String)>,
 }
 
 impl Default for PdfWriterConfig {
@@ -58,6 +72,10 @@ impl Default for PdfWriterConfig {
             keywords: None,
             creator: Some("pdf_oxide".to_string()),
             compress: false, // Disable compression for now (requires flate2)
+            open_action_script: None,
+            tagged: false,
+            language: None,
+            role_map: Vec::new(),
         }
     }
 }
@@ -87,6 +105,18 @@ impl PdfWriterConfig {
     /// using FlateDecode (zlib/deflate) to reduce file size.
     pub fn with_compress(mut self, compress: bool) -> Self {
         self.compress = compress;
+        self
+    }
+
+    /// Enable PDF/UA-1 tagged PDF mode.
+    pub fn tagged_pdf_ua1(mut self) -> Self {
+        self.tagged = true;
+        self
+    }
+
+    /// Set the document natural language tag (e.g. `"en-US"`).
+    pub fn with_language(mut self, lang: impl Into<String>) -> Self {
+        self.language = Some(lang.into());
         self
     }
 }
@@ -258,6 +288,59 @@ impl<'a> PageBuilder<'a> {
         let page = &mut self.writer.pages[self.page_index];
         page.content_builder.end_text();
         page.content_builder.rect(x, y, width, height).stroke();
+        self
+    }
+
+    /// Fill a rectangle with the given RGB color, then restore the fill color to black.
+    pub fn fill_rect_colored(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+    ) -> &mut Self {
+        let page = &mut self.writer.pages[self.page_index];
+        page.content_builder.end_text();
+        page.content_builder
+            .set_fill_color(r, g, b)
+            .rect(x, y, width, height)
+            .fill()
+            .set_fill_color(0.0, 0.0, 0.0);
+        self
+    }
+
+    /// Set the current fill (non-stroking) color. Affects subsequent text and fill ops.
+    pub fn set_fill_color(&mut self, r: f32, g: f32, b: f32) -> &mut Self {
+        let page = &mut self.writer.pages[self.page_index];
+        page.content_builder.end_text();
+        page.content_builder.set_fill_color(r, g, b);
+        self
+    }
+
+    /// Draw a horizontal line segment with the given RGB stroke color and thickness.
+    pub fn draw_hline_colored(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        thickness: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+    ) -> &mut Self {
+        let page = &mut self.writer.pages[self.page_index];
+        page.content_builder.end_text();
+        page.content_builder
+            .set_stroke_color(r, g, b)
+            .set_line_width(thickness)
+            .move_to(x, y)
+            .line_to(x + width, y)
+            .stroke()
+            .set_stroke_color(0.0, 0.0, 0.0)
+            .set_line_width(1.0);
         self
     }
 
@@ -752,6 +835,28 @@ impl<'a> PageBuilder<'a> {
         self.add_redact(RedactAnnotation::new(rect).with_overlay_text(overlay_text))
     }
 
+    /// Set the page's `/Tabs` entry, declaring the tab-navigation
+    /// order for form fields and annotations. `'R'` = row order (top-
+    /// to-bottom, left-to-right), `'C'` = column order (left-to-right,
+    /// top-to-bottom), `'S'` = structure order (requires tagged PDF —
+    /// only meaningful once Bundle F lands). #393 Bundle D-4.
+    pub fn set_tab_order(&mut self, order: char) -> &mut Self {
+        self.writer.pages[self.page_index].tab_order = Some(order);
+        self
+    }
+
+    /// Set a JavaScript action to run when this page is opened (`/AA /O`).
+    pub fn set_page_open_script(&mut self, script: impl Into<String>) -> &mut Self {
+        self.writer.pages[self.page_index].page_open_script = Some(script.into());
+        self
+    }
+
+    /// Set a JavaScript action to run when this page is closed (`/AA /C`).
+    pub fn set_page_close_script(&mut self, script: impl Into<String>) -> &mut Self {
+        self.writer.pages[self.page_index].page_close_script = Some(script.into());
+        self
+    }
+
     // ===== Form Field Methods =====
 
     /// Add a text field to the page.
@@ -859,6 +964,21 @@ impl<'a> PageBuilder<'a> {
         self
     }
 
+    /// Add an unsigned signature placeholder field to the page.
+    pub fn add_signature_field(&mut self, widget: SignatureWidget) -> &mut Self {
+        let page_ref = ObjectRef::new(0, 0);
+        let entry = widget.build_entry(page_ref);
+        let page = &mut self.writer.pages[self.page_index];
+        page.form_fields.push(entry);
+        self.writer.has_signature_fields = true;
+        self
+    }
+
+    /// Convenience method: add an unsigned signature placeholder by name and rect.
+    pub fn signature_field(&mut self, name: impl Into<String>, rect: Rect) -> &mut Self {
+        self.add_signature_field(SignatureWidget::new(name, rect))
+    }
+
     // ===== Generic Annotation Method =====
 
     /// Add any annotation type to the page.
@@ -905,6 +1025,14 @@ struct PageData {
     content_builder: ContentStreamBuilder,
     annotations: AnnotationBuilder,
     form_fields: Vec<FormFieldEntry>,
+    /// Per-page `/Tabs` entry: None => reader default. `Some(c)` emits
+    /// `/Tabs /c` where `c` is one of R (row), C (column), S (structure).
+    /// #393 Bundle D-4.
+    tab_order: Option<char>,
+    /// JavaScript to run when the page is navigated to (`/AA /O`).
+    page_open_script: Option<String>,
+    /// JavaScript to run when the page is navigated away from (`/AA /C`).
+    page_close_script: Option<String>,
 }
 
 /// PDF document writer.
@@ -944,6 +1072,17 @@ pub struct PdfWriter {
     next_embedded_font_id: u32,
     /// AcroForm builder for interactive forms
     acroform: Option<AcroFormBuilder>,
+    /// Set to true when at least one SignatureWidget is added; triggers
+    /// SigFlags bit 1 (SignaturesExist) in the AcroForm dictionary.
+    has_signature_fields: bool,
+    /// Document outline (bookmarks). When set, `finish()` builds the
+    /// outline tree against the emitted page refs and links it as
+    /// `/Outlines` on the catalog. #393 Bundle B-1.
+    outline: Option<super::outline_builder::OutlineBuilder>,
+    /// Page labels (Roman / Arabic / etc. numbering ranges). When set,
+    /// `finish()` emits the built number-tree and links it as
+    /// `/PageLabels` on the catalog. #393 Bundle B-2.
+    page_labels: Option<super::page_labels::PageLabelsBuilder>,
 }
 
 impl PdfWriter {
@@ -965,7 +1104,22 @@ impl PdfWriter {
             user_font_to_resource: HashMap::new(),
             next_embedded_font_id: 1,
             acroform: None,
+            has_signature_fields: false,
+            outline: None,
+            page_labels: None,
         }
+    }
+
+    /// Attach a document outline (bookmarks) to be emitted during
+    /// [`PdfWriter::finish`]. Replaces any previously-set outline.
+    pub fn set_outline(&mut self, outline: super::outline_builder::OutlineBuilder) {
+        self.outline = Some(outline);
+    }
+
+    /// Attach a `/PageLabels` number-tree (Roman numeral preface →
+    /// Arabic body etc.) to be emitted during `finish`.
+    pub fn set_page_labels(&mut self, labels: super::page_labels::PageLabelsBuilder) {
+        self.page_labels = Some(labels);
     }
 
     /// Register an embedded TrueType font for use in content streams.
@@ -1042,6 +1196,9 @@ impl PdfWriter {
             content_builder: ContentStreamBuilder::new(),
             annotations: AnnotationBuilder::new(),
             form_fields: Vec::new(),
+            tab_order: None,
+            page_open_script: None,
+            page_close_script: None,
         });
         PageBuilder {
             writer: self,
@@ -1219,8 +1376,14 @@ impl PdfWriter {
         // a second &mut borrow on `self`.
         let mut pending_per_page: Vec<Vec<super::content_stream::PendingImage>> =
             Vec::with_capacity(page_count);
+        // Collect struct records per page (F-1: tagged PDF structure tree).
+        // We drain them here (before the main page loop) so that the content
+        // builder borrow is released before we build the StructTreeRoot below.
+        let mut struct_records_per_page: Vec<Vec<StructElemRecord>> =
+            Vec::with_capacity(page_count);
         for page_data in self.pages.iter_mut() {
             pending_per_page.push(page_data.content_builder.take_pending_images());
+            struct_records_per_page.push(page_data.content_builder.take_struct_records());
         }
         let mut image_ids_per_page: Vec<Vec<(u32, Option<u32>)>> = Vec::with_capacity(page_count);
         let mut image_objects: Vec<(u32, Object, Vec<u8>)> = Vec::new();
@@ -1367,6 +1530,40 @@ impl PdfWriter {
                 page_entries.push(("Annots", Object::Array(annot_refs)));
             }
 
+            // /Tabs for tab-navigation order (#393 Bundle D-4)
+            if let Some(c) = page_data.tab_order {
+                page_entries.push(("Tabs", ObjectSerializer::name(&c.to_string())));
+            }
+
+            // /StructParents N — required for tagged PDF (F-1). Each page that
+            // participates in the structure tree gets a unique integer that
+            // the ParentTree number-tree uses to look up its StructElems.
+            if self.config.tagged {
+                page_entries.push(("StructParents", ObjectSerializer::integer(i as i64)));
+            }
+
+            // /AA page-level additional actions (open/close JS).
+            let mut aa_entries: Vec<(&str, Object)> = Vec::new();
+            if let Some(ref s) = page_data.page_open_script {
+                let action = Object::Dictionary(HashMap::from([
+                    ("Type".to_string(), ObjectSerializer::name("Action")),
+                    ("S".to_string(), ObjectSerializer::name("JavaScript")),
+                    ("JS".to_string(), ObjectSerializer::string(s)),
+                ]));
+                aa_entries.push(("O", action));
+            }
+            if let Some(ref s) = page_data.page_close_script {
+                let action = Object::Dictionary(HashMap::from([
+                    ("Type".to_string(), ObjectSerializer::name("Action")),
+                    ("S".to_string(), ObjectSerializer::name("JavaScript")),
+                    ("JS".to_string(), ObjectSerializer::string(s)),
+                ]));
+                aa_entries.push(("C", action));
+            }
+            if !aa_entries.is_empty() {
+                page_entries.push(("AA", ObjectSerializer::dict(aa_entries)));
+            }
+
             let page_obj = ObjectSerializer::dict(page_entries);
 
             page_refs.push(Object::Reference(ObjectRef::new(page_id, 0)));
@@ -1393,9 +1590,209 @@ impl PdfWriter {
             let id = self.alloc_obj_id();
             let mut acroform = self.acroform.take().unwrap_or_default();
             acroform.add_fields(all_field_refs);
+            if self.has_signature_fields {
+                acroform = acroform.signatures_exist();
+            }
             let acroform_dict = acroform.build_with_resources();
             self.objects.insert(id, Object::Dictionary(acroform_dict));
             Some(id)
+        } else {
+            None
+        };
+
+        // Build outline (bookmarks) if one is attached. Consumes the
+        // OutlineBuilder, walks its tree against the page ObjectRefs
+        // we just allocated, and returns the root object ID to link
+        // into the catalog. #393 Bundle B-1.
+        let mut outline_object_ids: Vec<u32> = Vec::new();
+        let outline_ref = if let Some(outline) = self.outline.take() {
+            // Extract `Vec<ObjectRef>` from the already-built
+            // `page_objects` (in the same insertion order as the Pages
+            // /Kids array).
+            let page_object_refs: Vec<ObjectRef> = page_objects
+                .iter()
+                .filter_map(|(id, obj, _)| match obj {
+                    Object::Dictionary(dict)
+                        if matches!(
+                            dict.get("Type"),
+                            Some(Object::Name(n)) if n == "Page"
+                        ) =>
+                    {
+                        Some(ObjectRef::new(*id, 0))
+                    },
+                    _ => None,
+                })
+                .collect();
+            if let Some(result) = outline.build(&page_object_refs, self.next_obj_id) {
+                // Splice the outline's objects into the writer's object
+                // table, track their IDs for the emission pass below,
+                // and advance the id counter past them.
+                outline_object_ids = result.objects.keys().copied().collect();
+                outline_object_ids.sort_unstable();
+                for (id, obj) in result.objects {
+                    self.objects.insert(id, obj);
+                }
+                self.next_obj_id = result.next_obj_id;
+                Some(result.root_ref)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Build /PageLabels if set. #393 Bundle B-2. Each range becomes
+        // a mapping in the number-tree, wrapped in an indirect object.
+        let page_labels_id = if let Some(labels) = self.page_labels.take() {
+            let id = self.alloc_obj_id();
+            self.objects.insert(id, labels.build());
+            Some(id)
+        } else {
+            None
+        };
+
+        // F-1: Build StructTreeRoot + ParentTree + per-element StructElem
+        // objects when tagged PDF is enabled.
+        //
+        // Strategy (flat, first-cut):
+        //   - Every top-level StructElemRecord from each page becomes a direct
+        //     child of the StructTreeRoot /K array.
+        //   - Nested child records are likewise emitted as StructElem objects
+        //     whose /P points to their parent StructElem.
+        //   - ParentTree: flat number-tree mapping page_index → array of
+        //     StructElem refs on that page (for AT reverse lookup).
+        //   - RoleMap emitted when config.role_map is non-empty (F-4).
+        //
+        // All struct-tree object IDs are tracked in `struct_tree_obj_ids` so
+        // the serialisation pass below can emit them in order.
+        let mut struct_tree_obj_ids: Vec<u32> = Vec::new();
+
+        let struct_tree_root_id: Option<u32> = if self.config.tagged {
+            // Collect all struct elem records into flat StructElem objects.
+            // Page refs (for /Pg) come from the pre-built page_ids list.
+
+            let str_root_id = self.alloc_obj_id();
+            let parent_tree_id = self.alloc_obj_id();
+            struct_tree_obj_ids.push(str_root_id);
+            struct_tree_obj_ids.push(parent_tree_id);
+
+            // Recursive helper: emit StructElem dicts for a record tree.
+            // Returns the ObjectRef of the root element for this record.
+            fn emit_struct_elems(
+                record: &StructElemRecord,
+                parent_ref: ObjectRef,
+                page_ref: ObjectRef,
+                next_id: &mut u32,
+                obj_ids: &mut Vec<u32>,
+                out: &mut Vec<(u32, Object)>,
+            ) -> ObjectRef {
+                let my_id = *next_id;
+                *next_id += 1;
+                let my_ref = ObjectRef::new(my_id, 0);
+                obj_ids.push(my_id);
+
+                // Recurse into children first so we know their refs for /K
+                let child_refs: Vec<ObjectRef> = record
+                    .children
+                    .iter()
+                    .map(|child| emit_struct_elems(child, my_ref, page_ref, next_id, obj_ids, out))
+                    .collect();
+
+                let mut dict: HashMap<String, Object> = HashMap::new();
+                dict.insert("Type".to_string(), Object::Name("StructElem".to_string()));
+                dict.insert("S".to_string(), Object::Name(record.structure_type.clone()));
+                dict.insert("P".to_string(), Object::Reference(parent_ref));
+                dict.insert("Pg".to_string(), Object::Reference(page_ref));
+                // /K: either array of MCIDs + child refs, or just the MCID
+                if child_refs.is_empty() {
+                    // Leaf: /K is just the integer MCID
+                    dict.insert("K".to_string(), Object::Integer(record.mcid as i64));
+                } else {
+                    // Has children: /K is an array of the MCID integer + child refs
+                    let mut k_array: Vec<Object> = Vec::new();
+                    k_array.push(Object::Integer(record.mcid as i64));
+                    for cr in &child_refs {
+                        k_array.push(Object::Reference(*cr));
+                    }
+                    dict.insert("K".to_string(), Object::Array(k_array));
+                }
+                if let Some(ref alt) = record.alt_text {
+                    dict.insert("Alt".to_string(), ObjectSerializer::string(alt));
+                }
+                if let Some(ref lang) = record.language {
+                    dict.insert("Lang".to_string(), ObjectSerializer::string(lang));
+                }
+
+                out.push((my_id, Object::Dictionary(dict)));
+                my_ref
+            }
+
+            let mut all_struct_elem_objs: Vec<(u32, Object)> = Vec::new();
+            // top-level refs → direct children of StructTreeRoot's /K
+            let mut top_level_refs: Vec<Object> = Vec::new();
+            // ParentTree entries: page_index → [StructElem refs on that page]
+            let mut parent_tree_entries: Vec<Object> = Vec::new();
+
+            let str_root_ref = ObjectRef::new(str_root_id, 0);
+            for (page_idx, records) in struct_records_per_page.iter().enumerate() {
+                let page_ref = ObjectRef::new(page_ids[page_idx].0, 0);
+
+                let mut page_elem_refs: Vec<Object> = Vec::new();
+
+                for record in records {
+                    let elem_ref = emit_struct_elems(
+                        record,
+                        str_root_ref,
+                        page_ref,
+                        &mut self.next_obj_id,
+                        &mut struct_tree_obj_ids,
+                        &mut all_struct_elem_objs,
+                    );
+                    top_level_refs.push(Object::Reference(elem_ref));
+                    page_elem_refs.push(Object::Reference(elem_ref));
+                }
+
+                // ParentTree entry for this page (even if empty, keep indexing stable)
+                parent_tree_entries.push(Object::Integer(page_idx as i64));
+                parent_tree_entries.push(Object::Array(page_elem_refs));
+            }
+
+            // ParentTree number-tree (flat /Nums array form)
+            let parent_tree_dict: HashMap<String, Object> =
+                HashMap::from([("Nums".to_string(), Object::Array(parent_tree_entries))]);
+            self.objects
+                .insert(parent_tree_id, Object::Dictionary(parent_tree_dict));
+
+            // StructTreeRoot dict
+            let mut str_dict: HashMap<String, Object> = HashMap::new();
+            str_dict.insert("Type".to_string(), Object::Name("StructTreeRoot".to_string()));
+            str_dict.insert("K".to_string(), Object::Array(top_level_refs));
+            str_dict.insert(
+                "ParentTree".to_string(),
+                Object::Reference(ObjectRef::new(parent_tree_id, 0)),
+            );
+            // ISO 14289-1 §7.1 / PDF Ref §10.6.6: ParentTreeNextKey must equal
+            // the next key that would be assigned (i.e. the page count).
+            str_dict.insert("ParentTreeNextKey".to_string(), Object::Integer(page_count as i64));
+
+            // F-4: /RoleMap
+            if !self.config.role_map.is_empty() {
+                let mut role_map_dict: HashMap<String, Object> = HashMap::new();
+                for (custom, standard) in &self.config.role_map {
+                    role_map_dict.insert(custom.clone(), Object::Name(standard.clone()));
+                }
+                str_dict.insert("RoleMap".to_string(), Object::Dictionary(role_map_dict));
+            }
+
+            self.objects
+                .insert(str_root_id, Object::Dictionary(str_dict));
+
+            // Store all StructElem objects
+            for (id, obj) in all_struct_elem_objs {
+                self.objects.insert(id, obj);
+            }
+
+            Some(str_root_id)
         } else {
             None
         };
@@ -1408,6 +1805,77 @@ impl PdfWriter {
         if let Some(acroform_id) = acroform_id {
             catalog_entries.push(("AcroForm", ObjectSerializer::reference(acroform_id, 0)));
         }
+        if let Some(root_ref) = outline_ref {
+            catalog_entries
+                .push(("Outlines", ObjectSerializer::reference(root_ref.id, root_ref.gen)));
+        }
+        if let Some(labels_id) = page_labels_id {
+            catalog_entries.push(("PageLabels", ObjectSerializer::reference(labels_id, 0)));
+        }
+        if let Some(ref script) = self.config.open_action_script {
+            let action = Object::Dictionary(HashMap::from([
+                ("Type".to_string(), ObjectSerializer::name("Action")),
+                ("S".to_string(), ObjectSerializer::name("JavaScript")),
+                ("JS".to_string(), ObjectSerializer::string(script)),
+            ]));
+            catalog_entries.push(("OpenAction", action));
+        }
+        // F-1/F-2: Tagged PDF catalog entries
+        // Build XMP metadata stream for pdfuaid:part (PDF/UA-1 ISO 14289-1 §6.7.11).
+        let xmp_metadata_id: Option<u32> = if self.config.tagged {
+            // /MarkInfo << /Marked true >>
+            let mark_info =
+                Object::Dictionary(HashMap::from([("Marked".to_string(), Object::Boolean(true))]));
+            catalog_entries.push(("MarkInfo", mark_info));
+
+            // /StructTreeRoot ref
+            if let Some(str_id) = struct_tree_root_id {
+                catalog_entries.push(("StructTreeRoot", ObjectSerializer::reference(str_id, 0)));
+            }
+
+            // F-2: /Lang
+            let lang = self
+                .config
+                .language
+                .as_deref()
+                .unwrap_or("en-US")
+                .to_string();
+            catalog_entries.push(("Lang", ObjectSerializer::string(&lang)));
+
+            // /ViewerPreferences << /DisplayDocTitle true >>
+            let viewer_prefs = Object::Dictionary(HashMap::from([(
+                "DisplayDocTitle".to_string(),
+                Object::Boolean(true),
+            )]));
+            catalog_entries.push(("ViewerPreferences", viewer_prefs));
+
+            // ISO 14289-1 §6.7.11: PDF/UA documents must carry an XMP metadata
+            // stream in the document catalog with pdfuaid:part set to 1 (UA-1).
+            let title = self.config.title.as_deref().unwrap_or("").to_string();
+            let creator = self
+                .config
+                .creator
+                .as_deref()
+                .unwrap_or("pdf_oxide")
+                .to_string();
+            let xmp = build_pdfua_xmp(&title, &creator, &lang);
+            let xmp_id = self.alloc_obj_id();
+            let mut xmp_dict: HashMap<String, Object> = HashMap::new();
+            xmp_dict.insert("Type".to_string(), Object::Name("Metadata".to_string()));
+            xmp_dict.insert("Subtype".to_string(), Object::Name("XML".to_string()));
+            xmp_dict.insert("Length".to_string(), Object::Integer(xmp.len() as i64));
+            self.objects.insert(
+                xmp_id,
+                Object::Stream {
+                    dict: xmp_dict,
+                    data: bytes::Bytes::from(xmp),
+                },
+            );
+            catalog_entries.push(("Metadata", ObjectSerializer::reference(xmp_id, 0)));
+            Some(xmp_id)
+        } else {
+            None
+        };
         let catalog_obj = ObjectSerializer::dict(catalog_entries);
 
         // Info object (optional metadata)
@@ -1490,6 +1958,39 @@ impl PdfWriter {
             }
         }
 
+        // Outline objects (root + every item). #393 Bundle B-1.
+        for &id in &outline_object_ids {
+            if let Some(obj) = self.objects.get(&id) {
+                xref_offsets.push((id, output.len()));
+                output.extend_from_slice(&serializer.serialize_indirect(id, 0, obj));
+            }
+        }
+
+        // PageLabels number tree (if set). #393 Bundle B-2.
+        if let Some(id) = page_labels_id {
+            if let Some(obj) = self.objects.get(&id) {
+                xref_offsets.push((id, output.len()));
+                output.extend_from_slice(&serializer.serialize_indirect(id, 0, obj));
+            }
+        }
+
+        // F-1: StructTreeRoot + ParentTree + StructElem objects (tagged PDF).
+        // Emit in insertion order (struct_tree_obj_ids preserves this).
+        for &id in &struct_tree_obj_ids {
+            if let Some(obj) = self.objects.get(&id) {
+                xref_offsets.push((id, output.len()));
+                output.extend_from_slice(&serializer.serialize_indirect(id, 0, obj));
+            }
+        }
+
+        // ISO 14289-1 §6.7.11: XMP metadata stream (tagged PDF only).
+        if let Some(xmp_id) = xmp_metadata_id {
+            if let Some(obj) = self.objects.get(&xmp_id) {
+                xref_offsets.push((xmp_id, output.len()));
+                output.extend_from_slice(&serializer.serialize_indirect(xmp_id, 0, obj));
+            }
+        }
+
         // Info object
         xref_offsets.push((info_id, output.len()));
         output.extend_from_slice(&serializer.serialize_indirect(info_id, 0, &info_obj));
@@ -1538,6 +2039,46 @@ impl Default for PdfWriter {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Build a minimal XMP packet that satisfies ISO 14289-1 §6.7.11 (PDF/UA-1).
+/// Returns raw UTF-8 bytes (no BOM, no padding).
+fn build_pdfua_xmp(title: &str, creator: &str, lang: &str) -> Vec<u8> {
+    // Escape the three free-text fields for XML attribute/element contexts.
+    fn xml_escape(s: &str) -> String {
+        s.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+    }
+    let title_e = xml_escape(title);
+    let creator_e = xml_escape(creator);
+    let lang_e = xml_escape(lang);
+
+    let xmp = format!(
+        r#"<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+      xmlns:dc="http://purl.org/dc/elements/1.1/"
+      xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+      xmlns:pdf="http://ns.adobe.com/pdf/1.3/"
+      xmlns:pdfuaid="http://www.aiim.org/pdfua/ns/id/">
+   <dc:title><rdf:Alt><rdf:li xml:lang="{lang}">{title}</rdf:li></rdf:Alt></dc:title>
+   <dc:creator><rdf:Seq><rdf:li>{creator}</rdf:li></rdf:Seq></dc:creator>
+   <xmp:CreatorTool>{creator}</xmp:CreatorTool>
+   <pdf:Producer>{creator}</pdf:Producer>
+   <pdfuaid:part>1</pdfuaid:part>
+   <pdfuaid:amd>2005</pdfuaid:amd>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>"#,
+        lang = lang_e,
+        title = title_e,
+        creator = creator_e,
+    );
+    xmp.into_bytes()
 }
 
 /// Convert an [`elements::ImageContent`] (what `PageBuilder::add_element`

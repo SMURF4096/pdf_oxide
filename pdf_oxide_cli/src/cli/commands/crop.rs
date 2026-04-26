@@ -26,7 +26,7 @@ pub fn run(
 
     let (left, right, top, bottom) = (parts[0], parts[1], parts[2], parts[3]);
 
-    let mut doc = super::open_doc(file, password)?;
+    let doc = super::open_doc(file, password)?;
     let page_count = doc.page_count()?;
     drop(doc);
 

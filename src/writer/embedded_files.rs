@@ -188,12 +188,12 @@ impl EmbeddedFile {
         dict.insert("Type".to_string(), Object::Name("Filespec".to_string()));
 
         // File name (F is the generic name, UF is Unicode name)
-        dict.insert("F".to_string(), Object::String(self.name.as_bytes().to_vec()));
+        dict.insert("F".to_string(), Object::text_string(&self.name));
         dict.insert("UF".to_string(), Object::String(encode_utf16_be(&self.name)));
 
         // Description
         if let Some(ref desc) = self.description {
-            dict.insert("Desc".to_string(), Object::String(desc.as_bytes().to_vec()));
+            dict.insert("Desc".to_string(), Object::text_string(desc));
         }
 
         // EF dictionary with the embedded file stream reference
@@ -266,7 +266,7 @@ impl EmbeddedFilesBuilder {
         sorted_refs.sort_by(|a, b| a.0.cmp(&b.0));
 
         for (name, ref_) in sorted_refs {
-            names_array.push(Object::String(name.as_bytes().to_vec()));
+            names_array.push(Object::text_string(name));
             names_array.push(Object::Reference(*ref_));
         }
 

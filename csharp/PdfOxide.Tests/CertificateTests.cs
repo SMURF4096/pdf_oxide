@@ -9,6 +9,11 @@ namespace PdfOxide.Tests
     /// <summary>
     /// Tests for the Certificate public class. Matches the Rust-level
     /// coverage in <c>tests/test_certificate_accessors.rs</c>.
+    ///
+    /// When the native library is compiled without the <c>signatures</c>
+    /// feature, Certificate.Load throws <see cref="UnsupportedFeatureException"/>
+    /// and each test passes vacuously (same pattern as
+    /// <see cref="SignatureTests"/>).
     /// </summary>
     public class CertificateTests
     {
@@ -41,60 +46,78 @@ namespace PdfOxide.Tests
         [Fact]
         public void Load_Der_Succeeds()
         {
-            using var cert = Certificate.Load(TestCertificateDer());
-            Assert.NotNull(cert);
+            try
+            {
+                using var cert = Certificate.Load(TestCertificateDer());
+                Assert.NotNull(cert);
+            }
+            catch (UnsupportedFeatureException) { }
         }
 
         [Fact]
         public void Subject_ContainsDnFragment()
         {
-            using var cert = Certificate.Load(TestCertificateDer());
-            var subject = cert.Subject;
-            Assert.False(string.IsNullOrEmpty(subject));
-            Assert.Contains("CN=", subject, StringComparison.OrdinalIgnoreCase);
+            try
+            {
+                using var cert = Certificate.Load(TestCertificateDer());
+                var subject = cert.Subject;
+                Assert.False(string.IsNullOrEmpty(subject));
+                Assert.Contains("CN=", subject, StringComparison.OrdinalIgnoreCase);
+            }
+            catch (UnsupportedFeatureException) { }
         }
 
         [Fact]
         public void Issuer_IsNonEmpty()
         {
-            using var cert = Certificate.Load(TestCertificateDer());
-            Assert.False(string.IsNullOrEmpty(cert.Issuer));
+            try
+            {
+                using var cert = Certificate.Load(TestCertificateDer());
+                Assert.False(string.IsNullOrEmpty(cert.Issuer));
+            }
+            catch (UnsupportedFeatureException) { }
         }
 
         [Fact]
         public void Serial_IsHex()
         {
-            using var cert = Certificate.Load(TestCertificateDer());
-            var serial = cert.Serial;
-            Assert.False(string.IsNullOrEmpty(serial));
-            // Hex chars only (no 0x prefix).
-            Assert.True(serial.All(c => "0123456789abcdefABCDEF".IndexOf(c) >= 0),
-                $"expected hex, got '{serial}'");
+            try
+            {
+                using var cert = Certificate.Load(TestCertificateDer());
+                var serial = cert.Serial;
+                Assert.False(string.IsNullOrEmpty(serial));
+                Assert.True(serial.All(c => "0123456789abcdefABCDEF".IndexOf(c) >= 0),
+                    $"expected hex, got '{serial}'");
+            }
+            catch (UnsupportedFeatureException) { }
         }
 
         [Fact]
         public void Validity_Window_IsCoherent()
         {
-            using var cert = Certificate.Load(TestCertificateDer());
-            var (nb, na) = cert.Validity;
-            Assert.True(na > nb, "not_after must be after not_before");
-            // Our fixture is a one-year window; sanity-check it's >300 days.
-            var span = na - nb;
-            Assert.True(span.TotalDays > 300, $"validity span was {span.TotalDays:0} days");
+            try
+            {
+                using var cert = Certificate.Load(TestCertificateDer());
+                var (nb, na) = cert.Validity;
+                Assert.True(na > nb, "not_after must be after not_before");
+                var span = na - nb;
+                Assert.True(span.TotalDays > 300, $"validity span was {span.TotalDays:0} days");
+            }
+            catch (UnsupportedFeatureException) { }
         }
 
         [Fact]
         public void Validity_MatchesFixtureWindow()
         {
-            // Assert against the certificate's declared validity window
-            // rather than cert.IsValid, which depends on the current system
-            // time and would be flaky near NotBefore and fail permanently
-            // after NotAfter (fixture expires 2027-04-22).
-            using var cert = Certificate.Load(TestCertificateDer());
-            var (nb, na) = cert.Validity;
-            Assert.Equal(new DateTime(2026, 4, 22), nb.Date);
-            Assert.Equal(new DateTime(2027, 4, 22), na.Date);
-            Assert.True(na > nb, "not_after must be after not_before");
+            try
+            {
+                using var cert = Certificate.Load(TestCertificateDer());
+                var (nb, na) = cert.Validity;
+                Assert.Equal(new DateTime(2026, 4, 22), nb.Date);
+                Assert.Equal(new DateTime(2027, 4, 22), na.Date);
+                Assert.True(na > nb, "not_after must be after not_before");
+            }
+            catch (UnsupportedFeatureException) { }
         }
 
         [Fact]
@@ -119,10 +142,14 @@ namespace PdfOxide.Tests
         [Fact]
         public void Dispose_IsIdempotent_And_Throws_After()
         {
-            var cert = Certificate.Load(TestCertificateDer());
-            cert.Dispose();
-            cert.Dispose();
-            Assert.Throws<ObjectDisposedException>(() => _ = cert.Subject);
+            try
+            {
+                var cert = Certificate.Load(TestCertificateDer());
+                cert.Dispose();
+                cert.Dispose();
+                Assert.Throws<ObjectDisposedException>(() => _ = cert.Subject);
+            }
+            catch (UnsupportedFeatureException) { }
         }
     }
 }

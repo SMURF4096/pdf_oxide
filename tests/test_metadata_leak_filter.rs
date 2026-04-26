@@ -22,7 +22,7 @@ const FORBIDDEN_KEYWORDS: &[&str] = &[
 
 #[test]
 fn test_no_metadata_in_outline_pdf() {
-    let mut doc = PdfDocument::open("tests/fixtures/outline.pdf").unwrap();
+    let doc = PdfDocument::open("tests/fixtures/outline.pdf").unwrap();
     let page_count = doc.page_count().unwrap();
 
     for i in 0..page_count {
@@ -38,7 +38,7 @@ fn test_no_metadata_in_outline_pdf() {
 
 #[test]
 fn test_no_metadata_in_simple_pdf() {
-    let mut doc = PdfDocument::open("tests/fixtures/simple.pdf").unwrap();
+    let doc = PdfDocument::open("tests/fixtures/simple.pdf").unwrap();
     let text = doc.extract_text(0).unwrap();
     for keyword in FORBIDDEN_KEYWORDS {
         assert!(

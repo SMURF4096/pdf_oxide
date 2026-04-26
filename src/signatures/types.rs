@@ -106,20 +106,69 @@ impl SigningCredentials {
     }
 
     /// Load credentials from a PKCS#12 (.p12/.pfx) file.
+    ///
+    /// Parses the DER-encoded PFX container using `p12-keystore`. Both the
+    /// end-entity certificate and the PKCS#8 private key are extracted; any
+    /// additional certificates in the bag become the chain.
     #[cfg(feature = "signatures")]
     pub fn from_pkcs12(data: &[u8], password: &str) -> Result<Self> {
-        // PKCS#12 parsing would be implemented here
-        // For now, return an error indicating this is not yet implemented
-        let _ = (data, password);
-        Err(Error::InvalidPdf("PKCS#12 loading not yet implemented".to_string()))
+        let ks = p12_keystore::KeyStore::from_pkcs12(data, password)
+            .map_err(|e| Error::InvalidPdf(format!("PKCS#12 parse error: {e}")))?;
+
+        let (_, pkc) = ks
+            .private_key_chain()
+            .ok_or_else(|| Error::InvalidPdf("PKCS#12 contains no private key".into()))?;
+
+        let private_key = pkc.key().to_vec();
+
+        // chain(): first entry is the entity cert, subsequent entries are intermediates/root.
+        let mut cert_iter = pkc.chain().iter();
+        let certificate = cert_iter
+            .next()
+            .ok_or_else(|| Error::InvalidPdf("PKCS#12 contains no certificate".into()))?
+            .as_der()
+            .to_vec();
+        let chain: Vec<Vec<u8>> = cert_iter.map(|c| c.as_der().to_vec()).collect();
+
+        Ok(Self {
+            certificate,
+            private_key,
+            chain,
+        })
     }
 
-    /// Load credentials from separate PEM files.
+    /// Load credentials from separate PEM-encoded certificate and private key.
+    ///
+    /// Both PEM blocks are decoded with `x509-parser`'s PEM reader which
+    /// accepts `BEGIN CERTIFICATE`, `BEGIN PRIVATE KEY` (PKCS#8), and
+    /// `BEGIN RSA PRIVATE KEY` (PKCS#1) labels. The certificate is validated
+    /// by parsing it as X.509. The key is stored as raw DER.
     #[cfg(feature = "signatures")]
     pub fn from_pem(cert_pem: &str, key_pem: &str) -> Result<Self> {
-        // PEM parsing would be implemented here
-        let _ = (cert_pem, key_pem);
-        Err(Error::InvalidPdf("PEM loading not yet implemented".to_string()))
+        use x509_parser::pem::parse_x509_pem;
+        use x509_parser::prelude::*;
+
+        // Parse the certificate PEM block and validate it.
+        let (_, cert_block) = parse_x509_pem(cert_pem.as_bytes())
+            .map_err(|e| Error::InvalidPdf(format!("invalid certificate PEM: {e}")))?;
+        let cert_der = cert_block.contents;
+        let (_, _) = X509Certificate::from_der(&cert_der).map_err(|e| {
+            Error::InvalidPdf(format!("certificate PEM contains invalid X.509 DER: {e}"))
+        })?;
+
+        // Parse the private key PEM block — any `BEGIN ... KEY` label is fine.
+        let (_, key_block) = parse_x509_pem(key_pem.as_bytes())
+            .map_err(|e| Error::InvalidPdf(format!("invalid private key PEM: {e}")))?;
+        let private_key = key_block.contents;
+        if private_key.is_empty() {
+            return Err(Error::InvalidPdf("private key PEM decoded to empty bytes".into()));
+        }
+
+        Ok(Self {
+            certificate: cert_der,
+            private_key,
+            chain: Vec::new(),
+        })
     }
 
     /// Load credentials from a raw DER-encoded X.509 certificate. No
@@ -478,5 +527,70 @@ mod tests {
         let debug = format!("{:?}", creds);
         assert!(debug.contains("[REDACTED]"));
         assert!(debug.contains("3 bytes"));
+    }
+
+    #[test]
+    #[cfg(feature = "signatures")]
+    fn test_from_pem_loads_cert_and_key() {
+        let cert_pem = std::fs::read_to_string("tests/fixtures/test_signing_cert.pem")
+            .expect("test fixture must exist");
+        let key_pem = std::fs::read_to_string("tests/fixtures/test_signing_key.pem")
+            .expect("test fixture must exist");
+        let creds =
+            SigningCredentials::from_pem(&cert_pem, &key_pem).expect("from_pem should succeed");
+        assert!(!creds.certificate.is_empty(), "certificate must be non-empty");
+        assert!(!creds.private_key.is_empty(), "private key must be non-empty");
+        let subj = creds.subject().expect("subject must parse");
+        assert!(subj.contains("pdfoxide-test"), "subject must include CN: got {subj}");
+    }
+
+    #[test]
+    #[cfg(feature = "signatures")]
+    fn test_from_pem_rejects_invalid_cert() {
+        let result = SigningCredentials::from_pem("not a pem at all", "also bad");
+        assert!(result.is_err(), "should reject invalid PEM cert");
+    }
+
+    #[test]
+    #[cfg(feature = "signatures")]
+    fn test_from_pkcs12_loads_cert_and_key() {
+        let data =
+            std::fs::read("tests/fixtures/test_signing.p12").expect("test fixture must exist");
+        let creds = SigningCredentials::from_pkcs12(&data, "testpass")
+            .expect("from_pkcs12 should succeed with correct password");
+        assert!(!creds.certificate.is_empty(), "certificate must be non-empty");
+        assert!(!creds.private_key.is_empty(), "private key must be non-empty");
+        let subj = creds.subject().expect("subject must parse");
+        assert!(subj.contains("pdfoxide-test"), "subject must include CN: got {subj}");
+    }
+
+    #[test]
+    #[cfg(feature = "signatures")]
+    fn test_from_pkcs12_rejects_wrong_password() {
+        let data =
+            std::fs::read("tests/fixtures/test_signing.p12").expect("test fixture must exist");
+        // Wrong password leads to either parse error or empty key/cert bags.
+        // Either outcome is acceptable — we just must not panic.
+        let result = SigningCredentials::from_pkcs12(&data, "wrongpassword");
+        // The p12 crate may or may not fail at parse time; it may return Ok
+        // but with empty bags — treat both as "not usable".
+        match result {
+            Err(_) => { /* correct: explicit parse error */ },
+            Ok(c) => {
+                // p12 decryption with wrong password silently gives garbage
+                // bytes; the cert DER will fail to parse as X.509.
+                assert!(
+                    c.subject().is_err() || c.certificate.is_empty() || c.private_key.is_empty(),
+                    "wrong-password PKCS#12 must not yield valid usable credentials"
+                );
+            },
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "signatures")]
+    fn test_from_pkcs12_rejects_garbage() {
+        let result = SigningCredentials::from_pkcs12(b"not pkcs12 data", "password");
+        assert!(result.is_err(), "should reject non-PKCS#12 data");
     }
 }

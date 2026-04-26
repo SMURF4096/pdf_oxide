@@ -18,7 +18,7 @@ fn test_pdf_header_parsing_basic() {
     let pdf_path = fixture_path.to_str().unwrap();
 
     // Open PDF successfully
-    let mut doc = match PdfDocument::open(pdf_path) {
+    let doc = match PdfDocument::open(pdf_path) {
         Ok(d) => d,
         Err(e) => panic!("Failed to open PDF: {}", e),
     };
@@ -50,7 +50,7 @@ fn test_pdf_header_parsing_multiple_pages() {
     let pdf_path = fixture_path.to_str().unwrap();
 
     // Open PDF document
-    let mut doc = PdfDocument::open(pdf_path).expect("Failed to open PDF");
+    let doc = PdfDocument::open(pdf_path).expect("Failed to open PDF");
 
     // Verify version
     let (major, _minor) = doc.version();

@@ -9,7 +9,7 @@ use pdf_oxide::document::PdfDocument;
 fn test_annotation_extraction_does_not_crash() {
     // Verify that extract_text with annotation appending doesn't crash
     // even on a PDF with no annotations.
-    let mut doc = PdfDocument::open("tests/fixtures/simple.pdf").unwrap();
+    let doc = PdfDocument::open("tests/fixtures/simple.pdf").unwrap();
     let text = doc.extract_text(0).unwrap();
     // Result should be deterministic across runs
     let text2 = doc.extract_text(0).unwrap();
@@ -19,7 +19,7 @@ fn test_annotation_extraction_does_not_crash() {
 #[test]
 fn test_outline_pdf_annotation_extraction() {
     // outline.pdf may have annotations - verify no crash and deterministic output
-    let mut doc = PdfDocument::open("tests/fixtures/outline.pdf").unwrap();
+    let doc = PdfDocument::open("tests/fixtures/outline.pdf").unwrap();
     let page_count = doc.page_count().unwrap();
     for i in 0..page_count {
         let text = doc.extract_text(i).unwrap();

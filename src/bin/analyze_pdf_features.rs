@@ -53,7 +53,7 @@ struct FeatureStats {
 fn analyze_pdf(path: &Path, stats: &mut FeatureStats) -> Result<(), Error> {
     let filename = path.file_name().unwrap().to_string_lossy().to_string();
 
-    let mut doc = match PdfDocument::open(path) {
+    let doc = match PdfDocument::open(path) {
         Ok(doc) => {
             stats.successful_parses += 1;
             doc

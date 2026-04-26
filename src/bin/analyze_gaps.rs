@@ -40,7 +40,7 @@ fn main() {
 
 fn analyze_pdf(pdf_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     // Open PDF
-    let mut doc = PdfDocument::open(pdf_path)?;
+    let doc = PdfDocument::open(pdf_path)?;
     let page_count = doc.page_count()?;
 
     println!("📄 PDF has {} pages\n", page_count);

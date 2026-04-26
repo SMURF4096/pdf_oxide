@@ -224,7 +224,7 @@ impl PyPdfDocument {
     /// Synchronize erasures to editor.
     fn sync_editor_erasures(&mut self) -> PyResult<()> {
         if let Some(ref mut editor) = self.editor {
-            for (page, regions) in self.inner.erase_regions.iter() {
+            for (page, regions) in self.inner.erase_regions.lock().unwrap().iter() {
                 editor.clear_erase_regions(*page);
                 for rect in regions {
                     let _ = editor.erase_region(
@@ -690,14 +690,70 @@ impl PyPdfDocument {
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to save page: {}", e)))
     }
 
-    /// Save document to path.
-    fn save(&mut self, path: &str) -> PyResult<()> {
-        use crate::editor::EditableDocument;
+    /// Save document to *path* with optional compression and garbage-collection.
+    ///
+    /// Args:
+    ///     path (str): Destination file path.
+    ///     compress (bool): Compress unfiltered streams with FlateDecode. Default ``True``.
+    ///     garbage_collect (bool): Remove unreachable objects. Default ``True``.
+    ///     linearize (bool): Linearize for fast web view (no-op, reserved). Default ``False``.
+    #[pyo3(signature = (path, compress=true, garbage_collect=true, linearize=false))]
+    fn save(
+        &mut self,
+        path: &str,
+        compress: bool,
+        garbage_collect: bool,
+        linearize: bool,
+    ) -> PyResult<()> {
+        use crate::editor::{EditableDocument, SaveOptions};
         self.ensure_editor()?;
         if let Some(ref mut editor) = self.editor {
+            let options = SaveOptions {
+                compress,
+                garbage_collect,
+                linearize,
+                incremental: false,
+                encryption: None,
+            };
             editor
-                .save(path)
+                .save_with_options(path, options)
                 .map_err(|e| PyIOError::new_err(format!("Failed to save PDF: {}", e)))
+        } else {
+            Err(PyRuntimeError::new_err("No editor initialized."))
+        }
+    }
+
+    /// Save document to bytes with optional compression and garbage-collection.
+    ///
+    /// Returns:
+    ///     bytes: The serialized PDF as a byte string.
+    ///
+    /// Args:
+    ///     compress (bool): Compress unfiltered streams with FlateDecode. Default ``True``.
+    ///     garbage_collect (bool): Remove unreachable objects. Default ``True``.
+    ///     linearize (bool): Linearize for fast web view (no-op, reserved). Default ``False``.
+    #[pyo3(signature = (compress=true, garbage_collect=true, linearize=false))]
+    fn to_bytes<'py>(
+        &mut self,
+        py: Python<'py>,
+        compress: bool,
+        garbage_collect: bool,
+        linearize: bool,
+    ) -> PyResult<Py<PyBytes>> {
+        use crate::editor::SaveOptions;
+        self.ensure_editor()?;
+        if let Some(ref mut editor) = self.editor {
+            let options = SaveOptions {
+                compress,
+                garbage_collect,
+                linearize,
+                incremental: false,
+                encryption: None,
+            };
+            let bytes = editor.save_to_bytes_with_options(options).map_err(|e| {
+                PyRuntimeError::new_err(format!("Failed to save PDF to bytes: {}", e))
+            })?;
+            Ok(PyBytes::new(py, &bytes).unbind())
         } else {
             Err(PyRuntimeError::new_err("No editor initialized."))
         }
@@ -1138,7 +1194,7 @@ impl PyPdfDocument {
             .with_literal(literal)
             .with_whole_word(whole_word)
             .with_max_results(max_results);
-        let results = TextSearcher::search(&mut self.inner, pattern, &opts)
+        let results = TextSearcher::search(&self.inner, pattern, &opts)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         let list = pyo3::types::PyList::empty(py);
         for r in results {
@@ -1173,7 +1229,7 @@ impl PyPdfDocument {
             .with_whole_word(whole_word)
             .with_max_results(max_results)
             .with_page_range(page, page);
-        let results = TextSearcher::search(&mut self.inner, pattern, &opts)
+        let results = TextSearcher::search(&self.inner, pattern, &opts)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         let list = pyo3::types::PyList::empty(py);
         for r in results {
@@ -1537,7 +1593,7 @@ impl PyPdfDocument {
     /// Get form fields.
     fn get_form_fields(&mut self) -> PyResult<Vec<PyFormField>> {
         use crate::extractors::forms::FormExtractor;
-        let fields = FormExtractor::extract_fields(&mut self.inner)
+        let fields = FormExtractor::extract_fields(&self.inner)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Ok(fields
             .into_iter()
@@ -1639,6 +1695,17 @@ impl PyPdfDocument {
         Ok(())
     }
 
+    /// Return warnings collected during the last form-flattening save.
+    ///
+    /// Each entry names a widget field that had no ``/AP`` appearance stream;
+    /// flattening such a field produces a blank rectangle.
+    fn flatten_warnings(&self) -> Vec<String> {
+        self.editor
+            .as_ref()
+            .map(|e| e.flatten_warnings().to_vec())
+            .unwrap_or_default()
+    }
+
     /// Merge from source.
     fn merge_from(&mut self, source: &Bound<'_, PyAny>) -> PyResult<usize> {
         self.ensure_editor()?;
@@ -1672,7 +1739,7 @@ impl PyPdfDocument {
     /// Get page labels.
     fn page_labels(&mut self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         use crate::extractors::page_labels::PageLabelExtractor;
-        let labels = PageLabelExtractor::extract(&mut self.inner)
+        let labels = PageLabelExtractor::extract(&self.inner)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         let list = pyo3::types::PyList::empty(py);
         for l in &labels {
@@ -1693,7 +1760,7 @@ impl PyPdfDocument {
     /// Get XMP metadata.
     fn xmp_metadata(&mut self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         use crate::extractors::xmp::XmpExtractor;
-        let meta = XmpExtractor::extract(&mut self.inner)
+        let meta = XmpExtractor::extract(&self.inner)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         match meta {
             Some(xmp) => {
@@ -2613,7 +2680,7 @@ impl PyPdfPageRegion {
         d.extract_images(py, self.page_index, Some(self.bbox()))
     }
     fn extract_paths(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        let mut d = self.doc.bind(py).borrow_mut();
+        let d = self.doc.bind(py).borrow_mut();
         let res = d
             .inner
             .extract_paths_in_rect(self.page_index, self.region)
@@ -4037,9 +4104,300 @@ enum PendingPageOp {
         h: f32,
         caption: String,
     },
+    SignatureField {
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    },
+    Footnote {
+        ref_mark: String,
+        note_text: String,
+    },
+    Columns {
+        count: u32,
+        gap_pt: f32,
+        text: String,
+    },
+    Inline(String),
+    InlineBold(String),
+    InlineItalic(String),
+    InlineColor {
+        r: f32,
+        g: f32,
+        b: f32,
+        text: String,
+    },
+    Newline,
     Rect(f32, f32, f32, f32),
     FilledRect(f32, f32, f32, f32, f32, f32, f32),
     Line(f32, f32, f32, f32),
+    StrokeRect {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        width: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+    },
+    StrokeLine {
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        width: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+    },
+    TextInRect {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        text: String,
+        align: i32,
+    },
+    NewPageSameSize,
+    Table {
+        widths: Vec<f32>,
+        aligns: Vec<i32>,
+        rows: Vec<Vec<String>>,
+        has_header: bool,
+    },
+    StreamingTable {
+        headers: Vec<String>,
+        widths: Vec<f32>,
+        aligns: Vec<i32>,
+        repeat_header: bool,
+        /// Each cell is (text, rowspan); rowspan==1 is a normal cell.
+        rows: Vec<Vec<(String, usize)>>,
+        /// "fixed" | "sample" | "auto_all"
+        mode: String,
+        sample_rows: usize,
+        min_col_width_pt: f32,
+        max_col_width_pt: f32,
+        max_rowspan: usize,
+    },
+    /// Pre-rendered barcode PNG (generated at record time so errors
+    /// surface at the Python call site, not during replay).
+    BarcodeImage {
+        bytes: Vec<u8>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    },
+    ImageWithAlt {
+        bytes: Vec<u8>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        alt_text: String,
+    },
+    ImageArtifact {
+        bytes: Vec<u8>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    },
+    LinkJavaScript(String),
+    OnOpen(String),
+    OnClose(String),
+    FieldKeystroke(String),
+    FieldFormat(String),
+    FieldValidate(String),
+    FieldCalculate(String),
+}
+
+fn parse_align_to_cell(i: i32) -> crate::writer::CellAlign {
+    match i {
+        1 => crate::writer::CellAlign::Center,
+        2 => crate::writer::CellAlign::Right,
+        _ => crate::writer::CellAlign::Left,
+    }
+}
+
+fn parse_align_to_text(i: i32) -> crate::writer::TextAlign {
+    match i {
+        1 => crate::writer::TextAlign::Center,
+        2 => crate::writer::TextAlign::Right,
+        _ => crate::writer::TextAlign::Left,
+    }
+}
+
+fn align_str_to_int(s: &str) -> PyResult<i32> {
+    match s.to_ascii_lowercase().as_str() {
+        "left" | "l" => Ok(0),
+        "center" | "centre" | "c" => Ok(1),
+        "right" | "r" => Ok(2),
+        other => Err(PyValueError::new_err(format!(
+            "invalid align '{}': expected 'left', 'center', or 'right'",
+            other
+        ))),
+    }
+}
+
+fn extract_align(py: Python<'_>, obj: &Bound<'_, PyAny>) -> PyResult<i32> {
+    // Accept str, int, or the Align pyclass itself.
+    if let Ok(s) = obj.extract::<String>() {
+        return align_str_to_int(&s);
+    }
+    if let Ok(a) = obj.extract::<PyRef<PyAlign>>() {
+        return Ok(*a as i32);
+    }
+    if let Ok(i) = obj.extract::<i32>() {
+        if (0..=2).contains(&i) {
+            return Ok(i);
+        }
+    }
+    let _ = py;
+    Err(PyValueError::new_err(
+        "align must be 'left'/'center'/'right' or an Align enum value",
+    ))
+}
+
+/// Python-side horizontal alignment enum. Maps 1:1 to `CellAlign` /
+/// `TextAlign` in the Rust core. Values are plain ints so the class can
+/// be used interchangeably with the string form ("left"/"center"/"right")
+/// anywhere the Python bindings accept alignment.
+#[pyclass(
+    module = "pdf_oxide.pdf_oxide",
+    name = "Align",
+    eq,
+    eq_int,
+    skip_from_py_object
+)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum PyAlign {
+    Left = 0,
+    Center = 1,
+    Right = 2,
+}
+
+#[pymethods]
+impl PyAlign {
+    #[classattr]
+    const LEFT: PyAlign = PyAlign::Left;
+    #[classattr]
+    const CENTER: PyAlign = PyAlign::Center;
+    #[classattr]
+    const RIGHT: PyAlign = PyAlign::Right;
+
+    fn __int__(&self) -> i32 {
+        *self as i32
+    }
+
+    fn __repr__(&self) -> &'static str {
+        match self {
+            PyAlign::Left => "Align.LEFT",
+            PyAlign::Center => "Align.CENTER",
+            PyAlign::Right => "Align.RIGHT",
+        }
+    }
+}
+
+/// Python-side column descriptor used by `Table` and
+/// `FluentPageBuilder.streaming_table`. Constructor matches the research
+/// C shape: `Column(header, width=100.0, align=Align.LEFT)`.
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "Column", skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyColumn {
+    pub header: String,
+    pub width: f32,
+    pub align: i32,
+}
+
+#[pymethods]
+impl PyColumn {
+    #[new]
+    #[pyo3(signature = (header, width=100.0, align=None))]
+    fn new(header: String, width: f32, align: Option<Bound<'_, PyAny>>) -> PyResult<Self> {
+        let align_i = match align {
+            Some(obj) => extract_align(obj.py(), &obj)?,
+            None => 0,
+        };
+        Ok(Self {
+            header,
+            width,
+            align: align_i,
+        })
+    }
+
+    #[getter]
+    fn header(&self) -> &str {
+        &self.header
+    }
+    #[getter]
+    fn width(&self) -> f32 {
+        self.width
+    }
+    #[getter]
+    fn align(&self) -> i32 {
+        self.align
+    }
+
+    fn __repr__(&self) -> String {
+        format!("Column(header={:?}, width={}, align={})", self.header, self.width, self.align)
+    }
+}
+
+/// Python-side buffered-table value object consumed by
+/// `FluentPageBuilder.table`. Carries columns (with widths + alignments
+/// + headers), rows of string cells, and a `has_header` flag that
+/// promotes the first row to the header style.
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "Table", skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyTable {
+    pub columns: Vec<PyColumn>,
+    pub rows: Vec<Vec<String>>,
+    pub has_header: bool,
+}
+
+#[pymethods]
+impl PyTable {
+    #[new]
+    #[pyo3(signature = (columns, rows, has_header=false))]
+    fn new(
+        columns: Vec<PyRef<'_, PyColumn>>,
+        rows: Vec<Vec<String>>,
+        has_header: bool,
+    ) -> PyResult<Self> {
+        let cols: Vec<PyColumn> = columns.into_iter().map(|c| (*c).clone()).collect();
+        let n_cols = cols.len();
+        if n_cols == 0 {
+            return Err(PyValueError::new_err("Table requires at least one Column"));
+        }
+        for (i, row) in rows.iter().enumerate() {
+            if row.len() != n_cols {
+                return Err(PyValueError::new_err(format!(
+                    "Table row {} has {} cells, expected {}",
+                    i,
+                    row.len(),
+                    n_cols
+                )));
+            }
+        }
+        Ok(Self {
+            columns: cols,
+            rows,
+            has_header,
+        })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Table(columns={}, rows={}, has_header={})",
+            self.columns.len(),
+            self.rows.len(),
+            self.has_header
+        )
+    }
 }
 
 /// Python wrapper for an embedded TTF/OTF font usable by `DocumentBuilder`.
@@ -4169,6 +4527,42 @@ impl PyDocumentBuilder {
         Ok(slf)
     }
 
+    fn on_open<'a>(mut slf: PyRefMut<'a, Self>, script: String) -> PyResult<PyRefMut<'a, Self>> {
+        slf.with_inner("on_open", |b| b.on_open(script))?;
+        Ok(slf)
+    }
+
+    /// Enable PDF/UA-1 tagged PDF mode.
+    ///
+    /// When enabled, `build()` emits `/MarkInfo`, `/StructTreeRoot`, `/Lang`,
+    /// and `/ViewerPreferences` in the catalog. Safe to ignore — has no effect
+    /// on documents that don't call this method (strict opt-in). Bundle F-1/F-2.
+    fn tagged_pdf_ua1<'a>(mut slf: PyRefMut<'a, Self>) -> PyResult<PyRefMut<'a, Self>> {
+        slf.with_inner("tagged_pdf_ua1", |b| b.tagged_pdf_ua1())?;
+        Ok(slf)
+    }
+
+    /// Set the document's natural language tag (e.g. `"en-US"`).
+    ///
+    /// Emitted as `/Lang` in the catalog when `tagged_pdf_ua1()` is set.
+    fn language<'a>(mut slf: PyRefMut<'a, Self>, lang: String) -> PyResult<PyRefMut<'a, Self>> {
+        slf.with_inner("language", |b| b.language(lang))?;
+        Ok(slf)
+    }
+
+    /// Add a role-map entry: custom structure type → standard PDF structure type.
+    ///
+    /// Emitted in `/RoleMap` inside the StructTreeRoot when `tagged_pdf_ua1()`
+    /// is set. Multiple calls accumulate entries.
+    fn role_map<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        custom: String,
+        standard: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.with_inner("role_map", |b| b.role_map(custom, standard))?;
+        Ok(slf)
+    }
+
     /// Register a TTF/OTF font the PDF pages can reference by name. The
     /// `EmbeddedFont` handle is **consumed** — reusing it raises
     /// `RuntimeError`.
@@ -4196,6 +4590,9 @@ impl PyDocumentBuilder {
             custom_height: 0.0,
             ops: Vec::new(),
             done_called: false,
+            current_font: "Helvetica".to_string(),
+            current_size: 12.0,
+            last_y: None,
         }
     }
 
@@ -4207,6 +4604,9 @@ impl PyDocumentBuilder {
             custom_height: 0.0,
             ops: Vec::new(),
             done_called: false,
+            current_font: "Helvetica".to_string(),
+            current_size: 12.0,
+            last_y: None,
         }
     }
 
@@ -4220,6 +4620,9 @@ impl PyDocumentBuilder {
             custom_height: height,
             ops: Vec::new(),
             done_called: false,
+            current_font: "Helvetica".to_string(),
+            current_size: 12.0,
+            last_y: None,
         }
     }
 
@@ -4286,6 +4689,15 @@ pub struct PyFluentPageBuilder {
     custom_height: f32,
     ops: Vec<PendingPageOp>,
     done_called: bool,
+    /// Best-effort current font tracking for `measure()` — updated on
+    /// every buffered `font()` call. Pure client-side cache; the Rust
+    /// builder still owns authoritative state after `done()`.
+    current_font: String,
+    current_size: f32,
+    /// Last `at()` y coordinate, used for the client-side
+    /// `remaining_space` estimate. `None` means "unknown — assume top
+    /// margin of the page".
+    last_y: Option<f32>,
 }
 
 impl PyFluentPageBuilder {
@@ -4305,11 +4717,14 @@ impl PyFluentPageBuilder {
         name: String,
         size: f32,
     ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.current_font = name.clone();
+        slf.current_size = size;
         slf.push(PendingPageOp::Font(name, size))?;
         Ok(slf)
     }
 
     fn at<'a>(mut slf: PyRefMut<'a, Self>, x: f32, y: f32) -> PyResult<PyRefMut<'a, Self>> {
+        slf.last_y = Some(y);
         slf.push(PendingPageOp::At(x, y))?;
         Ok(slf)
     }
@@ -4363,6 +4778,56 @@ impl PyFluentPageBuilder {
         destination: String,
     ) -> PyResult<PyRefMut<'a, Self>> {
         slf.push(PendingPageOp::LinkNamed(destination))?;
+        Ok(slf)
+    }
+
+    fn link_javascript<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        script: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::LinkJavaScript(script))?;
+        Ok(slf)
+    }
+
+    fn on_open<'a>(mut slf: PyRefMut<'a, Self>, script: String) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::OnOpen(script))?;
+        Ok(slf)
+    }
+
+    fn on_close<'a>(mut slf: PyRefMut<'a, Self>, script: String) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::OnClose(script))?;
+        Ok(slf)
+    }
+
+    fn field_keystroke<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        script: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::FieldKeystroke(script))?;
+        Ok(slf)
+    }
+
+    fn field_format<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        script: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::FieldFormat(script))?;
+        Ok(slf)
+    }
+
+    fn field_validate<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        script: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::FieldValidate(script))?;
+        Ok(slf)
+    }
+
+    fn field_calculate<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        script: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::FieldCalculate(script))?;
         Ok(slf)
     }
 
@@ -4565,6 +5030,182 @@ impl PyFluentPageBuilder {
         Ok(slf)
     }
 
+    /// Add an unsigned signature placeholder field at the given bounds.
+    fn signature_field<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        name: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::SignatureField { name, x, y, w, h })?;
+        Ok(slf)
+    }
+
+    /// Add a footnote: inline `ref_mark` at the cursor + `note_text` body
+    /// placed near the page bottom with a separator artifact line.
+    fn footnote<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        ref_mark: String,
+        note_text: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::Footnote {
+            ref_mark,
+            note_text,
+        })?;
+        Ok(slf)
+    }
+
+    /// Lay out `text` as balanced multi-column flow.
+    /// `column_count` columns with `gap_pt` points between them.
+    /// Paragraphs may be separated by `"\\n\\n"` in `text`.
+    fn columns<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        column_count: u32,
+        gap_pt: f32,
+        text: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::Columns {
+            count: column_count,
+            gap_pt,
+            text,
+        })?;
+        Ok(slf)
+    }
+
+    /// Emit `text` inline at the cursor (advances cursor_x, not cursor_y).
+    fn inline<'a>(mut slf: PyRefMut<'a, Self>, text: String) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::Inline(text))?;
+        Ok(slf)
+    }
+
+    /// Inline bold run.
+    fn inline_bold<'a>(mut slf: PyRefMut<'a, Self>, text: String) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::InlineBold(text))?;
+        Ok(slf)
+    }
+
+    /// Inline italic run.
+    fn inline_italic<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        text: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::InlineItalic(text))?;
+        Ok(slf)
+    }
+
+    /// Inline colored run (RGB 0.0–1.0).
+    fn inline_color<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        r: f32,
+        g: f32,
+        b: f32,
+        text: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::InlineColor { r, g, b, text })?;
+        Ok(slf)
+    }
+
+    /// Advance cursor_y by one line-height and reset cursor_x to 72 pt.
+    fn newline<'a>(mut slf: PyRefMut<'a, Self>) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::Newline)?;
+        Ok(slf)
+    }
+
+    /// Place a 1-D barcode image at `(x, y, w, h)` on the page.
+    /// `barcode_type`: 0=Code128 1=Code39 2=EAN13 3=EAN8 4=UPCA 5=ITF
+    /// 6=Code93 7=Codabar. Errors surface here (at call time), not at
+    /// `done()`.
+    fn barcode_1d<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        barcode_type: i32,
+        data: String,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        let bt = match barcode_type {
+            0 => crate::writer::BarcodeType::Code128,
+            1 => crate::writer::BarcodeType::Code39,
+            2 => crate::writer::BarcodeType::Ean13,
+            3 => crate::writer::BarcodeType::Ean8,
+            4 => crate::writer::BarcodeType::UpcA,
+            5 => crate::writer::BarcodeType::Itf,
+            6 => crate::writer::BarcodeType::Code93,
+            7 => crate::writer::BarcodeType::Codabar,
+            _ => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown barcode_type {barcode_type}; valid values are 0–7"
+                )))
+            },
+        };
+        let opts = crate::writer::BarcodeOptions::new()
+            .width(w as u32)
+            .height(h as u32);
+        let bytes = crate::writer::BarcodeGenerator::generate_1d(bt, &data, &opts)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        slf.push(PendingPageOp::BarcodeImage { bytes, x, y, w, h })?;
+        Ok(slf)
+    }
+
+    /// Place a QR-code image at `(x, y, size, size)` on the page.
+    /// Errors surface here (at call time), not at `done()`.
+    fn barcode_qr<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        data: String,
+        x: f32,
+        y: f32,
+        size: f32,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        let opts = crate::writer::QrCodeOptions::new().size(size as u32);
+        let bytes = crate::writer::BarcodeGenerator::generate_qr(&data, &opts)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        slf.push(PendingPageOp::BarcodeImage {
+            bytes,
+            x,
+            y,
+            w: size,
+            h: size,
+        })?;
+        Ok(slf)
+    }
+
+    /// Embed an image (JPEG/PNG/WebP bytes) with an accessibility alt text.
+    fn image_with_alt<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        bytes: Vec<u8>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        alt_text: String,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::ImageWithAlt {
+            bytes,
+            x,
+            y,
+            w,
+            h,
+            alt_text,
+        })?;
+        Ok(slf)
+    }
+
+    /// Embed a decorative image (JPEG/PNG/WebP bytes) as an /Artifact (no alt text).
+    fn image_artifact<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        bytes: Vec<u8>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::ImageArtifact { bytes, x, y, w, h })?;
+        Ok(slf)
+    }
+
     /// Draw a stroked rectangle outline (1pt black).
     fn rect<'a>(
         mut slf: PyRefMut<'a, Self>,
@@ -4604,6 +5245,197 @@ impl PyFluentPageBuilder {
         Ok(slf)
     }
 
+    // ── v0.3.39 primitives + tables (#393 step 6a) ──────────────────────
+
+    /// Measure the rendered width of `text` in PDF points, using the
+    /// most recently set `font()` / size (defaults: Helvetica, 12 pt).
+    ///
+    /// Implemented against a standalone base-14 `FontManager`, so any
+    /// PostScript name resolvable to a base-14 face (Helvetica, Times-
+    /// Roman, Courier, and their Bold/Italic variants) is measured
+    /// accurately. Custom embedded fonts registered on the
+    /// `DocumentBuilder` fall back to Helvetica metrics until a future
+    /// release routes measurement through the parent builder's
+    /// `FontManager`.
+    fn measure(&self, text: &str) -> PyResult<f32> {
+        let fm = crate::writer::FontManager::new();
+        Ok(fm.text_width(text, &self.current_font, self.current_size))
+    }
+
+    /// Best-effort vertical space between the last known cursor y and
+    /// the bottom margin (72 pt). Because `PyFluentPageBuilder` buffers
+    /// ops until `done()`, this is a client-side estimate: it returns
+    /// `last_at_y - 72` when `at()` has been called, else `page_height
+    /// - 144` (standard 1" top + bottom margins).
+    ///
+    /// For authoritative page-break decisions during streaming table
+    /// rendering, prefer `streaming_table(..., repeat_header=True)` —
+    /// the Rust core handles page breaks internally.
+    fn remaining_space(&self) -> f32 {
+        let page_height = match self.page_size {
+            Some(crate::writer::PageSize::A4) => 842.0,
+            Some(crate::writer::PageSize::Letter) => 792.0,
+            Some(crate::writer::PageSize::Legal) => 1008.0,
+            Some(crate::writer::PageSize::Custom(_, h)) => h,
+            _ => self.custom_height,
+        };
+        let y = self.last_y.unwrap_or(page_height - 72.0);
+        (y - 72.0).max(0.0)
+    }
+
+    /// Place wrapped text inside a rectangle with horizontal alignment.
+    /// `align` accepts `"left"`, `"center"`, `"right"` (case-insensitive)
+    /// or an `Align` enum value.
+    #[pyo3(signature = (x, y, w, h, text, align=None))]
+    fn text_in_rect<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        text: String,
+        align: Option<Bound<'_, PyAny>>,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        let align_i = match align {
+            Some(obj) => extract_align(obj.py(), &obj)?,
+            None => 0,
+        };
+        slf.push(PendingPageOp::TextInRect {
+            x,
+            y,
+            w,
+            h,
+            text,
+            align: align_i,
+        })?;
+        Ok(slf)
+    }
+
+    /// Draw a stroked rectangle with explicit width (points) and RGB
+    /// colour (channels 0..1).
+    #[pyo3(signature = (x, y, w, h, width=1.0, color=(0.0, 0.0, 0.0)))]
+    fn stroke_rect<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        width: f32,
+        color: (f32, f32, f32),
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::StrokeRect {
+            x,
+            y,
+            w,
+            h,
+            width,
+            r: color.0,
+            g: color.1,
+            b: color.2,
+        })?;
+        Ok(slf)
+    }
+
+    /// Draw a line with explicit width (points) and RGB colour.
+    #[pyo3(signature = (x1, y1, x2, y2, width=1.0, color=(0.0, 0.0, 0.0)))]
+    fn stroke_line<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        width: f32,
+        color: (f32, f32, f32),
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::StrokeLine {
+            x1,
+            y1,
+            x2,
+            y2,
+            width,
+            r: color.0,
+            g: color.1,
+            b: color.2,
+        })?;
+        Ok(slf)
+    }
+
+    /// Finish the current page and start a fresh one with the same
+    /// dimensions. Subsequent buffered ops land on the new page. The
+    /// current font / size tracking carries over.
+    fn new_page_same_size<'a>(mut slf: PyRefMut<'a, Self>) -> PyResult<PyRefMut<'a, Self>> {
+        slf.last_y = None;
+        slf.push(PendingPageOp::NewPageSameSize)?;
+        Ok(slf)
+    }
+
+    /// Emit a buffered `Table` — the whole row matrix is rendered in
+    /// one pass at `done()` time. Column widths come from the
+    /// `Column.width` on each `Column`; per-column alignment from
+    /// `Column.align`.
+    fn table<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        table: &Bound<'_, PyTable>,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        let t = table.borrow();
+        let widths: Vec<f32> = t.columns.iter().map(|c| c.width).collect();
+        let aligns: Vec<i32> = t.columns.iter().map(|c| c.align).collect();
+        let mut rows: Vec<Vec<String>> = Vec::with_capacity(t.rows.len() + 1);
+        if t.has_header {
+            // If has_header, the first user row isn't the header — the
+            // columns' own .header strings are. Inject a synthetic header
+            // row at the top so buffered Table::with_header_row works.
+            rows.push(t.columns.iter().map(|c| c.header.clone()).collect());
+        }
+        rows.extend(t.rows.iter().cloned());
+        slf.push(PendingPageOp::Table {
+            widths,
+            aligns,
+            rows,
+            has_header: t.has_header,
+        })?;
+        Ok(slf)
+    }
+
+    /// Open a `StreamingTable` bound to this page. Cells are pushed
+    /// row-at-a-time via the returned handle; `finish()` returns this
+    /// `FluentPageBuilder` for further chaining. Row emission is
+    /// deferred until `done()` (all rows are collected first, then
+    /// streamed through the Rust `StreamingTable` at commit time).
+    ///
+    /// `columns` is a list of `Column`; `repeat_header=True` redraws
+    /// the header row at every page break.
+    #[pyo3(signature = (columns, repeat_header=false, mode="fixed", sample_rows=50, min_col_width_pt=20.0, max_col_width_pt=400.0, max_rowspan=1))]
+    fn streaming_table(
+        slf_handle: Py<Self>,
+        py: Python<'_>,
+        columns: Vec<PyRef<'_, PyColumn>>,
+        repeat_header: bool,
+        mode: &str,
+        sample_rows: usize,
+        min_col_width_pt: f32,
+        max_col_width_pt: f32,
+        max_rowspan: usize,
+    ) -> PyResult<PyStreamingTable> {
+        if columns.is_empty() {
+            return Err(PyValueError::new_err("streaming_table requires at least one Column"));
+        }
+        let cols: Vec<PyColumn> = columns.into_iter().map(|c| (*c).clone()).collect();
+        let _ = py;
+        Ok(PyStreamingTable {
+            parent: slf_handle,
+            columns: cols,
+            repeat_header,
+            rows: Vec::new(),
+            finished: false,
+            mode: mode.to_string(),
+            sample_rows,
+            min_col_width_pt,
+            max_col_width_pt,
+            max_rowspan,
+        })
+    }
+
     /// Commit the page's buffered operations to the parent
     /// `DocumentBuilder` and return the parent for further chaining.
     /// After `done()`, this `FluentPageBuilder` is spent.
@@ -4637,6 +5469,13 @@ impl PyFluentPageBuilder {
                 PendingPageOp::LinkUrl(url) => page.link_url(&url),
                 PendingPageOp::LinkPage(p) => page.link_page(p),
                 PendingPageOp::LinkNamed(dest) => page.link_named(&dest),
+                PendingPageOp::LinkJavaScript(script) => page.link_javascript(&script),
+                PendingPageOp::OnOpen(script) => page.on_open(&script),
+                PendingPageOp::OnClose(script) => page.on_close(&script),
+                PendingPageOp::FieldKeystroke(s) => page.field_keystroke(&s),
+                PendingPageOp::FieldFormat(s) => page.field_format(&s),
+                PendingPageOp::FieldValidate(s) => page.field_validate(&s),
+                PendingPageOp::FieldCalculate(s) => page.field_calculate(&s),
                 PendingPageOp::Highlight(r, g, b) => page.highlight((r, g, b)),
                 PendingPageOp::Underline(r, g, b) => page.underline((r, g, b)),
                 PendingPageOp::Strikeout(r, g, b) => page.strikeout((r, g, b)),
@@ -4688,15 +5527,251 @@ impl PyFluentPageBuilder {
                     h,
                     caption,
                 } => page.push_button(name, x, y, w, h, caption),
+                PendingPageOp::SignatureField { name, x, y, w, h } => {
+                    page.signature_field(name, x, y, w, h)
+                },
+                PendingPageOp::Footnote {
+                    ref_mark,
+                    note_text,
+                } => page.footnote(&ref_mark, &note_text),
+                PendingPageOp::Columns {
+                    count,
+                    gap_pt,
+                    text,
+                } => page.columns(count, gap_pt, &text),
+                PendingPageOp::Inline(text) => page.inline(&text),
+                PendingPageOp::InlineBold(text) => page.inline_bold(&text),
+                PendingPageOp::InlineItalic(text) => page.inline_italic(&text),
+                PendingPageOp::InlineColor { r, g, b, text } => page.inline_color(r, g, b, &text),
+                PendingPageOp::Newline => page.newline(),
                 PendingPageOp::Rect(x, y, w, h) => page.rect(x, y, w, h),
                 PendingPageOp::FilledRect(x, y, w, h, r, g, b) => {
                     page.filled_rect(x, y, w, h, r, g, b)
                 },
                 PendingPageOp::Line(x1, y1, x2, y2) => page.line(x1, y1, x2, y2),
+                PendingPageOp::StrokeRect {
+                    x,
+                    y,
+                    w,
+                    h,
+                    width,
+                    r,
+                    g,
+                    b,
+                } => page.stroke_rect(x, y, w, h, crate::writer::LineStyle::new(width, r, g, b)),
+                PendingPageOp::StrokeLine {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    width,
+                    r,
+                    g,
+                    b,
+                } => {
+                    page.stroke_line(x1, y1, x2, y2, crate::writer::LineStyle::new(width, r, g, b))
+                },
+                PendingPageOp::TextInRect {
+                    x,
+                    y,
+                    w,
+                    h,
+                    text,
+                    align,
+                } => page.text_in_rect(
+                    crate::geometry::Rect::new(x, y, w, h),
+                    &text,
+                    parse_align_to_text(align),
+                ),
+                PendingPageOp::NewPageSameSize => page.new_page_same_size(),
+                PendingPageOp::BarcodeImage { bytes, x, y, w, h } => page
+                    .image_from_bytes(&bytes, crate::geometry::Rect::new(x, y, w, h))
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?,
+                PendingPageOp::ImageWithAlt {
+                    bytes,
+                    x,
+                    y,
+                    w,
+                    h,
+                    alt_text,
+                } => page
+                    .image_from_bytes_with_alt(
+                        &bytes,
+                        crate::geometry::Rect::new(x, y, w, h),
+                        &alt_text,
+                    )
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?,
+                PendingPageOp::ImageArtifact { bytes, x, y, w, h } => page
+                    .image_from_bytes_as_artifact(&bytes, crate::geometry::Rect::new(x, y, w, h))
+                    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?,
+                PendingPageOp::Table {
+                    widths,
+                    aligns,
+                    rows,
+                    has_header,
+                } => {
+                    let cells: Vec<Vec<crate::writer::TableCell>> = rows
+                        .into_iter()
+                        .map(|row| {
+                            row.into_iter()
+                                .map(crate::writer::TableCell::text)
+                                .collect()
+                        })
+                        .collect();
+                    let mut tbl = crate::writer::Table::new(cells);
+                    let col_widths: Vec<crate::writer::ColumnWidth> = widths
+                        .iter()
+                        .map(|&w| crate::writer::ColumnWidth::Fixed(w))
+                        .collect();
+                    tbl = tbl.with_column_widths(col_widths);
+                    let col_aligns: Vec<crate::writer::CellAlign> =
+                        aligns.iter().map(|&a| parse_align_to_cell(a)).collect();
+                    tbl.column_aligns = col_aligns;
+                    if has_header {
+                        tbl = tbl.with_header_row();
+                    }
+                    page.table(tbl)
+                },
+                PendingPageOp::StreamingTable {
+                    headers,
+                    widths,
+                    aligns,
+                    repeat_header,
+                    rows,
+                    mode,
+                    sample_rows,
+                    min_col_width_pt,
+                    max_col_width_pt,
+                    max_rowspan,
+                } => {
+                    let mut cfg = crate::writer::StreamingTableConfig::new()
+                        .repeat_header(repeat_header)
+                        .max_rowspan(max_rowspan);
+                    cfg = match mode.as_str() {
+                        "sample" => {
+                            cfg.mode_sample(sample_rows, min_col_width_pt, max_col_width_pt)
+                        },
+                        "auto_all" => cfg.mode_auto_all(),
+                        _ => cfg.mode_fixed(),
+                    };
+                    for i in 0..headers.len() {
+                        let col = crate::writer::StreamingColumn::new(headers[i].clone())
+                            .width_pt(widths[i])
+                            .align(parse_align_to_cell(aligns[i]));
+                        cfg = cfg.column(col);
+                    }
+                    let mut st = page.streaming_table(cfg);
+                    for row in rows {
+                        let _ = st.push_row(|r| {
+                            for (text, span) in row {
+                                if span > 1 {
+                                    r.span_cell(text, span);
+                                } else {
+                                    r.cell(text);
+                                }
+                            }
+                        });
+                    }
+                    st.finish()
+                },
             };
         }
         page.done();
 
+        drop(parent_ref);
+        Ok(parent_handle)
+    }
+}
+
+/// Streaming-table handle: collects rows cell-by-cell and — at
+/// `finish()` — attaches a `PendingPageOp::StreamingTable` to the
+/// parent `PyFluentPageBuilder` so the Rust `StreamingTable` core runs
+/// at `done()` time. Per the buffered architecture note on
+/// `PyFluentPageBuilder`, we can't hold a live Rust `StreamingTable`
+/// across GIL boundaries, so we buffer Python-side and replay.
+#[pyclass(module = "pdf_oxide.pdf_oxide", name = "StreamingTable")]
+pub struct PyStreamingTable {
+    parent: Py<PyFluentPageBuilder>,
+    columns: Vec<PyColumn>,
+    repeat_header: bool,
+    /// Each cell: (text, rowspan).
+    rows: Vec<Vec<(String, usize)>>,
+    finished: bool,
+    mode: String,
+    sample_rows: usize,
+    min_col_width_pt: f32,
+    max_col_width_pt: f32,
+    max_rowspan: usize,
+}
+
+#[pymethods]
+impl PyStreamingTable {
+    /// Push a single row of string cells (all rowspan=1). Length must match
+    /// the number of configured columns; otherwise `ValueError` is raised.
+    fn push_row(&mut self, cells: Vec<String>) -> PyResult<()> {
+        if self.finished {
+            return Err(PyRuntimeError::new_err("StreamingTable.finish() already called"));
+        }
+        if cells.len() != self.columns.len() {
+            return Err(PyValueError::new_err(format!(
+                "row has {} cells, expected {}",
+                cells.len(),
+                self.columns.len()
+            )));
+        }
+        self.rows
+            .push(cells.into_iter().map(|s| (s, 1usize)).collect());
+        Ok(())
+    }
+
+    /// Push a row with per-cell rowspan values. Each element is a
+    /// `(text, rowspan)` tuple; rowspan == 1 is a normal cell.
+    fn push_row_span(&mut self, cells: Vec<(String, usize)>) -> PyResult<()> {
+        if self.finished {
+            return Err(PyRuntimeError::new_err("StreamingTable.finish() already called"));
+        }
+        if cells.len() != self.columns.len() {
+            return Err(PyValueError::new_err(format!(
+                "row has {} cells, expected {}",
+                cells.len(),
+                self.columns.len()
+            )));
+        }
+        self.rows.push(cells);
+        Ok(())
+    }
+
+    /// Number of columns configured on this streaming table.
+    fn column_count(&self) -> usize {
+        self.columns.len()
+    }
+
+    /// Close the streaming table and return the parent
+    /// `FluentPageBuilder` for further chaining.
+    fn finish(&mut self, py: Python<'_>) -> PyResult<Py<PyFluentPageBuilder>> {
+        if self.finished {
+            return Err(PyRuntimeError::new_err("StreamingTable.finish() already called"));
+        }
+        self.finished = true;
+
+        let parent_handle = self.parent.clone_ref(py);
+        let mut parent_ref = parent_handle.borrow_mut(py);
+        let headers: Vec<String> = self.columns.iter().map(|c| c.header.clone()).collect();
+        let widths: Vec<f32> = self.columns.iter().map(|c| c.width).collect();
+        let aligns: Vec<i32> = self.columns.iter().map(|c| c.align).collect();
+        let rows = std::mem::take(&mut self.rows);
+        parent_ref.push(PendingPageOp::StreamingTable {
+            headers,
+            widths,
+            aligns,
+            repeat_header: self.repeat_header,
+            rows,
+            mode: self.mode.clone(),
+            sample_rows: self.sample_rows,
+            min_col_width_pt: self.min_col_width_pt,
+            max_col_width_pt: self.max_col_width_pt,
+            max_rowspan: self.max_rowspan,
+        })?;
         drop(parent_ref);
         Ok(parent_handle)
     }
@@ -5171,6 +6246,52 @@ impl PyCertificate {
         }
     }
 
+    /// Load a signer certificate + private key from separate PEM strings.
+    /// `cert_pem` must begin with `-----BEGIN CERTIFICATE-----`.
+    /// `key_pem` must begin with `-----BEGIN PRIVATE KEY-----` (PKCS#8) or
+    /// `-----BEGIN RSA PRIVATE KEY-----` (PKCS#1).
+    #[staticmethod]
+    fn load_pem(cert_pem: &str, key_pem: &str) -> PyResult<Self> {
+        #[cfg(feature = "signatures")]
+        {
+            let creds = crate::signatures::SigningCredentials::from_pem(cert_pem, key_pem)
+                .map_err(|e| {
+                    PyValueError::new_err(format!("Failed to load PEM credentials: {e}"))
+                })?;
+            Ok(Self { creds })
+        }
+        #[cfg(not(feature = "signatures"))]
+        {
+            let _ = (cert_pem, key_pem);
+            Err(PyNotImplementedError::new_err(
+                "Certificate.load_pem(): pdf_oxide was built without --features signatures",
+            ))
+        }
+    }
+
+    /// Load a signer certificate + private key from a PKCS#12 (.p12/.pfx) blob.
+    /// `password` is the passphrase protecting the key bag.
+    #[staticmethod]
+    fn load_pkcs12(data: &Bound<'_, PyBytes>, password: &str) -> PyResult<Self> {
+        #[cfg(feature = "signatures")]
+        {
+            let bytes = data.as_bytes();
+            if bytes.is_empty() {
+                return Err(PyValueError::new_err("PKCS#12 data must not be empty"));
+            }
+            let creds = crate::signatures::SigningCredentials::from_pkcs12(bytes, password)
+                .map_err(|e| PyValueError::new_err(format!("Failed to load PKCS#12: {e}")))?;
+            Ok(Self { creds })
+        }
+        #[cfg(not(feature = "signatures"))]
+        {
+            let _ = (data, password);
+            Err(PyNotImplementedError::new_err(
+                "Certificate.load_pkcs12(): pdf_oxide was built without --features signatures",
+            ))
+        }
+    }
+
     /// Subject distinguished name (e.g. `CN=pdfoxide-test, O=pdf_oxide, C=US`).
     #[getter]
     fn subject(&self) -> PyResult<String> {
@@ -5483,6 +6604,11 @@ fn pdf_oxide(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyDocumentBuilder>()?;
     m.add_class::<PyFluentPageBuilder>()?;
     m.add_class::<PyEmbeddedFont>()?;
+    // v0.3.39 table + primitive surface (#393 step 6a)
+    m.add_class::<PyAlign>()?;
+    m.add_class::<PyColumn>()?;
+    m.add_class::<PyTable>()?;
+    m.add_class::<PyStreamingTable>()?;
     m.add_class::<PyPageTemplate>()?;
     m.add_class::<PyArtifact>()?;
     m.add_class::<PyHeader>()?;
@@ -5498,6 +6624,55 @@ fn pdf_oxide(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyCertificate>()?;
     m.add_class::<PyTimestamp>()?;
     m.add_class::<PyTsaClient>()?;
+    m.add_function(pyo3::wrap_pyfunction!(py_sign_pdf_bytes, m)?)?;
     m.add("VERSION", env!("CARGO_PKG_VERSION"))?;
     Ok(())
+}
+
+/// Sign raw PDF bytes and return the signed PDF as `bytes`.
+///
+/// `cert` must be a :class:`Certificate` loaded via
+/// :meth:`Certificate.load_pem` or :meth:`Certificate.load_pkcs12`
+/// (i.e. it must carry a private key, not just a certificate).
+///
+/// # Example
+///
+/// ```python
+/// from pdf_oxide import Certificate, sign_pdf_bytes
+///
+/// cert = Certificate.load_pem(open("cert.pem").read(), open("key.pem").read())
+/// with open("input.pdf", "rb") as f:
+///     signed = sign_pdf_bytes(f.read(), cert, reason="Approved", location="HQ")
+/// with open("signed.pdf", "wb") as f:
+///     f.write(signed)
+/// ```
+#[pyo3::pyfunction]
+#[pyo3(signature = (pdf_data, cert, reason=None, location=None))]
+pub fn py_sign_pdf_bytes<'py>(
+    py: pyo3::Python<'py>,
+    pdf_data: &Bound<'py, PyBytes>,
+    cert: &PyCertificate,
+    reason: Option<&str>,
+    location: Option<&str>,
+) -> PyResult<Bound<'py, PyBytes>> {
+    #[cfg(feature = "signatures")]
+    {
+        use crate::signatures::{sign_pdf_bytes, SignOptions};
+        let opts = SignOptions {
+            reason: reason.map(str::to_owned),
+            location: location.map(str::to_owned),
+            ..Default::default()
+        };
+        let signed = sign_pdf_bytes(pdf_data.as_bytes(), &cert.creds, opts).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("sign_pdf_bytes failed: {e}"))
+        })?;
+        Ok(PyBytes::new(py, &signed))
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = (pdf_data, cert, reason, location);
+        Err(pyo3::exceptions::PyNotImplementedError::new_err(
+            "sign_pdf_bytes(): pdf_oxide was built without --features signatures",
+        ))
+    }
 }

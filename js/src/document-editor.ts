@@ -59,6 +59,15 @@ export class DocumentEditor {
     return new DocumentEditor(handle);
   }
 
+  /** Open a PDF from an in-memory buffer for editing. */
+  static openFromBytes(data: Buffer | Uint8Array): DocumentEditor {
+    if (!data || data.length === 0) {
+      throw new TypeError('data must be a non-empty Buffer or Uint8Array');
+    }
+    const handle = native.editorOpenFromBytes(data);
+    return new DocumentEditor(handle);
+  }
+
   /** True if the editor has been closed. Subsequent calls will throw. */
   get closed(): boolean {
     return this._closed;
@@ -92,6 +101,21 @@ export class DocumentEditor {
     native.editorSetAuthor(this._handle, author);
   }
 
+  setSubject(subject: string): void {
+    this._throwIfClosed();
+    native.editorSetSubject(this._handle, subject);
+  }
+
+  getKeywords(): string | null {
+    this._throwIfClosed();
+    return native.editorGetKeywords(this._handle);
+  }
+
+  setKeywords(keywords: string): void {
+    this._throwIfClosed();
+    native.editorSetKeywords(this._handle, keywords);
+  }
+
   getProducer(): string {
     this._throwIfClosed();
     return native.editorGetProducer(this._handle);
@@ -99,12 +123,7 @@ export class DocumentEditor {
 
   setProducer(producer: string): void {
     this._throwIfClosed();
-    // NOTE: today this is a no-op in Rust core (src/ffi.rs:532-586).
-    // The wrapper is in place so the API surface matches
-    // Python / C# / Go.
-    if (native.editorSetProducer) {
-      native.editorSetProducer(this._handle, producer);
-    }
+    native.editorSetProducer(this._handle, producer);
   }
 
   getCreationDate(): string {
@@ -114,10 +133,7 @@ export class DocumentEditor {
 
   setCreationDate(date: string): void {
     this._throwIfClosed();
-    // Same Rust-core stub note as setProducer.
-    if (native.editorSetCreationDate) {
-      native.editorSetCreationDate(this._handle, date);
-    }
+    native.editorSetCreationDate(this._handle, date);
   }
 
   // ----- page mutations ---------------------------------------------
@@ -159,6 +175,16 @@ export class DocumentEditor {
     native.editorFlattenForms(this._handle);
   }
 
+  /**
+   * Return warnings collected during the last form-flattening save.
+   * Each entry names a widget field that had no `/AP` appearance stream;
+   * flattening it produces a blank rectangle.
+   */
+  flattenWarnings(): string[] {
+    this._throwIfClosed();
+    return native.editorFlattenWarnings(this._handle) as string[];
+  }
+
   /** Flatten annotations. If `pageIndex` is omitted, flattens all pages. */
   flattenAnnotations(pageIndex?: number): void {
     this._throwIfClosed();
@@ -187,6 +213,128 @@ export class DocumentEditor {
     native.editorImportXfdfBytes(this._handle, xfdf);
   }
 
+  // ----- byte-level merge / embed -----------------------------------
+
+  /**
+   * Append every page of another PDF (supplied as bytes) to this document.
+   * Returns the number of pages added.
+   */
+  mergeFromBytes(data: Buffer | Uint8Array): number {
+    this._throwIfClosed();
+    return native.editorMergeFromBytes(this._handle, data) as number;
+  }
+
+  /** Embed a file attachment into the document. */
+  embedFile(name: string, data: Buffer | Uint8Array): void {
+    this._throwIfClosed();
+    native.editorEmbedFile(this._handle, name, data);
+  }
+
+  // ----- redactions -------------------------------------------------
+
+  /** Burn in redaction annotations on a single page (zero-based). */
+  applyPageRedactions(pageIndex: number): void {
+    this._throwIfClosed();
+    native.editorApplyPageRedactions(this._handle, pageIndex);
+  }
+
+  /** Burn in all pending redaction annotations across the document. */
+  applyAllRedactions(): void {
+    this._throwIfClosed();
+    native.editorApplyAllRedactions(this._handle);
+  }
+
+  // ----- rotation (additive) ----------------------------------------
+
+  /** Rotate all pages by `degrees` (additive). */
+  rotateAllPages(degrees: number): void {
+    this._throwIfClosed();
+    native.editorRotateAllPages(this._handle, degrees);
+  }
+
+  /** Rotate a single page by `degrees` (additive). */
+  rotatePageBy(pageIndex: number, degrees: number): void {
+    this._throwIfClosed();
+    native.editorRotatePageBy(this._handle, pageIndex, degrees);
+  }
+
+  // ----- page boxes -------------------------------------------------
+
+  /** Get the MediaBox of a page as `{x, y, width, height}`. */
+  getPageMediaBox(pageIndex: number): { x: number; y: number; width: number; height: number } {
+    this._throwIfClosed();
+    return native.editorGetPageMediaBox(this._handle, pageIndex);
+  }
+
+  /** Set the MediaBox of a page. */
+  setPageMediaBox(pageIndex: number, x: number, y: number, width: number, height: number): void {
+    this._throwIfClosed();
+    native.editorSetPageMediaBox(this._handle, pageIndex, x, y, width, height);
+  }
+
+  /** Get the CropBox of a page. Returns `{x:0,y:0,width:0,height:0}` if none set. */
+  getPageCropBox(pageIndex: number): { x: number; y: number; width: number; height: number } {
+    this._throwIfClosed();
+    return native.editorGetPageCropBox(this._handle, pageIndex);
+  }
+
+  /** Set the CropBox of a page. */
+  setPageCropBox(pageIndex: number, x: number, y: number, width: number, height: number): void {
+    this._throwIfClosed();
+    native.editorSetPageCropBox(this._handle, pageIndex, x, y, width, height);
+  }
+
+  // ----- erase regions ----------------------------------------------
+
+  /**
+   * Erase rectangular regions on a page.
+   * `rects` is an array of `[x, y, w, h]` tuples.
+   */
+  eraseRegions(pageIndex: number, rects: [number, number, number, number][]): void {
+    this._throwIfClosed();
+    native.editorEraseRegions(this._handle, pageIndex, rects);
+  }
+
+  /** Clear all pending erase-region entries for a page. */
+  clearEraseRegions(pageIndex: number): void {
+    this._throwIfClosed();
+    native.editorClearEraseRegions(this._handle, pageIndex);
+  }
+
+  // ----- form flattening on single page ------------------------------
+
+  /** Flatten form fields on a single page. */
+  flattenFormsOnPage(pageIndex: number): void {
+    this._throwIfClosed();
+    native.editorFlattenFormsOnPage(this._handle, pageIndex);
+  }
+
+  // ----- page-mark state queries ------------------------------------
+
+  /** True if the page is marked for annotation-flatten. */
+  isPageMarkedForFlatten(pageIndex: number): boolean {
+    this._throwIfClosed();
+    return native.editorIsPageMarkedForFlatten(this._handle, pageIndex) as boolean;
+  }
+
+  /** Remove the flatten mark from a page. */
+  unmarkPageForFlatten(pageIndex: number): void {
+    this._throwIfClosed();
+    native.editorUnmarkPageForFlatten(this._handle, pageIndex);
+  }
+
+  /** True if the page is marked for redaction. */
+  isPageMarkedForRedaction(pageIndex: number): boolean {
+    this._throwIfClosed();
+    return native.editorIsPageMarkedForRedaction(this._handle, pageIndex) as boolean;
+  }
+
+  /** Remove the redaction mark from a page. */
+  unmarkPageForRedaction(pageIndex: number): void {
+    this._throwIfClosed();
+    native.editorUnmarkPageForRedaction(this._handle, pageIndex);
+  }
+
   // ----- save paths -------------------------------------------------
 
   /** Save the document to `path`. */
@@ -202,6 +350,23 @@ export class DocumentEditor {
   saveEncrypted(path: string, userPassword: string, ownerPassword: string): void {
     this._throwIfClosed();
     native.editorSaveEncrypted(this._handle, path, userPassword, ownerPassword);
+  }
+
+  /** Save the document to an in-memory Buffer. */
+  saveToBytes(): Buffer {
+    this._throwIfClosed();
+    return native.editorSaveToBytes(this._handle) as Buffer;
+  }
+
+  /** Save to an in-memory Buffer with explicit compression / GC / linearize flags. */
+  saveToBytesWithOptions(compress: boolean, garbageCollect: boolean, linearize: boolean): Buffer {
+    this._throwIfClosed();
+    return native.editorSaveToBytesWithOptions(
+      this._handle,
+      compress,
+      garbageCollect,
+      linearize
+    ) as Buffer;
   }
 
   // ----- lifecycle --------------------------------------------------

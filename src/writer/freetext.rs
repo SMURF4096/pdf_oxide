@@ -272,10 +272,10 @@ impl FreeTextAnnotation {
         );
 
         // Contents
-        dict.insert("Contents".to_string(), Object::String(self.contents.as_bytes().to_vec()));
+        dict.insert("Contents".to_string(), Object::text_string(&self.contents));
 
         // Default Appearance (required for FreeText)
-        dict.insert("DA".to_string(), Object::String(self.default_appearance.as_bytes().to_vec()));
+        dict.insert("DA".to_string(), Object::text_string(&self.default_appearance));
 
         // Text alignment (Q entry)
         if self.alignment != TextAlignment::Left {
@@ -379,32 +379,32 @@ impl FreeTextAnnotation {
 
         // Rich text (RC entry)
         if let Some(ref rc) = self.rich_text {
-            dict.insert("RC".to_string(), Object::String(rc.as_bytes().to_vec()));
+            dict.insert("RC".to_string(), Object::text_string(rc));
         }
 
         // Default style (DS entry)
         if let Some(ref ds) = self.default_style {
-            dict.insert("DS".to_string(), Object::String(ds.as_bytes().to_vec()));
+            dict.insert("DS".to_string(), Object::text_string(ds));
         }
 
         // Author (T entry)
         if let Some(ref author) = self.author {
-            dict.insert("T".to_string(), Object::String(author.as_bytes().to_vec()));
+            dict.insert("T".to_string(), Object::text_string(author));
         }
 
         // Subject
         if let Some(ref subject) = self.subject {
-            dict.insert("Subj".to_string(), Object::String(subject.as_bytes().to_vec()));
+            dict.insert("Subj".to_string(), Object::text_string(subject));
         }
 
         // Creation date
         if let Some(ref date) = self.creation_date {
-            dict.insert("CreationDate".to_string(), Object::String(date.as_bytes().to_vec()));
+            dict.insert("CreationDate".to_string(), Object::text_string(date));
         }
 
         // Modification date
         if let Some(ref date) = self.modification_date {
-            dict.insert("M".to_string(), Object::String(date.as_bytes().to_vec()));
+            dict.insert("M".to_string(), Object::text_string(date));
         }
 
         dict

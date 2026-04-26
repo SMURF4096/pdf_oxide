@@ -181,10 +181,8 @@ namespace PdfOxide.Internal
         public static partial void FreeString(IntPtr ptr);
 
         /// <summary>
-        /// Frees a byte buffer allocated by Rust. Matches the native signature
-        /// <c>void free_bytes(void* ptr)</c> — length is not passed because
-        /// Rust's allocator tracks it internally. Callers that have a length
-        /// should pass it to the managed copy step, not this function.
+        /// Frees a byte buffer allocated by Rust via the C system allocator
+        /// (malloc).  No length argument needed — malloc tracks the size.
         /// </summary>
         /// <param name="ptr">Pointer to the buffer to free.</param>
         [LibraryImport(LibName, EntryPoint = "free_bytes", StringMarshalling = StringMarshalling.Utf8)]
@@ -4564,6 +4562,24 @@ namespace PdfOxide.Internal
             UIntPtr certSize,
             out int errorCode);
 
+        /// <summary>Load signing credentials from PEM-encoded certificate and private key strings.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_certificate_load_from_pem", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr PdfCertificateLoadFromPem(
+            string certPem, string keyPem, out int errorCode);
+
+        /// <summary>
+        /// Applies a CMS/PKCS#7 detached signature to raw PDF bytes and returns the signed PDF.
+        /// The caller must free the returned buffer with <see cref="FreeBytes"/>.
+        /// </summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_sign_bytes", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial byte* PdfSignBytes(
+            byte* pdfData, nuint pdfLen,
+            IntPtr certificateHandle,
+            string? reason, string? location,
+            out nuint outLen, out int errorCode);
+
         /// <summary>
         /// Gets the common name (CN) from a certificate handle.
         /// </summary>
@@ -6008,6 +6024,207 @@ namespace PdfOxide.Internal
             int pageIndex,
             out int errorCode);
 
+        /// <summary>
+        /// Returns the number of flatten warnings from the last save.
+        /// </summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_flatten_warnings_count")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_flatten_warnings_count(NativeHandle handle);
+
+        /// <summary>
+        /// Returns the index-th flatten warning as a native string (must be freed with free_string).
+        /// </summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_flatten_warning")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr document_editor_flatten_warning(
+            NativeHandle handle,
+            int index,
+            out int errorCode);
+
+        #endregion
+
+        #region DocumentEditor New Methods (v0.3.39)
+
+        /// <summary>Opens a DocumentEditor from an in-memory byte buffer.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_open_from_bytes")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial NativeHandle document_editor_open_from_bytes(
+            [In] byte[] data,
+            nuint length,
+            out int errorCode);
+
+        /// <summary>Saves the editor to an in-memory byte buffer.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_save_to_bytes")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr document_editor_save_to_bytes(
+            NativeHandle handle,
+            out nuint outLen,
+            out int errorCode);
+
+        /// <summary>Saves the editor to bytes with compress / garbage-collect / linearize options.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_save_to_bytes_with_options")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr document_editor_save_to_bytes_with_options(
+            NativeHandle handle,
+            [MarshalAs(UnmanagedType.I1)] bool compress,
+            [MarshalAs(UnmanagedType.I1)] bool garbageCollect,
+            [MarshalAs(UnmanagedType.I1)] bool linearize,
+            out nuint outLen,
+            out int errorCode);
+
+        /// <summary>Gets the keywords metadata from a DocumentEditor.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_get_keywords", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr document_editor_get_keywords(
+            NativeHandle handle,
+            out int errorCode);
+
+        /// <summary>Sets the keywords metadata on a DocumentEditor.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_set_keywords", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_set_keywords(
+            NativeHandle handle,
+            string keywords,
+            out int errorCode);
+
+        /// <summary>Merges pages from an in-memory PDF byte buffer.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_merge_from_bytes")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_merge_from_bytes(
+            NativeHandle handle,
+            [In] byte[] data,
+            nuint length,
+            out int errorCode);
+
+        /// <summary>Embeds a file attachment into the document.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_embed_file", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_embed_file(
+            NativeHandle handle,
+            string name,
+            [In] byte[] data,
+            nuint length,
+            out int errorCode);
+
+        /// <summary>Burns in redaction annotations on a single page.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_apply_page_redactions")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_apply_page_redactions(
+            NativeHandle handle,
+            nuint page,
+            out int errorCode);
+
+        /// <summary>Burns in all pending redaction annotations.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_apply_all_redactions")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_apply_all_redactions(
+            NativeHandle handle,
+            out int errorCode);
+
+        /// <summary>Rotates all pages by degrees (additive).</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_rotate_all_pages")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_rotate_all_pages(
+            NativeHandle handle,
+            int degrees,
+            out int errorCode);
+
+        /// <summary>Rotates a single page by degrees (additive).</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_rotate_page_by")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_rotate_page_by(
+            NativeHandle handle,
+            nuint page,
+            int degrees,
+            out int errorCode);
+
+        /// <summary>Gets the MediaBox of a page.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_get_page_media_box")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_get_page_media_box(
+            NativeHandle handle,
+            nuint page,
+            out double x, out double y, out double w, out double h,
+            out int errorCode);
+
+        /// <summary>Sets the MediaBox of a page.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_set_page_media_box")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_set_page_media_box(
+            NativeHandle handle,
+            nuint page,
+            double x, double y, double w, double h,
+            out int errorCode);
+
+        /// <summary>Gets the CropBox of a page. Returns zeros if no CropBox is set.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_get_page_crop_box")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_get_page_crop_box(
+            NativeHandle handle,
+            nuint page,
+            out double x, out double y, out double w, out double h,
+            out int errorCode);
+
+        /// <summary>Sets the CropBox of a page.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_set_page_crop_box")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_set_page_crop_box(
+            NativeHandle handle,
+            nuint page,
+            double x, double y, double w, double h,
+            out int errorCode);
+
+        /// <summary>
+        /// Erases multiple rectangular regions on a page.
+        /// rects is a flat [x,y,w,h,...] array; rectsCount is the number of rectangles.
+        /// </summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_erase_regions")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_erase_regions(
+            NativeHandle handle,
+            nuint page,
+            [In] double[] rects,
+            nuint rectsCount,
+            out int errorCode);
+
+        /// <summary>Clears all pending erase-region entries for a page.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_clear_erase_regions")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_clear_erase_regions(
+            NativeHandle handle,
+            nuint page,
+            out int errorCode);
+
+        /// <summary>Returns 1 if marked for flatten, 0 if not, -1 on error.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_is_page_marked_for_flatten")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_is_page_marked_for_flatten(
+            NativeHandle handle,
+            nuint page);
+
+        /// <summary>Removes the flatten mark from a page.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_unmark_page_for_flatten")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_unmark_page_for_flatten(
+            NativeHandle handle,
+            nuint page,
+            out int errorCode);
+
+        /// <summary>Returns 1 if marked for redaction, 0 if not, -1 on error.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_is_page_marked_for_redaction")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_is_page_marked_for_redaction(
+            NativeHandle handle,
+            nuint page);
+
+        /// <summary>Removes the redaction mark from a page.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_unmark_page_for_redaction")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_unmark_page_for_redaction(
+            NativeHandle handle,
+            nuint page,
+            out int errorCode);
+
         #endregion
 
         #region PdfDocument Extended Operations (8 functions)
@@ -6836,6 +7053,26 @@ namespace PdfOxide.Internal
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial int PdfDocumentBuilderSetCreator(IntPtr handle, string creator, out int errorCode);
 
+        /// <summary>Run JavaScript when the document is opened (/OpenAction).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_document_builder_on_open", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfDocumentBuilderOnOpen(IntPtr handle, string script, out int errorCode);
+
+        /// <summary>Enable PDF/UA-1 tagged PDF mode (Bundle F-1/F-2).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_document_builder_tagged_pdf_ua1", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfDocumentBuilderTaggedPdfUa1(IntPtr handle, out int errorCode);
+
+        /// <summary>Set the document's natural language tag, e.g. "en-US" (Bundle F-2).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_document_builder_language", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfDocumentBuilderLanguage(IntPtr handle, string lang, out int errorCode);
+
+        /// <summary>Add a role-map entry: custom structure type → standard PDF type (Bundle F-4).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_document_builder_role_map", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfDocumentBuilderRoleMap(IntPtr handle, string custom, string standard, out int errorCode);
+
         /// <summary>Register a TTF/OTF font. CONSUMES <paramref name="font"/> on success.</summary>
         [LibraryImport(LibName, EntryPoint = "pdf_document_builder_register_embedded_font", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
@@ -6909,6 +7146,41 @@ namespace PdfOxide.Internal
         [LibraryImport(LibName, EntryPoint = "pdf_page_builder_link_named", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial int PdfPageBuilderLinkNamed(IntPtr page, string destination, out int errorCode);
+
+        /// <summary>Link the previous text to a JavaScript action.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_link_javascript", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderLinkJavascript(IntPtr page, string script, out int errorCode);
+
+        /// <summary>Run JavaScript when this page is opened (/AA /O).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_on_open", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderOnOpen(IntPtr page, string script, out int errorCode);
+
+        /// <summary>Run JavaScript when this page is closed (/AA /C).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_on_close", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderOnClose(IntPtr page, string script, out int errorCode);
+
+        /// <summary>Set a keystroke JS action (/AA /K) on the last form field.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_field_keystroke", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderFieldKeystroke(IntPtr page, string script, out int errorCode);
+
+        /// <summary>Set a format JS action (/AA /F) on the last form field.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_field_format", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderFieldFormat(IntPtr page, string script, out int errorCode);
+
+        /// <summary>Set a validate JS action (/AA /V) on the last form field.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_field_validate", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderFieldValidate(IntPtr page, string script, out int errorCode);
+
+        /// <summary>Set a calculate JS action (/AA /C) on the last form field.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_field_calculate", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderFieldCalculate(IntPtr page, string script, out int errorCode);
 
         /// <summary>Highlight the previous text (RGB channels 0–1).</summary>
         [LibraryImport(LibName, EntryPoint = "pdf_page_builder_highlight", StringMarshalling = StringMarshalling.Utf8)]
@@ -7005,6 +7277,79 @@ namespace PdfOxide.Internal
             IntPtr page, string name, float x, float y, float w, float h,
             string caption, out int errorCode);
 
+        /// <summary>Add an unsigned signature placeholder field.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_signature_field", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderSignatureField(
+            IntPtr page, string name, float x, float y, float w, float h, out int errorCode);
+
+        /// <summary>Add a footnote reference mark inline and record the body for page-end placement.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_footnote", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderFootnote(
+            IntPtr page, string refMark, string noteText, out int errorCode);
+
+        /// <summary>Lay out text as balanced multi-column flow.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_columns", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderColumns(
+            IntPtr page, uint columnCount, float gapPt, string text, out int errorCode);
+
+        /// <summary>Inline text run (advances cursorX only).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_inline", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderInline(IntPtr page, string text, out int errorCode);
+
+        /// <summary>Inline bold run.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_inline_bold", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderInlineBold(IntPtr page, string text, out int errorCode);
+
+        /// <summary>Inline italic run.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_inline_italic", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderInlineItalic(IntPtr page, string text, out int errorCode);
+
+        /// <summary>Inline colored run (RGB 0.0–1.0).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_inline_color", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderInlineColor(
+            IntPtr page, float r, float g, float b, string text, out int errorCode);
+
+        /// <summary>Advance cursorY one line-height; reset cursorX to 72 pt.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_newline")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderNewline(IntPtr page, out int errorCode);
+
+        /// <summary>Place a 1-D barcode image on the page.
+        /// barcodeType: 0=Code128 1=Code39 2=EAN13 3=EAN8 4=UPCA 5=ITF 6=Code93 7=Codabar.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_barcode_1d", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderBarcode1d(
+            IntPtr page, int barcodeType, string data,
+            float x, float y, float w, float h, out int errorCode);
+
+        /// <summary>Place a QR-code image on the page (square: size × size).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_barcode_qr", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderBarcodeQr(
+            IntPtr page, string data, float x, float y, float size, out int errorCode);
+
+        /// <summary>Embed an image with accessibility alt text (PDF/UA-1 Figure).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_image_with_alt", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial int PdfPageBuilderImageWithAlt(
+            IntPtr page, byte* bytes, nuint len,
+            float x, float y, float w, float h,
+            string altText, out int errorCode);
+
+        /// <summary>Embed a decorative image as an /Artifact (no alt text, PDF/UA-1).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_image_artifact", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial int PdfPageBuilderImageArtifact(
+            IntPtr page, byte* bytes, nuint len,
+            float x, float y, float w, float h, out int errorCode);
+
         /// <summary>Draw a stroked rectangle outline.</summary>
         [LibraryImport(LibName, EntryPoint = "pdf_page_builder_rect", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
@@ -7019,6 +7364,89 @@ namespace PdfOxide.Internal
         [LibraryImport(LibName, EntryPoint = "pdf_page_builder_line", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial int PdfPageBuilderLine(IntPtr page, float x1, float y1, float x2, float y2, out int errorCode);
+
+        // v0.3.39 primitives (#393) — buffered Table surface ------------------
+
+        /// <summary>Draw a stroked rectangle with caller-supplied width + RGB colour.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_stroke_rect", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderStrokeRect(
+            IntPtr page, float x, float y, float w, float h,
+            float width, float r, float g, float b,
+            out int errorCode);
+
+        /// <summary>Draw a straight line with caller-supplied width + RGB colour.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_stroke_line", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderStrokeLine(
+            IntPtr page, float x1, float y1, float x2, float y2,
+            float width, float r, float g, float b,
+            out int errorCode);
+
+        /// <summary>Place wrapped text inside a rectangle with horizontal alignment (0=Left,1=Center,2=Right).</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_text_in_rect", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderTextInRect(
+            IntPtr page, float x, float y, float w, float h,
+            string text, int align, out int errorCode);
+
+        /// <summary>Transition to a new page with the same dimensions as the current one.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_new_page_same_size", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderNewPageSameSize(IntPtr page, out int errorCode);
+
+        /// <summary>
+        /// Place a buffered table at the current cursor. <c>cellStrings</c>
+        /// is a row-major array of UTF-8 C strings of length <c>nRows * nColumns</c>.
+        /// </summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_table", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial int PdfPageBuilderTable(
+            IntPtr page,
+            nuint nColumns,
+            float* widths,
+            int* aligns,
+            nuint nRows,
+            byte** cellStrings,
+            int hasHeader,
+            out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_streaming_table_begin_v2")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial int PdfPageBuilderStreamingTableBeginV2(
+            IntPtr page,
+            nuint nColumns,
+            byte** headers,
+            float* widths,
+            int* aligns,
+            int repeatHeader,
+            int mode,
+            nuint sampleRows,
+            float minColWidthPt,
+            float maxColWidthPt,
+            nuint maxRowspan,
+            out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_streaming_table_push_row")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial int PdfPageBuilderStreamingTablePushRow(
+            IntPtr page,
+            nuint nCells,
+            byte** cells,
+            out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_streaming_table_push_row_v2")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial int PdfPageBuilderStreamingTablePushRowV2(
+            IntPtr page,
+            nuint nCells,
+            byte** cells,
+            nuint* rowspans,
+            out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_streaming_table_finish")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderStreamingTableFinish(IntPtr page, out int errorCode);
 
         /// <summary>Commit the page and CONSUME the page handle.</summary>
         [LibraryImport(LibName, EntryPoint = "pdf_page_builder_done", StringMarshalling = StringMarshalling.Utf8)]

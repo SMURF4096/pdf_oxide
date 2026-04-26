@@ -71,9 +71,9 @@ fn open_pdf_from_bytes(bytes: &[u8]) -> (NamedTempFile, PdfDocument) {
 #[test]
 fn test_extract_form_fields_basic() {
     let bytes = create_form_pdf_bytes();
-    let (_temp, mut doc) = open_pdf_from_bytes(&bytes);
+    let (_temp, doc) = open_pdf_from_bytes(&bytes);
 
-    let fields = FormExtractor::extract_fields(&mut doc).expect("Failed to extract fields");
+    let fields = FormExtractor::extract_fields(&doc).expect("Failed to extract fields");
 
     // We should get at least 6 fields (name, ssn, agree, newsletter, country, interests)
     assert!(fields.len() >= 6, "Expected at least 6 fields, got {}", fields.len());
@@ -82,9 +82,9 @@ fn test_extract_form_fields_basic() {
 #[test]
 fn test_extract_text_field_value() {
     let bytes = create_form_pdf_bytes();
-    let (_temp, mut doc) = open_pdf_from_bytes(&bytes);
+    let (_temp, doc) = open_pdf_from_bytes(&bytes);
 
-    let fields = FormExtractor::extract_fields(&mut doc).expect("Failed to extract fields");
+    let fields = FormExtractor::extract_fields(&doc).expect("Failed to extract fields");
 
     let name_field = fields.iter().find(|f| f.full_name == "name");
     assert!(name_field.is_some(), "Should find 'name' field");
@@ -97,9 +97,9 @@ fn test_extract_text_field_value() {
 #[test]
 fn test_extract_text_field_readonly_flag() {
     let bytes = create_form_pdf_bytes();
-    let (_temp, mut doc) = open_pdf_from_bytes(&bytes);
+    let (_temp, doc) = open_pdf_from_bytes(&bytes);
 
-    let fields = FormExtractor::extract_fields(&mut doc).expect("Failed to extract fields");
+    let fields = FormExtractor::extract_fields(&doc).expect("Failed to extract fields");
 
     let ssn_field = fields.iter().find(|f| f.full_name == "ssn");
     assert!(ssn_field.is_some(), "Should find 'ssn' field");
@@ -112,9 +112,9 @@ fn test_extract_text_field_readonly_flag() {
 #[test]
 fn test_extract_checkbox_field() {
     let bytes = create_form_pdf_bytes();
-    let (_temp, mut doc) = open_pdf_from_bytes(&bytes);
+    let (_temp, doc) = open_pdf_from_bytes(&bytes);
 
-    let fields = FormExtractor::extract_fields(&mut doc).expect("Failed to extract fields");
+    let fields = FormExtractor::extract_fields(&doc).expect("Failed to extract fields");
 
     let agree_field = fields.iter().find(|f| f.full_name == "agree");
     assert!(agree_field.is_some(), "Should find 'agree' checkbox");
@@ -126,9 +126,9 @@ fn test_extract_checkbox_field() {
 #[test]
 fn test_extract_choice_field() {
     let bytes = create_form_pdf_bytes();
-    let (_temp, mut doc) = open_pdf_from_bytes(&bytes);
+    let (_temp, doc) = open_pdf_from_bytes(&bytes);
 
-    let fields = FormExtractor::extract_fields(&mut doc).expect("Failed to extract fields");
+    let fields = FormExtractor::extract_fields(&doc).expect("Failed to extract fields");
 
     let country_field = fields.iter().find(|f| f.full_name == "country");
     assert!(country_field.is_some(), "Should find 'country' choice field");
@@ -142,18 +142,18 @@ fn test_extract_no_form_fields_on_plain_pdf() {
     let bytes = pdf_oxide::api::Pdf::from_text("No forms here")
         .unwrap()
         .into_bytes();
-    let (_temp, mut doc) = open_pdf_from_bytes(&bytes);
+    let (_temp, doc) = open_pdf_from_bytes(&bytes);
 
-    let fields = FormExtractor::extract_fields(&mut doc).expect("Failed to extract fields");
+    let fields = FormExtractor::extract_fields(&doc).expect("Failed to extract fields");
     assert!(fields.is_empty(), "Plain PDF should have no form fields");
 }
 
 #[test]
 fn test_form_field_has_bounds() {
     let bytes = create_form_pdf_bytes();
-    let (_temp, mut doc) = open_pdf_from_bytes(&bytes);
+    let (_temp, doc) = open_pdf_from_bytes(&bytes);
 
-    let fields = FormExtractor::extract_fields(&mut doc).expect("Failed to extract fields");
+    let fields = FormExtractor::extract_fields(&doc).expect("Failed to extract fields");
 
     // Most fields should have bounds (bounding box)
     let with_bounds = fields.iter().filter(|f| f.bounds.is_some()).count();
@@ -167,7 +167,7 @@ fn test_form_field_has_bounds() {
 #[test]
 fn test_checkbox_does_not_leak_off_into_text() {
     let bytes = create_form_pdf_bytes();
-    let (_temp, mut doc) = open_pdf_from_bytes(&bytes);
+    let (_temp, doc) = open_pdf_from_bytes(&bytes);
 
     let text = doc.extract_text(0).expect("Failed to extract text");
 
@@ -184,7 +184,7 @@ fn test_checkbox_does_not_leak_off_into_text() {
 #[test]
 fn test_checkbox_does_not_leak_yes_into_text() {
     let bytes = create_form_pdf_bytes();
-    let (_temp, mut doc) = open_pdf_from_bytes(&bytes);
+    let (_temp, doc) = open_pdf_from_bytes(&bytes);
 
     let text = doc.extract_text(0).expect("Failed to extract text");
 
@@ -201,7 +201,7 @@ fn test_checkbox_does_not_leak_yes_into_text() {
 #[test]
 fn test_checkbox_does_not_leak_zapf_dingbats() {
     let bytes = create_form_pdf_bytes();
-    let (_temp, mut doc) = open_pdf_from_bytes(&bytes);
+    let (_temp, doc) = open_pdf_from_bytes(&bytes);
 
     let text = doc.extract_text(0).expect("Failed to extract text");
 
@@ -222,11 +222,11 @@ fn test_text_field_values_may_appear_in_text() {
     // in extract_text if the appearance stream contains them. This is expected behavior.
     // We're just verifying that form extraction + text extraction don't crash.
     let bytes = create_form_pdf_bytes();
-    let (_temp, mut doc) = open_pdf_from_bytes(&bytes);
+    let (_temp, doc) = open_pdf_from_bytes(&bytes);
 
     // Should not panic
     let _text = doc.extract_text(0).expect("Failed to extract text");
-    let _fields = FormExtractor::extract_fields(&mut doc).expect("Failed to extract fields");
+    let _fields = FormExtractor::extract_fields(&doc).expect("Failed to extract fields");
 }
 
 // ============================================================================
@@ -309,7 +309,7 @@ fn test_has_xfa_on_plain_pdf() {
 fn test_extract_text_form_fields_inline() {
     // Form field values should appear inline in extracted text (not at the end)
     let bytes = create_form_pdf_bytes();
-    let (_temp, mut doc) = open_pdf_from_bytes(&bytes);
+    let (_temp, doc) = open_pdf_from_bytes(&bytes);
 
     let text = doc.extract_text(0).expect("Failed to extract text");
 
@@ -330,7 +330,7 @@ fn test_extract_text_form_fields_inline() {
 fn test_widget_spans_checkbox_checked() {
     // Checked checkboxes should render as [x]
     let bytes = create_form_pdf_bytes();
-    let (_temp, mut doc) = open_pdf_from_bytes(&bytes);
+    let (_temp, doc) = open_pdf_from_bytes(&bytes);
 
     let text = doc.extract_text(0).expect("Failed to extract text");
 
@@ -345,7 +345,7 @@ fn test_widget_spans_checkbox_checked() {
 fn test_widget_spans_checkbox_unchecked() {
     // Unchecked checkboxes should render as [ ]
     let bytes = create_form_pdf_bytes();
-    let (_temp, mut doc) = open_pdf_from_bytes(&bytes);
+    let (_temp, doc) = open_pdf_from_bytes(&bytes);
 
     let text = doc.extract_text(0).expect("Failed to extract text");
 
@@ -360,7 +360,7 @@ fn test_widget_spans_checkbox_unchecked() {
 fn test_widget_spans_choice_field() {
     // Choice field selected value should appear in output
     let bytes = create_form_pdf_bytes();
-    let (_temp, mut doc) = open_pdf_from_bytes(&bytes);
+    let (_temp, doc) = open_pdf_from_bytes(&bytes);
 
     let text = doc.extract_text(0).expect("Failed to extract text");
 
@@ -376,7 +376,7 @@ fn test_to_markdown_includes_form_fields() {
     use pdf_oxide::converters::ConversionOptions;
 
     let bytes = create_form_pdf_bytes();
-    let (_temp, mut doc) = open_pdf_from_bytes(&bytes);
+    let (_temp, doc) = open_pdf_from_bytes(&bytes);
 
     let options = ConversionOptions {
         include_form_fields: true,
@@ -398,7 +398,7 @@ fn test_to_html_includes_form_fields() {
     use pdf_oxide::converters::ConversionOptions;
 
     let bytes = create_form_pdf_bytes();
-    let (_temp, mut doc) = open_pdf_from_bytes(&bytes);
+    let (_temp, doc) = open_pdf_from_bytes(&bytes);
 
     let options = ConversionOptions {
         include_form_fields: true,
@@ -418,7 +418,7 @@ fn test_to_markdown_exclude_form_fields() {
     use pdf_oxide::converters::ConversionOptions;
 
     let bytes = create_form_pdf_bytes();
-    let (_temp, mut doc) = open_pdf_from_bytes(&bytes);
+    let (_temp, doc) = open_pdf_from_bytes(&bytes);
 
     let options = ConversionOptions {
         include_form_fields: false,
@@ -443,7 +443,7 @@ fn test_parse_font_size_from_da() {
     // The parse_font_size_from_da is a private method, so we test its effect
     // through the extract_widget_spans → extract_text pipeline.
     let bytes = create_form_pdf_bytes();
-    let (_temp, mut doc) = open_pdf_from_bytes(&bytes);
+    let (_temp, doc) = open_pdf_from_bytes(&bytes);
 
     // This exercises the code path that parses DA strings
     let text = doc.extract_text(0).expect("Failed to extract text");
@@ -477,8 +477,8 @@ fn test_save_incremental_persists_text_value() {
         .expect("save incremental");
 
     // Reopen and verify via FormExtractor
-    let mut reopened = PdfDocument::open(out.path().to_str().unwrap()).expect("reopen");
-    let fields = FormExtractor::extract_fields(&mut reopened).expect("extract fields");
+    let reopened = PdfDocument::open(out.path().to_str().unwrap()).expect("reopen");
+    let fields = FormExtractor::extract_fields(&reopened).expect("extract fields");
     let name_field = fields.iter().find(|f| f.full_name == "name");
     assert!(name_field.is_some(), "name field should exist after save");
     assert_eq!(
@@ -509,8 +509,8 @@ fn test_save_incremental_persists_checkbox() {
         .expect("save incremental");
 
     // Reopen and verify the checkbox value
-    let mut reopened = PdfDocument::open(out.path().to_str().unwrap()).expect("reopen");
-    let fields = FormExtractor::extract_fields(&mut reopened).expect("extract fields");
+    let reopened = PdfDocument::open(out.path().to_str().unwrap()).expect("reopen");
+    let fields = FormExtractor::extract_fields(&reopened).expect("extract fields");
     let newsletter = fields.iter().find(|f| f.full_name == "newsletter");
     assert!(newsletter.is_some(), "newsletter field should exist");
 
@@ -552,7 +552,7 @@ fn test_save_incremental_text_value_inline() {
         .expect("save incremental");
 
     // Verify the value appears inline in extract_text
-    let mut reopened = PdfDocument::open(out.path().to_str().unwrap()).expect("reopen");
+    let reopened = PdfDocument::open(out.path().to_str().unwrap()).expect("reopen");
     let text = reopened.extract_text(0).expect("extract text");
     assert!(
         text.contains("Alice Smith"),
@@ -581,7 +581,7 @@ fn test_save_incremental_to_markdown_with_values() {
         .save_with_options(out.path().to_str().unwrap(), SaveOptions::incremental())
         .expect("save incremental");
 
-    let mut reopened = PdfDocument::open(out.path().to_str().unwrap()).expect("reopen");
+    let reopened = PdfDocument::open(out.path().to_str().unwrap()).expect("reopen");
     let opts = ConversionOptions {
         include_form_fields: true,
         ..Default::default()

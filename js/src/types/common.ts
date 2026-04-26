@@ -145,3 +145,87 @@ export type StreamErrorCallback = (error: Error) => void;
  * Stream end callback
  */
 export type StreamEndCallback = () => void;
+
+// ============================================================================
+// DocumentBuilder — table primitives (v0.3.39, issue #393)
+// ============================================================================
+
+/**
+ * Horizontal alignment for wrapped text and table cells.
+ * Matches the C FFI integer encoding used by
+ * `pdf_page_builder_text_in_rect` and `pdf_page_builder_table`.
+ */
+export enum Align {
+  Left = 0,
+  Center = 1,
+  Right = 2,
+}
+
+/**
+ * Column descriptor for {@link TableSpec} / {@link StreamingTableConfig}.
+ */
+export interface Column {
+  /** Header label rendered in bold (used only when `hasHeader`/`repeatHeader`). */
+  header: string;
+  /** Column width in PDF points. */
+  width: number;
+  /** Cell alignment (default {@link Align.Left}). */
+  align?: Align;
+}
+
+/**
+ * Buffered-table spec passed to `PageBuilder.table(...)`.
+ *
+ * All rows are held in JS memory and flushed to the native
+ * `pdf_page_builder_table` call in a single step.
+ */
+export interface TableSpec {
+  /** Column layout — widths, alignments, and header labels. */
+  columns: Column[];
+  /** Body rows, each row has `columns.length` cells (nullable = empty). */
+  rows: Array<Array<string | null | undefined>>;
+  /** Promote the column headers to a styled first row. Defaults to true. */
+  hasHeader?: boolean;
+}
+
+/**
+ * Column-sizing strategy for streaming tables (issue #400).
+ *
+ * - `fixed` — use the `width` from each `Column` as-is (default).
+ * - `sample` — buffer the first N rows, measure content, then freeze
+ *   column widths automatically.  Supply `sampleRows`, `minColWidth`,
+ *   and `maxColWidth` to tune.
+ */
+export type TableMode =
+  | { kind: 'fixed' }
+  | { kind: 'sample'; sampleRows?: number; minColWidthPt?: number; maxColWidthPt?: number };
+
+/**
+ * Configuration for the managed streaming-table adapter.
+ */
+export interface StreamingTableConfig {
+  /** Column layout — widths, alignments, and header labels. */
+  columns: Column[];
+  /**
+   * Whether to repeat the header row on every page break. Defaults to true.
+   */
+  repeatHeader?: boolean;
+  /**
+   * Column-sizing mode. Defaults to `{ kind: 'fixed' }`.
+   */
+  mode?: TableMode;
+  /**
+   * Maximum rowspan a cell may carry.  0 or 1 (default) disables rowspan.
+   * Set to ≥2 to allow `pushRowSpan` cells to span multiple rows.
+   */
+  maxRowspan?: number;
+}
+
+/**
+ * A single cell value for `StreamingTable.pushRowSpan`.
+ * `rowspan == 1` is equivalent to a normal cell.
+ */
+export interface SpanCell {
+  text: string;
+  rowspan: number;
+}

@@ -36,6 +36,11 @@ extern int   pdf_document_builder_set_subject(void* handle, const char* subject,
 extern int   pdf_document_builder_set_keywords(void* handle, const char* keywords, int* error_code);
 extern int   pdf_document_builder_set_creator(void* handle, const char* creator, int* error_code);
 
+extern int   pdf_document_builder_on_open(void* handle, const char* script, int* error_code);
+extern int   pdf_document_builder_tagged_pdf_ua1(void* handle, int* error_code);
+extern int   pdf_document_builder_language(void* handle, const char* lang, int* error_code);
+extern int   pdf_document_builder_role_map(void* handle, const char* custom, const char* standard, int* error_code);
+
 extern int   pdf_document_builder_register_embedded_font(void* handle, const char* name,
                                                          void* font, int* error_code);
 
@@ -54,6 +59,13 @@ extern int   pdf_page_builder_horizontal_rule(void* page, int* error_code);
 extern int   pdf_page_builder_link_url(void* page, const char* url, int* error_code);
 extern int   pdf_page_builder_link_page(void* page, size_t target_page, int* error_code);
 extern int   pdf_page_builder_link_named(void* page, const char* destination, int* error_code);
+extern int   pdf_page_builder_link_javascript(void* page, const char* script, int* error_code);
+extern int   pdf_page_builder_on_open(void* page, const char* script, int* error_code);
+extern int   pdf_page_builder_on_close(void* page, const char* script, int* error_code);
+extern int   pdf_page_builder_field_keystroke(void* page, const char* script, int* error_code);
+extern int   pdf_page_builder_field_format(void* page, const char* script, int* error_code);
+extern int   pdf_page_builder_field_validate(void* page, const char* script, int* error_code);
+extern int   pdf_page_builder_field_calculate(void* page, const char* script, int* error_code);
 extern int   pdf_page_builder_highlight(void* page, float r, float g, float b, int* error_code);
 extern int   pdf_page_builder_underline(void* page, float r, float g, float b, int* error_code);
 extern int   pdf_page_builder_strikeout(void* page, float r, float g, float b, int* error_code);
@@ -90,10 +102,85 @@ extern int   pdf_page_builder_radio_group(void* page, const char* name,
 extern int   pdf_page_builder_push_button(void* page, const char* name,
                                           float x, float y, float w, float h,
                                           const char* caption, int* error_code);
+extern int   pdf_page_builder_signature_field(void* page, const char* name,
+                                              float x, float y, float w, float h,
+                                              int* error_code);
+extern int   pdf_page_builder_footnote(void* page, const char* ref_mark,
+                                       const char* note_text, int* error_code);
+extern int   pdf_page_builder_columns(void* page, unsigned int column_count,
+                                      float gap_pt, const char* text, int* error_code);
+extern int   pdf_page_builder_inline(void* page, const char* text, int* error_code);
+extern int   pdf_page_builder_inline_bold(void* page, const char* text, int* error_code);
+extern int   pdf_page_builder_inline_italic(void* page, const char* text, int* error_code);
+extern int   pdf_page_builder_inline_color(void* page, float r, float g, float b,
+                                           const char* text, int* error_code);
+extern int   pdf_page_builder_newline(void* page, int* error_code);
 extern int   pdf_page_builder_rect(void* page, float x, float y, float w, float h, int* error_code);
 extern int   pdf_page_builder_filled_rect(void* page, float x, float y, float w, float h,
                                           float r, float g, float b, int* error_code);
 extern int   pdf_page_builder_line(void* page, float x1, float y1, float x2, float y2, int* error_code);
+
+// v0.3.39 primitives backing Go's Table / StreamingTable + friends.
+extern int   pdf_page_builder_stroke_rect(void* page, float x, float y, float w, float h,
+                                          float width, float r, float g, float b,
+                                          int* error_code);
+extern int   pdf_page_builder_stroke_line(void* page, float x1, float y1, float x2, float y2,
+                                          float width, float r, float g, float b,
+                                          int* error_code);
+extern int   pdf_page_builder_text_in_rect(void* page, float x, float y, float w, float h,
+                                           const char* text, int align, int* error_code);
+extern int   pdf_page_builder_new_page_same_size(void* page, int* error_code);
+extern int   pdf_page_builder_barcode_1d(void* page, int barcode_type, const char* data,
+                                         float x, float y, float w, float h,
+                                         int* error_code);
+extern int   pdf_page_builder_barcode_qr(void* page, const char* data,
+                                         float x, float y, float size,
+                                         int* error_code);
+extern int   pdf_page_builder_image_with_alt(void* page,
+                                             const uint8_t* bytes, size_t len,
+                                             float x, float y, float w, float h,
+                                             const char* alt_text, int* error_code);
+extern int   pdf_page_builder_image_artifact(void* page,
+                                             const uint8_t* bytes, size_t len,
+                                             float x, float y, float w, float h,
+                                             int* error_code);
+extern int   pdf_page_builder_table(void* page,
+                                    size_t n_columns,
+                                    const float* widths,
+                                    const int* aligns,
+                                    size_t n_rows,
+                                    const char* const* cell_strings,
+                                    int has_header,
+                                    int* error_code);
+extern int   pdf_page_builder_streaming_table_begin(void* page,
+                                                    size_t n_columns,
+                                                    const char* const* headers,
+                                                    const float* widths,
+                                                    const int* aligns,
+                                                    int repeat_header,
+                                                    int* error_code);
+extern int   pdf_page_builder_streaming_table_begin_v2(void* page,
+                                                       size_t n_columns,
+                                                       const char* const* headers,
+                                                       const float* widths,
+                                                       const int* aligns,
+                                                       int repeat_header,
+                                                       int mode,
+                                                       size_t sample_rows,
+                                                       float min_col_width_pt,
+                                                       float max_col_width_pt,
+                                                       size_t max_rowspan,
+                                                       int* error_code);
+extern int   pdf_page_builder_streaming_table_push_row(void* page,
+                                                       size_t n_cells,
+                                                       const char* const* cells,
+                                                       int* error_code);
+extern int   pdf_page_builder_streaming_table_push_row_v2(void* page,
+                                                          size_t n_cells,
+                                                          const char* const* cells,
+                                                          const size_t* rowspans,
+                                                          int* error_code);
+extern int   pdf_page_builder_streaming_table_finish(void* page, int* error_code);
 
 extern int   pdf_page_builder_done(void* page, int* error_code);
 extern void  pdf_page_builder_free(void* page);
@@ -328,6 +415,61 @@ func (b *DocumentBuilder) Creator(creator string) error {
 		func(h unsafe.Pointer, s *C.char, ec *C.int) C.int {
 			return C.pdf_document_builder_set_creator(h, s, ec)
 		}, "creator", creator)
+}
+
+// OnOpen sets a JavaScript script to run when the document is opened (/OpenAction).
+func (b *DocumentBuilder) OnOpen(script string) error {
+	return b.setString(
+		func(h unsafe.Pointer, s *C.char, ec *C.int) C.int {
+			return C.pdf_document_builder_on_open(h, s, ec)
+		}, "onOpen", script)
+}
+
+// TaggedPdfUa1 enables PDF/UA-1 tagged PDF mode.
+//
+// When enabled, Build emits /MarkInfo, /StructTreeRoot, /Lang, and
+// /ViewerPreferences in the catalog. Opt-in — no effect unless called.
+// Bundle F-1/F-2.
+func (b *DocumentBuilder) TaggedPdfUa1() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if err := b.checkUsable(); err != nil {
+		return err
+	}
+	var ec C.int
+	if C.pdf_document_builder_tagged_pdf_ua1(b.handle, &ec) != 0 {
+		return fmt.Errorf("taggedPdfUa1: error code %d", int(ec))
+	}
+	return nil
+}
+
+// Language sets the document's natural language tag, e.g. "en-US".
+// Emitted as /Lang in the catalog when TaggedPdfUa1 is set. Bundle F-2.
+func (b *DocumentBuilder) Language(lang string) error {
+	return b.setString(
+		func(h unsafe.Pointer, s *C.char, ec *C.int) C.int {
+			return C.pdf_document_builder_language(h, s, ec)
+		}, "language", lang)
+}
+
+// RoleMap adds a role-map entry: custom structure type → standard PDF type.
+// Emitted in /RoleMap inside the StructTreeRoot when TaggedPdfUa1 is set.
+// Multiple calls accumulate entries. Bundle F-4.
+func (b *DocumentBuilder) RoleMap(custom, standard string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if err := b.checkUsable(); err != nil {
+		return err
+	}
+	cCustom := C.CString(custom)
+	defer C.free(unsafe.Pointer(cCustom))
+	cStandard := C.CString(standard)
+	defer C.free(unsafe.Pointer(cStandard))
+	var ec C.int
+	if C.pdf_document_builder_role_map(b.handle, cCustom, cStandard, &ec) != 0 {
+		return fmt.Errorf("roleMap: error code %d", int(ec))
+	}
+	return nil
 }
 
 // RegisterEmbeddedFont registers a TTF/OTF font under name. CONSUMES the
@@ -607,6 +749,69 @@ func (p *PageBuilder) LinkNamed(destination string) *PageBuilder {
 	})
 }
 
+// LinkJavascript links the previous text to a JavaScript action.
+func (p *PageBuilder) LinkJavascript(script string) *PageBuilder {
+	return p.callInt(func(h unsafe.Pointer, ec *C.int) C.int {
+		cs := C.CString(script)
+		defer C.free(unsafe.Pointer(cs))
+		return C.pdf_page_builder_link_javascript(h, cs, ec)
+	})
+}
+
+// OnOpen sets a JavaScript script to run when the page is opened (/AA /O).
+func (p *PageBuilder) OnOpen(script string) *PageBuilder {
+	return p.callInt(func(h unsafe.Pointer, ec *C.int) C.int {
+		cs := C.CString(script)
+		defer C.free(unsafe.Pointer(cs))
+		return C.pdf_page_builder_on_open(h, cs, ec)
+	})
+}
+
+// OnClose sets a JavaScript script to run when the page is closed (/AA /C).
+func (p *PageBuilder) OnClose(script string) *PageBuilder {
+	return p.callInt(func(h unsafe.Pointer, ec *C.int) C.int {
+		cs := C.CString(script)
+		defer C.free(unsafe.Pointer(cs))
+		return C.pdf_page_builder_on_close(h, cs, ec)
+	})
+}
+
+// FieldKeystroke sets a keystroke JS action (/AA /K) on the last form field.
+func (p *PageBuilder) FieldKeystroke(script string) *PageBuilder {
+	return p.callInt(func(h unsafe.Pointer, ec *C.int) C.int {
+		cs := C.CString(script)
+		defer C.free(unsafe.Pointer(cs))
+		return C.pdf_page_builder_field_keystroke(h, cs, ec)
+	})
+}
+
+// FieldFormat sets a format JS action (/AA /F) on the last form field.
+func (p *PageBuilder) FieldFormat(script string) *PageBuilder {
+	return p.callInt(func(h unsafe.Pointer, ec *C.int) C.int {
+		cs := C.CString(script)
+		defer C.free(unsafe.Pointer(cs))
+		return C.pdf_page_builder_field_format(h, cs, ec)
+	})
+}
+
+// FieldValidate sets a validate JS action (/AA /V) on the last form field.
+func (p *PageBuilder) FieldValidate(script string) *PageBuilder {
+	return p.callInt(func(h unsafe.Pointer, ec *C.int) C.int {
+		cs := C.CString(script)
+		defer C.free(unsafe.Pointer(cs))
+		return C.pdf_page_builder_field_validate(h, cs, ec)
+	})
+}
+
+// FieldCalculate sets a calculate JS action (/AA /C) on the last form field.
+func (p *PageBuilder) FieldCalculate(script string) *PageBuilder {
+	return p.callInt(func(h unsafe.Pointer, ec *C.int) C.int {
+		cs := C.CString(script)
+		defer C.free(unsafe.Pointer(cs))
+		return C.pdf_page_builder_field_calculate(h, cs, ec)
+	})
+}
+
 // Highlight highlights the previous text with an RGB colour (channels 0-1).
 func (p *PageBuilder) Highlight(r, g, b float32) *PageBuilder {
 	return p.callInt(func(h unsafe.Pointer, ec *C.int) C.int {
@@ -812,6 +1017,130 @@ func (p *PageBuilder) PushButton(name string, x, y, w, h float32, caption string
 	})
 }
 
+// SignatureField adds an unsigned signature placeholder field (/FT /Sig) at the given bounds.
+func (p *PageBuilder) SignatureField(name string, x, y, w, h float32) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		cn := C.CString(name)
+		defer C.free(unsafe.Pointer(cn))
+		return C.pdf_page_builder_signature_field(hp, cn, C.float(x), C.float(y), C.float(w), C.float(h), ec)
+	})
+}
+
+// Footnote adds an inline refMark at the current cursor and records noteText
+// for page-end placement with a separator artifact line.
+func (p *PageBuilder) Footnote(refMark, noteText string) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		cm := C.CString(refMark)
+		defer C.free(unsafe.Pointer(cm))
+		cn := C.CString(noteText)
+		defer C.free(unsafe.Pointer(cn))
+		return C.pdf_page_builder_footnote(hp, cm, cn, ec)
+	})
+}
+
+// Columns lays out text as balanced multi-column flow.
+// Paragraphs in text are separated by "\n\n".
+func (p *PageBuilder) Columns(columnCount uint, gapPt float32, text string) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		ct := C.CString(text)
+		defer C.free(unsafe.Pointer(ct))
+		return C.pdf_page_builder_columns(hp, C.uint(columnCount), C.float(gapPt), ct, ec)
+	})
+}
+
+// Inline emits text inline at the cursor (advances cursorX only, not cursorY).
+func (p *PageBuilder) Inline(text string) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		ct := C.CString(text)
+		defer C.free(unsafe.Pointer(ct))
+		return C.pdf_page_builder_inline(hp, ct, ec)
+	})
+}
+
+// InlineBold emits a bold text run inline.
+func (p *PageBuilder) InlineBold(text string) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		ct := C.CString(text)
+		defer C.free(unsafe.Pointer(ct))
+		return C.pdf_page_builder_inline_bold(hp, ct, ec)
+	})
+}
+
+// InlineItalic emits an italic text run inline.
+func (p *PageBuilder) InlineItalic(text string) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		ct := C.CString(text)
+		defer C.free(unsafe.Pointer(ct))
+		return C.pdf_page_builder_inline_italic(hp, ct, ec)
+	})
+}
+
+// InlineColor emits a colored text run inline (RGB 0.0–1.0).
+func (p *PageBuilder) InlineColor(r, g, b float32, text string) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		ct := C.CString(text)
+		defer C.free(unsafe.Pointer(ct))
+		return C.pdf_page_builder_inline_color(hp, C.float(r), C.float(g), C.float(b), ct, ec)
+	})
+}
+
+// Newline advances cursorY by one line-height and resets cursorX to 72 pt.
+func (p *PageBuilder) Newline() *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		return C.pdf_page_builder_newline(hp, ec)
+	})
+}
+
+// Barcode1d places a 1-D barcode image on the page.
+// barcodeType: 0=Code128 1=Code39 2=EAN13 3=EAN8 4=UPCA 5=ITF 6=Code93 7=Codabar.
+func (p *PageBuilder) Barcode1d(barcodeType int, data string, x, y, w, h float32) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		cd := C.CString(data)
+		defer C.free(unsafe.Pointer(cd))
+		return C.pdf_page_builder_barcode_1d(hp, C.int(barcodeType), cd,
+			C.float(x), C.float(y), C.float(w), C.float(h), ec)
+	})
+}
+
+// BarcodeQr places a QR-code image on the page (square: size × size pt).
+func (p *PageBuilder) BarcodeQr(data string, x, y, size float32) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		cd := C.CString(data)
+		defer C.free(unsafe.Pointer(cd))
+		return C.pdf_page_builder_barcode_qr(hp, cd,
+			C.float(x), C.float(y), C.float(size), ec)
+	})
+}
+
+// ImageWithAlt embeds an image (JPEG/PNG/WebP bytes) with an accessibility alt text.
+func (p *PageBuilder) ImageWithAlt(bytes []byte, x, y, w, h float32, altText string) *PageBuilder {
+	if len(bytes) == 0 {
+		p.err = ffiError(-1)
+		return p
+	}
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		cAlt := C.CString(altText)
+		defer C.free(unsafe.Pointer(cAlt))
+		return C.pdf_page_builder_image_with_alt(hp,
+			(*C.uint8_t)(unsafe.Pointer(&bytes[0])), C.size_t(len(bytes)),
+			C.float(x), C.float(y), C.float(w), C.float(h),
+			cAlt, ec)
+	})
+}
+
+// ImageArtifact embeds a decorative image (JPEG/PNG/WebP bytes) as an /Artifact (no alt text).
+func (p *PageBuilder) ImageArtifact(bytes []byte, x, y, w, h float32) *PageBuilder {
+	if len(bytes) == 0 {
+		p.err = ffiError(-1)
+		return p
+	}
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		return C.pdf_page_builder_image_artifact(hp,
+			(*C.uint8_t)(unsafe.Pointer(&bytes[0])), C.size_t(len(bytes)),
+			C.float(x), C.float(y), C.float(w), C.float(h), ec)
+	})
+}
+
 // Rect draws a stroked rectangle outline (1pt black).
 func (p *PageBuilder) Rect(x, y, w, h float32) *PageBuilder {
 	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
@@ -832,6 +1161,389 @@ func (p *PageBuilder) Line(x1, y1, x2, y2 float32) *PageBuilder {
 	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
 		return C.pdf_page_builder_line(hp, C.float(x1), C.float(y1), C.float(x2), C.float(y2), ec)
 	})
+}
+
+// StrokeRect draws a stroked rectangle outline with the given line
+// width and RGB colour (channels 0-1). Unlike Rect (which uses the
+// writer's 1pt default), this primitive exposes full line style so it
+// can back Table borders, highlight boxes, etc.
+func (p *PageBuilder) StrokeRect(x, y, w, h, width, r, g, b float32) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		return C.pdf_page_builder_stroke_rect(hp, C.float(x), C.float(y), C.float(w), C.float(h),
+			C.float(width), C.float(r), C.float(g), C.float(b), ec)
+	})
+}
+
+// StrokeLine draws a straight line from (x1, y1) to (x2, y2) with the
+// given width and RGB colour.
+func (p *PageBuilder) StrokeLine(x1, y1, x2, y2, width, r, g, b float32) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		return C.pdf_page_builder_stroke_line(hp, C.float(x1), C.float(y1), C.float(x2), C.float(y2),
+			C.float(width), C.float(r), C.float(g), C.float(b), ec)
+	})
+}
+
+// TextInRect places wrapped text inside (x, y, w, h) with the given
+// horizontal alignment. Unknown Alignment values fall back to AlignLeft
+// on the writer side.
+func (p *PageBuilder) TextInRect(x, y, w, h float32, text string, align Alignment) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		cs := C.CString(text)
+		defer C.free(unsafe.Pointer(cs))
+		return C.pdf_page_builder_text_in_rect(hp, C.float(x), C.float(y), C.float(w), C.float(h),
+			cs, C.int(align), ec)
+	})
+}
+
+// NewPageSameSize starts a fresh page with identical dimensions. The
+// text configuration carries over; the cursor resets to the top-left
+// margin. Callers wanting header-repeat-on-break must re-emit the
+// header explicitly — this primitive does not do it automatically.
+func (p *PageBuilder) NewPageSameSize() *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		return C.pdf_page_builder_new_page_same_size(hp, ec)
+	})
+}
+
+// Measure returns an estimated rendered width for text at the current
+// font + size. v0.3.39 does not yet expose the Rust measure() method
+// through the FFI, so this is a managed-side approximation using a
+// conservative average glyph width in ems. It exists to match the
+// binding surface documented in the v0.3.39 research doc; a native FFI
+// path will replace it in a later release without changing the shape.
+//
+// The returned value is a rough estimate only — do not rely on it for
+// precise layout; prefer TextInRect / Table for wrapped output.
+func (p *PageBuilder) Measure(text string) float32 {
+	// 0.5em per glyph is a safe upper bound for proportional fonts; the
+	// caller usually just wants a sanity-check baseline.
+	if !p.checkUsable() {
+		return 0
+	}
+	// Without an FFI accessor we can't read the current font size back;
+	// callers who need real measurement should wait for the native path.
+	return float32(len(text)) * 0.5
+}
+
+// RemainingSpace is a placeholder for the managed height-budget
+// accessor described in the v0.3.39 research doc. No FFI surface yet;
+// returns 0 so callers written against the documented shape still
+// compile. Replace with the native accessor when it lands.
+func (p *PageBuilder) RemainingSpace() float32 {
+	return 0
+}
+
+// Table places a buffered table at the current cursor. The whole row
+// matrix is shipped to native in one FFI call; for very large tables
+// (10k+ rows) prefer StreamingTable.
+//
+// Returns the same *PageBuilder so callers can chain further output
+// below the table. Errors are deferred to Done like every other
+// PageBuilder method; a nil/empty TableSpec or a row whose length
+// disagrees with len(Columns) stops the chain with an error.
+func (p *PageBuilder) Table(spec TableSpec) *PageBuilder {
+	if !p.checkUsable() {
+		return p
+	}
+	nCols := len(spec.Columns)
+	if nCols == 0 {
+		p.err = errors.New("pdf_oxide: Table: at least one column required")
+		return p
+	}
+	for i, row := range spec.Rows {
+		if len(row) != nCols {
+			p.err = fmt.Errorf(
+				"pdf_oxide: Table: row %d has %d cells, expected %d",
+				i, len(row), nCols)
+			return p
+		}
+	}
+
+	// Build widths + aligns parallel arrays.
+	widths := make([]C.float, nCols)
+	aligns := make([]C.int, nCols)
+	for i, c := range spec.Columns {
+		widths[i] = C.float(c.Width)
+		aligns[i] = C.int(c.Align)
+	}
+
+	// Build row-major cell-string matrix. If HasHeader is true the
+	// first native row is the header, synthesised from Columns[i].Header.
+	var nRows int
+	if spec.HasHeader {
+		nRows = 1 + len(spec.Rows)
+	} else {
+		nRows = len(spec.Rows)
+	}
+	total := nRows * nCols
+	cStrs := make([]*C.char, total)
+	defer func() {
+		for _, s := range cStrs {
+			if s != nil {
+				C.free(unsafe.Pointer(s))
+			}
+		}
+	}()
+	off := 0
+	if spec.HasHeader {
+		for i, c := range spec.Columns {
+			cStrs[off+i] = C.CString(c.Header)
+		}
+		off += nCols
+	}
+	for _, row := range spec.Rows {
+		for i, cell := range row {
+			cStrs[off+i] = C.CString(cell)
+		}
+		off += nCols
+	}
+
+	var widthsPtr *C.float
+	var alignsPtr *C.int
+	var cellsPtr **C.char
+	if nCols > 0 {
+		widthsPtr = (*C.float)(unsafe.Pointer(&widths[0]))
+		alignsPtr = (*C.int)(unsafe.Pointer(&aligns[0]))
+	}
+	if total > 0 {
+		cellsPtr = (**C.char)(unsafe.Pointer(&cStrs[0]))
+	}
+	var hasHeader C.int
+	if spec.HasHeader {
+		hasHeader = 1
+	}
+	var ec C.int
+	if C.pdf_page_builder_table(
+		p.handle,
+		C.size_t(nCols),
+		widthsPtr,
+		alignsPtr,
+		C.size_t(nRows),
+		cellsPtr,
+		hasHeader,
+		&ec,
+	) != 0 {
+		p.err = ffiError(ec)
+	}
+	return p
+}
+
+// StreamingTable opens a native row-at-a-time streaming table on this page.
+// Feed rows via PushRow and finalise with Finish.
+func (p *PageBuilder) StreamingTable(cfg StreamingTableConfig) *StreamingTable {
+	if !p.checkUsable() {
+		return &StreamingTable{page: p, nCols: 0, finished: true}
+	}
+	nCols := len(cfg.Columns)
+	if nCols == 0 {
+		p.err = errors.New("pdf_oxide: StreamingTable: at least one column required")
+		return &StreamingTable{page: p, nCols: 0, finished: true}
+	}
+
+	// Build parallel arrays for headers, widths, aligns.
+	headers := make([]*C.char, nCols)
+	widths := make([]C.float, nCols)
+	aligns := make([]C.int, nCols)
+	for i, col := range cfg.Columns {
+		headers[i] = C.CString(col.Header)
+		widths[i] = C.float(col.Width)
+		aligns[i] = C.int(col.Align)
+	}
+	defer func() {
+		for _, h := range headers {
+			if h != nil {
+				C.free(unsafe.Pointer(h))
+			}
+		}
+	}()
+
+	modeInt := C.int(0)
+	sampleRows := C.size_t(20)
+	minW := C.float(0)
+	maxW := C.float(9999)
+	if cfg.Mode.Kind == TableModeSample {
+		modeInt = 1
+		if cfg.Mode.SampleRows > 0 {
+			sampleRows = C.size_t(cfg.Mode.SampleRows)
+		}
+		minW = C.float(cfg.Mode.MinColWidthPt)
+		maxW = C.float(cfg.Mode.MaxColWidthPt)
+		if maxW == 0 {
+			maxW = 9999
+		}
+	}
+
+	repeatHeader := C.int(0)
+	if cfg.RepeatHeader || hasAnyHeader(cfg.Columns) {
+		repeatHeader = 1
+	}
+
+	maxRowspan := C.size_t(1)
+	if cfg.MaxRowspan >= 2 {
+		maxRowspan = C.size_t(cfg.MaxRowspan)
+	}
+
+	var ec C.int
+	if C.pdf_page_builder_streaming_table_begin_v2(
+		p.handle,
+		C.size_t(nCols),
+		(**C.char)(unsafe.Pointer(&headers[0])),
+		(*C.float)(unsafe.Pointer(&widths[0])),
+		(*C.int)(unsafe.Pointer(&aligns[0])),
+		repeatHeader,
+		modeInt,
+		sampleRows,
+		minW, maxW,
+		maxRowspan,
+		&ec,
+	) != 0 {
+		p.err = ffiError(ec)
+	}
+
+	return &StreamingTable{page: p, nCols: nCols}
+}
+
+// StreamingTable is a row-at-a-time table adapter. Obtain one from
+// PageBuilder.StreamingTable, feed rows with PushRow, and finalise
+// with Finish to resume the page chain.
+type StreamingTable struct {
+	page     *PageBuilder
+	nCols    int
+	finished bool
+}
+
+// PushRow pushes one row to the native streaming table (all rowspan=1).
+// len(cells) must equal the column count the adapter was opened with.
+func (t *StreamingTable) PushRow(cells []string) error {
+	if t == nil {
+		return errors.New("pdf_oxide: PushRow on nil StreamingTable")
+	}
+	if t.finished {
+		return errors.New("pdf_oxide: PushRow on finished StreamingTable")
+	}
+	if t.page == nil {
+		return errors.New("pdf_oxide: StreamingTable has no parent page")
+	}
+	if len(cells) != t.nCols {
+		return fmt.Errorf(
+			"pdf_oxide: StreamingTable.PushRow: got %d cells, expected %d",
+			len(cells), t.nCols)
+	}
+	if !t.page.checkUsable() {
+		return t.page.err
+	}
+
+	cStrs := make([]*C.char, t.nCols)
+	for i, s := range cells {
+		cStrs[i] = C.CString(s)
+	}
+	defer func() {
+		for _, s := range cStrs {
+			if s != nil {
+				C.free(unsafe.Pointer(s))
+			}
+		}
+	}()
+
+	var ec C.int
+	if C.pdf_page_builder_streaming_table_push_row(
+		t.page.handle,
+		C.size_t(t.nCols),
+		(**C.char)(unsafe.Pointer(&cStrs[0])),
+		&ec,
+	) != 0 {
+		t.page.err = ffiError(ec)
+		return t.page.err
+	}
+	return nil
+}
+
+// SpanCell is a cell value paired with its rowspan for PushRowSpan.
+type SpanCell struct {
+	Text    string
+	Rowspan int
+}
+
+// PushRowSpan pushes one row with per-cell rowspan values.
+// Requires MaxRowspan >= 2 in the StreamingTableConfig.
+func (t *StreamingTable) PushRowSpan(cells []SpanCell) error {
+	if t == nil {
+		return errors.New("pdf_oxide: PushRowSpan on nil StreamingTable")
+	}
+	if t.finished {
+		return errors.New("pdf_oxide: PushRowSpan on finished StreamingTable")
+	}
+	if t.page == nil {
+		return errors.New("pdf_oxide: StreamingTable has no parent page")
+	}
+	if len(cells) != t.nCols {
+		return fmt.Errorf(
+			"pdf_oxide: StreamingTable.PushRowSpan: got %d cells, expected %d",
+			len(cells), t.nCols)
+	}
+	if !t.page.checkUsable() {
+		return t.page.err
+	}
+
+	cStrs := make([]*C.char, t.nCols)
+	rowspans := make([]C.size_t, t.nCols)
+	for i, c := range cells {
+		cStrs[i] = C.CString(c.Text)
+		rs := c.Rowspan
+		if rs < 1 {
+			rs = 1
+		}
+		rowspans[i] = C.size_t(rs)
+	}
+	defer func() {
+		for _, s := range cStrs {
+			if s != nil {
+				C.free(unsafe.Pointer(s))
+			}
+		}
+	}()
+
+	var ec C.int
+	if C.pdf_page_builder_streaming_table_push_row_v2(
+		t.page.handle,
+		C.size_t(t.nCols),
+		(**C.char)(unsafe.Pointer(&cStrs[0])),
+		(*C.size_t)(unsafe.Pointer(&rowspans[0])),
+		&ec,
+	) != 0 {
+		t.page.err = ffiError(ec)
+		return t.page.err
+	}
+	return nil
+}
+
+// Finish closes the streaming table and returns the parent PageBuilder
+// so callers can continue chaining. Idempotent.
+func (t *StreamingTable) Finish() *PageBuilder {
+	if t == nil || t.page == nil {
+		return nil
+	}
+	if t.finished {
+		return t.page
+	}
+	t.finished = true
+	if !t.page.checkUsable() {
+		return t.page
+	}
+	var ec C.int
+	if C.pdf_page_builder_streaming_table_finish(t.page.handle, &ec) != 0 {
+		t.page.err = ffiError(ec)
+	}
+	return t.page
+}
+
+func hasAnyHeader(cols []Column) bool {
+	for _, c := range cols {
+		if c.Header != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // Done commits the page to the parent DocumentBuilder and returns any

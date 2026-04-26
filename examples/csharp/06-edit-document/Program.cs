@@ -15,14 +15,21 @@ var output = args[1];
 using var editor = DocumentEditor.Open(input);
 Console.WriteLine($"Opened: {input}");
 
-editor.SetTitle("Edited Document");
+editor.Title = "Edited Document";
 Console.WriteLine("Set title: \"Edited Document\"");
 
-editor.SetAuthor("pdf_oxide");
+editor.Author = "pdf_oxide";
 Console.WriteLine("Set author: \"pdf_oxide\"");
 
-editor.DeletePage(1); // 0-indexed, deletes page 2
-Console.WriteLine("Deleted page 2");
+if (editor.PageCount > 1)
+{
+    editor.DeletePage(1); // 0-indexed, deletes page 2
+    Console.WriteLine("Deleted page 2");
+}
+else
+{
+    Console.WriteLine("(skipped delete — single-page document)");
+}
 
 editor.Save(output);
 Console.WriteLine($"Saved: {output}");

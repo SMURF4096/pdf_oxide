@@ -7,7 +7,7 @@ use pdf_oxide::document::PdfDocument;
 
 #[test]
 fn test_no_excessive_fragmentation_in_outline_pdf() {
-    let mut doc = PdfDocument::open("tests/fixtures/outline.pdf").unwrap();
+    let doc = PdfDocument::open("tests/fixtures/outline.pdf").unwrap();
     let page_count = doc.page_count().unwrap();
 
     for i in 0..page_count {

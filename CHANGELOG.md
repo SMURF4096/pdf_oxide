@@ -2,6 +2,339 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [0.3.39] - 2026-04-23
+
+> Tables (streaming + buffered), PDF/UA-1, digital signing (CMS/PKCS#7),
+> AcroForm flatten, interior-mutability thread safety, encryption +
+> UTF-8 encoding fixes, L4 font cache, and `to_bytes` — all 7 bindings.
+
+### Scope at-a-glance
+
+v0.3.39 originally shipped as a single release themed around table
+generation (issue #393). Mid-release we expanded the scope to close
+the broader post-#393 programmatic-builder gap audit
+(docs/v0.3.39/design/builder_gaps_plan.md, 26 items in 4 tiers).
+The release now delivers:
+
+- **Bundle C** — shape primitives (`circle`, `ellipse`, `polygon`, `arc`, `bezier_curve`) + dash patterns on `LineStyle`.
+- **Bundle A** — image placement (`image_from_file` / `_from_bytes` / `_with`) + 2D affine transforms (`rotated`, `scaled`, `translated`, `with_transform`; v0.3.39 scope text-only, path/image/table in v0.3.40).
+- **Bundle B** — document outline (`bookmark`, `bookmark_tree`), page labels (`with_page_labels`), ToC auto-generator (`insert_toc`).
+- **Bundle D (partial)** — `list_box` form widget, fluent field metadata (`required` / `read_only` / `tooltip`), page `tab_order` (`TabOrder::{Row, Column, Structure}`).
+- **Bundle E + F (research)** — RFCs for rich-text accumulator (`docs/v0.3.39/design/e_rich_text_rfc.md`) and PDF/UA compliance (`docs/v0.3.39/research/e_pdf_ua_compliance.md`). Implementation deferred to v0.3.40 (#400).
+- **Bundle D (deferred)** — signature_field widget, barcode-bound fields, JS-action field validation, calculated fields, XFA write-side → v0.3.40 (#400).
+
+### DocumentBuilder tables (original #393 scope)
+
+This release closes issue [#393](https://github.com/yfedoseev/pdf_oxide/issues/393).
+Users who previously had to build giant HTML strings or drop to PdfSharp
+(the .NET community's canonical pain point — MigraDoc halts around 30 k
+rows with an O(rows²) autosize) can now stream tables of arbitrary size
+directly through `DocumentBuilder`. The release gate is a criterion
+benchmark that proves linear scaling from 1 k → 30 k rows; see the
+"Release gate" section below.
+
+Design + research anchors live under `docs/v0.3.39/`:
+
+- `research/a_table_api_landscape.md` — survey of 20 OSS PDF libraries across 6 ecosystems.
+- `research/b_scalable_layout_algorithms.md` — why MigraDoc fails at 30 k rows + how to not repeat it.
+- `research/c_api_ergonomics.md` — idiomatic API shape per binding.
+- `research/d_builder_gap_analysis.md` — primitives we were missing to make tables compose.
+- `design/393_tables_decision.md` — synthesis + scope split v0.3.39 / v0.3.40.
+
+### Two table surfaces, one type vocabulary
+
+- **Buffered `Table`** (`page.table(Table::new(rows).with_header_row()...)`) — takes the full row matrix, supports `colspan` / `rowspan` / rich per-cell styling, splits at row boundaries, emits `ContentElement`s so the v0.3.38 subsetter continues re-keying CJK glyph IDs. Best for tables under ~1 k rows.
+
+- **Streaming `StreamingTable`** (`page.streaming_table(StreamingTableConfig::new().column(...).column(...))`) — row-at-a-time, `TableMode::Fixed` only (explicit widths, zero look-ahead), O(cols) persistent memory, auto page-break with repeat-header. Best for 1 k → ∞ rows. Solves the motivating MigraDoc 30 k-row failure directly.
+
+```rust
+use pdf_oxide::writer::{
+    CellAlign, DocumentBuilder, StreamingColumn, StreamingTableConfig,
+};
+
+let mut doc = DocumentBuilder::new();
+let page = doc.letter_page().font("Helvetica", 10.0).at(72.0, 720.0);
+
+let mut t = page.streaming_table(
+    StreamingTableConfig::new()
+        .column(StreamingColumn::new("SKU").width_pt(72.0))
+        .column(StreamingColumn::new("Item").width_pt(240.0))
+        .column(
+            StreamingColumn::new("Qty")
+                .width_pt(48.0)
+                .align(CellAlign::Right),
+        )
+        .repeat_header(true),
+);
+
+for record in huge_dataset {       // never materialised
+    t.push_row(|r| {
+        r.cell(&record.sku);
+        r.cell(&record.name);
+        r.cell(record.qty.to_string());
+    })?;
+}
+t.finish().done();
+```
+
+Both surfaces ship with idiomatic per-binding wrappers (Python, WASM, C#, Go, Node/TS). See each binding's README / guide for the native shape.
+
+### Four supporting `FluentPageBuilder` primitives
+
+Shipped alongside tables because a credible table API needs them:
+
+- `measure(&str) -> f32` — text width in points for the current font/size. Pure query; used to pick explicit column widths.
+- `text_in_rect(rect, text, align)` — wraps `text` to `rect.width`, aligns each line horizontally per `TextAlign::{Left, Center, Right}`. Cursor is deliberately NOT advanced — the rect has its own geometry. Finally honours `TextConfig.align` which was a dead field for seven releases.
+- `stroke_rect(x, y, w, h, LineStyle)` + `stroke_line(p1, p2, LineStyle)` — stroke with explicit width + RGB colour. Previously `rect()` and `line()` only stroked at 1 pt black. `LineStyle { width, color }` is the new public type.
+- `remaining_space()` + `new_page_same_size()` — the missing page-break signal. `remaining_space()` returns vertical points from cursor to the bottom margin; `new_page_same_size()` commits pending annotations and opens a fresh page with the same dimensions + carried `text_config`.
+
+### Release gate
+
+A criterion benchmark at `benches/streaming_table_scaling.rs` runs `StreamingTable` at 1 k / 5 k / 10 k / 30 k rows. Local numbers on the contributor machine (`--quick`):
+
+| Size   | Time     | Throughput      |
+|--------|----------|-----------------|
+| 1 000  | 21.7 ms  | 46.0 K rows/sec |
+| 10 000 | 217.0 ms | 46.0 K rows/sec |
+
+10× rows → 10× time → O(rows). MigraDoc's failure mode would have shown
+~100× time at 10× input. Cargo-bench-invoked as `cargo bench --bench streaming_table_scaling`.
+
+### Rendering-correctness fixes surfaced during the refactor
+
+- **Multi-line cell rendering.** The existing `src/writer/table_renderer.rs` computed row heights from wrapped text (`wrap_text` at `:817`) but only emitted the first line on render (`:968-969` — flagged as `// Simple single-line rendering for now`). Fixed by pre-computing wrapped lines + per-line widths once inside `TableLayout.cell_layouts` and looping them at render time.
+- **Per-line alignment.** `Center` and `Right` alignment used `cell_x + content_width / 2` and `cell_x + content_width` as the drawn-from x, which placed the text's left edge at the centre or right edge of the cell (so centre text was offset, right text was pushed off-cell). Fixed by using each wrapped line's measured width: `cell_x + (content_width - line_width) / 2` for Centre, `cell_x + content_width - line_width` for Right.
+
+### Expansion bundles — builder-gap closure
+
+#### Bundle A — images + transforms
+
+```rust
+page.image_from_file("logo.png", Rect::new(72.0, 720.0, 120.0, 40.0))?
+    .rotated(15.0, |p| p.text("tilted caption"))
+    .scaled(1.5, 1.5, |p| p.text("enlarged footnote"));
+```
+
+- `image_from_file(path, rect)` / `image_from_bytes(&[u8], rect)` / `image_with(ImageData, rect)` — auto-detect JPEG + PNG, alpha channels become `/SMask` XObjects for transparent placement.
+- `rotated(deg, |p| ...)`, `scaled(sx, sy, |p| ...)`, `translated(tx, ty, |p| ...)`, `with_transform([a b c d e f], |p| ...)` — closure-scoped 2D affine transforms. Compose naturally (`translated(50, 100, |p| p.rotated(45, |p| p.text("tilted")))` produces the expected composed matrix). **v0.3.39 scope is text-only** — Path / Image / Table elements gain a matrix field in v0.3.40. Rotated watermarks + stamps + captions are the common-case target today.
+
+#### Bundle B — navigation + document structure
+
+```rust
+doc.bookmark("Intro", 0)
+   .bookmark_tree(|o| {
+       o.add_item(OutlineItem::new("Chapter 1", 1));
+       o.add_child(OutlineItem::new("Section 1.1", 2));
+   })
+   .with_page_labels(
+       PageLabelsBuilder::new()
+           .add_range(PageLabelRange::new(0).with_style(PageLabelStyle::RomanLower))
+           .add_range(PageLabelRange::new(4).with_style(PageLabelStyle::Decimal)),
+   )
+   .insert_toc(0, "Table of Contents");
+```
+
+- `bookmark(title, page_index)` + `bookmark_tree(|b| ...)` — outline / bookmarks emitted as the catalog `/Outlines` tree. Pre-existing `OutlineBuilder` was unused; this release is the fluent wiring + the end-to-end catalog emission it was missing.
+- `with_page_labels(PageLabelsBuilder)` — Roman preface + Arabic body or any PageLabelStyle mix, emitted as `/PageLabels` number-tree.
+- `insert_toc(insert_at, title)` — walks the bookmark tree and renders an indented ToC page with right-aligned page numbers. v0.3.39 limitation: doesn't auto-renumber existing bookmark targets (call before further bookmarks, or re-issue after).
+
+#### Bundle C — shapes + dash patterns
+
+```rust
+page.circle(cx, cy, r, Some(LineStyle::new(1.5, 0.1, 0.2, 0.3)), None)
+    .ellipse(cx, cy, rx, ry, None, Some((0.9, 0.1, 0.1)))
+    .polygon(&points, Some(LineStyle::default()), Some((0.5, 0.5, 0.9)))
+    .arc(cx, cy, r, start, end, LineStyle::new(1.0, 0.0, 0.0, 0.0))
+    .bezier_curve(x0, y0, c1x, c1y, c2x, c2y, x3, y3, style, None)
+    .stroke_line(10, 100, 500, 100, LineStyle::new(0.5, 0, 0, 0).with_dash(&[3.0, 2.0], 0.0));
+```
+
+- `circle`, `ellipse`, `polygon`, `arc`, `bezier_curve` — five fluent shape primitives, each emitting one `ContentElement::Path` with optional stroke + fill. `circle` reuses `PathContent::circle`; `ellipse` / `arc` / `bezier_curve` build their quarter-Bezier approximations inline.
+- `LineStyle::with_dash(&[f32], phase)` / `.solid()` — dash patterns propagate into `PathContent.dash_pattern`, emitted as `[...] phase d` before stroke and reset to solid after.
+
+#### Bundle D — form fields (partial)
+
+```rust
+page.list_box("interests", 72, 600, 200, 80,
+              vec!["Hiking".into(), "Reading".into(), "Coding".into()],
+              Some("Coding".into()), true /* multi_select */)
+    .required()
+    .tooltip("Pick one or more")
+    .text_field("email", 72, 500, 200, 20, None)
+    .required()
+    .read_only()
+    .tab_order(TabOrder::Column);
+```
+
+- `list_box(name, x, y, w, h, options, selected, multi_select)` — wires the existing `ListBoxWidget` (fully implemented in `form_fields/choice_fields.rs`) through the public fluent surface.
+- `.required()` / `.read_only()` / `.tooltip(text)` — chainable metadata that mutates the most-recently-added form field on the current page (no-op if no field has been added yet).
+- `page.tab_order(TabOrder::{Row, Column, Structure})` — emits `/Tabs` on the page dict for reader tab-navigation order. `Structure` requires tagged PDF (Bundle F) to be meaningful.
+
+#### Bundle E (partial) — layout primitives
+
+```rust
+page.heading(1, "Shopping list")
+    .bullet_list(&["Apples", "Bananas", "Cherries"])
+    .space(12.0)
+    .numbered_list(&["First chapter", "Second chapter"], ListStyle::Decimal)
+    .code_block("rust", "fn main() {\n    println!(\"hi\");\n}");
+```
+
+- `page.bullet_list(items)` — bullets (•) with indent + per-item
+  wrapping.
+- `page.numbered_list(items, ListStyle::{Decimal, RomanLower, AlphaLower})`
+  — Arabic, lowercase Roman, or lowercase alpha markers.
+- `page.code_block(language, source)` — monospace text over a
+  light-grey filled rectangle. `language` reserved for Bundle F
+  accessibility tagging; no syntax highlighting in v0.3.39.
+- Helpers: `to_roman_lower(n)` and `to_alpha_lower(n)` exposed
+  internally.
+
+Inline rich text (`ParagraphBuilder` with `.bold()` / `.italic()` /
+`.color()`), multi-column flow, and footnotes remain deferred to
+v0.3.40 — see the E-0 RFC at `docs/v0.3.39/design/e_rich_text_rfc.md`.
+
+#### Bundles E + F — RFC + research only
+
+- `docs/v0.3.39/design/e_rich_text_rfc.md` — RFC for v0.3.40 inline-styling `ParagraphBuilder` with `.bold()` / `.italic()` / `.color(rgb, text)` cascading runs. ~770 LOC estimated for v0.3.40.
+- `docs/v0.3.39/research/e_pdf_ua_compliance.md` — PDF/UA-1 compliance audit. Repo has ~40 % of the plumbing (StructureElement, MCID counter, ArtifactType) but MCIDs are orphaned — no StructTreeRoot emission. Bundle F lands in v0.3.40 as ~490 Rust LoC + 1,450 across 6 bindings.
+
+### FFI / bindings
+
+- **C FFI (`include/pdf_oxide_c/pdf_oxide.h`)** — six new entry points: `pdf_page_builder_stroke_rect`, `_stroke_line`, `_text_in_rect`, `_new_page_same_size`, `_table` (buffered), and the streaming trio `_streaming_table_begin` / `_push_row` / `_finish`. Handle-lifetime contract documented inline.
+- **Python** (pyo3) — new classes `Align`, `Column`, `Table`, `StreamingTable`; new `FluentPageBuilder` methods mirroring the Rust surface. `align` kwargs accept string, enum, or raw int interchangeably.
+- **WASM** (wasm-bindgen) — `Align` enum + `StreamingTable` class; buffered `table({columns, rows, hasHeader})` via serde-wasm-bindgen; `stroke_rect`, `stroke_line`, `text_in_rect`, `new_page_same_size`, `measure`, `remaining_space` on the page builder.
+- **C#** — `Alignment`, `Column`, `TableSpec`, `StreamingTable : IDisposable`; fluent methods on `PageBuilder` including managed-side streaming buffer that flushes on `.Build()`.
+- **Go** (cgo) — `Alignment`, `Column`, `TableSpec`, `StreamingTableConfig` under `go/types.go`; fluent methods on `*PageBuilder`; managed streaming adapter. Purego backend untouched (table surface is cgo-only in v0.3.39).
+- **Node/TS** — `Align` enum + `StreamingTable` class in `js/src/builders/streaming-table.ts` with `pushRow`, `pushAll` (sync + async iterables), `finish`. All new types in `js/index.d.ts`.
+
+### Scope deferred to v0.3.40 (tracked in #400)
+
+**Tables**
+- `TableMode::Sample` — measure first N rows, freeze widths, stream the rest.
+- `TableMode::AutoAll` — opt-in O(rows × cols) with documentation warning.
+- Cross-page cell splitting for tall rich cells.
+- Bounded-lookahead rowspan in streaming mode.
+- Arrow-style bounded batching on binding StreamingTables (current impl buffers all rows managed-side between `begin` and `finish`).
+- Mixed-font exact metrics inside a single table (currently measures against the table default font).
+- Pandas DataFrame first-class adapter in Python.
+
+**Transforms**
+- `TableContent`-as-a-whole matrix (individual cells compose naturally
+  through their own `TextContent` / `PathContent` matrix fields, which
+  now ship — but wrapping an entire Table in one transform needs a new
+  field on `TableContent` itself).
+
+**Forms (rest of Bundle D)**
+- Signature-field form widget (coordinates with #208 signing half).
+- Barcode-bound form field (auto-generate from another field's value at fill time).
+- Field validation — regex mask, numeric range, JavaScript actions.
+
+**Layout (Bundle E) — blocked on E-0 RFC which ships in v0.3.39**
+- Inline rich-text styling (`ParagraphBuilder` with `.bold()` / `.italic()` / `.color()`).
+- Multi-column flow on `DocumentBuilder` (currently only available through `Pdf::from_html_css`).
+- Footnotes / endnotes.
+
+**Accessibility (Bundle F) — blocked on F-0 research which ships in v0.3.39**
+- Tagged PDF / logical structure tree emission.
+- `/Lang` per content run.
+- `/Artifact` marking for headers/footers on the write side.
+- `/RoleMap` for non-standard structure types.
+
+**Advanced forms (Bundle G) — pick up on concrete customer demand**
+- Calculated fields / JavaScript actions.
+- XFA write-side.
+
+### Bug fixes
+
+- **#401** — Encrypted PDFs were missing embedded-font sub-objects (`/Widths`, `/FontDescriptor`, `/FontFile2`); they are now included and referenced correctly. Reported by [@sparkyandrew](https://github.com/sparkyandrew).
+- **#402 / #406** — Systemic UTF-8 encoding loss: every PDF string object (metadata titles, annotation contents, bookmark titles, content streams) was written as raw UTF-8 bytes instead of PDFDocEncoding (Latin-1 code point for chars ≤ U+00FF) or UTF-16BE with BOM (for chars > U+00FF). Reported by [@AngeloBestetti](https://github.com/AngeloBestetti) (#402) and internally audited as #406.
+- **#407** — L4 font cache cross-contamination: when two pages share the same `/Font` resource key (e.g. both use key `F1`), the CMap of the first-loaded face silently overwrote the second's glyph mapping, causing glyphs to be dropped or mis-decoded. Fixed by keying the combined-font hash over all font objects. Reported by [@ChadThackray](https://github.com/ChadThackray).
+- **#395** — `SignatureException` on `PdfDocument.open()` for PDFs containing digital signatures. Fixed as a side-effect of the signing infrastructure (#208). Reported by [@gevorgter](https://github.com/gevorgter).
+- **#398** — Native PDF parser was non-reentrant: concurrent FFI reads on the same handle returned spurious parse errors. Resolved by the interior-mutability refactor (`Mutex<…>` on internal caches).
+- **#409** — Python (and all bindings) lacked `to_bytes()` / in-memory output; `compress` and `garbage_collect` were not wired into the write path. Reported by [@potatochipcoconut](https://github.com/potatochipcoconut).
+- **#411** — `p12 = "0.6"` (yanked / unmaintained) replaced with `p12-keystore = "0.2.1"` (RustCrypto-ecosystem, pure Rust, actively maintained). No public API change; `SigningCredentials::from_pkcs12` behaviour is unchanged.
+- **StreamingTable rowspan flush** — `finish()` was silently dropping the in-progress rowspan group if the table ended mid-span. Added a flush of any partial `rowspan_buf` before finalising the page.
+- **`draw_rowspan_group` bounds guard** — accessing `rows[0][col_idx].rowspan` was not guarded against `col_idx ≥ rows[0].len()`, causing a panic on narrow tables with rowspan cells. Added the bounds check `col_idx < rows[0].len()`.
+- **`scan_root_ref` anchoring** — the digital-signature helper scanned the entire document for `/Root`, so a `/Root` reference embedded inside an annotation value or stream body could silently win over the real XRef `/Root` at the end of the file. Now mirrors `scan_startxref` by restricting the search to the last 4 KB of the file.
+- **Signature reason/location PDFDocEncoding** — `/Reason` and `/Location` entries in CMS-signature dictionaries were written as raw UTF-8 bytes, bypassing the `encode_pdf_text_string` path. Non-ASCII characters (accents, CJK, etc.) were stored as illegal UTF-8 sequences in the PDF string. Now uses the same hex-encoded PDFDocEncoding/UTF-16BE path as all other string objects, closing the last #402-class gap in the signing path.
+- **#394** — Mixed-size inline runs (superscripts, footnote markers) were incorrectly split onto separate lines because the newline gate used a hard-coded 2 pt Y-tolerance. Replaced with `PdfDocument::same_line_threshold` — a font-size-relative helper (`max(prev_fs, cur_fs) × 0.5`) shared across all seven Tagged-PDF assembly paths and `should_insert_space`. A forward-gap guard was added to prevent the widened threshold from merging spans across column gutters. Contributed by [@RolandWArnold](https://github.com/RolandWArnold) (#394).
+- **#403** — Simple fonts without an explicit `/Widths` array fell back to a uniform 0.55 em default for every glyph. For standard-14 fonts (Helvetica, Times, Courier, etc.) this inflated span widths by up to 40 %, collapsing inter-column gaps from real values (e.g. 47 pt) to near-zero (5 pt) and breaking gap-dependent layout heuristics. The fast path now populates the byte-to-width table from `get_standard_font_width` when `/Widths` is absent; non-standard fonts and unmapped codepoints still fall back to the generic default. Contributed by [@RolandWArnold](https://github.com/RolandWArnold) (#403).
+- **#404** — Span right-edges could drift ~0.02 pt outside the detected table bbox due to float accumulation in upstream width arithmetic. The strict `Rect::contains_rect` check then rejected those spans from the table's retain set, so they were emitted via both the table path and the flow path, producing duplicated text. Introduced a 0.1 pt tolerance at the two retain call sites in `document.rs` via `PdfDocument::contains_rect_with_tolerance`; the geometry primitive itself remains strict. Contributed by [@RolandWArnold](https://github.com/RolandWArnold) (#404).
+
+### CI / test-suite fixes
+
+- Resolved all Clippy, `rustfmt`, and `cargo check` failures that were blocking CI (`fix(ci)` commit `6c95bada`): unused-mut across 80+ files after the interior-mutability refactor, late-init variables, doc-comment ordering, non-minimal boolean conditions, deprecated function references.
+- Renamed six test files from issue-number / benchmark-code names to functional descriptive names (`refactor(tests)` commit `fa071380`): `test_b1_*` → `test_shared_form_xobject_per_page_ctm`, `test_b3_*` → `test_running_header_first_occurrence_kept`, `test_b4_*` → `test_two_column_reading_order`, `test_b7_*` → `test_stroke_fill_duplicate_text_dedup`, `test_issue_346_*` → `test_extract_text_sort_comparator_stability`, `test_issue_395_*` → `test_signed_pdf_opens_and_renders`.
+- **Example smoke-tests in CI** — all code examples are now compiled and executed on every CI run, catching binding API drift before it reaches a release. A dedicated `rust-examples` job runs all 13 Rust examples (`tutorial_*` + `showcase_*`). The Python, Go, Node.js, and C# binding jobs each gained an equivalent step that runs the per-language examples against `tests/fixtures/simple.pdf`. This means any breaking change to a public binding API will fail CI immediately rather than being discovered post-release by users.
+- **Example restructuring** — the single monolithic `09-new-features` showcase file per language was replaced with one standalone file per feature (`streaming-table`, `pdf-ua-image`, `in-memory-roundtrip`, `pkcs12-signing`, `rfc3161-timestamp`) across all 5 languages. Each file is a self-contained runnable program. The tutorial examples `01-08` were also repaired: Go examples gained `go.mod` + `go.sum` and had three API-drift regressions fixed (`OpenEditor`, `pdf.Save`, `RowCount`/`CellText`); JavaScript examples were migrated from CommonJS `require()` to ESM `import`; C# examples gained `.csproj` files referencing the local `PdfOxide` project.
+
+### Community Contributors
+
+- **[@RolandWArnold](https://github.com/RolandWArnold)** — First
+  contribution to PDFOxide, and a substantial one at that. Roland
+  identified three independent text-extraction correctness issues, traced
+  each one to its root cause in the Rust source, wrote focused fixes with
+  synthetic `PdfWriter`-based regression tests, and documented the
+  behaviour thoroughly in PR descriptions that made review straightforward.
+  [#394](https://github.com/yfedoseev/pdf_oxide/pull/394) fixes the
+  long-standing mixed-size inline run / superscript line-grouping
+  problem; [#403](https://github.com/yfedoseev/pdf_oxide/pull/403)
+  restores correct span widths for standard-14 fonts without `/Widths`;
+  [#404](https://github.com/yfedoseev/pdf_oxide/pull/404) eliminates
+  duplicate text caused by sub-pixel float drift at the table-retain
+  boundary. Thank you, Roland — we look forward to more! 🚀
+
+- **[@AngeloBestetti](https://github.com/AngeloBestetti)** — Filed
+  [#402](https://github.com/yfedoseev/pdf_oxide/issues/402) with the
+  concrete word `"Lógico"`: a Portuguese term that, when saved to PDF,
+  came back as mojibake because every accented byte was being stored as
+  raw UTF-8. That single reproducer uncovered a systemic encoding bug —
+  _all_ PDF string objects (metadata titles, annotation contents,
+  bookmark labels, content-stream text) were silently corrupted for any
+  non-ASCII character. The internal audit that followed produced #406
+  and a full rewrite of `write_escaped_string` +
+  `encode_pdf_text_string` to emit PDFDocEncoding for chars ≤ U+00FF
+  and UTF-16BE with BOM for anything above. Thank you.
+
+- **[@sparkyandrew](https://github.com/sparkyandrew)** — Filed
+  [#401](https://github.com/yfedoseev/pdf_oxide/issues/401) after
+  discovering that AES-256 encrypted PDFs built with `DocumentBuilder`
+  opened successfully but rendered blank — the embedded font was gone.
+  The root cause: `collect_reachable_ids` followed the top-level `Font`
+  dictionary but stopped there, so `/Widths`, `/FontDescriptor`, and
+  `/FontFile2` were garbage-collected as "unreachable" during the
+  encrypted write pass. The fix traces the full font sub-object graph
+  before encryption so the complete font survives. Thank you.
+
+- **[@ChadThackray](https://github.com/ChadThackray)** — Filed
+  [#407](https://github.com/yfedoseev/pdf_oxide/issues/407) after
+  noticing that glyphs from one page silently replaced those of another
+  whenever two pages shared the same `/Font` resource-key name (both
+  using key `F1` but mapped to different faces). The L4 cache was
+  keying the combined glyph-map on a spot-check of a single font
+  object; the fix computes a combined hash over the _complete_ font set,
+  so any change to any face invalidates the entry. Thank you.
+
+- **[@gevorgter](https://github.com/gevorgter)** — Filed
+  [#395](https://github.com/yfedoseev/pdf_oxide/issues/395) after a
+  `SignatureException` from `RenderPage` on a 9-page signed PDF — the
+  renderer was propagating a signature-parse failure as the page-render
+  verdict even though no interactive widget lived on that page. The fix
+  treats unparseable signature-field metadata as non-fatal at render
+  time. @gevorgter also supplied the reproducer PDF that became the
+  regression fixture (`tests/test_signed_pdf_opens_and_renders.rs`),
+  ensuring this class of error can never silently return. Thank you.
+
+- **[@potatochipcoconut](https://github.com/potatochipcoconut)** —
+  Asked [#409](https://github.com/yfedoseev/pdf_oxide/issues/409) how
+  to get a `PdfDocument` as raw bytes from Python without writing to
+  disk, and whether `compress` and `garbage_collect` were available.
+  Neither worked. The question drove the `to_bytes()` / `SaveOptions`
+  kwargs work that shipped in-memory output, compression, and
+  garbage-collection across all 7 bindings, plus 18 missing
+  `DocumentEditor` methods. Thank you.
+
 ## [0.3.38] - 2026-04-23
 > DocumentBuilder fluent API across every language binding, real font subsetting, DocumentBuilder encryption, multi-target WASM packaging, and the first cryptographic slice of PDF signature verification
 

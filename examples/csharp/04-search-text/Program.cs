@@ -22,13 +22,13 @@ var pagesWithHits = 0;
 for (int i = 0; i < pages; i++)
 {
     var results = doc.SearchPage(i, query);
-    if (results.Count == 0) continue;
+    if (results.Length == 0) continue;
 
     pagesWithHits++;
-    Console.WriteLine($"Page {i + 1}: {results.Count} match(es)");
+    Console.WriteLine($"Page {i + 1}: {results.Length} match(es)");
     foreach (var r in results)
     {
-        Console.WriteLine($"  - \"...{r.Context}...\"");
+        Console.WriteLine($"  - \"{r.Text}\" (x={r.X:F1} y={r.Y:F1})");
         total++;
     }
     Console.WriteLine();

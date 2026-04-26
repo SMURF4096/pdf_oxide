@@ -1968,6 +1968,54 @@ export class SignatureManager extends EventEmitter {
     this.removeAllListeners();
   }
 
+  /**
+   * Sign a PDF from raw bytes using PEM credentials.
+   *
+   * Calls the native `signPdfBytes` FFI function (two-pass ByteRange writer).
+   * Credentials are loaded and freed within this call.
+   *
+   * @param pdfData - Buffer containing the PDF document bytes
+   * @param certPem - PEM-encoded certificate string
+   * @param keyPem  - PEM-encoded private key string
+   * @param reason  - Optional signature reason
+   * @param location - Optional signature location
+   * @returns Buffer containing the signed PDF
+   */
+  async signPdfData(
+    pdfData: Buffer,
+    certPem: string,
+    keyPem: string,
+    reason?: string,
+    location?: string
+  ): Promise<Buffer> {
+    if (!this.native?.certificateLoadFromPem) {
+      throw new SignatureException(
+        'Native signing not available: certificateLoadFromPem not found'
+      );
+    }
+    if (!this.native?.signPdfBytes) {
+      throw new SignatureException('Native signing not available: signPdfBytes not found');
+    }
+    const certHandle = this.native.certificateLoadFromPem(certPem, keyPem);
+    if (!certHandle) {
+      throw new SignatureException('Failed to load PEM certificate');
+    }
+    try {
+      const result = this.native.signPdfBytes(
+        pdfData,
+        certHandle,
+        reason ?? null,
+        location ?? null
+      );
+      if (!result) throw new SignatureException('signPdfBytes returned null');
+      return Buffer.from(result);
+    } finally {
+      if (this.native?.pdf_certificate_free) {
+        this.native.pdf_certificate_free(certHandle);
+      }
+    }
+  }
+
   // Private helpers
   private setCached(key: string, value: any): void {
     this.resultCache.set(key, value);

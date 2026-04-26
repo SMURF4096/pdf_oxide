@@ -204,6 +204,50 @@ namespace PdfOxide.Tests
             }
         }
 
+        // --- CSS property correctness -----------------------------------------
+        // Each test generates two PDFs that differ only in one CSS property and
+        // asserts the byte output is different — proving the property is applied.
+
+        [Fact]
+        public void Pdf_FromHtmlCss_FontSize_ChangesOutput()
+        {
+            var fontBytes = File.ReadAllBytes(FixtureFontPath);
+            const string html = "<p>text</p>";
+            var small = Pdf.FromHtmlCss(html, "p { font-size: 12px; }", fontBytes).SaveToBytes();
+            var large = Pdf.FromHtmlCss(html, "p { font-size: 48px; }", fontBytes).SaveToBytes();
+            Assert.False(small.SequenceEqual(large), "CSS font-size had no effect on output");
+        }
+
+        [Fact]
+        public void Pdf_FromHtmlCss_Color_ChangesOutput()
+        {
+            var fontBytes = File.ReadAllBytes(FixtureFontPath);
+            const string html = "<p>text</p>";
+            var black = Pdf.FromHtmlCss(html, "p { color: black; }", fontBytes).SaveToBytes();
+            var red = Pdf.FromHtmlCss(html, "p { color: red; }", fontBytes).SaveToBytes();
+            Assert.False(black.SequenceEqual(red), "CSS color had no effect on output");
+        }
+
+        [Fact]
+        public void Pdf_FromHtmlCss_BackgroundColor_ChangesOutput()
+        {
+            var fontBytes = File.ReadAllBytes(FixtureFontPath);
+            const string html = "<p>text</p>";
+            var none = Pdf.FromHtmlCss(html, "", fontBytes).SaveToBytes();
+            var yellow = Pdf.FromHtmlCss(html, "p { background-color: yellow; }", fontBytes).SaveToBytes();
+            Assert.False(none.SequenceEqual(yellow), "CSS background-color had no effect on output");
+        }
+
+        [Fact]
+        public void Pdf_FromHtmlCss_TextDecoration_ChangesOutput()
+        {
+            var fontBytes = File.ReadAllBytes(FixtureFontPath);
+            const string html = "<p>text</p>";
+            var none = Pdf.FromHtmlCss(html, "", fontBytes).SaveToBytes();
+            var underline = Pdf.FromHtmlCss(html, "p { text-decoration: underline; }", fontBytes).SaveToBytes();
+            Assert.False(none.SequenceEqual(underline), "CSS text-decoration had no effect on output");
+        }
+
         // --- Helpers ---------------------------------------------------------
 
         /// <summary>
@@ -235,6 +279,95 @@ namespace PdfOxide.Tests
                 $"pdfoxide-tmp-{Guid.NewGuid():N}.pdf");
             File.WriteAllBytes(path, bytes);
             return new TempFile(path);
+        }
+
+        // ── Issue #401 regression tests ───────────────────────────────────────
+
+        /// <summary>
+        /// Verifies that <see cref="DocumentBuilder.SaveEncrypted"/> writes all
+        /// font sub-objects (DescendantFonts, FontFile2, ToUnicode, FontDescriptor)
+        /// into the encrypted output when an embedded TrueType font is used.
+        ///
+        /// Strategy: the embedded DejaVu font program is several KB even after
+        /// subsetting. Without the fix (issue #401) those sub-objects are silently
+        /// dropped and the file barely differs from a base-14-font encrypted PDF.
+        /// With the fix the embedded-font file must be ≥10 KB larger.
+        /// </summary>
+        [Fact]
+        public void DocumentBuilder_SaveEncrypted_EmbeddedFont_ContentObjects_Preserved()
+        {
+            // Baseline: simple text (base-14 font), encrypted.
+            int simpleSize;
+            {
+                var path = Path.Combine(Path.GetTempPath(), $"pdfoxide-simple-enc-{Guid.NewGuid():N}.pdf");
+                try
+                {
+                    using var builder = DocumentBuilder.Create();
+                    builder.A4Page().At(72, 720).Text("Hello simple").Done();
+                    builder.SaveEncrypted(path, "userpw", "ownerpw");
+                    simpleSize = (int)new FileInfo(path).Length;
+                }
+                finally { if (File.Exists(path)) File.Delete(path); }
+            }
+
+            // Embedded-font PDF, encrypted.
+            int ttfSize;
+            {
+                var path = Path.Combine(Path.GetTempPath(), $"pdfoxide-ttf-enc-{Guid.NewGuid():N}.pdf");
+                try
+                {
+                    using var font = EmbeddedFont.FromFile(FixtureFontPath);
+                    using var builder = DocumentBuilder.Create()
+                        .RegisterEmbeddedFont("DejaVu", font);
+                    builder.A4Page()
+                        .Font("DejaVu", 12).At(72, 720).Text("Hello from embedded font")
+                        .Done();
+                    builder.SaveEncrypted(path, "userpw", "ownerpw");
+                    var raw = System.Text.Encoding.ASCII.GetString(File.ReadAllBytes(path));
+                    Assert.Contains("/Encrypt", raw);
+                    ttfSize = (int)new FileInfo(path).Length;
+                }
+                finally { if (File.Exists(path)) File.Delete(path); }
+            }
+
+            // With FlateDecode compression (SaveOptions::with_encryption sets compress=true),
+            // a subsetted font adds several KB. A 5 KB floor clearly distinguishes
+            // "font present" from "font missing" (which gives near-zero diff).
+            var diff = ttfSize - simpleSize;
+            Assert.True(
+                diff >= 5_000,
+                $"issue #401: embedded-font encrypted PDF ({ttfSize} B) is not " +
+                $"substantially larger than simple encrypted PDF ({simpleSize} B); " +
+                $"diff={diff} B — font sub-objects likely missing from encrypted output");
+        }
+
+        /// <summary>
+        /// Verifies <see cref="DocumentBuilder.ToBytesEncrypted"/> preserves
+        /// embedded font sub-objects in the encrypted byte output.
+        /// </summary>
+        [Fact]
+        public void DocumentBuilder_ToBytesEncrypted_EmbeddedFont_ContentObjects_Preserved()
+        {
+            using var font = EmbeddedFont.FromFile(FixtureFontPath);
+            using var builder = DocumentBuilder.Create()
+                .RegisterEmbeddedFont("DejaVu", font);
+            builder.A4Page()
+                .Font("DejaVu", 12).At(72, 720)
+                .Text("bytes encrypted with embedded font")
+                .Done();
+
+            var bytes = builder.ToBytesEncrypted("u", "o");
+            var raw = System.Text.Encoding.ASCII.GetString(bytes);
+            Assert.Contains("/Encrypt", raw);
+
+            // Font program must be present. With FlateDecode compression
+            // (SaveOptions::with_encryption sets compress=true), a subsetted DejaVu
+            // font adds ~8 KB; an 8 KB total floor clearly distinguishes "present"
+            // from "missing" (no-font output is <2 KB).
+            Assert.True(
+                bytes.Length > 8_000,
+                $"issue #401: ToBytesEncrypted embedded-font result ({bytes.Length} B) " +
+                "is too small; font sub-objects likely missing from encrypted output");
         }
     }
 }

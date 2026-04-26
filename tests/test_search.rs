@@ -62,9 +62,9 @@ mod text_search {
         std::fs::write(&temp_path, &bytes).expect("Failed to write temp PDF");
 
         // Search for text
-        let mut doc = PdfDocument::open(&temp_path).expect("Failed to open PDF");
+        let doc = PdfDocument::open(&temp_path).expect("Failed to open PDF");
         let options = SearchOptions::default();
-        let results = TextSearcher::search(&mut doc, "Hello", &options).expect("Search failed");
+        let results = TextSearcher::search(&doc, "Hello", &options).expect("Search failed");
 
         assert!(!results.is_empty(), "Should find at least one match for 'Hello'");
         assert!(results[0].text.contains("Hello"));
@@ -81,16 +81,16 @@ mod text_search {
         let temp_path = temp_dir.join("test_search_case.pdf");
         std::fs::write(&temp_path, &bytes).expect("Failed to write temp PDF");
 
-        let mut doc = PdfDocument::open(&temp_path).expect("Failed to open PDF");
+        let doc = PdfDocument::open(&temp_path).expect("Failed to open PDF");
 
         // Case-sensitive search should find exact matches
         let options = SearchOptions::default();
-        let results = TextSearcher::search(&mut doc, "hello", &options).expect("Search failed");
+        let results = TextSearcher::search(&doc, "hello", &options).expect("Search failed");
 
         // Case-insensitive search should find all variations
         let options_insensitive = SearchOptions::case_insensitive();
         let results_insensitive =
-            TextSearcher::search(&mut doc, "hello", &options_insensitive).expect("Search failed");
+            TextSearcher::search(&doc, "hello", &options_insensitive).expect("Search failed");
 
         // The case-insensitive search should find more or equal matches
         assert!(
@@ -110,11 +110,11 @@ mod text_search {
         let temp_path = temp_dir.join("test_search_regex.pdf");
         std::fs::write(&temp_path, &bytes).expect("Failed to write temp PDF");
 
-        let mut doc = PdfDocument::open(&temp_path).expect("Failed to open PDF");
+        let doc = PdfDocument::open(&temp_path).expect("Failed to open PDF");
 
         // Search for pattern "Item \\d"
         let options = SearchOptions::default();
-        let results = TextSearcher::search(&mut doc, r"Item \d", &options).expect("Search failed");
+        let results = TextSearcher::search(&doc, r"Item \d", &options).expect("Search failed");
 
         // Should find multiple matches
         assert!(!results.is_empty(), "Should find at least one 'Item N' pattern");
@@ -132,11 +132,11 @@ mod text_search {
         let temp_path = temp_dir.join("test_search_literal.pdf");
         std::fs::write(&temp_path, &bytes).expect("Failed to write temp PDF");
 
-        let mut doc = PdfDocument::open(&temp_path).expect("Failed to open PDF");
+        let doc = PdfDocument::open(&temp_path).expect("Failed to open PDF");
 
         // Literal search for "a.b" - should not match "axb"
         let options = SearchOptions::new().with_literal(true);
-        let results = TextSearcher::search(&mut doc, "a.b", &options).expect("Search failed");
+        let results = TextSearcher::search(&doc, "a.b", &options).expect("Search failed");
 
         for result in &results {
             // Each match should contain literal "a.b"
@@ -155,11 +155,11 @@ mod text_search {
         let temp_path = temp_dir.join("test_search_whole_word.pdf");
         std::fs::write(&temp_path, &bytes).expect("Failed to write temp PDF");
 
-        let mut doc = PdfDocument::open(&temp_path).expect("Failed to open PDF");
+        let doc = PdfDocument::open(&temp_path).expect("Failed to open PDF");
 
         // Whole word search for "cat" - should not match "category"
         let options = SearchOptions::new().with_whole_word(true);
-        let results = TextSearcher::search(&mut doc, "cat", &options).expect("Search failed");
+        let results = TextSearcher::search(&doc, "cat", &options).expect("Search failed");
 
         // Verify none of the matches are "category"
         for result in &results {
@@ -181,11 +181,11 @@ mod text_search {
         let temp_path = temp_dir.join("test_search_max.pdf");
         std::fs::write(&temp_path, &bytes).expect("Failed to write temp PDF");
 
-        let mut doc = PdfDocument::open(&temp_path).expect("Failed to open PDF");
+        let doc = PdfDocument::open(&temp_path).expect("Failed to open PDF");
 
         // Limit to 3 results
         let options = SearchOptions::new().with_max_results(3);
-        let results = TextSearcher::search(&mut doc, "test", &options).expect("Search failed");
+        let results = TextSearcher::search(&doc, "test", &options).expect("Search failed");
 
         assert!(results.len() <= 3, "Should respect max_results limit of 3");
 
@@ -201,11 +201,11 @@ mod text_search {
         let temp_path = temp_dir.join("test_search_no_match.pdf");
         std::fs::write(&temp_path, &bytes).expect("Failed to write temp PDF");
 
-        let mut doc = PdfDocument::open(&temp_path).expect("Failed to open PDF");
+        let doc = PdfDocument::open(&temp_path).expect("Failed to open PDF");
 
         let options = SearchOptions::default();
         let results =
-            TextSearcher::search(&mut doc, "xyz123notfound", &options).expect("Search failed");
+            TextSearcher::search(&doc, "xyz123notfound", &options).expect("Search failed");
 
         assert!(results.is_empty(), "Should return empty results for non-existent text");
 
@@ -221,10 +221,10 @@ mod text_search {
         let temp_path = temp_dir.join("test_search_position.pdf");
         std::fs::write(&temp_path, &bytes).expect("Failed to write temp PDF");
 
-        let mut doc = PdfDocument::open(&temp_path).expect("Failed to open PDF");
+        let doc = PdfDocument::open(&temp_path).expect("Failed to open PDF");
 
         let options = SearchOptions::default();
-        let results = TextSearcher::search(&mut doc, "Find", &options).expect("Search failed");
+        let results = TextSearcher::search(&doc, "Find", &options).expect("Search failed");
 
         if !results.is_empty() {
             let result = &results[0];

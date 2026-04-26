@@ -159,7 +159,7 @@ impl BatchProcessor {
         let start = Instant::now();
 
         let result = (|| -> Result<(String, usize), Error> {
-            let mut doc = PdfDocument::open(path)?;
+            let doc = PdfDocument::open(path)?;
             let page_count = doc.page_count()?;
             let text = doc.extract_all_text()?;
             Ok((text, page_count))

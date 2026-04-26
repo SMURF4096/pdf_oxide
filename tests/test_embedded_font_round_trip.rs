@@ -28,7 +28,7 @@ fn build_pdf_with_text(text: &str, font_size: f32) -> Vec<u8> {
 }
 
 fn extract_text_from_bytes(bytes: Vec<u8>) -> String {
-    let mut doc = PdfDocument::from_bytes(bytes).expect("PDF must re-open");
+    let doc = PdfDocument::from_bytes(bytes).expect("PDF must re-open");
     // Single page in every fixture; concatenate just in case future fixtures
     // grow.
     let pages = doc.page_count().expect("page_count must succeed");

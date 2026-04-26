@@ -11,7 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let pdf_path = &args[1];
-    let mut doc = PdfDocument::open(pdf_path)?;
+    let doc = PdfDocument::open(pdf_path)?;
     let page_count = doc.page_count()?;
 
     for page_idx in 0..page_count {

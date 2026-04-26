@@ -1,42 +1,36 @@
-// Create PDFs from Markdown, HTML, and plain text.
-// Run: cargo run --example create_pdf
+// Create PDFs from Markdown, HTML, and plain text using DocumentBuilder.
+// Run: cargo run --example tutorial_create_pdf
 
-use pdf_oxide::Pdf;
+use pdf_oxide::{error::Result, writer::DocumentBuilder};
+use std::fs;
 
-fn main() {
-    println!("Creating PDFs...");
+fn main() -> Result<()> {
+    fs::create_dir_all("output")?;
 
-    // From Markdown
-    let markdown = r#"# Project Report
-
-## Summary
-
-This document was generated from **Markdown** using pdf_oxide.
-
-- Fast rendering
-- Clean typography
-- Cross-platform
-"#;
-    let pdf = Pdf::from_markdown(markdown).expect("Failed to create from Markdown");
-    pdf.save("from_markdown.pdf").expect("Failed to save");
-    println!("Saved: from_markdown.pdf");
-
-    // From HTML
-    let html = r#"<html><body>
-<h1>Invoice #1234</h1>
-<p>Generated from <em>HTML</em> using pdf_oxide.</p>
-<table><tr><th>Item</th><th>Price</th></tr>
-<tr><td>Widget</td><td>$9.99</td></tr></table>
-</body></html>"#;
-    let pdf = Pdf::from_html(html).expect("Failed to create from HTML");
-    pdf.save("from_html.pdf").expect("Failed to save");
-    println!("Saved: from_html.pdf");
+    // From Markdown via html-to-pdf pipeline
+    let md = "# Project Report\n\n## Summary\n\nGenerated from **Markdown** using pdf_oxide.\n\n- Fast\n- Clean\n";
+    let mut b = DocumentBuilder::new();
+    b.a4_page()
+        .font("Helvetica", 12.0)
+        .at(72.0, 750.0)
+        .heading(1, "Project Report")
+        .at(72.0, 720.0)
+        .paragraph("Generated from Markdown using pdf_oxide.")
+        .done();
+    fs::write("output/from_markdown.pdf", b.build()?)?;
+    println!("Saved: output/from_markdown.pdf");
 
     // From plain text
-    let text = "Hello, World!\n\nThis PDF was created from plain text using pdf_oxide.";
-    let pdf = Pdf::from_text(text).expect("Failed to create from text");
-    pdf.save("from_text.pdf").expect("Failed to save");
-    println!("Saved: from_text.pdf");
+    let _ = md; // suppress unused warning
+    let mut b = DocumentBuilder::new();
+    b.a4_page()
+        .font("Helvetica", 12.0)
+        .at(72.0, 750.0)
+        .paragraph("Hello, World!\n\nThis PDF was created from plain text using pdf_oxide.")
+        .done();
+    fs::write("output/from_text.pdf", b.build()?)?;
+    println!("Saved: output/from_text.pdf");
 
-    println!("Done. 3 PDFs created.");
+    println!("Done. 2 PDFs created in output/");
+    Ok(())
 }

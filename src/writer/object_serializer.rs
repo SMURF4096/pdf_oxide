@@ -352,8 +352,11 @@ impl ObjectSerializer {
     }
 
     /// Create a String object from a Rust string.
+    ///
+    /// Encodes using PDFDocEncoding (U+0000–U+00FF) or UTF-16BE with BOM
+    /// (characters above U+00FF) per ISO 32000-2 §7.9.2.
     pub fn string(s: &str) -> Object {
-        Object::String(s.as_bytes().to_vec())
+        Object::text_string(s)
     }
 
     /// Create an Integer object.

@@ -165,7 +165,7 @@ impl RadioButtonGroup {
         dict.insert("FT".to_string(), Object::Name("Btn".to_string()));
 
         // Field name
-        dict.insert("T".to_string(), Object::String(self.name.as_bytes().to_vec()));
+        dict.insert("T".to_string(), Object::text_string(&self.name));
 
         // Value - selected button's export value or /Off
         let value = self.selected.clone().unwrap_or_else(|| "Off".to_string());
@@ -179,7 +179,7 @@ impl RadioButtonGroup {
 
         // Tooltip
         if let Some(ref tip) = self.tooltip {
-            dict.insert("TU".to_string(), Object::String(tip.as_bytes().to_vec()));
+            dict.insert("TU".to_string(), Object::text_string(tip));
         }
 
         dict
@@ -337,7 +337,7 @@ impl RadioButtonWidget {
         }
 
         // Caption character for radio (l = bullet in ZapfDingbats)
-        mk.insert("CA".to_string(), Object::String("l".as_bytes().to_vec()));
+        mk.insert("CA".to_string(), Object::text_string("l"));
 
         if !mk.is_empty() {
             dict.insert("MK".to_string(), Object::Dictionary(mk));

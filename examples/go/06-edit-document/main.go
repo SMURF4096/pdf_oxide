@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/yfedoseev/pdf_oxide/go"
+	pdfoxide "github.com/yfedoseev/pdf_oxide/go"
 )
 
 func main() {
@@ -17,26 +17,38 @@ func main() {
 	}
 	input, output := os.Args[1], os.Args[2]
 
-	editor, err := pdfoxide.EditorOpen(input)
+	editor, err := pdfoxide.OpenEditor(input)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+	defer editor.Close()
 	fmt.Printf("Opened: %s\n", input)
 
-	pdfoxide.EditorSetTitle(editor, "Edited Document")
-	fmt.Println(`Set title: "Edited Document"`)
-
-	pdfoxide.EditorSetAuthor(editor, "pdf_oxide")
-	fmt.Println(`Set author: "pdf_oxide"`)
-
-	if err := pdfoxide.EditorDeletePage(editor, 1); err != nil {
-		fmt.Fprintf(os.Stderr, "DeletePage error: %v\n", err)
+	if err := editor.SetTitle("Edited Document"); err != nil {
+		fmt.Fprintf(os.Stderr, "SetTitle error: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Println("Deleted page 2")
+	fmt.Println(`Set title: "Edited Document"`)
 
-	if err := pdfoxide.EditorSave(editor, output); err != nil {
+	if err := editor.SetAuthor("pdf_oxide"); err != nil {
+		fmt.Fprintf(os.Stderr, "SetAuthor error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println(`Set author: "pdf_oxide"`)
+
+	pages, _ := editor.PageCount()
+	if pages > 1 {
+		if err := editor.DeletePage(1); err != nil {
+			fmt.Fprintf(os.Stderr, "DeletePage error: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("Deleted page 2")
+	} else {
+		fmt.Println("(skipped delete — single-page document)")
+	}
+
+	if err := editor.Save(output); err != nil {
 		fmt.Fprintf(os.Stderr, "Save error: %v\n", err)
 		os.Exit(1)
 	}

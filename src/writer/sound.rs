@@ -279,7 +279,7 @@ impl SoundAnnotation {
 
         // Contents (description)
         if let Some(ref contents) = self.contents {
-            dict.insert("Contents".to_string(), Object::String(contents.as_bytes().to_vec()));
+            dict.insert("Contents".to_string(), Object::text_string(contents));
         }
 
         // Flags
@@ -289,12 +289,12 @@ impl SoundAnnotation {
 
         // Author
         if let Some(ref author) = self.author {
-            dict.insert("T".to_string(), Object::String(author.as_bytes().to_vec()));
+            dict.insert("T".to_string(), Object::text_string(author));
         }
 
         // Modification date
         if let Some(ref date) = self.modification_date {
-            dict.insert("M".to_string(), Object::String(date.as_bytes().to_vec()));
+            dict.insert("M".to_string(), Object::text_string(date));
         }
 
         // Note: The Sound entry (stream reference) must be added by the caller

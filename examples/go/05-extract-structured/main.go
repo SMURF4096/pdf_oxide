@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/yfedoseev/pdf_oxide/go"
+	pdfoxide "github.com/yfedoseev/pdf_oxide/go"
 )
 
 func main() {
@@ -27,7 +27,6 @@ func main() {
 
 	page := 0
 
-	// Extract words with position data
 	words, err := doc.ExtractWords(page)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ExtractWords error: %v\n", err)
@@ -46,7 +45,6 @@ func main() {
 		fmt.Printf("... (%d more words)\n", len(words)-20)
 	}
 
-	// Extract tables
 	tables, err := doc.ExtractTables(page)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ExtractTables error: %v\n", err)
@@ -57,10 +55,10 @@ func main() {
 		fmt.Println("(no tables found)")
 	}
 	for i, t := range tables {
-		fmt.Printf("Table %d: %d rows x %d cols\n", i+1, t.Rows, t.Cols)
-		for r := 0; r < t.Rows && r < 5; r++ {
-			for c := 0; c < t.Cols && c < 6; c++ {
-				fmt.Printf("  [%d,%d] %q", r, c, t.Cells[r][c])
+		fmt.Printf("Table %d: %d rows x %d cols\n", i+1, t.RowCount, t.ColCount)
+		for r := 0; r < t.RowCount && r < 5; r++ {
+			for c := 0; c < t.ColCount && c < 6; c++ {
+				fmt.Printf("  [%d,%d] %q", r, c, t.CellText(r, c))
 			}
 			fmt.Println()
 		}

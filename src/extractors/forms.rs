@@ -202,7 +202,7 @@ impl FormExtractor {
     /// Helper function to resolve an Object (handles indirect references).
     ///
     /// If the object is an indirect reference, loads it. Otherwise returns clone.
-    fn resolve_object(doc: &mut PdfDocument, obj: &Object) -> Result<Object> {
+    fn resolve_object(doc: &PdfDocument, obj: &Object) -> Result<Object> {
         if let Some(ref_val) = obj.as_reference() {
             doc.load_object(ref_val)
         } else {
@@ -269,7 +269,7 @@ impl FormExtractor {
     /// }
     /// # Ok::<(), pdf_oxide::error::Error>(())
     /// ```
-    pub fn extract_fields(doc: &mut PdfDocument) -> Result<Vec<FormField>> {
+    pub fn extract_fields(doc: &PdfDocument) -> Result<Vec<FormField>> {
         // Get document catalog
         let catalog = doc.catalog()?;
         let catalog_dict = catalog
@@ -330,7 +330,7 @@ impl FormExtractor {
     /// * `parent_name` - Full qualified name of parent field (for hierarchy)
     /// * `result` - Vector to accumulate extracted fields
     fn extract_field_recursive(
-        doc: &mut PdfDocument,
+        doc: &PdfDocument,
         field_ref: &Object,
         parent_name: &str,
         result: &mut Vec<FormField>,
@@ -590,7 +590,7 @@ impl FormExtractor {
 
     /// Parse appearance characteristics from /MK dictionary.
     fn parse_appearance_characteristics(
-        doc: &mut PdfDocument,
+        doc: &PdfDocument,
         obj: &Object,
     ) -> Option<AppearanceCharacteristics> {
         let dict = obj.as_dict()?;
@@ -681,10 +681,7 @@ impl FormExtractor {
     /// let mut doc = PdfDocument::open("form.pdf")?;
     /// FormExtractor::export_fdf(&mut doc, "form_data.fdf")?;
     /// ```
-    pub fn export_fdf(
-        doc: &mut PdfDocument,
-        output_path: impl AsRef<std::path::Path>,
-    ) -> Result<()> {
+    pub fn export_fdf(doc: &PdfDocument, output_path: impl AsRef<std::path::Path>) -> Result<()> {
         let fields = Self::extract_fields(doc)?;
         let writer = crate::fdf::FdfWriter::from_fields(fields);
         writer.write_to_file(output_path)
@@ -708,10 +705,7 @@ impl FormExtractor {
     /// let mut doc = PdfDocument::open("form.pdf")?;
     /// FormExtractor::export_xfdf(&mut doc, "form_data.xfdf")?;
     /// ```
-    pub fn export_xfdf(
-        doc: &mut PdfDocument,
-        output_path: impl AsRef<std::path::Path>,
-    ) -> Result<()> {
+    pub fn export_xfdf(doc: &PdfDocument, output_path: impl AsRef<std::path::Path>) -> Result<()> {
         let fields = Self::extract_fields(doc)?;
         let writer = crate::fdf::XfdfWriter::from_fields(fields);
         writer.write_to_file(output_path)

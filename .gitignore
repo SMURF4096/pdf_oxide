@@ -182,6 +182,10 @@ logs/
 *.key
 *.p12
 *.pfx
+# Exception: self-signed test-only fixtures committed intentionally
+!tests/fixtures/test_signing_cert.pem
+!tests/fixtures/test_signing_key.pem
+!tests/fixtures/test_signing.p12
 
 # Docker
 .dockerignore
@@ -363,3 +367,11 @@ bench_fixtures/
 # .NET build artifacts
 csharp/**/bin/
 csharp/**/obj/
+
+# Example output and build artifacts
+examples/**/output/
+examples/**/output_*/
+examples/**/node_modules/
+examples/**/bin/
+examples/**/obj/
+examples/**/dist/

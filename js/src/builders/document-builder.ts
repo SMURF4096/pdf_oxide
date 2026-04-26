@@ -28,6 +28,15 @@
 // against `prebuilds/<triple>/pdf_oxide.node` in the published
 // package and the in-tree `build/Release/` output in dev mode.
 import { loadNative } from '../native.js';
+import {
+  Align,
+  type Column,
+  type SpanCell,
+  type StreamingTableConfig,
+  type TableMode,
+  type TableSpec,
+} from '../types/common.js';
+import { StreamingTable } from './streaming-table.js';
 
 const native = loadNative();
 
@@ -143,6 +152,45 @@ export class DocumentBuilder {
   /** Set the creator application name. */
   creator(creator: string): this {
     native.documentBuilderSetCreator(this.checkUsable(), creator);
+    return this;
+  }
+
+  /** Run a JavaScript script when the document is opened (/OpenAction). */
+  onOpen(script: string): this {
+    native.documentBuilderOnOpen(this.checkUsable(), script);
+    return this;
+  }
+
+  /**
+   * Enable PDF/UA-1 tagged PDF mode.
+   *
+   * When enabled, `build()` emits `/MarkInfo`, `/StructTreeRoot`, `/Lang`, and
+   * `/ViewerPreferences` in the catalog. Opt-in — no effect unless called.
+   * Bundle F-1/F-2.
+   */
+  taggedPdfUa1(): this {
+    native.documentBuilderTaggedPdfUa1(this.checkUsable());
+    return this;
+  }
+
+  /**
+   * Set the document's natural language tag, e.g. `"en-US"`.
+   *
+   * Emitted as `/Lang` in the catalog when `taggedPdfUa1()` is set. Bundle F-2.
+   */
+  language(lang: string): this {
+    native.documentBuilderLanguage(this.checkUsable(), lang);
+    return this;
+  }
+
+  /**
+   * Add a role-map entry: custom structure type → standard PDF structure type.
+   *
+   * Emitted in `/RoleMap` inside the StructTreeRoot when `taggedPdfUa1()` is
+   * set. Multiple calls accumulate entries. Bundle F-4.
+   */
+  roleMap(custom: string, standard: string): this {
+    native.documentBuilderRoleMap(this.checkUsable(), custom, standard);
     return this;
   }
 
@@ -271,6 +319,7 @@ export class PageBuilder {
   /** Set font + size for subsequent text. */
   font(name: string, size: number): this {
     native.pageBuilderFont(this.h(), name, size);
+    this._lastFontSize = size;
     return this;
   }
 
@@ -327,6 +376,48 @@ export class PageBuilder {
   /** Link the previous text to a named destination. */
   linkNamed(destination: string): this {
     native.pageBuilderLinkNamed(this.h(), destination);
+    return this;
+  }
+
+  /** Link the previous text to a JavaScript action. */
+  linkJavascript(script: string): this {
+    native.pageBuilderLinkJavascript(this.h(), script);
+    return this;
+  }
+
+  /** Run JavaScript when this page is opened (/AA /O). */
+  onOpen(script: string): this {
+    native.pageBuilderOnOpen(this.h(), script);
+    return this;
+  }
+
+  /** Run JavaScript when this page is closed (/AA /C). */
+  onClose(script: string): this {
+    native.pageBuilderOnClose(this.h(), script);
+    return this;
+  }
+
+  /** Set a keystroke JS action (/AA /K) on the last form field. */
+  fieldKeystroke(script: string): this {
+    native.pageBuilderFieldKeystroke(this.h(), script);
+    return this;
+  }
+
+  /** Set a format JS action (/AA /F) on the last form field. */
+  fieldFormat(script: string): this {
+    native.pageBuilderFieldFormat(this.h(), script);
+    return this;
+  }
+
+  /** Set a validate JS action (/AA /V) on the last form field. */
+  fieldValidate(script: string): this {
+    native.pageBuilderFieldValidate(this.h(), script);
+    return this;
+  }
+
+  /** Set a calculate JS action (/AA /C) on the last form field. */
+  fieldCalculate(script: string): this {
+    native.pageBuilderFieldCalculate(this.h(), script);
     return this;
   }
 
@@ -467,6 +558,108 @@ export class PageBuilder {
     return this;
   }
 
+  /** Add an unsigned signature placeholder field (/FT /Sig) at the given bounds. */
+  signatureField(name: string, x: number, y: number, w: number, h: number): this {
+    native.pageBuilderSignatureField(this.h(), name, x, y, w, h);
+    return this;
+  }
+
+  /**
+   * Add a footnote: inline `refMark` emitted at the cursor position, and
+   * `noteText` placed near the page bottom with a separator artifact line.
+   */
+  footnote(refMark: string, noteText: string): this {
+    native.pageBuilderFootnote(this.h(), refMark, noteText);
+    return this;
+  }
+
+  /**
+   * Lay out `text` as balanced multi-column flow.
+   * `columnCount` columns separated by `gapPt` points.
+   * Paragraphs in `text` are delimited by `"\n\n"`.
+   */
+  columns(columnCount: number, gapPt: number, text: string): this {
+    native.pageBuilderColumns(this.h(), columnCount, gapPt, text);
+    return this;
+  }
+
+  /**
+   * Emit `text` inline at the current cursor position without advancing
+   * to a new line. The cursor advances horizontally so the next `inline`
+   * call follows on the same line.
+   */
+  inline(text: string): this {
+    native.pageBuilderInline(this.h(), text);
+    return this;
+  }
+
+  /** Emit `text` inline in bold weight. */
+  inlineBold(text: string): this {
+    native.pageBuilderInlineBold(this.h(), text);
+    return this;
+  }
+
+  /** Emit `text` inline in italic style. */
+  inlineItalic(text: string): this {
+    native.pageBuilderInlineItalic(this.h(), text);
+    return this;
+  }
+
+  /** Emit `text` inline in an RGB colour (channels 0–1). */
+  inlineColor(r: number, g: number, b: number, text: string): this {
+    native.pageBuilderInlineColor(this.h(), r, g, b, text);
+    return this;
+  }
+
+  /** Advance the cursor to the start of the next line. */
+  newline(): this {
+    native.pageBuilderNewline(this.h());
+    return this;
+  }
+
+  // --- Barcode / QR-code placement ------------------------------------
+
+  /**
+   * Place a 1-D barcode image on the page at `(x, y, w, h)`.
+   * `barcodeType`: 0=Code128 1=Code39 2=EAN13 3=EAN8 4=UPCA 5=ITF
+   * 6=Code93 7=Codabar.
+   */
+  barcode1d(barcodeType: number, data: string, x: number, y: number, w: number, h: number): this {
+    native.pageBuilderBarcode1d(this.h(), barcodeType, data, x, y, w, h);
+    return this;
+  }
+
+  /** Place a QR-code image on the page (square: `size × size` pt). */
+  barcodeQr(data: string, x: number, y: number, size: number): this {
+    native.pageBuilderBarcodeQr(this.h(), data, x, y, size);
+    return this;
+  }
+
+  /**
+   * Embed an image with an accessibility alt text (PDF/UA-1 §Figure).
+   * `bytes` must contain raw JPEG/PNG/WebP image data.
+   */
+  imageWithAlt(
+    bytes: Buffer | Uint8Array,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    altText: string
+  ): this {
+    native.pageBuilderImageWithAlt(this.h(), bytes, x, y, w, h, altText);
+    return this;
+  }
+
+  /**
+   * Embed a decorative image as an /Artifact (no alt text, PDF/UA-1 §Artifact).
+   * `bytes` must contain raw JPEG/PNG/WebP image data.
+   */
+  imageArtifact(bytes: Buffer | Uint8Array, x: number, y: number, w: number, h: number): this {
+    native.pageBuilderImageArtifact(this.h(), bytes, x, y, w, h);
+    return this;
+  }
+
   // --- Low-level graphics primitives ---------------------------------
 
   /** Draw a stroked rectangle outline (1pt black). */
@@ -486,6 +679,184 @@ export class PageBuilder {
     native.pageBuilderLine(this.h(), x1, y1, x2, y2);
     return this;
   }
+
+  // --- v0.3.39 primitives (#393) -------------------------------------
+
+  /**
+   * Draw a stroked rectangle outline with caller-supplied width + RGB
+   * colour (channels 0–1). Underlies the Table surface.
+   */
+  strokeRect(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    style?: { width?: number; color?: [number, number, number] }
+  ): this {
+    const width = style?.width ?? 1;
+    const [r, g, b] = style?.color ?? [0, 0, 0];
+    native.pageBuilderStrokeRect(this.h(), x, y, w, h, width, r, g, b);
+    return this;
+  }
+
+  /**
+   * Draw a straight line with caller-supplied width + RGB colour.
+   */
+  strokeLine(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    style?: { width?: number; color?: [number, number, number] }
+  ): this {
+    const width = style?.width ?? 1;
+    const [r, g, b] = style?.color ?? [0, 0, 0];
+    native.pageBuilderStrokeLine(this.h(), x1, y1, x2, y2, width, r, g, b);
+    return this;
+  }
+
+  /**
+   * Place wrapped text inside the rectangle (x, y, w, h) with the
+   * given horizontal alignment. Uses the current font + size. Text
+   * that does not fit is clipped to the rectangle height.
+   */
+  textInRect(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    text: string,
+    align: Align = Align.Left
+  ): this {
+    native.pageBuilderTextInRect(this.h(), x, y, w, h, text, align);
+    return this;
+  }
+
+  /**
+   * Start a new page with the *same* dimensions as the current one.
+   * Text config (font + size) carries over; the cursor resets to the
+   * top-left margin. Callers wanting header-repeat-on-break must
+   * re-emit the header explicitly.
+   */
+  newPageSameSize(): this {
+    native.pageBuilderNewPageSameSize(this.h());
+    return this;
+  }
+
+  /**
+   * Measure the width of `text` in the current font and size.
+   *
+   * Note: v0.3.39 ships a JS-side approximation (0.55em per glyph for
+   * ASCII / typical Latin-1 characters). A true per-glyph measurement
+   * FFI is pending. The result is in PDF points.
+   */
+  measure(text: string): number {
+    // Retrieve current font size if the user tracked it via `font(...)`.
+    // We have no FFI query for the size; fall back to the 10pt default.
+    const size = this._lastFontSize ?? 10;
+    // ~0.55 em is a reasonable average for proportional fonts.
+    return text.length * size * 0.55;
+  }
+
+  /**
+   * Estimate the remaining vertical space on the page at the current
+   * cursor position. v0.3.39 returns `null` when the native cursor is
+   * unknown — callers should treat `null` as "unknown; assume fresh
+   * page". A real FFI hook is pending in a follow-up release.
+   */
+  remainingSpace(): number | null {
+    return null;
+  }
+
+  /**
+   * Emit a buffered table at the current cursor. All rows are
+   * marshalled into a single FFI call — memory scales with the row
+   * count. For million-row streams use {@link streamingTable}.
+   */
+  table(spec: TableSpec): this {
+    const columns = spec.columns;
+    if (!columns || columns.length === 0) {
+      throw new Error('table spec must contain at least one column');
+    }
+    const widths = columns.map((c) => c.width);
+    const aligns = columns.map((c) => (c.align ?? Align.Left) as number);
+    const hasHeader = spec.hasHeader !== false;
+    const rows = spec.rows ?? [];
+    const cells: Array<string | null> = [];
+    if (hasHeader) {
+      for (const c of columns) cells.push(c.header);
+    }
+    const bodyRowCount = rows.length;
+    for (const row of rows) {
+      if (row.length !== columns.length) {
+        throw new Error(`row width ${row.length} does not match column count ${columns.length}`);
+      }
+      for (const cell of row) cells.push(cell ?? null);
+    }
+    const totalRows = (hasHeader ? 1 : 0) + bodyRowCount;
+    native.pageBuilderTable(this.h(), widths, aligns, totalRows, cells, hasHeader);
+    return this;
+  }
+
+  /**
+   * Begin a streaming table. Uses the native row-at-a-time FFI
+   * (`pdf_page_builder_streaming_table_begin_v2`). Pass a `mode` in
+   * `config` to control column-sizing strategy (default: fixed widths).
+   */
+  streamingTable(config: StreamingTableConfig): StreamingTable {
+    return new StreamingTable(this, config);
+  }
+
+  /** @internal — open streaming table FFI handle on this page. */
+  _streamingTableBeginV2(
+    headers: string[],
+    widths: number[],
+    aligns: number[],
+    repeatHeader: boolean,
+    mode: TableMode | undefined,
+    maxRowspan: number
+  ): void {
+    let modeInt = 0;
+    let sampleRows = 20;
+    let minW = 0;
+    let maxW = 9999;
+    if (mode?.kind === 'sample') {
+      modeInt = 1;
+      if (mode.sampleRows != null) sampleRows = mode.sampleRows;
+      if (mode.minColWidthPt != null) minW = mode.minColWidthPt;
+      if (mode.maxColWidthPt != null) maxW = mode.maxColWidthPt;
+    }
+    native.pageBuilderStreamingTableBeginV2(
+      this.h(),
+      headers,
+      widths,
+      aligns,
+      repeatHeader,
+      modeInt,
+      sampleRows,
+      minW,
+      maxW,
+      maxRowspan
+    );
+  }
+
+  /** @internal — push one row into the open streaming table (all rowspan=1). */
+  _streamingTablePushRow(cells: Array<string | null>): void {
+    native.pageBuilderStreamingTablePushRow(this.h(), cells);
+  }
+
+  /** @internal — push one row with per-cell rowspan values. */
+  _streamingTablePushRowV2(cells: Array<[string | null, number]>): void {
+    native.pageBuilderStreamingTablePushRowV2(this.h(), cells);
+  }
+
+  /** @internal — close the open streaming table. */
+  _streamingTableFinish(): void {
+    native.pageBuilderStreamingTableFinish(this.h());
+  }
+
+  /** @internal — track the last font size for JS-side `measure()`. */
+  _lastFontSize?: number;
 
   /**
    * Commit the page's buffered operations to the parent builder and
@@ -521,3 +892,16 @@ export class PageBuilder {
     this.close();
   }
 }
+
+export { StreamingTable } from './streaming-table.js';
+// Re-export the v0.3.39 table surface so users can `import { Align,
+// StreamingTable } from 'pdf-oxide'` without reaching into ./types or
+// ./builders/streaming-table.
+export {
+  Align,
+  type Column,
+  type SpanCell,
+  type StreamingTableConfig,
+  type TableMode,
+  type TableSpec,
+};

@@ -145,7 +145,7 @@ fn cmd_open(state: &mut ReplState, args: &str) -> pdf_oxide::Result<()> {
         return Err(pdf_oxide::Error::InvalidOperation("Usage: open <file>".to_string()));
     }
     let path = PathBuf::from(args);
-    let mut doc = PdfDocument::open(&path)?;
+    let doc = PdfDocument::open(&path)?;
     if let Some(ref pw) = state.password {
         doc.authenticate(pw.as_bytes())?;
     }

@@ -3,7 +3,7 @@
 
 import sys
 
-from pdf_oxide import DocumentEditor
+from pdf_oxide import PdfDocument
 
 
 def main():
@@ -13,19 +13,22 @@ def main():
 
     input_path, output_path = sys.argv[1], sys.argv[2]
 
-    editor = DocumentEditor(input_path)
+    doc = PdfDocument(input_path)
     print(f"Opened: {input_path}")
 
-    editor.set_title("Edited Document")
+    doc.set_title("Edited Document")
     print('Set title: "Edited Document"')
 
-    editor.set_author("pdf_oxide")
+    doc.set_author("pdf_oxide")
     print('Set author: "pdf_oxide"')
 
-    editor.delete_page(1)  # 0-indexed, deletes page 2
-    print("Deleted page 2")
+    if doc.page_count() > 1:
+        doc.delete_page(1)  # 0-indexed, deletes page 2
+        print("Deleted page 2")
+    else:
+        print("(skipped delete — single-page document)")
 
-    editor.save(output_path)
+    doc.save(output_path)
     print(f"Saved: {output_path}")
 
 

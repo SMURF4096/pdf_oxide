@@ -21,7 +21,7 @@ fn test_encrypted_cid_truetype_extract_text_non_empty() {
         return;
     }
 
-    let mut doc = PdfDocument::open(pdf_path).expect("Failed to open encrypted PDF");
+    let doc = PdfDocument::open(pdf_path).expect("Failed to open encrypted PDF");
 
     let page_count = doc.page_count().expect("Failed to get page count");
     assert!(page_count > 0, "PDF should have at least one page");

@@ -21,12 +21,13 @@ def main():
     words = doc.extract_words(page)
     print(f"\n--- Words (page {page + 1}) ---")
     for w in words[:20]:
-        quoted = '"' + w["text"] + '"'
+        quoted = '"' + w.text + '"'
+        x0, y0, x1, y1 = w.bbox
         print(
             f"{quoted:<20} "
-            f"x={w['x0']:<7.1f} y={w['y0']:<7.1f} "
-            f"x1={w['x1']:<7.1f} y1={w['y1']:<7.1f} "
-            f"font={w['fontname']}  size={w['size']:.1f}"
+            f"x={x0:<7.1f} y={y0:<7.1f} "
+            f"x1={x1:<7.1f} y1={y1:<7.1f} "
+            f"font={w.font_name}  size={w.font_size:.1f}"
         )
     if len(words) > 20:
         print(f"... ({len(words) - 20} more words)")

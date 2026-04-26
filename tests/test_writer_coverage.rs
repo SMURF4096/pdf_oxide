@@ -356,7 +356,7 @@ fn test_document_builder_simple() {
     assert!(!pdf_bytes.is_empty());
 
     // Verify the produced PDF is valid
-    let mut doc = PdfDocument::from_bytes(pdf_bytes).unwrap();
+    let doc = PdfDocument::from_bytes(pdf_bytes).unwrap();
     assert_eq!(doc.page_count().unwrap(), 1);
 }
 
@@ -369,7 +369,7 @@ fn test_document_builder_multi_page() {
     }
     let pdf_bytes = builder.build().unwrap();
 
-    let mut doc = PdfDocument::from_bytes(pdf_bytes).unwrap();
+    let doc = PdfDocument::from_bytes(pdf_bytes).unwrap();
     assert_eq!(doc.page_count().unwrap(), 3);
 }
 
@@ -441,7 +441,7 @@ fn test_pdf_save_and_reopen() {
     let bytes = pdf.as_bytes().to_vec();
     std::fs::write(&path, &bytes).unwrap();
 
-    let mut doc = PdfDocument::open(&path).unwrap();
+    let doc = PdfDocument::open(&path).unwrap();
     assert_eq!(doc.page_count().unwrap(), 1);
 
     let _ = std::fs::remove_file(&path);
@@ -565,7 +565,7 @@ fn test_pdf_source_path_some_for_opened() {
 fn test_annotations_empty_page() {
     let pdf = Pdf::from_text("No annotations").unwrap();
     let bytes = pdf.as_bytes().to_vec();
-    let mut doc = PdfDocument::from_bytes(bytes).unwrap();
+    let doc = PdfDocument::from_bytes(bytes).unwrap();
     let annotations = doc.get_annotations(0).unwrap();
     assert!(annotations.is_empty());
 }
@@ -586,7 +586,7 @@ fn test_round_trip_text_pdf() {
     let pdf_bytes = builder.build().unwrap();
 
     // Read back
-    let mut doc = PdfDocument::from_bytes(pdf_bytes).unwrap();
+    let doc = PdfDocument::from_bytes(pdf_bytes).unwrap();
     assert_eq!(doc.page_count().unwrap(), 1);
     let text = doc.extract_text(0).unwrap();
     assert!(text.contains("Round") || text.contains("trip"));
@@ -601,6 +601,6 @@ fn test_round_trip_multi_page() {
     }
     let pdf_bytes = builder.build().unwrap();
 
-    let mut doc = PdfDocument::from_bytes(pdf_bytes).unwrap();
+    let doc = PdfDocument::from_bytes(pdf_bytes).unwrap();
     assert_eq!(doc.page_count().unwrap(), 5);
 }

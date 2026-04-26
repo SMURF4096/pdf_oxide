@@ -373,7 +373,7 @@ mod circular_xobject {
     fn self_referencing_xobject_terminates_without_overflow() {
         let data = build_self_referencing_form_xobject();
         let path = write_temp_pdf(&data, "xobj_self_ref.pdf");
-        let mut doc = PdfDocument::open(&path).expect("Should parse PDF structure");
+        let doc = PdfDocument::open(&path).expect("Should parse PDF structure");
         let _result = doc.extract_text(0);
     }
 
@@ -381,7 +381,7 @@ mod circular_xobject {
     fn two_node_xobject_cycle_terminates_without_overflow() {
         let data = build_two_node_xobject_cycle();
         let path = write_temp_pdf(&data, "xobj_two_node_cycle.pdf");
-        let mut doc = PdfDocument::open(&path).expect("Should parse PDF structure");
+        let doc = PdfDocument::open(&path).expect("Should parse PDF structure");
         let _result = doc.extract_text(0);
     }
 
@@ -389,7 +389,7 @@ mod circular_xobject {
     fn three_node_xobject_cycle_terminates_gracefully() {
         let data = build_three_node_xobject_cycle();
         let path = write_temp_pdf(&data, "xobj_three_node_cycle.pdf");
-        let mut doc = PdfDocument::open(&path).expect("Should parse PDF structure");
+        let doc = PdfDocument::open(&path).expect("Should parse PDF structure");
         let _result = doc.extract_text(0);
     }
 
@@ -397,7 +397,7 @@ mod circular_xobject {
     fn non_circular_xobject_invoked_twice_produces_text() {
         let data = build_reused_form_xobject();
         let path = write_temp_pdf(&data, "xobj_reused_twice.pdf");
-        let mut doc = PdfDocument::open(&path).expect("Should parse PDF structure");
+        let doc = PdfDocument::open(&path).expect("Should parse PDF structure");
         let text = doc.extract_text(0).unwrap();
         assert!(
             text.contains("Reused"),
@@ -519,7 +519,7 @@ mod struct_tree_cycle {
     fn two_node_struct_cycle_terminates_without_overflow() {
         let data = build_two_node_struct_cycle();
         let path = write_temp_pdf(&data, "struct_two_node_cycle.pdf");
-        let mut doc = PdfDocument::open(&path).expect("Should parse PDF structure");
+        let doc = PdfDocument::open(&path).expect("Should parse PDF structure");
         // Must not SIGSEGV or hang — the visited-set guard must break the cycle.
         let _result = doc.extract_text(0);
     }
@@ -528,7 +528,7 @@ mod struct_tree_cycle {
     fn self_referencing_struct_elem_terminates_without_overflow() {
         let data = build_self_referencing_struct_elem();
         let path = write_temp_pdf(&data, "struct_self_ref.pdf");
-        let mut doc = PdfDocument::open(&path).expect("Should parse PDF structure");
+        let doc = PdfDocument::open(&path).expect("Should parse PDF structure");
         let _result = doc.extract_text(0);
     }
 
@@ -536,7 +536,7 @@ mod struct_tree_cycle {
     fn three_node_struct_cycle_terminates_without_overflow() {
         let data = build_three_node_struct_cycle();
         let path = write_temp_pdf(&data, "struct_three_node_cycle.pdf");
-        let mut doc = PdfDocument::open(&path).expect("Should parse PDF structure");
+        let doc = PdfDocument::open(&path).expect("Should parse PDF structure");
         let _result = doc.extract_text(0);
     }
 }

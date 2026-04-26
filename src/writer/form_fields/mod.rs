@@ -34,6 +34,7 @@ mod field_flags;
 mod form_appearance;
 mod push_button;
 mod radio_button;
+mod signature;
 mod text_field;
 
 pub use checkbox::CheckboxWidget;
@@ -44,6 +45,7 @@ pub use field_flags::{
 pub use form_appearance::FormAppearanceGenerator;
 pub use push_button::{FormAction, PushButtonWidget, SubmitFormFlags};
 pub use radio_button::{RadioButtonGroup, RadioButtonWidget};
+pub use signature::SignatureWidget;
 pub use text_field::TextFieldWidget;
 
 use crate::geometry::Rect;

@@ -91,7 +91,13 @@ jobs:
         # Skip on macOS due to extension-module linking restrictions
         # Use --lib --tests to run unit and integration tests (both under tests/)
         # This skips doctests which are validated in main CI
+        #
+        # CARGO_BUILD_JOBS=2 caps concurrent link-worker spawns so the
+        # parallel-link burst stays under the hosted-runner 7 GB RAM
+        # ceiling — fixes the rust-lld SIGBUS flake tracked in #399.
         if: runner.os != 'macOS'
+        env:
+          CARGO_BUILD_JOBS: "2"
         run: cargo test --lib --tests --features python
 
       - name: Run Python tests

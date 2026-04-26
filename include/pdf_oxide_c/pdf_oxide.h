@@ -78,6 +78,57 @@ char* document_editor_get_creation_date(const void* handle, int* error_code);
 int   document_editor_set_creation_date(void* handle, const char* date_str, int* error_code);
 int   document_editor_save(void* handle, const char* path, int* error_code);
 
+/* Open from bytes */
+void* document_editor_open_from_bytes(const uint8_t* data, size_t len, int* error_code);
+
+/* Save to bytes (returns buffer freed with free_bytes; *out_len receives size) */
+uint8_t* document_editor_save_to_bytes(void* handle, size_t* out_len, int* error_code);
+uint8_t* document_editor_save_to_bytes_with_options(void* handle, bool compress, bool garbage_collect, bool linearize, size_t* out_len, int* error_code);
+
+/* Keywords */
+char* document_editor_get_keywords(const void* handle, int* error_code);
+int   document_editor_set_keywords(void* handle, const char* keywords, int* error_code);
+
+/* Merge from bytes */
+int   document_editor_merge_from_bytes(void* handle, const uint8_t* data, size_t len, int* error_code);
+
+/* Embed file attachment */
+int   document_editor_embed_file(void* handle, const char* name, const uint8_t* data, size_t len, int* error_code);
+
+/* Redactions */
+int   document_editor_apply_page_redactions(void* handle, size_t page, int* error_code);
+int   document_editor_apply_all_redactions(void* handle, int* error_code);
+
+/* Rotation helpers */
+int   document_editor_rotate_all_pages(void* handle, int32_t degrees, int* error_code);
+int   document_editor_rotate_page_by(void* handle, size_t page, int32_t degrees, int* error_code);
+
+/* MediaBox editor variants */
+int   document_editor_get_page_media_box(void* handle, size_t page, double* x, double* y, double* w, double* h, int* error_code);
+int   document_editor_set_page_media_box(void* handle, size_t page, double x, double y, double w, double h, int* error_code);
+
+/* CropBox editor variants */
+int   document_editor_get_page_crop_box(void* handle, size_t page, double* x, double* y, double* w, double* h, int* error_code);
+int   document_editor_set_page_crop_box(void* handle, size_t page, double x, double y, double w, double h, int* error_code);
+
+/* Bulk erase regions (rects is flat [x,y,w,h,...] array; rects_count = number of rects) */
+int   document_editor_erase_regions(void* handle, size_t page, const double* rects, size_t rects_count, int* error_code);
+int   document_editor_clear_erase_regions(void* handle, size_t page, int* error_code);
+
+/* Page-mark state queries */
+int32_t document_editor_is_page_marked_for_flatten(const void* handle, size_t page);
+int   document_editor_unmark_page_for_flatten(void* handle, size_t page, int* error_code);
+int32_t document_editor_is_page_marked_for_redaction(const void* handle, size_t page);
+int   document_editor_unmark_page_for_redaction(void* handle, size_t page, int* error_code);
+
+/* Form flattening */
+int   document_editor_flatten_forms(void* handle, int* error_code);
+int   document_editor_flatten_forms_on_page(void* handle, int32_t page_index, int* error_code);
+/* Returns number of warnings from the last flatten save; -1 if handle is null */
+int32_t document_editor_flatten_warnings_count(const void* handle);
+/* Returns the index-th warning as a C string (free with free_string); null on error */
+char* document_editor_flatten_warning(const void* handle, int32_t index, int* error_code);
+
 /* ─── PDF Creator ────────────────────────────────────────────────────────── */
 
 void* pdf_from_markdown(const char* markdown, int* error_code);
@@ -181,7 +232,9 @@ void  pdf_barcode_free(void* handle);
 /* ─── Signatures (feature-gated, stubs return UNSUPPORTED) ──────────────── */
 
 void* pdf_certificate_load_from_bytes(const uint8_t* cert_bytes, int32_t cert_len, const char* password, int* error_code);
-int   pdf_document_sign(void* document_handle, const void* certificate_handle, const char* reason, const char* location, int* error_code);
+void* pdf_certificate_load_from_pem(const char* cert_pem, const char* key_pem, int* error_code);
+int      pdf_document_sign(void* document_handle, const void* certificate_handle, const char* reason, const char* location, int* error_code);
+uint8_t* pdf_sign_bytes(const uint8_t* pdf_data, size_t pdf_len, const void* certificate_handle, const char* reason, const char* location, size_t* out_len, int* error_code);
 int32_t pdf_document_get_signature_count(const void* document_handle, int* error_code);
 void* pdf_document_get_signature(const void* document_handle, int32_t index, int* error_code);
 int   pdf_signature_verify(const void* signature_handle, int* error_code);
@@ -342,6 +395,13 @@ int   pdf_document_builder_set_author(void* handle, const char* author, int* err
 int   pdf_document_builder_set_subject(void* handle, const char* subject, int* error_code);
 int   pdf_document_builder_set_keywords(void* handle, const char* keywords, int* error_code);
 int   pdf_document_builder_set_creator(void* handle, const char* creator, int* error_code);
+int   pdf_document_builder_on_open(void* handle, const char* script, int* error_code);
+
+/* DocumentBuilder — PDF/UA-1 accessibility (Bundle F-1/F-2/F-4) */
+int   pdf_document_builder_tagged_pdf_ua1(void* handle, int* error_code);
+int   pdf_document_builder_language(void* handle, const char* lang, int* error_code);
+int   pdf_document_builder_role_map(void* handle, const char* custom,
+                                    const char* standard, int* error_code);
 
 /* DocumentBuilder — font registration (CONSUMES font on success) */
 int   pdf_document_builder_register_embedded_font(void* handle, const char* name,
@@ -366,6 +426,14 @@ int   pdf_page_builder_horizontal_rule(void* page, int* error_code);
 int   pdf_page_builder_link_url(void* page, const char* url, int* error_code);
 int   pdf_page_builder_link_page(void* page, size_t target_page, int* error_code);
 int   pdf_page_builder_link_named(void* page, const char* destination, int* error_code);
+int   pdf_page_builder_link_javascript(void* page, const char* script, int* error_code);
+int   pdf_page_builder_on_open(void* page, const char* script, int* error_code);
+int   pdf_page_builder_on_close(void* page, const char* script, int* error_code);
+/* Field validation AA dict — call after text_field / combo_box / list_box */
+int   pdf_page_builder_field_keystroke(void* page, const char* script, int* error_code);
+int   pdf_page_builder_field_format(void* page, const char* script, int* error_code);
+int   pdf_page_builder_field_validate(void* page, const char* script, int* error_code);
+int   pdf_page_builder_field_calculate(void* page, const char* script, int* error_code);
 int   pdf_page_builder_highlight(void* page, float r, float g, float b, int* error_code);
 int   pdf_page_builder_underline(void* page, float r, float g, float b, int* error_code);
 int   pdf_page_builder_strikeout(void* page, float r, float g, float b, int* error_code);
@@ -417,6 +485,47 @@ int   pdf_page_builder_push_button(void* page, const char* name,
                                    float x, float y, float w, float h,
                                    const char* caption,
                                    int* error_code);
+int   pdf_page_builder_signature_field(void* page, const char* name,
+                                       float x, float y, float w, float h,
+                                       int* error_code);
+
+/* Footnote: inline ref mark + page-end body text with separator line. */
+int   pdf_page_builder_footnote(void* page, const char* ref_mark,
+                                const char* note_text, int* error_code);
+
+/* Multi-column text flow: wrap `text` into `column_count` balanced columns
+ * with `gap_pt` points between them, starting at the current cursor. */
+int   pdf_page_builder_columns(void* page, unsigned int column_count,
+                               float gap_pt, const char* text,
+                               int* error_code);
+
+/* Rich text inline runs — advance cursor_x only (no y-advance). */
+int   pdf_page_builder_inline(void* page, const char* text, int* error_code);
+int   pdf_page_builder_inline_bold(void* page, const char* text, int* error_code);
+int   pdf_page_builder_inline_italic(void* page, const char* text, int* error_code);
+int   pdf_page_builder_inline_color(void* page, float r, float g, float b,
+                                    const char* text, int* error_code);
+/* Advance cursor_y one line-height and reset cursor_x to 72 pt. */
+int   pdf_page_builder_newline(void* page, int* error_code);
+
+/* Barcode / QR-code image placement.
+ * barcode_type: 0=Code128 1=Code39 2=EAN13 3=EAN8 4=UPCA 5=ITF 6=Code93 7=Codabar */
+int   pdf_page_builder_barcode_1d(void* page, int barcode_type, const char* data,
+                                  float x, float y, float w, float h,
+                                  int* error_code);
+int   pdf_page_builder_barcode_qr(void* page, const char* data,
+                                  float x, float y, float size,
+                                  int* error_code);
+
+/* PDF/UA-1 image accessibility */
+int   pdf_page_builder_image_with_alt(void* page,
+                                      const uint8_t* bytes, size_t len,
+                                      float x, float y, float w, float h,
+                                      const char* alt_text, int* error_code);
+int   pdf_page_builder_image_artifact(void* page,
+                                      const uint8_t* bytes, size_t len,
+                                      float x, float y, float w, float h,
+                                      int* error_code);
 
 /* Low-level graphics primitives (PdfWriter exposure) */
 int   pdf_page_builder_rect(void* page, float x, float y, float w, float h,
@@ -425,6 +534,105 @@ int   pdf_page_builder_filled_rect(void* page, float x, float y, float w, float 
                                    float r, float g, float b, int* error_code);
 int   pdf_page_builder_line(void* page, float x1, float y1, float x2, float y2,
                             int* error_code);
+
+/* v0.3.39 primitives for the buffered Table surface (#393). */
+
+/* Stroked rectangle outline with caller-supplied width + colour. */
+int   pdf_page_builder_stroke_rect(void* page, float x, float y, float w, float h,
+                                   float width, float r, float g, float b,
+                                   int* error_code);
+/* Straight line with caller-supplied width + colour. */
+int   pdf_page_builder_stroke_line(void* page, float x1, float y1, float x2, float y2,
+                                   float width, float r, float g, float b,
+                                   int* error_code);
+
+/* Place wrapped text inside a rectangle with horizontal alignment.
+ * `align`: 0=Left, 1=Center, 2=Right. Anything else treated as Left. */
+int   pdf_page_builder_text_in_rect(void* page, float x, float y, float w, float h,
+                                    const char* text, int align,
+                                    int* error_code);
+
+/* Transition to a new page with the SAME dimensions. text_config
+ * carries over; cursor resets to the top-left margin. Does not
+ * re-draw any header — callers wanting header-repeat-on-break must
+ * re-emit explicitly. */
+int   pdf_page_builder_new_page_same_size(void* page, int* error_code);
+
+/* Place a buffered table at the current cursor.
+ *
+ *  n_columns:    column count.
+ *  widths:       array of length n_columns — column width in points.
+ *  aligns:       array of length n_columns — per-column alignment
+ *                (0=Left, 1=Center, 2=Right).
+ *  n_rows:       number of rows (not counting the header implicitly
+ *                — if has_header != 0 the first row in `cell_strings`
+ *                becomes the header).
+ *  cell_strings: row-major array of C strings, length n_rows * n_columns.
+ *                Each pointer must be a valid UTF-8 C string. NULL
+ *                pointers are treated as empty strings.
+ *  has_header:   0 = body-only, non-0 = promote first row to header
+ *                (bold + default header background).
+ *
+ * Returns 0 on success, -1 on failure. Streaming (O(cols) memory)
+ * is tracked separately; this buffers the whole row matrix. */
+int   pdf_page_builder_table(void* page,
+                             size_t n_columns,
+                             const float* widths,
+                             const int* aligns,
+                             size_t n_rows,
+                             const char* const* cell_strings,
+                             int has_header,
+                             int* error_code);
+
+/* Streaming table (row-at-a-time, true O(cols) memory at the Rust core).
+ * FFI layer currently buffers rows between _begin and _finish, replaying
+ * them against a live StreamingTable on _done. Full FFI row-by-row
+ * streaming is tracked under issue #400 for v0.3.40. */
+
+/* Open a streaming table. `headers`, `widths`, `aligns` are parallel
+ * arrays of length n_columns (aligns: 0=Left, 1=Center, 2=Right). */
+int   pdf_page_builder_streaming_table_begin(void* page,
+                                             size_t n_columns,
+                                             const char* const* headers,
+                                             const float* widths,
+                                             const int* aligns,
+                                             int repeat_header,
+                                             int* error_code);
+
+/* Same as _begin but exposes column-sizing mode.
+ * mode: 0=Fixed, 1=Sample(sample_rows,min_w,max_w), 2=AutoAll (error). */
+int   pdf_page_builder_streaming_table_begin_v2(void* page,
+                                                size_t n_columns,
+                                                const char* const* headers,
+                                                const float* widths,
+                                                const int* aligns,
+                                                int repeat_header,
+                                                int mode,
+                                                size_t sample_rows,
+                                                float min_col_width_pt,
+                                                float max_col_width_pt,
+                                                size_t max_rowspan,
+                                                int* error_code);
+
+/* Push one row (all rowspan=1). `cells` must have length matching
+ * n_columns from _begin. NULL cell pointers become empty strings. */
+int   pdf_page_builder_streaming_table_push_row(void* page,
+                                                size_t n_cells,
+                                                const char* const* cells,
+                                                int* error_code);
+
+/* Push one row with per-cell rowspan values. `rowspans` is a length-
+ * n_cells array of size_t values (1 = normal, >=2 = span). Pass NULL
+ * to treat all cells as rowspan=1. */
+int   pdf_page_builder_streaming_table_push_row_v2(void* page,
+                                                   size_t n_cells,
+                                                   const char* const* cells,
+                                                   const size_t* rowspans,
+                                                   int* error_code);
+
+/* Close the open streaming table. Auto-closed by _done if not
+ * explicit. */
+int   pdf_page_builder_streaming_table_finish(void* page, int* error_code);
 
 /* PageBuilder — commit / drop */
 int   pdf_page_builder_done(void* page, int* error_code);

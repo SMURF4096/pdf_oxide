@@ -642,6 +642,9 @@ pub struct TableLayout {
     pub total_height: f32,
     /// Cell positions (row, col) -> (x, y, width, height)
     pub cell_positions: Vec<Vec<CellPosition>>,
+    /// Wrapped lines and per-line widths for each cell, parallel to
+    /// `cell_positions`. Consumed by `render` to emit one text op per line.
+    pub cell_layouts: Vec<Vec<CellLayout>>,
 }
 
 /// Position and size of a cell.
@@ -655,6 +658,18 @@ pub struct CellPosition {
     pub width: f32,
     /// Cell height
     pub height: f32,
+}
+
+/// Pre-computed text layout for a single cell: the wrapped lines and each
+/// line's measured width. Produced once by `calculate_layout` so `render`
+/// can emit per-line text with correct alignment without needing font
+/// metrics at render time.
+#[derive(Debug, Clone, Default)]
+pub struct CellLayout {
+    /// Content wrapped to the cell's content width.
+    pub lines: Vec<String>,
+    /// Measured width of each corresponding line, in points.
+    pub line_widths: Vec<f32>,
 }
 
 impl Table {
@@ -672,6 +687,7 @@ impl Table {
                 total_width: 0.0,
                 total_height: 0.0,
                 cell_positions: vec![],
+                cell_layouts: vec![],
             };
         }
 
@@ -680,8 +696,12 @@ impl Table {
         // Calculate column widths
         let column_widths = self.calculate_column_widths(table_width, num_cols, font_metrics);
 
-        // Calculate row heights
-        let row_heights = self.calculate_row_heights(&column_widths, font_metrics);
+        // Wrap every cell once, measuring each wrapped line's width. Consumed
+        // by row-height aggregation below and by `render` later.
+        let cell_layouts = self.wrap_all_cells(&column_widths, font_metrics);
+
+        // Calculate row heights from the pre-wrapped layouts
+        let row_heights = self.calculate_row_heights(&cell_layouts);
 
         // Calculate cell positions
         let cell_positions = self.calculate_cell_positions(&column_widths, &row_heights);
@@ -695,6 +715,7 @@ impl Table {
             total_width,
             total_height,
             cell_positions,
+            cell_layouts,
         }
     }
 
@@ -787,40 +808,67 @@ impl Table {
         widths
     }
 
-    fn calculate_row_heights(
+    /// Wrap every cell's content to its resolved column width and measure
+    /// each resulting line. Returns a per-row, per-cell matrix of
+    /// `CellLayout` indexed identically to `self.rows[row].cells[cell]`.
+    fn wrap_all_cells(
         &self,
         column_widths: &[f32],
         font_metrics: &dyn FontMetrics,
-    ) -> Vec<f32> {
+    ) -> Vec<Vec<CellLayout>> {
         let padding = &self.style.cell_padding;
-        let mut heights = Vec::with_capacity(self.rows.len());
+        let mut out = Vec::with_capacity(self.rows.len());
 
         for row in &self.rows {
-            let mut max_height = 0.0f32;
+            let mut row_out = Vec::with_capacity(row.cells.len());
             let mut col_idx = 0;
 
             for cell in &row.cells {
+                let cell_width: f32 = if cell.colspan == 1 {
+                    column_widths.get(col_idx).copied().unwrap_or(100.0)
+                } else {
+                    column_widths[col_idx..col_idx + cell.colspan].iter().sum()
+                };
+
+                let cell_padding = cell.padding.as_ref().unwrap_or(padding);
+                let content_width = cell_width - cell_padding.horizontal();
+                let font_size = cell.font_size.unwrap_or(self.style.font_size);
+
+                let lines = wrap_text(&cell.content, content_width, font_size, font_metrics);
+                let line_widths = lines
+                    .iter()
+                    .map(|l| font_metrics.text_width(l, font_size))
+                    .collect();
+
+                row_out.push(CellLayout { lines, line_widths });
+                col_idx += cell.colspan;
+            }
+
+            out.push(row_out);
+        }
+
+        out
+    }
+
+    fn calculate_row_heights(&self, cell_layouts: &[Vec<CellLayout>]) -> Vec<f32> {
+        let padding = &self.style.cell_padding;
+        let mut heights = Vec::with_capacity(self.rows.len());
+
+        for (row_idx, row) in self.rows.iter().enumerate() {
+            let mut max_height = 0.0f32;
+
+            for (cell_idx, cell) in row.cells.iter().enumerate() {
                 if cell.rowspan == 1 {
-                    let cell_width = if cell.colspan == 1 {
-                        column_widths.get(col_idx).copied().unwrap_or(100.0)
-                    } else {
-                        column_widths[col_idx..col_idx + cell.colspan].iter().sum()
-                    };
-
                     let cell_padding = cell.padding.as_ref().unwrap_or(padding);
-                    let content_width = cell_width - cell_padding.horizontal();
-
                     let font_size = cell.font_size.unwrap_or(self.style.font_size);
                     let line_height = font_size * 1.2;
 
-                    // Calculate wrapped text height
-                    let lines = wrap_text(&cell.content, content_width, font_size, font_metrics);
-                    let text_height = lines.len() as f32 * line_height;
+                    let n_lines = cell_layouts[row_idx][cell_idx].lines.len() as f32;
+                    let text_height = n_lines * line_height;
 
                     let cell_height = text_height + cell_padding.vertical();
                     max_height = max_height.max(cell_height);
                 }
-                col_idx += cell.colspan;
             }
 
             // Apply minimum height if specified
@@ -867,6 +915,237 @@ impl Table {
         }
 
         positions
+    }
+
+    /// Render the table to a list of high-level `ContentElement`s.
+    ///
+    /// This is the blessed path for the fluent `FluentPageBuilder::table`
+    /// surface (#393). Emitting `ContentElement::Text` + `ContentElement::
+    /// Path` rather than writing raw content-stream ops lets the writer's
+    /// subsetter (v0.3.38 #385) re-key glyph IDs for dynamically-added
+    /// CJK cell text — raw `ContentStreamBuilder.text()` bypasses that
+    /// dispatch and would corrupt subset embedding.
+    ///
+    /// The low-level `render()` method is retained as an escape hatch for
+    /// callers that already have a `ContentStreamBuilder` in hand, and
+    /// for the renderer's own unit tests which inspect emitted PDF ops.
+    pub fn to_content_elements(
+        &self,
+        x: f32,
+        y: f32,
+        layout: &TableLayout,
+    ) -> Vec<crate::elements::ContentElement> {
+        use crate::elements::{
+            ContentElement, FontSpec, PathContent, PathOperation, TextContent, TextStyle,
+        };
+        use crate::geometry::Rect;
+        use crate::layout::Color;
+
+        // y is top of table (paragraph/text convention — y decreases
+        // going down a page).
+        let table_top = y;
+        let mut elements: Vec<ContentElement> = Vec::new();
+
+        // ── Pass 1 ── backgrounds and cell borders ──────────────────
+        for (row_idx, row) in self.rows.iter().enumerate() {
+            for (cell_idx, cell) in row.cells.iter().enumerate() {
+                let pos = &layout.cell_positions[row_idx][cell_idx];
+                let cell_x = x + pos.x;
+                let cell_y = table_top - pos.y - pos.height;
+
+                // Background colour precedence: cell > header-row > stripe > row.
+                let bg = cell.background.or({
+                    if row.is_header {
+                        self.style.header_background
+                    } else if let Some(stripe) = self.style.stripe_color {
+                        if row_idx % 2 == 1 {
+                            Some(stripe)
+                        } else {
+                            row.background
+                        }
+                    } else {
+                        row.background
+                    }
+                });
+
+                if let Some((r, g, b)) = bg {
+                    let mut path =
+                        PathContent::new(Rect::new(cell_x, cell_y, pos.width, pos.height));
+                    path.operations
+                        .push(PathOperation::Rectangle(cell_x, cell_y, pos.width, pos.height));
+                    path.fill_color = Some(Color { r, g, b });
+                    path.stroke_color = None;
+                    path.reading_order = Some(elements.len());
+                    elements.push(ContentElement::Path(path));
+                }
+
+                let borders = cell.borders.as_ref().unwrap_or(&self.style.cell_borders);
+                Self::push_cell_border_elements(
+                    &mut elements,
+                    cell_x,
+                    cell_y,
+                    pos.width,
+                    pos.height,
+                    borders,
+                );
+            }
+        }
+
+        // ── Pass 2 ── text per wrapped line, aligned by measured width
+        for (row_idx, row) in self.rows.iter().enumerate() {
+            for (cell_idx, cell) in row.cells.iter().enumerate() {
+                if cell.content.is_empty() {
+                    continue;
+                }
+
+                let pos = &layout.cell_positions[row_idx][cell_idx];
+                let padding = cell.padding.as_ref().unwrap_or(&self.style.cell_padding);
+                let cell_x = x + pos.x + padding.left;
+                let cell_y = table_top - pos.y - padding.top;
+                let content_width = pos.width - padding.horizontal();
+
+                let align = if cell.align != CellAlign::Left {
+                    cell.align
+                } else {
+                    self.column_aligns
+                        .get(cell_idx)
+                        .copied()
+                        .unwrap_or(CellAlign::Left)
+                };
+
+                let font_name = cell.font_name.as_deref().unwrap_or(&self.style.font_name);
+                let font_size = cell.font_size.unwrap_or(self.style.font_size);
+
+                let actual_font = if cell.bold && cell.italic {
+                    format!("{}-BoldOblique", font_name)
+                } else if cell.bold || row.is_header {
+                    format!("{}-Bold", font_name)
+                } else if cell.italic {
+                    format!("{}-Oblique", font_name)
+                } else {
+                    font_name.to_string()
+                };
+
+                let line_height = font_size * 1.2;
+                let cell_layout = &layout.cell_layouts[row_idx][cell_idx];
+
+                for (line_idx, (line, line_width)) in cell_layout
+                    .lines
+                    .iter()
+                    .zip(cell_layout.line_widths.iter())
+                    .enumerate()
+                {
+                    if line.is_empty() {
+                        continue;
+                    }
+
+                    let text_x = match align {
+                        CellAlign::Left => cell_x,
+                        CellAlign::Center => cell_x + (content_width - line_width) / 2.0,
+                        CellAlign::Right => cell_x + content_width - line_width,
+                    };
+
+                    // TextContent.bbox uses the top-edge y convention; the
+                    // first line sits at the cell's top-after-padding.
+                    let line_top = cell_y - (line_idx as f32) * line_height;
+
+                    elements.push(ContentElement::Text(TextContent {
+                        text: line.clone(),
+                        bbox: Rect::new(text_x, line_top, *line_width, font_size),
+                        font: FontSpec {
+                            name: actual_font.clone(),
+                            size: font_size,
+                        },
+                        style: TextStyle::default(),
+                        reading_order: Some(elements.len()),
+                        artifact_type: None,
+                        origin: None,
+                        rotation_degrees: None,
+                        matrix: None,
+                    }));
+                }
+            }
+        }
+
+        // ── Pass 3 ── outer table border ────────────────────────────
+        if let Some(outer) = &self.style.outer_border {
+            if outer.width > 0.0 {
+                let outer_y = table_top - layout.total_height;
+                let mut path = PathContent::new(Rect::new(
+                    x,
+                    outer_y,
+                    layout.total_width,
+                    layout.total_height,
+                ));
+                path.operations.push(PathOperation::Rectangle(
+                    x,
+                    outer_y,
+                    layout.total_width,
+                    layout.total_height,
+                ));
+                path.stroke_color = Some(Color {
+                    r: outer.color.0,
+                    g: outer.color.1,
+                    b: outer.color.2,
+                });
+                path.stroke_width = outer.width;
+                path.fill_color = None;
+                path.reading_order = Some(elements.len());
+                elements.push(ContentElement::Path(path));
+            }
+        }
+
+        elements
+    }
+
+    /// Push one `ContentElement::Path` per enabled border side. Used by
+    /// `to_content_elements` to mirror `draw_cell_borders` semantics.
+    fn push_cell_border_elements(
+        elements: &mut Vec<crate::elements::ContentElement>,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        borders: &Borders,
+    ) {
+        use crate::elements::{ContentElement, PathContent, PathOperation};
+        use crate::geometry::Rect;
+        use crate::layout::Color;
+
+        let mut push_line = |x1: f32, y1: f32, x2: f32, y2: f32, style: &TableBorderStyle| {
+            if style.width <= 0.0 {
+                return;
+            }
+            let min_x = x1.min(x2);
+            let min_y = y1.min(y2);
+            let w = (x2 - x1).abs().max(1.0);
+            let h = (y2 - y1).abs().max(1.0);
+            let mut path = PathContent::new(Rect::new(min_x, min_y, w, h));
+            path.operations.push(PathOperation::MoveTo(x1, y1));
+            path.operations.push(PathOperation::LineTo(x2, y2));
+            path.stroke_color = Some(Color {
+                r: style.color.0,
+                g: style.color.1,
+                b: style.color.2,
+            });
+            path.stroke_width = style.width;
+            path.fill_color = None;
+            path.reading_order = Some(elements.len());
+            elements.push(ContentElement::Path(path));
+        };
+
+        if let Some(border) = &borders.top {
+            push_line(x, y + height, x + width, y + height, border);
+        }
+        if let Some(border) = &borders.bottom {
+            push_line(x, y, x + width, y, border);
+        }
+        if let Some(border) = &borders.left {
+            push_line(x, y, x, y + height, border);
+        }
+        if let Some(border) = &borders.right {
+            push_line(x + width, y, x + width, y + height, border);
+        }
     }
 
     /// Render the table to a content stream.
@@ -955,18 +1234,35 @@ impl Table {
 
                 builder.begin_text().set_font(&actual_font, font_size);
 
-                // Calculate text position based on alignment
-                let text_x = match align {
-                    CellAlign::Left => cell_x,
-                    CellAlign::Center => cell_x + content_width / 2.0,
-                    CellAlign::Right => cell_x + content_width,
-                };
+                let line_height = font_size * 1.2;
+                let cell_layout = &layout.cell_layouts[row_idx][cell_idx];
 
-                let _line_height = font_size * 1.2;
-                let text_y = cell_y - font_size;
+                for (line_idx, (line, line_width)) in cell_layout
+                    .lines
+                    .iter()
+                    .zip(cell_layout.line_widths.iter())
+                    .enumerate()
+                {
+                    if line.is_empty() {
+                        continue;
+                    }
 
-                // Simple single-line rendering for now
-                builder.text(&cell.content, text_x, text_y);
+                    // Per-line x placement: each line aligns independently.
+                    // `text` places its first glyph at the given x, so Center
+                    // and Right must offset by this line's measured width.
+                    let text_x = match align {
+                        CellAlign::Left => cell_x,
+                        CellAlign::Center => cell_x + (content_width - line_width) / 2.0,
+                        CellAlign::Right => cell_x + content_width - line_width,
+                    };
+
+                    // Baseline: first line sits `font_size` below the cell
+                    // top; each subsequent line drops by `line_height`.
+                    let text_y = cell_y - font_size - (line_idx as f32) * line_height;
+
+                    builder.text(line, text_x, text_y);
+                }
+
                 builder.end_text();
             }
         }
@@ -1265,5 +1561,226 @@ mod tests {
     fn test_striped_table() {
         let style = TableStyle::new().striped(0.95, 0.95, 0.95);
         assert!(style.stripe_color.is_some());
+    }
+
+    #[test]
+    fn test_multi_line_cell_layout_stores_wrapped_lines() {
+        // A cell with content that must wrap into multiple lines.
+        let long = "The quick brown fox jumps over the lazy dog";
+        let table = Table::new(vec![vec![TableCell::text(long), TableCell::text("short")]])
+            .with_column_widths(vec![ColumnWidth::Fixed(60.0), ColumnWidth::Fixed(80.0)]);
+
+        let metrics = SimpleFontMetrics::default();
+        let layout = table.calculate_layout(140.0, &metrics);
+
+        // cell_layouts must mirror the cells grid.
+        assert_eq!(layout.cell_layouts.len(), 1);
+        assert_eq!(layout.cell_layouts[0].len(), 2);
+
+        // First cell should wrap to > 1 line; second cell stays on 1 line.
+        assert!(
+            layout.cell_layouts[0][0].lines.len() > 1,
+            "expected multi-line wrap, got {} lines: {:?}",
+            layout.cell_layouts[0][0].lines.len(),
+            layout.cell_layouts[0][0].lines
+        );
+        assert_eq!(layout.cell_layouts[0][1].lines.len(), 1);
+
+        // Line widths must match the line count for every cell.
+        for row in &layout.cell_layouts {
+            for cell in row {
+                assert_eq!(
+                    cell.lines.len(),
+                    cell.line_widths.len(),
+                    "lines and line_widths must be parallel"
+                );
+            }
+        }
+
+        // Row height must scale with the wrapped line count.
+        // With >=2 lines and font_size 10 (default style), text_height alone
+        // exceeds the minimum `font_size * 1.5` floor.
+        let expected_min = 2.0 * (layout.cell_layouts[0][0].lines.len() as f32) * 0.5;
+        assert!(layout.row_heights[0] > expected_min);
+    }
+
+    #[test]
+    fn test_multi_line_render_emits_one_tj_per_line() {
+        use super::super::content_stream::ContentStreamBuilder;
+
+        // Force wrap by choosing a narrow column.
+        let long = "alpha beta gamma delta epsilon zeta eta theta";
+        let table = Table::new(vec![vec![TableCell::text(long)]])
+            .with_column_widths(vec![ColumnWidth::Fixed(40.0)]);
+
+        let metrics = SimpleFontMetrics::default();
+        let layout = table.calculate_layout(40.0, &metrics);
+        let expected_lines = layout.cell_layouts[0][0].lines.len();
+        assert!(expected_lines >= 3, "fixture must wrap to >=3 lines to be meaningful");
+
+        // Render to a content stream and count `Tj` text-show operations.
+        let mut builder = ContentStreamBuilder::new();
+        table
+            .render(&mut builder, 0.0, 800.0, &layout)
+            .expect("render");
+
+        let bytes = builder.build().expect("build content stream");
+        let text = String::from_utf8_lossy(&bytes);
+        let tj_count = text.matches(" Tj").count();
+
+        assert_eq!(
+            tj_count, expected_lines,
+            "expected {} Tj operations (one per wrapped line), got {}\n--- stream ---\n{}",
+            expected_lines, tj_count, text
+        );
+    }
+
+    #[test]
+    fn test_to_content_elements_emits_text_per_line() {
+        // The fluent-builder path: to_content_elements must emit one
+        // ContentElement::Text per wrapped line per cell, using the measured
+        // line width for alignment.
+        use crate::elements::ContentElement;
+
+        let long = "alpha beta gamma delta epsilon zeta eta theta";
+        let table = Table::new(vec![vec![TableCell::text(long), TableCell::text("x")]])
+            .with_column_widths(vec![ColumnWidth::Fixed(40.0), ColumnWidth::Fixed(40.0)]);
+
+        let metrics = SimpleFontMetrics::default();
+        let layout = table.calculate_layout(80.0, &metrics);
+        let expected_lines_col0 = layout.cell_layouts[0][0].lines.len();
+        assert!(expected_lines_col0 >= 2, "fixture must wrap >=2 lines");
+
+        let elements = table.to_content_elements(0.0, 800.0, &layout);
+        let texts: Vec<_> = elements
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Text(t) => Some(t),
+                _ => None,
+            })
+            .collect();
+
+        // One Text per non-empty line per cell (cell 0 wraps, cell 1 is 1 line).
+        assert_eq!(texts.len(), expected_lines_col0 + 1);
+
+        // Every text bbox must stay inside the table horizontally.
+        for t in &texts {
+            assert!(t.bbox.x >= 0.0 - 0.01);
+            assert!(t.bbox.x + t.bbox.width <= 80.0 + 0.01);
+        }
+
+        // Lines within a cell stack top-down (y decreasing).
+        let col0_lines: Vec<_> = texts.iter().take(expected_lines_col0).collect();
+        for pair in col0_lines.windows(2) {
+            assert!(
+                pair[1].bbox.y < pair[0].bbox.y,
+                "multi-line cell lines must move down: {} then {}",
+                pair[0].bbox.y,
+                pair[1].bbox.y
+            );
+        }
+    }
+
+    #[test]
+    fn test_to_content_elements_path_for_backgrounds_and_borders() {
+        use crate::elements::ContentElement;
+
+        let mut style = TableStyle::new().striped(0.9, 0.9, 0.9);
+        style.outer_border = Some(TableBorderStyle::medium());
+
+        let table = Table::new(vec![
+            vec![TableCell::text("a"), TableCell::text("b")],
+            vec![TableCell::text("c"), TableCell::text("d")],
+        ])
+        .with_style(style)
+        .with_column_widths(vec![ColumnWidth::Fixed(60.0), ColumnWidth::Fixed(60.0)]);
+
+        let metrics = SimpleFontMetrics::default();
+        let layout = table.calculate_layout(120.0, &metrics);
+        let elements = table.to_content_elements(0.0, 800.0, &layout);
+
+        let paths: Vec<_> = elements
+            .iter()
+            .filter_map(|e| match e {
+                ContentElement::Path(p) => Some(p),
+                _ => None,
+            })
+            .collect();
+
+        // At least one stripe fill on row 1 + 4 cell borders per cell ×
+        // 4 cells + outer border. Check the fill/stroke mix is plausible.
+        let fills = paths.iter().filter(|p| p.fill_color.is_some()).count();
+        let strokes = paths.iter().filter(|p| p.stroke_color.is_some()).count();
+        assert!(fills >= 2, "expected stripe fills on row 1 cells, got {}", fills);
+        assert!(strokes >= 1, "expected at least outer border stroke, got {}", strokes);
+
+        // Reading order must be monotone — tables are emitted in drawing
+        // order so later overlays paint on top of earlier ones.
+        let orders: Vec<_> = elements.iter().filter_map(|e| e.reading_order()).collect();
+        for pair in orders.windows(2) {
+            assert!(pair[1] > pair[0], "reading_order must increase: {:?}", orders);
+        }
+    }
+
+    #[test]
+    fn test_alignment_offsets_per_line_width() {
+        // Single-line cells in a single row, each with its own alignment.
+        // Verify the emitted Tm x-offset matches cell_x + alignment maths
+        // applied to the MEASURED line width, not the column content width.
+        use super::super::content_stream::ContentStreamBuilder;
+
+        let table = Table::new(vec![vec![
+            TableCell::text("L").align(CellAlign::Left),
+            TableCell::text("C").align(CellAlign::Center),
+            TableCell::text("R").align(CellAlign::Right),
+        ]])
+        .with_column_widths(vec![
+            ColumnWidth::Fixed(60.0),
+            ColumnWidth::Fixed(60.0),
+            ColumnWidth::Fixed(60.0),
+        ])
+        .with_style(TableStyle::new().cell_padding(CellPadding::uniform(0.0)));
+
+        let metrics = SimpleFontMetrics::default();
+        let layout = table.calculate_layout(180.0, &metrics);
+
+        let mut builder = ContentStreamBuilder::new();
+        table
+            .render(&mut builder, 0.0, 800.0, &layout)
+            .expect("render");
+        let bytes = builder.build().expect("build");
+        let text = String::from_utf8_lossy(&bytes);
+
+        // Extract all `a b c d e f Tm` operations and grab the e component
+        // (x-offset). We expect three, corresponding to the three cells in
+        // left→center→right order.
+        let tm_xs: Vec<f32> = text
+            .lines()
+            .filter_map(|l| l.strip_suffix(" Tm"))
+            .filter_map(|prefix| {
+                let parts: Vec<&str> = prefix.split_whitespace().collect();
+                if parts.len() == 6 {
+                    parts[4].parse::<f32>().ok()
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert_eq!(tm_xs.len(), 3, "expected 3 Tm ops, got {}: {:?}", tm_xs.len(), tm_xs);
+
+        // Column widths all 60.0, padding zero, single-char content.
+        // Left:  x = 0
+        // Center: x = 60 + (60 - line_width) / 2  = 60 + (60 - 5) / 2 = 87.5
+        // Right:  x = 120 + (60 - line_width)     = 120 + 55 = 175
+        // Single char "L"/"C"/"R" at default metrics = 1 * 10 * 0.5 = 5.0
+        let char_w = 5.0f32;
+        let left_expected = 0.0;
+        let center_expected = 60.0 + (60.0 - char_w) / 2.0;
+        let right_expected = 120.0 + 60.0 - char_w;
+
+        assert!((tm_xs[0] - left_expected).abs() < 0.01, "left x={}", tm_xs[0]);
+        assert!((tm_xs[1] - center_expected).abs() < 0.01, "center x={}", tm_xs[1]);
+        assert!((tm_xs[2] - right_expected).abs() < 0.01, "right x={}", tm_xs[2]);
     }
 }

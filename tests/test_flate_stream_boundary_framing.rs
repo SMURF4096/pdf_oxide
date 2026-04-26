@@ -153,7 +153,7 @@ fn crlf_framed_flate_content_stream_decompresses_cleanly() {
 
     let tmp = tempfile::NamedTempFile::new().expect("temp");
     std::fs::write(tmp.path(), &out).unwrap();
-    let mut doc = PdfDocument::open(tmp.path()).expect("open");
+    let doc = PdfDocument::open(tmp.path()).expect("open");
     let text = doc.extract_text(0).expect("extract");
     assert_both_ends_present(&text, "CRLF + CRLF");
 }
@@ -168,7 +168,7 @@ fn lf_framed_flate_content_stream_decompresses_cleanly() {
 
     let tmp = tempfile::NamedTempFile::new().expect("temp");
     std::fs::write(tmp.path(), &out).unwrap();
-    let mut doc = PdfDocument::open(tmp.path()).expect("open");
+    let doc = PdfDocument::open(tmp.path()).expect("open");
     let text = doc.extract_text(0).expect("extract");
     assert_both_ends_present(&text, "LF + LF");
 }
@@ -186,7 +186,7 @@ fn crlf_open_no_close_eol_decompresses_cleanly() {
 
     let tmp = tempfile::NamedTempFile::new().expect("temp");
     std::fs::write(tmp.path(), &out).unwrap();
-    let mut doc = PdfDocument::open(tmp.path()).expect("open");
+    let doc = PdfDocument::open(tmp.path()).expect("open");
     let text = doc.extract_text(0).expect("extract");
     assert_both_ends_present(&text, "CRLF + no-close-EOL");
 }
@@ -225,7 +225,7 @@ fn indirect_length_crlf_framed_stream_decompresses_cleanly() {
 
     let tmp = tempfile::NamedTempFile::new().expect("temp");
     std::fs::write(tmp.path(), &out).unwrap();
-    let mut doc = PdfDocument::open(tmp.path()).expect("open");
+    let doc = PdfDocument::open(tmp.path()).expect("open");
     let text = doc.extract_text(0).expect("extract");
     assert_both_ends_present(&text, "indirect-Length + CRLF");
 }

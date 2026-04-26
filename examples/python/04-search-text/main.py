@@ -15,20 +15,20 @@ def main():
     query = sys.argv[2]
     doc = PdfDocument(path)
 
-    pages = doc.page_count
+    pages = doc.page_count()
     print(f'Searching for "{query}" in {path} ({pages} pages)...\n')
 
     total = 0
     pages_with_hits = 0
 
     for i in range(pages):
-        results = doc.search(query, page_index=i)
+        results = doc.search_page(i, query)
         if not results:
             continue
         pages_with_hits += 1
         print(f"Page {i + 1}: {len(results)} match(es)")
         for r in results:
-            print(f'  - "...{r.context}..."')
+            print(f'  - "{r["text"]}" (x={r["x"]:.1f} y={r["y"]:.1f})')
             total += 1
         print()
 

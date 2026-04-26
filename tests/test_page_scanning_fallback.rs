@@ -51,7 +51,7 @@ startxref
 %%EOF
 ";
     let path = write_temp_pdf(data, "page_tree_not_dict.pdf");
-    let mut doc = PdfDocument::open(&path).expect("Should parse PDF structure");
+    let doc = PdfDocument::open(&path).expect("Should parse PDF structure");
     // Page tree node is invalid, but scanning should find the Page object
     let result = doc.extract_spans(0);
     assert!(result.is_ok(), "Fallback scanning should find the page");
@@ -94,7 +94,7 @@ startxref
 %%EOF
 ";
     let path = write_temp_pdf(data, "page_without_type.pdf");
-    let mut doc = PdfDocument::open(&path).expect("Should parse PDF structure");
+    let doc = PdfDocument::open(&path).expect("Should parse PDF structure");
     // Page object lacks /Type but has /MediaBox — heuristic should find it
     let result = doc.extract_spans(0);
     // The key test is that get_page doesn't error with "Page index not found"

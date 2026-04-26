@@ -103,7 +103,7 @@ impl TextSearcher {
     ///
     /// Vector of search results with positions.
     pub fn search(
-        doc: &mut PdfDocument,
+        doc: &PdfDocument,
         pattern: &str,
         options: &SearchOptions,
     ) -> Result<Vec<SearchResult>> {
@@ -136,7 +136,7 @@ impl TextSearcher {
 
     /// Search for text on a specific page.
     pub fn search_page(
-        doc: &mut PdfDocument,
+        doc: &PdfDocument,
         page: usize,
         regex: &Regex,
         options: &SearchOptions,

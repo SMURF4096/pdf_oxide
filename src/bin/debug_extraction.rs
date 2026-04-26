@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n=== PDF EXTRACTION DEBUG ===");
     println!("File: {}\n", pdf_path);
 
-    let mut doc = PdfDocument::open(pdf_path)?;
+    let doc = PdfDocument::open(pdf_path)?;
     let page_count = doc.page_count()?;
 
     // Analyze spans for first page (or specified page)
@@ -67,7 +67,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("=== SPACING ANALYSIS ===\n");
             println!("Analyzing gaps between consecutive spans on same line:\n");
 
-            let line_tolerance = 2.0;
             let mut prev_idx: Option<usize> = None;
 
             for (i, span) in spans.iter().enumerate() {
@@ -75,8 +74,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let prev = &spans[prev_i];
                     let y_diff = (prev.bbox.y - span.bbox.y).abs();
 
-                    // Same line check
-                    if y_diff < line_tolerance {
+                    // Same-line tolerance scales with the larger of the two
+                    // font sizes so superscripts and subscripts stay on the
+                    // line they belong to (matches PdfDocument::same_line_threshold).
+                    let line_tolerance = prev.font_size.max(span.font_size).max(1.0) * 0.5;
+
+                    // Same-line check. Uses `<=` so the boundary case
+                    // (y_diff exactly equal to the tolerance) is
+                    // classified as same-line. Production treats a span
+                    // as a new line only when `y_diff > threshold`, so
+                    // the equality case belongs on the same-line side;
+                    // this debug tool should report boundary deltas the
+                    // same way.
+                    if y_diff <= line_tolerance {
                         let gap = span.bbox.x - (prev.bbox.x + prev.bbox.width);
                         let space_threshold = prev.font_size * 0.25;
 

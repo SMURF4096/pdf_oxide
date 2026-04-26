@@ -483,6 +483,8 @@ pub struct DocumentEditor {
     flatten_forms_pages: std::collections::HashSet<usize>,
     /// Flag to remove AcroForm from catalog after form flattening
     remove_acroform: bool,
+    /// Warnings collected during form flattening (e.g. widgets with no /AP stream)
+    flatten_warnings: Vec<String>,
     /// Embedded files to add to the document
     embedded_files: Vec<crate::writer::EmbeddedFile>,
     /// Modified or new form fields (field name → wrapper)
@@ -602,6 +604,7 @@ impl DocumentEditor {
             image_modifications: HashMap::new(),
             flatten_forms_pages: std::collections::HashSet::new(),
             remove_acroform: false,
+            flatten_warnings: Vec::new(),
             embedded_files: Vec::new(),
             modified_form_fields: HashMap::new(),
             deleted_form_fields: HashSet::new(),
@@ -637,6 +640,7 @@ impl DocumentEditor {
             image_modifications: HashMap::new(),
             flatten_forms_pages: std::collections::HashSet::new(),
             remove_acroform: false,
+            flatten_warnings: Vec::new(),
             embedded_files: Vec::new(),
             modified_form_fields: HashMap::new(),
             deleted_form_fields: HashSet::new(),
@@ -676,6 +680,7 @@ impl DocumentEditor {
             image_modifications: HashMap::new(),
             flatten_forms_pages: std::collections::HashSet::new(),
             remove_acroform: false,
+            flatten_warnings: Vec::new(),
             embedded_files: Vec::new(),
             modified_form_fields: HashMap::new(),
             deleted_form_fields: HashSet::new(),
@@ -707,7 +712,7 @@ impl DocumentEditor {
             ));
         }
         let mut cursor = Cursor::new(Vec::new());
-        self.write_full_to_writer(&mut cursor, options.encryption.as_ref())?;
+        self.write_full_to_writer(&mut cursor, &options)?;
         Ok(cursor.into_inner())
     }
 
@@ -1458,25 +1463,112 @@ impl DocumentEditor {
 
     /// Write a full rewrite of the PDF.
     #[cfg(not(target_arch = "wasm32"))]
-    fn write_full(
-        &mut self,
-        path: impl AsRef<Path>,
-        encryption_config: Option<&EncryptionConfig>,
-    ) -> Result<()> {
+    fn write_full(&mut self, path: impl AsRef<Path>, options: &SaveOptions) -> Result<()> {
         let file = File::create(path.as_ref())?;
         let mut writer = BufWriter::new(file);
-        self.write_full_to_writer(&mut writer, encryption_config)
+        self.write_full_to_writer(&mut writer, options)
+    }
+
+    /// Collect all object IDs reachable from the catalog root via BFS.
+    ///
+    /// Used by garbage collection: any source-document object not in this set is
+    /// an orphan and can be omitted from the output.  Modified objects are
+    /// consulted first so that references introduced by edits are honoured.
+    fn collect_reachable_ids(&self) -> std::collections::HashSet<u32> {
+        use std::collections::{HashSet, VecDeque};
+
+        fn traverse(obj: &Object, queue: &mut VecDeque<u32>) {
+            match obj {
+                Object::Reference(r) => queue.push_back(r.id),
+                Object::Array(arr) => arr.iter().for_each(|o| traverse(o, queue)),
+                Object::Dictionary(d) => d.values().for_each(|o| traverse(o, queue)),
+                Object::Stream { dict, .. } => dict.values().for_each(|o| traverse(o, queue)),
+                _ => {},
+            }
+        }
+
+        let mut reachable: HashSet<u32> = HashSet::new();
+        let mut queue: VecDeque<u32> = VecDeque::new();
+
+        if let Some(r) = self
+            .source
+            .trailer()
+            .as_dict()
+            .and_then(|d| d.get("Root"))
+            .and_then(|v| v.as_reference())
+        {
+            queue.push_back(r.id);
+        }
+        if let Some(r) = self
+            .source
+            .trailer()
+            .as_dict()
+            .and_then(|d| d.get("Info"))
+            .and_then(|v| v.as_reference())
+        {
+            queue.push_back(r.id);
+        }
+
+        while let Some(id) = queue.pop_front() {
+            if !reachable.insert(id) {
+                continue;
+            }
+            let obj = if let Some(m) = self.modified_objects.get(&id) {
+                Some(m.clone())
+            } else {
+                self.source.load_object(ObjectRef { id, gen: 0 }).ok()
+            };
+            if let Some(obj) = obj {
+                traverse(&obj, &mut queue);
+            }
+        }
+
+        reachable
     }
 
     /// Write a full rewrite of the PDF to a generic writer.
     fn write_full_to_writer(
         &mut self,
         writer: &mut (impl Write + Seek),
-        encryption_config: Option<&EncryptionConfig>,
+        options: &SaveOptions,
     ) -> Result<()> {
         use crate::encryption::{
             generate_file_id, Algorithm, EncryptDictBuilder, EncryptionWriteHandler,
         };
+        use flate2::{write::ZlibEncoder, Compression};
+
+        /// Compress a stream object with FlateDecode if it has no filter yet.
+        fn compress_stream_if_raw(obj: Object) -> Object {
+            match obj {
+                Object::Stream { mut dict, data } => {
+                    if dict.contains_key("Filter") {
+                        return Object::Stream { dict, data };
+                    }
+                    let mut enc = ZlibEncoder::new(Vec::new(), Compression::default());
+                    if std::io::Write::write_all(&mut enc, &data).is_err() {
+                        return Object::Stream { dict, data };
+                    }
+                    match enc.finish() {
+                        Ok(compressed) => {
+                            dict.insert(
+                                "Filter".to_string(),
+                                Object::Name("FlateDecode".to_string()),
+                            );
+                            dict.insert(
+                                "Length".to_string(),
+                                Object::Integer(compressed.len() as i64),
+                            );
+                            Object::Stream {
+                                dict,
+                                data: compressed.into(),
+                            }
+                        },
+                        Err(_) => Object::Stream { dict, data },
+                    }
+                },
+                other => other,
+            }
+        }
 
         // Write PDF header
         let (major, minor) = self.version();
@@ -1487,39 +1579,40 @@ impl DocumentEditor {
         let serializer = ObjectSerializer::compact();
 
         // Set up encryption if configured
-        let (file_id, encrypt_dict, encryption_handler) = if let Some(config) = encryption_config {
-            let (id1, id2) = generate_file_id();
+        let (file_id, encrypt_dict, encryption_handler) =
+            if let Some(config) = options.encryption.as_ref() {
+                let (id1, id2) = generate_file_id();
 
-            // Convert EncryptionAlgorithm to encryption::Algorithm
-            let algorithm = match config.algorithm {
-                EncryptionAlgorithm::Rc4_40 => Algorithm::RC4_40,
-                EncryptionAlgorithm::Rc4_128 => Algorithm::Rc4_128,
-                EncryptionAlgorithm::Aes128 => Algorithm::Aes128,
-                EncryptionAlgorithm::Aes256 => Algorithm::Aes256,
+                // Convert EncryptionAlgorithm to encryption::Algorithm
+                let algorithm = match config.algorithm {
+                    EncryptionAlgorithm::Rc4_40 => Algorithm::RC4_40,
+                    EncryptionAlgorithm::Rc4_128 => Algorithm::Rc4_128,
+                    EncryptionAlgorithm::Aes128 => Algorithm::Aes128,
+                    EncryptionAlgorithm::Aes256 => Algorithm::Aes256,
+                };
+
+                // Build encryption dictionary
+                let encrypt_dict = EncryptDictBuilder::new(algorithm)
+                    .user_password(config.user_password.as_bytes())
+                    .owner_password(config.owner_password.as_bytes())
+                    .permissions(config.permissions.to_bits())
+                    .encrypt_metadata(true)
+                    .build(&id1);
+
+                // Create encryption handler
+                let handler = EncryptionWriteHandler::new(
+                    config.user_password.as_bytes(),
+                    &encrypt_dict.owner_password,
+                    encrypt_dict.permissions,
+                    &id1,
+                    algorithm,
+                    true,
+                );
+
+                (Some((id1, id2)), Some(encrypt_dict), Some(handler))
+            } else {
+                (None, None, None)
             };
-
-            // Build encryption dictionary
-            let encrypt_dict = EncryptDictBuilder::new(algorithm)
-                .user_password(config.user_password.as_bytes())
-                .owner_password(config.owner_password.as_bytes())
-                .permissions(config.permissions.to_bits())
-                .encrypt_metadata(true)
-                .build(&id1);
-
-            // Create encryption handler
-            let handler = EncryptionWriteHandler::new(
-                config.user_password.as_bytes(),
-                &encrypt_dict.owner_password,
-                encrypt_dict.permissions,
-                &id1,
-                algorithm,
-                true,
-            );
-
-            (Some((id1, id2)), Some(encrypt_dict), Some(handler))
-        } else {
-            (None, None, None)
-        };
 
         // Helper to serialize with or without encryption
         let serialize_obj = |s: &ObjectSerializer,
@@ -1578,12 +1671,23 @@ impl DocumentEditor {
             .cloned()
             .unwrap_or(catalog);
 
-        // Remove AcroForm from catalog if form flattening was requested
+        // Remove or rebuild AcroForm after form flattening
         if self.remove_acroform {
+            // All pages flattened — drop the entire AcroForm
             if let Some(catalog_dict) = catalog_obj.as_dict() {
                 let mut new_catalog = catalog_dict.clone();
                 new_catalog.remove("AcroForm");
                 catalog_obj = Object::Dictionary(new_catalog);
+            }
+        } else if !self.flatten_forms_pages.is_empty() {
+            // Partial flatten — rebuild AcroForm keeping only fields whose widgets
+            // remain on non-flattened pages (ISO 32000-1 §12.7.2).
+            if let Some(catalog_dict) = catalog_obj.as_dict() {
+                if let Some(rebuilt) = self.rebuild_partial_acroform(catalog_dict)? {
+                    let mut new_catalog = catalog_dict.clone();
+                    new_catalog.insert("AcroForm".to_string(), rebuilt);
+                    catalog_obj = Object::Dictionary(new_catalog);
+                }
             }
         }
 
@@ -3132,6 +3236,77 @@ impl DocumentEditor {
             None
         };
 
+        // ── Remaining-objects sweep ────────────────────────────────────────────
+        //
+        // The page-tree traversal above is deliberately shallow: it handles the
+        // catalog, pages tree, page dicts, content streams, and the first level
+        // of font/XObject resource references.  For documents built by
+        // `DocumentBuilder` with embedded TrueType fonts, the full object graph
+        // is deeper:
+        //
+        //   Type0 font dict  →  DescendantFonts  →  CIDFontType2 dict
+        //                                         →  FontDescriptor dict
+        //                                            → FontFile2 stream
+        //                    →  ToUnicode CMap stream
+        //
+        // Any of these that were not reached above would produce dangling
+        // cross-reference entries in the output, making the PDF unrenderable
+        // even though it is structurally valid.  (Issue #401.)
+        //
+        // Solution: after the main traversal, enumerate every object ID in the
+        // source document's xref table and write any that were not yet written.
+        // This is safe — written_ids provides O(1) dedup, so already-written
+        // objects are skipped; orphaned objects are harmless in a PDF reader.
+        //
+        // When garbage_collect=true, only reachable objects are written.
+        // When compress=true, raw (unfiltered) streams are FlateDecode-compressed.
+        //
+        // NOTE: `written_ids` must be rebuilt from `xref_entries` here because
+        // the merge-page and parent-field loops above push to `xref_entries`
+        // without updating `written_ids`.
+        written_ids.clear();
+        written_ids.extend(xref_entries.iter().map(|(id, _, _, _)| *id));
+
+        let reachable_ids = if options.garbage_collect {
+            Some(self.collect_reachable_ids())
+        } else {
+            None
+        };
+
+        let all_source_ids = self.source.all_object_ids();
+        for obj_id in all_source_ids {
+            if obj_id == 0 || written_ids.contains(&obj_id) {
+                continue;
+            }
+            if let Some(ref reachable) = reachable_ids {
+                if !reachable.contains(&obj_id) {
+                    log::debug!("write_full_to_writer: GC dropping unreachable object {}", obj_id);
+                    continue;
+                }
+            }
+            match self.source.load_object(ObjectRef { id: obj_id, gen: 0 }) {
+                Ok(obj) => {
+                    let obj = if options.compress {
+                        compress_stream_if_raw(obj)
+                    } else {
+                        obj
+                    };
+                    let offset = writer.stream_position()?;
+                    let bytes = serialize_obj(&serializer, obj_id, 0, &obj, &encryption_handler);
+                    writer.write_all(&bytes)?;
+                    xref_entries.push((obj_id, offset, 0, true));
+                    written_ids.insert(obj_id);
+                },
+                Err(e) => {
+                    log::debug!(
+                        "write_full_to_writer: skipping unloadable object {} during sweep: {}",
+                        obj_id,
+                        e
+                    );
+                },
+            }
+        }
+
         // Sort xref entries by object ID
         xref_entries.sort_by_key(|(id, _, _, _)| *id);
 
@@ -3215,7 +3390,7 @@ impl DocumentEditor {
     /// `Ok(None)` if no structure is available,
     /// `Err` if an error occurs during extraction
     pub fn get_page_content(&mut self, page_index: usize) -> Result<Option<StructureElement>> {
-        HierarchicalExtractor::extract_page(&mut self.source, page_index)
+        HierarchicalExtractor::extract_page(&self.source, page_index)
     }
 
     /// Replace the content of a page with a new structure.
@@ -3302,7 +3477,7 @@ impl DocumentEditor {
             structure
         } else {
             // If no modified content, try to extract from original
-            match HierarchicalExtractor::extract_page(&mut self.source, page_index)? {
+            match HierarchicalExtractor::extract_page(&self.source, page_index)? {
                 Some(structure) => structure,
                 None => {
                     // Create empty structure if extraction fails
@@ -3842,6 +4017,127 @@ impl DocumentEditor {
         self.remove_acroform
     }
 
+    /// Warnings collected during the last form-flattening save.
+    ///
+    /// Each entry names a widget field that had no `/AP` appearance stream and
+    /// could not have one generated — flattening it produces a blank rectangle.
+    pub fn flatten_warnings(&self) -> &[String] {
+        &self.flatten_warnings
+    }
+
+    /// Rebuild an AcroForm dict containing only root fields that still have at
+    /// least one widget on a non-flattened page.
+    ///
+    /// Returns `None` if the original catalog has no AcroForm, or if the AcroForm
+    /// contains `/XFA` (in which case we leave it untouched and emit a warning).
+    fn rebuild_partial_acroform(
+        &mut self,
+        catalog_dict: &HashMap<String, Object>,
+    ) -> Result<Option<Object>> {
+        let acroform_obj = match catalog_dict.get("AcroForm") {
+            Some(o) => o.clone(),
+            None => return Ok(None),
+        };
+
+        let acroform_dict: HashMap<String, Object> = match acroform_obj {
+            Object::Dictionary(d) => d,
+            Object::Reference(r) => match self.source.load_object(r)? {
+                Object::Dictionary(d) => d,
+                _ => return Ok(None),
+            },
+            _ => return Ok(None),
+        };
+
+        // XFA forms use a completely different field-addressing model; rebuilding
+        // the /Fields array would break SOM expressions inside the XFA stream.
+        // Leave the AcroForm as-is and warn the caller (ISO 32000-1 §12.7.8).
+        if acroform_dict.contains_key("XFA") {
+            self.flatten_warnings.push(
+                "XFA form detected — AcroForm not rebuilt after partial flatten; \
+                 XFA SOM expressions may reference flattened widgets"
+                    .to_string(),
+            );
+            return Ok(None);
+        }
+
+        let fields_array = match acroform_dict.get("Fields") {
+            Some(Object::Array(arr)) => arr.clone(),
+            _ => return Ok(None),
+        };
+
+        // Build page-ref → page-index map once
+        let page_count = self.source.page_count().unwrap_or(0);
+        let mut page_ref_to_index: HashMap<u32, usize> = HashMap::new();
+        for i in 0..page_count {
+            if let Ok(pr) = self.source.get_page_ref(i) {
+                page_ref_to_index.insert(pr.id, i);
+            }
+        }
+
+        // Collect root field refs that survive the partial flatten
+        let flattened = self.flatten_forms_pages.clone();
+        let mut surviving: Vec<Object> = Vec::new();
+        for field_entry in &fields_array {
+            if let Object::Reference(field_ref) = field_entry {
+                if self.field_has_surviving_widgets(field_ref, &flattened, &page_ref_to_index)? {
+                    surviving.push(Object::Reference(*field_ref));
+                }
+            }
+        }
+
+        // Preserve all original top-level AcroForm keys; replace only /Fields.
+        let mut new_acroform = acroform_dict.clone();
+        new_acroform.insert("Fields".to_string(), Object::Array(surviving));
+        Ok(Some(Object::Dictionary(new_acroform)))
+    }
+
+    /// Returns true if `field_ref` or any of its descendants has a widget whose
+    /// `/P` page reference maps to a page that was NOT flattened.
+    fn field_has_surviving_widgets(
+        &mut self,
+        field_ref: &ObjectRef,
+        flattened_pages: &HashSet<usize>,
+        page_ref_to_index: &HashMap<u32, usize>,
+    ) -> Result<bool> {
+        let field_obj = match self.source.load_object(*field_ref) {
+            Ok(o) => o,
+            Err(_) => return Ok(true), // can't load → keep to be safe
+        };
+        let dict = match field_obj.as_dict() {
+            Some(d) => d.clone(),
+            None => return Ok(true),
+        };
+
+        if let Some(Object::Array(kids)) = dict.get("Kids").cloned() {
+            // Non-terminal field — recurse into kids
+            for kid in &kids {
+                if let Object::Reference(kid_ref) = kid {
+                    if self.field_has_surviving_widgets(
+                        kid_ref,
+                        flattened_pages,
+                        page_ref_to_index,
+                    )? {
+                        return Ok(true);
+                    }
+                }
+            }
+            Ok(false)
+        } else {
+            // Terminal field / merged field+widget — check /P (page ref)
+            match dict.get("P") {
+                Some(Object::Reference(page_ref)) => {
+                    match page_ref_to_index.get(&page_ref.id) {
+                        Some(idx) => Ok(!flattened_pages.contains(idx)),
+                        // Page ref not in map — keep the field (unknown page)
+                        None => Ok(true),
+                    }
+                },
+                // No /P — keep the field
+                _ => Ok(true),
+            }
+        }
+    }
+
     // =========================================================================
     // File Attachments (Embedded Files)
     // =========================================================================
@@ -3998,7 +4294,7 @@ impl DocumentEditor {
         use crate::extractors::forms::FormExtractor;
 
         // Extract fields from source document
-        let source_fields = FormExtractor::extract_fields(&mut self.source)?;
+        let source_fields = FormExtractor::extract_fields(&self.source)?;
 
         // Build page ref -> index map for resolving field page indices
         let page_count = self.source.page_count()?;
@@ -4108,7 +4404,7 @@ impl DocumentEditor {
         }
 
         // Look up in original document
-        let source_fields = FormExtractor::extract_fields(&mut self.source)?;
+        let source_fields = FormExtractor::extract_fields(&self.source)?;
 
         for field in source_fields {
             if field.full_name == name {
@@ -4153,7 +4449,7 @@ impl DocumentEditor {
         }
 
         // Look up in original document
-        let source_fields = FormExtractor::extract_fields(&mut self.source)?;
+        let source_fields = FormExtractor::extract_fields(&self.source)?;
 
         for field in source_fields {
             if field.full_name == name {
@@ -4500,7 +4796,7 @@ impl DocumentEditor {
         }
 
         // Look up in original document and create wrapper
-        let source_fields = FormExtractor::extract_fields(&mut self.source)?;
+        let source_fields = FormExtractor::extract_fields(&self.source)?;
 
         for field in source_fields {
             if field.full_name == name {
@@ -4749,7 +5045,7 @@ impl DocumentEditor {
         }
 
         // Look up in original document and create wrapper
-        let source_fields = FormExtractor::extract_fields(&mut self.source)?;
+        let source_fields = FormExtractor::extract_fields(&self.source)?;
 
         for field in source_fields {
             if field.full_name == name {
@@ -4791,7 +5087,7 @@ impl DocumentEditor {
     /// ```
     pub fn export_form_data_fdf(&mut self, output_path: impl AsRef<std::path::Path>) -> Result<()> {
         use crate::extractors::forms::FormExtractor;
-        FormExtractor::export_fdf(&mut self.source, output_path)
+        FormExtractor::export_fdf(&self.source, output_path)
     }
 
     /// Export form field data to XFDF format.
@@ -4816,7 +5112,7 @@ impl DocumentEditor {
         output_path: impl AsRef<std::path::Path>,
     ) -> Result<()> {
         use crate::extractors::forms::FormExtractor;
-        FormExtractor::export_xfdf(&mut self.source, output_path)
+        FormExtractor::export_xfdf(&self.source, output_path)
     }
 
     /// Get widget annotation appearances for form flattening.
@@ -4850,6 +5146,22 @@ impl DocumentEditor {
                     // No appearance stream - try to generate one
                     if let Some(generated) = self.generate_widget_appearance(&annotation)? {
                         appearances.push(generated);
+                    } else {
+                        // Widget has neither /AP nor a generatable appearance — flattening
+                        // it produces a blank rectangle. Record field name as a warning.
+                        let field_name = annotation
+                            .raw_dict
+                            .as_ref()
+                            .and_then(|d| d.get("T"))
+                            .and_then(|t| match t {
+                                Object::String(s) => String::from_utf8(s.clone()).ok(),
+                                _ => None,
+                            })
+                            .unwrap_or_else(|| format!("widget@page{}", page));
+                        self.flatten_warnings.push(format!(
+                            "field '{}' has no /AP appearance stream — flattening produces blank rectangle",
+                            field_name
+                        ));
                     }
                 },
                 Err(_) => continue,
@@ -6317,7 +6629,7 @@ impl EditableDocument for DocumentEditor {
         if options.incremental {
             self.write_incremental(path)
         } else {
-            self.write_full(path, options.encryption.as_ref())
+            self.write_full(path, &options)
         }
     }
 
@@ -7872,6 +8184,8 @@ mod tests {
             horizontal_dpi: None,
             vertical_dpi: None,
             soft_mask: None,
+            matrix: None,
+            is_artifact: false,
         };
 
         let obj = DocumentEditor::build_image_xobject(&image);
@@ -7900,6 +8214,8 @@ mod tests {
             horizontal_dpi: None,
             vertical_dpi: None,
             soft_mask: None,
+            matrix: None,
+            is_artifact: false,
         };
 
         let obj = DocumentEditor::build_image_xobject(&image);
@@ -7928,6 +8244,8 @@ mod tests {
             horizontal_dpi: None,
             vertical_dpi: None,
             soft_mask: None,
+            matrix: None,
+            is_artifact: false,
         };
 
         let obj = DocumentEditor::build_image_xobject(&image);
@@ -7956,6 +8274,8 @@ mod tests {
             horizontal_dpi: None,
             vertical_dpi: None,
             soft_mask: None,
+            matrix: None,
+            is_artifact: false,
         };
 
         let obj = DocumentEditor::build_image_xobject(&image);
@@ -7984,6 +8304,8 @@ mod tests {
             horizontal_dpi: None,
             vertical_dpi: None,
             soft_mask: None,
+            matrix: None,
+            is_artifact: false,
         };
 
         let obj = DocumentEditor::build_image_xobject(&image);
@@ -8012,6 +8334,8 @@ mod tests {
             horizontal_dpi: None,
             vertical_dpi: None,
             soft_mask: None,
+            matrix: None,
+            is_artifact: false,
         };
 
         let obj = DocumentEditor::build_image_xobject(&image);

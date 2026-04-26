@@ -66,7 +66,7 @@ pub mod layers;
 pub mod linearization;
 mod movie;
 mod object_serializer;
-mod outline_builder;
+pub mod outline_builder;
 mod page_labels;
 mod page_template;
 mod pattern;
@@ -78,6 +78,7 @@ mod shape_annotations;
 mod sound;
 mod special_annotations;
 mod stamp;
+mod streaming_table;
 mod table_renderer;
 mod text_annotations;
 mod text_markup;
@@ -98,7 +99,8 @@ pub use content_stream::{
     TextArrayItem,
 };
 pub use document_builder::{
-    DocumentBuilder, DocumentMetadata, FluentPageBuilder, PageSize, TextAlign, TextConfig,
+    DocumentBuilder, DocumentMetadata, FluentPageBuilder, LineStyle, PageSize, TextAlign,
+    TextConfig, TextRun, TextRunStyle,
 };
 pub use embedded_files::{AFRelationship, EmbeddedFile, EmbeddedFilesBuilder};
 pub use font_manager::{
@@ -113,8 +115,8 @@ pub use font_shaping::{shape as shape_text, Direction as ShapeDirection, ShapedG
 pub use form_fields::{
     ButtonFieldFlags, CheckboxWidget, ChoiceFieldFlags, ChoiceOption, ComboBoxWidget, FieldFlags,
     FormAction, FormAppearanceGenerator, FormFieldEntry, FormFieldWidget, ListBoxWidget,
-    PushButtonWidget, RadioButtonGroup, RadioButtonWidget, SubmitFormFlags, TextAlignment,
-    TextFieldFlags, TextFieldWidget,
+    PushButtonWidget, RadioButtonGroup, RadioButtonWidget, SignatureWidget, SubmitFormFlags,
+    TextAlignment, TextFieldFlags, TextFieldWidget,
 };
 pub use freetext::FreeTextAnnotation;
 pub use graphics_state::{ExtGStateBuilder, SoftMask, SoftMaskSubtype};
@@ -164,6 +166,7 @@ pub use special_annotations::{
     RedactAnnotation,
 };
 pub use stamp::{StampAnnotation, StampType};
+pub use streaming_table::{StreamingColumn, StreamingRow, StreamingTable, StreamingTableConfig};
 pub use table_renderer::{
     Borders, CellAlign, CellPadding, CellPosition, CellVAlign, ColumnWidth, FontMetrics,
     SimpleFontMetrics, Table, TableBorderStyle, TableCell, TableLayout, TableRow, TableStyle,

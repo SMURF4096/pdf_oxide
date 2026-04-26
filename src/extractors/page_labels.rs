@@ -145,7 +145,7 @@ pub struct PageLabelExtractor;
 
 impl PageLabelExtractor {
     /// Helper function to resolve an Object (handles indirect references).
-    fn resolve_object(doc: &mut PdfDocument, obj: &Object) -> Result<Object> {
+    fn resolve_object(doc: &PdfDocument, obj: &Object) -> Result<Object> {
         if let Some(ref_val) = obj.as_reference() {
             doc.load_object(ref_val)
         } else {
@@ -175,7 +175,7 @@ impl PageLabelExtractor {
     }
 
     /// Parse a page label dictionary.
-    fn parse_label_dict(doc: &mut PdfDocument, dict_obj: &Object) -> Result<PageLabelRange> {
+    fn parse_label_dict(doc: &PdfDocument, dict_obj: &Object) -> Result<PageLabelRange> {
         let dict_resolved = Self::resolve_object(doc, dict_obj)?;
         let dict = dict_resolved
             .as_dict()
@@ -218,7 +218,7 @@ impl PageLabelExtractor {
     /// Number trees can have:
     /// - /Nums array: direct array of [key, value, key, value, ...]
     /// - /Kids array: array of intermediate nodes
-    fn parse_number_tree(doc: &mut PdfDocument, tree_obj: &Object) -> Result<Vec<PageLabelRange>> {
+    fn parse_number_tree(doc: &PdfDocument, tree_obj: &Object) -> Result<Vec<PageLabelRange>> {
         let tree_resolved = Self::resolve_object(doc, tree_obj)?;
         let tree_dict = tree_resolved
             .as_dict()
@@ -291,7 +291,7 @@ impl PageLabelExtractor {
     /// }
     /// # Ok::<(), pdf_oxide::error::Error>(())
     /// ```
-    pub fn extract(doc: &mut PdfDocument) -> Result<Vec<PageLabelRange>> {
+    pub fn extract(doc: &PdfDocument) -> Result<Vec<PageLabelRange>> {
         // Get document catalog
         let catalog = doc.catalog()?;
         let catalog_dict = catalog

@@ -12,6 +12,11 @@ namespace PdfOxide.Tests
     /// round-trip for Verify()/VerifyDetached() is covered by
     /// <c>tests/test_cms_verify_round_trip.rs</c> on the Rust side; the
     /// C# side does not yet have a signed-PDF integration fixture.
+    ///
+    /// When the native library is compiled without the <c>signatures</c>
+    /// feature, SignatureCount and Signatures throw
+    /// <see cref="UnsupportedFeatureException"/> and the tests pass
+    /// vacuously (same pattern as <see cref="OcrEngineTests"/>).
     /// </summary>
     public class SignatureTests
     {
@@ -23,7 +28,16 @@ namespace PdfOxide.Tests
         public void PdfWithoutAcroForm_HasZeroSignatures()
         {
             using var doc = PdfDocument.Open(UnsignedFixture);
-            Assert.Equal(0, doc.SignatureCount);
+            int count;
+            try
+            {
+                count = doc.SignatureCount;
+            }
+            catch (UnsupportedFeatureException)
+            {
+                return; // signatures feature not compiled in
+            }
+            Assert.Equal(0, count);
             Assert.Empty(doc.Signatures);
         }
 
@@ -31,7 +45,15 @@ namespace PdfOxide.Tests
         public void Issue395Fixture_EnumerationDoesNotThrow()
         {
             using var doc = PdfDocument.Open(Issue395Fixture);
-            var count = doc.SignatureCount;
+            int count;
+            try
+            {
+                count = doc.SignatureCount;
+            }
+            catch (UnsupportedFeatureException)
+            {
+                return;
+            }
             var list = doc.Signatures;
             Assert.Equal(count, list.Count);
             foreach (var sig in list) sig.Dispose();
@@ -41,9 +63,16 @@ namespace PdfOxide.Tests
         public void Signatures_SnapshotListSemantics()
         {
             using var doc = PdfDocument.Open(UnsignedFixture);
-            var a = doc.Signatures;
-            var b = doc.Signatures;
-            Assert.NotSame(a, b);
+            try
+            {
+                var a = doc.Signatures;
+                var b = doc.Signatures;
+                Assert.NotSame(a, b);
+            }
+            catch (UnsupportedFeatureException)
+            {
+                return;
+            }
         }
     }
 }

@@ -850,3 +850,165 @@ fn wasm_pdf_document_move_page_preserves_page_count() {
     // Out-of-range move must surface as an Err, not panic.
     assert!(doc.move_page(99, 0).is_err(), "out-of-range from_index should return Err",);
 }
+
+// ----------------------------------------------------------------------
+// v0.3.39 — issue #393 DocumentBuilder tables + primitives
+// ----------------------------------------------------------------------
+
+#[wasm_bindgen_test]
+fn fluent_page_text_in_rect_and_strokes_round_trip() {
+    let mut b = WasmDocumentBuilder::new();
+    let mut p = b.letter_page().unwrap();
+    p.font("Helvetica".to_string(), 10.0).unwrap();
+    p.text_in_rect(72.0, 700.0, 200.0, 100.0, "wrapped text".to_string(), 1 /* Center */)
+        .unwrap();
+    p.stroke_rect(50.0, 500.0, 200.0, 100.0, 2.0, 0.5, 0.5, 0.5)
+        .unwrap();
+    p.stroke_line(50.0, 400.0, 250.0, 400.0, 1.0, 0.2, 0.2, 0.2)
+        .unwrap();
+    p.done(&mut b).unwrap();
+    let bytes = b.build().unwrap();
+    assert!(bytes.starts_with(b"%PDF-"));
+}
+
+#[wasm_bindgen_test]
+fn fluent_page_measure_nonzero_and_remaining_space() {
+    let mut b = WasmDocumentBuilder::new();
+    let mut p = b.letter_page().unwrap();
+    p.font("Helvetica".to_string(), 12.0).unwrap();
+    let w = p.measure("Hello");
+    assert!(w > 0.0, "measure should return a positive width, got {w}");
+    // Letter = 612x792, top-margin 72 puts cursor at 720.
+    // Bottom margin 72 → remaining = 648.
+    let r = p.remaining_space();
+    assert!((r - 648.0).abs() < 1.0, "remainingSpace ≈ 648 at page start, got {r}");
+    // Silence unused-must-use on p for later chaining.
+    p.done(&mut b).unwrap();
+    let _ = b.build().unwrap();
+}
+
+#[wasm_bindgen_test]
+fn fluent_page_new_page_same_size_creates_second_page() {
+    let mut b = WasmDocumentBuilder::new();
+    let mut p = b.letter_page().unwrap();
+    p.at(72.0, 720.0).unwrap();
+    p.text("page-1".to_string()).unwrap();
+    p.new_page_same_size().unwrap();
+    p.at(72.0, 720.0).unwrap();
+    p.text("page-2".to_string()).unwrap();
+    p.done(&mut b).unwrap();
+    let bytes = b.build().unwrap();
+    let mut doc = WasmPdfDocument::new(&bytes).unwrap();
+    assert_eq!(doc.page_count().unwrap(), 2, "newPageSameSize must add a page");
+}
+
+#[wasm_bindgen_test]
+fn fluent_page_buffered_table_from_js_object() {
+    use wasm_bindgen::JsValue;
+
+    let mut b = WasmDocumentBuilder::new();
+    let mut p = b.letter_page().unwrap();
+    p.font("Helvetica".to_string(), 10.0).unwrap();
+    p.at(72.0, 720.0).unwrap();
+
+    // Construct a JS object equivalent to:
+    //   { columns: [{header:"SKU", width:100, align:0}, {header:"Qty", width:60, align:2}],
+    //     rows: [["A-1","12"], ["B-2","3"]],
+    //     hasHeader: true }
+    let spec = js_sys::Object::new();
+    let columns = js_sys::Array::new();
+    for (header, width, align) in [("SKU", 100.0_f64, 0_i32), ("Qty", 60.0, 2)].iter() {
+        let col = js_sys::Object::new();
+        js_sys::Reflect::set(&col, &JsValue::from_str("header"), &JsValue::from_str(header))
+            .unwrap();
+        js_sys::Reflect::set(&col, &JsValue::from_str("width"), &JsValue::from_f64(*width))
+            .unwrap();
+        js_sys::Reflect::set(&col, &JsValue::from_str("align"), &JsValue::from_f64(*align as f64))
+            .unwrap();
+        columns.push(&col);
+    }
+    js_sys::Reflect::set(&spec, &JsValue::from_str("columns"), &columns).unwrap();
+
+    let rows = js_sys::Array::new();
+    for row in [["A-1", "12"], ["B-2", "3"]].iter() {
+        let r = js_sys::Array::new();
+        for cell in row.iter() {
+            r.push(&JsValue::from_str(cell));
+        }
+        rows.push(&r);
+    }
+    js_sys::Reflect::set(&spec, &JsValue::from_str("rows"), &rows).unwrap();
+    js_sys::Reflect::set(&spec, &JsValue::from_str("hasHeader"), &JsValue::from_bool(true))
+        .unwrap();
+
+    p.table(spec.into()).unwrap();
+    p.done(&mut b).unwrap();
+    let bytes = b.build().unwrap();
+    assert!(bytes.starts_with(b"%PDF-"));
+    let mut doc = WasmPdfDocument::new(&bytes).unwrap();
+    let text = doc.extract_all_text().unwrap();
+    // At minimum the header texts should survive the round-trip.
+    assert!(
+        text.contains("SKU") || text.contains("Qty"),
+        "buffered-table headers missing from extracted text: {text:?}",
+    );
+}
+
+#[wasm_bindgen_test]
+fn fluent_page_streaming_table_push_and_finish() {
+    use wasm_bindgen::JsValue;
+
+    let mut b = WasmDocumentBuilder::new();
+    let mut p = b.letter_page().unwrap();
+    p.font("Helvetica".to_string(), 10.0).unwrap();
+    p.at(72.0, 720.0).unwrap();
+
+    // { columns: [{header:"SKU", width:72}, {header:"Item", width:200}, {header:"Qty", width:48, align:2}],
+    //   repeatHeader: true }
+    let spec = js_sys::Object::new();
+    let columns = js_sys::Array::new();
+    for (header, width, align) in [
+        ("SKU", 72.0_f64, 0_i32),
+        ("Item", 200.0, 0),
+        ("Qty", 48.0, 2),
+    ]
+    .iter()
+    {
+        let col = js_sys::Object::new();
+        js_sys::Reflect::set(&col, &JsValue::from_str("header"), &JsValue::from_str(header))
+            .unwrap();
+        js_sys::Reflect::set(&col, &JsValue::from_str("width"), &JsValue::from_f64(*width))
+            .unwrap();
+        js_sys::Reflect::set(&col, &JsValue::from_str("align"), &JsValue::from_f64(*align as f64))
+            .unwrap();
+        columns.push(&col);
+    }
+    js_sys::Reflect::set(&spec, &JsValue::from_str("columns"), &columns).unwrap();
+    js_sys::Reflect::set(&spec, &JsValue::from_str("repeatHeader"), &JsValue::from_bool(true))
+        .unwrap();
+
+    let mut t = p.streaming_table(spec.into()).unwrap();
+    assert_eq!(t.column_count(), 3);
+    for i in 0..3 {
+        t.push_row(vec![format!("A-{i}"), "Widget".into(), (i * 10).to_string()])
+            .unwrap();
+    }
+    // Wrong-arity row → error, not panic.
+    assert!(
+        t.push_row(vec!["only-one".to_string()]).is_err(),
+        "wrong-arity row should return Err",
+    );
+    t.finish().unwrap();
+    // finish() twice throws.
+    assert!(t.finish().is_err(), "double finish should return Err");
+
+    p.done(&mut b).unwrap();
+    let bytes = b.build().unwrap();
+    assert!(bytes.starts_with(b"%PDF-"));
+    let mut doc = WasmPdfDocument::new(&bytes).unwrap();
+    let text = doc.extract_all_text().unwrap();
+    assert!(
+        text.contains("SKU") || text.contains("Item") || text.contains("Qty"),
+        "streaming-table headers missing from extracted text: {text:?}",
+    );
+}

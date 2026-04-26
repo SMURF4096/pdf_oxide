@@ -220,7 +220,7 @@ impl InkAnnotation {
 
         // Contents
         if let Some(ref contents) = self.contents {
-            dict.insert("Contents".to_string(), Object::String(contents.as_bytes().to_vec()));
+            dict.insert("Contents".to_string(), Object::text_string(contents));
         }
 
         // Flags
@@ -282,22 +282,22 @@ impl InkAnnotation {
 
         // Author
         if let Some(ref author) = self.author {
-            dict.insert("T".to_string(), Object::String(author.as_bytes().to_vec()));
+            dict.insert("T".to_string(), Object::text_string(author));
         }
 
         // Subject
         if let Some(ref subject) = self.subject {
-            dict.insert("Subj".to_string(), Object::String(subject.as_bytes().to_vec()));
+            dict.insert("Subj".to_string(), Object::text_string(subject));
         }
 
         // Creation date
         if let Some(ref date) = self.creation_date {
-            dict.insert("CreationDate".to_string(), Object::String(date.as_bytes().to_vec()));
+            dict.insert("CreationDate".to_string(), Object::text_string(date));
         }
 
         // Modification date
         if let Some(ref date) = self.modification_date {
-            dict.insert("M".to_string(), Object::String(date.as_bytes().to_vec()));
+            dict.insert("M".to_string(), Object::text_string(date));
         }
 
         dict

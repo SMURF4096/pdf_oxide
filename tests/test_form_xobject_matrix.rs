@@ -230,7 +230,7 @@ fn test_form_xobject_matrix_scaling_applied_to_spans() {
     let _ = env_logger::builder().is_test(true).try_init();
     let pdf_bytes = build_form_xobject_with_matrix_pdf();
 
-    let mut doc = PdfDocument::from_bytes(pdf_bytes).expect("Failed to parse test PDF");
+    let doc = PdfDocument::from_bytes(pdf_bytes).expect("Failed to parse test PDF");
 
     let spans = doc.extract_spans(0).expect("Failed to extract spans");
     assert!(!spans.is_empty(), "Should extract at least one span");
@@ -268,7 +268,7 @@ fn test_form_xobject_matrix_translation_applied_to_spans() {
     let _ = env_logger::builder().is_test(true).try_init();
     let pdf_bytes = build_form_xobject_with_translation_pdf();
 
-    let mut doc = PdfDocument::from_bytes(pdf_bytes).expect("Failed to parse test PDF");
+    let doc = PdfDocument::from_bytes(pdf_bytes).expect("Failed to parse test PDF");
 
     let spans = doc.extract_spans(0).expect("Failed to extract spans");
     assert!(!spans.is_empty(), "Should extract at least one span");
@@ -296,7 +296,7 @@ fn test_form_xobject_without_matrix_uses_identity() {
     let _ = env_logger::builder().is_test(true).try_init();
     let pdf_bytes = build_form_xobject_without_matrix_pdf();
 
-    let mut doc = PdfDocument::from_bytes(pdf_bytes).expect("Failed to parse test PDF");
+    let doc = PdfDocument::from_bytes(pdf_bytes).expect("Failed to parse test PDF");
 
     let spans = doc.extract_spans(0).expect("Failed to extract spans");
     assert!(!spans.is_empty(), "Should extract at least one span");
@@ -391,7 +391,7 @@ fn test_form_xobject_matrix_does_not_leak_to_parent() {
         .as_bytes(),
     );
 
-    let mut doc = PdfDocument::from_bytes(pdf).expect("Failed to parse test PDF");
+    let doc = PdfDocument::from_bytes(pdf).expect("Failed to parse test PDF");
 
     let spans = doc.extract_spans(0).expect("Failed to extract spans");
 
@@ -507,7 +507,7 @@ fn test_form_xobject_nested_matrix_composition() {
         .as_bytes(),
     );
 
-    let mut doc = PdfDocument::from_bytes(pdf).expect("Failed to parse test PDF");
+    let doc = PdfDocument::from_bytes(pdf).expect("Failed to parse test PDF");
     let spans = doc.extract_spans(0).expect("Failed to extract spans");
 
     let nested_span = spans.iter().find(|s| s.text.contains("Nested"));
@@ -596,7 +596,7 @@ fn test_rotated_text_does_not_produce_extreme_coordinates() {
         .as_bytes(),
     );
 
-    let mut doc = PdfDocument::from_bytes(pdf).expect("Failed to parse test PDF");
+    let doc = PdfDocument::from_bytes(pdf).expect("Failed to parse test PDF");
     let spans = doc.extract_spans(0).expect("Failed to extract spans");
 
     assert!(!spans.is_empty(), "Should extract rotated text spans");

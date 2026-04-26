@@ -20,7 +20,7 @@ fn pdf_without_acroform_has_no_signatures() {
 }
 
 #[test]
-fn issue_395_fixture_signature_count_is_stable() {
+fn signed_pdf_has_no_acroform_signatures() {
     // The issue-395 fixture was crafted to reproduce a C# SignatureException
     // regression; it has no real AcroForm signature fields, so
     // enumeration should come back empty (and not error).

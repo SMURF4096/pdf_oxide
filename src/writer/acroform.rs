@@ -168,7 +168,7 @@ impl AcroFormBuilder {
 
         // Default appearance
         if let Some(ref da) = self.default_appearance {
-            dict.insert("DA".to_string(), Object::String(da.as_bytes().to_vec()));
+            dict.insert("DA".to_string(), Object::text_string(da));
         }
 
         // Default resources (DR)
@@ -269,7 +269,7 @@ impl AcroFormBuilder {
 
         // Default appearance
         if let Some(ref da) = self.default_appearance {
-            dict.insert("DA".to_string(), Object::String(da.as_bytes().to_vec()));
+            dict.insert("DA".to_string(), Object::text_string(da));
         }
 
         // Default resources

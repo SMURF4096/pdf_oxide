@@ -305,11 +305,11 @@ impl LayerBuilder {
         let mut d_dict = HashMap::new();
 
         // Name of the configuration
-        d_dict.insert("Name".to_string(), Object::String("Default".as_bytes().to_vec()));
+        d_dict.insert("Name".to_string(), Object::text_string("Default"));
 
         // Creator (application that created the layers)
         if let Some(ref creator) = self.creator {
-            d_dict.insert("Creator".to_string(), Object::String(creator.as_bytes().to_vec()));
+            d_dict.insert("Creator".to_string(), Object::text_string(creator));
         }
 
         // Base state

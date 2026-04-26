@@ -128,7 +128,7 @@ fn range_to_object(range: &PageLabelRange) -> Object {
 
     // /P - prefix (optional)
     if let Some(ref prefix) = range.prefix {
-        dict.insert("P".to_string(), Object::String(prefix.as_bytes().to_vec()));
+        dict.insert("P".to_string(), Object::text_string(prefix));
     }
 
     // /St - starting value (optional, only if != 1)

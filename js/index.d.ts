@@ -978,6 +978,32 @@ export class Pdf {
   static fromText(text: string): Pdf;
 
   /**
+   * Creates a PDF from HTML with CSS styling and a single embedded font.
+   * @param html - HTML content string
+   * @param css - CSS stylesheet string
+   * @param fontBytes - Font file bytes (TTF/OTF) used for body text
+   * @returns New Pdf instance
+   */
+  static fromHtmlCss(html: string, css: string, fontBytes: Buffer | Uint8Array): Pdf;
+
+  /**
+   * Creates a PDF from HTML with CSS styling and a multi-font cascade.
+   * `families` and `fonts` are parallel arrays: `families[i]` is the
+   * CSS `font-family` name that resolves to `fonts[i]`.
+   * @param html - HTML content string
+   * @param css - CSS stylesheet string
+   * @param families - Font family names (parallel to `fonts`)
+   * @param fonts - Font file bytes arrays (parallel to `families`)
+   * @returns New Pdf instance
+   */
+  static fromHtmlCssWithFonts(
+    html: string,
+    css: string,
+    families: string[],
+    fonts: (Buffer | Uint8Array)[]
+  ): Pdf;
+
+  /**
    * Adds a new page to the document
    * @param width - Page width in points
    * @param height - Page height in points
@@ -1249,6 +1275,13 @@ export class PdfBuilder {
   fromMarkdown(markdown: string): Pdf;
   fromHtml(html: string): Pdf;
   fromText(text: string): Pdf;
+  fromHtmlCss(html: string, css: string, fontBytes: Buffer | Uint8Array): Pdf;
+  fromHtmlCssWithFonts(
+    html: string,
+    css: string,
+    families: string[],
+    fonts: (Buffer | Uint8Array)[]
+  ): Pdf;
 
   fromMarkdownAsync(markdown: string): Promise<Pdf>;
   fromHtmlAsync(html: string): Promise<Pdf>;
@@ -1812,3 +1845,226 @@ export class RenderingManager {
  *   .save('output.pdf');
  * ```
  */
+
+// ============================================================================
+// DocumentBuilder — v0.3.39 table primitives (#393)
+// ============================================================================
+
+/**
+ * Horizontal alignment for `textInRect` and table cells.
+ * Integer values match the C FFI encoding.
+ */
+export enum Align {
+  Left = 0,
+  Center = 1,
+  Right = 2,
+}
+
+/** Column descriptor for {@link TableSpec} / {@link StreamingTableConfig}. */
+export interface Column {
+  /** Header label (bold when `hasHeader` / `repeatHeader` is true). */
+  header: string;
+  /** Column width in PDF points. */
+  width: number;
+  /** Cell alignment (default Align.Left). */
+  align?: Align;
+}
+
+/** Buffered-table spec consumed by `PageBuilder.table(...)`. */
+export interface TableSpec {
+  columns: Column[];
+  rows: Array<Array<string | null | undefined>>;
+  /** Promote columns to a styled header row. Default `true`. */
+  hasHeader?: boolean;
+}
+
+/** Config passed to `PageBuilder.streamingTable(...)`. */
+export interface StreamingTableConfig {
+  columns: Column[];
+  /** Emit the header on completion. Default `true`. */
+  repeatHeader?: boolean;
+}
+
+/**
+ * Managed streaming-table adapter. Rows pushed via `pushRow` /
+ * `pushAll` are buffered and flushed through the buffered-table FFI
+ * on `finish()`.
+ */
+export class StreamingTable {
+  /** Push a single row (cell count must equal `columns.length`). */
+  pushRow(cells: Array<string | null | undefined>): this;
+  /** Drain a sync or async iterable of rows. */
+  pushAll(
+    rows:
+      | Iterable<Array<string | null | undefined>>
+      | AsyncIterable<Array<string | null | undefined>>
+  ): Promise<this>;
+  /** Flush buffered rows and return the parent PageBuilder. */
+  finish(): Promise<PageBuilder>;
+  /** Number of body rows buffered so far. */
+  readonly rowCount: number;
+}
+
+/**
+ * Fluent document builder — the programmatic multi-page construction API
+ * exposed through the C FFI.
+ */
+export class DocumentBuilder {
+  static create(): DocumentBuilder;
+  title(title: string): this;
+  author(author: string): this;
+  subject(subject: string): this;
+  keywords(keywords: string): this;
+  creator(creator: string): this;
+  onOpen(script: string): this;
+  /**
+   * Enable PDF/UA-1 tagged PDF mode.
+   * Emits /MarkInfo, /StructTreeRoot, /Lang, and /ViewerPreferences in the
+   * catalog. Opt-in — no effect unless called. Bundle F-1/F-2.
+   */
+  taggedPdfUa1(): this;
+  /**
+   * Set the document's natural language tag, e.g. "en-US".
+   * Emitted as /Lang in the catalog when taggedPdfUa1() is set. Bundle F-2.
+   */
+  language(lang: string): this;
+  /**
+   * Add a role-map entry: custom structure type → standard PDF structure type.
+   * Emitted in /RoleMap inside the StructTreeRoot when taggedPdfUa1() is set.
+   * Multiple calls accumulate entries. Bundle F-4.
+   */
+  roleMap(custom: string, standard: string): this;
+  registerEmbeddedFont(name: string, font: EmbeddedFont): this;
+  a4Page(): PageBuilder;
+  letterPage(): PageBuilder;
+  page(width: number, height: number): PageBuilder;
+  build(): Buffer;
+  save(path: string): void;
+  saveEncrypted(path: string, userPassword: string, ownerPassword: string): void;
+  toBytesEncrypted(userPassword: string, ownerPassword: string): Buffer;
+  close(): void;
+  [Symbol.dispose](): void;
+}
+
+/** TTF / OTF font registerable with {@link DocumentBuilder}. */
+export class EmbeddedFont {
+  static fromFile(path: string): EmbeddedFont;
+  static fromBytes(data: Uint8Array | Buffer, name?: string): EmbeddedFont;
+  close(): void;
+  [Symbol.dispose](): void;
+}
+
+/**
+ * Fluent per-page builder returned by `DocumentBuilder.a4Page()` etc.
+ * Single-use — `done()` commits the page.
+ */
+export class PageBuilder {
+  // --- Text / typography --------------------------------------------
+  font(name: string, size: number): this;
+  at(x: number, y: number): this;
+  text(text: string): this;
+  heading(level: number, text: string): this;
+  paragraph(text: string): this;
+  space(points: number): this;
+  horizontalRule(): this;
+
+  // --- Annotations ---------------------------------------------------
+  linkUrl(url: string): this;
+  linkPage(pageIndex: number): this;
+  linkNamed(destination: string): this;
+  linkJavascript(script: string): this;
+  onOpen(script: string): this;
+  onClose(script: string): this;
+  fieldKeystroke(script: string): this;
+  fieldFormat(script: string): this;
+  fieldValidate(script: string): this;
+  fieldCalculate(script: string): this;
+  highlight(r: number, g: number, b: number): this;
+  underline(r: number, g: number, b: number): this;
+  strikeout(r: number, g: number, b: number): this;
+  squiggly(r: number, g: number, b: number): this;
+  stickyNote(text: string): this;
+  stickyNoteAt(x: number, y: number, text: string): this;
+  watermark(text: string): this;
+  watermarkConfidential(): this;
+  watermarkDraft(): this;
+  stamp(typeName: string): this;
+  freeText(x: number, y: number, w: number, h: number, text: string): this;
+
+  // --- Form fields ---------------------------------------------------
+  textField(name: string, x: number, y: number, w: number, h: number, defaultValue?: string): this;
+  checkbox(name: string, x: number, y: number, w: number, h: number, checked?: boolean): this;
+  comboBox(
+    name: string,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    options: string[],
+    selected?: string
+  ): this;
+  radioGroup(
+    name: string,
+    buttons: Array<[string, number, number, number, number]>,
+    selected?: string
+  ): this;
+  pushButton(name: string, x: number, y: number, w: number, h: number, caption: string): this;
+  /** Add an unsigned signature placeholder field (/FT /Sig) at the given bounds. */
+  signatureField(name: string, x: number, y: number, w: number, h: number): this;
+  /** Add a footnote: inline refMark at cursor + noteText near page bottom with separator. */
+  footnote(refMark: string, noteText: string): this;
+  /** Lay out text as balanced multi-column flow (columnCount columns, gapPt between them). Paragraphs separated by "\n\n". */
+  columns(columnCount: number, gapPt: number, text: string): this;
+  /** Emit text inline at the current horizontal cursor position (no line break). */
+  inline(text: string): this;
+  /** Emit text inline in bold weight. */
+  inlineBold(text: string): this;
+  /** Emit text inline in italic style. */
+  inlineItalic(text: string): this;
+  /** Emit text inline in an RGB colour (channels 0–1). */
+  inlineColor(r: number, g: number, b: number, text: string): this;
+  /** Advance the cursor to the start of the next line. */
+  newline(): this;
+
+  // --- Barcode / QR-code placement ----------------------------------
+  /** Place a 1-D barcode image on the page. barcodeType: 0=Code128 1=Code39 2=EAN13 3=EAN8 4=UPCA 5=ITF 6=Code93 7=Codabar. */
+  barcode1d(barcodeType: number, data: string, x: number, y: number, w: number, h: number): this;
+  /** Place a QR-code image on the page (square: size × size pt). */
+  barcodeQr(data: string, x: number, y: number, size: number): this;
+
+  // --- Graphics primitives ------------------------------------------
+  rect(x: number, y: number, w: number, h: number): this;
+  filledRect(x: number, y: number, w: number, h: number, r: number, g: number, b: number): this;
+  line(x1: number, y1: number, x2: number, y2: number): this;
+
+  // --- v0.3.39 table primitives (#393) ------------------------------
+  strokeRect(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    style?: { width?: number; color?: [number, number, number] }
+  ): this;
+  strokeLine(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    style?: { width?: number; color?: [number, number, number] }
+  ): this;
+  textInRect(x: number, y: number, w: number, h: number, text: string, align?: Align): this;
+  newPageSameSize(): this;
+  /** Approximate width of `text` in the current font (JS-side in v0.3.39). */
+  measure(text: string): number;
+  /** Remaining vertical space, or null when unknown. */
+  remainingSpace(): number | null;
+  /** Emit a buffered table at the current cursor. */
+  table(spec: TableSpec): this;
+  /** Begin a managed streaming-table adapter. */
+  streamingTable(config: StreamingTableConfig): StreamingTable;
+
+  // --- Lifecycle -----------------------------------------------------
+  done(): DocumentBuilder;
+  close(): void;
+  [Symbol.dispose](): void;
+}

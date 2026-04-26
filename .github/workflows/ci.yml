@@ -37,6 +37,22 @@ jobs:
       - name: Check formatting
         run: cargo fmt -- --check
 
+  # Fixture hygiene: every .pdf under tools/benchmark-harness/fixtures
+  # must start with %PDF- (or be listed in a directory-local .skip).
+  # Catches ISP DNS-hijack HTML, CMS-wrapped PDFs, and 404 pages
+  # entering the corpus silently. See tools/benchmark-harness/README.md.
+  fixture-hygiene:
+    name: Fixture Hygiene
+    runs-on: ubuntu-latest
+    # Only needs the script + skip-lists, which ARE tracked; the actual
+    # fixture corpus is gitignored and fetched separately. If no
+    # fixtures are checked out in CI, the script exits 0 trivially.
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate fixtures
+        run: ./tools/benchmark-harness/validate_fixtures.sh --strict
+
   # Linting with Clippy
   clippy:
     name: Clippy
@@ -117,6 +133,45 @@ jobs:
       - name: Build without features
         run: cargo build --no-default-features
         if: matrix.features == ''
+
+  # Rust examples smoke-test
+  rust-examples:
+    name: Rust Examples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: rust-examples
+
+      - name: Build examples (default features)
+        run: cargo build --examples
+
+      - name: Build examples (signatures feature)
+        run: cargo build --examples --features signatures
+
+      - name: Run Rust examples
+        shell: bash
+        run: |
+          PDF=tests/fixtures/simple.pdf
+          cargo run --example tutorial_extract_text -- "$PDF"
+          cargo run --example tutorial_convert_formats -- "$PDF"
+          cargo run --example tutorial_create_pdf
+          cargo run --example tutorial_search_text -- "$PDF" "PDF"
+          cargo run --example tutorial_extract_structured -- "$PDF"
+          cargo run --example tutorial_edit_document -- "$PDF" /tmp/edited.pdf
+          cargo run --example tutorial_forms_annotations -- "$PDF"
+          cargo run --example tutorial_batch_processing -- "$PDF" "$PDF"
+          cargo run --example showcase_streaming_table
+          cargo run --example showcase_pdf_ua_image
+          cargo run --example showcase_in_memory_roundtrip
+          cargo run --example showcase_pkcs12_signing --features signatures
+          cargo run --example showcase_rfc3161_timestamp --features signatures
 
   # CLI build
   cli:
@@ -209,8 +264,30 @@ jobs:
           wheel=$(ls dist/*.whl)
           uv pip install "$wheel"
 
-      - name: Test Python bindings
+      - name: Smoke-test Python bindings
         run: uv run python -c "import pdf_oxide; print(pdf_oxide.VERSION)"
+
+      - name: Run Python feature-guard tests
+        run: uv run pytest python/tests/ -v --tb=short
+
+      - name: Run Python examples
+        if: matrix.python-version == '3.11'
+        shell: bash
+        run: |
+          PDF="$GITHUB_WORKSPACE/tests/fixtures/simple.pdf"
+          cd examples/python/01-extract-text       && uv run python main.py "$PDF"
+          cd "$GITHUB_WORKSPACE/examples/python/02-convert-formats"  && uv run python main.py "$PDF"
+          cd "$GITHUB_WORKSPACE/examples/python/03-create-pdf"       && uv run python main.py
+          cd "$GITHUB_WORKSPACE/examples/python/04-search-text"      && uv run python main.py "$PDF" "PDF"
+          cd "$GITHUB_WORKSPACE/examples/python/05-extract-structured" && uv run python main.py "$PDF"
+          cd "$GITHUB_WORKSPACE/examples/python/06-edit-document"    && uv run python main.py "$PDF" /tmp/py_edited.pdf
+          cd "$GITHUB_WORKSPACE/examples/python/07-forms-annotations" && uv run python main.py "$PDF"
+          cd "$GITHUB_WORKSPACE/examples/python/08-batch-processing"  && uv run python main.py "$PDF" "$PDF"
+          cd "$GITHUB_WORKSPACE/examples/python/09-new-features/streaming_table"  && uv run python main.py
+          cd "$GITHUB_WORKSPACE/examples/python/09-new-features/pdf_ua_image"     && uv run python main.py
+          cd "$GITHUB_WORKSPACE/examples/python/09-new-features/in_memory_roundtrip" && uv run python main.py
+          cd "$GITHUB_WORKSPACE/examples/python/09-new-features/pkcs12_signing"   && uv run python main.py
+          cd "$GITHUB_WORKSPACE/examples/python/09-new-features/rfc3161_timestamp" && uv run python main.py
 
   # WASM build check
   wasm-build:
@@ -419,6 +496,27 @@ jobs:
         working-directory: go
         run: go test -race -count=1 -p 1 -tags pdf_oxide_dev ./...
 
+      - name: Run Go examples
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          PDF="$GITHUB_WORKSPACE/tests/fixtures/simple.pdf"
+          for dir in 01-extract-text 02-convert-formats \
+                     05-extract-structured 07-forms-annotations 08-batch-processing; do
+            cd "$GITHUB_WORKSPACE/examples/go/$dir"
+            go run -tags pdf_oxide_dev main.go "$PDF"
+          done
+          cd "$GITHUB_WORKSPACE/examples/go/04-search-text"
+          go run -tags pdf_oxide_dev main.go "$PDF" "PDF"
+          cd "$GITHUB_WORKSPACE/examples/go/03-create-pdf"
+          go run -tags pdf_oxide_dev main.go
+          cd "$GITHUB_WORKSPACE/examples/go/06-edit-document"
+          go run -tags pdf_oxide_dev main.go "$PDF" /tmp/go_edited.pdf
+          for feat in streaming_table pdf_ua_image in_memory_roundtrip pkcs12_signing rfc3161_timestamp; do
+            cd "$GITHUB_WORKSPACE/examples/go/09-new-features/$feat"
+            go run -tags pdf_oxide_dev main.go
+          done
+
   # JavaScript/TypeScript bindings build and test
   # Mirrors the release.yml build-nodejs job: builds the Rust staticlib, then
   # runs node-gyp rebuild to produce a real .node addon, matching exactly what
@@ -426,6 +524,7 @@ jobs:
   nodejs:
     name: Node.js Bindings (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -523,6 +622,49 @@ jobs:
           npx node-gyp rebuild
           ls -la build/Release/pdf_oxide.node
 
+      - name: Run Node.js tests
+        working-directory: js
+        run: npm test
+
+      - name: Stage node-gyp build as prebuilt for examples
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: js
+        shell: bash
+        run: |
+          mkdir -p prebuilds/linux-x64
+          cp build/Release/pdf_oxide.node prebuilds/linux-x64/pdf_oxide.node
+
+      - name: Install examples workspace dependencies
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: examples/javascript
+        run: npm install --ignore-scripts
+
+      - name: Run JavaScript examples
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        env:
+          NODE_PATH: "${{ github.workspace }}/examples/javascript/node_modules"
+        run: |
+          PDF="$GITHUB_WORKSPACE/tests/fixtures/simple.pdf"
+          cd "$GITHUB_WORKSPACE/examples/javascript"
+          echo "--- 01-extract-text ---"       && timeout 120 node 01-extract-text/index.js "$PDF"
+          echo "--- 02-convert-formats ---"    && timeout 120 node 02-convert-formats/index.js "$PDF"
+          echo "--- 03-create-pdf ---"         && timeout 120 node 03-create-pdf/index.js
+          echo "--- 04-search-text ---"        && timeout 120 node 04-search-text/index.js "$PDF" "PDF"
+          echo "--- 05-extract-structured ---" && timeout 120 node 05-extract-structured/index.js "$PDF"
+          echo "--- 07-forms-annotations ---"  && timeout 120 node 07-forms-annotations/index.js "$PDF"
+          echo "--- 08-batch-processing ---"   && timeout 120 node 08-batch-processing/index.js "$PDF" "$PDF"
+          echo "--- streaming_table ---"       && timeout 120 node 09-new-features/streaming_table/index.js
+          echo "--- pdf_ua_image ---"          && timeout 120 node 09-new-features/pdf_ua_image/index.js
+          echo "--- in_memory_roundtrip ---"   && timeout 120 node 09-new-features/in_memory_roundtrip/index.js
+          echo "--- pkcs12_signing ---"        && timeout 120 node 09-new-features/pkcs12_signing/index.js
+          echo "--- rfc3161_timestamp ---"     && timeout 120 node 09-new-features/rfc3161_timestamp/index.js
+
+      - name: Compile TypeScript examples
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: examples/javascript
+        run: npx tsc -p tsconfig.json --noEmit
+
   # C#/.NET bindings build
   csharp:
     name: C# Bindings (${{ matrix.os }})
@@ -618,6 +760,76 @@ jobs:
         working-directory: csharp/PdfOxide.Tests
         run: dotnet test -c Release --no-build --verbosity normal
 
+      - name: Run C# examples
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        env:
+          LD_LIBRARY_PATH: "${{ github.workspace }}/target/release"
+        run: |
+          PDF="$GITHUB_WORKSPACE/tests/fixtures/simple.pdf"
+          for proj in \
+            examples/csharp/01-extract-text/ExtractText.csproj \
+            examples/csharp/02-convert-formats/ConvertFormats.csproj \
+            examples/csharp/05-extract-structured/ExtractStructured.csproj \
+            examples/csharp/07-forms-annotations/FormsAnnotations.csproj; do
+            dotnet run --project "$proj" -- "$PDF"
+          done
+          dotnet run --project examples/csharp/04-search-text/SearchText.csproj -- "$PDF" "PDF"
+          dotnet run --project examples/csharp/03-create-pdf/CreatePdf.csproj
+          dotnet run --project examples/csharp/06-edit-document/EditDocument.csproj -- "$PDF" /tmp/cs_edited.pdf
+          dotnet run --project examples/csharp/08-batch-processing/BatchProcessing.csproj -- "$PDF" "$PDF"
+          for proj in \
+            examples/csharp/09-new-features/StreamingTable/StreamingTable.csproj \
+            examples/csharp/09-new-features/PdfUaImage/PdfUaImage.csproj \
+            examples/csharp/09-new-features/InMemoryRoundtrip/InMemoryRoundtrip.csproj \
+            examples/csharp/09-new-features/Pkcs12Signing/Pkcs12Signing.csproj \
+            examples/csharp/09-new-features/Rfc3161Timestamp/Rfc3161Timestamp.csproj; do
+            dotnet run --project "$proj"
+          done
+
+  # Regression guard: verify binding tests pass against a bare-features
+  # native lib (only default "icc" feature, same as the old broken release
+  # build). Tests that use feature-gated APIs must catch
+  # UnsupportedFeatureException rather than assuming the feature is present.
+  # If a future test blindly asserts a feature-gated call succeeds, this job
+  # will catch it before the release ships a broken NuGet / .node / .a.
+  csharp-bare-features:
+    name: C# bindings — bare-features native lib (regression guard)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: csharp-bare-ubuntu
+
+      - name: Build native lib — default features only (icc)
+        run: cargo build --release --lib
+
+      - name: Build C# library
+        working-directory: csharp/PdfOxide
+        run: dotnet build -c Release
+
+      - name: Build C# tests
+        working-directory: csharp/PdfOxide.Tests
+        run: dotnet build -c Release
+
+      - name: Stage bare-features native lib
+        run: cp target/release/libpdf_oxide.so csharp/PdfOxide.Tests/bin/Release/net8.0/
+
+      - name: Run C# tests against bare-features lib
+        working-directory: csharp/PdfOxide.Tests
+        run: dotnet test -c Release --no-build --verbosity normal
+
   # Code coverage with enforcement
   coverage:
     name: Code Coverage
@@ -625,6 +837,21 @@ jobs:
     if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v6
+
+      # Free ~15 GB of disk before cargo-llvm-cov runs. The instrumented
+      # build writes a second full target tree (target/llvm-cov-target/)
+      # with much larger object files; ubuntu-latest starts with ~14 GB
+      # free and has hit "No space left on device" on the v0.3.38
+      # post-merge run — see #399 Case B.
+      - name: Free disk space before coverage
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: true
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -637,7 +864,16 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
+      # Drop the regular target/ before the instrumented build so only
+      # one target/* tree is alive at a time. #399 mitigation.
+      - name: Clean target before instrumented build
+        run: rm -rf target/
+
       - name: Generate coverage
+        env:
+          # Cap parallel link-worker spawns to avoid rust-lld SIGBUS
+          # on the instrumented path (object files are larger). #399.
+          CARGO_BUILD_JOBS: "2"
         run: |
           cargo llvm-cov --lib --tests --lcov --output-path lcov.info \
             --ignore-filename-regex '(cid_mappings/|adobe_glyph_list\.rs|python\.rs|wasm\.rs|ffi\.rs|ocr/|rendering/|bin/)'

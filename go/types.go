@@ -19,17 +19,31 @@ var (
 	ErrInvalidPath = errors.New("pdf_oxide: invalid path")
 	// ErrDocumentNotFound indicates the document could not be opened. FFI code 2.
 	ErrDocumentNotFound = errors.New("pdf_oxide: document not found")
-	// ErrInvalidFormat indicates the PDF could not be parsed. FFI code 3.
+	// ErrInvalidFormat indicates the PDF could not be parsed. FFI code 3
+	// (ERR_PARSE). Historically documented as "FFI code 3" with the
+	// aliased ErrParseError also matching code 5 — see below.
 	ErrInvalidFormat = errors.New("pdf_oxide: invalid PDF format")
 	// ErrExtractionFailed indicates extraction failed. FFI code 4.
 	ErrExtractionFailed = errors.New("pdf_oxide: extraction failed")
-	// ErrParseError indicates a parse failure. FFI code 5.
-	ErrParseError = errors.New("pdf_oxide: parse error")
+	// ErrParseError is a legacy alias for parse-time failures. Kept for
+	// backward compatibility with v0.3.38 code that matched against
+	// `errors.Is(err, ErrParseError)` when Rust emitted ERR_INTERNAL
+	// (code 5) — the v0.3.38 behaviour. As of v0.3.39 the canonical
+	// sentinel for code 5 is ErrInternal; code-3 failures match both
+	// ErrInvalidFormat (new canonical) and ErrParseError (alias).
+	//
+	// Deprecated: use ErrInvalidFormat for parse failures or ErrInternal
+	// for native-layer failures.
+	ErrParseError = ErrInvalidFormat
 	// ErrInvalidPageIndex indicates an out-of-range page index. FFI code 6.
 	ErrInvalidPageIndex = errors.New("pdf_oxide: invalid page index")
 	// ErrSearchFailed indicates a search operation failed. FFI code 7.
 	ErrSearchFailed = errors.New("pdf_oxide: search failed")
-	// ErrInternal indicates an internal/unknown error. FFI code 8.
+	// ErrInternal indicates an internal/unknown error. FFI code 5
+	// (ERR_INTERNAL). Fixed in v0.3.39 per #398 — previously
+	// misreported as "FFI code 8" in the docstring and `sentinelForCode`
+	// mapped code 5 to ErrParseError, masking native-layer races
+	// behind a misleading parse-error message.
 	ErrInternal = errors.New("pdf_oxide: internal error")
 
 	// ErrDocumentClosed indicates the document has been closed.
@@ -95,7 +109,26 @@ func ffiErrorFromInt(code int) error {
 	}
 }
 
-// sentinelForCode returns the canonical sentinel for an FFI error code.
+// sentinelForCode returns the canonical sentinel for an FFI error code,
+// matching the Rust-side table at `src/ffi.rs:48-56`:
+//
+//	0 ERR_SUCCESS       — no sentinel
+//	1 ERR_INVALID_ARG   — ErrInvalidPath (historical name; is really
+//	                     "invalid argument", not path-specific)
+//	2 ERR_IO            — ErrDocumentNotFound (historical name; is
+//	                     really generic IO)
+//	3 ERR_PARSE         — ErrInvalidFormat
+//	4 ERR_EXTRACTION    — ErrExtractionFailed
+//	5 ERR_INTERNAL      — ErrInternal (fixed in v0.3.39 per #398;
+//	                     previously mapped to ErrParseError, which
+//	                     masked native-layer races as "parse error")
+//	6 ERR_INVALID_PAGE  — ErrInvalidPageIndex
+//	7 ERR_SEARCH        — ErrSearchFailed
+//	8 _ERR_UNSUPPORTED  — ErrInternal (no dedicated sentinel yet)
+//
+// The historical names at codes 1, 2, and the former code-5/8 swap are
+// legacy API commitments kept for backward compatibility. Renaming to
+// accurate labels is tracked as a v0.3.40 cleanup.
 func sentinelForCode(code int) error {
 	switch code {
 	case 1:
@@ -107,7 +140,7 @@ func sentinelForCode(code int) error {
 	case 4:
 		return ErrExtractionFailed
 	case 5:
-		return ErrParseError
+		return ErrInternal
 	case 6:
 		return ErrInvalidPageIndex
 	case 7:
@@ -176,6 +209,89 @@ type Element struct {
 	Y      float32 `json:"y"`
 	Width  float32 `json:"width"`
 	Height float32 `json:"height"`
+}
+
+// ─── DocumentBuilder write-side value types ──────────────────────────────
+//
+// These types are pure data + tag-agnostic so both backends see them even
+// though only the cgo backend currently wires them to the FFI. The purego
+// backend lacks DocumentBuilder entirely (the types here are therefore
+// just field carriers until purego parity lands).
+
+// Alignment encodes the horizontal alignment of text inside a rectangle
+// or column. Values mirror the FFI encoding (0/1/2).
+type Alignment int
+
+const (
+	// AlignLeft left-aligns text within the rect or column (default).
+	AlignLeft Alignment = 0
+	// AlignCenter horizontally centers text within the rect or column.
+	AlignCenter Alignment = 1
+	// AlignRight right-aligns text within the rect or column.
+	AlignRight Alignment = 2
+)
+
+// Column describes one column of a Table or StreamingTable.
+//
+//   - Header is the header-row label. For Table with HasHeader=false, the
+//     field is ignored. For StreamingTable, the header row is emitted at
+//     the top of each new page when RepeatHeader is true.
+//   - Width is the column width in PDF points.
+//   - Align is the per-column body alignment. Headers always center by
+//     default in the underlying writer.
+type Column struct {
+	Header string
+	Width  float32
+	Align  Alignment
+}
+
+// TableSpec is the buffered-table surface consumed by PageBuilder.Table.
+// The whole row matrix is held in managed memory until the page commits.
+//
+//   - Columns drive column widths + alignments. If HasHeader is true the
+//     column headers are promoted into a bold header row.
+//   - Rows is a row-major matrix of cell strings; len(row) must equal
+//     len(Columns) for each row.
+//   - HasHeader toggles the header row synthesized from Columns[i].Header.
+type TableSpec struct {
+	Columns   []Column
+	Rows      [][]string
+	HasHeader bool
+}
+
+// TableModeKind selects the column-sizing strategy for a StreamingTable.
+type TableModeKind int
+
+const (
+	// TableModeFixed uses the Width from each Column as-is (default).
+	TableModeFixed TableModeKind = 0
+	// TableModeSample buffers the first N rows, measures content widths,
+	// then freezes column widths for the remainder of the stream.
+	TableModeSample TableModeKind = 1
+)
+
+// TableMode configures how a StreamingTable sizes its columns (issue #400).
+// Use the TableModeFixed or TableModeSample constants for Kind.
+type TableMode struct {
+	Kind          TableModeKind
+	SampleRows    int     // used when Kind == TableModeSample (default 20)
+	MinColWidthPt float32 // used when Kind == TableModeSample (default 0)
+	MaxColWidthPt float32 // used when Kind == TableModeSample (default 9999)
+}
+
+// StreamingTableConfig configures a StreamingTable — the row-at-a-time
+// adapter returned by PageBuilder.StreamingTable.
+//
+//   - Columns drives widths, alignments, and the header labels.
+//   - RepeatHeader repeats the header row on every page break.
+//   - Mode selects the column-sizing strategy (default: TableModeFixed).
+//   - MaxRowspan allows cells to span multiple rows via PushRowSpan.
+//     0 or 1 disables rowspan (default); ≥2 enables it.
+type StreamingTableConfig struct {
+	Columns      []Column
+	RepeatHeader bool
+	Mode         TableMode
+	MaxRowspan   int
 }
 
 // LogLevel represents the log verbosity level.

@@ -37,9 +37,9 @@ fn bench_fixture(path: &Path) -> Result<FixtureResult, Box<dyn std::error::Error
     // measure so per-call JIT / lazy init is amortized away.
     let warm_opts = SearchOptions::default();
     {
-        let mut doc = PdfDocument::open(path)?;
+        let doc = PdfDocument::open(path)?;
         let _ = doc.extract_text(0)?;
-        let _ = TextSearcher::search(&mut doc, "the", &warm_opts)?;
+        let _ = TextSearcher::search(&doc, "the", &warm_opts)?;
     }
 
     // Open (average across ITERATIONS).
@@ -52,7 +52,7 @@ fn bench_fixture(path: &Path) -> Result<FixtureResult, Box<dyn std::error::Error
     let open_ns = open_total / ITERATIONS as u128;
 
     // Extract text from page 0 (average across ITERATIONS on a single open doc).
-    let mut doc = PdfDocument::open(path)?;
+    let doc = PdfDocument::open(path)?;
     let page_count = doc.page_count()?;
     let mut p0_total: u128 = 0;
     let mut text_len = 0;
@@ -77,7 +77,7 @@ fn bench_fixture(path: &Path) -> Result<FixtureResult, Box<dyn std::error::Error
         ..Default::default()
     };
     let start = Instant::now();
-    let _ = TextSearcher::search(&mut doc, "the", &search_opts)?;
+    let _ = TextSearcher::search(&doc, "the", &search_opts)?;
     let search_ns = start.elapsed().as_nanos();
 
     Ok(FixtureResult {

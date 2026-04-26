@@ -59,7 +59,7 @@ manual_checked_ops = "allow"
 
 [package]
 name = "pdf_oxide"
-version = "0.3.38"
+version = "0.3.39"
 # MSRV — driven up from 1.82 for v0.3.38. Transitive deps pulled in
 # this release push the floor to 1.88:
 #   - hybrid-array 0.4.10 (via RustCrypto) → edition 2024 → 1.85
@@ -107,6 +107,7 @@ workspace = true
 # Core dependencies
 thiserror = "2.0"
 log = "0.4"
+libc = "0.2"        # malloc/free for FFI byte buffers (free_bytes needs length-free dealloc)
 env_logger = "0.11"
 chrono = "0.4"      # Timestamp generation for benchmark results
 
@@ -163,15 +164,16 @@ sha2 = "0.11"      # SHA-256 for newer encryption
 stringprep = "0.1" # SASLprep for Unicode PDF passwords (R>=5)
 
 # Digital signatures (optional)
-x509-parser = { version = "0.18", optional = true } # X.509 certificate parsing
-cms = { version = "0.2", optional = true }          # CMS/PKCS#7 signatures
-rsa = { version = "0.9", optional = true }          # RSA signing
-der = { version = "0.7", optional = true }          # DER encoding — pinned to 0.7 to match cms 0.2 + x509-tsp 0.1
-spki = { version = "0.7", optional = true }         # SubjectPublicKeyInfo — matches der 0.7
-pkcs1 = { version = "0.7", optional = true }        # PKCS#1 RSA format
-pkcs8 = { version = "0.10", optional = true }       # PKCS#8 private keys
-signature = { version = "2.2", optional = true }    # Signature traits
-sha1 = { version = "0.11", optional = true }        # SHA-1 for legacy signatures
+x509-parser = { version = "0.18", optional = true }   # X.509 certificate parsing
+cms = { version = "0.2", optional = true }            # CMS/PKCS#7 signatures
+rsa = { version = "0.9", optional = true }            # RSA signing
+der = { version = "0.7", optional = true }            # DER encoding — pinned to 0.7 to match cms 0.2 + x509-tsp 0.1
+spki = { version = "0.7", optional = true }           # SubjectPublicKeyInfo — matches der 0.7
+pkcs1 = { version = "0.7", optional = true }          # PKCS#1 RSA format
+pkcs8 = { version = "0.10", optional = true }         # PKCS#8 private keys
+p12-keystore = { version = "0.2.1", optional = true } # PKCS#12 (.p12/.pfx) parsing
+signature = { version = "2.2", optional = true }      # Signature traits
+sha1 = { version = "0.11", optional = true }          # SHA-1 for legacy signatures
 
 # Parallel extraction
 rayon = { version = "1.12", optional = true }
@@ -316,6 +318,7 @@ signatures = [
     "dep:spki",
     "dep:pkcs1",
     "dep:pkcs8",
+    "dep:p12-keystore",
     "dep:signature",
     "dep:sha1",
     "dep:x509-tsp",
@@ -388,10 +391,74 @@ harness = false
 name = "full_pipeline_benchmarks"
 harness = false
 
+# #393 release gate: StreamingTable must stay linear at 30k rows.
+# Runs 1k / 5k / 10k / 30k sizes via criterion; CI smoke job exercises
+# only the 5k size (see tools/benchmark-harness for the dedicated CI
+# invocation).
+[[bench]]
+name = "streaming_table_scaling"
+harness = false
+
 # Cross-language benchmark runner (Rust baseline for comparing against Go/C#/JS bindings)
 [[bin]]
 name = "rust_bench"
 path = "bench/rust_bench.rs"
+
+# ── v0.3.39 per-feature examples (examples/rust/09-new-features/) ─────────────
+[[example]]
+name = "showcase_streaming_table"
+path = "examples/rust/09-new-features/streaming_table/main.rs"
+
+[[example]]
+name = "showcase_pdf_ua_image"
+path = "examples/rust/09-new-features/pdf_ua_image/main.rs"
+
+[[example]]
+name = "showcase_in_memory_roundtrip"
+path = "examples/rust/09-new-features/in_memory_roundtrip/main.rs"
+
+[[example]]
+name = "showcase_pkcs12_signing"
+path = "examples/rust/09-new-features/pkcs12_signing/main.rs"
+required-features = ["signatures"]
+
+[[example]]
+name = "showcase_rfc3161_timestamp"
+path = "examples/rust/09-new-features/rfc3161_timestamp/main.rs"
+required-features = ["signatures"]
+
+# ── Tutorial examples 01-08 (examples/rust/) ──────────────────────────────────
+[[example]]
+name = "tutorial_extract_text"
+path = "examples/rust/01-extract-text/main.rs"
+
+[[example]]
+name = "tutorial_convert_formats"
+path = "examples/rust/02-convert-formats/main.rs"
+
+[[example]]
+name = "tutorial_create_pdf"
+path = "examples/rust/03-create-pdf/main.rs"
+
+[[example]]
+name = "tutorial_search_text"
+path = "examples/rust/04-search-text/main.rs"
+
+[[example]]
+name = "tutorial_extract_structured"
+path = "examples/rust/05-extract-structured/main.rs"
+
+[[example]]
+name = "tutorial_edit_document"
+path = "examples/rust/06-edit-document/main.rs"
+
+[[example]]
+name = "tutorial_forms_annotations"
+path = "examples/rust/07-forms-annotations/main.rs"
+
+[[example]]
+name = "tutorial_batch_processing"
+path = "examples/rust/08-batch-processing/main.rs"
 
 [package.metadata.docs.rs]
 # Document with safe features only (tesseract-rs fails on docs.rs sandbox)

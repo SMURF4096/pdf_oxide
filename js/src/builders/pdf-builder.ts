@@ -268,6 +268,25 @@ export class PdfBuilder {
     return pdf;
   }
 
+  fromHtmlCss(html: string, css: string, fontBytes: Buffer | Uint8Array): any {
+    const { Pdf } = require('../index.js');
+    const pdf = Pdf.fromHtmlCss(html, css, fontBytes);
+    this._applyConfiguration(pdf);
+    return pdf;
+  }
+
+  fromHtmlCssWithFonts(
+    html: string,
+    css: string,
+    families: string[],
+    fonts: (Buffer | Uint8Array)[]
+  ): any {
+    const { Pdf } = require('../index.js');
+    const pdf = Pdf.fromHtmlCssWithFonts(html, css, families, fonts);
+    this._applyConfiguration(pdf);
+    return pdf;
+  }
+
   /**
    * Asynchronously creates a PDF document from Markdown content
    * @param markdown - Markdown formatted content

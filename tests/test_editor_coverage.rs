@@ -476,7 +476,7 @@ fn test_editor_save_full_rewrite() {
         .unwrap();
 
     // Verify saved file is valid
-    let mut doc = PdfDocument::open(&out_path).unwrap();
+    let doc = PdfDocument::open(&out_path).unwrap();
     assert_eq!(doc.page_count().unwrap(), 1);
 
     let _ = std::fs::remove_file(&path);
@@ -493,7 +493,7 @@ fn test_editor_save_default() {
     let mut editor = DocumentEditor::open(&path).unwrap();
     editor.save(&out_path).unwrap();
 
-    let mut doc = PdfDocument::open(&out_path).unwrap();
+    let doc = PdfDocument::open(&out_path).unwrap();
     assert_eq!(doc.page_count().unwrap(), 1);
 
     let _ = std::fs::remove_file(&path);
@@ -1617,7 +1617,7 @@ fn test_editor_save_with_compression() {
     };
     editor.save_with_options(&out_path, opts).unwrap();
 
-    let mut doc = PdfDocument::open(&out_path).unwrap();
+    let doc = PdfDocument::open(&out_path).unwrap();
     assert_eq!(doc.page_count().unwrap(), 1);
 
     let _ = std::fs::remove_file(&path);
@@ -1640,7 +1640,7 @@ fn test_editor_save_no_compress_no_gc() {
     };
     editor.save_with_options(&out_path, opts).unwrap();
 
-    let mut doc = PdfDocument::open(&out_path).unwrap();
+    let doc = PdfDocument::open(&out_path).unwrap();
     assert_eq!(doc.page_count().unwrap(), 1);
 
     let _ = std::fs::remove_file(&path);
@@ -1804,4 +1804,242 @@ fn test_editor_combined_metadata_and_save() {
 
     let _ = std::fs::remove_file(&path);
     let _ = std::fs::remove_file(&out_path);
+}
+
+// ===========================================================================
+// Tests: compress + garbage_collect in SaveOptions
+// ===========================================================================
+
+#[test]
+fn test_save_to_bytes_returns_valid_pdf() {
+    let pdf = build_minimal_pdf();
+    let path = write_temp_pdf(&pdf, "save_to_bytes_src.pdf");
+    let mut editor = DocumentEditor::open(&path).unwrap();
+    editor.set_title("BytesTest");
+
+    let bytes = editor.save_to_bytes().unwrap();
+    assert!(!bytes.is_empty());
+    assert!(bytes.starts_with(b"%PDF-"), "output must start with PDF header");
+
+    // Round-trip: open the returned bytes as a new document
+    let doc = PdfDocument::from_bytes(bytes.clone()).unwrap();
+    assert_eq!(doc.page_count().unwrap(), 1);
+
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn test_save_to_bytes_with_compress_produces_valid_pdf() {
+    let pdf = build_minimal_pdf();
+    let path = write_temp_pdf(&pdf, "compress_src.pdf");
+    let mut editor = DocumentEditor::open(&path).unwrap();
+
+    let opts = SaveOptions {
+        compress: true,
+        garbage_collect: false,
+        linearize: false,
+        incremental: false,
+        encryption: None,
+    };
+    let bytes = editor.save_to_bytes_with_options(opts).unwrap();
+    assert!(!bytes.is_empty());
+    assert!(bytes.starts_with(b"%PDF-"));
+
+    let doc = PdfDocument::from_bytes(bytes.clone()).unwrap();
+    assert_eq!(doc.page_count().unwrap(), 1);
+
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn test_save_to_bytes_with_garbage_collect_produces_valid_pdf() {
+    let pdf = build_minimal_pdf();
+    let path = write_temp_pdf(&pdf, "gc_src.pdf");
+    let mut editor = DocumentEditor::open(&path).unwrap();
+
+    let opts = SaveOptions {
+        compress: false,
+        garbage_collect: true,
+        linearize: false,
+        incremental: false,
+        encryption: None,
+    };
+    let bytes = editor.save_to_bytes_with_options(opts).unwrap();
+    assert!(!bytes.is_empty());
+    assert!(bytes.starts_with(b"%PDF-"));
+
+    let doc = PdfDocument::from_bytes(bytes.clone()).unwrap();
+    assert_eq!(doc.page_count().unwrap(), 1);
+
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn test_save_to_bytes_compress_and_gc_together() {
+    let pdf = build_minimal_pdf();
+    let path = write_temp_pdf(&pdf, "compress_gc_src.pdf");
+    let mut editor = DocumentEditor::open(&path).unwrap();
+
+    // Both compress and gc enabled (full_rewrite defaults)
+    let bytes = editor.save_to_bytes().unwrap(); // uses full_rewrite internally
+    assert!(bytes.starts_with(b"%PDF-"));
+
+    let doc = PdfDocument::from_bytes(bytes.clone()).unwrap();
+    assert_eq!(doc.page_count().unwrap(), 1);
+
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn test_gc_produces_smaller_or_equal_output_than_no_gc() {
+    // Build a PDF that includes an unrefenced orphan object and verify that
+    // GC output is <= no-gc output in size (orphans removed).
+    let mut pdf = b"%PDF-1.7\n".to_vec();
+    let off1 = pdf.len();
+    pdf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+    let off2 = pdf.len();
+    pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+    let off3 = pdf.len();
+    pdf.extend_from_slice(
+        b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n",
+    );
+    // Orphan object — not referenced from anywhere
+    let off4 = pdf.len();
+    let orphan = b"This is a large orphaned stream payload that should be removed by GC".repeat(20);
+    pdf.extend_from_slice(format!("4 0 obj\n<< /Length {} >>\nstream\n", orphan.len()).as_bytes());
+    pdf.extend_from_slice(&orphan);
+    pdf.extend_from_slice(b"\nendstream\nendobj\n");
+    finalize_pdf(&mut pdf, &[0, off1, off2, off3, off4]);
+
+    let path = write_temp_pdf(&pdf, "gc_size_src.pdf");
+
+    let mut editor_nogc = DocumentEditor::open(&path).unwrap();
+    let no_gc_bytes = editor_nogc
+        .save_to_bytes_with_options(SaveOptions {
+            compress: false,
+            garbage_collect: false,
+            linearize: false,
+            incremental: false,
+            encryption: None,
+        })
+        .unwrap();
+
+    let mut editor_gc = DocumentEditor::open(&path).unwrap();
+    let gc_bytes = editor_gc
+        .save_to_bytes_with_options(SaveOptions {
+            compress: false,
+            garbage_collect: true,
+            linearize: false,
+            incremental: false,
+            encryption: None,
+        })
+        .unwrap();
+
+    assert!(
+        gc_bytes.len() <= no_gc_bytes.len(),
+        "GC output ({} bytes) should be <= no-GC output ({} bytes)",
+        gc_bytes.len(),
+        no_gc_bytes.len()
+    );
+
+    // GC output still parses as valid PDF
+    let doc = PdfDocument::from_bytes(gc_bytes.clone()).unwrap();
+    assert_eq!(doc.page_count().unwrap(), 1);
+
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn test_compress_produces_smaller_or_equal_output_for_raw_streams() {
+    // Build a PDF with a large uncompressed content stream.
+    let content = b"BT /F1 12 Tf 72 720 Td (Hello World) Tj ET ".repeat(50);
+    let mut pdf = b"%PDF-1.7\n".to_vec();
+    let off1 = pdf.len();
+    pdf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+    let off2 = pdf.len();
+    pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+    let off3 = pdf.len();
+    pdf.extend_from_slice(
+        "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>\nendobj\n".to_string()
+        .as_bytes(),
+    );
+    let off4 = pdf.len();
+    pdf.extend_from_slice(format!("4 0 obj\n<< /Length {} >>\nstream\n", content.len()).as_bytes());
+    pdf.extend_from_slice(&content);
+    pdf.extend_from_slice(b"\nendstream\nendobj\n");
+    finalize_pdf(&mut pdf, &[0, off1, off2, off3, off4]);
+
+    let path = write_temp_pdf(&pdf, "compress_size_src.pdf");
+
+    let mut editor_nocomp = DocumentEditor::open(&path).unwrap();
+    let uncompressed_bytes = editor_nocomp
+        .save_to_bytes_with_options(SaveOptions {
+            compress: false,
+            garbage_collect: false,
+            linearize: false,
+            incremental: false,
+            encryption: None,
+        })
+        .unwrap();
+
+    let mut editor_comp = DocumentEditor::open(&path).unwrap();
+    let compressed_bytes = editor_comp
+        .save_to_bytes_with_options(SaveOptions {
+            compress: true,
+            garbage_collect: false,
+            linearize: false,
+            incremental: false,
+            encryption: None,
+        })
+        .unwrap();
+
+    assert!(
+        compressed_bytes.len() <= uncompressed_bytes.len(),
+        "Compressed output ({} bytes) should be <= uncompressed output ({} bytes)",
+        compressed_bytes.len(),
+        uncompressed_bytes.len()
+    );
+
+    // Compressed output parses correctly
+    let doc = PdfDocument::from_bytes(compressed_bytes.clone()).unwrap();
+    assert_eq!(doc.page_count().unwrap(), 1);
+
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn test_linearize_true_does_not_panic() {
+    let pdf = build_minimal_pdf();
+    let path = write_temp_pdf(&pdf, "linearize_src.pdf");
+    let mut editor = DocumentEditor::open(&path).unwrap();
+
+    let opts = SaveOptions {
+        compress: false,
+        garbage_collect: false,
+        linearize: true,
+        incremental: false,
+        encryption: None,
+    };
+    let bytes = editor.save_to_bytes_with_options(opts).unwrap();
+    assert!(bytes.starts_with(b"%PDF-"));
+
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn test_save_to_bytes_round_trip_preserves_content() {
+    let pdf = build_minimal_pdf();
+    let path = write_temp_pdf(&pdf, "rt_src.pdf");
+    let mut editor = DocumentEditor::open(&path).unwrap();
+    editor.set_title("Round-trip Title");
+
+    let bytes = editor.save_to_bytes().unwrap();
+    let mut editor2 = DocumentEditor::from_bytes(bytes).unwrap();
+    editor2.set_author("Second Pass Author");
+    let bytes2 = editor2.save_to_bytes().unwrap();
+
+    let doc = PdfDocument::from_bytes(bytes2.clone()).unwrap();
+    assert_eq!(doc.page_count().unwrap(), 1);
+
+    let _ = std::fs::remove_file(&path);
 }

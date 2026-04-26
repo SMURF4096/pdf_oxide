@@ -1,4 +1,4 @@
-//! Regression test for B1: Form XObject reuse across pages with per-page CTM.
+//! Tests that Form XObject reuse across pages with per-page CTM.
 //!
 //! Before the fix, `extract_text(n)` returned page 0's content for every
 //! `n` on PDFs where a single Form XObject carried every page's text and
@@ -119,7 +119,7 @@ fn shared_xobject_with_per_page_ctm_yields_distinct_page_text() {
     let tmp = tempfile::NamedTempFile::new().expect("temp");
     std::fs::write(tmp.path(), &pdf).unwrap();
 
-    let mut doc = PdfDocument::open(tmp.path()).expect("open");
+    let doc = PdfDocument::open(tmp.path()).expect("open");
     assert_eq!(doc.page_count().unwrap(), 2, "fixture has 2 pages");
 
     let p0 = doc.extract_text(0).expect("page 0");
@@ -140,5 +140,5 @@ fn shared_xobject_with_per_page_ctm_yields_distinct_page_text() {
     );
 
     // The two pages' text must not be identical — the whole bug report.
-    assert_ne!(p0, p1, "page 0 and page 1 must yield different text (B1 regression)");
+    assert_ne!(p0, p1, "page 0 and page 1 must yield different text ");
 }

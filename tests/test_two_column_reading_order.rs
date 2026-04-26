@@ -1,4 +1,4 @@
-//! Regression test for B4: two-column reading order.
+//! Tests that two-column reading order.
 //!
 //! Pre-fix, `extract_text` used a row-aware Y-band sort (Y descending
 //! within bands, X ascending within a row). On a two-column layout that
@@ -79,7 +79,7 @@ fn two_column_reading_order_respects_columns() {
     let tmp = tempfile::NamedTempFile::new().expect("temp");
     std::fs::write(tmp.path(), &pdf).unwrap();
 
-    let mut doc = PdfDocument::open(tmp.path()).expect("open");
+    let doc = PdfDocument::open(tmp.path()).expect("open");
     let text = doc.extract_text(0).expect("extract");
 
     // Extract left/right column positions in output order.

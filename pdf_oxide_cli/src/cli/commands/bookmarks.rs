@@ -2,7 +2,7 @@ use pdf_oxide::outline::{Destination, OutlineItem};
 use std::path::Path;
 
 pub fn run(file: &Path, password: Option<&str>, json: bool) -> pdf_oxide::Result<()> {
-    let mut doc = super::open_doc(file, password)?;
+    let doc = super::open_doc(file, password)?;
 
     let outline = doc.get_outline()?;
 

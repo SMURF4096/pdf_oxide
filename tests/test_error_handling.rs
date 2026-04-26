@@ -2,7 +2,7 @@ use pdf_oxide::document::PdfDocument;
 
 #[test]
 fn out_of_range_page_index_returns_err() {
-    let mut doc = PdfDocument::open("tests/fixtures/simple.pdf").unwrap();
+    let doc = PdfDocument::open("tests/fixtures/simple.pdf").unwrap();
     let result = doc.extract_text(99999);
     assert!(result.is_err(), "Out-of-range page index should return Err");
 }

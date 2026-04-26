@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using PdfOxide.Core;
+using PdfOxide.Exceptions;
 using Xunit;
 
 namespace PdfOxide.Tests
@@ -9,6 +10,13 @@ namespace PdfOxide.Tests
     /// Tests for <see cref="PdfDocument.RenderPage(int, RenderOptions)"/>,
     /// the full RenderOptions surface (DPI, background, annotations, JPEG
     /// quality) for the C# layer. Mirrors the Python surface.
+    ///
+    /// Tests that exercise the native render path are guarded: when the
+    /// native library is compiled without the <c>rendering</c> feature (e.g.
+    /// the bare-features CI job or an end-user build that omits it) the call
+    /// throws <see cref="UnsupportedFeatureException"/> and the test passes
+    /// vacuously. Argument-validation tests do not need guards because C#
+    /// validates inputs before touching native code.
     /// </summary>
     public class RenderOptionsTests
     {
@@ -25,11 +33,26 @@ namespace PdfOxide.Tests
         private static bool IsJpeg(byte[] b) =>
             b.Length >= 3 && b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF;
 
+        // Returns true if rendering is available, false (and discards bytes) if not.
+        private static bool TryRender(PdfDocument doc, RenderOptions opts, out byte[] bytes)
+        {
+            try
+            {
+                bytes = doc.RenderPage(0, opts);
+                return true;
+            }
+            catch (UnsupportedFeatureException)
+            {
+                bytes = Array.Empty<byte>();
+                return false; // native lib compiled without rendering — skip assertion
+            }
+        }
+
         [Fact]
         public void RenderPage_WithOptions_DefaultIsPng()
         {
             using var doc = CreateTestDoc();
-            var bytes = doc.RenderPage(0, new RenderOptions());
+            if (!TryRender(doc, new RenderOptions(), out var bytes)) return;
             Assert.True(IsPng(bytes));
         }
 
@@ -37,7 +60,7 @@ namespace PdfOxide.Tests
         public void RenderPage_WithOptions_JpegFormat_EmitsJpegMagic()
         {
             using var doc = CreateTestDoc();
-            var bytes = doc.RenderPage(0, new RenderOptions { Format = RenderImageFormat.Jpeg });
+            if (!TryRender(doc, new RenderOptions { Format = RenderImageFormat.Jpeg }, out var bytes)) return;
             Assert.True(IsJpeg(bytes));
         }
 
@@ -45,8 +68,8 @@ namespace PdfOxide.Tests
         public void RenderPage_WithOptions_HigherDpiProducesBiggerOutput()
         {
             using var doc = CreateTestDoc();
-            var small = doc.RenderPage(0, new RenderOptions { Dpi = 72 });
-            var large = doc.RenderPage(0, new RenderOptions { Dpi = 300 });
+            if (!TryRender(doc, new RenderOptions { Dpi = 72 }, out var small)) return;
+            if (!TryRender(doc, new RenderOptions { Dpi = 300 }, out var large)) return;
             Assert.True(IsPng(small) && IsPng(large));
             Assert.True(large.Length > small.Length);
         }
@@ -55,16 +78,8 @@ namespace PdfOxide.Tests
         public void RenderPage_WithOptions_LowerJpegQualityIsSmaller()
         {
             using var doc = CreateTestDoc();
-            var low = doc.RenderPage(0, new RenderOptions
-            {
-                Format = RenderImageFormat.Jpeg,
-                JpegQuality = 20,
-            });
-            var high = doc.RenderPage(0, new RenderOptions
-            {
-                Format = RenderImageFormat.Jpeg,
-                JpegQuality = 95,
-            });
+            if (!TryRender(doc, new RenderOptions { Format = RenderImageFormat.Jpeg, JpegQuality = 20 }, out var low)) return;
+            if (!TryRender(doc, new RenderOptions { Format = RenderImageFormat.Jpeg, JpegQuality = 95 }, out var high)) return;
             Assert.True(IsJpeg(low) && IsJpeg(high));
             Assert.True(low.Length <= high.Length);
         }
@@ -73,10 +88,7 @@ namespace PdfOxide.Tests
         public void RenderPage_WithOptions_TransparentBackground_OK()
         {
             using var doc = CreateTestDoc();
-            var bytes = doc.RenderPage(0, new RenderOptions
-            {
-                TransparentBackground = true,
-            });
+            if (!TryRender(doc, new RenderOptions { TransparentBackground = true }, out var bytes)) return;
             Assert.True(IsPng(bytes));
         }
 
@@ -84,10 +96,7 @@ namespace PdfOxide.Tests
         public void RenderPage_WithOptions_CustomBackground_OK()
         {
             using var doc = CreateTestDoc();
-            var bytes = doc.RenderPage(0, new RenderOptions
-            {
-                Background = (0f, 0f, 0f, 1f),
-            });
+            if (!TryRender(doc, new RenderOptions { Background = (0f, 0f, 0f, 1f) }, out var bytes)) return;
             Assert.True(IsPng(bytes));
         }
 
@@ -95,12 +104,12 @@ namespace PdfOxide.Tests
         public void RenderPage_WithOptions_RenderAnnotationsFalse_OK()
         {
             using var doc = CreateTestDoc();
-            var bytes = doc.RenderPage(0, new RenderOptions
-            {
-                RenderAnnotations = false,
-            });
+            if (!TryRender(doc, new RenderOptions { RenderAnnotations = false }, out var bytes)) return;
             Assert.True(IsPng(bytes));
         }
+
+        // Argument-validation tests: C# throws before reaching native code,
+        // so no feature guard is needed.
 
         [Fact]
         public void RenderPage_WithOptions_Null_Throws()
