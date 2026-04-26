@@ -633,6 +633,14 @@ jobs:
         working-directory: js
         run: npm test
 
+      - name: Stage node-gyp build as prebuilt for examples
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: js
+        shell: bash
+        run: |
+          mkdir -p prebuilds/linux-x64
+          cp build/Release/pdf_oxide.node prebuilds/linux-x64/pdf_oxide.node
+
       - name: Install examples workspace dependencies
         if: matrix.os == 'ubuntu-latest'
         working-directory: examples/javascript
