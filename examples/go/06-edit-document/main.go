@@ -37,11 +37,16 @@ func main() {
 	}
 	fmt.Println(`Set author: "pdf_oxide"`)
 
-	if err := editor.DeletePage(1); err != nil {
-		fmt.Fprintf(os.Stderr, "DeletePage error: %v\n", err)
-		os.Exit(1)
+	pages, _ := editor.PageCount()
+	if pages > 1 {
+		if err := editor.DeletePage(1); err != nil {
+			fmt.Fprintf(os.Stderr, "DeletePage error: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("Deleted page 2")
+	} else {
+		fmt.Println("(skipped delete — single-page document)")
 	}
-	fmt.Println("Deleted page 2")
 
 	if err := editor.Save(output); err != nil {
 		fmt.Fprintf(os.Stderr, "Save error: %v\n", err)

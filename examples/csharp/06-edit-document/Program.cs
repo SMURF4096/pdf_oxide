@@ -21,8 +21,15 @@ Console.WriteLine("Set title: \"Edited Document\"");
 editor.SetAuthor("pdf_oxide");
 Console.WriteLine("Set author: \"pdf_oxide\"");
 
-editor.DeletePage(1); // 0-indexed, deletes page 2
-Console.WriteLine("Deleted page 2");
+if (editor.PageCount > 1)
+{
+    editor.DeletePage(1); // 0-indexed, deletes page 2
+    Console.WriteLine("Deleted page 2");
+}
+else
+{
+    Console.WriteLine("(skipped delete — single-page document)");
+}
 
 editor.Save(output);
 Console.WriteLine($"Saved: {output}");
