@@ -40,7 +40,7 @@ func main() {
 		pagesWithHits++
 		fmt.Printf("Page %d: %d match(es)\n", i+1, len(results))
 		for _, r := range results {
-			fmt.Printf("  - \"...%s...\"\n", r.Context)
+			fmt.Printf("  - %q (x=%.1f y=%.1f)\n", r.Text, r.X, r.Y)
 			total++
 		}
 		fmt.Println()

@@ -30,9 +30,16 @@ var tables = doc.ExtractTables(page);
 Console.WriteLine($"\n--- Tables (page {page + 1}) ---");
 if (tables.Length == 0)
     Console.WriteLine("(no tables found)");
-foreach (var (rowCount, colCount) in tables)
+for (var i = 0; i < tables.Length; i++)
 {
-    Console.WriteLine($"Table: {rowCount} rows x {colCount} cols");
+    var t = tables[i];
+    Console.WriteLine($"Table {i + 1}: {t.RowCount} rows x {t.ColCount} cols");
+    for (var r = 0; r < Math.Min(t.RowCount, 5); r++)
+    {
+        for (var c = 0; c < Math.Min(t.ColCount, 6); c++)
+            Console.Write($"  [{r},{c}] \"{t.CellText(r, c)}\"");
+        Console.WriteLine();
+    }
 }
 
 return 0;
