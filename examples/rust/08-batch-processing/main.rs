@@ -34,11 +34,15 @@ fn main() {
     {
         use rayon::prelude::*;
         let results: Vec<_> = paths.par_iter().map(|p| process(p)).collect();
-        for r in &results { println!("{}", r); }
+        for r in &results {
+            println!("{}", r);
+        }
     }
     #[cfg(not(feature = "parallel"))]
     {
-        for path in &paths { println!("{}", process(path)); }
+        for path in &paths {
+            println!("{}", process(path));
+        }
     }
 
     println!("\nDone in {:.2}s", start.elapsed().as_secs_f64());

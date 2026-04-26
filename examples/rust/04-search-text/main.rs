@@ -1,7 +1,10 @@
 // Search for a term across all pages of a PDF and print matches.
 // Run: cargo run --example tutorial_search_text -- tests/fixtures/simple.pdf "the"
 
-use pdf_oxide::{search::{SearchOptions, TextSearcher}, PdfDocument};
+use pdf_oxide::{
+    search::{SearchOptions, TextSearcher},
+    PdfDocument,
+};
 use std::{env, process};
 
 fn main() {
@@ -29,7 +32,9 @@ fn main() {
     let mut total = 0;
     for i in 0..pages {
         let results = TextSearcher::search_page(&doc, i, &re, &opts).unwrap_or_default();
-        if results.is_empty() { continue; }
+        if results.is_empty() {
+            continue;
+        }
         println!("Page {}: {} match(es)", i + 1, results.len());
         for r in &results {
             println!("  - {:?}", r.text);

@@ -6,7 +6,9 @@ use pdf_oxide::PdfDocument;
 use std::env;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let path = env::args().nth(1).expect("Usage: tutorial_forms_annotations <file.pdf>");
+    let path = env::args()
+        .nth(1)
+        .expect("Usage: tutorial_forms_annotations <file.pdf>");
     let doc = PdfDocument::open(&path)?;
     println!("Opened: {}", path);
 
