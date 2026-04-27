@@ -7,14 +7,10 @@ pub fn run(file: &Path, output: Option<&Path>, password: Option<&str>) -> pdf_ox
     let _ = password; // Password handling for DocumentEditor not yet supported
     let mut editor = DocumentEditor::open(file)?;
 
-    let out_path = output.map(|p| p.to_path_buf()).unwrap_or_else(|| {
-        let stem = file
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("output");
-        let ext = file.extension().and_then(|s| s.to_str()).unwrap_or("pdf");
-        Path::new(&format!("{stem}_compressed.{ext}")).to_path_buf()
-    });
+    let ext = file.extension().and_then(|s| s.to_str()).unwrap_or("pdf");
+    let out_path = output
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| super::output_beside(file, &format!("_compressed.{ext}")));
 
     let original_size = std::fs::metadata(file).map(|m| m.len()).unwrap_or(0);
 

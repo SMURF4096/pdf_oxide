@@ -15,7 +15,14 @@ pub fn run(files: &[std::path::PathBuf], output: Option<&Path>) -> pdf_oxide::Re
         eprintln!("Merged {} pages from {}", pages_added, source.display());
     }
 
-    let out_path = output.unwrap_or_else(|| Path::new("merged.pdf"));
+    let default_out;
+    let out_path = match output {
+        Some(p) => p,
+        None => {
+            default_out = super::output_dir_beside(&files[0]).join("merged.pdf");
+            &default_out
+        },
+    };
     editor.save(out_path)?;
     eprintln!("Saved to {}", out_path.display());
 

@@ -25,13 +25,9 @@ pub fn run(
         eprintln!("Flattened form fields");
     }
 
-    let out_path = output.map(|p| p.to_path_buf()).unwrap_or_else(|| {
-        let stem = file
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("output");
-        Path::new(&format!("{stem}_flattened.pdf")).to_path_buf()
-    });
+    let out_path = output
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| super::output_beside(file, "_flattened.pdf"));
 
     editor.save_with_options(
         &out_path,
