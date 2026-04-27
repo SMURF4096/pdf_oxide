@@ -1,4 +1,7 @@
-# StreamingTable with rowspan — v0.3.39
+# StreamingTable with rowspan and batch_size — v0.3.40
+#
+# batch_size caps memory: the Rust layer auto-flushes every N rows so the
+# client-side buffer stays bounded even for million-row streams.
 #
 # Run: python main.py
 
@@ -24,6 +27,7 @@ def main() -> None:
         .at(72, 660)
     )
 
+    # batch_size=2: Rust auto-flushes every 2 rows, keeping memory bounded.
     tbl = page.streaming_table(
         columns=[
             pdf_oxide.Column("Category", width=120),
@@ -32,10 +36,13 @@ def main() -> None:
         ],
         repeat_header=True,
         max_rowspan=2,
+        batch_size=2,
     )
     tbl.push_row_span([("Fruits", 2), ("Apple", 1), ("crisp", 1)])
     tbl.push_row_span([("", 1), ("Banana", 1), ("sweet", 1)])
     tbl.push_row_span([("Vegetables", 1), ("Carrot", 1), ("earthy", 1)])
+
+    print(f"  batch_count={tbl.batch_count()}, pending={tbl.pending_row_count()}")
 
     path = os.path.join(OUT_DIR, "streaming_table_rowspan.pdf")
     tbl.finish().done().save(path)

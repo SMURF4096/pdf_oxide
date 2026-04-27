@@ -998,3 +998,63 @@ fn ffi_fixture_font_exists() {
         "DejaVuSans.ttf fixture missing — regenerate tests/fixtures/fonts/"
     );
 }
+
+#[test]
+fn ffi_dashed_stroke_rect_produces_pdf_with_dash_operator() {
+    let mut ec: i32 = -1;
+    let builder = unsafe { pdf_document_builder_create(&mut ec) };
+    assert_eq!(ec, 0);
+
+    let page = unsafe { pdf_document_builder_a4_page(builder, &mut ec) };
+    assert_eq!(ec, 0);
+
+    // Dashed rect: 3pt dash, 2pt gap, phase 0
+    let dashes: [f32; 2] = [3.0, 2.0];
+    assert_eq!(
+        unsafe {
+            pdf_page_builder_stroke_rect_dashed(
+                page,
+                50.0, 100.0, 200.0, 150.0, // x y w h
+                1.5, 0.0, 0.0, 0.8,         // width r g b
+                dashes.as_ptr(), dashes.len(), 0.0, // dash_array n_dash phase
+                &mut ec,
+            )
+        },
+        0
+    );
+    assert_eq!(ec, 0);
+
+    // Dashed line: 5pt dash, 3pt gap
+    let dashes2: [f32; 2] = [5.0, 3.0];
+    assert_eq!(
+        unsafe {
+            pdf_page_builder_stroke_line_dashed(
+                page,
+                50.0, 80.0, 250.0, 80.0,   // x1 y1 x2 y2
+                1.0, 0.8, 0.0, 0.0,         // width r g b
+                dashes2.as_ptr(), dashes2.len(), 1.0, // dash_array n_dash phase
+                &mut ec,
+            )
+        },
+        0
+    );
+    assert_eq!(ec, 0);
+
+    assert_eq!(unsafe { pdf_page_builder_done(page, &mut ec) }, 0);
+    assert_eq!(ec, 0);
+
+    let mut out_len: usize = 0;
+    let bytes_ptr = unsafe { pdf_document_builder_build(builder, &mut out_len, &mut ec) };
+    assert_eq!(ec, 0);
+    assert!(!bytes_ptr.is_null());
+
+    let bytes = unsafe { std::slice::from_raw_parts(bytes_ptr as *const u8, out_len) };
+    assert!(bytes.starts_with(b"%PDF-"), "output is not a PDF");
+
+    // The content stream must contain the `d` (setdash) operator
+    let content = String::from_utf8_lossy(bytes);
+    assert!(content.contains(" d\n") || content.contains(" d "), "dash operator 'd' not found in PDF");
+
+    unsafe { pdf_document_builder_free(builder) };
+    unsafe { free_bytes(bytes_ptr) };
+}

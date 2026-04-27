@@ -291,6 +291,7 @@ jobs:
           cd "$GITHUB_WORKSPACE/examples/python/09-new-features/in_memory_roundtrip" && uv run python main.py
           cd "$GITHUB_WORKSPACE/examples/python/09-new-features/pkcs12_signing"   && uv run python main.py
           cd "$GITHUB_WORKSPACE/examples/python/09-new-features/rfc3161_timestamp" && uv run python main.py
+          cd "$GITHUB_WORKSPACE/examples/python/09-new-features/dashed_stroke"    && uv run python main.py
 
   # WASM build check
   wasm-build:
@@ -515,7 +516,7 @@ jobs:
           go run -tags pdf_oxide_dev main.go
           cd "$GITHUB_WORKSPACE/examples/go/06-edit-document"
           go run -tags pdf_oxide_dev main.go "$PDF" /tmp/go_edited.pdf
-          for feat in streaming_table pdf_ua_image in_memory_roundtrip pkcs12_signing rfc3161_timestamp; do
+          for feat in streaming_table pdf_ua_image in_memory_roundtrip pkcs12_signing rfc3161_timestamp dashed_stroke; do
             cd "$GITHUB_WORKSPACE/examples/go/09-new-features/$feat"
             go run -tags pdf_oxide_dev main.go
           done
@@ -662,6 +663,7 @@ jobs:
           echo "--- in_memory_roundtrip ---"   && timeout 120 node 09-new-features/in_memory_roundtrip/index.js
           echo "--- pkcs12_signing ---"        && timeout 120 node 09-new-features/pkcs12_signing/index.js
           echo "--- rfc3161_timestamp ---"     && timeout 120 node 09-new-features/rfc3161_timestamp/index.js
+          echo "--- dashed_stroke ---"         && timeout 120 node 09-new-features/dashed_stroke/index.js
 
       - name: Compile TypeScript examples
         if: matrix.os == 'ubuntu-latest'
@@ -786,7 +788,8 @@ jobs:
             examples/csharp/09-new-features/PdfUaImage/PdfUaImage.csproj \
             examples/csharp/09-new-features/InMemoryRoundtrip/InMemoryRoundtrip.csproj \
             examples/csharp/09-new-features/Pkcs12Signing/Pkcs12Signing.csproj \
-            examples/csharp/09-new-features/Rfc3161Timestamp/Rfc3161Timestamp.csproj; do
+            examples/csharp/09-new-features/Rfc3161Timestamp/Rfc3161Timestamp.csproj \
+            examples/csharp/09-new-features/DashedStroke/DashedStroke.csproj; do
             dotnet run --project "$proj"
           done
 

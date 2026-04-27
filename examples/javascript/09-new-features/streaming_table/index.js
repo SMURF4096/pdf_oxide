@@ -1,4 +1,4 @@
-// StreamingTable with rowspan — v0.3.39
+// StreamingTable with rowspan and batchSize — v0.3.40
 // Run: node index.js
 
 import path from "node:path";
@@ -21,11 +21,14 @@ const tbl = page.streamingTable({
   ],
   repeatHeader: true,
   maxRowspan: 2,
+  batchSize: 2,
 });
 
 tbl.pushRowSpan([{ text: "Fruits",     rowspan: 2 }, { text: "Apple",  rowspan: 1 }, { text: "crisp",  rowspan: 1 }]);
 tbl.pushRowSpan([{ text: "",           rowspan: 1 }, { text: "Banana", rowspan: 1 }, { text: "sweet",  rowspan: 1 }]);
 tbl.pushRowSpan([{ text: "Vegetables", rowspan: 1 }, { text: "Carrot", rowspan: 1 }, { text: "earthy", rowspan: 1 }]);
+
+console.log(`  batchCount=${tbl.batchCount}, pendingRowCount=${tbl.pendingRowCount}`);
 
 const outPath = path.join(OUT_DIR, "streaming_table_rowspan.pdf");
 (await tbl.finish()).done();

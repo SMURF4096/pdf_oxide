@@ -210,6 +210,22 @@ describe('DocumentBuilder native bindings', () => {
     }
   });
 
+  it('strokeRectDashed and strokeLineDashed produce PDF with dash operator', () => {
+    const b = native.documentBuilderCreate();
+    const p = native.documentBuilderA4Page(b);
+    native.pageBuilderStrokeRectDashed(p, 50, 100, 200, 150, 1.5, 0, 0, 0.8, [3, 2], 0);
+    native.pageBuilderStrokeLineDashed(p, 50, 80, 250, 80, 1.0, 0.8, 0, 0, [5, 3], 1);
+    native.pageBuilderDone(p);
+    const buf = native.documentBuilderBuild(b);
+    native.documentBuilderFree(b);
+    assert.ok(buf.length > 100, `PDF suspiciously small: ${buf.length}`);
+    const text = buf.toString('latin1');
+    assert.ok(
+      text.includes(' d\n') || text.includes(' d '),
+      "PDF content stream missing dash operator 'd'"
+    );
+  });
+
   it('Phase 2 — Pdf.fromHtmlCss round-trips', () => {
     const fontBytes = readFileSync(FIXTURE);
     const pdf = native.pdfFromHtmlCss(

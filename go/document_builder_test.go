@@ -12,6 +12,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -818,5 +819,74 @@ func TestCSSTextDecorationChangesOutput(t *testing.T) {
 	underline := htmlCSS(t, html, "p { text-decoration: underline; }", fontBytes)
 	if bytes.Equal(none, underline) {
 		t.Fatal("CSS text-decoration had no effect on output")
+	}
+}
+
+func TestStreamingTableBoundedBatch(t *testing.T) {
+	doc, err := NewDocumentBuilder()
+	if err != nil {
+		t.Fatalf("NewDocumentBuilder: %v", err)
+	}
+	page, err := doc.LetterPage()
+	if err != nil {
+		t.Fatalf("LetterPage: %v", err)
+	}
+	page.Font("Helvetica", 9).At(72, 720)
+	st := page.StreamingTable(StreamingTableConfig{
+		Columns: []Column{
+			{Header: "ID", Width: 60},
+			{Header: "Val", Width: 120},
+		},
+		BatchSize: 3,
+	})
+
+	// Push 7 rows: 3 → flush (batch 1), 3 → flush (batch 2), 1 still pending.
+	for i := 0; i < 7; i++ {
+		id := strconv.Itoa(i)
+		val := "row-" + id
+		if err2 := st.PushRow([]string{id, val}); err2 != nil {
+			t.Fatalf("PushRow %d: %v", i, err2)
+		}
+	}
+	if got := st.PendingRowCount(); got != 1 {
+		t.Errorf("PendingRowCount: got %d, want 1", got)
+	}
+	if got := st.BatchCount(); got != 2 {
+		t.Errorf("BatchCount: got %d, want 2", got)
+	}
+
+	page2 := st.Finish()
+	if page2 == nil {
+		t.Fatal("Finish returned nil")
+	}
+	page2.Done()
+	data, buildErr := doc.Build()
+	if buildErr != nil {
+		t.Fatalf("Build: %v", buildErr)
+	}
+	if !bytes.HasPrefix(data, []byte("%PDF")) {
+		t.Fatal("output is not a PDF")
+	}
+}
+
+func TestStrokeDashed(t *testing.T) {
+	doc, err := NewDocumentBuilder()
+	if err != nil {
+		t.Fatalf("NewDocumentBuilder: %v", err)
+	}
+	page, _ := doc.A4Page()
+	dash := []float32{3.0, 2.0}
+	page.StrokeRectDashed(50, 100, 200, 150, 1.5, 0.0, 0.0, 0.8, dash, 0.0)
+	page.StrokeLineDashed(50, 80, 250, 80, 1.0, 0.8, 0.0, 0.0, dash, 1.0)
+	page.Done()
+	data, err := doc.Build()
+	if err != nil {
+		t.Fatalf("Build failed: %v", err)
+	}
+	if !bytes.HasPrefix(data, []byte("%PDF")) {
+		t.Fatal("output is not a PDF")
+	}
+	if !bytes.Contains(data, []byte(" d\n")) && !bytes.Contains(data, []byte(" d ")) {
+		t.Fatal("dash operator 'd' missing from PDF content")
 	}
 }

@@ -31,6 +31,20 @@ function tmp(ext = '.pdf') {
   return join(dir, `out${ext}`);
 }
 
+// Helper: open a streaming table, push N rows via native, return the page handle.
+function makeNativeStreamingTable(n_cols, batch_size) {
+  const b = native.documentBuilderCreate();
+  const p = native.documentBuilderLetterPage(b);
+  native.pageBuilderFont(p, 'Helvetica', 8);
+  native.pageBuilderAt(p, 72, 720);
+  const headers = Array.from({ length: n_cols }, (_, i) => `H${i}`);
+  const widths = Array.from({ length: n_cols }, () => 80);
+  const aligns = Array.from({ length: n_cols }, () => 0);
+  native.pageBuilderStreamingTableBeginV2(p, headers, widths, aligns, true, 0, 20, 0, 9999, 1);
+  if (batch_size != null) native.pageBuilderStreamingTableSetBatchSize(p, batch_size);
+  return { builder: b, page: p, n_cols };
+}
+
 describe('DocumentBuilder tables — native primitives', () => {
   it('strokeRect / strokeLine round-trip without error', () => {
     const b = native.documentBuilderCreate();
@@ -124,6 +138,35 @@ describe('DocumentBuilder tables — native primitives', () => {
       native.closeDocument(doc);
       unlinkSync(path);
     }
+  });
+
+  it('streamingTable batchSize=3: 7 rows → batchCount=2, pendingRowCount=1', () => {
+    const { builder: b, page: p, n_cols } = makeNativeStreamingTable(2, 3);
+    for (let i = 0; i < 7; i++) {
+      native.pageBuilderStreamingTablePushRow(p, [`r${i}-a`, `r${i}-b`]);
+    }
+    assert.strictEqual(native.pageBuilderStreamingTableBatchCount(p), 2);
+    assert.strictEqual(native.pageBuilderStreamingTablePendingRowCount(p), 1);
+    native.pageBuilderStreamingTableFinish(p);
+    native.pageBuilderDone(p);
+    const buf = native.documentBuilderBuild(b);
+    native.documentBuilderFree(b);
+    assert.ok(buf.length > 256);
+  });
+
+  it('streamingTable flush() marks batch boundary explicitly', () => {
+    const { builder: b, page: p } = makeNativeStreamingTable(1, 100);
+    native.pageBuilderStreamingTablePushRow(p, ['first']);
+    native.pageBuilderStreamingTablePushRow(p, ['second']);
+    assert.strictEqual(native.pageBuilderStreamingTableBatchCount(p), 0);
+    assert.strictEqual(native.pageBuilderStreamingTablePendingRowCount(p), 2);
+    native.pageBuilderStreamingTableFlush(p);
+    assert.strictEqual(native.pageBuilderStreamingTableBatchCount(p), 1);
+    assert.strictEqual(native.pageBuilderStreamingTablePendingRowCount(p), 0);
+    native.pageBuilderStreamingTableFinish(p);
+    native.pageBuilderDone(p);
+    native.documentBuilderBuild(b);
+    native.documentBuilderFree(b);
   });
 
   it('table with mismatched aligns length throws TypeError', () => {
@@ -251,5 +294,6 @@ if (builders) {
       page.done();
       doc.close();
     });
+
   });
 }

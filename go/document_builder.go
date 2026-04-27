@@ -127,6 +127,14 @@ extern int   pdf_page_builder_stroke_rect(void* page, float x, float y, float w,
 extern int   pdf_page_builder_stroke_line(void* page, float x1, float y1, float x2, float y2,
                                           float width, float r, float g, float b,
                                           int* error_code);
+extern int   pdf_page_builder_stroke_rect_dashed(void* page, float x, float y, float w, float h,
+                                                  float width, float r, float g, float b,
+                                                  const float* dash_array, size_t n_dash,
+                                                  float phase, int* error_code);
+extern int   pdf_page_builder_stroke_line_dashed(void* page, float x1, float y1, float x2, float y2,
+                                                  float width, float r, float g, float b,
+                                                  const float* dash_array, size_t n_dash,
+                                                  float phase, int* error_code);
 extern int   pdf_page_builder_text_in_rect(void* page, float x, float y, float w, float h,
                                            const char* text, int align, int* error_code);
 extern int   pdf_page_builder_new_page_same_size(void* page, int* error_code);
@@ -175,12 +183,17 @@ extern int   pdf_page_builder_streaming_table_push_row(void* page,
                                                        size_t n_cells,
                                                        const char* const* cells,
                                                        int* error_code);
-extern int   pdf_page_builder_streaming_table_push_row_v2(void* page,
-                                                          size_t n_cells,
-                                                          const char* const* cells,
-                                                          const size_t* rowspans,
-                                                          int* error_code);
-extern int   pdf_page_builder_streaming_table_finish(void* page, int* error_code);
+extern int    pdf_page_builder_streaming_table_push_row_v2(void* page,
+                                                           size_t n_cells,
+                                                           const char* const* cells,
+                                                           const size_t* rowspans,
+                                                           int* error_code);
+extern int    pdf_page_builder_streaming_table_set_batch_size(void* page, size_t batch_size,
+                                                              int* error_code);
+extern size_t pdf_page_builder_streaming_table_pending_row_count(void* page);
+extern size_t pdf_page_builder_streaming_table_batch_count(void* page);
+extern int    pdf_page_builder_streaming_table_flush(void* page, int* error_code);
+extern int    pdf_page_builder_streaming_table_finish(void* page, int* error_code);
 
 extern int   pdf_page_builder_done(void* page, int* error_code);
 extern void  pdf_page_builder_free(void* page);
@@ -1183,6 +1196,36 @@ func (p *PageBuilder) StrokeLine(x1, y1, x2, y2, width, r, g, b float32) *PageBu
 	})
 }
 
+// StrokeRectDashed draws a dashed rectangle border. dash is alternating on/off
+// lengths in points; phase is the starting offset into the pattern.
+func (p *PageBuilder) StrokeRectDashed(x, y, w, h, width, r, g, b float32, dash []float32, phase float32) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		var dashPtr *C.float
+		if len(dash) > 0 {
+			dashPtr = (*C.float)(unsafe.Pointer(&dash[0]))
+		}
+		return C.pdf_page_builder_stroke_rect_dashed(hp,
+			C.float(x), C.float(y), C.float(w), C.float(h),
+			C.float(width), C.float(r), C.float(g), C.float(b),
+			dashPtr, C.size_t(len(dash)), C.float(phase), ec)
+	})
+}
+
+// StrokeLineDashed draws a dashed line from (x1,y1) to (x2,y2). dash is
+// alternating on/off lengths in points; phase is the starting offset.
+func (p *PageBuilder) StrokeLineDashed(x1, y1, x2, y2, width, r, g, b float32, dash []float32, phase float32) *PageBuilder {
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		var dashPtr *C.float
+		if len(dash) > 0 {
+			dashPtr = (*C.float)(unsafe.Pointer(&dash[0]))
+		}
+		return C.pdf_page_builder_stroke_line_dashed(hp,
+			C.float(x1), C.float(y1), C.float(x2), C.float(y2),
+			C.float(width), C.float(r), C.float(g), C.float(b),
+			dashPtr, C.size_t(len(dash)), C.float(phase), ec)
+	})
+}
+
 // TextInRect places wrapped text inside (x, y, w, h) with the given
 // horizontal alignment. Unknown Alignment values fall back to AlignLeft
 // on the writer side.
@@ -1400,16 +1443,67 @@ func (p *PageBuilder) StreamingTable(cfg StreamingTableConfig) *StreamingTable {
 		p.err = ffiError(ec)
 	}
 
+	batchSize := cfg.BatchSize
+	if batchSize <= 0 {
+		batchSize = 256
+	}
+	if p.err == nil {
+		var ec C.int
+		if C.pdf_page_builder_streaming_table_set_batch_size(
+			p.handle, C.size_t(batchSize), &ec,
+		) != 0 {
+			p.err = ffiError(ec)
+		}
+	}
 	return &StreamingTable{page: p, nCols: nCols}
 }
 
 // StreamingTable is a row-at-a-time table adapter. Obtain one from
 // PageBuilder.StreamingTable, feed rows with PushRow, and finalise
 // with Finish to resume the page chain.
+//
+// Batch tracking (PendingRowCount, BatchCount, Flush) is managed by the
+// Rust FFI layer — no buffering occurs in Go.
 type StreamingTable struct {
 	page     *PageBuilder
 	nCols    int
 	finished bool
+}
+
+// PendingRowCount returns the number of rows pushed since the last batch
+// boundary (or since the table was opened).
+func (t *StreamingTable) PendingRowCount() int {
+	if t == nil || t.page == nil || t.page.handle == nil {
+		return 0
+	}
+	return int(C.pdf_page_builder_streaming_table_pending_row_count(t.page.handle))
+}
+
+// BatchCount returns the number of complete batches recorded by the native layer.
+func (t *StreamingTable) BatchCount() int {
+	if t == nil || t.page == nil || t.page.handle == nil {
+		return 0
+	}
+	return int(C.pdf_page_builder_streaming_table_batch_count(t.page.handle))
+}
+
+// Flush explicitly marks a batch boundary in the native layer.
+// Can also be called explicitly in addition to the automatic trigger.
+func (t *StreamingTable) Flush() error {
+	if t == nil {
+		return errors.New("pdf_oxide: Flush on nil StreamingTable")
+	}
+	if t.finished {
+		return errors.New("pdf_oxide: Flush on finished StreamingTable")
+	}
+	if !t.page.checkUsable() {
+		return t.page.err
+	}
+	var ec C.int
+	if C.pdf_page_builder_streaming_table_flush(t.page.handle, &ec) != 0 {
+		return ffiError(ec)
+	}
+	return nil
 }
 
 // PushRow pushes one row to the native streaming table (all rowspan=1).
@@ -1433,25 +1527,23 @@ func (t *StreamingTable) PushRow(cells []string) error {
 		return t.page.err
 	}
 
-	cStrs := make([]*C.char, t.nCols)
+	cStrs := make([]*C.char, len(cells))
 	for i, s := range cells {
 		cStrs[i] = C.CString(s)
 	}
-	defer func() {
-		for _, s := range cStrs {
-			if s != nil {
-				C.free(unsafe.Pointer(s))
-			}
-		}
-	}()
-
 	var ec C.int
-	if C.pdf_page_builder_streaming_table_push_row(
+	rc := C.pdf_page_builder_streaming_table_push_row(
 		t.page.handle,
-		C.size_t(t.nCols),
+		C.size_t(len(cells)),
 		(**C.char)(unsafe.Pointer(&cStrs[0])),
 		&ec,
-	) != 0 {
+	)
+	for _, s := range cStrs {
+		if s != nil {
+			C.free(unsafe.Pointer(s))
+		}
+	}
+	if rc != 0 {
 		t.page.err = ffiError(ec)
 		return t.page.err
 	}
@@ -1485,8 +1577,8 @@ func (t *StreamingTable) PushRowSpan(cells []SpanCell) error {
 		return t.page.err
 	}
 
-	cStrs := make([]*C.char, t.nCols)
-	rowspans := make([]C.size_t, t.nCols)
+	cStrs := make([]*C.char, len(cells))
+	rowspans := make([]C.size_t, len(cells))
 	for i, c := range cells {
 		cStrs[i] = C.CString(c.Text)
 		rs := c.Rowspan
@@ -1495,22 +1587,20 @@ func (t *StreamingTable) PushRowSpan(cells []SpanCell) error {
 		}
 		rowspans[i] = C.size_t(rs)
 	}
-	defer func() {
-		for _, s := range cStrs {
-			if s != nil {
-				C.free(unsafe.Pointer(s))
-			}
-		}
-	}()
-
 	var ec C.int
-	if C.pdf_page_builder_streaming_table_push_row_v2(
+	rc := C.pdf_page_builder_streaming_table_push_row_v2(
 		t.page.handle,
-		C.size_t(t.nCols),
+		C.size_t(len(cells)),
 		(**C.char)(unsafe.Pointer(&cStrs[0])),
 		(*C.size_t)(unsafe.Pointer(&rowspans[0])),
 		&ec,
-	) != 0 {
+	)
+	for _, s := range cStrs {
+		if s != nil {
+			C.free(unsafe.Pointer(s))
+		}
+	}
+	if rc != 0 {
 		t.page.err = ffiError(ec)
 		return t.page.err
 	}
@@ -1518,7 +1608,8 @@ func (t *StreamingTable) PushRowSpan(cells []SpanCell) error {
 }
 
 // Finish closes the streaming table and returns the parent PageBuilder
-// so callers can continue chaining. Idempotent.
+// for chaining. The Rust FFI layer records any remaining pending rows as
+// a final batch on finish. Idempotent.
 func (t *StreamingTable) Finish() *PageBuilder {
 	if t == nil || t.page == nil {
 		return nil

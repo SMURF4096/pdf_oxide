@@ -7629,6 +7629,18 @@ enum FfiPageOp {
         g: f32,
         b: f32,
     },
+    StrokeRectDashed {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        width: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+        dash: Vec<f32>,
+        phase: f32,
+    },
     StrokeLine {
         x1: f32,
         y1: f32,
@@ -7638,6 +7650,18 @@ enum FfiPageOp {
         r: f32,
         g: f32,
         b: f32,
+    },
+    StrokeLineDashed {
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        width: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+        dash: Vec<f32>,
+        phase: f32,
     },
     TextInRect {
         x: f32,
@@ -7752,6 +7776,11 @@ pub struct FfiPageBuilder {
     custom_height: f32,
     ops: Vec<FfiPageOp>,
     done_called: bool,
+    // Streaming-table batch tracking (valid while a table is open).
+    // Auto-flush triggers when pending reaches batch_size (0 = disabled).
+    st_batch_size: usize,
+    st_batch_count: usize,
+    st_pending_count: usize,
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -8095,6 +8124,9 @@ fn open_page(
         custom_height: height,
         ops: Vec::new(),
         done_called: false,
+        st_batch_size: 0,
+        st_batch_count: 0,
+        st_pending_count: 0,
     }))
 }
 
@@ -9181,6 +9213,75 @@ pub extern "C" fn pdf_page_builder_stroke_line(
     )
 }
 
+/// Buffer a `stroke_rect` with a dash pattern.
+///
+/// `dash_array` is a pointer to `n_dash` alternating on/off lengths in points.
+/// `phase` is the starting offset into the pattern. Pass `n_dash == 0` for solid.
+///
+/// # Safety
+/// `handle` must satisfy the Handle Ownership Contract. If `n_dash > 0`,
+/// `dash_array` must point to `n_dash` valid `f32` values.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_stroke_rect_dashed(
+    handle: *mut FfiPageBuilder,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    width: f32,
+    r: f32,
+    g: f32,
+    b: f32,
+    dash_array: *const f32,
+    n_dash: usize,
+    phase: f32,
+    error_code: *mut i32,
+) -> i32 {
+    let dash = if n_dash == 0 || dash_array.is_null() {
+        vec![]
+    } else {
+        unsafe { std::slice::from_raw_parts(dash_array, n_dash) }.to_vec()
+    };
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::StrokeRectDashed { x, y, w, h, width, r, g, b, dash, phase },
+    )
+}
+
+/// Buffer a `stroke_line` with a dash pattern.
+///
+/// # Safety
+/// `handle` must satisfy the Handle Ownership Contract. If `n_dash > 0`,
+/// `dash_array` must point to `n_dash` valid `f32` values.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_stroke_line_dashed(
+    handle: *mut FfiPageBuilder,
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    width: f32,
+    r: f32,
+    g: f32,
+    b: f32,
+    dash_array: *const f32,
+    n_dash: usize,
+    phase: f32,
+    error_code: *mut i32,
+) -> i32 {
+    let dash = if n_dash == 0 || dash_array.is_null() {
+        vec![]
+    } else {
+        unsafe { std::slice::from_raw_parts(dash_array, n_dash) }.to_vec()
+    };
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::StrokeLineDashed { x1, y1, x2, y2, width, r, g, b, dash, phase },
+    )
+}
+
 /// Buffer a `text_in_rect(rect, text, align)` call. `align` encodes
 /// 0=Left, 1=Center, 2=Right — anything else is treated as Left.
 #[no_mangle]
@@ -9349,6 +9450,10 @@ pub extern "C" fn pdf_page_builder_streaming_table_begin(
         cols.push((header, widths_slice[i], aligns_slice[i]));
     }
 
+    let pb = unsafe { &mut *handle };
+    pb.st_batch_size = 256;
+    pb.st_batch_count = 0;
+    pb.st_pending_count = 0;
     push_page_op(
         handle,
         error_code,
@@ -9409,6 +9514,10 @@ pub extern "C" fn pdf_page_builder_streaming_table_begin_v2(
         cols.push((header, widths_slice[i], aligns_slice[i]));
     }
 
+    let pb = unsafe { &mut *handle };
+    pb.st_batch_size = 256;
+    pb.st_batch_count = 0;
+    pb.st_pending_count = 0;
     push_page_op(
         handle,
         error_code,
@@ -9422,6 +9531,73 @@ pub extern "C" fn pdf_page_builder_streaming_table_begin_v2(
             max_rowspan,
         },
     )
+}
+
+/// Set the batch size for the currently-open streaming table. When
+/// `push_row` accumulates this many pending rows, a batch boundary is
+/// recorded automatically (auto-flush). Call after
+/// `pdf_page_builder_streaming_table_begin[_v2]` and before the first
+/// `push_row`. A value of 0 defaults to 256.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_streaming_table_set_batch_size(
+    handle: *mut FfiPageBuilder,
+    batch_size: usize,
+    error_code: *mut i32,
+) -> i32 {
+    if handle.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let pb = unsafe { &mut *handle };
+    pb.st_batch_size = if batch_size == 0 { 256 } else { batch_size };
+    pb.st_batch_count = 0;
+    pb.st_pending_count = 0;
+    set_error(error_code, ERR_SUCCESS);
+    0
+}
+
+/// Return the number of rows pushed since the last batch boundary
+/// (or since the table was opened). Returns 0 if no table is open.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_streaming_table_pending_row_count(
+    handle: *mut FfiPageBuilder,
+) -> usize {
+    if handle.is_null() {
+        return 0;
+    }
+    unsafe { (*handle).st_pending_count }
+}
+
+/// Return the number of complete batches recorded so far.
+/// Returns 0 if no table is open.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_streaming_table_batch_count(
+    handle: *mut FfiPageBuilder,
+) -> usize {
+    if handle.is_null() {
+        return 0;
+    }
+    unsafe { (*handle).st_batch_count }
+}
+
+/// Explicitly mark a batch boundary: increment the batch counter and
+/// reset the pending-row counter. A no-op if there are no pending rows.
+#[no_mangle]
+pub extern "C" fn pdf_page_builder_streaming_table_flush(
+    handle: *mut FfiPageBuilder,
+    error_code: *mut i32,
+) -> i32 {
+    if handle.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let pb = unsafe { &mut *handle };
+    if pb.st_pending_count > 0 {
+        pb.st_batch_count += 1;
+        pb.st_pending_count = 0;
+    }
+    set_error(error_code, ERR_SUCCESS);
+    0
 }
 
 /// Push one row into the currently-open streaming table. `cells` is
@@ -9484,16 +9660,35 @@ pub extern "C" fn pdf_page_builder_streaming_table_push_row_v2(
         let span = rowspans_slice.map_or(1, |rs| rs[i].max(1));
         row.push((text, span));
     }
-    push_page_op(handle, error_code, FfiPageOp::StreamingTableRow(row))
+    let rc = push_page_op(handle, error_code, FfiPageOp::StreamingTableRow(row));
+    if rc == 0 {
+        let pb = unsafe { &mut *handle };
+        pb.st_pending_count += 1;
+        if pb.st_batch_size > 0 && pb.st_pending_count >= pb.st_batch_size {
+            pb.st_batch_count += 1;
+            pb.st_pending_count = 0;
+        }
+    }
+    rc
 }
 
-/// Close the currently-open streaming table. Returns -1 +
-/// ERR_INVALID_ARG if no table is open.
+/// Close the currently-open streaming table. Records a final batch
+/// boundary if any rows are pending, then resets all batch state.
+/// Returns -1 + ERR_INVALID_ARG if no table is open.
 #[no_mangle]
 pub extern "C" fn pdf_page_builder_streaming_table_finish(
     handle: *mut FfiPageBuilder,
     error_code: *mut i32,
 ) -> i32 {
+    if !handle.is_null() {
+        let pb = unsafe { &mut *handle };
+        if pb.st_pending_count > 0 {
+            pb.st_batch_count += 1;
+            pb.st_pending_count = 0;
+        }
+        pb.st_batch_size = 0;
+        pb.st_batch_count = 0;
+    }
     push_page_op(handle, error_code, FfiPageOp::StreamingTableFinish)
 }
 
@@ -9783,6 +9978,14 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
                 g,
                 b,
             } => rust_page.stroke_rect(x, y, w, h, crate::writer::LineStyle::new(width, r, g, b)),
+            FfiPageOp::StrokeRectDashed { x, y, w, h, width, r, g, b, dash, phase } => {
+                let style = if dash.is_empty() {
+                    crate::writer::LineStyle::new(width, r, g, b)
+                } else {
+                    crate::writer::LineStyle::new(width, r, g, b).with_dash(&dash, phase)
+                };
+                rust_page.stroke_rect(x, y, w, h, style)
+            },
             FfiPageOp::StrokeLine {
                 x1,
                 y1,
@@ -9794,6 +9997,14 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
                 b,
             } => {
                 rust_page.stroke_line(x1, y1, x2, y2, crate::writer::LineStyle::new(width, r, g, b))
+            },
+            FfiPageOp::StrokeLineDashed { x1, y1, x2, y2, width, r, g, b, dash, phase } => {
+                let style = if dash.is_empty() {
+                    crate::writer::LineStyle::new(width, r, g, b)
+                } else {
+                    crate::writer::LineStyle::new(width, r, g, b).with_dash(&dash, phase)
+                };
+                rust_page.stroke_line(x1, y1, x2, y2, style)
             },
             FfiPageOp::TextInRect {
                 x,
@@ -10178,5 +10389,190 @@ mod tests {
     fn classify_layout_analysis_returns_extraction() {
         let e = Error::LayoutAnalysis("layout failed".into());
         assert_eq!(classify_error(&e), ERR_EXTRACTION);
+    }
+
+    // ── FFI builder/page helpers ─────────────────────────────────────────
+
+    unsafe fn new_test_builder() -> *mut FfiDocumentBuilder {
+        let mut ec = 0i32;
+        let b = pdf_document_builder_create(&mut ec);
+        assert!(!b.is_null(), "pdf_document_builder_create ec={ec}");
+        b
+    }
+
+    unsafe fn new_test_page(b: *mut FfiDocumentBuilder) -> *mut FfiPageBuilder {
+        let mut ec = 0i32;
+        let p = pdf_document_builder_a4_page(b, &mut ec);
+        assert!(!p.is_null(), "pdf_document_builder_a4_page ec={ec}");
+        p
+    }
+
+    /// Free without replaying — suitable for tests that don't need the PDF bytes.
+    unsafe fn free_test_pair(b: *mut FfiDocumentBuilder, p: *mut FfiPageBuilder) {
+        pdf_page_builder_free(p);
+        pdf_document_builder_free(b);
+    }
+
+    // ── Dashed stroke tests ──────────────────────────────────────────────
+
+    #[test]
+    fn stroke_rect_dashed_returns_success() {
+        unsafe {
+            let b = new_test_builder();
+            let p = new_test_page(b);
+            let dash = [5.0f32, 3.0f32];
+            let mut ec = 0i32;
+            let rc = pdf_page_builder_stroke_rect_dashed(
+                p, 10.0, 10.0, 200.0, 100.0, 2.0,
+                0.0, 0.0, 1.0,
+                dash.as_ptr(), dash.len(), 0.0, &mut ec,
+            );
+            assert_eq!(rc, 0, "expected 0, ec={ec}");
+            assert_eq!(ec, ERR_SUCCESS);
+            free_test_pair(b, p);
+        }
+    }
+
+    #[test]
+    fn stroke_line_dashed_returns_success() {
+        unsafe {
+            let b = new_test_builder();
+            let p = new_test_page(b);
+            let dash = [4.0f32, 2.0f32];
+            let mut ec = 0i32;
+            let rc = pdf_page_builder_stroke_line_dashed(
+                p, 10.0, 10.0, 200.0, 10.0, 1.5,
+                0.0, 0.5, 0.5,
+                dash.as_ptr(), dash.len(), 1.0, &mut ec,
+            );
+            assert_eq!(rc, 0, "expected 0, ec={ec}");
+            assert_eq!(ec, ERR_SUCCESS);
+            free_test_pair(b, p);
+        }
+    }
+
+    #[test]
+    fn stroke_rect_dashed_null_dash_array_is_solid() {
+        // NULL dash array + zero length = solid stroke (no error).
+        unsafe {
+            let b = new_test_builder();
+            let p = new_test_page(b);
+            let mut ec = 0i32;
+            let rc = pdf_page_builder_stroke_rect_dashed(
+                p, 0.0, 0.0, 100.0, 50.0, 1.0,
+                0.0, 0.0, 0.0,
+                std::ptr::null(), 0, 0.0, &mut ec,
+            );
+            assert_eq!(rc, 0, "ec={ec}");
+            free_test_pair(b, p);
+        }
+    }
+
+    // ── StreamingTable batch-tracking tests ──────────────────────────────
+
+    unsafe fn begin_single_col_table(p: *mut FfiPageBuilder) {
+        let hdr = b"Col\0";
+        let hdrs = [hdr.as_ptr() as *const c_char];
+        let widths = [100.0f32];
+        let aligns = [0i32];
+        let mut ec = 0i32;
+        pdf_page_builder_streaming_table_begin_v2(
+            p, 1,
+            hdrs.as_ptr(), widths.as_ptr(), aligns.as_ptr(),
+            1, 0, 20, 0.0, 9999.0, 1, &mut ec,
+        );
+        assert_eq!(ec, ERR_SUCCESS, "streaming_table_begin_v2 failed");
+    }
+
+    unsafe fn push_str_row(p: *mut FfiPageBuilder, val: &str) {
+        let s = format!("{val}\0");
+        let ptr = s.as_ptr() as *const c_char;
+        let cells = [ptr];
+        let mut ec = 0i32;
+        pdf_page_builder_streaming_table_push_row(p, 1, cells.as_ptr(), &mut ec);
+        assert_eq!(ec, ERR_SUCCESS, "push_row failed for {val:?}");
+    }
+
+    #[test]
+    fn streaming_table_set_batch_size_resets_counts() {
+        unsafe {
+            let b = new_test_builder();
+            let p = new_test_page(b);
+            begin_single_col_table(p);
+            let mut ec = 0i32;
+            pdf_page_builder_streaming_table_set_batch_size(p, 5, &mut ec);
+            assert_eq!(ec, ERR_SUCCESS);
+            assert_eq!(pdf_page_builder_streaming_table_pending_row_count(p), 0);
+            assert_eq!(pdf_page_builder_streaming_table_batch_count(p), 0);
+            pdf_page_builder_streaming_table_finish(p, &mut ec);
+            free_test_pair(b, p);
+        }
+    }
+
+    #[test]
+    fn streaming_table_auto_flush_at_batch_boundary() {
+        // batch_size=3, push 7 rows → 2 auto-flushes (at row 3 and row 6),
+        // 1 row pending.
+        unsafe {
+            let b = new_test_builder();
+            let p = new_test_page(b);
+            begin_single_col_table(p);
+            let mut ec = 0i32;
+            pdf_page_builder_streaming_table_set_batch_size(p, 3, &mut ec);
+            assert_eq!(ec, ERR_SUCCESS);
+
+            for i in 0..7 {
+                push_str_row(p, &format!("r{i}"));
+            }
+            assert_eq!(pdf_page_builder_streaming_table_batch_count(p), 2);
+            assert_eq!(pdf_page_builder_streaming_table_pending_row_count(p), 1);
+
+            pdf_page_builder_streaming_table_finish(p, &mut ec);
+            free_test_pair(b, p);
+        }
+    }
+
+    #[test]
+    fn streaming_table_explicit_flush_marks_boundary() {
+        unsafe {
+            let b = new_test_builder();
+            let p = new_test_page(b);
+            begin_single_col_table(p);
+            let mut ec = 0i32;
+            pdf_page_builder_streaming_table_set_batch_size(p, 100, &mut ec);
+
+            push_str_row(p, "a");
+            push_str_row(p, "b");
+            assert_eq!(pdf_page_builder_streaming_table_batch_count(p), 0);
+            assert_eq!(pdf_page_builder_streaming_table_pending_row_count(p), 2);
+
+            pdf_page_builder_streaming_table_flush(p, &mut ec);
+            assert_eq!(ec, ERR_SUCCESS);
+            assert_eq!(pdf_page_builder_streaming_table_batch_count(p), 1);
+            assert_eq!(pdf_page_builder_streaming_table_pending_row_count(p), 0);
+
+            pdf_page_builder_streaming_table_finish(p, &mut ec);
+            free_test_pair(b, p);
+        }
+    }
+
+    #[test]
+    fn streaming_table_finish_records_final_batch() {
+        // finish() should bump batch_count if rows are still pending.
+        // After finish the counts reset (st_batch_size = 0).
+        unsafe {
+            let b = new_test_builder();
+            let p = new_test_page(b);
+            begin_single_col_table(p);
+            let mut ec = 0i32;
+            pdf_page_builder_streaming_table_set_batch_size(p, 100, &mut ec);
+            push_str_row(p, "only");
+            assert_eq!(pdf_page_builder_streaming_table_pending_row_count(p), 1);
+            pdf_page_builder_streaming_table_finish(p, &mut ec);
+            assert_eq!(ec, ERR_SUCCESS);
+            // After finish the state is reset; pending=0
+            assert_eq!(pdf_page_builder_streaming_table_pending_row_count(p), 0);
+            free_test_pair(b, p);
+        }
     }
 }

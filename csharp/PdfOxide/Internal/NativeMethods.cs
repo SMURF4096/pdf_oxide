@@ -7383,6 +7383,24 @@ namespace PdfOxide.Internal
             float width, float r, float g, float b,
             out int errorCode);
 
+        /// <summary>Draw a dashed rectangle border. dashArray is alternating on/off lengths in points.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_stroke_rect_dashed")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial int PdfPageBuilderStrokeRectDashed(
+            IntPtr page, float x, float y, float w, float h,
+            float width, float r, float g, float b,
+            float* dashArray, nuint nDash, float phase,
+            out int errorCode);
+
+        /// <summary>Draw a dashed line. dashArray is alternating on/off lengths in points.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_stroke_line_dashed")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial int PdfPageBuilderStrokeLineDashed(
+            IntPtr page, float x1, float y1, float x2, float y2,
+            float width, float r, float g, float b,
+            float* dashArray, nuint nDash, float phase,
+            out int errorCode);
+
         /// <summary>Place wrapped text inside a rectangle with horizontal alignment (0=Left,1=Center,2=Right).</summary>
         [LibraryImport(LibName, EntryPoint = "pdf_page_builder_text_in_rect", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
@@ -7443,6 +7461,22 @@ namespace PdfOxide.Internal
             byte** cells,
             nuint* rowspans,
             out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_streaming_table_set_batch_size")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderStreamingTableSetBatchSize(IntPtr page, nuint batchSize, out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_streaming_table_pending_row_count")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial nuint PdfPageBuilderStreamingTablePendingRowCount(IntPtr page);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_streaming_table_batch_count")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial nuint PdfPageBuilderStreamingTableBatchCount(IntPtr page);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_streaming_table_flush")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderStreamingTableFlush(IntPtr page, out int errorCode);
 
         [LibraryImport(LibName, EntryPoint = "pdf_page_builder_streaming_table_finish")]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]

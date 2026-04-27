@@ -4143,6 +4143,18 @@ enum PendingPageOp {
         g: f32,
         b: f32,
     },
+    StrokeRectDashed {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        width: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+        dash: Vec<f32>,
+        phase: f32,
+    },
     StrokeLine {
         x1: f32,
         y1: f32,
@@ -4152,6 +4164,18 @@ enum PendingPageOp {
         r: f32,
         g: f32,
         b: f32,
+    },
+    StrokeLineDashed {
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        width: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+        dash: Vec<f32>,
+        phase: f32,
     },
     TextInRect {
         x: f32,
@@ -4181,6 +4205,11 @@ enum PendingPageOp {
         min_col_width_pt: f32,
         max_col_width_pt: f32,
         max_rowspan: usize,
+    },
+    /// Pre-assembled batch of rows for the currently-open streaming table.
+    /// Emitted by `PyStreamingTable.push_row` when `batch_size` is reached.
+    StreamingTableBatch {
+        rows: Vec<Vec<(String, usize)>>,
     },
     /// Pre-rendered barcode PNG (generated at record time so errors
     /// surface at the Python call site, not during replay).
@@ -5336,6 +5365,25 @@ impl PyFluentPageBuilder {
         Ok(slf)
     }
 
+    /// Draw a dashed rectangle border. `dash` is alternating on/off lengths in points.
+    #[pyo3(signature = (x, y, w, h, dash, width=1.0, color=(0.0, 0.0, 0.0), phase=0.0))]
+    fn stroke_rect_dashed<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        dash: Vec<f32>,
+        width: f32,
+        color: (f32, f32, f32),
+        phase: f32,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::StrokeRectDashed {
+            x, y, w, h, width, r: color.0, g: color.1, b: color.2, dash, phase,
+        })?;
+        Ok(slf)
+    }
+
     /// Draw a line with explicit width (points) and RGB colour.
     #[pyo3(signature = (x1, y1, x2, y2, width=1.0, color=(0.0, 0.0, 0.0)))]
     fn stroke_line<'a>(
@@ -5356,6 +5404,25 @@ impl PyFluentPageBuilder {
             r: color.0,
             g: color.1,
             b: color.2,
+        })?;
+        Ok(slf)
+    }
+
+    /// Draw a dashed line. `dash` is alternating on/off lengths in points.
+    #[pyo3(signature = (x1, y1, x2, y2, dash, width=1.0, color=(0.0, 0.0, 0.0), phase=0.0))]
+    fn stroke_line_dashed<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        dash: Vec<f32>,
+        width: f32,
+        color: (f32, f32, f32),
+        phase: f32,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::StrokeLineDashed {
+            x1, y1, x2, y2, width, r: color.0, g: color.1, b: color.2, dash, phase,
         })?;
         Ok(slf)
     }
@@ -5405,7 +5472,7 @@ impl PyFluentPageBuilder {
     ///
     /// `columns` is a list of `Column`; `repeat_header=True` redraws
     /// the header row at every page break.
-    #[pyo3(signature = (columns, repeat_header=false, mode="fixed", sample_rows=50, min_col_width_pt=20.0, max_col_width_pt=400.0, max_rowspan=1))]
+    #[pyo3(signature = (columns, repeat_header=false, mode="fixed", sample_rows=50, min_col_width_pt=20.0, max_col_width_pt=400.0, max_rowspan=1, batch_size=256))]
     fn streaming_table(
         slf_handle: Py<Self>,
         py: Python<'_>,
@@ -5416,9 +5483,13 @@ impl PyFluentPageBuilder {
         min_col_width_pt: f32,
         max_col_width_pt: f32,
         max_rowspan: usize,
+        batch_size: usize,
     ) -> PyResult<PyStreamingTable> {
         if columns.is_empty() {
             return Err(PyValueError::new_err("streaming_table requires at least one Column"));
+        }
+        if batch_size == 0 {
+            return Err(PyValueError::new_err("batch_size must be >= 1"));
         }
         let cols: Vec<PyColumn> = columns.into_iter().map(|c| (*c).clone()).collect();
         let _ = py;
@@ -5426,13 +5497,15 @@ impl PyFluentPageBuilder {
             parent: slf_handle,
             columns: cols,
             repeat_header,
-            rows: Vec::new(),
+            current_batch: Vec::new(),
+            completed_batches: Vec::new(),
             finished: false,
             mode: mode.to_string(),
             sample_rows,
             min_col_width_pt,
             max_col_width_pt,
             max_rowspan,
+            batch_size,
         })
     }
 
@@ -5559,6 +5632,10 @@ impl PyFluentPageBuilder {
                     g,
                     b,
                 } => page.stroke_rect(x, y, w, h, crate::writer::LineStyle::new(width, r, g, b)),
+                PendingPageOp::StrokeRectDashed { x, y, w, h, width, r, g, b, dash, phase } => {
+                    let style = crate::writer::LineStyle::new(width, r, g, b).with_dash(&dash, phase);
+                    page.stroke_rect(x, y, w, h, style)
+                },
                 PendingPageOp::StrokeLine {
                     x1,
                     y1,
@@ -5570,6 +5647,10 @@ impl PyFluentPageBuilder {
                     b,
                 } => {
                     page.stroke_line(x1, y1, x2, y2, crate::writer::LineStyle::new(width, r, g, b))
+                },
+                PendingPageOp::StrokeLineDashed { x1, y1, x2, y2, width, r, g, b, dash, phase } => {
+                    let style = crate::writer::LineStyle::new(width, r, g, b).with_dash(&dash, phase);
+                    page.stroke_line(x1, y1, x2, y2, style)
                 },
                 PendingPageOp::TextInRect {
                     x,
@@ -5674,6 +5755,11 @@ impl PyFluentPageBuilder {
                     }
                     st.finish()
                 },
+                PendingPageOp::StreamingTableBatch { .. } => {
+                    // Should never appear without a surrounding StreamingTable op;
+                    // ignore gracefully rather than panic.
+                    page
+                },
             };
         }
         page.done();
@@ -5694,21 +5780,26 @@ pub struct PyStreamingTable {
     parent: Py<PyFluentPageBuilder>,
     columns: Vec<PyColumn>,
     repeat_header: bool,
-    /// Each cell: (text, rowspan).
-    rows: Vec<Vec<(String, usize)>>,
+    /// Rows accumulating in the current (not-yet-flushed) batch.
+    current_batch: Vec<Vec<(String, usize)>>,
+    /// Fully-completed batches waiting to be assembled at finish().
+    completed_batches: Vec<Vec<Vec<(String, usize)>>>,
     finished: bool,
     mode: String,
     sample_rows: usize,
     min_col_width_pt: f32,
     max_col_width_pt: f32,
     max_rowspan: usize,
+    /// Maximum rows per batch before an automatic flush (default 256).
+    batch_size: usize,
 }
 
 #[pymethods]
 impl PyStreamingTable {
     /// Push a single row of string cells (all rowspan=1). Length must match
     /// the number of configured columns; otherwise `ValueError` is raised.
-    fn push_row(&mut self, cells: Vec<String>) -> PyResult<()> {
+    /// Auto-flushes the current batch when `batch_size` is reached.
+    fn push_row(&mut self, py: Python<'_>, cells: Vec<String>) -> PyResult<()> {
         if self.finished {
             return Err(PyRuntimeError::new_err("StreamingTable.finish() already called"));
         }
@@ -5719,14 +5810,18 @@ impl PyStreamingTable {
                 self.columns.len()
             )));
         }
-        self.rows
+        self.current_batch
             .push(cells.into_iter().map(|s| (s, 1usize)).collect());
+        if self.current_batch.len() >= self.batch_size {
+            self._flush_batch(py)?;
+        }
         Ok(())
     }
 
     /// Push a row with per-cell rowspan values. Each element is a
     /// `(text, rowspan)` tuple; rowspan == 1 is a normal cell.
-    fn push_row_span(&mut self, cells: Vec<(String, usize)>) -> PyResult<()> {
+    /// Auto-flushes the current batch when `batch_size` is reached.
+    fn push_row_span(&mut self, py: Python<'_>, cells: Vec<(String, usize)>) -> PyResult<()> {
         if self.finished {
             return Err(PyRuntimeError::new_err("StreamingTable.finish() already called"));
         }
@@ -5737,7 +5832,10 @@ impl PyStreamingTable {
                 self.columns.len()
             )));
         }
-        self.rows.push(cells);
+        self.current_batch.push(cells);
+        if self.current_batch.len() >= self.batch_size {
+            self._flush_batch(py)?;
+        }
         Ok(())
     }
 
@@ -5746,12 +5844,29 @@ impl PyStreamingTable {
         self.columns.len()
     }
 
+    /// Number of rows in the current (not-yet-flushed) batch.
+    fn pending_row_count(&self) -> usize {
+        self.current_batch.len()
+    }
+
+    /// Number of fully-completed batches waiting for finish().
+    fn batch_count(&self) -> usize {
+        self.completed_batches.len()
+    }
+
+    /// Explicitly flush the current batch to `completed_batches`.
+    /// Called automatically when `batch_size` rows accumulate.
+    fn flush(&mut self, py: Python<'_>) -> PyResult<()> {
+        self._flush_batch(py)
+    }
+
     /// Close the streaming table and return the parent
     /// `FluentPageBuilder` for further chaining.
     fn finish(&mut self, py: Python<'_>) -> PyResult<Py<PyFluentPageBuilder>> {
         if self.finished {
             return Err(PyRuntimeError::new_err("StreamingTable.finish() already called"));
         }
+        self._flush_batch(py)?;
         self.finished = true;
 
         let parent_handle = self.parent.clone_ref(py);
@@ -5759,7 +5874,12 @@ impl PyStreamingTable {
         let headers: Vec<String> = self.columns.iter().map(|c| c.header.clone()).collect();
         let widths: Vec<f32> = self.columns.iter().map(|c| c.width).collect();
         let aligns: Vec<i32> = self.columns.iter().map(|c| c.align).collect();
-        let rows = std::mem::take(&mut self.rows);
+        // Assemble all batches into a flat row list for the existing dispatch.
+        let rows: Vec<Vec<(String, usize)>> = self
+            .completed_batches
+            .drain(..)
+            .flatten()
+            .collect();
         parent_ref.push(PendingPageOp::StreamingTable {
             headers,
             widths,
@@ -5774,6 +5894,18 @@ impl PyStreamingTable {
         })?;
         drop(parent_ref);
         Ok(parent_handle)
+    }
+}
+
+impl PyStreamingTable {
+    /// Move the current batch into `completed_batches` (a no-op if the current
+    /// batch is empty). Frees the batch buffer.
+    fn _flush_batch(&mut self, _py: Python<'_>) -> PyResult<()> {
+        if !self.current_batch.is_empty() {
+            let batch = std::mem::take(&mut self.current_batch);
+            self.completed_batches.push(batch);
+        }
+        Ok(())
     }
 }
 

@@ -287,11 +287,15 @@ type TableMode struct {
 //   - Mode selects the column-sizing strategy (default: TableModeFixed).
 //   - MaxRowspan allows cells to span multiple rows via PushRowSpan.
 //     0 or 1 disables rowspan (default); ≥2 enables it.
+//   - BatchSize is the maximum number of rows accumulated in the
+//     client-side buffer before an automatic flush to the native layer.
+//     0 or unset defaults to 256.
 type StreamingTableConfig struct {
 	Columns      []Column
 	RepeatHeader bool
 	Mode         TableMode
 	MaxRowspan   int
+	BatchSize    int
 }
 
 // LogLevel represents the log verbosity level.

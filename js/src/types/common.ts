@@ -219,6 +219,11 @@ export interface StreamingTableConfig {
    * Set to ≥2 to allow `pushRowSpan` cells to span multiple rows.
    */
   maxRowspan?: number;
+  /**
+   * Maximum rows to buffer before an automatic batch flush in the native
+   * layer. 0 or unset defaults to 256.
+   */
+  batchSize?: number;
 }
 
 /**

@@ -2052,6 +2052,24 @@ export class PageBuilder {
     y2: number,
     style?: { width?: number; color?: [number, number, number] }
   ): this;
+  strokeRectDashed(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    dash: number[],
+    phase?: number,
+    style?: { width?: number; color?: [number, number, number] }
+  ): this;
+  strokeLineDashed(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    dash: number[],
+    phase?: number,
+    style?: { width?: number; color?: [number, number, number] }
+  ): this;
   textInRect(x: number, y: number, w: number, h: number, text: string, align?: Align): this;
   newPageSameSize(): this;
   /** Approximate width of `text` in the current font (JS-side in v0.3.39). */
