@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // PDF Oxide Node.js bindings - Native module loader
 
 import { createRequire } from 'node:module';

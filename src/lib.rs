@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // Allow some clippy lints that are too pedantic for this project
 #![allow(clippy::type_complexity)]
 #![allow(clippy::too_many_arguments)]

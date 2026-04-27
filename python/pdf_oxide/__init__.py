@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
 """
 PDF Oxide - The Complete PDF Toolkit
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! WebAssembly bindings for PDF Oxide.
 //!
 //! Provides a JavaScript/TypeScript API for PDF operations in browser
