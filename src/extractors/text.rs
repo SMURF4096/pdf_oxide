@@ -4,6 +4,8 @@
 //! text characters with their Unicode mappings, font information, and
 //! bounding boxes.
 
+#![forbid(unsafe_code)]
+
 use crate::config::ExtractionProfile;
 use crate::content::graphics_state::{GraphicsStateStack, Matrix};
 use crate::content::operators::{Operator, TextElement};
@@ -1940,7 +1942,7 @@ struct MarkedContentContext {
 /// - **Span mode** (default): Extracts complete text strings as PDF provides them (PDF spec compliant)
 /// - **Character mode**: Extracts individual characters (for special use cases)
 #[derive(Debug)]
-pub struct TextExtractor {
+pub struct TextExtractor<'doc> {
     /// Graphics state stack for handling q/Q operators
     state_stack: GraphicsStateStack,
     /// Loaded fonts (name -> FontInfo). Arc-wrapped to avoid deep cloning across pages.
@@ -1952,7 +1954,7 @@ pub struct TextExtractor {
     /// Resources dictionary (for accessing XObjects and fonts)
     resources: Option<Object>,
     /// Reference to the document (for loading XObjects)
-    document: Option<*const crate::document::PdfDocument>,
+    document: Option<&'doc crate::document::PdfDocument>,
     /// Set of processed XObject references to avoid duplicates
     processed_xobjects: HashSet<ObjectRef>,
     /// Cached XObject name → ObjectRef mapping for current resources context.
@@ -2023,7 +2025,7 @@ pub struct TextExtractor {
     cached_current_font: Option<Arc<FontInfo>>,
 }
 
-impl TextExtractor {
+impl<'doc> TextExtractor<'doc> {
     /// Fraction of a glyph's advance width considered "overlap" for
     /// duplicate detection. Used by both `deduplicate_overlapping_chars`
     /// and `deduplicate_overlapping_spans`.
@@ -2130,12 +2132,7 @@ impl TextExtractor {
     }
 
     /// Set the document reference for loading XObjects.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure the document pointer remains valid for the lifetime
-    /// of this extractor. This is safe when used within PdfDocument methods.
-    pub fn set_document(&mut self, document: *const crate::document::PdfDocument) {
+    pub fn set_document(&mut self, document: &'doc crate::document::PdfDocument) {
         self.document = Some(document);
     }
 
@@ -2143,9 +2140,9 @@ impl TextExtractor {
     // Debug/profiling helpers — exposed for examples/debug_katalog.rs
     // ========================================================================
 
-    /// Convenience wrapper: set document from a reference (avoids raw pointer in caller).
-    pub fn set_document_ptr(&mut self, doc: &crate::document::PdfDocument) {
-        self.document = Some(doc as *const crate::document::PdfDocument);
+    /// Convenience wrapper: identical to `set_document`.
+    pub fn set_document_ptr(&mut self, doc: &'doc crate::document::PdfDocument) {
+        self.set_document(doc);
     }
 
     /// Prepare for span extraction mode (same setup as extract_text_spans preamble).
@@ -2438,24 +2435,21 @@ impl TextExtractor {
         let prop_name = properties.as_name()?;
         let resources = self.resources.as_ref()?;
         let res_dict = if let Some(res_ref) = resources.as_reference() {
-            let doc = unsafe { &*self.document? };
-            doc.load_object(res_ref).ok()?
+            self.document?.load_object(res_ref).ok()?
         } else {
             resources.clone()
         };
         let res_dict = res_dict.as_dict()?;
         let properties_dict_obj = res_dict.get("Properties")?;
         let properties_dict = if let Some(r) = properties_dict_obj.as_reference() {
-            let doc = unsafe { &*self.document? };
-            doc.load_object(r).ok()?
+            self.document?.load_object(r).ok()?
         } else {
             properties_dict_obj.clone()
         };
         let properties_dict = properties_dict.as_dict()?;
         let prop_obj = properties_dict.get(prop_name)?;
         let resolved = if let Some(r) = prop_obj.as_reference() {
-            let doc = unsafe { &*self.document? };
-            doc.load_object(r).ok()?
+            self.document?.load_object(r).ok()?
         } else {
             prop_obj.clone()
         };
@@ -4754,11 +4748,10 @@ impl TextExtractor {
             None => return Ok(None),
         };
 
-        let doc_ptr = match self.document {
-            Some(ptr) => ptr,
+        let doc = match self.document {
+            Some(d) => d,
             None => return Ok(None),
         };
-        let doc = unsafe { &*doc_ptr };
 
         // Resolve resources → XObject dict
         let resources_obj = if let Some(res_ref) = resources.as_reference() {
@@ -4821,9 +4814,9 @@ impl TextExtractor {
 
         self.processed_xobjects.insert(xobject_ref);
 
-        // Get document reference for loading objects
+        // Get document reference for loading objects.
         let doc = match self.document {
-            Some(ptr) => unsafe { &*ptr },
+            Some(d) => d,
             None => return Ok(()),
         };
 
@@ -6588,7 +6581,7 @@ fn cmyk_to_rgb(c: f32, m: f32, y: f32, k: f32) -> (f32, f32, f32) {
     (r, g, b)
 }
 
-impl Default for TextExtractor {
+impl<'doc> Default for TextExtractor<'doc> {
     fn default() -> Self {
         Self::new()
     }

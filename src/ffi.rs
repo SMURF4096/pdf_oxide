@@ -33,8 +33,8 @@
 //!
 //! # Handle Ownership Contract
 //! Every opaque handle (`*mut PdfDocument`, `*mut DocumentEditor`, `*mut Pdf`, etc.) is a
-//! `Box<T>` cast to a raw pointer. Functions dereference these pointers via [`handle_mut!`]
-//! or [`handle_ref!`]. The following invariants **must** be upheld by all callers:
+//! `Box<T>` cast to a raw pointer. Functions dereference these pointers via [`handle_mut`]
+//! or [`handle_ref`]. The following invariants **must** be upheld by all callers:
 //!
 //! 1. **Exclusive ownership** — at any point in time, at most one logical caller holds a given
 //!    handle. Passing the same handle to two threads concurrently (without external
@@ -62,31 +62,31 @@ use crate::search::{SearchOptions, SearchResult as RustSearchResult, TextSearche
 
 // ─── Handle dereference helpers ──────────────────────────────────────────────
 //
-// Use handle_mut! for every pointer deref that calls a &mut self method.
-// Use handle_ref! for every pointer deref that calls a &self method.
+// Use handle_mut() for every pointer deref that calls a &mut self method.
+// Use handle_ref() for every pointer deref that calls a &self method.
 // This centralises the unsafe block so a future Mutex<T> migration only
-// needs to change these two macros — see issue #410.
+// needs to change these two functions — see issue #410.
 
 /// Dereference a raw handle pointer as a shared reference.
 ///
-/// # Safety
-/// `$ptr` must satisfy the Handle Ownership Contract (see module docs):
+/// Callers must uphold the Handle Ownership Contract (see module docs):
 /// non-null, valid, and no concurrent `&mut` alias exists.
-macro_rules! handle_ref {
-    ($ptr:expr) => {
-        unsafe { &*$ptr }
-    };
+#[allow(unsafe_code)]
+#[inline(always)]
+fn handle_ref<'a, T>(ptr: *const T) -> &'a T {
+    // SAFETY: Handle Ownership Contract — see module docs.
+    unsafe { &*ptr }
 }
 
 /// Dereference a raw handle pointer as a unique (mutable) reference.
 ///
-/// # Safety
-/// `$ptr` must satisfy the Handle Ownership Contract (see module docs):
+/// Callers must uphold the Handle Ownership Contract (see module docs):
 /// non-null, valid, exclusively owned, and no other reference to `*$ptr` exists.
-macro_rules! handle_mut {
-    ($ptr:expr) => {
-        unsafe { &mut *$ptr }
-    };
+#[allow(unsafe_code)]
+#[inline(always)]
+fn handle_mut<'a, T>(ptr: *mut T) -> &'a mut T {
+    // SAFETY: Handle Ownership Contract — see module docs.
+    unsafe { &mut *ptr }
 }
 
 // ─── Error helpers ───────────────────────────────────────────────────────────
@@ -165,6 +165,56 @@ fn to_c_string_opt(s: Option<String>) -> *mut c_char {
     }
 }
 
+/// Convert a C string pointer to `&str`. Returns `Err(())` if null or invalid UTF-8.
+///
+/// Callers must ensure `ptr`, when non-null, points to a valid null-terminated C string.
+#[allow(unsafe_code)]
+fn c_str<'a>(ptr: *const c_char) -> Result<&'a str, ()> {
+    if ptr.is_null() {
+        return Err(());
+    }
+    // SAFETY: non-null, caller ensures valid null-terminated string per FFI contract.
+    unsafe { CStr::from_ptr(ptr) }.to_str().map_err(|_| ())
+}
+
+/// Convert a C string pointer to an owned `String` using lossy UTF-8 conversion.
+/// Returns `None` if null.
+///
+/// Callers must ensure `ptr`, when non-null, points to a valid null-terminated C string.
+#[allow(unsafe_code)]
+fn c_str_lossy(ptr: *const c_char) -> Option<String> {
+    if ptr.is_null() {
+        return None;
+    }
+    // SAFETY: non-null, caller ensures valid null-terminated string per FFI contract.
+    Some(unsafe { CStr::from_ptr(ptr) }.to_string_lossy().into_owned())
+}
+
+/// Convert a C pointer+length pair into a Rust slice.
+/// Returns an empty slice if `ptr` is null or `len` is zero.
+///
+/// Callers must ensure `ptr..ptr+len` is a valid, aligned, initialized memory region.
+#[allow(unsafe_code)]
+fn raw_slice<'a, T>(ptr: *const T, len: usize) -> &'a [T] {
+    if ptr.is_null() || len == 0 {
+        return &[];
+    }
+    // SAFETY: non-null, len is caller-supplied and correct per FFI contract.
+    unsafe { std::slice::from_raw_parts(ptr, len) }
+}
+
+/// Write a value through a raw out-parameter pointer. No-op if null.
+///
+/// Callers must ensure `ptr`, when non-null, is a valid writable pointer.
+#[allow(unsafe_code)]
+#[inline]
+fn write_out<T: Copy>(ptr: *mut T, val: T) {
+    if !ptr.is_null() {
+        // SAFETY: non-null, caller ensures valid writable pointer per FFI contract.
+        unsafe { *ptr = val }
+    }
+}
+
 // ─── Logging ───────────────────────────────────────────────────────────────
 
 /// Set the global log level for the library.
@@ -233,8 +283,7 @@ pub extern "C" fn pdf_document_open(path: *const c_char, error_code: *mut i32) -
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let path_str = unsafe { CStr::from_ptr(path) };
-    let path_str = match path_str.to_str() {
+    let path_str = match c_str(path) {
         Ok(s) => s,
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
@@ -277,7 +326,7 @@ pub extern "C" fn pdf_document_get_page_count(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.page_count() {
         Ok(count) => {
             set_error(error_code, ERR_SUCCESS);
@@ -300,12 +349,10 @@ pub extern "C" fn pdf_document_get_version(
     if handle.is_null() || major.is_null() || minor.is_null() {
         return;
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     let (maj, min) = doc.version();
-    unsafe {
-        *major = maj;
-        *minor = min;
-    }
+    write_out(major, maj);
+    write_out(minor, min);
 }
 
 /// Check if the document has a structure tree (tagged PDF).
@@ -314,7 +361,7 @@ pub extern "C" fn pdf_document_has_structure_tree(handle: *mut PdfDocument) -> b
     if handle.is_null() {
         return false;
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     doc.structure_tree().ok().flatten().is_some()
 }
 
@@ -329,7 +376,7 @@ pub extern "C" fn pdf_document_extract_text(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.extract_text(page_index as usize) {
         Ok(text) => {
             set_error(error_code, ERR_SUCCESS);
@@ -353,7 +400,7 @@ pub extern "C" fn pdf_document_to_markdown(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     let opts = ConversionOptions::default();
     match doc.to_markdown(page_index as usize, &opts) {
         Ok(text) => {
@@ -378,7 +425,7 @@ pub extern "C" fn pdf_document_to_html(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     let opts = ConversionOptions::default();
     match doc.to_html(page_index as usize, &opts) {
         Ok(text) => {
@@ -403,7 +450,7 @@ pub extern "C" fn pdf_document_to_plain_text(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     let opts = ConversionOptions::default();
     match doc.to_plain_text(page_index as usize, &opts) {
         Ok(text) => {
@@ -427,7 +474,7 @@ pub extern "C" fn pdf_document_to_markdown_all(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     let opts = ConversionOptions::default();
     match doc.to_markdown_all(&opts) {
         Ok(text) => {
@@ -458,7 +505,7 @@ pub extern "C" fn document_editor_open(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let path_str = match unsafe { CStr::from_ptr(path) }.to_str() {
+    let path_str = match c_str(path) {
         Ok(s) => s,
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
@@ -497,7 +544,7 @@ pub extern "C" fn document_editor_is_modified(handle: *const DocumentEditor) -> 
     if handle.is_null() {
         return false;
     }
-    let editor = handle_ref!(handle);
+    let editor = handle_ref(handle);
     editor.is_modified()
 }
 
@@ -511,7 +558,7 @@ pub extern "C" fn document_editor_get_source_path(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let editor = handle_ref!(handle);
+    let editor = handle_ref(handle);
     set_error(error_code, ERR_SUCCESS);
     to_c_string(editor.source_path())
 }
@@ -526,12 +573,10 @@ pub extern "C" fn document_editor_get_version(
     if handle.is_null() || major.is_null() || minor.is_null() {
         return;
     }
-    let editor = handle_ref!(handle);
+    let editor = handle_ref(handle);
     let (maj, min) = editor.version();
-    unsafe {
-        *major = maj;
-        *minor = min;
-    }
+    write_out(major, maj);
+    write_out(minor, min);
 }
 
 /// Get page count from editor.
@@ -544,7 +589,7 @@ pub extern "C" fn document_editor_get_page_count(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_ref!(handle);
+    let editor = handle_ref(handle);
     set_error(error_code, ERR_SUCCESS);
     editor.current_page_count() as i32
 }
@@ -562,7 +607,7 @@ macro_rules! editor_get_string_field {
             }
             // We need &mut self for these methods, but we only have *const
             // This is safe because we hold the only reference from Go side
-            let editor = handle_mut!((handle as *mut DocumentEditor));
+            let editor = handle_mut((handle as *mut DocumentEditor));
             match editor.$method() {
                 Ok(Some(val)) => {
                     set_error(error_code, ERR_SUCCESS);
@@ -593,8 +638,8 @@ macro_rules! editor_set_string_field {
                 set_error(error_code, ERR_INVALID_ARG);
                 return -1;
             }
-            let editor = handle_mut!(handle);
-            let val = match unsafe { CStr::from_ptr(value) }.to_str() {
+            let editor = handle_mut(handle);
+            let val = match c_str(value) {
                 Ok(s) => s,
                 Err(_) => {
                     set_error(error_code, ERR_INVALID_ARG);
@@ -627,7 +672,7 @@ pub extern "C" fn document_editor_get_producer(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     match editor.producer() {
         Ok(Some(s)) => {
             set_error(error_code, ERR_SUCCESS);
@@ -654,14 +699,14 @@ pub extern "C" fn document_editor_set_producer(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let s = match unsafe { CStr::from_ptr(value) }.to_str() {
+    let s = match c_str(value) {
         Ok(s) => s,
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
             return -1;
         },
     };
-    handle_mut!(handle).set_producer(s);
+    handle_mut(handle).set_producer(s);
     set_error(error_code, ERR_SUCCESS);
     0
 }
@@ -677,7 +722,7 @@ pub extern "C" fn document_editor_get_creation_date(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     match editor.creation_date() {
         Ok(Some(s)) => {
             set_error(error_code, ERR_SUCCESS);
@@ -704,14 +749,14 @@ pub extern "C" fn document_editor_set_creation_date(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let s = match unsafe { CStr::from_ptr(date_str) }.to_str() {
+    let s = match c_str(date_str) {
         Ok(s) => s,
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
             return -1;
         },
     };
-    handle_mut!(handle).set_creation_date(s);
+    handle_mut(handle).set_creation_date(s);
     set_error(error_code, ERR_SUCCESS);
     0
 }
@@ -730,8 +775,8 @@ pub extern "C" fn document_editor_save(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
-    let path_str = match unsafe { CStr::from_ptr(path) }.to_str() {
+    let editor = handle_mut(handle);
+    let path_str = match c_str(path) {
         Ok(s) => s,
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
@@ -764,7 +809,7 @@ pub extern "C" fn document_editor_open_from_bytes(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let bytes = unsafe { std::slice::from_raw_parts(data, len) }.to_vec();
+    let bytes = raw_slice(data, len).to_vec();
     match DocumentEditor::from_bytes(bytes) {
         Ok(editor) => {
             set_error(error_code, ERR_SUCCESS);
@@ -790,13 +835,11 @@ pub extern "C" fn document_editor_save_to_bytes(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     match editor.save_to_bytes() {
         Ok(bytes) => {
             set_error(error_code, ERR_SUCCESS);
-            unsafe {
-                *out_len = bytes.len();
-            }
+            write_out(out_len, bytes.len());
             vec_to_ffi_bytes(bytes)
         },
         Err(e) => {
@@ -820,7 +863,7 @@ pub extern "C" fn document_editor_save_to_bytes_with_options(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     let mut opts = crate::editor::SaveOptions::full_rewrite();
     opts.compress = compress;
     opts.garbage_collect = garbage_collect;
@@ -828,9 +871,7 @@ pub extern "C" fn document_editor_save_to_bytes_with_options(
     match editor.save_to_bytes_with_options(opts) {
         Ok(bytes) => {
             set_error(error_code, ERR_SUCCESS);
-            unsafe {
-                *out_len = bytes.len();
-            }
+            write_out(out_len, bytes.len());
             vec_to_ffi_bytes(bytes)
         },
         Err(e) => {
@@ -852,8 +893,8 @@ pub extern "C" fn document_editor_merge_from_bytes(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
-    let bytes = unsafe { std::slice::from_raw_parts(data, len) };
+    let editor = handle_mut(handle);
+    let bytes = raw_slice(data, len);
     match editor.merge_from_bytes(bytes) {
         Ok(n) => {
             set_error(error_code, ERR_SUCCESS);
@@ -879,15 +920,15 @@ pub extern "C" fn document_editor_embed_file(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
-    let name_str = match unsafe { std::ffi::CStr::from_ptr(name) }.to_str() {
+    let editor = handle_mut(handle);
+    let name_str = match c_str(name) {
         Ok(s) => s,
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
             return -1;
         },
     };
-    let bytes = unsafe { std::slice::from_raw_parts(data, len) }.to_vec();
+    let bytes = raw_slice(data, len).to_vec();
     match editor.embed_file(name_str, bytes) {
         Ok(()) => {
             set_error(error_code, ERR_SUCCESS);
@@ -911,7 +952,7 @@ pub extern "C" fn document_editor_apply_page_redactions(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     match editor.apply_page_redactions(page) {
         Ok(()) => {
             set_error(error_code, ERR_SUCCESS);
@@ -934,7 +975,7 @@ pub extern "C" fn document_editor_apply_all_redactions(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     match editor.apply_all_redactions() {
         Ok(()) => {
             set_error(error_code, ERR_SUCCESS);
@@ -958,7 +999,7 @@ pub extern "C" fn document_editor_rotate_all_pages(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     match editor.rotate_all_pages(degrees) {
         Ok(()) => {
             set_error(error_code, ERR_SUCCESS);
@@ -983,7 +1024,7 @@ pub extern "C" fn document_editor_rotate_page_by(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     match editor.rotate_page_by(page, degrees) {
         Ok(()) => {
             set_error(error_code, ERR_SUCCESS);
@@ -1011,16 +1052,14 @@ pub extern "C" fn document_editor_get_page_media_box(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     match editor.get_page_media_box(page) {
         Ok(b) => {
             set_error(error_code, ERR_SUCCESS);
-            unsafe {
-                *x = b[0] as f64;
-                *y = b[1] as f64;
-                *w = b[2] as f64;
-                *h = b[3] as f64;
-            }
+            write_out(x, b[0] as f64);
+            write_out(y, b[1] as f64);
+            write_out(w, b[2] as f64);
+            write_out(h, b[3] as f64);
             0
         },
         Err(e) => {
@@ -1045,7 +1084,7 @@ pub extern "C" fn document_editor_set_page_media_box(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     match editor.set_page_media_box(page, [x as f32, y as f32, w as f32, h as f32]) {
         Ok(()) => {
             set_error(error_code, ERR_SUCCESS);
@@ -1073,26 +1112,22 @@ pub extern "C" fn document_editor_get_page_crop_box(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     match editor.get_page_crop_box(page) {
         Ok(Some(b)) => {
             set_error(error_code, ERR_SUCCESS);
-            unsafe {
-                *x = b[0] as f64;
-                *y = b[1] as f64;
-                *w = b[2] as f64;
-                *h = b[3] as f64;
-            }
+            write_out(x, b[0] as f64);
+            write_out(y, b[1] as f64);
+            write_out(w, b[2] as f64);
+            write_out(h, b[3] as f64);
             0
         },
         Ok(None) => {
             set_error(error_code, ERR_SUCCESS);
-            unsafe {
-                *x = 0.0;
-                *y = 0.0;
-                *w = 0.0;
-                *h = 0.0;
-            }
+            write_out(x, 0.0f64);
+            write_out(y, 0.0f64);
+            write_out(w, 0.0f64);
+            write_out(h, 0.0f64);
             0
         },
         Err(e) => {
@@ -1117,7 +1152,7 @@ pub extern "C" fn document_editor_set_page_crop_box(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     match editor.set_page_crop_box(page, [x as f32, y as f32, w as f32, h as f32]) {
         Ok(()) => {
             set_error(error_code, ERR_SUCCESS);
@@ -1145,8 +1180,8 @@ pub extern "C" fn document_editor_erase_regions(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
-    let flat = unsafe { std::slice::from_raw_parts(rects, rects_count * 4) };
+    let editor = handle_mut(handle);
+    let flat = raw_slice(rects, rects_count * 4);
     let boxes: Vec<[f32; 4]> = flat
         .chunks_exact(4)
         .map(|c| [c[0] as f32, c[1] as f32, c[2] as f32, c[3] as f32])
@@ -1174,7 +1209,7 @@ pub extern "C" fn document_editor_clear_erase_regions(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     editor.clear_erase_regions(page);
     set_error(error_code, ERR_SUCCESS);
     0
@@ -1189,7 +1224,7 @@ pub extern "C" fn document_editor_is_page_marked_for_flatten(
     if handle.is_null() {
         return -1;
     }
-    let editor = handle_ref!(handle);
+    let editor = handle_ref(handle);
     if editor.is_page_marked_for_flatten(page) {
         1
     } else {
@@ -1208,7 +1243,7 @@ pub extern "C" fn document_editor_unmark_page_for_flatten(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     editor.unmark_page_for_flatten(page);
     set_error(error_code, ERR_SUCCESS);
     0
@@ -1223,7 +1258,7 @@ pub extern "C" fn document_editor_is_page_marked_for_redaction(
     if handle.is_null() {
         return -1;
     }
-    let editor = handle_ref!(handle);
+    let editor = handle_ref(handle);
     if editor.is_page_marked_for_redaction(page) {
         1
     } else {
@@ -1242,7 +1277,7 @@ pub extern "C" fn document_editor_unmark_page_for_redaction(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     editor.unmark_page_for_redaction(page);
     set_error(error_code, ERR_SUCCESS);
     0
@@ -1256,7 +1291,7 @@ pub extern "C" fn pdf_from_markdown(markdown: *const c_char, error_code: *mut i3
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let md = match unsafe { CStr::from_ptr(markdown) }.to_str() {
+    let md = match c_str(markdown) {
         Ok(s) => s,
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
@@ -1281,7 +1316,7 @@ pub extern "C" fn pdf_from_html(html: *const c_char, error_code: *mut i32) -> *m
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let html_str = match unsafe { CStr::from_ptr(html) }.to_str() {
+    let html_str = match c_str(html) {
         Ok(s) => s,
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
@@ -1306,7 +1341,7 @@ pub extern "C" fn pdf_from_text(text: *const c_char, error_code: *mut i32) -> *m
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let text_str = match unsafe { CStr::from_ptr(text) }.to_str() {
+    let text_str = match c_str(text) {
         Ok(s) => s,
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
@@ -1331,7 +1366,7 @@ pub extern "C" fn pdf_save(handle: *mut Pdf, path: *const c_char, error_code: *m
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let path_str = match unsafe { CStr::from_ptr(path) }.to_str() {
+    let path_str = match c_str(path) {
         Ok(s) => s,
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
@@ -1340,7 +1375,7 @@ pub extern "C" fn pdf_save(handle: *mut Pdf, path: *const c_char, error_code: *m
     };
     // Borrow the Pdf mutably — save must NOT consume it, otherwise the
     // subsequent `pdf_free` call in the caller (Go/JS/C#) is a double-free.
-    let pdf = handle_mut!(handle);
+    let pdf = handle_mut(handle);
     match pdf.save(path_str) {
         Ok(()) => {
             set_error(error_code, ERR_SUCCESS);
@@ -1365,13 +1400,11 @@ pub extern "C" fn pdf_save_to_bytes(
     }
     // Borrow mutably — must NOT consume the handle (would cause double-free
     // when caller runs pdf_free).
-    let pdf = handle_mut!(handle);
+    let pdf = handle_mut(handle);
     match pdf.save_to_bytes() {
         Ok(bytes) => {
             set_error(error_code, ERR_SUCCESS);
-            unsafe {
-                *data_len = bytes.len() as i32;
-            }
+            write_out(data_len, bytes.len() as i32);
             vec_to_ffi_bytes(bytes)
         },
         Err(e) => {
@@ -1387,7 +1420,7 @@ pub extern "C" fn pdf_get_page_count(handle: *mut Pdf, error_code: *mut i32) -> 
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let pdf = handle_mut!(handle);
+    let pdf = handle_mut(handle);
     match pdf.page_count() {
         Ok(count) => {
             set_error(error_code, ERR_SUCCESS);
@@ -1428,8 +1461,8 @@ pub extern "C" fn pdf_document_search_page(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
-    let term = match unsafe { CStr::from_ptr(search_term) }.to_str() {
+    let doc = handle_ref(handle);
+    let term = match c_str(search_term) {
         Ok(s) => s,
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
@@ -1462,8 +1495,8 @@ pub extern "C" fn pdf_document_search_all(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
-    let term = match unsafe { CStr::from_ptr(search_term) }.to_str() {
+    let doc = handle_ref(handle);
+    let term = match c_str(search_term) {
         Ok(s) => s,
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
@@ -1488,7 +1521,7 @@ pub extern "C" fn pdf_oxide_search_result_count(results: *const FfiSearchResults
     if results.is_null() {
         return 0;
     }
-    let r = handle_ref!(results);
+    let r = handle_ref(results);
     r.results.len() as i32
 }
 
@@ -1502,7 +1535,7 @@ pub extern "C" fn pdf_oxide_search_result_get_text(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let r = handle_ref!(results);
+    let r = handle_ref(results);
     if index < 0 || (index as usize) >= r.results.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -1521,7 +1554,7 @@ pub extern "C" fn pdf_oxide_search_result_get_page(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let r = handle_ref!(results);
+    let r = handle_ref(results);
     if index < 0 || (index as usize) >= r.results.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return -1;
@@ -1544,18 +1577,16 @@ pub extern "C" fn pdf_oxide_search_result_get_bbox(
         set_error(error_code, ERR_INVALID_ARG);
         return;
     }
-    let r = handle_ref!(results);
+    let r = handle_ref(results);
     if index < 0 || (index as usize) >= r.results.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return;
     }
     let bbox = &r.results[index as usize].bbox;
-    unsafe {
-        *x = bbox.x;
-        *y = bbox.y;
-        *width = bbox.width;
-        *height = bbox.height;
-    }
+    write_out(x, bbox.x);
+    write_out(y, bbox.y);
+    write_out(width, bbox.width);
+    write_out(height, bbox.height);
     set_error(error_code, ERR_SUCCESS);
 }
 
@@ -1593,7 +1624,7 @@ pub extern "C" fn pdf_document_get_embedded_fonts(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     // Extract spans to discover font names used on this page
     let fonts = match doc.extract_spans(page_index as usize) {
         Ok(spans) => {
@@ -1626,7 +1657,7 @@ pub extern "C" fn pdf_oxide_font_count(fonts: *const FfiFontList) -> i32 {
     if fonts.is_null() {
         return 0;
     }
-    unsafe { (*fonts).fonts.len() as i32 }
+    handle_ref(fonts).fonts.len() as i32
 }
 
 #[no_mangle]
@@ -1639,7 +1670,7 @@ pub extern "C" fn pdf_oxide_font_get_name(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let list = handle_ref!(fonts);
+    let list = handle_ref(fonts);
     if (index as usize) >= list.fonts.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -1658,7 +1689,7 @@ pub extern "C" fn pdf_oxide_font_get_type(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let list = handle_ref!(fonts);
+    let list = handle_ref(fonts);
     if (index as usize) >= list.fonts.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -1677,7 +1708,7 @@ pub extern "C" fn pdf_oxide_font_get_encoding(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let list = handle_ref!(fonts);
+    let list = handle_ref(fonts);
     if (index as usize) >= list.fonts.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -1696,7 +1727,7 @@ pub extern "C" fn pdf_oxide_font_is_embedded(
         set_error(error_code, ERR_INVALID_ARG);
         return 0;
     }
-    let list = handle_ref!(fonts);
+    let list = handle_ref(fonts);
     if (index as usize) >= list.fonts.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return 0;
@@ -1719,7 +1750,7 @@ pub extern "C" fn pdf_oxide_font_is_subset(
         set_error(error_code, ERR_INVALID_ARG);
         return 0;
     }
-    let list = handle_ref!(fonts);
+    let list = handle_ref(fonts);
     if (index as usize) >= list.fonts.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return 0;
@@ -1769,7 +1800,7 @@ pub extern "C" fn pdf_document_get_embedded_images(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.extract_images(page_index as usize) {
         Ok(images) => {
             set_error(error_code, ERR_SUCCESS);
@@ -1787,7 +1818,7 @@ pub extern "C" fn pdf_oxide_image_count(images: *const FfiImageList) -> i32 {
     if images.is_null() {
         return 0;
     }
-    unsafe { (*images).images.len() as i32 }
+    handle_ref(images).images.len() as i32
 }
 
 #[no_mangle]
@@ -1800,7 +1831,7 @@ pub extern "C" fn pdf_oxide_image_get_width(
         set_error(error_code, ERR_INVALID_ARG);
         return 0;
     }
-    let list = handle_ref!(images);
+    let list = handle_ref(images);
     if (index as usize) >= list.images.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return 0;
@@ -1819,7 +1850,7 @@ pub extern "C" fn pdf_oxide_image_get_height(
         set_error(error_code, ERR_INVALID_ARG);
         return 0;
     }
-    let list = handle_ref!(images);
+    let list = handle_ref(images);
     if (index as usize) >= list.images.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return 0;
@@ -1838,7 +1869,7 @@ pub extern "C" fn pdf_oxide_image_get_format(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let list = handle_ref!(images);
+    let list = handle_ref(images);
     if (index as usize) >= list.images.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -1857,7 +1888,7 @@ pub extern "C" fn pdf_oxide_image_get_colorspace(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let list = handle_ref!(images);
+    let list = handle_ref(images);
     if (index as usize) >= list.images.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -1876,7 +1907,7 @@ pub extern "C" fn pdf_oxide_image_get_bits_per_component(
         set_error(error_code, ERR_INVALID_ARG);
         return 0;
     }
-    let list = handle_ref!(images);
+    let list = handle_ref(images);
     if (index as usize) >= list.images.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return 0;
@@ -1896,7 +1927,7 @@ pub extern "C" fn pdf_oxide_image_get_data(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let list = handle_ref!(images);
+    let list = handle_ref(images);
     if (index as usize) >= list.images.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -1906,9 +1937,7 @@ pub extern "C" fn pdf_oxide_image_get_data(
         crate::extractors::ImageData::Jpeg(bytes) => bytes.clone(),
         crate::extractors::ImageData::Raw { pixels, .. } => pixels.clone(),
     };
-    unsafe {
-        *data_len = data.len() as i32;
-    }
+    write_out(data_len, data.len() as i32);
     set_error(error_code, ERR_SUCCESS);
     vec_to_ffi_bytes(data)
 }
@@ -1938,7 +1967,7 @@ pub extern "C" fn pdf_document_get_page_annotations(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.get_annotations(page_index as usize) {
         Ok(annotations) => {
             set_error(error_code, ERR_SUCCESS);
@@ -1956,7 +1985,7 @@ pub extern "C" fn pdf_oxide_annotation_count(annotations: *const FfiAnnotationLi
     if annotations.is_null() {
         return 0;
     }
-    unsafe { (*annotations).annotations.len() as i32 }
+    handle_ref(annotations).annotations.len() as i32
 }
 
 #[no_mangle]
@@ -1969,7 +1998,7 @@ pub extern "C" fn pdf_oxide_annotation_get_type(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let list = handle_ref!(annotations);
+    let list = handle_ref(annotations);
     if (index as usize) >= list.annotations.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -1988,7 +2017,7 @@ pub extern "C" fn pdf_oxide_annotation_get_content(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let list = handle_ref!(annotations);
+    let list = handle_ref(annotations);
     if (index as usize) >= list.annotations.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -2011,25 +2040,21 @@ pub extern "C" fn pdf_oxide_annotation_get_rect(
         set_error(error_code, ERR_INVALID_ARG);
         return;
     }
-    let list = handle_ref!(annotations);
+    let list = handle_ref(annotations);
     if index < 0 || (index as usize) >= list.annotations.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return;
     }
     if let Some(rect) = &list.annotations[index as usize].rect {
-        unsafe {
-            *x = rect[0] as f32;
-            *y = rect[1] as f32;
-            *width = (rect[2] - rect[0]) as f32;
-            *height = (rect[3] - rect[1]) as f32;
-        }
+        write_out(x, rect[0] as f32);
+        write_out(y, rect[1] as f32);
+        write_out(width, (rect[2] - rect[0]) as f32);
+        write_out(height, (rect[3] - rect[1]) as f32);
     } else {
-        unsafe {
-            *x = 0.0;
-            *y = 0.0;
-            *width = 0.0;
-            *height = 0.0;
-        }
+        write_out(x, 0.0f32);
+        write_out(y, 0.0f32);
+        write_out(width, 0.0f32);
+        write_out(height, 0.0f32);
     }
     set_error(error_code, ERR_SUCCESS);
 }
@@ -2054,7 +2079,7 @@ pub extern "C" fn pdf_oxide_annotation_get_subtype(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let list = handle_ref!(annotations);
+    let list = handle_ref(annotations);
     if (index as usize) >= list.annotations.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -2083,7 +2108,7 @@ pub extern "C" fn pdf_oxide_annotation_get_creation_date(
         set_error(error_code, ERR_INVALID_ARG);
         return 0;
     }
-    let list = handle_ref!(annotations);
+    let list = handle_ref(annotations);
     if (index as usize) >= list.annotations.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return 0;
@@ -2117,7 +2142,7 @@ pub extern "C" fn pdf_oxide_annotation_get_author(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let list = handle_ref!(annotations);
+    let list = handle_ref(annotations);
     if (index as usize) >= list.annotations.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -2136,7 +2161,7 @@ pub extern "C" fn pdf_oxide_annotation_get_border_width(
         set_error(error_code, ERR_INVALID_ARG);
         return 0.0;
     }
-    let list = handle_ref!(annotations);
+    let list = handle_ref(annotations);
     if (index as usize) >= list.annotations.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return 0.0;
@@ -2158,7 +2183,7 @@ pub extern "C" fn pdf_oxide_annotation_get_color(
         set_error(error_code, ERR_INVALID_ARG);
         return 0;
     }
-    let list = handle_ref!(annotations);
+    let list = handle_ref(annotations);
     if (index as usize) >= list.annotations.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return 0;
@@ -2188,7 +2213,7 @@ pub extern "C" fn pdf_oxide_annotation_is_hidden(
         set_error(error_code, ERR_INVALID_ARG);
         return false;
     }
-    let list = handle_ref!(annotations);
+    let list = handle_ref(annotations);
     if (index as usize) >= list.annotations.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return false;
@@ -2207,7 +2232,7 @@ pub extern "C" fn pdf_oxide_annotation_is_printable(
         set_error(error_code, ERR_INVALID_ARG);
         return false;
     }
-    let list = handle_ref!(annotations);
+    let list = handle_ref(annotations);
     if (index as usize) >= list.annotations.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return false;
@@ -2226,7 +2251,7 @@ pub extern "C" fn pdf_oxide_annotation_is_read_only(
         set_error(error_code, ERR_INVALID_ARG);
         return false;
     }
-    let list = handle_ref!(annotations);
+    let list = handle_ref(annotations);
     if (index as usize) >= list.annotations.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return false;
@@ -2245,7 +2270,7 @@ pub extern "C" fn pdf_oxide_link_annotation_get_uri(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let list = handle_ref!(annotations);
+    let list = handle_ref(annotations);
     if (index as usize) >= list.annotations.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -2280,7 +2305,7 @@ pub extern "C" fn pdf_oxide_highlight_annotation_get_quad_points_count(
         set_error(error_code, ERR_INVALID_ARG);
         return 0;
     }
-    let list = handle_ref!(annotations);
+    let list = handle_ref(annotations);
     if (index as usize) >= list.annotations.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return 0;
@@ -2312,7 +2337,7 @@ pub extern "C" fn pdf_oxide_highlight_annotation_get_quad_point(
         set_error(error_code, ERR_INVALID_ARG);
         return;
     }
-    let list = handle_ref!(annotations);
+    let list = handle_ref(annotations);
     if (index as usize) >= list.annotations.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return;
@@ -2320,16 +2345,14 @@ pub extern "C" fn pdf_oxide_highlight_annotation_get_quad_point(
     if let Some(quads) = &list.annotations[index as usize].quad_points {
         if (quad_index as usize) < quads.len() {
             let q = &quads[quad_index as usize];
-            unsafe {
-                *x1 = q[0] as f32;
-                *y1 = q[1] as f32;
-                *x2 = q[2] as f32;
-                *y2 = q[3] as f32;
-                *x3 = q[4] as f32;
-                *y3 = q[5] as f32;
-                *x4 = q[6] as f32;
-                *y4 = q[7] as f32;
-            }
+            write_out(x1, q[0] as f32);
+            write_out(y1, q[1] as f32);
+            write_out(x2, q[2] as f32);
+            write_out(y2, q[3] as f32);
+            write_out(x3, q[4] as f32);
+            write_out(y3, q[5] as f32);
+            write_out(x4, q[6] as f32);
+            write_out(y4, q[7] as f32);
             set_error(error_code, ERR_SUCCESS);
             return;
         }
@@ -2349,7 +2372,7 @@ pub extern "C" fn pdf_page_get_width(
         set_error(error_code, ERR_INVALID_ARG);
         return 0.0;
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.get_page_media_box(page_index as usize) {
         Ok((_, _, w, _)) => {
             set_error(error_code, ERR_SUCCESS);
@@ -2372,7 +2395,7 @@ pub extern "C" fn pdf_page_get_height(
         set_error(error_code, ERR_INVALID_ARG);
         return 0.0;
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.get_page_media_box(page_index as usize) {
         Ok((_, _, _, h)) => {
             set_error(error_code, ERR_SUCCESS);
@@ -2412,15 +2435,13 @@ macro_rules! page_box_fn {
                 set_error(error_code, ERR_INVALID_ARG);
                 return;
             }
-            let doc = handle_ref!(handle);
+            let doc = handle_ref(handle);
             match doc.get_page_media_box(page_index as usize) {
                 Ok((bx, by, bw, bh)) => {
-                    unsafe {
-                        *x = bx;
-                        *y = by;
-                        *width = bw;
-                        *height = bh;
-                    }
+                    write_out(x, bx);
+                    write_out(y, by);
+                    write_out(width, bw);
+                    write_out(height, bh);
                     set_error(error_code, ERR_SUCCESS);
                 },
                 Err(e) => {
@@ -2455,7 +2476,7 @@ pub extern "C" fn pdf_page_get_elements(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.extract_spans(page_index as usize) {
         Ok(spans) => {
             set_error(error_code, ERR_SUCCESS);
@@ -2473,7 +2494,7 @@ pub extern "C" fn pdf_oxide_element_count(elements: *const FfiElementList) -> i3
     if elements.is_null() {
         return 0;
     }
-    unsafe { (*elements).spans.len() as i32 }
+    handle_ref(elements).spans.len() as i32
 }
 
 #[no_mangle]
@@ -2496,7 +2517,7 @@ pub extern "C" fn pdf_oxide_element_get_text(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let list = handle_ref!(elements);
+    let list = handle_ref(elements);
     if (index as usize) >= list.spans.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -2519,18 +2540,16 @@ pub extern "C" fn pdf_oxide_element_get_rect(
         set_error(error_code, ERR_INVALID_ARG);
         return;
     }
-    let list = handle_ref!(elements);
+    let list = handle_ref(elements);
     if index < 0 || (index as usize) >= list.spans.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return;
     }
     let span = &list.spans[index as usize];
-    unsafe {
-        *x = span.bbox.x;
-        *y = span.bbox.y;
-        *width = span.bbox.width;
-        *height = span.bbox.height;
-    }
+    write_out(x, span.bbox.x);
+    write_out(y, span.bbox.y);
+    write_out(width, span.bbox.width);
+    write_out(height, span.bbox.height);
     set_error(error_code, ERR_SUCCESS);
 }
 
@@ -2567,7 +2586,7 @@ pub extern "C" fn pdf_generate_qr_code(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let data_str = match unsafe { CStr::from_ptr(data) }.to_str() {
+    let data_str = match c_str(data) {
         Ok(s) => s,
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
@@ -2611,7 +2630,7 @@ pub extern "C" fn pdf_generate_barcode(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let data_str = match unsafe { CStr::from_ptr(data) }.to_str() {
+    let data_str = match c_str(data) {
         Ok(s) => s,
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
@@ -2655,15 +2674,13 @@ pub extern "C" fn pdf_barcode_get_image_png(
 ) -> *mut u8 {
     if barcode_handle.is_null() || out_len.is_null() {
         set_error(error_code, ERR_INVALID_ARG);
-        if !out_len.is_null() {
-            unsafe { *out_len = 0 }
-        }
+        write_out(out_len, 0i32);
         return ptr::null_mut();
     }
-    let bc = handle_ref!(barcode_handle);
+    let bc = handle_ref(barcode_handle);
     let data = bc.data.clone();
     let len = data.len() as i32;
-    unsafe { *out_len = len }
+    write_out(out_len, len);
     set_error(error_code, ERR_SUCCESS);
     vec_to_ffi_bytes(data)
 }
@@ -2705,7 +2722,7 @@ pub extern "C" fn pdf_barcode_get_format(
         return -1;
     }
     set_error(error_code, ERR_SUCCESS);
-    unsafe { (*barcode_handle).format }
+    handle_ref(barcode_handle).format
 }
 
 #[no_mangle]
@@ -2718,7 +2735,7 @@ pub extern "C" fn pdf_barcode_get_data(
         return ptr::null_mut();
     }
     set_error(error_code, ERR_SUCCESS);
-    to_c_string(&handle_ref!(barcode_handle).source_data)
+    to_c_string(&handle_ref(barcode_handle).source_data)
 }
 
 #[no_mangle]
@@ -2765,11 +2782,11 @@ pub extern "C" fn pdf_certificate_load_from_bytes(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let data = unsafe { std::slice::from_raw_parts(cert_bytes, cert_len as usize) };
+        let data = raw_slice(cert_bytes, cert_len as usize);
         let pwd = if password.is_null() {
             ""
         } else {
-            unsafe { CStr::from_ptr(password) }.to_str().unwrap_or("")
+            c_str(password).unwrap_or("")
         };
         // Try PKCS#12 first (has a private key + cert chain). If that
         // fails — today `from_pkcs12` is still stubbed — fall back to
@@ -2857,31 +2874,15 @@ pub extern "C" fn pdf_document_sign(
             set_error(error_code, ERR_INVALID_ARG);
             return -1;
         }
-        let doc = handle_mut!((document_handle as *mut PdfDocument));
+        let doc = handle_mut((document_handle as *mut PdfDocument));
         let creds =
-            handle_ref!((certificate_handle as *const crate::signatures::SigningCredentials));
+            handle_ref((certificate_handle as *const crate::signatures::SigningCredentials));
         if doc.source_bytes.is_empty() {
             set_error(error_code, ERR_INVALID_ARG);
             return -1;
         }
-        let reason_str = if reason.is_null() {
-            None
-        } else {
-            Some(unsafe {
-                std::ffi::CStr::from_ptr(reason)
-                    .to_string_lossy()
-                    .into_owned()
-            })
-        };
-        let location_str = if location.is_null() {
-            None
-        } else {
-            Some(unsafe {
-                std::ffi::CStr::from_ptr(location)
-                    .to_string_lossy()
-                    .into_owned()
-            })
-        };
+        let reason_str = c_str_lossy(reason);
+        let location_str = c_str_lossy(location);
         let opts = SignOptions {
             reason: reason_str,
             location: location_str,
@@ -2930,27 +2931,11 @@ pub unsafe extern "C" fn pdf_sign_bytes(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let data = unsafe { std::slice::from_raw_parts(pdf_data, pdf_len) };
+        let data = raw_slice(pdf_data, pdf_len);
         let creds =
-            handle_ref!((certificate_handle as *const crate::signatures::SigningCredentials));
-        let reason_str = if reason.is_null() {
-            None
-        } else {
-            Some(unsafe {
-                std::ffi::CStr::from_ptr(reason)
-                    .to_string_lossy()
-                    .into_owned()
-            })
-        };
-        let location_str = if location.is_null() {
-            None
-        } else {
-            Some(unsafe {
-                std::ffi::CStr::from_ptr(location)
-                    .to_string_lossy()
-                    .into_owned()
-            })
-        };
+            handle_ref((certificate_handle as *const crate::signatures::SigningCredentials));
+        let reason_str = c_str_lossy(reason);
+        let location_str = c_str_lossy(location);
         let opts = SignOptions {
             reason: reason_str,
             location: location_str,
@@ -2959,9 +2944,7 @@ pub unsafe extern "C" fn pdf_sign_bytes(
         match sign_pdf_bytes(data, creds, opts) {
             Ok(signed) => {
                 set_error(error_code, ERR_SUCCESS);
-                unsafe {
-                    *out_len = signed.len();
-                }
+                write_out(out_len, signed.len());
                 vec_to_ffi_bytes(signed)
             },
             Err(e) => {
@@ -2989,7 +2972,7 @@ pub extern "C" fn pdf_document_get_signature_count(
             set_error(error_code, ERR_INVALID_ARG);
             return -1;
         }
-        let doc = handle_mut!((document_handle as *mut PdfDocument));
+        let doc = handle_mut((document_handle as *mut PdfDocument));
         match crate::signatures::count_signatures(doc) {
             Ok(n) => {
                 set_error(error_code, ERR_SUCCESS);
@@ -3021,7 +3004,7 @@ pub extern "C" fn pdf_document_get_signature(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let doc = handle_mut!((document_handle as *mut PdfDocument));
+        let doc = handle_mut((document_handle as *mut PdfDocument));
         match crate::signatures::enumerate_signatures(doc) {
             Ok(list) => match list.into_iter().nth(index as usize) {
                 Some(info) => {
@@ -3072,7 +3055,7 @@ pub extern "C" fn pdf_signature_verify(
             set_error(error_code, ERR_INVALID_ARG);
             return -1;
         }
-        let ffi = handle_ref!((signature_handle as *const FfiSignatureInfo));
+        let ffi = handle_ref((signature_handle as *const FfiSignatureInfo));
         let Some(contents) = ffi.info.contents() else {
             set_error(error_code, _ERR_UNSUPPORTED);
             return -1;
@@ -3133,7 +3116,7 @@ pub extern "C" fn pdf_signature_verify_detached(
             set_error(error_code, ERR_INVALID_ARG);
             return -1;
         }
-        let ffi = handle_ref!((signature_handle as *const FfiSignatureInfo));
+        let ffi = handle_ref((signature_handle as *const FfiSignatureInfo));
         let Some(contents) = ffi.info.contents() else {
             set_error(error_code, _ERR_UNSUPPORTED);
             return -1;
@@ -3144,7 +3127,7 @@ pub extern "C" fn pdf_signature_verify_detached(
             return -1;
         }
         let byte_range: [i64; 4] = [br[0], br[1], br[2], br[3]];
-        let pdf_slice = unsafe { std::slice::from_raw_parts(pdf_data, pdf_len) };
+        let pdf_slice = raw_slice(pdf_data, pdf_len);
         let signed_bytes = match crate::signatures::ByteRangeCalculator::extract_signed_bytes(
             pdf_slice,
             &byte_range,
@@ -3202,7 +3185,7 @@ pub extern "C" fn pdf_signature_get_signer_name(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let info = handle_ref!(sig);
+        let info = handle_ref(sig);
         set_error(error_code, ERR_SUCCESS);
         to_c_string_opt(info.info.signer_name.clone())
     }
@@ -3225,7 +3208,7 @@ pub extern "C" fn pdf_signature_get_signing_time(
             set_error(error_code, ERR_INVALID_ARG);
             return 0;
         }
-        let info = handle_ref!(sig);
+        let info = handle_ref(sig);
         set_error(error_code, ERR_SUCCESS);
         info.info
             .signing_time
@@ -3252,7 +3235,7 @@ pub extern "C" fn pdf_signature_get_signing_reason(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let info = handle_ref!(sig);
+        let info = handle_ref(sig);
         set_error(error_code, ERR_SUCCESS);
         to_c_string_opt(info.info.reason.clone())
     }
@@ -3275,7 +3258,7 @@ pub extern "C" fn pdf_signature_get_signing_location(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let info = handle_ref!(sig);
+        let info = handle_ref(sig);
         set_error(error_code, ERR_SUCCESS);
         to_c_string_opt(info.info.location.clone())
     }
@@ -3298,7 +3281,7 @@ pub extern "C" fn pdf_signature_get_certificate(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let info = handle_ref!((sig as *const FfiSignatureInfo));
+        let info = handle_ref((sig as *const FfiSignatureInfo));
         let contents = match info.info.contents.as_ref() {
             Some(c) => c,
             None => {
@@ -3343,7 +3326,7 @@ pub extern "C" fn pdf_certificate_get_subject(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let creds = handle_ref!((cert as *const crate::signatures::SigningCredentials));
+        let creds = handle_ref((cert as *const crate::signatures::SigningCredentials));
         match creds.subject() {
             Ok(s) => {
                 set_error(error_code, ERR_SUCCESS);
@@ -3374,7 +3357,7 @@ pub extern "C" fn pdf_certificate_get_issuer(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let creds = handle_ref!((cert as *const crate::signatures::SigningCredentials));
+        let creds = handle_ref((cert as *const crate::signatures::SigningCredentials));
         match creds.issuer() {
             Ok(s) => {
                 set_error(error_code, ERR_SUCCESS);
@@ -3405,7 +3388,7 @@ pub extern "C" fn pdf_certificate_get_serial(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let creds = handle_ref!((cert as *const crate::signatures::SigningCredentials));
+        let creds = handle_ref((cert as *const crate::signatures::SigningCredentials));
         match creds.serial() {
             Ok(s) => {
                 set_error(error_code, ERR_SUCCESS);
@@ -3438,13 +3421,11 @@ pub extern "C" fn pdf_certificate_get_validity(
             set_error(error_code, ERR_INVALID_ARG);
             return;
         }
-        let creds = handle_ref!((cert as *const crate::signatures::SigningCredentials));
+        let creds = handle_ref((cert as *const crate::signatures::SigningCredentials));
         match creds.validity() {
             Ok((nb, na)) => {
-                unsafe {
-                    *not_before = nb;
-                    *not_after = na;
-                }
+                write_out(not_before, nb);
+                write_out(not_after, na);
                 set_error(error_code, ERR_SUCCESS);
             },
             Err(e) => set_error(error_code, classify_error(&e)),
@@ -3468,7 +3449,7 @@ pub extern "C" fn pdf_certificate_is_valid(
             set_error(error_code, ERR_INVALID_ARG);
             return 0;
         }
-        let creds = handle_ref!((cert as *const crate::signatures::SigningCredentials));
+        let creds = handle_ref((cert as *const crate::signatures::SigningCredentials));
         match creds.is_valid() {
             Ok(v) => {
                 set_error(error_code, ERR_SUCCESS);
@@ -3570,7 +3551,7 @@ pub extern "C" fn pdf_render_page(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let d = handle_mut!(doc);
+        let d = handle_mut(doc);
         let fmt = if format == 1 {
             RenderImageFormat::Jpeg
         } else {
@@ -3634,7 +3615,7 @@ pub extern "C" fn pdf_render_page_with_options(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let d = handle_mut!(doc);
+        let d = handle_mut(doc);
         let fmt = if format == 1 {
             RenderImageFormat::Jpeg
         } else {
@@ -3702,7 +3683,7 @@ pub extern "C" fn pdf_render_page_region(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let d = handle_mut!(doc);
+        let d = handle_mut(doc);
         let fmt = if format == 1 {
             RenderImageFormat::Jpeg
         } else {
@@ -3751,7 +3732,7 @@ pub extern "C" fn pdf_render_page_zoom(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let d = handle_mut!(doc);
+        let d = handle_mut(doc);
         let dpi = (72.0 * zoom) as u32;
         let fmt = if format == 1 {
             RenderImageFormat::Jpeg
@@ -3798,7 +3779,7 @@ pub extern "C" fn pdf_render_page_fit(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let d = handle_mut!(doc);
+        let d = handle_mut(doc);
         let fmt = if format == 1 {
             RenderImageFormat::Jpeg
         } else {
@@ -3842,7 +3823,7 @@ pub extern "C" fn pdf_render_page_thumbnail(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let d = handle_mut!(doc);
+        let d = handle_mut(doc);
         let fmt = if format == 1 {
             RenderImageFormat::Jpeg
         } else {
@@ -3884,7 +3865,7 @@ pub extern "C" fn pdf_get_rendered_image_width(
             return 0;
         }
         set_error(error_code, ERR_SUCCESS);
-        unsafe { (*img).inner.width as i32 }
+        handle_ref(img).inner.width as i32
     }
     #[cfg(not(feature = "rendering"))]
     {
@@ -3906,7 +3887,7 @@ pub extern "C" fn pdf_get_rendered_image_height(
             return 0;
         }
         set_error(error_code, ERR_SUCCESS);
-        unsafe { (*img).inner.height as i32 }
+        handle_ref(img).inner.height as i32
     }
     #[cfg(not(feature = "rendering"))]
     {
@@ -3928,11 +3909,9 @@ pub extern "C" fn pdf_get_rendered_image_data(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let i = handle_ref!(img);
+        let i = handle_ref(img);
         let bytes = i.inner.as_bytes().to_vec();
-        unsafe {
-            *data_len = bytes.len() as i32;
-        }
+        write_out(data_len, bytes.len() as i32);
         set_error(error_code, ERR_SUCCESS);
         vec_to_ffi_bytes(bytes)
     }
@@ -3956,14 +3935,14 @@ pub extern "C" fn pdf_save_rendered_image(
             set_error(error_code, ERR_INVALID_ARG);
             return -1;
         }
-        let path = match unsafe { CStr::from_ptr(file_path) }.to_str() {
+        let path = match c_str(file_path) {
             Ok(s) => s,
             Err(_) => {
                 set_error(error_code, ERR_INVALID_ARG);
                 return -1;
             },
         };
-        let i = handle_ref!(img);
+        let i = handle_ref(img);
         match i.inner.save(path) {
             Ok(()) => {
                 set_error(error_code, ERR_SUCCESS);
@@ -4015,27 +3994,9 @@ pub extern "C" fn pdf_tsa_client_create(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let url_str = unsafe { CStr::from_ptr(url) }
-            .to_string_lossy()
-            .into_owned();
-        let user_opt = if username.is_null() {
-            None
-        } else {
-            Some(
-                unsafe { CStr::from_ptr(username) }
-                    .to_string_lossy()
-                    .into_owned(),
-            )
-        };
-        let pw_opt = if password.is_null() {
-            None
-        } else {
-            Some(
-                unsafe { CStr::from_ptr(password) }
-                    .to_string_lossy()
-                    .into_owned(),
-            )
-        };
+        let url_str = c_str_lossy(url).unwrap_or_default();
+        let user_opt = c_str_lossy(username);
+        let pw_opt = c_str_lossy(password);
         let algo = hash_algo_from_i32(hash_algo);
         let cfg = crate::signatures::TsaClientConfig {
             url: url_str,
@@ -4091,8 +4052,8 @@ pub extern "C" fn pdf_tsa_request_timestamp(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let c = handle_ref!((client as *const crate::signatures::TsaClient));
-        let slice = unsafe { std::slice::from_raw_parts(data, data_len) };
+        let c = handle_ref((client as *const crate::signatures::TsaClient));
+        let slice = raw_slice(data, data_len);
         match c.request_timestamp(slice) {
             Ok(ts) => {
                 set_error(error_code, ERR_SUCCESS);
@@ -4126,8 +4087,8 @@ pub extern "C" fn pdf_tsa_request_timestamp_hash(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let c = handle_ref!((client as *const crate::signatures::TsaClient));
-        let slice = unsafe { std::slice::from_raw_parts(hash, hash_len) };
+        let c = handle_ref((client as *const crate::signatures::TsaClient));
+        let slice = raw_slice(hash, hash_len);
         let algo = hash_algo_from_i32(hash_algo);
         match c.request_timestamp_hash(slice, algo) {
             Ok(ts) => {
@@ -4174,7 +4135,7 @@ pub extern "C" fn pdf_timestamp_parse(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let slice = unsafe { std::slice::from_raw_parts(bytes, len) };
+        let slice = raw_slice(bytes, len);
         match crate::signatures::Timestamp::from_der(slice) {
             Ok(ts) => {
                 set_error(error_code, ERR_SUCCESS);
@@ -4206,9 +4167,9 @@ pub extern "C" fn pdf_timestamp_get_token(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null();
         }
-        let t = handle_ref!((ts as *const crate::signatures::Timestamp));
+        let t = handle_ref((ts as *const crate::signatures::Timestamp));
         let bytes = t.token_bytes();
-        unsafe { *out_len = bytes.len() };
+        write_out(out_len, bytes.len());
         set_error(error_code, ERR_SUCCESS);
         bytes.as_ptr()
     }
@@ -4228,7 +4189,7 @@ pub extern "C" fn pdf_timestamp_get_time(ts: *const std::ffi::c_void, error_code
             set_error(error_code, ERR_INVALID_ARG);
             return 0;
         }
-        let t = handle_ref!((ts as *const crate::signatures::Timestamp));
+        let t = handle_ref((ts as *const crate::signatures::Timestamp));
         set_error(error_code, ERR_SUCCESS);
         t.time()
     }
@@ -4251,7 +4212,7 @@ pub extern "C" fn pdf_timestamp_get_serial(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let t = handle_ref!((ts as *const crate::signatures::Timestamp));
+        let t = handle_ref((ts as *const crate::signatures::Timestamp));
         set_error(error_code, ERR_SUCCESS);
         to_c_string(&t.serial())
     }
@@ -4274,7 +4235,7 @@ pub extern "C" fn pdf_timestamp_get_tsa_name(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let t = handle_ref!((ts as *const crate::signatures::Timestamp));
+        let t = handle_ref((ts as *const crate::signatures::Timestamp));
         set_error(error_code, ERR_SUCCESS);
         to_c_string(&t.tsa_name())
     }
@@ -4297,7 +4258,7 @@ pub extern "C" fn pdf_timestamp_get_policy_oid(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let t = handle_ref!((ts as *const crate::signatures::Timestamp));
+        let t = handle_ref((ts as *const crate::signatures::Timestamp));
         set_error(error_code, ERR_SUCCESS);
         to_c_string(&t.policy_oid())
     }
@@ -4320,7 +4281,7 @@ pub extern "C" fn pdf_timestamp_get_hash_algorithm(
             set_error(error_code, ERR_INVALID_ARG);
             return -1;
         }
-        let t = handle_ref!((ts as *const crate::signatures::Timestamp));
+        let t = handle_ref((ts as *const crate::signatures::Timestamp));
         set_error(error_code, ERR_SUCCESS);
         t.hash_algorithm() as i32
     }
@@ -4347,7 +4308,7 @@ pub extern "C" fn pdf_timestamp_get_message_imprint(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null();
         }
-        let t = handle_ref!((ts as *const crate::signatures::Timestamp));
+        let t = handle_ref((ts as *const crate::signatures::Timestamp));
         // Stash the imprint on the handle so the returned pointer
         // remains valid for the handle's lifetime. The getter on
         // Timestamp clones, which would invalidate the pointer on
@@ -4355,7 +4316,7 @@ pub extern "C" fn pdf_timestamp_get_message_imprint(
         // Compromise: allocate a new leaked Box each call and rely on
         // the caller to NOT free. Instead we stash on the handle:
         let imprint = t.message_imprint_ref();
-        unsafe { *out_len = imprint.len() };
+        write_out(out_len, imprint.len());
         set_error(error_code, ERR_SUCCESS);
         imprint.as_ptr()
     }
@@ -4454,7 +4415,7 @@ pub extern "C" fn pdf_validate_pdf_ua(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_mut!(document);
+    let doc = handle_mut(document);
     let ua_level = if level == 2 {
         PdfUaLevel::Ua2
     } else {
@@ -4482,7 +4443,7 @@ pub extern "C" fn pdf_pdf_ua_is_accessible(
         return false;
     }
     set_error(error_code, ERR_SUCCESS);
-    unsafe { (*results).result.is_compliant }
+    handle_ref(results).result.is_compliant
 }
 
 #[no_mangle]
@@ -4490,7 +4451,7 @@ pub extern "C" fn pdf_pdf_ua_error_count(results: *const FfiUaResults) -> i32 {
     if results.is_null() {
         return 0;
     }
-    unsafe { (*results).result.errors.len() as i32 }
+    handle_ref(results).result.errors.len() as i32
 }
 
 #[no_mangle]
@@ -4503,7 +4464,7 @@ pub extern "C" fn pdf_pdf_ua_get_error(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let r = handle_ref!(results);
+    let r = handle_ref(results);
     if (index as usize) >= r.result.errors.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -4517,7 +4478,7 @@ pub extern "C" fn pdf_pdf_ua_warning_count(results: *const FfiUaResults) -> i32 
     if results.is_null() {
         return 0;
     }
-    unsafe { (*results).result.warnings.len() as i32 }
+    handle_ref(results).result.warnings.len() as i32
 }
 
 #[no_mangle]
@@ -4530,7 +4491,7 @@ pub extern "C" fn pdf_pdf_ua_get_warning(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let r = handle_ref!(results);
+    let r = handle_ref(results);
     if (index as usize) >= r.result.warnings.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -4554,38 +4515,14 @@ pub extern "C" fn pdf_pdf_ua_get_stats(
         set_error(error_code, ERR_INVALID_ARG);
         return false;
     }
-    let r = handle_ref!(results);
+    let r = handle_ref(results);
     let s = &r.result.stats;
-    if !out_struct.is_null() {
-        unsafe {
-            *out_struct = s.structure_elements_checked as i32;
-        }
-    }
-    if !out_images.is_null() {
-        unsafe {
-            *out_images = s.images_checked as i32;
-        }
-    }
-    if !out_tables.is_null() {
-        unsafe {
-            *out_tables = s.tables_checked as i32;
-        }
-    }
-    if !out_forms.is_null() {
-        unsafe {
-            *out_forms = s.form_fields_checked as i32;
-        }
-    }
-    if !out_annotations.is_null() {
-        unsafe {
-            *out_annotations = s.annotations_checked as i32;
-        }
-    }
-    if !out_pages.is_null() {
-        unsafe {
-            *out_pages = s.pages_checked as i32;
-        }
-    }
+    write_out(out_struct, s.structure_elements_checked as i32);
+    write_out(out_images, s.images_checked as i32);
+    write_out(out_tables, s.tables_checked as i32);
+    write_out(out_forms, s.form_fields_checked as i32);
+    write_out(out_annotations, s.annotations_checked as i32);
+    write_out(out_pages, s.pages_checked as i32);
     set_error(error_code, ERR_SUCCESS);
     true
 }
@@ -4659,7 +4596,7 @@ pub extern "C" fn pdf_document_export_form_data_to_bytes(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_mut!(document);
+    let doc = handle_mut(document);
     let fields = match FormExtractor::extract_fields(doc) {
         Ok(f) => f,
         Err(e) => {
@@ -4682,9 +4619,7 @@ pub extern "C" fn pdf_document_export_form_data_to_bytes(
             },
         }
     };
-    unsafe {
-        *out_len = bytes.len();
-    }
+    write_out(out_len, bytes.len());
     set_error(error_code, ERR_SUCCESS);
     vec_to_ffi_bytes(bytes)
 }
@@ -4702,7 +4637,7 @@ pub extern "C" fn pdf_document_open_from_bytes(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let bytes = unsafe { std::slice::from_raw_parts(data, len) }.to_vec();
+    let bytes = raw_slice(data, len).to_vec();
     match PdfDocument::from_bytes(bytes) {
         Ok(doc) => {
             set_error(error_code, ERR_SUCCESS);
@@ -4726,7 +4661,7 @@ pub extern "C" fn pdf_document_open_with_password(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let path_str = match unsafe { CStr::from_ptr(path) }.to_str() {
+    let path_str = match c_str(path) {
         Ok(s) => s,
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
@@ -4736,7 +4671,7 @@ pub extern "C" fn pdf_document_open_with_password(
     match PdfDocument::open(path_str) {
         Ok(mut doc) => {
             if !password.is_null() {
-                if let Ok(pwd) = unsafe { CStr::from_ptr(password) }.to_str() {
+                if let Ok(pwd) = c_str(password) {
                     let _ = doc.authenticate(pwd.as_bytes());
                 }
             }
@@ -4756,7 +4691,7 @@ pub extern "C" fn pdf_document_is_encrypted(handle: *const PdfDocument) -> bool 
     if handle.is_null() {
         return false;
     }
-    handle_ref!(handle).is_encrypted()
+    handle_ref(handle).is_encrypted()
 }
 
 /// Authenticate with password.
@@ -4770,8 +4705,8 @@ pub extern "C" fn pdf_document_authenticate(
         set_error(error_code, ERR_INVALID_ARG);
         return false;
     }
-    let doc = handle_ref!(handle);
-    let pwd = match unsafe { CStr::from_ptr(password) }.to_str() {
+    let doc = handle_ref(handle);
+    let pwd = match c_str(password) {
         Ok(s) => s,
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
@@ -4801,7 +4736,7 @@ pub extern "C" fn pdf_document_extract_all_text(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.extract_all_text() {
         Ok(t) => {
             set_error(error_code, ERR_SUCCESS);
@@ -4823,7 +4758,7 @@ pub extern "C" fn pdf_document_to_html_all(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     let opts = ConversionOptions::default();
     match doc.to_html_all(&opts) {
         Ok(t) => {
@@ -4846,7 +4781,7 @@ pub extern "C" fn pdf_document_to_plain_text_all(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     let opts = ConversionOptions::default();
     match doc.to_plain_text_all(&opts) {
         Ok(t) => {
@@ -4880,7 +4815,7 @@ pub extern "C" fn pdf_document_extract_chars(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.extract_chars(page_index as usize) {
         Ok(chars) => {
             set_error(error_code, ERR_SUCCESS);
@@ -4898,7 +4833,7 @@ pub extern "C" fn pdf_oxide_char_count(chars: *const FfiCharList) -> i32 {
     if chars.is_null() {
         return 0;
     }
-    unsafe { (*chars).chars.len() as i32 }
+    handle_ref(chars).chars.len() as i32
 }
 
 #[no_mangle]
@@ -4911,7 +4846,7 @@ pub extern "C" fn pdf_oxide_char_get_char(
         set_error(error_code, ERR_INVALID_ARG);
         return 0;
     }
-    let list = handle_ref!(chars);
+    let list = handle_ref(chars);
     if (index as usize) >= list.chars.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return 0;
@@ -4934,18 +4869,16 @@ pub extern "C" fn pdf_oxide_char_get_bbox(
         set_error(error_code, ERR_INVALID_ARG);
         return;
     }
-    let list = handle_ref!(chars);
+    let list = handle_ref(chars);
     if (index as usize) >= list.chars.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return;
     }
     let b = &list.chars[index as usize].bbox;
-    unsafe {
-        *x = b.x;
-        *y = b.y;
-        *w = b.width;
-        *h = b.height;
-    }
+    write_out(x, b.x);
+    write_out(y, b.y);
+    write_out(w, b.width);
+    write_out(h, b.height);
     set_error(error_code, ERR_SUCCESS);
 }
 
@@ -4959,7 +4892,7 @@ pub extern "C" fn pdf_oxide_char_get_font_name(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let list = handle_ref!(chars);
+    let list = handle_ref(chars);
     if (index as usize) >= list.chars.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -4978,7 +4911,7 @@ pub extern "C" fn pdf_oxide_char_get_font_size(
         set_error(error_code, ERR_INVALID_ARG);
         return 0.0;
     }
-    let list = handle_ref!(chars);
+    let list = handle_ref(chars);
     if (index as usize) >= list.chars.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return 0.0;
@@ -5012,7 +4945,7 @@ pub extern "C" fn pdf_document_extract_words(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.extract_words(page_index as usize) {
         Ok(words) => {
             set_error(error_code, ERR_SUCCESS);
@@ -5030,7 +4963,7 @@ pub extern "C" fn pdf_oxide_word_count(words: *const FfiWordList) -> i32 {
     if words.is_null() {
         return 0;
     }
-    unsafe { (*words).words.len() as i32 }
+    handle_ref(words).words.len() as i32
 }
 
 #[no_mangle]
@@ -5043,7 +4976,7 @@ pub extern "C" fn pdf_oxide_word_get_text(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let list = handle_ref!(words);
+    let list = handle_ref(words);
     if (index as usize) >= list.words.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -5066,18 +4999,16 @@ pub extern "C" fn pdf_oxide_word_get_bbox(
         set_error(error_code, ERR_INVALID_ARG);
         return;
     }
-    let list = handle_ref!(words);
+    let list = handle_ref(words);
     if (index as usize) >= list.words.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return;
     }
     let b = &list.words[index as usize].bbox;
-    unsafe {
-        *x = b.x;
-        *y = b.y;
-        *w = b.width;
-        *h = b.height;
-    }
+    write_out(x, b.x);
+    write_out(y, b.y);
+    write_out(w, b.width);
+    write_out(h, b.height);
     set_error(error_code, ERR_SUCCESS);
 }
 
@@ -5091,7 +5022,7 @@ pub extern "C" fn pdf_oxide_word_get_font_name(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let list = handle_ref!(words);
+    let list = handle_ref(words);
     if (index as usize) >= list.words.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -5110,7 +5041,7 @@ pub extern "C" fn pdf_oxide_word_get_font_size(
         set_error(error_code, ERR_INVALID_ARG);
         return 0.0;
     }
-    let list = handle_ref!(words);
+    let list = handle_ref(words);
     if (index as usize) >= list.words.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return 0.0;
@@ -5129,7 +5060,7 @@ pub extern "C" fn pdf_oxide_word_is_bold(
         set_error(error_code, ERR_INVALID_ARG);
         return false;
     }
-    let list = handle_ref!(words);
+    let list = handle_ref(words);
     if (index as usize) >= list.words.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return false;
@@ -5163,7 +5094,7 @@ pub extern "C" fn pdf_document_extract_text_lines(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.extract_text_lines(page_index as usize) {
         Ok(lines) => {
             set_error(error_code, ERR_SUCCESS);
@@ -5181,7 +5112,7 @@ pub extern "C" fn pdf_oxide_line_count(lines: *const FfiTextLineList) -> i32 {
     if lines.is_null() {
         return 0;
     }
-    unsafe { (*lines).lines.len() as i32 }
+    handle_ref(lines).lines.len() as i32
 }
 
 #[no_mangle]
@@ -5194,7 +5125,7 @@ pub extern "C" fn pdf_oxide_line_get_text(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let list = handle_ref!(lines);
+    let list = handle_ref(lines);
     if (index as usize) >= list.lines.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -5217,18 +5148,16 @@ pub extern "C" fn pdf_oxide_line_get_bbox(
         set_error(error_code, ERR_INVALID_ARG);
         return;
     }
-    let list = handle_ref!(lines);
+    let list = handle_ref(lines);
     if (index as usize) >= list.lines.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return;
     }
     let b = &list.lines[index as usize].bbox;
-    unsafe {
-        *x = b.x;
-        *y = b.y;
-        *w = b.width;
-        *h = b.height;
-    }
+    write_out(x, b.x);
+    write_out(y, b.y);
+    write_out(w, b.width);
+    write_out(h, b.height);
     set_error(error_code, ERR_SUCCESS);
 }
 
@@ -5242,7 +5171,7 @@ pub extern "C" fn pdf_oxide_line_get_word_count(
         set_error(error_code, ERR_INVALID_ARG);
         return 0;
     }
-    let list = handle_ref!(lines);
+    let list = handle_ref(lines);
     if (index as usize) >= list.lines.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return 0;
@@ -5278,7 +5207,7 @@ pub extern "C" fn pdf_document_extract_tables(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.extract_tables(page_index as usize) {
         Ok(tables) => {
             set_error(error_code, ERR_SUCCESS);
@@ -5296,7 +5225,7 @@ pub extern "C" fn pdf_oxide_table_count(tables: *const FfiTableList) -> i32 {
     if tables.is_null() {
         return 0;
     }
-    unsafe { (*tables).tables.len() as i32 }
+    handle_ref(tables).tables.len() as i32
 }
 
 #[no_mangle]
@@ -5309,7 +5238,7 @@ pub extern "C" fn pdf_oxide_table_get_row_count(
         set_error(error_code, ERR_INVALID_ARG);
         return 0;
     }
-    let list = handle_ref!(tables);
+    let list = handle_ref(tables);
     if (index as usize) >= list.tables.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return 0;
@@ -5328,7 +5257,7 @@ pub extern "C" fn pdf_oxide_table_get_col_count(
         set_error(error_code, ERR_INVALID_ARG);
         return 0;
     }
-    let list = handle_ref!(tables);
+    let list = handle_ref(tables);
     if (index as usize) >= list.tables.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return 0;
@@ -5349,7 +5278,7 @@ pub extern "C" fn pdf_oxide_table_get_cell_text(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let list = handle_ref!(tables);
+    let list = handle_ref(tables);
     if (table_index as usize) >= list.tables.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -5378,7 +5307,7 @@ pub extern "C" fn pdf_oxide_table_has_header(
         set_error(error_code, ERR_INVALID_ARG);
         return false;
     }
-    let list = handle_ref!(tables);
+    let list = handle_ref(tables);
     if (index as usize) >= list.tables.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return false;
@@ -5419,7 +5348,7 @@ pub extern "C" fn pdf_document_extract_text_in_rect(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.extract_text_in_rect(
         page_index as usize,
         make_rect(x, y, w, h),
@@ -5450,7 +5379,7 @@ pub extern "C" fn pdf_document_extract_words_in_rect(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.extract_words_in_rect(
         page_index as usize,
         make_rect(x, y, w, h),
@@ -5481,7 +5410,7 @@ pub extern "C" fn pdf_document_extract_lines_in_rect(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.extract_text_lines_in_rect(
         page_index as usize,
         make_rect(x, y, w, h),
@@ -5512,7 +5441,7 @@ pub extern "C" fn pdf_document_extract_tables_in_rect(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.extract_tables_in_rect(page_index as usize, make_rect(x, y, w, h)) {
         Ok(tables) => {
             set_error(error_code, ERR_SUCCESS);
@@ -5539,7 +5468,7 @@ pub extern "C" fn pdf_document_extract_images_in_rect(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.extract_images_in_rect(page_index as usize, make_rect(x, y, w, h)) {
         Ok(images) => {
             set_error(error_code, ERR_SUCCESS);
@@ -5569,7 +5498,7 @@ pub extern "C" fn pdf_document_get_form_fields(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match FormExtractor::extract_fields(doc) {
         Ok(fields) => {
             set_error(error_code, ERR_SUCCESS);
@@ -5587,7 +5516,7 @@ pub extern "C" fn pdf_oxide_form_field_count(fields: *const FfiFormFieldList) ->
     if fields.is_null() {
         return 0;
     }
-    unsafe { (*fields).fields.len() as i32 }
+    handle_ref(fields).fields.len() as i32
 }
 
 #[no_mangle]
@@ -5600,7 +5529,7 @@ pub extern "C" fn pdf_oxide_form_field_get_name(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let list = handle_ref!(fields);
+    let list = handle_ref(fields);
     if (index as usize) >= list.fields.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -5619,7 +5548,7 @@ pub extern "C" fn pdf_oxide_form_field_get_type(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let list = handle_ref!(fields);
+    let list = handle_ref(fields);
     if (index as usize) >= list.fields.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -5638,7 +5567,7 @@ pub extern "C" fn pdf_oxide_form_field_get_value(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let list = handle_ref!(fields);
+    let list = handle_ref(fields);
     if (index as usize) >= list.fields.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -5657,7 +5586,7 @@ pub extern "C" fn pdf_oxide_form_field_is_readonly(
         set_error(error_code, ERR_INVALID_ARG);
         return false;
     }
-    let list = handle_ref!(fields);
+    let list = handle_ref(fields);
     if (index as usize) >= list.fields.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return false;
@@ -5679,7 +5608,7 @@ pub extern "C" fn pdf_oxide_form_field_is_required(
         set_error(error_code, ERR_INVALID_ARG);
         return false;
     }
-    let list = handle_ref!(fields);
+    let list = handle_ref(fields);
     if (index as usize) >= list.fields.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return false;
@@ -5706,7 +5635,7 @@ pub extern "C" fn pdf_document_has_xfa(handle: *mut PdfDocument) -> bool {
     if handle.is_null() {
         return false;
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     if let Ok(catalog) = doc.catalog() {
         if let crate::object::Object::Dictionary(dict) = &catalog {
             if let Some(acroform) = dict.get("AcroForm") {
@@ -5731,7 +5660,7 @@ pub extern "C" fn pdf_document_remove_headers(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.remove_headers(threshold) {
         Ok(n) => {
             set_error(error_code, ERR_SUCCESS);
@@ -5754,7 +5683,7 @@ pub extern "C" fn pdf_document_remove_footers(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.remove_footers(threshold) {
         Ok(n) => {
             set_error(error_code, ERR_SUCCESS);
@@ -5777,7 +5706,7 @@ pub extern "C" fn pdf_document_remove_artifacts(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.remove_artifacts(threshold) {
         Ok(n) => {
             set_error(error_code, ERR_SUCCESS);
@@ -5800,7 +5729,7 @@ pub extern "C" fn pdf_document_erase_header(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.erase_header(page_index as usize) {
         Ok(()) => {
             set_error(error_code, ERR_SUCCESS);
@@ -5823,7 +5752,7 @@ pub extern "C" fn pdf_document_erase_footer(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.erase_footer(page_index as usize) {
         Ok(()) => {
             set_error(error_code, ERR_SUCCESS);
@@ -5846,7 +5775,7 @@ pub extern "C" fn pdf_document_erase_artifacts(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.erase_artifacts(page_index as usize) {
         Ok(()) => {
             set_error(error_code, ERR_SUCCESS);
@@ -5871,7 +5800,7 @@ pub extern "C" fn document_editor_delete_page(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     match editor.remove_page(page_index as usize) {
         Ok(()) => {
             set_error(error_code, ERR_SUCCESS);
@@ -5895,7 +5824,7 @@ pub extern "C" fn document_editor_move_page(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     match editor.move_page(from as usize, to as usize) {
         Ok(()) => {
             set_error(error_code, ERR_SUCCESS);
@@ -5918,7 +5847,7 @@ pub extern "C" fn document_editor_get_page_rotation(
         set_error(error_code, ERR_INVALID_ARG);
         return 0;
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     match editor.get_page_rotation(page as usize) {
         Ok(r) => {
             set_error(error_code, ERR_SUCCESS);
@@ -5942,7 +5871,7 @@ pub extern "C" fn document_editor_set_page_rotation(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     match editor.set_page_rotation(page as usize, degrees) {
         Ok(()) => {
             set_error(error_code, ERR_SUCCESS);
@@ -5969,7 +5898,7 @@ pub extern "C" fn document_editor_erase_region(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     match editor.erase_region(page as usize, [x, y, x + w, y + h]) {
         Ok(()) => {
             set_error(error_code, ERR_SUCCESS);
@@ -5992,7 +5921,7 @@ pub extern "C" fn document_editor_flatten_annotations(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     match editor.flatten_page_annotations(page as usize) {
         Ok(()) => {
             set_error(error_code, ERR_SUCCESS);
@@ -6014,7 +5943,7 @@ pub extern "C" fn document_editor_flatten_all_annotations(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     match editor.flatten_all_annotations() {
         Ok(()) => {
             set_error(error_code, ERR_SUCCESS);
@@ -6040,7 +5969,7 @@ pub extern "C" fn document_editor_crop_margins(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     match editor.crop_margins(left, right, top, bottom) {
         Ok(()) => {
             set_error(error_code, ERR_SUCCESS);
@@ -6063,8 +5992,8 @@ pub extern "C" fn document_editor_merge_from(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
-    let path = match unsafe { CStr::from_ptr(source_path) }.to_str() {
+    let editor = handle_mut(handle);
+    let path = match c_str(source_path) {
         Ok(s) => s,
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
@@ -6091,7 +6020,7 @@ pub extern "C" fn pdf_from_image(path: *const c_char, error_code: *mut i32) -> *
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let p = match unsafe { CStr::from_ptr(path) }.to_str() {
+    let p = match c_str(path) {
         Ok(s) => s,
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
@@ -6120,7 +6049,7 @@ pub extern "C" fn pdf_from_image_bytes(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let bytes = unsafe { std::slice::from_raw_parts(data, data_len as usize) };
+    let bytes = raw_slice(data, data_len as usize);
     match Pdf::from_image_bytes(bytes) {
         Ok(pdf) => {
             set_error(error_code, ERR_SUCCESS);
@@ -6146,13 +6075,12 @@ pub extern "C" fn pdf_merge(
         return ptr::null_mut();
     }
     let mut path_strs: Vec<String> = Vec::new();
-    for i in 0..path_count {
-        let p = unsafe { *paths.add(i as usize) };
+    for &p in raw_slice(paths, path_count as usize) {
         if p.is_null() {
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        match unsafe { CStr::from_ptr(p) }.to_str() {
+        match c_str(p) {
             Ok(s) => path_strs.push(s.to_string()),
             Err(_) => {
                 set_error(error_code, ERR_INVALID_ARG);
@@ -6164,9 +6092,7 @@ pub extern "C" fn pdf_merge(
     match crate::api::merge_pdfs(&path_refs) {
         Ok(bytes) => {
             set_error(error_code, ERR_SUCCESS);
-            unsafe {
-                *data_len = bytes.len() as i32;
-            }
+            write_out(data_len, bytes.len() as i32);
             vec_to_ffi_bytes(bytes)
         },
         Err(e) => {
@@ -6194,7 +6120,7 @@ pub extern "C" fn pdf_validate_pdf_a_level(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_mut!(document);
+    let doc = handle_mut(document);
     let pdf_a_level = match level {
         0 => PdfALevel::A1b,
         1 => PdfALevel::A1a,
@@ -6228,7 +6154,7 @@ pub extern "C" fn pdf_pdf_a_is_compliant(
         return false;
     }
     set_error(error_code, ERR_SUCCESS);
-    unsafe { (*results).result.is_compliant }
+    handle_ref(results).result.is_compliant
 }
 
 #[no_mangle]
@@ -6236,7 +6162,7 @@ pub extern "C" fn pdf_pdf_a_error_count(results: *const FfiPdfAResults) -> i32 {
     if results.is_null() {
         return 0;
     }
-    unsafe { (*results).result.errors.len() as i32 }
+    handle_ref(results).result.errors.len() as i32
 }
 
 #[no_mangle]
@@ -6249,7 +6175,7 @@ pub extern "C" fn pdf_pdf_a_get_error(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let r = handle_ref!(results);
+    let r = handle_ref(results);
     if (index as usize) >= r.result.errors.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -6263,7 +6189,7 @@ pub extern "C" fn pdf_pdf_a_warning_count(results: *const FfiPdfAResults) -> i32
     if results.is_null() {
         return 0;
     }
-    unsafe { (*results).result.warnings.len() as i32 }
+    handle_ref(results).result.warnings.len() as i32
 }
 
 #[no_mangle]
@@ -6293,7 +6219,7 @@ pub extern "C" fn pdf_validate_pdf_x_level(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_mut!(document);
+    let doc = handle_mut(document);
     let x_level = match level {
         0 => PdfXLevel::X1a2001,
         1 => PdfXLevel::X32002,
@@ -6322,7 +6248,7 @@ pub extern "C" fn pdf_pdf_x_is_compliant(
         return false;
     }
     set_error(error_code, ERR_SUCCESS);
-    unsafe { (*results).result.is_compliant }
+    handle_ref(results).result.is_compliant
 }
 
 #[no_mangle]
@@ -6330,7 +6256,7 @@ pub extern "C" fn pdf_pdf_x_error_count(results: *const FfiPdfXResults) -> i32 {
     if results.is_null() {
         return 0;
     }
-    unsafe { (*results).result.errors.len() as i32 }
+    handle_ref(results).result.errors.len() as i32
 }
 
 #[no_mangle]
@@ -6343,7 +6269,7 @@ pub extern "C" fn pdf_pdf_x_get_error(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let r = handle_ref!(results);
+    let r = handle_ref(results);
     if (index as usize) >= r.result.errors.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return ptr::null_mut();
@@ -6375,15 +6301,15 @@ pub extern "C" fn document_editor_save_encrypted(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
-    let path_str = match unsafe { CStr::from_ptr(path) }.to_str() {
+    let editor = handle_mut(handle);
+    let path_str = match c_str(path) {
         Ok(s) => s,
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
             return -1;
         },
     };
-    let user_pwd = match unsafe { CStr::from_ptr(user_password) }.to_str() {
+    let user_pwd = match c_str(user_password) {
         Ok(s) => s,
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
@@ -6393,7 +6319,7 @@ pub extern "C" fn document_editor_save_encrypted(
     let owner_pwd = if owner_password.is_null() {
         user_pwd
     } else {
-        match unsafe { CStr::from_ptr(owner_password) }.to_str() {
+        match c_str(owner_password) {
             Ok(s) => s,
             Err(_) => user_pwd,
         }
@@ -6437,7 +6363,7 @@ pub extern "C" fn pdf_document_extract_paths(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.extract_paths(page_index as usize) {
         Ok(paths) => {
             set_error(error_code, ERR_SUCCESS);
@@ -6455,7 +6381,7 @@ pub extern "C" fn pdf_oxide_path_count(paths: *const FfiPathList) -> i32 {
     if paths.is_null() {
         return 0;
     }
-    unsafe { (*paths).paths.len() as i32 }
+    handle_ref(paths).paths.len() as i32
 }
 
 #[no_mangle]
@@ -6472,18 +6398,16 @@ pub extern "C" fn pdf_oxide_path_get_bbox(
         set_error(error_code, ERR_INVALID_ARG);
         return;
     }
-    let list = handle_ref!(paths);
+    let list = handle_ref(paths);
     if (index as usize) >= list.paths.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return;
     }
     let b = &list.paths[index as usize].bbox;
-    unsafe {
-        *x = b.x;
-        *y = b.y;
-        *w = b.width;
-        *h = b.height;
-    }
+    write_out(x, b.x);
+    write_out(y, b.y);
+    write_out(w, b.width);
+    write_out(h, b.height);
     set_error(error_code, ERR_SUCCESS);
 }
 
@@ -6497,7 +6421,7 @@ pub extern "C" fn pdf_oxide_path_get_stroke_width(
         set_error(error_code, ERR_INVALID_ARG);
         return 0.0;
     }
-    let list = handle_ref!(paths);
+    let list = handle_ref(paths);
     if (index as usize) >= list.paths.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return 0.0;
@@ -6516,7 +6440,7 @@ pub extern "C" fn pdf_oxide_path_has_stroke(
         set_error(error_code, ERR_INVALID_ARG);
         return false;
     }
-    let list = handle_ref!(paths);
+    let list = handle_ref(paths);
     if (index as usize) >= list.paths.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return false;
@@ -6535,7 +6459,7 @@ pub extern "C" fn pdf_oxide_path_has_fill(
         set_error(error_code, ERR_INVALID_ARG);
         return false;
     }
-    let list = handle_ref!(paths);
+    let list = handle_ref(paths);
     if (index as usize) >= list.paths.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return false;
@@ -6554,7 +6478,7 @@ pub extern "C" fn pdf_oxide_path_get_operation_count(
         set_error(error_code, ERR_INVALID_ARG);
         return 0;
     }
-    let list = handle_ref!(paths);
+    let list = handle_ref(paths);
     if (index as usize) >= list.paths.len() {
         set_error(error_code, ERR_INVALID_PAGE);
         return 0;
@@ -6586,7 +6510,7 @@ pub extern "C" fn pdf_document_get_page_labels(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match PageLabelExtractor::extract(doc) {
         Ok(ranges) => {
             let page_count = doc.page_count().unwrap_or(0);
@@ -6620,7 +6544,7 @@ pub extern "C" fn pdf_document_get_xmp_metadata(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match XmpExtractor::extract(doc) {
         Ok(Some(xmp)) => {
             let title = xmp.dc_title.as_deref().unwrap_or("").replace('"', "\\\"");
@@ -6723,7 +6647,7 @@ pub extern "C" fn pdf_document_get_outline(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let doc = handle_ref!(handle);
+    let doc = handle_ref(handle);
     match doc.get_outline() {
         Ok(Some(items)) => {
             set_error(error_code, ERR_SUCCESS);
@@ -6754,15 +6678,15 @@ pub extern "C" fn document_editor_set_form_field_value(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
-    let field_name = match unsafe { CStr::from_ptr(name) }.to_str() {
+    let editor = handle_mut(handle);
+    let field_name = match c_str(name) {
         Ok(s) => s,
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
             return -1;
         },
     };
-    let field_value = match unsafe { CStr::from_ptr(value) }.to_str() {
+    let field_value = match c_str(value) {
         Ok(s) => s,
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
@@ -6794,7 +6718,7 @@ pub extern "C" fn document_editor_flatten_forms(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     match editor.flatten_forms() {
         Ok(()) => {
             set_error(error_code, ERR_SUCCESS);
@@ -6818,7 +6742,7 @@ pub extern "C" fn document_editor_flatten_forms_on_page(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let editor = handle_mut!(handle);
+    let editor = handle_mut(handle);
     match editor.flatten_forms_on_page(page_index as usize) {
         Ok(()) => {
             set_error(error_code, ERR_SUCCESS);
@@ -6840,7 +6764,7 @@ pub extern "C" fn document_editor_flatten_warnings_count(handle: *const Document
     if handle.is_null() {
         return -1;
     }
-    let editor = handle_ref!(handle);
+    let editor = handle_ref(handle);
     editor.flatten_warnings().len() as i32
 }
 
@@ -6858,7 +6782,7 @@ pub extern "C" fn document_editor_flatten_warning(
         set_error(error_code, ERR_INVALID_ARG);
         return std::ptr::null_mut();
     }
-    let editor = handle_ref!(handle);
+    let editor = handle_ref(handle);
     let warnings = editor.flatten_warnings();
     match warnings.get(index as usize) {
         Some(w) => match CString::new(w.as_str()) {
@@ -7021,10 +6945,9 @@ pub extern "C" fn AllocString(s: *const c_char) -> *mut c_char {
     if s.is_null() {
         return ptr::null_mut();
     }
-    let cstr = unsafe { CStr::from_ptr(s) };
-    match CString::new(cstr.to_bytes()) {
-        Ok(cs) => cs.into_raw(),
-        Err(_) => ptr::null_mut(),
+    match c_str(s).ok().and_then(|s| CString::new(s).ok()) {
+        Some(cs) => cs.into_raw(),
+        None => ptr::null_mut(),
     }
 }
 
@@ -7115,7 +7038,7 @@ pub extern "C" fn pdf_oxide_fonts_to_json(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let list = handle_ref!(fonts);
+    let list = handle_ref(fonts);
     let items: Vec<JsonFont> = list
         .fonts
         .iter()
@@ -7152,7 +7075,7 @@ pub extern "C" fn pdf_oxide_annotations_to_json(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let list = handle_ref!(annotations);
+    let list = handle_ref(annotations);
 
     // Pre-compute owned strings so the closure can borrow them.
     let rows: Vec<(
@@ -7255,7 +7178,7 @@ pub extern "C" fn pdf_oxide_elements_to_json(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let list = handle_ref!(elements);
+    let list = handle_ref(elements);
     let items: Vec<JsonElement> = list
         .spans
         .iter()
@@ -7291,7 +7214,7 @@ pub extern "C" fn pdf_oxide_search_results_to_json(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let list = handle_ref!(results);
+    let list = handle_ref(results);
     let items: Vec<JsonSearchResult> = list
         .results
         .iter()
@@ -7336,21 +7259,21 @@ pub extern "C" fn pdf_ocr_engine_create(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let det = match unsafe { CStr::from_ptr(det_model_path) }.to_str() {
+        let det = match c_str(det_model_path) {
             Ok(s) => s,
             Err(_) => {
                 set_error(error_code, ERR_INVALID_ARG);
                 return ptr::null_mut();
             },
         };
-        let rec = match unsafe { CStr::from_ptr(rec_model_path) }.to_str() {
+        let rec = match c_str(rec_model_path) {
             Ok(s) => s,
             Err(_) => {
                 set_error(error_code, ERR_INVALID_ARG);
                 return ptr::null_mut();
             },
         };
-        let dict = match unsafe { CStr::from_ptr(dict_path) }.to_str() {
+        let dict = match c_str(dict_path) {
             Ok(s) => s,
             Err(_) => {
                 set_error(error_code, ERR_INVALID_ARG);
@@ -7409,7 +7332,7 @@ pub extern "C" fn pdf_ocr_page_needs_ocr(
             set_error(error_code, ERR_INVALID_ARG);
             return false;
         }
-        let d = handle_mut!(doc);
+        let d = handle_mut(doc);
         match crate::ocr::needs_ocr(d, page_index as usize) {
             Ok(v) => {
                 set_error(error_code, ERR_SUCCESS);
@@ -7446,11 +7369,11 @@ pub extern "C" fn pdf_ocr_extract_text(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let d = handle_mut!(doc);
+        let d = handle_mut(doc);
         let ocr_engine: Option<&OcrEngine> = if engine.is_null() {
             None
         } else {
-            Some(handle_ref!((engine as *const OcrEngine)))
+            Some(handle_ref((engine as *const OcrEngine)))
         };
         match crate::ocr::extract_text_with_ocr(
             d,
@@ -7798,7 +7721,7 @@ pub extern "C" fn pdf_embedded_font_from_file(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let path_str = match unsafe { CStr::from_ptr(path) }.to_str() {
+    let path_str = match c_str(path) {
         Ok(s) => s,
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
@@ -7830,11 +7753,11 @@ pub extern "C" fn pdf_embedded_font_from_bytes(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let bytes = unsafe { std::slice::from_raw_parts(data, len) }.to_vec();
+    let bytes = raw_slice(data, len).to_vec();
     let name_opt = if name.is_null() {
         None
     } else {
-        match unsafe { CStr::from_ptr(name) }.to_str() {
+        match c_str(name) {
             Ok(s) => Some(s.to_string()),
             Err(_) => {
                 set_error(error_code, ERR_INVALID_ARG);
@@ -7900,7 +7823,7 @@ fn ffi_builder_mut<'a>(
         set_error(error_code, ERR_INVALID_ARG);
         return None;
     }
-    let wrapper = handle_mut!(handle);
+    let wrapper = handle_mut(handle);
     if wrapper.inner.is_none() {
         set_error(error_code, ERR_INVALID_ARG);
         return None;
@@ -7930,7 +7853,7 @@ fn read_cstr_or_fail(ptr: *const c_char, error_code: *mut i32) -> Option<String>
         set_error(error_code, ERR_INVALID_ARG);
         return None;
     }
-    match unsafe { CStr::from_ptr(ptr) }.to_str() {
+    match c_str(ptr) {
         Ok(s) => Some(s.to_string()),
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
@@ -8170,7 +8093,7 @@ fn push_page_op(handle: *mut FfiPageBuilder, error_code: *mut i32, op: FfiPageOp
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let page = handle_mut!(handle);
+    let page = handle_mut(handle);
     if page.done_called {
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
@@ -8567,7 +8490,7 @@ pub extern "C" fn pdf_page_builder_text_field(
     let default_s = if default_value.is_null() {
         None
     } else {
-        match unsafe { CStr::from_ptr(default_value) }.to_str() {
+        match c_str(default_value) {
             Ok(s) => Some(s.to_string()),
             Err(_) => {
                 set_error(error_code, ERR_INVALID_ARG);
@@ -8619,7 +8542,7 @@ pub extern "C" fn pdf_page_builder_checkbox(
 }
 
 /// Helper — collect a C string array into a `Vec<String>`.
-unsafe fn read_cstring_array(
+fn read_cstring_array(
     array: *const *const c_char,
     count: usize,
     error_code: *mut i32,
@@ -8629,13 +8552,12 @@ unsafe fn read_cstring_array(
         return None;
     }
     let mut out = Vec::with_capacity(count);
-    for i in 0..count {
-        let ptr = unsafe { *array.add(i) };
+    for &ptr in raw_slice(array, count) {
         if ptr.is_null() {
             set_error(error_code, ERR_INVALID_ARG);
             return None;
         }
-        match unsafe { CStr::from_ptr(ptr) }.to_str() {
+        match c_str(ptr) {
             Ok(s) => out.push(s.to_string()),
             Err(_) => {
                 set_error(error_code, ERR_INVALID_ARG);
@@ -8665,13 +8587,13 @@ pub extern "C" fn pdf_page_builder_combo_box(
     let Some(name_s) = read_cstr_or_fail(name, error_code) else {
         return -1;
     };
-    let Some(opts) = (unsafe { read_cstring_array(options, options_count, error_code) }) else {
+    let Some(opts) = read_cstring_array(options, options_count, error_code) else {
         return -1;
     };
     let selected_s = if selected.is_null() {
         None
     } else {
-        match unsafe { CStr::from_ptr(selected) }.to_str() {
+        match c_str(selected) {
             Ok(s) => Some(s.to_string()),
             Err(_) => {
                 set_error(error_code, ERR_INVALID_ARG);
@@ -8717,13 +8639,13 @@ pub extern "C" fn pdf_page_builder_radio_group(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let Some(vs) = (unsafe { read_cstring_array(values, count, error_code) }) else {
+    let Some(vs) = read_cstring_array(values, count, error_code) else {
         return -1;
     };
-    let xs_slice = unsafe { std::slice::from_raw_parts(xs, count) };
-    let ys_slice = unsafe { std::slice::from_raw_parts(ys, count) };
-    let ws_slice = unsafe { std::slice::from_raw_parts(ws, count) };
-    let hs_slice = unsafe { std::slice::from_raw_parts(hs, count) };
+    let xs_slice = raw_slice(xs, count);
+    let ys_slice = raw_slice(ys, count);
+    let ws_slice = raw_slice(ws, count);
+    let hs_slice = raw_slice(hs, count);
     let buttons: Vec<(String, f32, f32, f32, f32)> = vs
         .into_iter()
         .zip(xs_slice.iter().copied())
@@ -8735,7 +8657,7 @@ pub extern "C" fn pdf_page_builder_radio_group(
     let selected_s = if selected.is_null() {
         None
     } else {
-        match unsafe { CStr::from_ptr(selected) }.to_str() {
+        match c_str(selected) {
             Ok(s) => Some(s.to_string()),
             Err(_) => {
                 set_error(error_code, ERR_INVALID_ARG);
@@ -9058,7 +8980,7 @@ pub unsafe extern "C" fn pdf_page_builder_image_with_alt(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let data = unsafe { std::slice::from_raw_parts(bytes, len) }.to_vec();
+    let data = raw_slice(bytes, len).to_vec();
     let Some(alt) = read_cstr_or_fail(alt_text, error_code) else {
         return -1;
     };
@@ -9094,7 +9016,7 @@ pub unsafe extern "C" fn pdf_page_builder_image_artifact(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let data = unsafe { std::slice::from_raw_parts(bytes, len) }.to_vec();
+    let data = raw_slice(bytes, len).to_vec();
     push_page_op(
         handle,
         error_code,
@@ -9240,7 +9162,7 @@ pub extern "C" fn pdf_page_builder_stroke_rect_dashed(
     let dash = if n_dash == 0 || dash_array.is_null() {
         vec![]
     } else {
-        unsafe { std::slice::from_raw_parts(dash_array, n_dash) }.to_vec()
+        raw_slice(dash_array, n_dash).to_vec()
     };
     push_page_op(
         handle,
@@ -9273,7 +9195,7 @@ pub extern "C" fn pdf_page_builder_stroke_line_dashed(
     let dash = if n_dash == 0 || dash_array.is_null() {
         vec![]
     } else {
-        unsafe { std::slice::from_raw_parts(dash_array, n_dash) }.to_vec()
+        raw_slice(dash_array, n_dash).to_vec()
     };
     push_page_op(
         handle,
@@ -9299,7 +9221,7 @@ pub extern "C" fn pdf_page_builder_text_in_rect(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let text_s = match unsafe { CStr::from_ptr(text) }.to_str() {
+    let text_s = match c_str(text) {
         Ok(s) => s.to_string(),
         Err(_) => {
             set_error(error_code, ERR_INVALID_ARG);
@@ -9363,13 +9285,13 @@ pub extern "C" fn pdf_page_builder_table(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let widths_vec: Vec<f32> = unsafe { std::slice::from_raw_parts(widths, n_columns) }.to_vec();
-    let aligns_vec: Vec<i32> = unsafe { std::slice::from_raw_parts(aligns, n_columns) }.to_vec();
+    let widths_vec: Vec<f32> = raw_slice(widths, n_columns).to_vec();
+    let aligns_vec: Vec<i32> = raw_slice(aligns, n_columns).to_vec();
 
     let total = n_rows.saturating_mul(n_columns);
     let mut rows: Vec<Vec<String>> = Vec::with_capacity(n_rows);
     if total > 0 {
-        let strings = unsafe { std::slice::from_raw_parts(cell_strings, total) };
+        let strings = raw_slice(cell_strings, total);
         for row_idx in 0..n_rows {
             let mut row = Vec::with_capacity(n_columns);
             for col_idx in 0..n_columns {
@@ -9378,7 +9300,7 @@ pub extern "C" fn pdf_page_builder_table(
                     row.push(String::new());
                     continue;
                 }
-                match unsafe { CStr::from_ptr(ptr) }.to_str() {
+                match c_str(ptr) {
                     Ok(s) => row.push(s.to_string()),
                     Err(_) => {
                         set_error(error_code, ERR_INVALID_ARG);
@@ -9429,9 +9351,9 @@ pub extern "C" fn pdf_page_builder_streaming_table_begin(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let widths_slice = unsafe { std::slice::from_raw_parts(widths, n_columns) };
-    let aligns_slice = unsafe { std::slice::from_raw_parts(aligns, n_columns) };
-    let headers_slice = unsafe { std::slice::from_raw_parts(headers, n_columns) };
+    let widths_slice = raw_slice(widths, n_columns);
+    let aligns_slice = raw_slice(aligns, n_columns);
+    let headers_slice = raw_slice(headers, n_columns);
 
     let mut cols: Vec<(String, f32, i32)> = Vec::with_capacity(n_columns);
     for i in 0..n_columns {
@@ -9440,7 +9362,7 @@ pub extern "C" fn pdf_page_builder_streaming_table_begin(
             set_error(error_code, ERR_INVALID_ARG);
             return -1;
         }
-        let header = match unsafe { CStr::from_ptr(ptr) }.to_str() {
+        let header = match c_str(ptr) {
             Ok(s) => s.to_string(),
             Err(_) => {
                 set_error(error_code, ERR_INVALID_ARG);
@@ -9450,7 +9372,7 @@ pub extern "C" fn pdf_page_builder_streaming_table_begin(
         cols.push((header, widths_slice[i], aligns_slice[i]));
     }
 
-    let pb = unsafe { &mut *handle };
+    let pb = handle_mut(handle);
     pb.st_batch_size = 256;
     pb.st_batch_count = 0;
     pb.st_pending_count = 0;
@@ -9493,9 +9415,9 @@ pub extern "C" fn pdf_page_builder_streaming_table_begin_v2(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let widths_slice = unsafe { std::slice::from_raw_parts(widths, n_columns) };
-    let aligns_slice = unsafe { std::slice::from_raw_parts(aligns, n_columns) };
-    let headers_slice = unsafe { std::slice::from_raw_parts(headers, n_columns) };
+    let widths_slice = raw_slice(widths, n_columns);
+    let aligns_slice = raw_slice(aligns, n_columns);
+    let headers_slice = raw_slice(headers, n_columns);
 
     let mut cols: Vec<(String, f32, i32)> = Vec::with_capacity(n_columns);
     for i in 0..n_columns {
@@ -9504,7 +9426,7 @@ pub extern "C" fn pdf_page_builder_streaming_table_begin_v2(
             set_error(error_code, ERR_INVALID_ARG);
             return -1;
         }
-        let header = match unsafe { CStr::from_ptr(ptr) }.to_str() {
+        let header = match c_str(ptr) {
             Ok(s) => s.to_string(),
             Err(_) => {
                 set_error(error_code, ERR_INVALID_ARG);
@@ -9514,7 +9436,7 @@ pub extern "C" fn pdf_page_builder_streaming_table_begin_v2(
         cols.push((header, widths_slice[i], aligns_slice[i]));
     }
 
-    let pb = unsafe { &mut *handle };
+    let pb = handle_mut(handle);
     pb.st_batch_size = 256;
     pb.st_batch_count = 0;
     pb.st_pending_count = 0;
@@ -9548,7 +9470,7 @@ pub extern "C" fn pdf_page_builder_streaming_table_set_batch_size(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let pb = unsafe { &mut *handle };
+    let pb = handle_mut(handle);
     pb.st_batch_size = if batch_size == 0 { 256 } else { batch_size };
     pb.st_batch_count = 0;
     pb.st_pending_count = 0;
@@ -9565,7 +9487,7 @@ pub extern "C" fn pdf_page_builder_streaming_table_pending_row_count(
     if handle.is_null() {
         return 0;
     }
-    unsafe { (*handle).st_pending_count }
+    handle_ref(handle).st_pending_count
 }
 
 /// Return the number of complete batches recorded so far.
@@ -9577,7 +9499,7 @@ pub extern "C" fn pdf_page_builder_streaming_table_batch_count(
     if handle.is_null() {
         return 0;
     }
-    unsafe { (*handle).st_batch_count }
+    handle_ref(handle).st_batch_count
 }
 
 /// Explicitly mark a batch boundary: increment the batch counter and
@@ -9591,7 +9513,7 @@ pub extern "C" fn pdf_page_builder_streaming_table_flush(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let pb = unsafe { &mut *handle };
+    let pb = handle_mut(handle);
     if pb.st_pending_count > 0 {
         pb.st_batch_count += 1;
         pb.st_pending_count = 0;
@@ -9637,11 +9559,11 @@ pub extern "C" fn pdf_page_builder_streaming_table_push_row_v2(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let cells_slice = unsafe { std::slice::from_raw_parts(cells, n_cells) };
+    let cells_slice = raw_slice(cells, n_cells);
     let rowspans_slice = if rowspans.is_null() {
         None
     } else {
-        Some(unsafe { std::slice::from_raw_parts(rowspans, n_cells) })
+        Some(raw_slice(rowspans, n_cells))
     };
     let mut row: Vec<(String, usize)> = Vec::with_capacity(n_cells);
     for i in 0..n_cells {
@@ -9649,7 +9571,7 @@ pub extern "C" fn pdf_page_builder_streaming_table_push_row_v2(
         let text = if ptr.is_null() {
             String::new()
         } else {
-            match unsafe { CStr::from_ptr(ptr) }.to_str() {
+            match c_str(ptr) {
                 Ok(s) => s.to_string(),
                 Err(_) => {
                     set_error(error_code, ERR_INVALID_ARG);
@@ -9662,7 +9584,7 @@ pub extern "C" fn pdf_page_builder_streaming_table_push_row_v2(
     }
     let rc = push_page_op(handle, error_code, FfiPageOp::StreamingTableRow(row));
     if rc == 0 {
-        let pb = unsafe { &mut *handle };
+        let pb = handle_mut(handle);
         pb.st_pending_count += 1;
         if pb.st_batch_size > 0 && pb.st_pending_count >= pb.st_batch_size {
             pb.st_batch_count += 1;
@@ -9681,7 +9603,7 @@ pub extern "C" fn pdf_page_builder_streaming_table_finish(
     error_code: *mut i32,
 ) -> i32 {
     if !handle.is_null() {
-        let pb = unsafe { &mut *handle };
+        let pb = handle_mut(handle);
         if pb.st_pending_count > 0 {
             pb.st_batch_count += 1;
             pb.st_pending_count = 0;
@@ -9718,7 +9640,7 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    let parent = handle_mut!(page.parent);
+    let parent = handle_mut(page.parent);
     let Some(builder) = parent.inner.as_mut() else {
         set_error(error_code, ERR_INVALID_ARG);
         parent.open_page = false;
@@ -10121,9 +10043,7 @@ fn bytes_to_ffi(bytes: Vec<u8>, out_len: *mut usize, error_code: *mut i32) -> *m
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    unsafe {
-        *out_len = bytes.len();
-    }
+    write_out(out_len, bytes.len());
     set_error(error_code, ERR_SUCCESS);
     vec_to_ffi_bytes(bytes)
 }
@@ -10264,7 +10184,7 @@ pub extern "C" fn pdf_from_html_css(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let font_vec = unsafe { std::slice::from_raw_parts(font_bytes, font_len) }.to_vec();
+    let font_vec = raw_slice(font_bytes, font_len).to_vec();
     match Pdf::from_html_css(&html_s, &css_s, font_vec) {
         Ok(pdf) => {
             set_error(error_code, ERR_SUCCESS);
@@ -10301,22 +10221,25 @@ pub extern "C" fn pdf_from_html_css_with_fonts(
         return ptr::null_mut();
     }
     let mut fonts: Vec<(String, Vec<u8>)> = Vec::with_capacity(count);
+    let names_slice = raw_slice(families, count);
+    let bytes_ptrs_slice = raw_slice(font_bytes, count);
+    let bytes_lens_slice = raw_slice(font_lens, count);
     for i in 0..count {
-        let name_ptr = unsafe { *families.add(i) };
-        let bytes_ptr = unsafe { *font_bytes.add(i) };
-        let bytes_len = unsafe { *font_lens.add(i) };
+        let name_ptr = names_slice[i];
+        let bytes_ptr = bytes_ptrs_slice[i];
+        let bytes_len = bytes_lens_slice[i];
         if name_ptr.is_null() || bytes_ptr.is_null() || bytes_len == 0 {
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let name = match unsafe { CStr::from_ptr(name_ptr) }.to_str() {
+        let name = match c_str(name_ptr) {
             Ok(s) => s.to_string(),
             Err(_) => {
                 set_error(error_code, ERR_INVALID_ARG);
                 return ptr::null_mut();
             },
         };
-        let bytes = unsafe { std::slice::from_raw_parts(bytes_ptr, bytes_len) }.to_vec();
+        let bytes = raw_slice(bytes_ptr, bytes_len).to_vec();
         fonts.push((name, bytes));
     }
     match Pdf::from_html_css_with_fonts(&html_s, &css_s, fonts) {

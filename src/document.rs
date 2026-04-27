@@ -5931,7 +5931,7 @@ impl PdfDocument {
                 resources.clone()
             };
             extractor.set_resources(res_obj.clone());
-            extractor.set_document(self as *const PdfDocument);
+            extractor.set_document(self);
             let _ = self.load_fonts(&res_obj, &mut extractor);
         } else {
             // No resources on the AP stream — try the annotation's /DR or parent page resources
@@ -7142,7 +7142,7 @@ impl PdfDocument {
         let mut extractor = TextExtractor::with_config(config);
         if let Some(resources) = page_dict.get("Resources") {
             extractor.set_resources(resources.clone());
-            extractor.set_document(self as *const PdfDocument);
+            extractor.set_document(self);
             if let Err(e) = self.load_fonts(resources, &mut extractor) {
                 log::warn!(
                     "Failed to load fonts for page {}: {}, continuing with defaults",
@@ -7364,7 +7364,7 @@ impl PdfDocument {
         // Load fonts from page resources and set resources for XObject access
         if let Some(resources) = page_dict.get("Resources") {
             extractor.set_resources(resources.clone());
-            extractor.set_document(self as *const PdfDocument);
+            extractor.set_document(self);
 
             // Load fonts
             if let Err(e) = self.load_fonts(resources, &mut extractor) {
@@ -7453,7 +7453,7 @@ impl PdfDocument {
         // Load fonts from page resources and set resources for XObject access
         if let Some(resources) = page_dict.get("Resources") {
             extractor.set_resources(resources.clone());
-            extractor.set_document(self as *const PdfDocument);
+            extractor.set_document(self);
 
             // Load fonts
             if let Err(e) = self.load_fonts(resources, &mut extractor) {
@@ -9033,7 +9033,7 @@ impl PdfDocument {
     pub(crate) fn load_fonts(
         &self,
         resources: &Object,
-        extractor: &mut crate::extractors::TextExtractor,
+        extractor: &mut crate::extractors::TextExtractor<'_>,
     ) -> Result<()> {
         use crate::fonts::FontInfo;
 
@@ -11131,7 +11131,7 @@ impl PdfDocument {
     pub fn load_fonts_public(
         &self,
         resources: &Object,
-        extractor: &mut crate::extractors::TextExtractor,
+        extractor: &mut crate::extractors::TextExtractor<'_>,
     ) -> Result<()> {
         self.load_fonts(resources, extractor)
     }

@@ -3,6 +3,8 @@
 //! This is the most common PDF compression filter, used in ~90% of PDFs.
 //! Uses the flate2 crate for zlib decompression.
 
+#![forbid(unsafe_code)]
+
 use crate::decoders::StreamDecoder;
 use crate::error::{Error, Result};
 use flate2::read::{DeflateDecoder, ZlibDecoder};
@@ -21,14 +23,17 @@ use std::io::Read;
 /// - [`FlateDecoder::with_limit`] for programmatic control
 pub const DEFAULT_MAX_DECOMPRESSED_BYTES: u64 = 256 * 1024 * 1024;
 
+fn effective_limit_from_str(val: Option<&str>) -> u64 {
+    val.and_then(|v| v.parse::<u64>().ok())
+        .map(|mb| mb * 1024 * 1024)
+        .unwrap_or(DEFAULT_MAX_DECOMPRESSED_BYTES)
+}
+
 /// Read the decompression limit from the environment, falling back to the
 /// compile-time default.
 fn effective_limit() -> u64 {
-    std::env::var("PDF_OXIDE_MAX_DECOMPRESS_MB")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .map(|mb| mb * 1024 * 1024)
-        .unwrap_or(DEFAULT_MAX_DECOMPRESSED_BYTES)
+    let val = std::env::var("PDF_OXIDE_MAX_DECOMPRESS_MB");
+    effective_limit_from_str(val.as_deref().ok())
 }
 
 /// Heuristic validator for partial-recovery output from a failing decompress.
@@ -520,23 +525,16 @@ mod tests {
         );
     }
 
-    // Single test for env var to avoid parallel race conditions.
-    // Tests all three cases sequentially in one function.
     #[test]
     fn test_effective_limit_env_variable() {
-        // Default (no env var)
-        std::env::remove_var("PDF_OXIDE_MAX_DECOMPRESS_MB");
-        assert_eq!(effective_limit(), DEFAULT_MAX_DECOMPRESSED_BYTES);
-
-        // Valid override
-        unsafe { std::env::set_var("PDF_OXIDE_MAX_DECOMPRESS_MB", "64") };
-        assert_eq!(effective_limit(), 64 * 1024 * 1024);
-
-        // Invalid value falls back to default
-        unsafe { std::env::set_var("PDF_OXIDE_MAX_DECOMPRESS_MB", "not_a_number") };
-        assert_eq!(effective_limit(), DEFAULT_MAX_DECOMPRESSED_BYTES);
-
-        // Cleanup
-        unsafe { std::env::remove_var("PDF_OXIDE_MAX_DECOMPRESS_MB") };
+        assert_eq!(
+            effective_limit_from_str(None),
+            DEFAULT_MAX_DECOMPRESSED_BYTES
+        );
+        assert_eq!(effective_limit_from_str(Some("64")), 64 * 1024 * 1024);
+        assert_eq!(
+            effective_limit_from_str(Some("not_a_number")),
+            DEFAULT_MAX_DECOMPRESSED_BYTES
+        );
     }
 }
