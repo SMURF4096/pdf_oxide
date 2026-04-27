@@ -182,10 +182,14 @@ sha2 = "0.11"      # SHA-256 for newer encryption
 stringprep = "0.1" # SASLprep for Unicode PDF passwords (R>=5)
 
 # Digital signatures (optional)
+# NOTE: der/spki/pkcs1/pkcs8/rsa/signature/cms are pinned to 0.7/0.9/0.10/2.x track.
+# der 0.8 + spki 0.8 are stable but the rest of the RustCrypto 0.8 stack
+# (pkcs1 0.8, pkcs8 0.11, rsa 0.10, cms 0.3, signature 3.0) are still RC as of 2026-04.
+# Upgrade the whole block together once all reach stable release.
 x509-parser = { version = "0.18", optional = true }   # X.509 certificate parsing
 cms = { version = "0.2", optional = true }            # CMS/PKCS#7 signatures
 rsa = { version = "0.9", optional = true }            # RSA signing
-der = { version = "0.7", optional = true }            # DER encoding — pinned to 0.7 to match cms 0.2 + x509-tsp 0.1
+der = { version = "0.7", optional = true }            # DER encoding
 spki = { version = "0.7", optional = true }           # SubjectPublicKeyInfo — matches der 0.7
 pkcs1 = { version = "0.7", optional = true }          # PKCS#1 RSA format
 pkcs8 = { version = "0.10", optional = true }         # PKCS#8 private keys

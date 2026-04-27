@@ -31,17 +31,16 @@ jobs:
       - name: Check for outdated dependencies
         id: outdated
         run: |
-          OUTPUT=$(cargo outdated --workspace --exit-code 0 2>&1)
+          # --exit-code 1 makes cargo-outdated exit 1 when outdated deps are found
+          OUTPUT=$(cargo outdated --workspace --exit-code 1 2>&1) && HAS=false || HAS=true
           echo "$OUTPUT"
-          if echo "$OUTPUT" | grep -qE "^[a-zA-Z].*->"; then
-            echo "has_outdated=true" >> "$GITHUB_OUTPUT"
+          echo "has_outdated=$HAS" >> "$GITHUB_OUTPUT"
+          if [ "$HAS" = "true" ]; then
             {
               echo "report<<EOF"
               echo "$OUTPUT"
               echo "EOF"
             } >> "$GITHUB_OUTPUT"
-          else
-            echo "has_outdated=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Open issue for outdated deps
