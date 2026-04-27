@@ -11,6 +11,8 @@ The fastest PDF library for text extraction, image extraction, and markdown conv
 [![Documentation](https://docs.rs/pdf_oxide/badge.svg)](https://docs.rs/pdf_oxide)
 [![Build Status](https://github.com/yfedoseev/pdf_oxide/workflows/CI/badge.svg)](https://github.com/yfedoseev/pdf_oxide/actions)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](https://opensource.org/licenses)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/yfedoseev/pdf_oxide/badge)](https://scorecard.dev/viewer/?uri=github.com/yfedoseev/pdf_oxide)
+<!-- [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/NNNN/badge)](https://www.bestpractices.dev/projects/NNNN) -->
 
 > **New in v0.3.24 — now available in Go, JavaScript / TypeScript, and C# / .NET**, alongside the existing Python, Rust, and WASM bindings.
 > Same Rust core, same 0.8 ms extraction speed, same 100% pass rate.
