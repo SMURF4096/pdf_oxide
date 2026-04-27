@@ -2,6 +2,14 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [0.3.40] - unreleased
+
+### Bug fixes
+
+### Improvements
+
+---
+
 ## [0.3.39] - 2026-04-23
 
 > Tables (streaming + buffered), PDF/UA-1, digital signing (CMS/PKCS#7),
