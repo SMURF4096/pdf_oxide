@@ -2736,7 +2736,7 @@ dependencies = [
 
 [[package]]
 name = "pdf_oxide"
-version = "0.3.39"
+version = "0.3.40"
 dependencies = [
  "aes 0.9.0",
  "barcoders",
@@ -2824,7 +2824,7 @@ dependencies = [
 
 [[package]]
 name = "pdf_oxide_cli"
-version = "0.3.39"
+version = "0.3.40"
 dependencies = [
  "clap",
  "is-terminal",
@@ -2834,7 +2834,7 @@ dependencies = [
 
 [[package]]
 name = "pdf_oxide_mcp"
-version = "0.3.39"
+version = "0.3.40"
 dependencies = [
  "pdf_oxide",
  "serde_json",
