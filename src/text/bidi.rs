@@ -31,6 +31,8 @@
 //! markers (see `pipeline::converters::markdown::strip_inline_emphasis_in_rtl`)
 //! while leaving order alone.
 
+#![forbid(unsafe_code)]
+
 use unicode_bidi::BidiInfo;
 
 /// Cheap pre-check: does `text` look like it contains any RTL

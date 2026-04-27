@@ -3,31 +3,23 @@
 //! This module provides functions to clean up excessive whitespace in generated markdown,
 //! ensuring consistent formatting and readability.
 
-use lazy_static::lazy_static;
 use regex::Regex;
+use std::sync::LazyLock;
 
-lazy_static! {
-    /// Regex for normalizing 3+ consecutive newlines
-    static ref RE_MULTI_NEWLINE: Regex = Regex::new(r"\n{3,}").unwrap();
-
-    /// Regex for "Page N" style page numbers
-    static ref RE_PAGE_NUM: Regex = Regex::new(r"(?m)^Page\s+\d+\s*$").unwrap();
-
-    /// Regex for "- N -" style page numbers
-    static ref RE_DASH_PAGE: Regex = Regex::new(r"(?m)^\s*-\s*\d+\s*-\s*$").unwrap();
-
-    /// Regex for "[N]" or "(N)" style page numbers
-    static ref RE_BRACKET_PAGE: Regex = Regex::new(r"(?m)^\s*[\[\(]\d+[\]\)]\s*$").unwrap();
-
-    /// Regex for standalone numbers (likely page numbers)
-    static ref RE_STANDALONE_NUM: Regex = Regex::new(r"(?m)^\s*\d{1,3}\s*$").unwrap();
-
-    /// Regex for dash separators
-    static ref RE_DASH_SEP: Regex = Regex::new(r"(?m)^[\s\-]{5,}$").unwrap();
-
-    /// Regex for equals sign separators
-    static ref RE_EQUALS_SEP: Regex = Regex::new(r"(?m)^[\s=]{5,}$").unwrap();
-}
+static RE_MULTI_NEWLINE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\n{3,}").unwrap());
+static RE_PAGE_NUM: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^Page\s+\d+\s*$").unwrap());
+static RE_DASH_PAGE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^\s*-\s*\d+\s*-\s*$").unwrap());
+static RE_BRACKET_PAGE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^\s*[\[\(]\d+[\]\)]\s*$").unwrap());
+static RE_STANDALONE_NUM: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^\s*\d{1,3}\s*$").unwrap());
+static RE_DASH_SEP: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^[\s\-]{5,}$").unwrap());
+static RE_EQUALS_SEP: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^[\s=]{5,}$").unwrap());
 
 /// Normalize whitespace in markdown text by limiting consecutive blank lines.
 ///
@@ -140,14 +132,10 @@ pub fn remove_page_artifacts(text: &str) -> String {
 /// assert_eq!(output, "The **Chinese stock market** is volatile");
 /// ```
 pub fn merge_bold_markers(text: &str) -> String {
-    lazy_static! {
-        // Pattern: **text** followed by 1-3 words followed by potential bold start
-        // This catches: "**word1** word2" or "**word1 word2** word3 word4"
-        // We want to extend bold to include the following words if they form a natural phrase
-        static ref RE_BOLD_GAP: Regex = Regex::new(
-            r"\*\*([^*]+)\*\*\s+([a-zA-Z]+)(?:\s+([a-zA-Z]+))?(?:\s+([a-zA-Z]+))?"
-        ).unwrap();
-    }
+    static RE_BOLD_GAP: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"\*\*([^*]+)\*\*\s+([a-zA-Z]+)(?:\s+([a-zA-Z]+))?(?:\s+([a-zA-Z]+))?")
+            .unwrap()
+    });
 
     // For now, implement a simpler approach: merge `** **` patterns (empty bold boundaries)
     // This handles: "**text1** **text2**" -> "**text1 text2**"
@@ -178,10 +166,7 @@ pub fn merge_bold_markers(text: &str) -> String {
 /// assert_eq!(output, "The cat sat on the mat.");
 /// ```
 pub fn remove_duplicate_words(text: &str) -> String {
-    lazy_static! {
-        // Pattern: word (4+ letters)
-        static ref RE_WORD: Regex = Regex::new(r"\b(\w{4,})\b").unwrap();
-    }
+    static RE_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\b(\w{4,})\b").unwrap());
 
     let mut result = String::with_capacity(text.len());
     let mut last_word: Option<String> = None;
@@ -282,10 +267,8 @@ pub fn cleanup_markdown(text: &str) -> String {
 /// assert_eq!(output, "The quick brown fox");
 /// ```
 pub fn normalize_horizontal_whitespace(text: &str) -> String {
-    lazy_static! {
-        // Pattern: 2 or more spaces
-        static ref RE_MULTI_SPACE: Regex = Regex::new(r" {2,}").unwrap();
-    }
+    static RE_MULTI_SPACE: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r" {2,}").unwrap());
 
     // Process line by line to preserve indentation at start of lines
     let mut result = String::with_capacity(text.len());

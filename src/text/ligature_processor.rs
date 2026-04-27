@@ -10,6 +10,8 @@
 //! This module provides spec-compliant ligature expansion that integrates
 //! with word boundary detection.
 
+#![forbid(unsafe_code)]
+
 use crate::text::{BoundaryContext, CharacterInfo};
 
 /// Decision about whether to keep or split a ligature.

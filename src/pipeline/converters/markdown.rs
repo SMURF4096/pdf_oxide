@@ -7,18 +7,15 @@ use crate::layout::FontWeight;
 use crate::pipeline::{OrderedTextSpan, StructRole, TextPipelineConfig};
 use crate::structure::table_extractor::Table;
 use crate::text::HyphenationHandler;
-use lazy_static::lazy_static;
 use regex::Regex;
+use std::sync::LazyLock;
 
 use super::OutputConverter;
 
-lazy_static! {
-    /// Regex for matching URLs in text
-    static ref RE_URL: Regex = Regex::new(r"(https?://[^\s<>\[\]]*[^\s<>\[\].,!?;:])").unwrap();
-
-    /// Regex for matching email addresses
-    static ref RE_EMAIL: Regex = Regex::new(r"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})").unwrap();
-}
+static RE_URL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(https?://[^\s<>\[\]]*[^\s<>\[\].,!?;:])").unwrap());
+static RE_EMAIL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})").unwrap());
 
 /// Markdown output converter.
 ///

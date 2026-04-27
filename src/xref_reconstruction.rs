@@ -10,17 +10,14 @@ use crate::error::{Error, Result};
 use crate::object::Object;
 use crate::parser::parse_object;
 use crate::xref::{CrossRefTable, XRefEntry};
-use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
+use std::sync::LazyLock;
 
-lazy_static! {
-    /// Regex for finding "N G obj" patterns in PDF files
-    static ref RE_OBJ_PATTERN: regex::bytes::Regex = regex::bytes::Regex::new(r"(\d+)\s+(\d+)\s+obj").unwrap();
-
-    /// Regex for finding "trailer <<" patterns
-    static ref RE_TRAILER: regex::bytes::Regex = regex::bytes::Regex::new(r"trailer\s*<<").unwrap();
-}
+static RE_OBJ_PATTERN: LazyLock<regex::bytes::Regex> =
+    LazyLock::new(|| regex::bytes::Regex::new(r"(\d+)\s+(\d+)\s+obj").unwrap());
+static RE_TRAILER: LazyLock<regex::bytes::Regex> =
+    LazyLock::new(|| regex::bytes::Regex::new(r"trailer\s*<<").unwrap());
 
 /// Reconstruct the cross-reference table by scanning the entire PDF file.
 ///

@@ -22,6 +22,9 @@ jobs:
         with:
           key: outdated
 
+      - name: Install libgit2 (required by cargo-outdated)
+        run: sudo apt-get install -y libgit2-dev pkg-config
+
       - name: Install cargo-outdated
         run: cargo install --locked cargo-outdated
 

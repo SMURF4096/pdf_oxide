@@ -177,10 +177,10 @@ fn compute_stream_hash(data: &[u8]) -> CMapKey {
 /// Maximum number of entries in the global CMap cache.
 const MAX_CMAP_CACHE_ENTRIES: usize = 1024;
 
-lazy_static::lazy_static! {
-    static ref CMAP_CACHE: Mutex<crate::cache::BoundedEntryCache<CMapKey, Arc<CMap>>> =
-        Mutex::new(crate::cache::BoundedEntryCache::new(MAX_CMAP_CACHE_ENTRIES));
-}
+static CMAP_CACHE: std::sync::LazyLock<Mutex<crate::cache::BoundedEntryCache<CMapKey, Arc<CMap>>>> =
+    std::sync::LazyLock::new(|| {
+        Mutex::new(crate::cache::BoundedEntryCache::new(MAX_CMAP_CACHE_ENTRIES))
+    });
 
 /// Clear the global CMap cache.
 ///
@@ -518,9 +518,8 @@ fn extract_sections<'a>(content: &'a str, begin: &str, end: &str) -> Vec<&'a str
 /// Supports multiple pairs per line, hex code points, ligatures, escape sequences,
 /// and flexible whitespace inside angle brackets.
 fn parse_bfchar_line(line: &str) -> Vec<(u32, String)> {
-    lazy_static::lazy_static! {
-        static ref RE: Regex = Regex::new(r"<([^>]*)>\s*<([^>]*)>").unwrap();
-    }
+    static RE: std::sync::LazyLock<Regex> =
+        std::sync::LazyLock::new(|| Regex::new(r"<([^>]*)>\s*<([^>]*)>").unwrap());
 
     let mut results = Vec::new();
 
@@ -607,16 +606,11 @@ fn parse_bfchar_line(line: &str) -> Vec<(u32, String)> {
 ///
 /// This function supports both formats and flexible whitespace within angle brackets.
 fn parse_bfrange_line(line: &str) -> Option<Vec<(u32, String)>> {
-    lazy_static::lazy_static! {
-        // Format 1: <start> <end> <dst> - Flexible whitespace inside brackets
-        static ref RE_SEQ: Regex = Regex::new(
-            r"<([^>]*)>\s*<([^>]*)>\s*<([^>]*)>"
-        ).unwrap();
-        // Format 2: <start> <end> [<dst1> <dst2> ...] - Flexible whitespace inside brackets
-        static ref RE_ARRAY: Regex = Regex::new(
-            r"<([^>]*)>\s*<([^>]*)>\s*\[((?:\s*<[^>]+>\s*)+)\]"
-        ).unwrap();
-    }
+    static RE_SEQ: std::sync::LazyLock<Regex> =
+        std::sync::LazyLock::new(|| Regex::new(r"<([^>]*)>\s*<([^>]*)>\s*<([^>]*)>").unwrap());
+    static RE_ARRAY: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r"<([^>]*)>\s*<([^>]*)>\s*\[((?:\s*<[^>]+>\s*)+)\]").unwrap()
+    });
 
     // Try format 2 first (array format)
     // Example: <005F> <0061> [<00660066> <00660069> <00660066006C>]
@@ -630,9 +624,8 @@ fn parse_bfrange_line(line: &str) -> Option<Vec<(u32, String)>> {
 
         // Extract all destination hex strings from array
         // Each can be a single Unicode code point OR multiple code points (for ligatures)
-        lazy_static::lazy_static! {
-            static ref RE_HEX: Regex = Regex::new(r"<([^>]*)>").unwrap();
-        }
+        static RE_HEX: std::sync::LazyLock<Regex> =
+            std::sync::LazyLock::new(|| Regex::new(r"<([^>]*)>").unwrap());
         let dst_hexes: Vec<String> = RE_HEX
             .captures_iter(array_str)
             .filter_map(|cap| {
@@ -781,12 +774,8 @@ fn parse_bfrange_line(line: &str) -> Option<Vec<(u32, String)>> {
 /// Unlike bfrange, notdefrange only supports the sequential format (not arrays).
 /// Notdefrange mappings are applied only to codes not already mapped by bfchar/bfrange.
 fn parse_notdefrange_line(line: &str) -> Option<Vec<(u32, String)>> {
-    lazy_static::lazy_static! {
-        // Format: <start> <end> <dst> - Flexible whitespace inside brackets
-        static ref RE_SEQ: Regex = Regex::new(
-            r"<([^>]*)>\s*<([^>]*)>\s*<([^>]*)>"
-        ).unwrap();
-    }
+    static RE_SEQ: std::sync::LazyLock<Regex> =
+        std::sync::LazyLock::new(|| Regex::new(r"<([^>]*)>\s*<([^>]*)>\s*<([^>]*)>").unwrap());
 
     if let Some(caps) = RE_SEQ.captures(line) {
         let start_str = caps[1].trim().replace(char::is_whitespace, "");

@@ -8,16 +8,13 @@ use crate::converters::{ConversionOptions, ReadingOrderMode};
 use crate::error::Result;
 use crate::layout::clustering::{cluster_chars_into_words, cluster_words_into_lines};
 use crate::layout::{TextBlock, TextChar};
-use lazy_static::lazy_static;
 use regex::Regex;
+use std::sync::LazyLock;
 
-lazy_static! {
-    /// Regex for matching URLs in text
-    static ref RE_URL: Regex = Regex::new(r"https?://[^\s<>()]+").unwrap();
-
-    /// Regex for matching email addresses
-    static ref RE_EMAIL: Regex = Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}").unwrap();
-}
+static RE_URL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"https?://[^\s<>()]+").unwrap());
+static RE_EMAIL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}").unwrap());
 
 /// Converter for PDF to HTML format.
 ///

@@ -478,8 +478,8 @@ impl<'a> Tokenizer<'a> {
 // Named entities — high-frequency subset
 // ─────────────────────────────────────────────────────────────────────
 
-lazy_static::lazy_static! {
-    static ref NAMED_ENTITIES: HashMap<&'static str, &'static str> = {
+static NAMED_ENTITIES: std::sync::LazyLock<HashMap<&'static str, &'static str>> =
+    std::sync::LazyLock::new(|| {
         let mut m = HashMap::new();
         // Core
         m.insert("amp", "&");
@@ -536,8 +536,7 @@ lazy_static::lazy_static! {
         m.insert("ne", "≠");
         m.insert("equiv", "≡");
         m
-    };
-}
+    });
 
 // ─────────────────────────────────────────────────────────────────────
 // Tests
