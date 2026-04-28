@@ -6639,13 +6639,18 @@ impl PyTimestamp {
         PyBytes::new(py, self.inner.message_imprint_ref()).into()
     }
 
-    /// Cryptographic verify — not yet implemented. The RFC 3161
-    /// TSA-token signer-verification path is not yet wired through
-    /// the Rust core.
+    /// Cryptographically verify this TimeStampToken.
+    ///
+    /// Parses the outer CMS SignedData and verifies the TSA's signature and
+    /// `messageDigest` attribute (RSA-PKCS#1 v1.5, RSA-PSS, ECDSA P-256/P-384).
+    ///
+    /// Returns `True` when the token is cryptographically valid, `False` when
+    /// the check fails. Raises `RuntimeError` if the token is not CMS-wrapped
+    /// or uses an unsupported algorithm.
     fn verify(&self) -> PyResult<bool> {
-        Err(PyNotImplementedError::new_err(
-            "Timestamp.verify() requires CMS signer verification — not yet landed",
-        ))
+        self.inner
+            .verify()
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
     fn __repr__(&self) -> String {
@@ -6659,10 +6664,10 @@ impl PyTimestamp {
 }
 
 /// A single existing PDF signature surfaced by
-/// `PdfDocument.signatures()`. `verify()` runs the RSA-PKCS#1 v1.5
-/// signer-attributes check; `verify_detached()` adds the
-/// `messageDigest` content-hash check. RSA-PSS / ECDSA signers still
-/// raise `NotImplementedError`.
+/// `PdfDocument.signatures()`. `verify()` runs the signer-attributes
+/// check; `verify_detached()` adds the `messageDigest` content-hash
+/// check. Supported algorithms: RSA-PKCS#1 v1.5, RSA-PSS, ECDSA P-256/P-384.
+/// Unsupported-algorithm signers return `Unknown`.
 #[pyclass(module = "pdf_oxide.pdf_oxide", name = "Signature")]
 pub struct PySignature {
     info: crate::signatures::SignatureInfo,
@@ -6755,8 +6760,8 @@ impl PySignature {
     /// signing. A False result means either the signer check failed
     /// or the content was modified after signing.
     ///
-    /// Raises NotImplementedError for RSA-PSS / ECDSA / unknown
-    /// digest / missing signed_attrs / missing messageDigest.
+    /// Raises NotImplementedError when the digest OID is unrecognised
+    /// or signed attributes / messageDigest are absent.
     fn verify_detached(&self, pdf_data: &[u8]) -> PyResult<bool> {
         let Some(contents) = self.info.contents() else {
             return Err(PyNotImplementedError::new_err(

@@ -1418,20 +1418,23 @@ impl WasmTimestamp {
         self.inner.message_imprint()
     }
 
-    /// Cryptographic verify — not yet implemented.
+    /// Cryptographically verify this TimeStampToken.
+    ///
+    /// Returns `true` when the TSA's signature and `messageDigest` both pass.
+    /// Returns `false` when a crypto check fails (tampered token or wrong key).
+    /// Throws when the token is not CMS-wrapped or uses an unsupported algorithm.
     #[wasm_bindgen]
     pub fn verify(&self) -> Result<bool, JsValue> {
-        Err(JsValue::from_str(
-            "Timestamp.verify() requires CMS signer verification — not yet landed",
-        ))
+        self.inner
+            .verify()
+            .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 }
 
 /// A single existing PDF signature surfaced by
-/// `WasmPdfDocument.signatures()`. `verify()` runs the RSA-PKCS#1 v1.5
-/// signer-attributes check; `verifyDetached()` adds the
-/// `messageDigest` content-hash check. RSA-PSS / ECDSA signers still
-/// throw an `UnsupportedFeature`-mapped JS error.
+/// `WasmPdfDocument.signatures()`. `verify()` runs the signer-attributes
+/// check; `verifyDetached()` adds the `messageDigest` content-hash check.
+/// Supported: RSA-PKCS#1 v1.5, RSA-PSS, ECDSA P-256/P-384.
 #[cfg(feature = "signatures")]
 #[wasm_bindgen]
 pub struct WasmSignature {

@@ -113,6 +113,51 @@ impl Timestamp {
     pub fn message_imprint_ref(&self) -> &[u8] {
         self.tst.message_imprint.hashed_message.as_bytes()
     }
+
+    /// Cryptographically verify this TimeStampToken.
+    ///
+    /// Parses the outer CMS SignedData, extracts the encapsulated TSTInfo
+    /// bytes, then calls [`cms_verify::verify_signer_detached`] — the same
+    /// path used for PDF signatures, covering RSA-PKCS#1 v1.5, RSA-PSS,
+    /// and ECDSA P-256/P-384.
+    ///
+    /// Returns `Ok(true)` when the TSA's signer crypto and the
+    /// `messageDigest` attribute both pass. Returns `Ok(false)` when a
+    /// crypto check fails (tampered token or wrong key). Returns `Err` when
+    /// the token is not CMS-wrapped or uses an unsupported algorithm.
+    pub fn verify(&self) -> Result<bool> {
+        use cms::content_info::ContentInfo;
+        use cms::signed_data::SignedData;
+
+        // Only CMS-wrapped tokens can be verified — bare TSTInfo carries no
+        // outer SignedData and therefore no TSA signature to check.
+        let content = ContentInfo::from_der(&self.token_bytes).map_err(|_| {
+            Error::InvalidPdf(
+                "timestamp token is not CMS-wrapped; cannot verify signature".into(),
+            )
+        })?;
+        let sd_bytes = content
+            .content
+            .to_der()
+            .map_err(|e| Error::InvalidPdf(format!("failed to re-encode timestamp ContentInfo: {e}")))?;
+        let sd = SignedData::from_der(&sd_bytes)
+            .map_err(|e| Error::InvalidPdf(format!("timestamp token is not valid SignedData: {e}")))?;
+        let econtent = sd.encap_content_info.econtent.as_ref().ok_or_else(|| {
+            Error::InvalidPdf("timestamp SignedData has no encapsulated TSTInfo content".into())
+        })?;
+        // econtent.value() returns the raw TSTInfo DER bytes — exactly what
+        // the TSA hashed when building its messageDigest signed attribute.
+        let tst_bytes = econtent.value().to_vec();
+
+        match super::cms_verify::verify_signer_detached(&self.token_bytes, &tst_bytes) {
+            Ok(super::cms_verify::SignerVerify::Valid) => Ok(true),
+            Ok(super::cms_verify::SignerVerify::Invalid) => Ok(false),
+            Ok(super::cms_verify::SignerVerify::Unknown) => Err(Error::InvalidPdf(
+                "timestamp TSA uses an algorithm not yet supported by the verifier".into(),
+            )),
+            Err(e) => Err(e),
+        }
+    }
 }
 
 /// Try to decode `bytes` as a full CMS-wrapped TimeStampToken. Returns
@@ -170,6 +215,18 @@ mod tests {
     #[test]
     fn timestamp_rejects_garbage() {
         let err = Timestamp::from_der(b"not a timestamp").unwrap_err();
+        assert!(matches!(err, Error::InvalidPdf(_)), "expected InvalidPdf, got {err:?}");
+    }
+
+    #[test]
+    fn verify_bare_tstinfo_returns_err() {
+        // A Timestamp parsed from bare TSTInfo bytes has no outer CMS
+        // SignedData and therefore no TSA signature to verify.
+        let bare_tstinfo: &[u8] = &hex!(
+            "3081B302010106042A0304013031300D060960864801650304020105000420BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD020104180F32303233303630373131323632365A300A020101800201F48101640101FF0208314CFCE4E0651827A048A4463044310B30090603550406130255533113301106035504080C0A536F6D652D5374617465310D300B060355040A0C04546573743111300F06035504030C085465737420545341"
+        );
+        let ts = Timestamp::from_der(bare_tstinfo).expect("parse bare TSTInfo");
+        let err = ts.verify().unwrap_err();
         assert!(matches!(err, Error::InvalidPdf(_)), "expected InvalidPdf, got {err:?}");
     }
 

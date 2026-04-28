@@ -4347,13 +4347,30 @@ pub extern "C" fn pdf_timestamp_get_message_imprint(
 
 #[no_mangle]
 pub extern "C" fn pdf_timestamp_verify(ts: *const std::ffi::c_void, error_code: *mut i32) -> bool {
-    // Full cryptographic verification requires CMS SignedData signer
-    // validation, which is not yet implemented in Rust core. Surface
-    // UNSUPPORTED so every binding's Timestamp.Verify() is explicit
-    // about the gap.
-    let _ = ts;
-    set_error(error_code, _ERR_UNSUPPORTED);
-    false
+    #[cfg(feature = "signatures")]
+    {
+        if ts.is_null() {
+            set_error(error_code, ERR_INVALID_ARG);
+            return false;
+        }
+        let t = handle_ref(ts as *const crate::signatures::Timestamp);
+        match t.verify() {
+            Ok(valid) => {
+                set_error(error_code, ERR_SUCCESS);
+                valid
+            },
+            Err(_) => {
+                set_error(error_code, _ERR_UNSUPPORTED);
+                false
+            },
+        }
+    }
+    #[cfg(not(feature = "signatures"))]
+    {
+        let _ = ts;
+        set_error(error_code, _ERR_UNSUPPORTED);
+        false
+    }
 }
 
 #[no_mangle]
