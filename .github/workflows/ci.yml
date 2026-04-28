@@ -294,6 +294,8 @@ jobs:
           cd "$GITHUB_WORKSPACE/examples/python/09-new-features/dashed_stroke"    && uv run python main.py
           cd "$GITHUB_WORKSPACE/examples/python/09-new-features/pdfa_conversion"  && uv run python main.py
           cd "$GITHUB_WORKSPACE/examples/python/09-new-features/page_extraction"  && uv run python main.py
+          cd "$GITHUB_WORKSPACE/examples/python/09-new-features/encrypted_bytes" && uv run python main.py
+          cd "$GITHUB_WORKSPACE/examples/python/09-new-features/compliance_validation" && uv run python main.py
           cd "$GITHUB_WORKSPACE/examples/python/09-new-features/ocr_scanned_pdf"  && uv run python main.py
 
   # WASM build check
@@ -667,6 +669,8 @@ jobs:
           echo "--- pkcs12_signing ---"        && timeout 120 node 09-new-features/pkcs12_signing/index.js
           echo "--- rfc3161_timestamp ---"     && timeout 120 node 09-new-features/rfc3161_timestamp/index.js
           echo "--- dashed_stroke ---"         && timeout 120 node 09-new-features/dashed_stroke/index.js
+          echo "--- encrypted_bytes ---"        && timeout 120 node 09-new-features/encrypted_bytes/index.js
+          echo "--- compliance_validation ---"  && timeout 120 node 09-new-features/compliance_validation/index.js
 
       - name: Compile TypeScript examples
         if: matrix.os == 'ubuntu-latest'
