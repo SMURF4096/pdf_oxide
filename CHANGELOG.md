@@ -148,8 +148,9 @@ others. All are now consistent across all 7 bindings:
 - **Python glibc 2.34 compatibility** (#416) — LLVM emits `__memcmpeq` (a
   glibc 2.35 symbol) in some optimised builds; wheels built against glibc 2.35
   failed to load on Amazon Linux 2023 (glibc 2.34) and similar systems. Fixed by
-  adding a `build.rs` that passes `--defsym __memcmpeq=memcmp` only to the final
-  cdylib link step (not to build scripts, which don't export `memcmp`). Reported
+  adding a `global_asm!` weak-symbol alias in `src/lib.rs` that maps
+  `__memcmpeq` → `memcmp`. This works with both GNU ld and lld (unlike
+  `--defsym` which lld rejects for PLT-resolved symbols). Reported
   by [@potatochipcoconut](https://github.com/potatochipcoconut).
 
 - **Python OCR wheels** (#417) — published wheels omitted the `ocr` feature, so
