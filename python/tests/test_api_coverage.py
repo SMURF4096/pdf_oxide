@@ -645,6 +645,94 @@ class TestMutations:
         assert doc2.page_rotation(0) == 180
 
 
+# ── PdfDocument: page extraction ─────────────────────────────────────────────
+
+
+def _make_two_page_doc() -> PdfDocument:
+    """Return a PdfDocument with exactly 2 pages."""
+    data = Pdf.from_markdown("# Page One\n\n---\n\n# Page Two").to_bytes()
+    doc = PdfDocument.from_bytes(data)
+    if doc.page_count() < 2:
+        # Merge a second page in
+        extra = Pdf.from_markdown("# Page Two").to_bytes()
+        doc.merge_from(extra)
+    return doc
+
+
+class TestPageExtraction:
+    def test_extract_pages_to_file_reduces_page_count(self, tmp_path):
+        doc = _make_two_page_doc()
+        assert doc.page_count() >= 2
+        out = str(tmp_path / "single.pdf")
+        doc.extract_pages([0], out)
+        result = PdfDocument(out)
+        assert result.page_count() == 1
+
+    def test_extract_pages_preserves_content(self, tmp_path):
+        data = Pdf.from_markdown("KEEPTHIS\n\n---\n\nDROPTHIS").to_bytes()
+        doc = PdfDocument.from_bytes(data)
+        if doc.page_count() < 2:
+            extra = Pdf.from_markdown("DROPTHIS").to_bytes()
+            doc.merge_from(extra)
+        out = str(tmp_path / "kept.pdf")
+        doc.extract_pages([0], out)
+        result = PdfDocument(out)
+        text = result.extract_text(0)
+        assert "KEEPTHIS" in text
+
+    def test_extract_pages_to_bytes_returns_valid_pdf(self):
+        doc = _make_two_page_doc()
+        assert doc.page_count() >= 2
+        data = doc.extract_pages_to_bytes([0])
+        assert data[:5] == _PDF_MAGIC
+
+    def test_extract_pages_to_bytes_correct_page_count(self):
+        doc = _make_two_page_doc()
+        assert doc.page_count() >= 2
+        data = doc.extract_pages_to_bytes([0])
+        result = PdfDocument.from_bytes(data)
+        assert result.page_count() == 1
+
+    def test_extract_pages_to_bytes_multiple_pages(self):
+        data = Pdf.from_markdown("# P1").to_bytes()
+        doc = PdfDocument.from_bytes(data)
+        for i in range(2, 5):
+            extra = Pdf.from_markdown(f"# P{i}").to_bytes()
+            doc.merge_from(extra)
+        total = doc.page_count()
+        assert total >= 3
+        chunk = doc.extract_pages_to_bytes([0, 1])
+        result = PdfDocument.from_bytes(chunk)
+        assert result.page_count() == 2
+
+    def test_extract_pages_chunking_pipeline(self):
+        """Simulate potatochipcoconut's page-splitting use case."""
+        from itertools import batched
+
+        data = Pdf.from_markdown("# P1").to_bytes()
+        doc = PdfDocument.from_bytes(data)
+        for i in range(2, 6):
+            extra = Pdf.from_markdown(f"# P{i}").to_bytes()
+            doc.merge_from(extra)
+        total = doc.page_count()
+        assert total >= 4
+
+        chunk_size = 2
+        chunks = []
+        for chunk_indices in batched(range(total), chunk_size):
+            chunk_bytes = doc.extract_pages_to_bytes(list(chunk_indices))
+            assert chunk_bytes[:5] == _PDF_MAGIC
+            chunk_doc = PdfDocument.from_bytes(chunk_bytes)
+            assert chunk_doc.page_count() == len(chunk_indices)
+            chunks.append(chunk_bytes)
+        assert len(chunks) >= 2
+
+    def test_extract_pages_out_of_range_raises(self):
+        doc = _make_two_page_doc()
+        with pytest.raises(Exception):
+            doc.extract_pages_to_bytes([999])
+
+
 # ── DocumentBuilder extras ────────────────────────────────────────────────────
 
 

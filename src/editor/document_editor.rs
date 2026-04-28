@@ -978,33 +978,44 @@ impl DocumentEditor {
         Ok(())
     }
 
-    /// Extract pages to a new document.
-    pub fn extract_pages(&mut self, pages: &[usize], _output: impl AsRef<Path>) -> Result<()> {
-        // Get all page refs
-        let all_refs = self.get_page_refs()?;
+    /// Extract a subset of pages into a new PDF and write it to `output`.
+    ///
+    /// `pages` is a list of 0-based indices to keep. The current document is
+    /// not modified. Works by cloning the document and removing all unwanted
+    /// pages in reverse-index order (same approach used by the WASM binding).
+    pub fn extract_pages(&mut self, pages: &[usize], output: impl AsRef<Path>) -> Result<()> {
+        let bytes = self.extract_pages_to_bytes(pages)?;
+        std::fs::write(output, bytes)?;
+        Ok(())
+    }
 
-        // Validate page indices
+    /// Extract a subset of pages and return the result as PDF bytes.
+    ///
+    /// `pages` is a list of 0-based indices to keep. The current document is
+    /// not modified.
+    pub fn extract_pages_to_bytes(&mut self, pages: &[usize]) -> Result<Vec<u8>> {
+        use crate::editor::EditableDocument;
+
+        let page_count = self.page_count()?;
+
         for &page in pages {
-            if page >= all_refs.len() {
+            if page >= page_count {
                 return Err(Error::InvalidPdf(format!(
                     "Page index {} out of range (document has {} pages)",
-                    page,
-                    all_refs.len()
+                    page, page_count
                 )));
             }
         }
 
-        // For now, implement a simple extraction by copying the source
-        // and removing unwanted pages
-        // A full implementation would rebuild the document with only selected pages
-
-        // This is a placeholder - full implementation would need to:
-        // 1. Create new document structure
-        // 2. Copy only referenced objects
-        // 3. Update page tree
-        // 4. Write new PDF
-
-        Err(Error::InvalidPdf("Page extraction not yet fully implemented".to_string()))
+        // Clone via bytes, then remove all pages not in the keep-set.
+        let snapshot = self.save_to_bytes()?;
+        let mut copy = DocumentEditor::from_bytes(snapshot)?;
+        for i in (0..page_count).rev() {
+            if !pages.contains(&i) {
+                copy.remove_page(i)?;
+            }
+        }
+        copy.save_to_bytes()
     }
 
     /// Merge pages from another PDF into this document.

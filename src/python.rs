@@ -1934,6 +1934,26 @@ impl PyPdfDocument {
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Extract a subset of pages and return them as PDF bytes.
+    /// `pages` is a list of 0-based indices to keep. The source document is not modified.
+    ///
+    /// Example::
+    ///
+    ///     from itertools import batched
+    ///     doc = PdfDocument.from_bytes(pdf_bytes)
+    ///     for chunk in batched(range(doc.page_count()), 50):
+    ///         chunk_bytes = doc.extract_pages_to_bytes(list(chunk))
+    fn extract_pages_to_bytes<'py>(&mut self, py: Python<'py>, pages: Vec<usize>) -> PyResult<Bound<'py, PyBytes>> {
+        self.ensure_editor()?;
+        let editor = self.editor.as_mut().ok_or_else(|| {
+            PyRuntimeError::new_err("Internal error: editor missing after initialization")
+        })?;
+        let bytes = editor
+            .extract_pages_to_bytes(&pages)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(PyBytes::new(py, &bytes))
+    }
+
     /// Delete a page by index (0-based).
     fn delete_page(&mut self, index: usize) -> PyResult<()> {
         use crate::editor::EditableDocument;
