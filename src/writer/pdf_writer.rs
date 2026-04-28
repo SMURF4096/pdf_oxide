@@ -2087,10 +2087,39 @@ fn build_pdfua_xmp(title: &str, creator: &str, lang: &str) -> Vec<u8> {
 /// two structs carry the same payload but are owned by different
 /// layers — this keeps the paint pipeline plugged into the standard
 /// writer-side serializer without reaching across module boundaries.
-fn image_content_to_xobject_stream(
+pub(crate) fn image_content_to_xobject_stream(
     image: &crate::elements::ImageContent,
 ) -> (super::image_handler::ImageData, Option<Vec<u8>>) {
     use super::image_handler::{ColorSpace as WColorSpace, ImageData, ImageFormat as WImageFormat};
+
+    // If the caller passed raw PNG or JPEG file bytes directly (e.g. via
+    // `ImageContent::new()` without going through `image_from_bytes()`),
+    // decode them now so the XObject gets the correct pixel dimensions,
+    // colour space, filter params, and PNG per-row filter bytes.
+    //
+    // Detection is by magic number rather than `image.format` so we catch
+    // both cases: (a) format tag matches bytes, (b) caller passed a PNG
+    // buffer but labelled it as something else.
+    let raw = &image.data;
+
+    // PNG magic: \x89 P N G \r \n \x1a \n
+    if raw.len() >= 8 && raw[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] {
+        if let Ok(decoded) = ImageData::from_png(raw) {
+            let soft_mask = decoded.soft_mask.clone();
+            return (decoded, soft_mask);
+        }
+    }
+
+    // JPEG magic: \xFF \xD8
+    if raw.len() >= 2 && raw[0] == 0xFF && raw[1] == 0xD8 {
+        if let Ok(decoded) = ImageData::from_jpeg(raw.to_vec()) {
+            // JPEG has no alpha channel.
+            return (decoded, None);
+        }
+    }
+
+    // Pre-processed path: data was already encoded by `ImageData::from_png()`
+    // (Flate-compressed pixels with per-row filter bytes) or is raw pixels.
     let color_space = match image.color_space {
         crate::elements::ColorSpace::Gray => WColorSpace::DeviceGray,
         crate::elements::ColorSpace::CMYK => WColorSpace::DeviceCMYK,
@@ -3155,5 +3184,114 @@ mod tests {
 
         let annot_count = content.matches("/Type /Annot").count();
         assert_eq!(annot_count, 14, "Expected 14 different annotation types");
+    }
+
+    // ── issue #425: image rendering regression tests ───────────────────────
+
+    fn make_png_bytes(width: u32, height: u32, pixels_rgb: &[u8]) -> Vec<u8> {
+        use image::RgbImage;
+        let img = RgbImage::from_raw(width, height, pixels_rgb.to_vec())
+            .expect("pixel buffer size mismatch");
+        let mut buf = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+            .expect("encode PNG");
+        buf
+    }
+
+    fn make_jpeg_bytes(width: u32, height: u32, pixels_rgb: &[u8]) -> Vec<u8> {
+        use image::RgbImage;
+        let img = RgbImage::from_raw(width, height, pixels_rgb.to_vec())
+            .expect("pixel buffer size mismatch");
+        let mut buf = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Jpeg)
+            .expect("encode JPEG");
+        buf
+    }
+
+    /// `ImageContent::new()` with raw PNG file bytes must produce an XObject
+    /// whose Width/Height come from the PNG header, not from the caller-
+    /// supplied width/height parameters (issue #425 bug 2).
+    #[test]
+    fn test_image_content_raw_png_bytes_decoded_correctly() {
+        use crate::elements::{ImageContent, ImageFormat};
+        use crate::geometry::Rect;
+
+        let png = make_png_bytes(4, 3, &[128u8; 4 * 3 * 3]); // 4×3 solid grey
+        let content = ImageContent::new(
+            Rect::new(0.0, 0.0, 100.0, 100.0),
+            ImageFormat::Png,
+            png,
+            99, // wrong width — should be overridden by PNG header
+            99, // wrong height — should be overridden by PNG header
+        );
+
+        let (image_data, _soft_mask) = image_content_to_xobject_stream(&content);
+        assert_eq!(image_data.width, 4, "width must come from PNG header (4), not user arg (99)");
+        assert_eq!(image_data.height, 3, "height must come from PNG header (3), not user arg (99)");
+
+        // XObject dict must have FlateDecode + Predictor=15 (not raw PNG bytes).
+        use crate::object::Object;
+        let dict = image_data.build_xobject_dict();
+        assert_eq!(dict["Filter"], Object::Name("FlateDecode".to_string()));
+        let parms = match dict.get("DecodeParms") {
+            Some(Object::Dictionary(d)) => d,
+            _ => panic!("DecodeParms missing"),
+        };
+        assert_eq!(parms["Predictor"], Object::Integer(15));
+    }
+
+    /// `ImageContent::new()` with raw JPEG file bytes must produce an XObject
+    /// whose Width/Height come from the JPEG header, not from the caller-
+    /// supplied width/height (issue #425 bug 3 — "zoomed in" JPEG).
+    #[test]
+    fn test_image_content_raw_jpeg_bytes_uses_real_dimensions() {
+        use crate::elements::{ImageContent, ImageFormat};
+        use crate::geometry::Rect;
+
+        // Encode a 6×5 JPEG.
+        let jpeg = make_jpeg_bytes(6, 5, &[200u8; 6 * 5 * 3]);
+        let content = ImageContent::new(
+            Rect::new(0.0, 0.0, 200.0, 380.0),
+            ImageFormat::Jpeg,
+            jpeg,
+            200, // wrong — should be 6
+            380, // wrong — should be 5
+        );
+
+        let (image_data, _soft_mask) = image_content_to_xobject_stream(&content);
+        assert_eq!(image_data.width, 6, "width must come from JPEG header (6), not user arg (200)");
+        assert_eq!(image_data.height, 5, "height must come from JPEG header (5), not user arg (380)");
+
+        // XObject dict must use DCTDecode.
+        use crate::object::Object;
+        let dict = image_data.build_xobject_dict();
+        assert_eq!(dict["Filter"], Object::Name("DCTDecode".to_string()));
+    }
+
+    /// End-to-end: `image_from_bytes()` with a real PNG must produce a PDF
+    /// that contains a properly-formed FlateDecode+Predictor=15 image stream
+    /// (issue #425 bug 1 — colour loss).
+    #[test]
+    fn test_image_from_bytes_png_produces_valid_flate_stream() {
+        use crate::writer::document_builder::DocumentBuilder;
+        use crate::geometry::Rect;
+
+        let png = make_png_bytes(2, 2, &[255u8, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0]);
+
+        let mut builder = DocumentBuilder::new();
+        let _ = builder
+            .letter_page()
+            .image_from_bytes(&png, Rect::new(0.0, 0.0, 100.0, 100.0))
+            .expect("image_from_bytes failed")
+            .done();
+
+        let pdf_bytes = builder.build().expect("build failed");
+
+        // The PDF must contain FlateDecode and Predictor 15 (for PNG images).
+        let pdf_text = String::from_utf8_lossy(&pdf_bytes);
+        assert!(pdf_text.contains("/FlateDecode"), "must use FlateDecode");
+        assert!(pdf_text.contains("/Predictor 15"), "must declare Predictor 15");
+        // Must NOT use DCTDecode for a PNG source.
+        assert!(!pdf_text.contains("/DCTDecode"), "must not use DCTDecode for PNG");
     }
 }
