@@ -22,10 +22,9 @@ def main() -> None:
     os.makedirs(OUT_DIR, exist_ok=True)
 
     # Build a sample PDF to work with
-    source_bytes = (
-        pdf_oxide.Pdf.from_markdown("# Archive Me\n\nThis document will be converted to PDF/A.")
-        .to_bytes()
-    )
+    source_bytes = pdf_oxide.Pdf.from_markdown(
+        "# Archive Me\n\nThis document will be converted to PDF/A."
+    ).to_bytes()
 
     doc = pdf_oxide.PdfDocument.from_bytes(source_bytes)
 
@@ -34,7 +33,7 @@ def main() -> None:
     print(f"Before conversion — valid: {pre['valid']}, errors: {len(pre['errors'])}")
 
     # Step 2: convert to PDF/A-2b in-place
-    result = doc.convert_to_pdfa("2b")
+    result = doc.convert_to_pdf_a("2b")
     print(f"Conversion success: {result['success']}")
     print(f"  Actions taken ({len(result['actions'])}):")
     for action in result["actions"]:

@@ -16,7 +16,7 @@ const doc = PdfDocument.openFromBuffer(pdfBytes);
 console.log("Validating PDF/A-2b compliance...");
 try {
   const result = doc.validatePdfA("2b");
-  console.log(`  isCompliant: ${result.isCompliant}`);
+  console.log(`  compliant: ${result.compliant}`);
   console.log(`  errors:   ${JSON.stringify(result.errors)}`);
   console.log(`  warnings: ${JSON.stringify(result.warnings)}`);
 } catch (err) {
@@ -26,7 +26,7 @@ try {
 console.log("Validating PDF/X-4 compliance...");
 try {
   const result = doc.validatePdfX("4");
-  console.log(`  isCompliant: ${result.isCompliant}`);
+  console.log(`  compliant: ${result.compliant}`);
   console.log(`  errors:   ${JSON.stringify(result.errors)}`);
   console.log(`  warnings: ${JSON.stringify(result.warnings)}`);
 } catch (err) {
@@ -35,12 +35,12 @@ try {
 
 console.log("Validating PDF/UA-1 compliance...");
 try {
-  const result = doc.validatePdfUa("ua1");
-  console.log(`  isCompliant: ${result.isCompliant}`);
+  const result = doc.validatePdfUA("ua1");
+  console.log(`  accessible: ${result.accessible}`);
   console.log(`  errors:   ${JSON.stringify(result.errors)}`);
   console.log(`  warnings: ${JSON.stringify(result.warnings)}`);
 } catch (err) {
-  console.log(`  validatePdfUa skipped or errored: ${err}`);
+  console.log(`  validatePdfUA skipped or errored: ${err}`);
 }
 
 process.exit(0);

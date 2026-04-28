@@ -23,6 +23,7 @@ import sys
 
 import pdf_oxide
 
+
 DET_MODEL = os.environ.get("OCR_DET_MODEL", "det.onnx")
 REC_MODEL = os.environ.get("OCR_REC_MODEL", "rec.onnx")
 DICT_PATH = os.environ.get("OCR_DICT", "en_dict.txt")

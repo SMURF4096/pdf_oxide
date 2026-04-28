@@ -8,9 +8,15 @@
 from __future__ import annotations
 
 import os
-from itertools import batched
+from itertools import islice
 
 import pdf_oxide
+
+
+def batched(iterable, n):
+    it = iter(iterable)
+    while chunk := list(islice(it, n)):
+        yield chunk
 
 
 OUT_DIR = "output"
@@ -36,8 +42,10 @@ def main() -> None:
     for i, chunk_indices in enumerate(batched(range(total), CHUNK_SIZE)):
         chunk_bytes = doc.extract_pages_to_bytes(list(chunk_indices))
         chunk_doc = pdf_oxide.PdfDocument.from_bytes(chunk_bytes)
-        print(f"  Chunk {i}: pages {list(chunk_indices)} → {chunk_doc.page_count()} pages, "
-              f"{len(chunk_bytes):,} bytes")
+        print(
+            f"  Chunk {i}: pages {list(chunk_indices)} → {chunk_doc.page_count()} pages, "
+            f"{len(chunk_bytes):,} bytes"
+        )
         assert chunk_doc.page_count() == len(chunk_indices)
         chunks.append(chunk_bytes)
 

@@ -74,3 +74,4 @@ console.log(`Produced ${chunks.length} chunk(s)`);
 const outPath = path.join(OUT_DIR, "chunk_0.pdf");
 fs.writeFileSync(outPath, chunks[0]);
 console.log(`Written: ${outPath}`);
+process.exit(0);

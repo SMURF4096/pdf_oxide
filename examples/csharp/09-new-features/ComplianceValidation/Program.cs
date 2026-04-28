@@ -14,7 +14,7 @@ builder.LetterPage()
     .Done();
 byte[] pdfBytes = builder.Build();
 
-using var doc = PdfDocument.FromBytes(pdfBytes);
+using var doc = PdfDocument.Open(pdfBytes);
 
 Console.WriteLine("Validating PDF/A-2b compliance...");
 try

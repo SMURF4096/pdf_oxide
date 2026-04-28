@@ -28,7 +28,10 @@ def main() -> None:
 
     # Dashed rectangle — [5 on, 3 off] pattern, blue border
     page.stroke_rect_dashed(
-        72, 580, 300, 80,
+        72,
+        580,
+        300,
+        80,
         dash=[5.0, 3.0],
         width=2.0,
         color=(0.0, 0.2, 0.8),
@@ -36,7 +39,10 @@ def main() -> None:
 
     # Dashed line — [8 on, 4 off] pattern, red
     page.stroke_line_dashed(
-        72, 550, 372, 550,
+        72,
+        550,
+        372,
+        550,
         dash=[8.0, 4.0],
         width=1.5,
         color=(0.8, 0.0, 0.0),
@@ -44,7 +50,10 @@ def main() -> None:
 
     # Fine dotted rectangle — [2 on, 2 off] pattern with phase offset, green
     page.stroke_rect_dashed(
-        72, 460, 200, 60,
+        72,
+        460,
+        200,
+        60,
         dash=[2.0, 2.0],
         phase=1.0,
         width=1.0,

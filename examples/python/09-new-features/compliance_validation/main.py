@@ -25,30 +25,30 @@ def main() -> None:
 
     print("Validating PDF/A-2b compliance...")
     try:
-        result = doc.validate_pdfa("2b")
-        print(f"  is_compliant: {result['is_compliant']}")
+        result = doc.validate_pdf_a("2b")
+        print(f"  is_compliant: {result['valid']}")
         print(f"  errors:   {result['errors']}")
         print(f"  warnings: {result['warnings']}")
     except (RuntimeError, NotImplementedError, AttributeError) as e:
-        print(f"  validate_pdfa skipped or errored: {e}")
+        print(f"  validate_pdf_a skipped or errored: {e}")
 
     print("Validating PDF/X-4 compliance...")
     try:
-        result = doc.validate_pdfx("4")
-        print(f"  is_compliant: {result['is_compliant']}")
+        result = doc.validate_pdf_x("4")
+        print(f"  is_compliant: {result['valid']}")
         print(f"  errors:   {result['errors']}")
         print(f"  warnings: {result['warnings']}")
     except (RuntimeError, NotImplementedError, AttributeError) as e:
-        print(f"  validate_pdfx skipped or errored: {e}")
+        print(f"  validate_pdf_x skipped or errored: {e}")
 
     print("Validating PDF/UA-1 compliance...")
     try:
-        result = doc.validate_pdfua("ua1")
-        print(f"  is_compliant: {result['is_compliant']}")
+        result = doc.validate_pdf_ua()
+        print(f"  is_compliant: {result['valid']}")
         print(f"  errors:   {result['errors']}")
         print(f"  warnings: {result['warnings']}")
     except (RuntimeError, NotImplementedError, AttributeError) as e:
-        print(f"  validate_pdfua skipped or errored: {e}")
+        print(f"  validate_pdf_ua skipped or errored: {e}")
 
 
 if __name__ == "__main__":

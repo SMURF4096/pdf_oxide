@@ -4,7 +4,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
-import { DocumentBuilder, PdfDocument } from "pdf-oxide";
+import { DocumentBuilder } from "pdf-oxide";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = path.join(__dirname, "output");
@@ -17,16 +17,13 @@ builder.letterPage()
   .at(72, 690).paragraph("This PDF is encrypted with a user password.")
   .done();
 
-const pdfBytes = builder.build();
-console.log(`  Original PDF size: ${pdfBytes.length} bytes`);
-
-const doc = PdfDocument.openFromBuffer(pdfBytes);
-const encrypted = doc.saveEncryptedToBytes("user123", undefined, true, false, false, false);
+// toBytesEncrypted consumes the builder; can't call build() first since it
+// also consumes the handle. The encrypted output includes the same content.
+const outPath = path.join(OUT_DIR, "encrypted.pdf");
+const encrypted = builder.toBytesEncrypted("user123", "owner123");
+fs.writeFileSync(outPath, encrypted);
 
 if (encrypted.length === 0) throw new Error("encrypted output is empty");
 console.log(`  Encrypted PDF size: ${encrypted.length} bytes`);
-
-const outPath = path.join(OUT_DIR, "encrypted.pdf");
-fs.writeFileSync(outPath, encrypted);
 console.log(`Written: ${outPath}`);
 process.exit(0);
