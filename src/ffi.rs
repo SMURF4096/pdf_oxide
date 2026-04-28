@@ -2891,9 +2891,9 @@ pub extern "C" fn pdf_document_sign(
             set_error(error_code, ERR_INVALID_ARG);
             return -1;
         }
-        let doc = handle_mut((document_handle as *mut PdfDocument));
+        let doc = handle_mut(document_handle as *mut PdfDocument);
         let creds =
-            handle_ref((certificate_handle as *const crate::signatures::SigningCredentials));
+            handle_ref(certificate_handle as *const crate::signatures::SigningCredentials);
         if doc.source_bytes.is_empty() {
             set_error(error_code, ERR_INVALID_ARG);
             return -1;
@@ -2950,7 +2950,7 @@ pub unsafe extern "C" fn pdf_sign_bytes(
         }
         let data = raw_slice(pdf_data, pdf_len);
         let creds =
-            handle_ref((certificate_handle as *const crate::signatures::SigningCredentials));
+            handle_ref(certificate_handle as *const crate::signatures::SigningCredentials);
         let reason_str = c_str_lossy(reason);
         let location_str = c_str_lossy(location);
         let opts = SignOptions {
@@ -2989,7 +2989,7 @@ pub extern "C" fn pdf_document_get_signature_count(
             set_error(error_code, ERR_INVALID_ARG);
             return -1;
         }
-        let doc = handle_mut((document_handle as *mut PdfDocument));
+        let doc = handle_mut(document_handle as *mut PdfDocument);
         match crate::signatures::count_signatures(doc) {
             Ok(n) => {
                 set_error(error_code, ERR_SUCCESS);
@@ -3021,7 +3021,7 @@ pub extern "C" fn pdf_document_get_signature(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let doc = handle_mut((document_handle as *mut PdfDocument));
+        let doc = handle_mut(document_handle as *mut PdfDocument);
         match crate::signatures::enumerate_signatures(doc) {
             Ok(list) => match list.into_iter().nth(index as usize) {
                 Some(info) => {
@@ -3072,7 +3072,7 @@ pub extern "C" fn pdf_signature_verify(
             set_error(error_code, ERR_INVALID_ARG);
             return -1;
         }
-        let ffi = handle_ref((signature_handle as *const FfiSignatureInfo));
+        let ffi = handle_ref(signature_handle as *const FfiSignatureInfo);
         let Some(contents) = ffi.info.contents() else {
             set_error(error_code, _ERR_UNSUPPORTED);
             return -1;
@@ -3133,7 +3133,7 @@ pub extern "C" fn pdf_signature_verify_detached(
             set_error(error_code, ERR_INVALID_ARG);
             return -1;
         }
-        let ffi = handle_ref((signature_handle as *const FfiSignatureInfo));
+        let ffi = handle_ref(signature_handle as *const FfiSignatureInfo);
         let Some(contents) = ffi.info.contents() else {
             set_error(error_code, _ERR_UNSUPPORTED);
             return -1;
@@ -3298,7 +3298,7 @@ pub extern "C" fn pdf_signature_get_certificate(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let info = handle_ref((sig as *const FfiSignatureInfo));
+        let info = handle_ref(sig as *const FfiSignatureInfo);
         let contents = match info.info.contents.as_ref() {
             Some(c) => c,
             None => {
@@ -3343,7 +3343,7 @@ pub extern "C" fn pdf_certificate_get_subject(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let creds = handle_ref((cert as *const crate::signatures::SigningCredentials));
+        let creds = handle_ref(cert as *const crate::signatures::SigningCredentials);
         match creds.subject() {
             Ok(s) => {
                 set_error(error_code, ERR_SUCCESS);
@@ -3374,7 +3374,7 @@ pub extern "C" fn pdf_certificate_get_issuer(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let creds = handle_ref((cert as *const crate::signatures::SigningCredentials));
+        let creds = handle_ref(cert as *const crate::signatures::SigningCredentials);
         match creds.issuer() {
             Ok(s) => {
                 set_error(error_code, ERR_SUCCESS);
@@ -3405,7 +3405,7 @@ pub extern "C" fn pdf_certificate_get_serial(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let creds = handle_ref((cert as *const crate::signatures::SigningCredentials));
+        let creds = handle_ref(cert as *const crate::signatures::SigningCredentials);
         match creds.serial() {
             Ok(s) => {
                 set_error(error_code, ERR_SUCCESS);
@@ -3438,7 +3438,7 @@ pub extern "C" fn pdf_certificate_get_validity(
             set_error(error_code, ERR_INVALID_ARG);
             return;
         }
-        let creds = handle_ref((cert as *const crate::signatures::SigningCredentials));
+        let creds = handle_ref(cert as *const crate::signatures::SigningCredentials);
         match creds.validity() {
             Ok((nb, na)) => {
                 write_out(not_before, nb);
@@ -3466,7 +3466,7 @@ pub extern "C" fn pdf_certificate_is_valid(
             set_error(error_code, ERR_INVALID_ARG);
             return 0;
         }
-        let creds = handle_ref((cert as *const crate::signatures::SigningCredentials));
+        let creds = handle_ref(cert as *const crate::signatures::SigningCredentials);
         match creds.is_valid() {
             Ok(v) => {
                 set_error(error_code, ERR_SUCCESS);
@@ -4184,7 +4184,7 @@ pub extern "C" fn pdf_timestamp_get_token(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null();
         }
-        let t = handle_ref((ts as *const crate::signatures::Timestamp));
+        let t = handle_ref(ts as *const crate::signatures::Timestamp);
         let bytes = t.token_bytes();
         write_out(out_len, bytes.len());
         set_error(error_code, ERR_SUCCESS);
@@ -4206,7 +4206,7 @@ pub extern "C" fn pdf_timestamp_get_time(ts: *const std::ffi::c_void, error_code
             set_error(error_code, ERR_INVALID_ARG);
             return 0;
         }
-        let t = handle_ref((ts as *const crate::signatures::Timestamp));
+        let t = handle_ref(ts as *const crate::signatures::Timestamp);
         set_error(error_code, ERR_SUCCESS);
         t.time()
     }
@@ -4229,7 +4229,7 @@ pub extern "C" fn pdf_timestamp_get_serial(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let t = handle_ref((ts as *const crate::signatures::Timestamp));
+        let t = handle_ref(ts as *const crate::signatures::Timestamp);
         set_error(error_code, ERR_SUCCESS);
         to_c_string(&t.serial())
     }
@@ -4252,7 +4252,7 @@ pub extern "C" fn pdf_timestamp_get_tsa_name(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let t = handle_ref((ts as *const crate::signatures::Timestamp));
+        let t = handle_ref(ts as *const crate::signatures::Timestamp);
         set_error(error_code, ERR_SUCCESS);
         to_c_string(&t.tsa_name())
     }
@@ -4275,7 +4275,7 @@ pub extern "C" fn pdf_timestamp_get_policy_oid(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let t = handle_ref((ts as *const crate::signatures::Timestamp));
+        let t = handle_ref(ts as *const crate::signatures::Timestamp);
         set_error(error_code, ERR_SUCCESS);
         to_c_string(&t.policy_oid())
     }
@@ -4298,7 +4298,7 @@ pub extern "C" fn pdf_timestamp_get_hash_algorithm(
             set_error(error_code, ERR_INVALID_ARG);
             return -1;
         }
-        let t = handle_ref((ts as *const crate::signatures::Timestamp));
+        let t = handle_ref(ts as *const crate::signatures::Timestamp);
         set_error(error_code, ERR_SUCCESS);
         t.hash_algorithm() as i32
     }
@@ -4325,7 +4325,7 @@ pub extern "C" fn pdf_timestamp_get_message_imprint(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null();
         }
-        let t = handle_ref((ts as *const crate::signatures::Timestamp));
+        let t = handle_ref(ts as *const crate::signatures::Timestamp);
         // Stash the imprint on the handle so the returned pointer
         // remains valid for the handle's lifetime. The getter on
         // Timestamp clones, which would invalidate the pointer on

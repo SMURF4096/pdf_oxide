@@ -132,14 +132,8 @@ pub fn remove_page_artifacts(text: &str) -> String {
 /// assert_eq!(output, "The **Chinese stock market** is volatile");
 /// ```
 pub fn merge_bold_markers(text: &str) -> String {
-    static RE_BOLD_GAP: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"\*\*([^*]+)\*\*\s+([a-zA-Z]+)(?:\s+([a-zA-Z]+))?(?:\s+([a-zA-Z]+))?")
-            .unwrap()
-    });
-
-    // For now, implement a simpler approach: merge `** **` patterns (empty bold boundaries)
-    // This handles: "**text1** **text2**" -> "**text1 text2**"
-
+    // Merge `** **` patterns (empty bold boundaries).
+    // "**text1** **text2**" -> "**text1 text2**"
     text.replace("** **", " ")
 }
 

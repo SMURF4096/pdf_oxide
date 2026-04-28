@@ -18,8 +18,6 @@
 use regex::Regex;
 use std::sync::LazyLock;
 
-static RE_HYPHEN_LINEBREAK: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(\-|\u{00AD})\n\s*([a-z])").unwrap());
 static RE_EXCESSIVE_SPACES: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"([^\s])\s{2,}([^\s])").unwrap());
 

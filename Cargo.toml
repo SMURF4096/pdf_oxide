@@ -196,6 +196,13 @@ pkcs8 = { version = "0.10", optional = true }         # PKCS#8 private keys
 p12-keystore = { version = "0.2.1", optional = true } # PKCS#12 (.p12/.pfx) parsing
 signature = { version = "2.2", optional = true }      # Signature traits
 sha1 = { version = "0.11", optional = true }          # SHA-1 for legacy signatures
+# sha2 v0.10 alias: rsa 0.9 and p256/p384 0.13 require digest 0.10 trait bounds.
+# Our main codebase uses sha2 0.11 (digest 0.11). The alias lets the signatures
+# module use sha2 0.10 types specifically where rsa::pss / ecdsa crate generics
+# require it, without changing the rest of the codebase. See issue #420.
+sha2_v10 = { package = "sha2", version = "0.10", optional = true }
+p256 = { version = "0.13", optional = true }          # ECDSA P-256 signature verification
+p384 = { version = "0.13", optional = true }          # ECDSA P-384 signature verification
 
 # Parallel extraction
 rayon = { version = "1.12", optional = true }
@@ -344,6 +351,9 @@ signatures = [
     "dep:signature",
     "dep:sha1",
     "dep:x509-tsp",
+    "dep:sha2_v10",
+    "dep:p256",
+    "dep:p384",
 ]
 
 # RFC 3161 TSA HTTP client (optional, on top of signatures). Adds ureq
