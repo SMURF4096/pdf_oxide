@@ -1016,8 +1016,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      id-token: write
-      attestations: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
@@ -1052,13 +1050,6 @@ jobs:
           prerelease: ${{ contains(needs.validate.outputs.version, '-') }}
           fail_on_unmatched_files: false
 
-      - name: Attest build provenance
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
-        with:
-          subject-path: |
-            target/release/pdf-oxide
-            target/release/pdf-oxide-mcp
-
       - name: Install cargo-cyclonedx
         uses: taiki-e/install-action@cf525cb33f51aca27cd6fa02034117ab963ff9f1 # v2
         with:
@@ -1072,12 +1063,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Attest SBOM
-        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2
-        with:
-          subject-path: sbom.cdx.json
-          sbom-path: sbom.cdx.json
-
   # Publish to crates.io (optional)
   publish-crates:
     name: Publish to crates.io
@@ -1086,7 +1071,6 @@ jobs:
     if: ${{ !contains(needs.validate.outputs.version, '-') }}
     permissions:
       contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
@@ -1096,24 +1080,20 @@ jobs:
       - name: Verify crates.io readiness
         run: cargo publish -p pdf_oxide --dry-run
 
-      - name: Authenticate to crates.io
-        uses: rust-lang/crates-io-auth-action@bbd81622f20ce9e2dd9622e3218b975523e45bbe # v1
-        id: crates-io-auth
-
       - name: Publish to crates.io
         run: cargo publish -p pdf_oxide
         env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_TOKEN }}
 
       - name: Publish CLI to crates.io
         run: cargo publish -p pdf_oxide_cli
         env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_TOKEN }}
 
       - name: Publish MCP server to crates.io
         run: cargo publish -p pdf_oxide_mcp
         env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_TOKEN }}
 
   # Publish to PyPI (optional)
   publish-pypi:
@@ -1123,7 +1103,6 @@ jobs:
     if: ${{ !contains(needs.validate.outputs.version, '-') }}
     permissions:
       contents: read
-      id-token: write
     steps:
       - name: Download wheel artifacts
         uses: actions/download-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -1140,10 +1119,9 @@ jobs:
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          attestations: true
+          password: ${{ secrets.PYPI_API_TOKEN }}
           packages-dir: wheels/
           skip-existing: true
-          # no password — uses OIDC identity token
 
   # Publish to npm
   publish-npm:
@@ -1153,7 +1131,6 @@ jobs:
     if: ${{ !contains(needs.validate.outputs.version, '-') }}
     permissions:
       contents: read
-      id-token: write
     steps:
       - name: Download WASM artifact
         uses: actions/download-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -1174,7 +1151,7 @@ jobs:
 
       - name: Publish to npm
         working-directory: wasm-out
-        run: npm publish --provenance --access public
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -1280,7 +1257,6 @@ jobs:
     if: ${{ !contains(needs.validate.outputs.version, '-') }}
     permissions:
       contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
@@ -1327,7 +1303,7 @@ jobs:
 
       - name: Publish to npm
         working-directory: js
-        run: npm publish --provenance --access public
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
