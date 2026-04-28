@@ -230,7 +230,7 @@ jobs:
           key: ${{ runner.os }}-wasm-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build WASM binary
-        run: cargo build --lib --target wasm32-unknown-unknown --features wasm --release
+        run: cargo build --lib --target wasm32-unknown-unknown --features wasm,rendering --release
 
       - name: Install matching wasm-bindgen-cli
         run: |

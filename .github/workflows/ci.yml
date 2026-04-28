@@ -323,10 +323,10 @@ jobs:
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: Build WASM
-        run: cargo build --lib --target wasm32-unknown-unknown --features wasm
+        run: cargo build --lib --target wasm32-unknown-unknown --features wasm,rendering
 
       - name: Clippy WASM
-        run: cargo clippy --target wasm32-unknown-unknown --no-default-features --features wasm --lib -- -D warnings
+        run: cargo clippy --target wasm32-unknown-unknown --no-default-features --features wasm,rendering --lib -- -D warnings
 
       # Validate the produced module using wasm-tools.
       - name: Install wasm-tools
@@ -347,7 +347,7 @@ jobs:
           echo "$PWD/binaryen-version_${ver}/bin" >> "$GITHUB_PATH"
 
       - name: Release WASM build
-        run: cargo build --release --lib --target wasm32-unknown-unknown --no-default-features --features wasm
+        run: cargo build --release --lib --target wasm32-unknown-unknown --no-default-features --features wasm,rendering
 
       - name: wasm-opt -Oz --converge (size gate)
         shell: bash
