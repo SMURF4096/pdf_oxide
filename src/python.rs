@@ -1839,6 +1839,41 @@ impl PyPdfDocument {
         Ok(d.into())
     }
 
+    /// Convert document to PDF/A archival format in-place.
+    /// `level` is one of: 1a, 1b, 2a, 2b, 2u, 3a, 3b, 3u.
+    /// Returns a dict with 'success' (bool), 'actions' (list[str]), 'errors' (list[str]).
+    #[pyo3(signature = (level="2b"))]
+    fn convert_to_pdfa(&mut self, py: Python<'_>, level: &str) -> PyResult<Py<PyAny>> {
+        use crate::compliance::convert_to_pdf_a;
+        use crate::compliance::types::PdfALevel;
+        let pdf_level = match level {
+            "1a" => PdfALevel::A1a,
+            "1b" => PdfALevel::A1b,
+            "2a" => PdfALevel::A2a,
+            "2b" => PdfALevel::A2b,
+            "2u" => PdfALevel::A2u,
+            "3a" => PdfALevel::A3a,
+            "3b" => PdfALevel::A3b,
+            "3u" => PdfALevel::A3u,
+            _ => {
+                return Err(PyValueError::new_err(format!(
+                    "Unknown PDF/A level: '{}'. Use 1a, 1b, 2a, 2b, 2u, 3a, 3b, 3u",
+                    level
+                )))
+            },
+        };
+        let result = convert_to_pdf_a(&mut self.inner, pdf_level)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let d = pyo3::types::PyDict::new(py);
+        d.set_item("success", result.success)?;
+        d.set_item("level", level)?;
+        let actions: Vec<String> = result.actions.iter().map(|a| a.description.clone()).collect();
+        let errors: Vec<String> = result.errors.iter().map(|e| e.reason.clone()).collect();
+        d.set_item("actions", actions)?;
+        d.set_item("errors", errors)?;
+        Ok(d.into())
+    }
+
     /// Validate PDF/UA accessibility compliance.
     /// Returns a dict with 'valid', 'errors', 'warnings' keys.
     fn validate_pdf_ua(&mut self, py: Python<'_>) -> PyResult<Py<PyAny>> {

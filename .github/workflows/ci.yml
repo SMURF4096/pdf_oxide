@@ -292,6 +292,7 @@ jobs:
           cd "$GITHUB_WORKSPACE/examples/python/09-new-features/pkcs12_signing"   && uv run python main.py
           cd "$GITHUB_WORKSPACE/examples/python/09-new-features/rfc3161_timestamp" && uv run python main.py
           cd "$GITHUB_WORKSPACE/examples/python/09-new-features/dashed_stroke"    && uv run python main.py
+          cd "$GITHUB_WORKSPACE/examples/python/09-new-features/pdfa_conversion"  && uv run python main.py
 
   # WASM build check
   wasm-build:

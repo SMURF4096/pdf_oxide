@@ -801,3 +801,83 @@ class TestSaveOptions:
         path = str(tmp_path / "plain.pdf")
         doc.save(path)
         assert os.path.getsize(path) > 100
+
+
+# ── PdfDocument: PDF/A compliance ────────────────────────────────────────────
+
+
+class TestPdfACompliance:
+    def test_validate_pdf_a_returns_dict_with_required_keys(self):
+        doc = _make_simple_doc()
+        result = doc.validate_pdf_a("2b")
+        assert isinstance(result, dict)
+        assert "valid" in result
+        assert "level" in result
+        assert "errors" in result
+        assert "warnings" in result
+
+    def test_validate_pdf_a_level_echoed_back(self):
+        doc = _make_simple_doc()
+        result = doc.validate_pdf_a("1b")
+        assert result["level"] == "1b"
+
+    def test_validate_pdf_a_errors_is_list(self):
+        doc = _make_simple_doc()
+        result = doc.validate_pdf_a("2b")
+        assert isinstance(result["errors"], list)
+        assert isinstance(result["warnings"], list)
+
+    def test_validate_pdf_a_invalid_level_raises(self):
+        doc = _make_simple_doc()
+        with pytest.raises(ValueError):
+            doc.validate_pdf_a("99z")
+
+    def test_convert_to_pdfa_returns_dict_with_required_keys(self):
+        doc = _make_simple_doc()
+        result = doc.convert_to_pdfa("2b")
+        assert isinstance(result, dict)
+        assert "success" in result
+        assert "actions" in result
+        assert "errors" in result
+
+    def test_convert_to_pdfa_success_is_bool(self):
+        doc = _make_simple_doc()
+        result = doc.convert_to_pdfa("2b")
+        assert isinstance(result["success"], bool)
+
+    def test_convert_to_pdfa_actions_is_list(self):
+        doc = _make_simple_doc()
+        result = doc.convert_to_pdfa("2b")
+        assert isinstance(result["actions"], list)
+        assert isinstance(result["errors"], list)
+
+    def test_convert_to_pdfa_document_remains_valid_pdf(self):
+        doc = _make_simple_doc()
+        doc.convert_to_pdfa("2b")
+        data = doc.to_bytes()
+        assert data[:5] == _PDF_MAGIC
+
+    def test_convert_to_pdfa_validate_after_conversion(self):
+        doc = _make_simple_doc()
+        doc.convert_to_pdfa("2b")
+        result = doc.validate_pdf_a("2b")
+        assert isinstance(result["valid"], bool)
+
+    def test_convert_to_pdfa_invalid_level_raises(self):
+        doc = _make_simple_doc()
+        with pytest.raises(ValueError):
+            doc.convert_to_pdfa("99z")
+
+    def test_convert_to_pdfa_all_levels_accepted(self):
+        for level in ("1a", "1b", "2a", "2b", "2u", "3a", "3b", "3u"):
+            doc = _make_simple_doc()
+            result = doc.convert_to_pdfa(level)
+            assert "success" in result, f"level {level!r} did not return expected dict"
+
+    def test_convert_to_pdfa_bytes_output_pipeline(self):
+        """Full IDP pipeline: open → convert → compress → get bytes."""
+        doc = _make_simple_doc()
+        doc.convert_to_pdfa("2b")
+        data = doc.to_bytes(compress=True, garbage_collect=True)
+        assert data[:5] == _PDF_MAGIC
+        assert len(data) > 100
