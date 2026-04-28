@@ -2,11 +2,184 @@
 
 All notable changes to PDFOxide are documented here.
 
-## [0.3.40] - unreleased
+## [0.3.40] - 2026-04-27
 
-### Bug fixes
+> Image rendering fixes, dashed stroke + streaming table batch, digital
+> signature verification, binding completeness sweep, security hardening,
+> dependency freshness, and a new clean image API — all 7 bindings.
 
-### Improvements
+### Community contributors
+
+This release exists because of the community. Special thanks to:
+
+- **[@sparkyandrew](https://github.com/sparkyandrew)** — six detailed bug
+  reports (#382, #385, #386, #397, #401, #425) that drove the CJK font
+  subsetter, encryption, font-name handling, and now the image rendering
+  overhaul. Every report came with a reproduction case. Issue #425 specifically
+  identified four separate rendering bugs and raised the API design question
+  that led to `ImageContent::from_bytes()` and the new `image()` method across
+  all bindings.
+
+- **[@potatochipcoconut](https://github.com/potatochipcoconut)** — three
+  well-targeted reports (#409, #416, #417) that directly drove the manylinux
+  glibc fix, the OCR wheel fix, and the discovery of the missing in-memory
+  encrypted save API. Terse, precise, actionable every time.
+
+### Scope at-a-glance
+
+- **Image rendering** — four bugs fixed in PNG/JPEG embed path (#425).
+- **New image API** — `ImageContent::from_bytes()` + plain `image()` on all bindings; no pixel dims needed (#425).
+- **Dashed stroke + streaming table batch** — `StrokeRectDashed`/`StrokeLineDashed` + `StreamingTable` bounded-batch API across all 7 bindings (#400).
+- **Digital signature verification** — real RSA-PSS / ECDSA / TSA cryptographic checks (#420).
+- **Binding completeness** — encrypted bytes (#423), barcode via C FFI (#421), Node.js validation (#424) and page extraction (#384), Python/Go `convert_to_pdfa` (#418/#419).
+- **Platform fixes** — Python glibc 2.34 compat (#416), OCR wheels (#417), WASM rendering (#422), CLI output path.
+- **Security & hygiene** — unsafe audit, dep freshness, SLSA provenance, SBOM, CodeQL, DCO (#415).
+
+### Image rendering fixes (#425)
+
+This release closes the image-rendering bugs reported in
+[#425](https://github.com/yfedoseev/pdf_oxide/issues/425) by
+[@sparkyandrew](https://github.com/sparkyandrew). Four bugs, all in the same
+family of incorrect assumptions in `image_handler.rs` / `pdf_writer.rs`:
+
+- **PNG color corruption** (`Predictor=15` mismatch) — `FlateDecode` with
+  `DecodeParms/Predictor=15` promises PNG-style per-scanline filter bytes. The
+  encoder was compressing raw pixels without prepending the required `0x00`
+  (None-filter) byte before each row; viewers applied PNG unfiltering to raw
+  data, corrupting every pixel. Fixed: `compress_image_data()` now prepends one
+  `0x00` per scanline before Flate compression.
+
+- **Blank PNG via `ImageContent::new()`** — `image_content_to_xobject_stream()`
+  assumed `data` was already decoded pixel bytes. Passing raw PNG file bytes
+  caused the PNG header to be treated as pixels — blank / garbage output. Fixed:
+  magic-byte detection (`89 50 4E 47`) routes raw bytes through
+  `ImageData::from_png()`.
+
+- **JPEG zoom / wrong dimensions** — same root cause; JPEG file bytes were not
+  routed through `ImageData::from_jpeg()`, so the pixel dimensions stored in the
+  XObject were wrong. Fixed by the same `FF D8` magic-byte detection.
+
+- **Soft-mask (alpha) lost** — PNG transparency was discarded when raw bytes were
+  passed through `ImageContent::new()`. The new auto-detect path correctly
+  threads the alpha channel through to the PDF `/SMask` XObject.
+
+### New image API — `from_bytes()` and `image()` (#425)
+
+The bug report also identified a legitimate API design problem: every other PDF
+library (ReportLab, fpdf2, iText, PDFBox, PDFKit, printpdf, Prawn) auto-detects
+pixel dimensions from the image header — users only specify where the image
+appears on the page. `ImageContent::new()` required passing `width` and `height`
+explicitly, which callers typically had to look up from a separate decode step.
+
+```rust
+// Before — pixel dims required even though the library could read them itself
+let img = ImageContent::new(bbox, ImageFormat::Png, raw_bytes, width, height);
+
+// After — just bytes + on-page display rect; everything else auto-detected
+let img = ImageContent::from_bytes(bbox, raw_bytes)?;
+```
+
+`from_bytes()` detects JPEG/PNG by magic number and reads `width`, `height`,
+`color_space`, `bits_per_component`, and the soft-mask channel from the image
+header. A plain `image()` method (no accessibility wrapper) was also missing
+from Go, C#, and Node.js — added to all three:
+
+| Binding | Method |
+|---------|--------|
+| Rust    | `ImageContent::from_bytes(bbox, data)?` |
+| Go      | `page.Image(bytes, x, y, w, h)` |
+| C#      | `page.Image(bytes, x, y, w, h)` |
+| Node.js | `page.image(bytes, x, y, w, h)` |
+| Python  | `page.image_from_bytes(bytes, x, y, w, h)` *(pre-existing)* |
+| WASM    | `page.image_from_bytes(bytes, x, y, w, h)` *(pre-existing)* |
+
+Use `imageWithAlt` / `ImageWithAlt` for PDF/UA-1 accessible figures and
+`imageArtifact` / `ImageArtifact` for decorative images.
+
+### Dashed stroke + streaming table batch (#400)
+
+Two `FluentPageBuilder` additions shipping across all 7 bindings:
+
+- **`stroke_rect_dashed` / `stroke_line_dashed`** — stroke a rectangle or line
+  with an explicit dash pattern (`&[f32]` on/off lengths + phase) and RGB colour.
+  Complements the existing solid `stroke_rect` / `stroke_line`.
+
+- **`StreamingTable` bounded-batch API** — `set_batch_size(n)`, `pending_row_count()`,
+  `batch_count()`, `flush()` — lets callers control how many rows accumulate in
+  memory before being flushed to the PDF content stream. Useful when streaming
+  very large tables from a source that itself has natural chunk boundaries.
+
+Both surfaces are available in Rust, Python, WASM, Go, C#, and Node.js /
+TypeScript. New `examples/*/09-new-features/dashed_stroke/` examples ship in
+all four binding example directories.
+
+### Digital signature verification (#420)
+
+`SignatureInfo.verify()` now performs real cryptographic verification instead of
+returning a stub result:
+
+- **RSA-PSS** and **RSA-PKCS#1 v1.5** — verified against the embedded
+  certificate public key via the `rsa` + `sha2` crates.
+- **ECDSA (P-256 / P-384)** — verified via the `p256` / `p384` crates.
+- **TSA timestamp** (`Timestamp.verify()`) — full RFC 3161 countersignature
+  verification: CMS structure, signer certificate, and TSTInfo hash match.
+
+### Binding completeness sweep
+
+Several APIs present in the Rust core and some bindings were missing from
+others. All are now consistent across all 7 bindings:
+
+- **In-memory encrypted save** (#423) — `PdfDocument.to_bytes_encrypted(user_pw, owner_pw)` saves with AES-256 encryption directly to `bytes` / `Buffer` / `Vec<u8>` without touching disk. Available in Python, Node.js, C#, Go, and the C FFI. Driven by [@potatochipcoconut](https://github.com/potatochipcoconut) in #409.
+
+- **Barcode via C FFI** (#421) — `pdf_add_barcode_to_page()` embeds a generated barcode PNG onto a page at a given rect. Previously the function returned `ERR_UNSUPPORTED`; it now calls the new `DocumentEditor::add_image_bytes_to_page()` helper internally. C FFI only in this release — Go and C# wrappers are follow-up work.
+
+- **PDF/A, PDF/X, PDF/UA validation on Node.js** (#424) — `PdfDocument.validatePdfA()`, `.validatePdfX()`, `.validatePdfUA()` now available in the Node.js binding, matching Python, Go, C#, WASM, and Rust.
+
+- **Page extraction in Node.js** (#384) — `DocumentEditor.extractPagesToBytes(pageIndices)` splits a multi-page PDF into per-chunk `Buffer` objects entirely in memory, no temp files needed.
+
+  ```js
+  const chunk = editor.extractPagesToBytes([0, 1, 2]); // → Buffer
+  ```
+
+- **PDF/A conversion** (#418/#419) — `PdfDocument.convert_to_pdfa(output_path, level)` exposed in Python; `pdf_convert_to_pdfa()` C FFI + Go `ConvertToPdfA()`.
+
+### Platform fixes
+
+- **Python glibc 2.34 compatibility** (#416) — LLVM emits `__memcmpeq` (a
+  glibc 2.35 symbol) in some optimised builds; wheels built against glibc 2.35
+  failed to load on Amazon Linux 2023 (glibc 2.34) and similar systems. Fixed by
+  adding a `build.rs` that passes `--defsym __memcmpeq=memcmp` only to the final
+  cdylib link step (not to build scripts, which don't export `memcmp`). Reported
+  by [@potatochipcoconut](https://github.com/potatochipcoconut).
+
+- **Python OCR wheels** (#417) — published wheels omitted the `ocr` feature, so
+  `pip install pdf-oxide[ocr]` installed silently but failed at runtime. Wheels
+  now compile with `--features ocr`; ORT library path auto-detected on import.
+  Reported by [@potatochipcoconut](https://github.com/potatochipcoconut).
+
+- **WASM rendering** (#422) — `wasm-pack` builds were missing the `rendering`
+  feature flag, producing blank page images. All WASM targets now build with
+  `--features rendering`.
+
+- **CLI binary output path** — `pdf-oxide render`, `pdf-oxide thumbnail`, and
+  other commands that produce binary output were writing next to the working
+  directory instead of next to the input file when no explicit output path was
+  given. Fixed.
+
+### Security & hygiene (#415)
+
+- `#[forbid(unsafe_code)]` on all modules that have no FFI business being
+  unsafe; remaining unsafe consolidated into audited FFI helpers with
+  `handle_mut!` / `handle_ref!` macros.
+- `lazy_static` replaced with `std::sync::OnceLock` throughout.
+- `cargo update` dep freshness sweep; lock file refreshed.
+- `cargo-geiger` unsafe audit + `cargo-outdated` dependency check added to CI
+  (both run monthly).
+- CI: action SHAs pinned, OIDC publish, SLSA provenance level 3, SBOM
+  (CycloneDX), OpenSSF Scorecard, CodeQL static analysis, DCO enforcement.
+- Dependabot configured for all three ecosystems (`cargo`, `npm`, `github-actions`).
+- SPDX licence headers added to source files; `CODEOWNERS` and `CONTRIBUTING`
+  (DCO) added.
 
 ---
 
