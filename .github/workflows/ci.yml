@@ -259,7 +259,7 @@ jobs:
         run: uv pip install maturin pytest
 
       - name: Build Python package
-        run: uv run maturin build --release --features python --out dist
+        run: uv run maturin build --release --features python,ocr --out dist
 
       - name: Install wheel
         shell: bash
@@ -294,6 +294,7 @@ jobs:
           cd "$GITHUB_WORKSPACE/examples/python/09-new-features/dashed_stroke"    && uv run python main.py
           cd "$GITHUB_WORKSPACE/examples/python/09-new-features/pdfa_conversion"  && uv run python main.py
           cd "$GITHUB_WORKSPACE/examples/python/09-new-features/page_extraction"  && uv run python main.py
+          cd "$GITHUB_WORKSPACE/examples/python/09-new-features/ocr_scanned_pdf"  && uv run python main.py
 
   # WASM build check
   wasm-build:

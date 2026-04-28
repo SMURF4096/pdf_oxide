@@ -43,6 +43,51 @@ pdf.save("output.pdf")
 Dual-licensed under MIT OR Apache-2.0.
 """
 
+import os as _os
+
+
+def _setup_ort_dylib_path() -> None:
+    """Point ort's dynamic loader at the onnxruntime library shipped by the
+    Python ``onnxruntime`` package, if installed and not already overridden.
+
+    The ``ort`` Rust crate (used for OCR) searches for ``libonnxruntime.so``
+    (Linux), ``libonnxruntime.dylib`` (macOS), or ``onnxruntime.dll``
+    (Windows) via ``ORT_DYLIB_PATH``.  The Python ``onnxruntime`` package
+    ships this library inside its own ``capi/`` directory, so we locate it
+    here and set the env-var before the native module is loaded.
+    """
+    if _os.environ.get("ORT_DYLIB_PATH"):
+        return  # already set by user — respect it
+    try:
+        import importlib.util as _ilu
+        spec = _ilu.find_spec("onnxruntime")
+        if spec is None or spec.origin is None:
+            return
+        import pathlib as _pl
+        capi_dir = _pl.Path(spec.origin).parent / "capi"
+        candidates = [
+            capi_dir / "libonnxruntime.so",
+            capi_dir / "libonnxruntime.dylib",
+            capi_dir / "onnxruntime.dll",
+        ]
+        # Also match versioned names like libonnxruntime.so.1.20.1
+        if capi_dir.is_dir():
+            for f in capi_dir.iterdir():
+                name = f.name
+                if (name.startswith("libonnxruntime.so")
+                        or name.startswith("libonnxruntime.dylib")
+                        or name == "onnxruntime.dll"):
+                    candidates.insert(0, f)
+        for candidate in candidates:
+            if candidate.exists():
+                _os.environ["ORT_DYLIB_PATH"] = str(candidate)
+                break
+    except Exception:
+        pass  # non-fatal — OCR will raise a clear error if ort can't load
+
+
+_setup_ort_dylib_path()
+
 from ._async import (
     AsyncOfficeConverter,
     AsyncPdf,

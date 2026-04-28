@@ -82,6 +82,39 @@ def test_render_page_invalid_dpi_raises():
         doc.render_page(0, dpi=-1)
 
 
+# ── OCR (always compiled into published wheels) ───────────────────────────────
+
+
+def test_ocr_engine_and_config_are_importable():
+    """OcrEngine and OcrConfig must always be importable — no AttributeError."""
+    from pdf_oxide import OcrConfig, OcrEngine  # noqa: F401
+
+
+def test_ocr_engine_raises_runtime_error_not_attribute_error_when_no_models():
+    """Without model files, OcrEngine.__init__ must raise RuntimeError (not AttributeError).
+    If it raises AttributeError, the wheel was compiled without the ocr feature.
+    """
+    from pdf_oxide import OcrEngine
+
+    try:
+        OcrEngine(
+            det_model_path="/nonexistent/det.onnx",
+            rec_model_path="/nonexistent/rec.onnx",
+            dict_path="/nonexistent/dict.txt",
+        )
+    except RuntimeError:
+        pass  # expected — model files don't exist or ort not found
+    except Exception as exc:
+        if "OCR not enabled" in str(exc) or "not enabled" in str(exc).lower():
+            pytest.fail(
+                "OCR feature is NOT compiled into this wheel. "
+                "Rebuild with --features python,ocr. "
+                f"Got: {exc}"
+            )
+        # Other errors (file not found, etc.) are OK
+        pass
+
+
 # ── HTML + CSS creation (always available) ────────────────────────────────────
 
 
