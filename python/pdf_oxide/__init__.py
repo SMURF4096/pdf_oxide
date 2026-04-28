@@ -60,10 +60,12 @@ def _setup_ort_dylib_path() -> None:
         return  # already set by user — respect it
     try:
         import importlib.util as _ilu
+
         spec = _ilu.find_spec("onnxruntime")
         if spec is None or spec.origin is None:
             return
         import pathlib as _pl
+
         capi_dir = _pl.Path(spec.origin).parent / "capi"
         candidates = [
             capi_dir / "libonnxruntime.so",
@@ -74,9 +76,11 @@ def _setup_ort_dylib_path() -> None:
         if capi_dir.is_dir():
             for f in capi_dir.iterdir():
                 name = f.name
-                if (name.startswith("libonnxruntime.so")
-                        or name.startswith("libonnxruntime.dylib")
-                        or name == "onnxruntime.dll"):
+                if (
+                    name.startswith("libonnxruntime.so")
+                    or name.startswith("libonnxruntime.dylib")
+                    or name == "onnxruntime.dll"
+                ):
                     candidates.insert(0, f)
         for candidate in candidates:
             if candidate.exists():
@@ -88,12 +92,12 @@ def _setup_ort_dylib_path() -> None:
 
 _setup_ort_dylib_path()
 
-from ._async import (
+from ._async import (  # noqa: E402
     AsyncOfficeConverter,
     AsyncPdf,
     AsyncPdfDocument,
 )
-from .pdf_oxide import (
+from .pdf_oxide import (  # noqa: E402
     VERSION,
     # v0.3.39 tables + primitives
     Align,

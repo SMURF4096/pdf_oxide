@@ -707,7 +707,16 @@ class TestPageExtraction:
 
     def test_extract_pages_chunking_pipeline(self):
         """Simulate potatochipcoconut's page-splitting use case."""
-        from itertools import batched
+        try:
+            from itertools import batched
+        except ImportError:
+            # Python < 3.12 compat
+            from itertools import islice
+
+            def batched(iterable, n):
+                it = iter(iterable)
+                while chunk := list(islice(it, n)):
+                    yield chunk
 
         data = Pdf.from_markdown("# P1").to_bytes()
         doc = PdfDocument.from_bytes(data)
@@ -729,7 +738,7 @@ class TestPageExtraction:
 
     def test_extract_pages_out_of_range_raises(self):
         doc = _make_two_page_doc()
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError):
             doc.extract_pages_to_bytes([999])
 
 
@@ -920,52 +929,52 @@ class TestPdfACompliance:
         with pytest.raises(ValueError):
             doc.validate_pdf_a("99z")
 
-    def test_convert_to_pdfa_returns_dict_with_required_keys(self):
+    def test_convert_to_pdf_a_returns_dict_with_required_keys(self):
         doc = _make_simple_doc()
-        result = doc.convert_to_pdfa("2b")
+        result = doc.convert_to_pdf_a("2b")
         assert isinstance(result, dict)
         assert "success" in result
         assert "actions" in result
         assert "errors" in result
 
-    def test_convert_to_pdfa_success_is_bool(self):
+    def test_convert_to_pdf_a_success_is_bool(self):
         doc = _make_simple_doc()
-        result = doc.convert_to_pdfa("2b")
+        result = doc.convert_to_pdf_a("2b")
         assert isinstance(result["success"], bool)
 
-    def test_convert_to_pdfa_actions_is_list(self):
+    def test_convert_to_pdf_a_actions_is_list(self):
         doc = _make_simple_doc()
-        result = doc.convert_to_pdfa("2b")
+        result = doc.convert_to_pdf_a("2b")
         assert isinstance(result["actions"], list)
         assert isinstance(result["errors"], list)
 
-    def test_convert_to_pdfa_document_remains_valid_pdf(self):
+    def test_convert_to_pdf_a_document_remains_valid_pdf(self):
         doc = _make_simple_doc()
-        doc.convert_to_pdfa("2b")
+        doc.convert_to_pdf_a("2b")
         data = doc.to_bytes()
         assert data[:5] == _PDF_MAGIC
 
-    def test_convert_to_pdfa_validate_after_conversion(self):
+    def test_convert_to_pdf_a_validate_after_conversion(self):
         doc = _make_simple_doc()
-        doc.convert_to_pdfa("2b")
+        doc.convert_to_pdf_a("2b")
         result = doc.validate_pdf_a("2b")
         assert isinstance(result["valid"], bool)
 
-    def test_convert_to_pdfa_invalid_level_raises(self):
+    def test_convert_to_pdf_a_invalid_level_raises(self):
         doc = _make_simple_doc()
         with pytest.raises(ValueError):
-            doc.convert_to_pdfa("99z")
+            doc.convert_to_pdf_a("99z")
 
-    def test_convert_to_pdfa_all_levels_accepted(self):
+    def test_convert_to_pdf_a_all_levels_accepted(self):
         for level in ("1a", "1b", "2a", "2b", "2u", "3a", "3b", "3u"):
             doc = _make_simple_doc()
-            result = doc.convert_to_pdfa(level)
+            result = doc.convert_to_pdf_a(level)
             assert "success" in result, f"level {level!r} did not return expected dict"
 
-    def test_convert_to_pdfa_bytes_output_pipeline(self):
+    def test_convert_to_pdf_a_bytes_output_pipeline(self):
         """Full IDP pipeline: open → convert → compress → get bytes."""
         doc = _make_simple_doc()
-        doc.convert_to_pdfa("2b")
+        doc.convert_to_pdf_a("2b")
         data = doc.to_bytes(compress=True, garbage_collect=True)
         assert data[:5] == _PDF_MAGIC
         assert len(data) > 100
@@ -995,7 +1004,7 @@ class TestPdfDocumentEncryptedBytes:
     def test_to_bytes_encrypted_wrong_password_raises(self):
         doc = _make_simple_doc()
         data = doc.to_bytes_encrypted("correct", "ownerpass")
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError):
             PdfDocument.from_bytes(data, password="wrong")
 
     def test_to_bytes_encrypted_with_permission_flags(self):
@@ -1015,7 +1024,7 @@ class TestPdfDocumentEncryptedBytes:
     def test_to_bytes_encrypted_larger_than_unencrypted(self):
         doc1 = _make_simple_doc()
         doc2 = _make_simple_doc()
-        plain = doc1.to_bytes()
+        _ = doc1.to_bytes()
         encrypted = doc2.to_bytes_encrypted("pw", "pw")
         assert len(encrypted) > 0
         assert encrypted[:5] == _PDF_MAGIC

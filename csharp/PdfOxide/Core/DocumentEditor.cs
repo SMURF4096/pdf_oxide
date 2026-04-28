@@ -603,7 +603,7 @@ namespace PdfOxide.Core
         public void ConvertToPdfA(PdfALevel level = PdfALevel.A2b)
         {
             ThrowIfDisposed();
-            NativeMethods.document_editor_convert_to_pdfa(_handle, (int)level, out int errorCode);
+            NativeMethods.document_editor_convert_to_pdf_a(_handle, (int)level, out int errorCode);
             ExceptionMapper.ThrowIfError(errorCode);
         }
 

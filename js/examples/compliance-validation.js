@@ -32,7 +32,7 @@ if (!filePath) {
   process.exit(0);
 }
 
-using doc = PdfDocument.open(filePath);
+const doc = PdfDocument.open(filePath);
 
 console.log(`Validating "${filePath}" (${doc.getPageCount()} page(s))\n`);
 

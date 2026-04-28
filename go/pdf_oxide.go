@@ -319,7 +319,7 @@ extern uint8_t* document_editor_save_to_bytes_with_options(void* handle, bool co
 
 // Editor: v0.3.40 additions
 extern void* document_editor_extract_pages_to_bytes(void* handle, int32_t* pages, size_t count, size_t* out_len, int* error_code);
-extern int document_editor_convert_to_pdfa(void* handle, int32_t level, int* error_code);
+extern int document_editor_convert_to_pdf_a(void* handle, int32_t level, int* error_code);
 extern void* document_editor_save_encrypted_to_bytes(void* handle, const char* user_password, const char* owner_password, size_t* out_len, int* error_code);
 extern char* document_editor_get_keywords(const void* handle, int* error_code);
 extern int   document_editor_set_keywords(void* handle, const char* keywords, int* error_code);
@@ -2284,7 +2284,7 @@ func (editor *DocumentEditor) ConvertToPdfA(level int) error {
 	}
 	defer editor.mu.Unlock()
 	var errorCode C.int
-	C.document_editor_convert_to_pdfa(editor.handle, C.int32_t(level), &errorCode)
+	C.document_editor_convert_to_pdf_a(editor.handle, C.int32_t(level), &errorCode)
 	if errorCode != 0 {
 		return ffiError(errorCode)
 	}

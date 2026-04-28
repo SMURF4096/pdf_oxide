@@ -3809,6 +3809,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   extern Napi::Value PageBuilderNewline(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderBarcode1d(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderBarcodeQr(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderImage(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderImageWithAlt(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderImageArtifact(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderRect(const Napi::CallbackInfo&);

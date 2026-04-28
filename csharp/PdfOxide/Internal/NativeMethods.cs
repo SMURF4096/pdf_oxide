@@ -6068,9 +6068,9 @@ namespace PdfOxide.Internal
             NativeHandle handle, int* pages, nuint count, out nuint outLen, out int errorCode);
 
         /// <summary>Converts the document in-place to the given PDF/A conformance level.</summary>
-        [LibraryImport(LibName, EntryPoint = "document_editor_convert_to_pdfa")]
+        [LibraryImport(LibName, EntryPoint = "document_editor_convert_to_pdf_a")]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-        public static partial int document_editor_convert_to_pdfa(
+        public static partial int document_editor_convert_to_pdf_a(
             NativeHandle handle, int level, out int errorCode);
 
         /// <summary>Saves the document with AES-256 encryption and returns the bytes.</summary>

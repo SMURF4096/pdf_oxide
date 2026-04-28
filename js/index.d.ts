@@ -576,18 +576,22 @@ export class PdfDocument {
    * @param level - "1a"|"1b"|"2a"|"2b"|"2u"|"3a"|"3b"|"3u" (default "2b")
    * @returns Validation result with compliant flag, errors, and warnings
    */
-  validatePdfA(
-    level?: '1a' | '1b' | '2a' | '2b' | '2u' | '3a' | '3b' | '3u'
-  ): { compliant: boolean; errors: string[]; warnings: string[] };
+  validatePdfA(level?: '1a' | '1b' | '2a' | '2b' | '2u' | '3a' | '3b' | '3u'): {
+    compliant: boolean;
+    errors: string[];
+    warnings: string[];
+  };
 
   /**
    * Validate PDF/X conformance.
    * @param level - "1a_2001"|"1a_2003"|"3_2003"|"4"|"5"|"6" (default "4")
    * @returns Validation result with compliant flag and errors
    */
-  validatePdfX(
-    level?: '1a_2001' | '1a_2003' | '3_2003' | '4' | '5' | '6'
-  ): { compliant: boolean; errors: string[]; warnings: string[] };
+  validatePdfX(level?: '1a_2001' | '1a_2003' | '3_2003' | '4' | '5' | '6'): {
+    compliant: boolean;
+    errors: string[];
+    warnings: string[];
+  };
 
   /**
    * Validate PDF/UA accessibility conformance.
