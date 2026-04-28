@@ -1018,6 +1018,40 @@ impl DocumentEditor {
         copy.save_to_bytes()
     }
 
+    /// Overlay a PNG image onto an existing page at the given position.
+    ///
+    /// `page_index` is 0-based. `x`, `y`, `width`, `height` are in PDF points
+    /// (1/72 inch), measured from the bottom-left of the page.
+    ///
+    /// The PNG bytes are decoded, then appended to the page's content stream as
+    /// an XObject.  The page is saved back after the operation.
+    pub fn add_image_bytes_to_page(
+        &mut self,
+        page_index: usize,
+        png_bytes: &[u8],
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+    ) -> Result<()> {
+        use crate::elements::{ImageContent, ImageFormat};
+        use crate::geometry::Rect;
+
+        let image = ImageContent::new(
+            Rect::new(x, y, width, height),
+            ImageFormat::Png,
+            png_bytes.to_vec(),
+            // Width/height in pixels are derived from the bbox for placement;
+            // we use 72 DPI as a nominal value (actual pixels don't affect placement).
+            (width as u32).max(1),
+            (height as u32).max(1),
+        );
+        self.edit_page(page_index, |page| {
+            page.add_image(image);
+            Ok(())
+        })
+    }
+
     /// Merge pages from another PDF into this document.
     ///
     /// This appends all pages from the source PDF to the end of this document.

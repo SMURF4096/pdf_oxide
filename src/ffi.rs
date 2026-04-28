@@ -2698,18 +2698,35 @@ pub extern "C" fn pdf_barcode_get_svg(
 
 #[no_mangle]
 pub extern "C" fn pdf_add_barcode_to_page(
-    _document_handle: *mut std::ffi::c_void,
-    _page_index: i32,
-    _barcode_handle: *const FfiBarcodeImage,
-    _x: f32,
-    _y: f32,
-    _width: f32,
-    _height: f32,
+    document_handle: *mut DocumentEditor,
+    page_index: i32,
+    barcode_handle: *const FfiBarcodeImage,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
     error_code: *mut i32,
 ) -> i32 {
-    // Adding barcode to existing page requires editor integration
-    set_error(error_code, _ERR_UNSUPPORTED);
-    -1
+    if document_handle.is_null() || barcode_handle.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    if page_index < 0 {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let editor = handle_mut(document_handle);
+    let barcode = handle_ref(barcode_handle);
+    match editor.add_image_bytes_to_page(page_index as usize, &barcode.data, x, y, width, height) {
+        Ok(()) => {
+            set_error(error_code, ERR_SUCCESS);
+            0
+        },
+        Err(_) => {
+            set_error(error_code, ERR_INTERNAL);
+            -1
+        },
+    }
 }
 
 #[no_mangle]
