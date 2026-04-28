@@ -7788,6 +7788,14 @@ enum FfiPageOp {
         w: f32,
         h: f32,
     },
+    /// Plain image embed — no alt text, no /Artifact wrapper.
+    Image {
+        bytes: Vec<u8>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    },
     /// Image with accessibility alt text (PDF/UA-1 /Figure).
     ImageWithAlt {
         bytes: Vec<u8>,
@@ -9117,6 +9125,28 @@ pub extern "C" fn pdf_page_builder_barcode_qr(
 
 /// Embed an image at `(x, y, w, h)` with an accessibility alt text.
 /// `bytes` must point to raw JPEG/PNG/WebP image data of `len` bytes.
+/// Embed an image at `(x, y, w, h)` in PDF points (no accessibility wrapper).
+/// `bytes` must point to raw JPEG/PNG image data of `len` bytes.
+/// Returns 0 on success, −1 on error.
+#[no_mangle]
+pub unsafe extern "C" fn pdf_page_builder_image(
+    handle: *mut FfiPageBuilder,
+    bytes: *const u8,
+    len: usize,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    error_code: *mut i32,
+) -> i32 {
+    if bytes.is_null() || len == 0 {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    let data = raw_slice(bytes, len).to_vec();
+    push_page_op(handle, error_code, FfiPageOp::Image { bytes: data, x, y, w, h })
+}
+
 /// `alt_text` is a NUL-terminated UTF-8 string.
 /// Returns 0 on success, −1 on error.
 #[no_mangle]
@@ -9894,6 +9924,23 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
                 }
                 continue;
             },
+            FfiPageOp::Image { bytes, x, y, w, h } => {
+                let rp = match rust_page_opt.take() {
+                    Some(p) => p,
+                    None => {
+                        set_error(error_code, ERR_INVALID_ARG);
+                        return -1;
+                    },
+                };
+                match rp.image_from_bytes(&bytes, crate::geometry::Rect::new(x, y, w, h)) {
+                    Ok(p) => rust_page_opt = Some(p),
+                    Err(_) => {
+                        set_error(error_code, ERR_INTERNAL);
+                        return -1;
+                    },
+                }
+                continue;
+            },
             FfiPageOp::ImageWithAlt {
                 bytes,
                 x,
@@ -10137,6 +10184,7 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
             | FfiPageOp::StreamingTableRow(_)
             | FfiPageOp::StreamingTableFinish
             | FfiPageOp::BarcodeImage { .. }
+            | FfiPageOp::Image { .. }
             | FfiPageOp::ImageWithAlt { .. }
             | FfiPageOp::ImageArtifact { .. } => {
                 unreachable!("streaming ops handled above; reaching here is a replay-loop bug")

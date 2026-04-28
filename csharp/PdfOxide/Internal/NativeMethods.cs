@@ -7356,6 +7356,13 @@ namespace PdfOxide.Internal
         public static partial int PdfPageBuilderBarcodeQr(
             IntPtr page, string data, float x, float y, float size, out int errorCode);
 
+        /// <summary>Embed an image at (x, y, w, h) without accessibility wrapper.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_image", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial int PdfPageBuilderImage(
+            IntPtr page, byte* bytes, nuint len,
+            float x, float y, float w, float h, out int errorCode);
+
         /// <summary>Embed an image with accessibility alt text (PDF/UA-1 Figure).</summary>
         [LibraryImport(LibName, EntryPoint = "pdf_page_builder_image_with_alt", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]

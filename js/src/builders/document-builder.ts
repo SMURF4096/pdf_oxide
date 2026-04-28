@@ -636,6 +636,16 @@ export class PageBuilder {
   }
 
   /**
+   * Embed a JPEG/PNG image at (x, y, w, h) in PDF points.
+   * No alt text or /Artifact wrapper. Use `imageWithAlt` or `imageArtifact`
+   * for PDF/UA-1 accessibility requirements.
+   */
+  image(bytes: Buffer | Uint8Array, x: number, y: number, w: number, h: number): this {
+    native.pageBuilderImage(this.h(), bytes, x, y, w, h);
+    return this;
+  }
+
+  /**
    * Embed an image with an accessibility alt text (PDF/UA-1 §Figure).
    * `bytes` must contain raw JPEG/PNG/WebP image data.
    */

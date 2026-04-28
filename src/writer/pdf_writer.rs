@@ -3294,4 +3294,152 @@ mod tests {
         // Must NOT use DCTDecode for a PNG source.
         assert!(!pdf_text.contains("/DCTDecode"), "must not use DCTDecode for PNG");
     }
+
+    /// Reproduces the exact code from issue #425 using the reporter's actual
+    /// attached images (downloaded to /tmp by the developer).
+    ///
+    /// Run with:
+    ///   cargo test -p pdf_oxide --lib -- write_issue_425_reporter_images --nocapture --ignored
+    #[test]
+    #[ignore]
+    fn write_issue_425_reporter_images() {
+        use crate::elements::{ContentElement, ImageContent, ImageFormat};
+        use crate::geometry::Rect;
+        use crate::writer::document_builder::DocumentBuilder;
+
+        let cats_png = std::fs::read("/tmp/issue_425_img1.png")
+            .expect("PNG not found — run the curl download step first");
+        let cats_jpg = std::fs::read("/tmp/issue_425_img2.jpg")
+            .expect("JPEG not found — run the curl download step first");
+
+        std::fs::create_dir_all("output").unwrap();
+
+        let mut document_builder = DocumentBuilder::new();
+        let page_builder = document_builder.a4_page();
+
+        // Exact layout from the reporter's code:
+        // Top half — image_from_bytes() for both PNG and JPEG
+        let page_builder = page_builder
+            .image_from_bytes(
+                &cats_png,
+                Rect { x: 50.0, y: 450.0, width: 280.0, height: 380.0 },
+            )
+            .unwrap()
+            .image_from_bytes(
+                &cats_jpg,
+                Rect { x: 380.0, y: 450.0, width: 200.0, height: 380.0 },
+            )
+            .unwrap();
+
+        // Bottom half — ImageContent::new() for both PNG and JPEG
+        let page_builder = page_builder
+            .element(ContentElement::Image(ImageContent::new(
+                Rect { x: 50.0, y: 50.0, width: 280.0, height: 380.0 },
+                ImageFormat::Png,
+                cats_png,
+                200,
+                380,
+            )))
+            .element(ContentElement::Image(ImageContent::new(
+                Rect { x: 380.0, y: 50.0, width: 200.0, height: 380.0 },
+                ImageFormat::Jpeg,
+                cats_jpg,
+                200,
+                380,
+            )));
+
+        let _ = page_builder.done();
+
+        let pdf_bytes = document_builder.build().unwrap();
+        let path = "output/issue_425_reporter_images.pdf";
+        std::fs::write(path, &pdf_bytes).unwrap();
+        println!("\n✓ Written: {}", std::fs::canonicalize(path).unwrap().display());
+        println!("  Top-left:  PNG via image_from_bytes()   — should show cats PNG correctly");
+        println!("  Top-right: JPEG via image_from_bytes()  — should show cats JPEG correctly");
+        println!("  Bot-left:  PNG via ImageContent::new()  — should show same cats PNG (was blank)");
+        println!("  Bot-right: JPEG via ImageContent::new() — should show same cats JPEG (was zoomed)");
+    }
+
+    /// Visual verification PDF for issue #425.
+    ///
+    /// Run with:
+    ///   cargo test -p pdf_oxide --lib -- write_issue_425_visual_verification --nocapture --ignored
+    ///
+    /// Opens `output/issue_425_images.pdf` — check all 4 images display correctly.
+    #[test]
+    #[ignore]
+    fn write_issue_425_visual_verification() {
+        use crate::elements::{ColorSpace as EColorSpace, ImageContent, ImageFormat as EImageFormat};
+        use crate::geometry::Rect;
+        use crate::writer::document_builder::DocumentBuilder;
+
+        std::fs::create_dir_all("output").unwrap();
+
+        // Build vivid test images so it's immediately obvious if colours are wrong.
+        // 100×100 solid red PNG
+        let red_png = make_png_bytes(100, 100, &vec![255u8, 0, 0].repeat(100 * 100));
+        // 100×100 solid blue PNG
+        let blue_png = make_png_bytes(100, 100, &vec![0u8, 0, 255].repeat(100 * 100));
+        // 100×100 solid green JPEG
+        let green_jpg = make_jpeg_bytes(100, 100, &vec![0u8, 180, 0].repeat(100 * 100));
+        // 100×100 purple JPEG (for ImageContent path)
+        let purple_jpg = make_jpeg_bytes(100, 100, &vec![160u8, 0, 160].repeat(100 * 100));
+
+        let mut builder = DocumentBuilder::new();
+        let page = builder.letter_page();
+
+        // Row 1 labels & images via image_from_bytes() ----------------------
+        //   Col 1: red PNG  (bug 1 — colour loss before fix)
+        //   Col 2: green JPEG
+        let page = page
+            .font("Helvetica", 10.0)
+            .at(50.0, 700.0)
+            .text("image_from_bytes() — PNG (should be solid RED):")
+            .at(50.0, 580.0)
+            .text("image_from_bytes() — JPEG (should be solid GREEN):")
+            .image_from_bytes(&red_png, Rect::new(50.0, 450.0, 200.0, 200.0))
+            .unwrap()
+            .image_from_bytes(&green_jpg, Rect::new(300.0, 450.0, 200.0, 200.0))
+            .unwrap();
+
+        // Row 2 labels & images via ImageContent::new() ----------------------
+        //   Col 1: blue PNG  (bug 2 — blank before fix)
+        //   Col 2: purple JPEG (bug 3 — wrong dimensions / zoom before fix)
+        let page = page
+            .at(50.0, 420.0)
+            .text("ImageContent::new() — PNG (should be solid BLUE):")
+            .at(50.0, 300.0)
+            .text("ImageContent::new() — JPEG (should be solid PURPLE):");
+
+        let blue_content = ImageContent::new(
+            Rect::new(50.0, 170.0, 200.0, 200.0),
+            EImageFormat::Png,
+            blue_png,
+            100,
+            100,
+        );
+        let purple_content = ImageContent::new(
+            Rect::new(300.0, 170.0, 200.0, 200.0),
+            EImageFormat::Jpeg,
+            purple_jpg,
+            999, // deliberately wrong pixel dims — fix must use real JPEG dims
+            999,
+        );
+
+        use crate::elements::ContentElement;
+        let _ = page
+            .element(ContentElement::Image(blue_content))
+            .element(ContentElement::Image(purple_content))
+            .done();
+
+        let pdf_bytes = builder.build().unwrap();
+        let path = "output/issue_425_images.pdf";
+        std::fs::write(path, &pdf_bytes).unwrap();
+        println!("\n✓ Written: {}", std::fs::canonicalize(path).unwrap().display());
+        println!("  Open in any PDF viewer and check:");
+        println!("  Top-left  → solid RED   (image_from_bytes PNG)");
+        println!("  Top-right → solid GREEN (image_from_bytes JPEG)");
+        println!("  Bot-left  → solid BLUE  (ImageContent::new PNG)");
+        println!("  Bot-right → solid PURPLE (ImageContent::new JPEG)");
+    }
 }

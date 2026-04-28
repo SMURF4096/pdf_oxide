@@ -188,6 +188,48 @@ impl ImageContent {
             None => false,
         }
     }
+
+    /// Create an `ImageContent` from raw image bytes, auto-detecting JPEG/PNG by magic number.
+    ///
+    /// Pixel dimensions, color space, and soft mask are parsed from the image header
+    /// automatically — no need to supply `width` or `height`. `bbox` controls the
+    /// on-page display rectangle in PDF points (72 pt = 1 inch).
+    ///
+    /// Returns an error if the bytes do not start with a recognised image magic number.
+    pub fn from_bytes(bbox: Rect, data: Vec<u8>) -> Result<Self, crate::error::Error> {
+        use crate::writer::{ColorSpace as HCS, ImageData, ImageFormat as HIF};
+        let parsed =
+            ImageData::from_bytes(&data).map_err(|e| crate::error::Error::Image(e.to_string()))?;
+        let format = match parsed.format {
+            HIF::Jpeg => ImageFormat::Jpeg,
+            HIF::Png => ImageFormat::Png,
+            HIF::Raw => ImageFormat::Raw,
+        };
+        let color_space = match parsed.color_space {
+            HCS::DeviceGray => ColorSpace::Gray,
+            HCS::DeviceRGB => ColorSpace::RGB,
+            HCS::DeviceCMYK => ColorSpace::CMYK,
+        };
+        let soft_mask = parsed.soft_mask;
+        let mut image = Self {
+            bbox,
+            format,
+            data,
+            width: parsed.width,
+            height: parsed.height,
+            bits_per_component: parsed.bits_per_component,
+            color_space,
+            reading_order: None,
+            alt_text: None,
+            horizontal_dpi: None,
+            vertical_dpi: None,
+            soft_mask,
+            matrix: None,
+            is_artifact: false,
+        };
+        image.calculate_dpi();
+        Ok(image)
+    }
 }
 
 impl Default for ImageContent {

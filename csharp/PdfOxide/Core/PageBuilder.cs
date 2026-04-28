@@ -555,6 +555,23 @@ namespace PdfOxide.Core
         }
 
         /// <summary>
+        /// Embed a JPEG/PNG image at (x, y, w, h) in PDF points.
+        /// No alt text or /Artifact wrapper is added — use
+        /// <see cref="ImageWithAlt"/> or <see cref="ImageArtifact"/> for PDF/UA-1.
+        /// </summary>
+        public unsafe PageBuilder Image(byte[] imageBytes, float x, float y, float w, float h)
+        {
+            ArgumentNullException.ThrowIfNull(imageBytes);
+            if (imageBytes.Length == 0) throw new ArgumentException("imageBytes must not be empty", nameof(imageBytes));
+            fixed (byte* p = imageBytes)
+            {
+                NativeMethods.PdfPageBuilderImage(Handle, p, (nuint)imageBytes.Length, x, y, w, h, out var ec);
+                ExceptionMapper.ThrowIfError(ec);
+            }
+            return this;
+        }
+
+        /// <summary>
         /// Embed an image with an accessibility alt text (PDF/UA-1 Figure element).
         /// <paramref name="imageBytes"/> must contain raw JPEG/PNG/WebP data.
         /// </summary>

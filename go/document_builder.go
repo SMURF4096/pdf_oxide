@@ -144,6 +144,10 @@ extern int   pdf_page_builder_barcode_1d(void* page, int barcode_type, const cha
 extern int   pdf_page_builder_barcode_qr(void* page, const char* data,
                                          float x, float y, float size,
                                          int* error_code);
+extern int   pdf_page_builder_image(void* page,
+                                    const uint8_t* bytes, size_t len,
+                                    float x, float y, float w, float h,
+                                    int* error_code);
 extern int   pdf_page_builder_image_with_alt(void* page,
                                              const uint8_t* bytes, size_t len,
                                              float x, float y, float w, float h,
@@ -1122,6 +1126,21 @@ func (p *PageBuilder) BarcodeQr(data string, x, y, size float32) *PageBuilder {
 		defer C.free(unsafe.Pointer(cd))
 		return C.pdf_page_builder_barcode_qr(hp, cd,
 			C.float(x), C.float(y), C.float(size), ec)
+	})
+}
+
+// Image embeds a JPEG/PNG image at (x, y, w, h) in PDF points.
+// No alt text or /Artifact wrapper is added — use ImageWithAlt or ImageArtifact for
+// PDF/UA-1 accessibility requirements.
+func (p *PageBuilder) Image(bytes []byte, x, y, w, h float32) *PageBuilder {
+	if len(bytes) == 0 {
+		p.err = ffiError(-1)
+		return p
+	}
+	return p.callInt(func(hp unsafe.Pointer, ec *C.int) C.int {
+		return C.pdf_page_builder_image(hp,
+			(*C.uint8_t)(unsafe.Pointer(&bytes[0])), C.size_t(len(bytes)),
+			C.float(x), C.float(y), C.float(w), C.float(h), ec)
 	})
 }
 
