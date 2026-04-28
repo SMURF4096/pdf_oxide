@@ -1008,18 +1008,14 @@ fn test_editor_merge_pages_from_out_of_range() {
 }
 
 #[test]
-fn test_editor_extract_pages_returns_error() {
+fn test_editor_extract_pages_works() {
     let pdf = build_multi_page_pdf(3);
     let path = write_temp_pdf(&pdf, "editor_extract.pdf");
     let out_path = write_temp_pdf(&[], "editor_extract_out.pdf");
     let mut editor = DocumentEditor::open(&path).unwrap();
 
-    // extract_pages is currently a placeholder that returns an error
     let result = editor.extract_pages(&[0, 1], &out_path);
-    assert!(
-        result.is_err(),
-        "extract_pages is expected to return error (not fully implemented)"
-    );
+    assert!(result.is_ok(), "extract_pages should succeed: {result:?}");
 
     let _ = std::fs::remove_file(&path);
     let _ = std::fs::remove_file(&out_path);

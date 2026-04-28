@@ -4098,9 +4098,24 @@ impl WasmDocumentBuilder {
                 } => {
                     rust_page.stroke_rect(x, y, w, h, crate::writer::LineStyle::new(width, r, g, b))
                 },
-                WasmPageOp::StrokeRectDashed { x, y, w, h, width, r, g, b, dash, phase } => {
-                    rust_page.stroke_rect(x, y, w, h, crate::writer::LineStyle::new(width, r, g, b).with_dash(&dash, phase))
-                },
+                WasmPageOp::StrokeRectDashed {
+                    x,
+                    y,
+                    w,
+                    h,
+                    width,
+                    r,
+                    g,
+                    b,
+                    dash,
+                    phase,
+                } => rust_page.stroke_rect(
+                    x,
+                    y,
+                    w,
+                    h,
+                    crate::writer::LineStyle::new(width, r, g, b).with_dash(&dash, phase),
+                ),
                 WasmPageOp::StrokeLine {
                     x1,
                     y1,
@@ -4117,9 +4132,24 @@ impl WasmDocumentBuilder {
                     y2,
                     crate::writer::LineStyle::new(width, r, g, b),
                 ),
-                WasmPageOp::StrokeLineDashed { x1, y1, x2, y2, width, r, g, b, dash, phase } => {
-                    rust_page.stroke_line(x1, y1, x2, y2, crate::writer::LineStyle::new(width, r, g, b).with_dash(&dash, phase))
-                },
+                WasmPageOp::StrokeLineDashed {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    width,
+                    r,
+                    g,
+                    b,
+                    dash,
+                    phase,
+                } => rust_page.stroke_line(
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    crate::writer::LineStyle::new(width, r, g, b).with_dash(&dash, phase),
+                ),
                 WasmPageOp::NewPageSameSize => rust_page.new_page_same_size(),
                 WasmPageOp::BufferedTable {
                     columns,
@@ -4834,12 +4864,29 @@ impl WasmFluentPageBuilder {
     #[allow(clippy::too_many_arguments)]
     pub fn stroke_rect_dashed(
         &mut self,
-        x: f32, y: f32, w: f32, h: f32,
-        width: f32, r: f32, g: f32, b: f32,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        width: f32,
+        r: f32,
+        g: f32,
+        b: f32,
         dash: Vec<f32>,
         phase: f32,
     ) -> Result<(), JsValue> {
-        self.push(WasmPageOp::StrokeRectDashed { x, y, w, h, width, r, g, b, dash, phase })
+        self.push(WasmPageOp::StrokeRectDashed {
+            x,
+            y,
+            w,
+            h,
+            width,
+            r,
+            g,
+            b,
+            dash,
+            phase,
+        })
     }
 
     /// Draw a straight line with explicit stroke width and RGB colour.
@@ -4873,12 +4920,29 @@ impl WasmFluentPageBuilder {
     #[allow(clippy::too_many_arguments)]
     pub fn stroke_line_dashed(
         &mut self,
-        x1: f32, y1: f32, x2: f32, y2: f32,
-        width: f32, r: f32, g: f32, b: f32,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        width: f32,
+        r: f32,
+        g: f32,
+        b: f32,
         dash: Vec<f32>,
         phase: f32,
     ) -> Result<(), JsValue> {
-        self.push(WasmPageOp::StrokeLineDashed { x1, y1, x2, y2, width, r, g, b, dash, phase })
+        self.push(WasmPageOp::StrokeLineDashed {
+            x1,
+            y1,
+            x2,
+            y2,
+            width,
+            r,
+            g,
+            b,
+            dash,
+            phase,
+        })
     }
 
     /// Finish the current page and start a new one with the same page
@@ -5137,11 +5201,7 @@ impl WasmStreamingTable {
         }
         self.flush_batch();
         self.finished = true;
-        let rows: Vec<Vec<(String, usize)>> = self
-            .completed_batches
-            .drain(..)
-            .flatten()
-            .collect();
+        let rows: Vec<Vec<(String, usize)>> = self.completed_batches.drain(..).flatten().collect();
         let op = WasmPageOp::StreamingTableBlock {
             config_columns: std::mem::take(&mut self.columns),
             repeat_header: self.repeat_header,
@@ -6230,7 +6290,8 @@ mod tests {
 
         // Push 7 rows with batch_size=3: expect 2 full batches + 1 partial.
         for i in 0..7usize {
-            st.push_row(vec![i.to_string(), format!("row-{i}")]).unwrap();
+            st.push_row(vec![i.to_string(), format!("row-{i}")])
+                .unwrap();
         }
         assert_eq!(st.batch_count(), 2, "expected 2 completed batches");
         assert_eq!(st.pending_row_count(), 1, "expected 1 pending row");

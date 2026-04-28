@@ -996,6 +996,10 @@ impl DocumentEditor {
     pub fn extract_pages_to_bytes(&mut self, pages: &[usize]) -> Result<Vec<u8>> {
         use crate::editor::EditableDocument;
 
+        if pages.is_empty() {
+            return Err(Error::InvalidPdf("pages list must not be empty".to_string()));
+        }
+
         let page_count = self.page_count()?;
 
         for &page in pages {
@@ -1008,10 +1012,11 @@ impl DocumentEditor {
         }
 
         // Clone via bytes, then remove all pages not in the keep-set.
+        let keep: std::collections::HashSet<usize> = pages.iter().copied().collect();
         let snapshot = self.save_to_bytes()?;
         let mut copy = DocumentEditor::from_bytes(snapshot)?;
         for i in (0..page_count).rev() {
-            if !pages.contains(&i) {
+            if !keep.contains(&i) {
                 copy.remove_page(i)?;
             }
         }
@@ -1034,18 +1039,11 @@ impl DocumentEditor {
         width: f32,
         height: f32,
     ) -> Result<()> {
-        use crate::elements::{ImageContent, ImageFormat};
+        use crate::elements::ImageContent;
         use crate::geometry::Rect;
 
-        let image = ImageContent::new(
-            Rect::new(x, y, width, height),
-            ImageFormat::Png,
-            png_bytes.to_vec(),
-            // Width/height in pixels are derived from the bbox for placement;
-            // we use 72 DPI as a nominal value (actual pixels don't affect placement).
-            (width as u32).max(1),
-            (height as u32).max(1),
-        );
+        let image = ImageContent::from_bytes(Rect::new(x, y, width, height), png_bytes.to_vec())
+            .map_err(|e| crate::error::Error::Image(e.to_string()))?;
         self.edit_page(page_index, |page| {
             page.add_image(image);
             Ok(())
@@ -9387,17 +9385,19 @@ mod tests {
     // =========================================================================
 
     #[test]
-    fn test_extract_pages_not_implemented() {
+    fn test_extract_pages_works() {
         let mut editor = create_test_editor();
-        // Currently returns "not yet fully implemented"
-        let result = editor.extract_pages(&[0], "/tmp/output.pdf");
-        assert!(result.is_err());
+        let out = std::env::temp_dir().join("pdf_oxide_extract_test.pdf");
+        let result = editor.extract_pages(&[0], &out);
+        let _ = std::fs::remove_file(&out);
+        assert!(result.is_ok());
     }
 
     #[test]
     fn test_extract_pages_out_of_range() {
         let mut editor = create_test_editor();
-        let result = editor.extract_pages(&[99], "/tmp/output.pdf");
+        let out = std::env::temp_dir().join("pdf_oxide_extract_oob.pdf");
+        let result = editor.extract_pages(&[99], &out);
         assert!(result.is_err());
     }
 

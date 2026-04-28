@@ -19,15 +19,15 @@
 //!   should prefer this entry point whenever they have the raw PDF
 //!   byte-range available.
 //!
-//! Supported: RSA-PKCS#1 v1.5, RSA-PSS, and ECDSA (P-256/P-384) over
-//! SHA-1 / SHA-256 / SHA-384 / SHA-512.
+//! Supported: RSA-PKCS#1 v1.5 and RSA-PSS (SHA-256 / SHA-384 / SHA-512); ECDSA with
+//! P-256+SHA-256 and P-384+SHA-384. Other ECDSA curves/hash combinations
+//! return `VerificationStatus::Unknown`.
 
 #![cfg(feature = "signatures")]
 
 use super::crypto::{
-    digest_info_prefix, hash_with_oid, is_rsa_pkcs1v15_sig_oid, OID_EC_PUBLIC_KEY,
-    OID_ECDSA_SHA256, OID_ECDSA_SHA384, OID_ECDSA_SHA512, OID_P256, OID_P384,
-    OID_RSA_ENCRYPTION, OID_RSASSA_PSS,
+    digest_info_prefix, hash_with_oid, is_rsa_pkcs1v15_sig_oid, OID_ECDSA_SHA256, OID_ECDSA_SHA384,
+    OID_ECDSA_SHA512, OID_EC_PUBLIC_KEY, OID_P256, OID_P384, OID_RSASSA_PSS, OID_RSA_ENCRYPTION,
 };
 use crate::error::{Error, Result};
 use cms::cert::x509::Certificate;
@@ -160,7 +160,11 @@ fn verify_rsa_pss(
         // with rsa 0.9's digest 0.10 bound — treat as Unknown.
         return SignerVerify::Unknown;
     };
-    if ok { SignerVerify::Valid } else { SignerVerify::Invalid }
+    if ok {
+        SignerVerify::Valid
+    } else {
+        SignerVerify::Invalid
+    }
 }
 
 /// ECDSA-P256 with SHA-256: parse the SEC1-encoded public key point,
@@ -464,10 +468,7 @@ mod tests {
         let msg = b"round-trip test";
         let sig: Signature = sk.sign(msg);
         let sig_der = sig.to_der();
-        assert_eq!(
-            verify_ecdsa_p256(&pub_key_bytes, msg, sig_der.as_bytes()),
-            SignerVerify::Valid,
-        );
+        assert_eq!(verify_ecdsa_p256(&pub_key_bytes, msg, sig_der.as_bytes()), SignerVerify::Valid,);
         assert_eq!(
             verify_ecdsa_p256(&pub_key_bytes, b"wrong message", sig_der.as_bytes()),
             SignerVerify::Invalid,
@@ -491,10 +492,7 @@ mod tests {
         let msg = b"round-trip test";
         let sig: Signature = sk.sign(msg);
         let sig_der = sig.to_der();
-        assert_eq!(
-            verify_ecdsa_p384(&pub_key_bytes, msg, sig_der.as_bytes()),
-            SignerVerify::Valid,
-        );
+        assert_eq!(verify_ecdsa_p384(&pub_key_bytes, msg, sig_der.as_bytes()), SignerVerify::Valid,);
         assert_eq!(
             verify_ecdsa_p384(&pub_key_bytes, b"wrong message", sig_der.as_bytes()),
             SignerVerify::Invalid,

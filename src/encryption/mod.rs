@@ -453,14 +453,43 @@ impl EncryptDictBuilder {
 
         // Use owner password if provided, otherwise use user password
         let owner_pass = if self.owner_password.is_empty() {
-            &self.user_password
+            self.user_password.clone()
         } else {
-            &self.owner_password
+            self.owner_password.clone()
         };
+
+        if revision >= 5 {
+            // AES-256 (R6): file key is random; U/UE and O/OE are computed per
+            // PDF 2.0 Algorithm 8 and 9 using the actual passwords.
+            let (user_hash, user_encryption, file_key) =
+                algorithms::compute_u_and_ue(&self.user_password, key_length, revision);
+            let (owner_hash, owner_encryption) = algorithms::compute_o_and_oe(
+                &owner_pass,
+                &self.user_password,
+                &file_key,
+                &user_hash,
+                revision,
+            );
+            return EncryptDict {
+                filter: "Standard".to_string(),
+                sub_filter: None,
+                version,
+                length: Some((key_length * 8) as u32),
+                revision,
+                owner_password: owner_hash,
+                user_password: user_hash,
+                permissions: self.permissions,
+                encrypt_metadata: self.encrypt_metadata,
+                owner_encryption: Some(owner_encryption),
+                user_encryption: Some(user_encryption),
+                perms: None,
+                stream_crypt_method: None,
+            };
+        }
 
         // Compute owner password hash (O value)
         let owner_hash = algorithms::compute_owner_password_hash(
-            owner_pass,
+            &owner_pass,
             &self.user_password,
             revision,
             key_length,

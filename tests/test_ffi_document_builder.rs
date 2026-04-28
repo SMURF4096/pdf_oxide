@@ -1014,9 +1014,17 @@ fn ffi_dashed_stroke_rect_produces_pdf_with_dash_operator() {
         unsafe {
             pdf_page_builder_stroke_rect_dashed(
                 page,
-                50.0, 100.0, 200.0, 150.0, // x y w h
-                1.5, 0.0, 0.0, 0.8,         // width r g b
-                dashes.as_ptr(), dashes.len(), 0.0, // dash_array n_dash phase
+                50.0,
+                100.0,
+                200.0,
+                150.0, // x y w h
+                1.5,
+                0.0,
+                0.0,
+                0.8, // width r g b
+                dashes.as_ptr(),
+                dashes.len(),
+                0.0, // dash_array n_dash phase
                 &mut ec,
             )
         },
@@ -1030,9 +1038,17 @@ fn ffi_dashed_stroke_rect_produces_pdf_with_dash_operator() {
         unsafe {
             pdf_page_builder_stroke_line_dashed(
                 page,
-                50.0, 80.0, 250.0, 80.0,   // x1 y1 x2 y2
-                1.0, 0.8, 0.0, 0.0,         // width r g b
-                dashes2.as_ptr(), dashes2.len(), 1.0, // dash_array n_dash phase
+                50.0,
+                80.0,
+                250.0,
+                80.0, // x1 y1 x2 y2
+                1.0,
+                0.8,
+                0.0,
+                0.0, // width r g b
+                dashes2.as_ptr(),
+                dashes2.len(),
+                1.0, // dash_array n_dash phase
                 &mut ec,
             )
         },
@@ -1053,7 +1069,10 @@ fn ffi_dashed_stroke_rect_produces_pdf_with_dash_operator() {
 
     // The content stream must contain the `d` (setdash) operator
     let content = String::from_utf8_lossy(bytes);
-    assert!(content.contains(" d\n") || content.contains(" d "), "dash operator 'd' not found in PDF");
+    assert!(
+        content.contains(" d\n") || content.contains(" d "),
+        "dash operator 'd' not found in PDF"
+    );
 
     unsafe { pdf_document_builder_free(builder) };
     unsafe { free_bytes(bytes_ptr) };

@@ -14,6 +14,7 @@ categories = ["command-line-utilities", "text-processing"]
 [[bin]]
 name = "pdf-oxide"
 path = "src/main.rs"
+doc = false
 
 # src/lib.rs exists only so the CLI can share modules between bin and unit tests.
 # It has no user-facing API and no doctests, so disable doctest collection to

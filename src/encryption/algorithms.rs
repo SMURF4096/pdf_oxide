@@ -534,6 +534,107 @@ fn compute_user_hash_r5(user_password: &[u8]) -> Vec<u8> {
     result
 }
 
+/// PDF 2.0 Algorithm 8: compute U, UE, and the random file encryption key for R>=5.
+///
+/// Returns `(U, UE, file_encryption_key)` where:
+/// - `U` is 48 bytes: hash(password, validation_salt) || validation_salt || key_salt
+/// - `UE` is 32 bytes: AES256-CBC(key=hash(password, key_salt), IV=0, data=file_key)
+/// - `file_encryption_key` is the 32-byte random key used to encrypt streams
+pub fn compute_u_and_ue(
+    user_password: &[u8],
+    key_length: usize,
+    revision: u32,
+) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+    let file_key = generate_random_encryption_key(key_length);
+    let validation_salt = generate_random_bytes(8);
+    let key_salt = generate_random_bytes(8);
+
+    let password = saslprep_password(user_password);
+    let password = truncate_password_utf8(&password);
+
+    let hash = if revision >= 6 {
+        algorithm_2b(&password, &validation_salt, &[])
+    } else {
+        let mut h = Sha256::new();
+        h.update(&password);
+        h.update(&validation_salt);
+        h.finalize().to_vec()
+    };
+
+    let mut u = hash;
+    u.extend_from_slice(&validation_salt);
+    u.extend_from_slice(&key_salt);
+
+    let intermediate_key = if revision >= 6 {
+        algorithm_2b(&password, &key_salt, &[])
+    } else {
+        let mut h = Sha256::new();
+        h.update(&password);
+        h.update(&key_salt);
+        h.finalize().to_vec()
+    };
+
+    // PDF 2.0 spec (ISO 32000-2 Algorithm 8) mandates a zero IV for AES-256-CBC key wrapping.
+    // Security comes from the random file_key and key_salt, not the IV.
+    let iv: [u8; 16] = std::array::from_fn(|_| 0);
+    let ue = super::aes::aes256_encrypt_no_padding(&intermediate_key[..32], &iv, &file_key)
+        .unwrap_or_default();
+
+    (u, ue, file_key)
+}
+
+/// PDF 2.0 Algorithm 9: compute O and OE for R>=5.
+///
+/// Returns `(O, OE)` where:
+/// - `O` is 48 bytes: hash(owner_password, validation_salt, U) || validation_salt || key_salt
+/// - `OE` is 32 bytes: AES256-CBC(key=hash(owner_password, key_salt, U), IV=0, data=file_key)
+pub fn compute_o_and_oe(
+    owner_password: &[u8],
+    _user_password: &[u8],
+    file_key: &[u8],
+    u: &[u8],
+    revision: u32,
+) -> (Vec<u8>, Vec<u8>) {
+    let validation_salt = generate_random_bytes(8);
+    let key_salt = generate_random_bytes(8);
+
+    let password = saslprep_password(owner_password);
+    let password = truncate_password_utf8(&password);
+    let u48 = &u[..u.len().min(48)];
+
+    let hash = if revision >= 6 {
+        algorithm_2b(&password, &validation_salt, u48)
+    } else {
+        let mut h = Sha256::new();
+        h.update(&password);
+        h.update(&validation_salt);
+        h.update(u48);
+        h.finalize().to_vec()
+    };
+
+    let mut o = hash;
+    o.extend_from_slice(&validation_salt);
+    o.extend_from_slice(&key_salt);
+
+    let intermediate_key = if revision >= 6 {
+        algorithm_2b(&password, &key_salt, u48)
+    } else {
+        let mut h = Sha256::new();
+        h.update(&password);
+        h.update(&key_salt);
+        h.update(u48);
+        h.finalize().to_vec()
+    };
+
+    // PDF 2.0 spec (ISO 32000-2 Algorithm 9) mandates a zero IV for AES-256-CBC key wrapping.
+    // Security comes from the random file_key and key_salt, not the IV.
+    let iv: [u8; 16] = std::array::from_fn(|_| 0);
+    let oe = super::aes::aes256_encrypt_no_padding(&intermediate_key[..32], &iv, file_key)
+        .unwrap_or_default();
+
+    (o, oe)
+}
+
 /// Generate random bytes using UUID v4 and timestamp mixing.
 fn generate_random_bytes(len: usize) -> Vec<u8> {
     use md5::{Digest, Md5};

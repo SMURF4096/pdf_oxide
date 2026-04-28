@@ -88,6 +88,17 @@ jobs:
           - os: ubuntu-latest
             rust: nightly
     steps:
+      - name: Free disk space (Linux)
+        if: runner.os == 'Linux'
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Install Rust
@@ -102,9 +113,12 @@ jobs:
 
       - name: Build
         run: cargo build --verbose
+        if: runner.os != 'Linux'
 
       - name: Run tests
         run: cargo test --verbose
+        env:
+          CARGO_INCREMENTAL: "0"
 
       - name: Build documentation (warnings as errors)
         run: cargo doc --no-deps --workspace
@@ -381,41 +395,109 @@ jobs:
           fi
           wasm-tools validate "$out"
 
-  # C FFI layer build check - the shared library that Go, JS, and C# bindings link against
-  ffi-build:
-    name: FFI Build (${{ matrix.os }})
+  # Build the native library once per OS × feature-variant, then share the
+  # resulting artifact with all binding jobs (Go, Node.js, C#, FFI check).
+  # Avoids rebuilding ~400 MB of Rust code N times per CI run.
+  #
+  # Variants:
+  #   default  — icc only (default features); used by Node.js + C# bare guard
+  #   extended — barcodes,rendering,signatures,tsa-client,system-fonts; native targets; used by C#
+  #   go       — same features, but cross-compiled for CGo (aarch64-darwin / mingw64); used by Go
+  build-lib:
+    name: Build lib (${{ matrix.os }}, ${{ matrix.variant }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            variant: default
+            features: ""
+            extra-target: ""
+          - os: ubuntu-latest
+            variant: extended
+            features: "barcodes,rendering,signatures,tsa-client,system-fonts"
+            extra-target: ""
+          - os: macos-latest
+            variant: default
+            features: ""
+            extra-target: ""
+          - os: macos-latest
+            variant: extended
+            features: "barcodes,rendering,signatures,tsa-client,system-fonts"
+            extra-target: ""
+          - os: macos-latest
+            variant: go
+            features: "barcodes,rendering,signatures,tsa-client,system-fonts"
+            extra-target: "aarch64-apple-darwin"
+          - os: windows-latest
+            variant: default
+            features: ""
+            extra-target: ""
+          - os: windows-latest
+            variant: extended
+            features: "barcodes,rendering,signatures,tsa-client,system-fonts"
+            extra-target: ""
+          - os: windows-latest
+            variant: go
+            features: "barcodes,rendering,signatures,tsa-client,system-fonts"
+            extra-target: "x86_64-pc-windows-gnu"
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
+      - name: Add cross-compile target
+        if: matrix.extra-target != ''
+        run: rustup target add ${{ matrix.extra-target }}
+
       - name: Cache
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
-          key: ffi-${{ matrix.os }}
+          key: build-lib-${{ matrix.os }}-${{ matrix.variant }}
 
-      - name: Build library (produces cdylib + rlib)
-        run: cargo build --release --lib
+      - name: Build library
+        shell: bash
+        run: |
+          FEATURE_FLAG=""
+          [ -n "${{ matrix.features }}" ] && FEATURE_FLAG="--features ${{ matrix.features }}"
+          TARGET_FLAG=""
+          [ -n "${{ matrix.extra-target }}" ] && TARGET_FLAG="--target ${{ matrix.extra-target }}"
+          cargo build --release --lib $FEATURE_FLAG $TARGET_FLAG
+
+      # Upload every lib file that exists — paths vary by OS and target.
+      # Downstream jobs download and find the file at its original location.
+      - name: Upload native lib artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: native-lib-${{ matrix.os }}-${{ matrix.variant }}
+          retention-days: 1
+          if-no-files-found: ignore
+          path: |
+            target/release/libpdf_oxide.so
+            target/release/libpdf_oxide.a
+            target/release/libpdf_oxide.dylib
+            target/release/pdf_oxide.dll
+            target/release/pdf_oxide.lib
+            target/x86_64-pc-windows-gnu/release/libpdf_oxide.a
+            target/x86_64-pc-windows-gnu/release/pdf_oxide.dll
+            target/x86_64-pc-windows-gnu/release/pdf_oxide.lib
+            target/aarch64-apple-darwin/release/libpdf_oxide.dylib
+            target/aarch64-apple-darwin/release/libpdf_oxide.a
+            include/pdf_oxide.h
 
   # Go bindings build and test
   go:
     name: Go Bindings (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: [build-lib]
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -425,39 +507,14 @@ jobs:
           # available (>=1.25 required by govulncheck v1.3+).
           go-version: 'stable'
 
-      - name: Cache
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      # Download the pre-built native lib (extended features: barcodes,
+      # rendering, signatures, tsa-client, system-fonts). Artifact preserves
+      # the original target/ directory structure so CGo finds it at the
+      # expected path without any extra staging.
+      - name: Download native lib artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          key: go-${{ matrix.os }}
-
-      # Windows uses a GNU Rust target so the resulting `libpdf_oxide.a`
-      # is MinGW-compatible with the gcc linker that Go's CGo invokes by
-      # default. The MSVC target produces `pdf_oxide.lib` (COFF) which
-      # MinGW ld can't read, matching the release.yml cross-compile row.
-      - name: Windows — add GNU Rust target
-        if: matrix.os == 'windows-latest'
-        run: rustup target add x86_64-pc-windows-gnu
-
-      # The Go test suite exercises rendering + signatures + barcodes
-      # + the TSA HTTP client via the FFI, so the native lib has to be
-      # built with matching features — default `icc`-only would make
-      # the stubs fall through to UNSUPPORTED at runtime.
-      - name: Build library (cdylib + rlib + staticlib)
-        shell: bash
-        env:
-          PDF_OXIDE_FEATURES: "barcodes,rendering,signatures,tsa-client,system-fonts"
-        run: |
-          case "${{ matrix.os }}" in
-            windows-latest)
-              cargo build --release --lib --features "$PDF_OXIDE_FEATURES" --target x86_64-pc-windows-gnu
-              ;;
-            macos-latest)
-              cargo build --release --lib --features "$PDF_OXIDE_FEATURES" --target aarch64-apple-darwin
-              ;;
-            *)
-              cargo build --release --lib --features "$PDF_OXIDE_FEATURES"
-              ;;
-          esac
+          name: native-lib-${{ matrix.os }}-${{ matrix.os == 'ubuntu-latest' && 'extended' || 'go' }}
 
       - name: Go build
         working-directory: go
@@ -530,12 +587,12 @@ jobs:
           done
 
   # JavaScript/TypeScript bindings build and test
-  # Mirrors the release.yml build-nodejs job: builds the Rust staticlib, then
-  # runs node-gyp rebuild to produce a real .node addon, matching exactly what
-  # ships to npm.
+  # Downloads the pre-built Rust staticlib then runs node-gyp rebuild to
+  # produce a real .node addon, matching exactly what ships to npm.
   nodejs:
     name: Node.js Bindings (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: [build-lib]
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -544,21 +601,15 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '20'
 
-      - name: Cache
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Download native lib artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          key: nodejs-${{ matrix.os }}
-
-      - name: Build library (produces cdylib + rlib + staticlib)
-        run: cargo build --release --lib
+          name: native-lib-${{ matrix.os }}-default
 
       - name: Stage staticlib for node-gyp
         shell: bash
@@ -686,6 +737,7 @@ jobs:
   csharp:
     name: C# Bindings (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: [build-lib]
     strategy:
       fail-fast: false
       matrix:
@@ -693,25 +745,18 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-
       - name: Set up .NET
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
 
-      - name: Cache
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      # C# tests require the extended-features lib (barcodes, rendering,
+      # signatures, tsa-client, system-fonts) so UNSUPPORTED stubs don't
+      # shadow the assertions.
+      - name: Download native lib artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          key: csharp-${{ matrix.os }}
-
-      # C# binding surface exercises barcodes + rendering + signatures
-      # + the TSA HTTP client. Build the native lib with the features
-      # those tests assume so the FFI stubs don't fall through to
-      # UNSUPPORTED at runtime.
-      - name: Build library (produces cdylib + rlib)
-        run: cargo build --release --lib --features barcodes,rendering,signatures,tsa-client,system-fonts
+          name: native-lib-${{ matrix.os }}-extended
 
       - name: Build C# library
         working-directory: csharp/PdfOxide
@@ -819,24 +864,19 @@ jobs:
   csharp-bare-features:
     name: C# bindings — bare-features native lib (regression guard)
     runs-on: ubuntu-latest
+    needs: [build-lib]
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
 
-      - name: Cache
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Download native lib artifact (default features)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          key: csharp-bare-ubuntu
-
-      - name: Build native lib — default features only (icc)
-        run: cargo build --release --lib
+          name: native-lib-ubuntu-latest-default
 
       - name: Build C# library
         working-directory: csharp/PdfOxide

@@ -55,7 +55,10 @@ pub(super) fn output_beside(input: &Path, suffix: &str) -> PathBuf {
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
-    let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
+    let stem = input
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("output");
     dir.join(format!("{stem}{suffix}"))
 }
 
@@ -70,6 +73,24 @@ pub(super) fn output_dir_beside(input: &Path) -> PathBuf {
         .to_path_buf()
 }
 
+/// Write output to file or stdout.
+pub fn write_output(content: &str, output: Option<&Path>) -> pdf_oxide::Result<()> {
+    use std::io::Write;
+    match output {
+        Some(path) => Ok(std::fs::write(path, content)?),
+        None => {
+            let stdout = std::io::stdout();
+            let mut handle = stdout.lock();
+            handle.write_all(content.as_bytes())?;
+            // Ensure trailing newline for terminal
+            if !content.ends_with('\n') {
+                handle.write_all(b"\n")?;
+            }
+            Ok(())
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -82,7 +103,6 @@ mod tests {
 
     #[test]
     fn output_beside_bare_filename() {
-        // bare "doc.pdf" has an empty parent — result stays in "."
         let p = output_beside(Path::new("doc.pdf"), "_compressed.pdf");
         assert_eq!(p, PathBuf::from("./doc_compressed.pdf"));
     }
@@ -103,23 +123,5 @@ mod tests {
     fn output_dir_beside_bare_filename() {
         let p = output_dir_beside(Path::new("doc.pdf"));
         assert_eq!(p, PathBuf::from("."));
-    }
-}
-
-/// Write output to file or stdout.
-pub fn write_output(content: &str, output: Option<&Path>) -> pdf_oxide::Result<()> {
-    use std::io::Write;
-    match output {
-        Some(path) => Ok(std::fs::write(path, content)?),
-        None => {
-            let stdout = std::io::stdout();
-            let mut handle = stdout.lock();
-            handle.write_all(content.as_bytes())?;
-            // Ensure trailing newline for terminal
-            if !content.ends_with('\n') {
-                handle.write_all(b"\n")?;
-            }
-            Ok(())
-        },
     }
 }

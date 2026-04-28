@@ -29,10 +29,8 @@ static RE_URL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(https?://[^\s<>\[\]]*[^\s<>\[\].,!?;:])").unwrap());
 static RE_EMAIL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})").unwrap());
-static RE_DASH_BEFORE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(\d)\s+(–|—)(\d)").unwrap());
-static RE_DASH_AFTER: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(\d)(–|—)\s+(\d)").unwrap());
+static RE_DASH_BEFORE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d)\s+(–|—)(\d)").unwrap());
+static RE_DASH_AFTER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d)(–|—)\s+(\d)").unwrap());
 static RE_PUNCT_SPACE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"([.!?;:,])([A-Za-z])").unwrap());
 

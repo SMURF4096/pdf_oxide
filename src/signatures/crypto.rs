@@ -182,8 +182,7 @@ pub(super) const OID_EC_PUBLIC_KEY: ObjectIdentifier =
     ObjectIdentifier::new_unwrap("1.2.840.10045.2.1");
 
 /// P-256 named curve OID (secp256r1 / prime256v1).
-pub(super) const OID_P256: ObjectIdentifier =
-    ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
+pub(super) const OID_P256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
 
 /// P-384 named curve OID (secp384r1).
 pub(super) const OID_P384: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.132.0.34");

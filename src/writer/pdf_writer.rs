@@ -3260,7 +3260,10 @@ mod tests {
 
         let (image_data, _soft_mask) = image_content_to_xobject_stream(&content);
         assert_eq!(image_data.width, 6, "width must come from JPEG header (6), not user arg (200)");
-        assert_eq!(image_data.height, 5, "height must come from JPEG header (5), not user arg (380)");
+        assert_eq!(
+            image_data.height, 5,
+            "height must come from JPEG header (5), not user arg (380)"
+        );
 
         // XObject dict must use DCTDecode.
         use crate::object::Object;
@@ -3273,8 +3276,8 @@ mod tests {
     /// (issue #425 bug 1 — colour loss).
     #[test]
     fn test_image_from_bytes_png_produces_valid_flate_stream() {
-        use crate::writer::document_builder::DocumentBuilder;
         use crate::geometry::Rect;
+        use crate::writer::document_builder::DocumentBuilder;
 
         let png = make_png_bytes(2, 2, &[255u8, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0]);
 
@@ -3322,26 +3325,46 @@ mod tests {
         let page_builder = page_builder
             .image_from_bytes(
                 &cats_png,
-                Rect { x: 50.0, y: 450.0, width: 280.0, height: 380.0 },
+                Rect {
+                    x: 50.0,
+                    y: 450.0,
+                    width: 280.0,
+                    height: 380.0,
+                },
             )
             .unwrap()
             .image_from_bytes(
                 &cats_jpg,
-                Rect { x: 380.0, y: 450.0, width: 200.0, height: 380.0 },
+                Rect {
+                    x: 380.0,
+                    y: 450.0,
+                    width: 200.0,
+                    height: 380.0,
+                },
             )
             .unwrap();
 
         // Bottom half — ImageContent::new() for both PNG and JPEG
         let page_builder = page_builder
             .element(ContentElement::Image(ImageContent::new(
-                Rect { x: 50.0, y: 50.0, width: 280.0, height: 380.0 },
+                Rect {
+                    x: 50.0,
+                    y: 50.0,
+                    width: 280.0,
+                    height: 380.0,
+                },
                 ImageFormat::Png,
                 cats_png,
                 200,
                 380,
             )))
             .element(ContentElement::Image(ImageContent::new(
-                Rect { x: 380.0, y: 50.0, width: 200.0, height: 380.0 },
+                Rect {
+                    x: 380.0,
+                    y: 50.0,
+                    width: 200.0,
+                    height: 380.0,
+                },
                 ImageFormat::Jpeg,
                 cats_jpg,
                 200,
@@ -3356,8 +3379,12 @@ mod tests {
         println!("\n✓ Written: {}", std::fs::canonicalize(path).unwrap().display());
         println!("  Top-left:  PNG via image_from_bytes()   — should show cats PNG correctly");
         println!("  Top-right: JPEG via image_from_bytes()  — should show cats JPEG correctly");
-        println!("  Bot-left:  PNG via ImageContent::new()  — should show same cats PNG (was blank)");
-        println!("  Bot-right: JPEG via ImageContent::new() — should show same cats JPEG (was zoomed)");
+        println!(
+            "  Bot-left:  PNG via ImageContent::new()  — should show same cats PNG (was blank)"
+        );
+        println!(
+            "  Bot-right: JPEG via ImageContent::new() — should show same cats JPEG (was zoomed)"
+        );
     }
 
     /// Visual verification PDF for issue #425.
@@ -3369,7 +3396,7 @@ mod tests {
     #[test]
     #[ignore]
     fn write_issue_425_visual_verification() {
-        use crate::elements::{ColorSpace as EColorSpace, ImageContent, ImageFormat as EImageFormat};
+        use crate::elements::{ImageContent, ImageFormat as EImageFormat};
         use crate::geometry::Rect;
         use crate::writer::document_builder::DocumentBuilder;
 
@@ -3377,13 +3404,13 @@ mod tests {
 
         // Build vivid test images so it's immediately obvious if colours are wrong.
         // 100×100 solid red PNG
-        let red_png = make_png_bytes(100, 100, &vec![255u8, 0, 0].repeat(100 * 100));
+        let red_png = make_png_bytes(100, 100, &[255u8, 0, 0].repeat(100 * 100));
         // 100×100 solid blue PNG
-        let blue_png = make_png_bytes(100, 100, &vec![0u8, 0, 255].repeat(100 * 100));
+        let blue_png = make_png_bytes(100, 100, &[0u8, 0, 255].repeat(100 * 100));
         // 100×100 solid green JPEG
-        let green_jpg = make_jpeg_bytes(100, 100, &vec![0u8, 180, 0].repeat(100 * 100));
+        let green_jpg = make_jpeg_bytes(100, 100, &[0u8, 180, 0].repeat(100 * 100));
         // 100×100 purple JPEG (for ImageContent path)
-        let purple_jpg = make_jpeg_bytes(100, 100, &vec![160u8, 0, 160].repeat(100 * 100));
+        let purple_jpg = make_jpeg_bytes(100, 100, &[160u8, 0, 160].repeat(100 * 100));
 
         let mut builder = DocumentBuilder::new();
         let page = builder.letter_page();

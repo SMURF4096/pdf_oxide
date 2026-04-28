@@ -33,8 +33,8 @@
 //!
 //! # Handle Ownership Contract
 //! Every opaque handle (`*mut PdfDocument`, `*mut DocumentEditor`, `*mut Pdf`, etc.) is a
-//! `Box<T>` cast to a raw pointer. Functions dereference these pointers via [`handle_mut`]
-//! or [`handle_ref`]. The following invariants **must** be upheld by all callers:
+//! `Box<T>` cast to a raw pointer. Functions dereference these pointers via `handle_mut`
+//! or `handle_ref`. The following invariants **must** be upheld by all callers:
 //!
 //! 1. **Exclusive ownership** — at any point in time, at most one logical caller holds a given
 //!    handle. Passing the same handle to two threads concurrently (without external
@@ -74,8 +74,10 @@ use crate::search::{SearchOptions, SearchResult as RustSearchResult, TextSearche
 #[allow(unsafe_code)]
 #[inline(always)]
 fn handle_ref<'a, T>(ptr: *const T) -> &'a T {
-    // SAFETY: Handle Ownership Contract — see module docs.
-    unsafe { &*ptr }
+    // NonNull::new checks null via safe code; expect panics if null.
+    let nn = std::ptr::NonNull::new(ptr as *mut T).expect("FFI: handle pointer must be non-null");
+    // SAFETY: non-null proven by NonNull above; Handle Ownership Contract — see module docs.
+    unsafe { nn.as_ref() }
 }
 
 /// Dereference a raw handle pointer as a unique (mutable) reference.
@@ -85,8 +87,10 @@ fn handle_ref<'a, T>(ptr: *const T) -> &'a T {
 #[allow(unsafe_code)]
 #[inline(always)]
 fn handle_mut<'a, T>(ptr: *mut T) -> &'a mut T {
-    // SAFETY: Handle Ownership Contract — see module docs.
-    unsafe { &mut *ptr }
+    // NonNull::new validates the pointer is non-null before any dereference.
+    let mut nn = std::ptr::NonNull::new(ptr).expect("FFI: handle pointer must be non-null");
+    // SAFETY: non-null proven by NonNull above; Handle Ownership Contract — see module docs.
+    unsafe { nn.as_mut() }
 }
 
 // ─── Error helpers ───────────────────────────────────────────────────────────
@@ -187,7 +191,11 @@ fn c_str_lossy(ptr: *const c_char) -> Option<String> {
         return None;
     }
     // SAFETY: non-null, caller ensures valid null-terminated string per FFI contract.
-    Some(unsafe { CStr::from_ptr(ptr) }.to_string_lossy().into_owned())
+    Some(
+        unsafe { CStr::from_ptr(ptr) }
+            .to_string_lossy()
+            .into_owned(),
+    )
 }
 
 /// Convert a C pointer+length pair into a Rust slice.
@@ -607,7 +615,7 @@ macro_rules! editor_get_string_field {
             }
             // We need &mut self for these methods, but we only have *const
             // This is safe because we hold the only reference from Go side
-            let editor = handle_mut((handle as *mut DocumentEditor));
+            let editor = handle_mut(handle as *mut DocumentEditor);
             match editor.$method() {
                 Ok(Some(val)) => {
                     set_error(error_code, ERR_SUCCESS);
@@ -895,12 +903,10 @@ pub extern "C" fn document_editor_extract_pages_to_bytes(
         set_error(error_code, ERR_INVALID_ARG);
         return ptr::null_mut();
     }
-    let page_indices: Vec<usize> = unsafe {
-        std::slice::from_raw_parts(pages, count)
-    }
-    .iter()
-    .map(|&i| i as usize)
-    .collect();
+    let page_indices: Vec<usize> = unsafe { std::slice::from_raw_parts(pages, count) }
+        .iter()
+        .map(|&i| i as usize)
+        .collect();
     let editor = handle_mut(handle);
     match editor.extract_pages_to_bytes(&page_indices) {
         Ok(bytes) => {
@@ -918,7 +924,7 @@ pub extern "C" fn document_editor_extract_pages_to_bytes(
 /// Convert the edited document to PDF/A in-place.
 /// level: 0=A1b 1=A1a 2=A2b 3=A2a 4=A2u 5=A3b 6=A3a 7=A3u
 #[no_mangle]
-pub extern "C" fn document_editor_convert_to_pdfa(
+pub extern "C" fn document_editor_convert_to_pdf_a(
     handle: *mut DocumentEditor,
     level: i32,
     error_code: *mut i32,
@@ -927,8 +933,8 @@ pub extern "C" fn document_editor_convert_to_pdfa(
         set_error(error_code, ERR_INVALID_ARG);
         return -1;
     }
-    use crate::compliance::types::PdfALevel;
     use crate::compliance::convert_to_pdf_a;
+    use crate::compliance::types::PdfALevel;
     let pdf_level = match level {
         0 => PdfALevel::A1b,
         1 => PdfALevel::A1a,
@@ -3013,8 +3019,7 @@ pub extern "C" fn pdf_document_sign(
             return -1;
         }
         let doc = handle_mut(document_handle as *mut PdfDocument);
-        let creds =
-            handle_ref(certificate_handle as *const crate::signatures::SigningCredentials);
+        let creds = handle_ref(certificate_handle as *const crate::signatures::SigningCredentials);
         if doc.source_bytes.is_empty() {
             set_error(error_code, ERR_INVALID_ARG);
             return -1;
@@ -3070,8 +3075,7 @@ pub unsafe extern "C" fn pdf_sign_bytes(
             return ptr::null_mut();
         }
         let data = raw_slice(pdf_data, pdf_len);
-        let creds =
-            handle_ref(certificate_handle as *const crate::signatures::SigningCredentials);
+        let creds = handle_ref(certificate_handle as *const crate::signatures::SigningCredentials);
         let reason_str = c_str_lossy(reason);
         let location_str = c_str_lossy(location);
         let opts = SignOptions {
@@ -4190,7 +4194,7 @@ pub extern "C" fn pdf_tsa_request_timestamp(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let c = handle_ref((client as *const crate::signatures::TsaClient));
+        let c = handle_ref(client as *const crate::signatures::TsaClient);
         let slice = raw_slice(data, data_len);
         match c.request_timestamp(slice) {
             Ok(ts) => {
@@ -4225,7 +4229,7 @@ pub extern "C" fn pdf_tsa_request_timestamp_hash(
             set_error(error_code, ERR_INVALID_ARG);
             return ptr::null_mut();
         }
-        let c = handle_ref((client as *const crate::signatures::TsaClient));
+        let c = handle_ref(client as *const crate::signatures::TsaClient);
         let slice = raw_slice(hash, hash_len);
         let algo = hash_algo_from_i32(hash_algo);
         match c.request_timestamp_hash(slice, algo) {
@@ -7528,7 +7532,7 @@ pub extern "C" fn pdf_ocr_extract_text(
         let ocr_engine: Option<&OcrEngine> = if engine.is_null() {
             None
         } else {
-            Some(handle_ref((engine as *const OcrEngine)))
+            Some(handle_ref(engine as *const OcrEngine))
         };
         match crate::ocr::extract_text_with_ocr(
             d,
@@ -8194,6 +8198,10 @@ fn open_page(
     height: f32,
     error_code: *mut i32,
 ) -> *mut FfiPageBuilder {
+    if handle.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return ptr::null_mut();
+    }
     let Some(wrapper) = ffi_builder_mut(handle, error_code) else {
         return ptr::null_mut();
     };
@@ -8203,6 +8211,8 @@ fn open_page(
     }
     wrapper.open_page = true;
     set_error(error_code, ERR_SUCCESS);
+    // SAFETY: handle checked non-null above; parent is only dereferenced when
+    // the page is finalised (page_builder_done), which re-validates via ffi_builder_mut.
     Box::into_raw(Box::new(FfiPageBuilder {
         parent: handle,
         page_size,
@@ -9144,7 +9154,17 @@ pub unsafe extern "C" fn pdf_page_builder_image(
         return -1;
     }
     let data = raw_slice(bytes, len).to_vec();
-    push_page_op(handle, error_code, FfiPageOp::Image { bytes: data, x, y, w, h })
+    push_page_op(
+        handle,
+        error_code,
+        FfiPageOp::Image {
+            bytes: data,
+            x,
+            y,
+            w,
+            h,
+        },
+    )
 }
 
 /// `alt_text` is a NUL-terminated UTF-8 string.
@@ -9352,7 +9372,18 @@ pub extern "C" fn pdf_page_builder_stroke_rect_dashed(
     push_page_op(
         handle,
         error_code,
-        FfiPageOp::StrokeRectDashed { x, y, w, h, width, r, g, b, dash, phase },
+        FfiPageOp::StrokeRectDashed {
+            x,
+            y,
+            w,
+            h,
+            width,
+            r,
+            g,
+            b,
+            dash,
+            phase,
+        },
     )
 }
 
@@ -9385,7 +9416,18 @@ pub extern "C" fn pdf_page_builder_stroke_line_dashed(
     push_page_op(
         handle,
         error_code,
-        FfiPageOp::StrokeLineDashed { x1, y1, x2, y2, width, r, g, b, dash, phase },
+        FfiPageOp::StrokeLineDashed {
+            x1,
+            y1,
+            x2,
+            y2,
+            width,
+            r,
+            g,
+            b,
+            dash,
+            phase,
+        },
     )
 }
 
@@ -10102,7 +10144,18 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
                 g,
                 b,
             } => rust_page.stroke_rect(x, y, w, h, crate::writer::LineStyle::new(width, r, g, b)),
-            FfiPageOp::StrokeRectDashed { x, y, w, h, width, r, g, b, dash, phase } => {
+            FfiPageOp::StrokeRectDashed {
+                x,
+                y,
+                w,
+                h,
+                width,
+                r,
+                g,
+                b,
+                dash,
+                phase,
+            } => {
                 let style = if dash.is_empty() {
                     crate::writer::LineStyle::new(width, r, g, b)
                 } else {
@@ -10122,7 +10175,18 @@ pub extern "C" fn pdf_page_builder_done(handle: *mut FfiPageBuilder, error_code:
             } => {
                 rust_page.stroke_line(x1, y1, x2, y2, crate::writer::LineStyle::new(width, r, g, b))
             },
-            FfiPageOp::StrokeLineDashed { x1, y1, x2, y2, width, r, g, b, dash, phase } => {
+            FfiPageOp::StrokeLineDashed {
+                x1,
+                y1,
+                x2,
+                y2,
+                width,
+                r,
+                g,
+                b,
+                dash,
+                phase,
+            } => {
                 let style = if dash.is_empty() {
                     crate::writer::LineStyle::new(width, r, g, b)
                 } else {
@@ -10549,9 +10613,19 @@ mod tests {
             let dash = [5.0f32, 3.0f32];
             let mut ec = 0i32;
             let rc = pdf_page_builder_stroke_rect_dashed(
-                p, 10.0, 10.0, 200.0, 100.0, 2.0,
-                0.0, 0.0, 1.0,
-                dash.as_ptr(), dash.len(), 0.0, &mut ec,
+                p,
+                10.0,
+                10.0,
+                200.0,
+                100.0,
+                2.0,
+                0.0,
+                0.0,
+                1.0,
+                dash.as_ptr(),
+                dash.len(),
+                0.0,
+                &mut ec,
             );
             assert_eq!(rc, 0, "expected 0, ec={ec}");
             assert_eq!(ec, ERR_SUCCESS);
@@ -10567,9 +10641,19 @@ mod tests {
             let dash = [4.0f32, 2.0f32];
             let mut ec = 0i32;
             let rc = pdf_page_builder_stroke_line_dashed(
-                p, 10.0, 10.0, 200.0, 10.0, 1.5,
-                0.0, 0.5, 0.5,
-                dash.as_ptr(), dash.len(), 1.0, &mut ec,
+                p,
+                10.0,
+                10.0,
+                200.0,
+                10.0,
+                1.5,
+                0.0,
+                0.5,
+                0.5,
+                dash.as_ptr(),
+                dash.len(),
+                1.0,
+                &mut ec,
             );
             assert_eq!(rc, 0, "expected 0, ec={ec}");
             assert_eq!(ec, ERR_SUCCESS);
@@ -10585,9 +10669,19 @@ mod tests {
             let p = new_test_page(b);
             let mut ec = 0i32;
             let rc = pdf_page_builder_stroke_rect_dashed(
-                p, 0.0, 0.0, 100.0, 50.0, 1.0,
-                0.0, 0.0, 0.0,
-                std::ptr::null(), 0, 0.0, &mut ec,
+                p,
+                0.0,
+                0.0,
+                100.0,
+                50.0,
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                std::ptr::null(),
+                0,
+                0.0,
+                &mut ec,
             );
             assert_eq!(rc, 0, "ec={ec}");
             free_test_pair(b, p);
@@ -10603,9 +10697,18 @@ mod tests {
         let aligns = [0i32];
         let mut ec = 0i32;
         pdf_page_builder_streaming_table_begin_v2(
-            p, 1,
-            hdrs.as_ptr(), widths.as_ptr(), aligns.as_ptr(),
-            1, 0, 20, 0.0, 9999.0, 1, &mut ec,
+            p,
+            1,
+            hdrs.as_ptr(),
+            widths.as_ptr(),
+            aligns.as_ptr(),
+            1,
+            0,
+            20,
+            0.0,
+            9999.0,
+            1,
+            &mut ec,
         );
         assert_eq!(ec, ERR_SUCCESS, "streaming_table_begin_v2 failed");
     }

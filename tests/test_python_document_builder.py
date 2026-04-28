@@ -765,6 +765,7 @@ def test_issue_401_two_embedded_fonts_save_encrypted(tmp_path):
 
 # ── Dashed stroke tests ──────────────────────────────────────────────────────
 
+
 def test_stroke_rect_dashed_produces_pdf():
     """stroke_rect_dashed emits a valid PDF containing the dash operator."""
     doc = pdf_oxide.DocumentBuilder()
@@ -780,7 +781,9 @@ def test_stroke_line_dashed_produces_pdf():
     """stroke_line_dashed emits a valid PDF containing the dash operator."""
     doc = pdf_oxide.DocumentBuilder()
     page = doc.a4_page()
-    page.stroke_line_dashed(50, 80, 250, 80, dash=[5.0, 3.0], width=1.0, color=(0.8, 0.0, 0.0), phase=1.0)
+    page.stroke_line_dashed(
+        50, 80, 250, 80, dash=[5.0, 3.0], width=1.0, color=(0.8, 0.0, 0.0), phase=1.0
+    )
     page.done()
     data = doc.build()
     assert data[:4] == b"%PDF"

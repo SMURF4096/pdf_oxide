@@ -132,16 +132,14 @@ impl Timestamp {
         // Only CMS-wrapped tokens can be verified — bare TSTInfo carries no
         // outer SignedData and therefore no TSA signature to check.
         let content = ContentInfo::from_der(&self.token_bytes).map_err(|_| {
-            Error::InvalidPdf(
-                "timestamp token is not CMS-wrapped; cannot verify signature".into(),
-            )
+            Error::InvalidPdf("timestamp token is not CMS-wrapped; cannot verify signature".into())
         })?;
-        let sd_bytes = content
-            .content
-            .to_der()
-            .map_err(|e| Error::InvalidPdf(format!("failed to re-encode timestamp ContentInfo: {e}")))?;
-        let sd = SignedData::from_der(&sd_bytes)
-            .map_err(|e| Error::InvalidPdf(format!("timestamp token is not valid SignedData: {e}")))?;
+        let sd_bytes = content.content.to_der().map_err(|e| {
+            Error::InvalidPdf(format!("failed to re-encode timestamp ContentInfo: {e}"))
+        })?;
+        let sd = SignedData::from_der(&sd_bytes).map_err(|e| {
+            Error::InvalidPdf(format!("timestamp token is not valid SignedData: {e}"))
+        })?;
         let econtent = sd.encap_content_info.econtent.as_ref().ok_or_else(|| {
             Error::InvalidPdf("timestamp SignedData has no encapsulated TSTInfo content".into())
         })?;

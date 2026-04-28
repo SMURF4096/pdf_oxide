@@ -73,8 +73,12 @@ impl PyPdfDocument {
             .map_err(|e| PyIOError::new_err(format!("Failed to open PDF: {}", e)))?;
 
         if let Some(pw) = password {
-            doc.authenticate(pw.as_bytes())
+            let ok = doc
+                .authenticate(pw.as_bytes())
                 .map_err(|e| PyRuntimeError::new_err(format!("Authentication failed: {}", e)))?;
+            if !ok {
+                return Err(PyRuntimeError::new_err("Authentication failed: wrong password"));
+            }
         }
 
         let path_str = path.to_string_lossy().into_owned();
@@ -96,8 +100,12 @@ impl PyPdfDocument {
             .map_err(|e| PyIOError::new_err(format!("Failed to open PDF from bytes: {}", e)))?;
 
         if let Some(pw) = password {
-            doc.authenticate(pw.as_bytes())
+            let ok = doc
+                .authenticate(pw.as_bytes())
                 .map_err(|e| PyRuntimeError::new_err(format!("Authentication failed: {}", e)))?;
+            if !ok {
+                return Err(PyRuntimeError::new_err("Authentication failed: wrong password"));
+            }
         }
 
         Ok(PyPdfDocument {
@@ -137,9 +145,16 @@ impl PyPdfDocument {
 
     /// Get number of pages.
     fn page_count(&mut self) -> PyResult<usize> {
-        self.inner
-            .page_count()
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to get page count: {}", e)))
+        if let Some(ref mut editor) = self.editor {
+            use crate::editor::EditableDocument;
+            editor
+                .page_count()
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to get page count: {}", e)))
+        } else {
+            self.inner
+                .page_count()
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to get page count: {}", e)))
+        }
     }
 
     /// Enumerate existing PDF signatures. Returns a list of
@@ -1885,7 +1900,7 @@ impl PyPdfDocument {
     /// `level` is one of: 1a, 1b, 2a, 2b, 2u, 3a, 3b, 3u.
     /// Returns a dict with 'success' (bool), 'actions' (list[str]), 'errors' (list[str]).
     #[pyo3(signature = (level="2b"))]
-    fn convert_to_pdfa(&mut self, py: Python<'_>, level: &str) -> PyResult<Py<PyAny>> {
+    fn convert_to_pdf_a(&mut self, py: Python<'_>, level: &str) -> PyResult<Py<PyAny>> {
         use crate::compliance::convert_to_pdf_a;
         use crate::compliance::types::PdfALevel;
         let pdf_level = match level {
@@ -1909,7 +1924,11 @@ impl PyPdfDocument {
         let d = pyo3::types::PyDict::new(py);
         d.set_item("success", result.success)?;
         d.set_item("level", level)?;
-        let actions: Vec<String> = result.actions.iter().map(|a| a.description.clone()).collect();
+        let actions: Vec<String> = result
+            .actions
+            .iter()
+            .map(|a| a.description.clone())
+            .collect();
         let errors: Vec<String> = result.errors.iter().map(|e| e.reason.clone()).collect();
         d.set_item("actions", actions)?;
         d.set_item("errors", errors)?;
@@ -1985,7 +2004,11 @@ impl PyPdfDocument {
     ///     doc = PdfDocument.from_bytes(pdf_bytes)
     ///     for chunk in batched(range(doc.page_count()), 50):
     ///         chunk_bytes = doc.extract_pages_to_bytes(list(chunk))
-    fn extract_pages_to_bytes<'py>(&mut self, py: Python<'py>, pages: Vec<usize>) -> PyResult<Bound<'py, PyBytes>> {
+    fn extract_pages_to_bytes<'py>(
+        &mut self,
+        py: Python<'py>,
+        pages: Vec<usize>,
+    ) -> PyResult<Bound<'py, PyBytes>> {
         self.ensure_editor()?;
         let editor = self.editor.as_mut().ok_or_else(|| {
             PyRuntimeError::new_err("Internal error: editor missing after initialization")
@@ -4303,11 +4326,6 @@ enum PendingPageOp {
         max_col_width_pt: f32,
         max_rowspan: usize,
     },
-    /// Pre-assembled batch of rows for the currently-open streaming table.
-    /// Emitted by `PyStreamingTable.push_row` when `batch_size` is reached.
-    StreamingTableBatch {
-        rows: Vec<Vec<(String, usize)>>,
-    },
     /// Pre-rendered barcode PNG (generated at record time so errors
     /// surface at the Python call site, not during replay).
     BarcodeImage {
@@ -5476,7 +5494,16 @@ impl PyFluentPageBuilder {
         phase: f32,
     ) -> PyResult<PyRefMut<'a, Self>> {
         slf.push(PendingPageOp::StrokeRectDashed {
-            x, y, w, h, width, r: color.0, g: color.1, b: color.2, dash, phase,
+            x,
+            y,
+            w,
+            h,
+            width,
+            r: color.0,
+            g: color.1,
+            b: color.2,
+            dash,
+            phase,
         })?;
         Ok(slf)
     }
@@ -5519,7 +5546,16 @@ impl PyFluentPageBuilder {
         phase: f32,
     ) -> PyResult<PyRefMut<'a, Self>> {
         slf.push(PendingPageOp::StrokeLineDashed {
-            x1, y1, x2, y2, width, r: color.0, g: color.1, b: color.2, dash, phase,
+            x1,
+            y1,
+            x2,
+            y2,
+            width,
+            r: color.0,
+            g: color.1,
+            b: color.2,
+            dash,
+            phase,
         })?;
         Ok(slf)
     }
@@ -5729,8 +5765,20 @@ impl PyFluentPageBuilder {
                     g,
                     b,
                 } => page.stroke_rect(x, y, w, h, crate::writer::LineStyle::new(width, r, g, b)),
-                PendingPageOp::StrokeRectDashed { x, y, w, h, width, r, g, b, dash, phase } => {
-                    let style = crate::writer::LineStyle::new(width, r, g, b).with_dash(&dash, phase);
+                PendingPageOp::StrokeRectDashed {
+                    x,
+                    y,
+                    w,
+                    h,
+                    width,
+                    r,
+                    g,
+                    b,
+                    dash,
+                    phase,
+                } => {
+                    let style =
+                        crate::writer::LineStyle::new(width, r, g, b).with_dash(&dash, phase);
                     page.stroke_rect(x, y, w, h, style)
                 },
                 PendingPageOp::StrokeLine {
@@ -5745,8 +5793,20 @@ impl PyFluentPageBuilder {
                 } => {
                     page.stroke_line(x1, y1, x2, y2, crate::writer::LineStyle::new(width, r, g, b))
                 },
-                PendingPageOp::StrokeLineDashed { x1, y1, x2, y2, width, r, g, b, dash, phase } => {
-                    let style = crate::writer::LineStyle::new(width, r, g, b).with_dash(&dash, phase);
+                PendingPageOp::StrokeLineDashed {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    width,
+                    r,
+                    g,
+                    b,
+                    dash,
+                    phase,
+                } => {
+                    let style =
+                        crate::writer::LineStyle::new(width, r, g, b).with_dash(&dash, phase);
                     page.stroke_line(x1, y1, x2, y2, style)
                 },
                 PendingPageOp::TextInRect {
@@ -5851,11 +5911,6 @@ impl PyFluentPageBuilder {
                         });
                     }
                     st.finish()
-                },
-                PendingPageOp::StreamingTableBatch { .. } => {
-                    // Should never appear without a surrounding StreamingTable op;
-                    // ignore gracefully rather than panic.
-                    page
                 },
             };
         }
@@ -5972,11 +6027,7 @@ impl PyStreamingTable {
         let widths: Vec<f32> = self.columns.iter().map(|c| c.width).collect();
         let aligns: Vec<i32> = self.columns.iter().map(|c| c.align).collect();
         // Assemble all batches into a flat row list for the existing dispatch.
-        let rows: Vec<Vec<(String, usize)>> = self
-            .completed_batches
-            .drain(..)
-            .flatten()
-            .collect();
+        let rows: Vec<Vec<(String, usize)>> = self.completed_batches.drain(..).flatten().collect();
         parent_ref.push(PendingPageOp::StreamingTable {
             headers,
             widths,

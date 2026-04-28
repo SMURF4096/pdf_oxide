@@ -527,14 +527,8 @@ mod tests {
 
     #[test]
     fn test_effective_limit_env_variable() {
-        assert_eq!(
-            effective_limit_from_str(None),
-            DEFAULT_MAX_DECOMPRESSED_BYTES
-        );
+        assert_eq!(effective_limit_from_str(None), DEFAULT_MAX_DECOMPRESSED_BYTES);
         assert_eq!(effective_limit_from_str(Some("64")), 64 * 1024 * 1024);
-        assert_eq!(
-            effective_limit_from_str(Some("not_a_number")),
-            DEFAULT_MAX_DECOMPRESSED_BYTES
-        );
+        assert_eq!(effective_limit_from_str(Some("not_a_number")), DEFAULT_MAX_DECOMPRESSED_BYTES);
     }
 }

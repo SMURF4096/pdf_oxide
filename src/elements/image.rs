@@ -14,7 +14,9 @@ pub struct ImageContent {
     pub bbox: Rect,
     /// Image format
     pub format: ImageFormat,
-    /// Raw image data (decoded)
+    /// Image bytes. When constructed via `from_bytes()` or `new()` this holds the
+    /// encoded file bytes (PNG/JPEG). When extracted from an existing PDF the bytes
+    /// are the raw decoded pixel data as stored in the XObject stream.
     pub data: Vec<u8>,
     /// Image width in pixels
     pub width: u32,

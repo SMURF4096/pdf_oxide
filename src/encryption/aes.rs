@@ -17,7 +17,6 @@ use cbc::{Decryptor, Encryptor};
 type Aes128CbcEnc = Encryptor<Aes128>;
 type Aes128CbcDec = Decryptor<Aes128>;
 
-#[allow(dead_code)]
 type Aes256CbcEnc = Encryptor<Aes256>;
 #[allow(dead_code)]
 type Aes256CbcDec = Decryptor<Aes256>;
@@ -122,6 +121,37 @@ pub fn aes256_decrypt_no_padding(
     cipher
         .decrypt_padded::<aes::cipher::block_padding::NoPadding>(&mut buffer)
         .map_err(|_| "Decryption failed")?;
+
+    Ok(buffer)
+}
+
+/// Encrypt data using AES-256 in CBC mode without padding.
+///
+/// Used for R>=5 file encryption key wrapping (UE/OE encryption).
+/// Data length must be a multiple of 16.
+pub fn aes256_encrypt_no_padding(
+    key: &[u8],
+    iv: &[u8],
+    data: &[u8],
+) -> Result<Vec<u8>, &'static str> {
+    if key.len() != 32 {
+        return Err("AES-256 key must be 32 bytes");
+    }
+    if iv.len() != 16 {
+        return Err("IV must be 16 bytes");
+    }
+    if data.is_empty() {
+        return Ok(Vec::new());
+    }
+    if !data.len().is_multiple_of(16) {
+        return Err("Data length must be multiple of 16 for no-padding mode");
+    }
+
+    let mut buffer = data.to_vec();
+    let cipher = Aes256CbcEnc::new(key.try_into().unwrap(), iv.try_into().unwrap());
+    cipher
+        .encrypt_padded::<aes::cipher::block_padding::NoPadding>(&mut buffer, data.len())
+        .map_err(|_| "Encryption failed")?;
 
     Ok(buffer)
 }

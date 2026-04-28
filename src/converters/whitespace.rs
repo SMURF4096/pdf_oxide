@@ -6,20 +6,16 @@
 use regex::Regex;
 use std::sync::LazyLock;
 
-static RE_MULTI_NEWLINE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\n{3,}").unwrap());
-static RE_PAGE_NUM: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?m)^Page\s+\d+\s*$").unwrap());
+static RE_MULTI_NEWLINE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\n{3,}").unwrap());
+static RE_PAGE_NUM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^Page\s+\d+\s*$").unwrap());
 static RE_DASH_PAGE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?m)^\s*-\s*\d+\s*-\s*$").unwrap());
 static RE_BRACKET_PAGE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?m)^\s*[\[\(]\d+[\]\)]\s*$").unwrap());
 static RE_STANDALONE_NUM: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?m)^\s*\d{1,3}\s*$").unwrap());
-static RE_DASH_SEP: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?m)^[\s\-]{5,}$").unwrap());
-static RE_EQUALS_SEP: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?m)^[\s=]{5,}$").unwrap());
+static RE_DASH_SEP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^[\s\-]{5,}$").unwrap());
+static RE_EQUALS_SEP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^[\s=]{5,}$").unwrap());
 
 /// Normalize whitespace in markdown text by limiting consecutive blank lines.
 ///
@@ -261,8 +257,7 @@ pub fn cleanup_markdown(text: &str) -> String {
 /// assert_eq!(output, "The quick brown fox");
 /// ```
 pub fn normalize_horizontal_whitespace(text: &str) -> String {
-    static RE_MULTI_SPACE: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r" {2,}").unwrap());
+    static RE_MULTI_SPACE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r" {2,}").unwrap());
 
     // Process line by line to preserve indentation at start of lines
     let mut result = String::with_capacity(text.len());

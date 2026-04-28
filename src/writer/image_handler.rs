@@ -392,7 +392,9 @@ fn compress_image_data(pixels: &[u8], width: u32, components: u8) -> Result<Vec<
 
     if row_bytes == 0 || pixels.is_empty() {
         let encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-        return encoder.finish().map_err(|e| ImageError::CompressionError(e.to_string()));
+        return encoder
+            .finish()
+            .map_err(|e| ImageError::CompressionError(e.to_string()));
     }
 
     // Pre-allocate: 1 filter byte per row + all pixel bytes.
@@ -694,7 +696,8 @@ mod tests {
         use image::GrayImage;
         let img = GrayImage::from_raw(2, 1, vec![100u8, 200]).unwrap();
         let mut buf = Vec::new();
-        img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png).unwrap();
+        img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+            .unwrap();
 
         let image_data = ImageData::from_png(&buf).expect("grayscale from_png failed");
         assert_eq!(image_data.color_space, ColorSpace::DeviceGray);
