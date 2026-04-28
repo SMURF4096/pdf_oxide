@@ -521,7 +521,7 @@ jobs:
           go run -tags pdf_oxide_dev main.go
           cd "$GITHUB_WORKSPACE/examples/go/06-edit-document"
           go run -tags pdf_oxide_dev main.go "$PDF" /tmp/go_edited.pdf
-          for feat in streaming_table pdf_ua_image in_memory_roundtrip pkcs12_signing rfc3161_timestamp dashed_stroke encrypted_bytes page_extraction pdfa_conversion; do
+          for feat in streaming_table pdf_ua_image in_memory_roundtrip pkcs12_signing rfc3161_timestamp dashed_stroke encrypted_bytes page_extraction pdfa_conversion compliance_validation; do
             cd "$GITHUB_WORKSPACE/examples/go/09-new-features/$feat"
             go run -tags pdf_oxide_dev main.go
           done
@@ -670,6 +670,7 @@ jobs:
           echo "--- rfc3161_timestamp ---"     && timeout 120 node 09-new-features/rfc3161_timestamp/index.js
           echo "--- dashed_stroke ---"         && timeout 120 node 09-new-features/dashed_stroke/index.js
           echo "--- encrypted_bytes ---"        && timeout 120 node 09-new-features/encrypted_bytes/index.js
+          echo "--- page_extraction ---"        && timeout 120 node 09-new-features/page_extraction/index.js
           echo "--- compliance_validation ---"  && timeout 120 node 09-new-features/compliance_validation/index.js
 
       - name: Compile TypeScript examples
@@ -799,7 +800,8 @@ jobs:
             examples/csharp/09-new-features/DashedStroke/DashedStroke.csproj \
             examples/csharp/09-new-features/EncryptedBytes/EncryptedBytes.csproj \
             examples/csharp/09-new-features/PageExtraction/PageExtraction.csproj \
-            examples/csharp/09-new-features/PdfaConversion/PdfaConversion.csproj; do
+            examples/csharp/09-new-features/PdfaConversion/PdfaConversion.csproj \
+            examples/csharp/09-new-features/ComplianceValidation/ComplianceValidation.csproj; do
             dotnet run --project "$proj"
           done
 

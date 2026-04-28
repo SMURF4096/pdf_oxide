@@ -238,6 +238,7 @@ extern "C" {
   extern int   document_editor_unmark_page_for_flatten(void* handle, size_t page, int* error_code);
   extern int32_t document_editor_is_page_marked_for_redaction(const void* handle, size_t page);
   extern int   document_editor_unmark_page_for_redaction(void* handle, size_t page, int* error_code);
+  extern uint8_t* document_editor_extract_pages_to_bytes(void* handle, const int32_t* pages, size_t count, size_t* out_len, int* error_code);
 
   // Form Fields
   extern void* pdf_document_get_form_fields(void* handle, int* error_code);
@@ -2179,6 +2180,26 @@ Napi::Value EditorSaveToBytesWithOptions(const Napi::CallbackInfo& info) {
   return buf;
 }
 
+Napi::Value EditorExtractPagesToBytes(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 2) throw Napi::TypeError::New(env, "Expected (handle, pageIndices: number[])");
+  void* handle = info[0].As<Napi::External<void>>().Data();
+  Napi::Array arr = info[1].As<Napi::Array>();
+  uint32_t len = arr.Length();
+  std::vector<int32_t> pages(len);
+  for (uint32_t i = 0; i < len; i++) {
+    pages[i] = static_cast<int32_t>(arr.Get(i).As<Napi::Number>().Int32Value());
+  }
+  size_t outLen = 0;
+  int errorCode = 0;
+  uint8_t* data = document_editor_extract_pages_to_bytes(handle, pages.data(), len, &outLen, &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, "extractPages failed: " + getErrorMessage(errorCode));
+  if (!data || outLen == 0) return Napi::Buffer<uint8_t>::New(env, 0);
+  auto buf = Napi::Buffer<uint8_t>::Copy(env, data, outLen);
+  free_bytes(data);
+  return buf;
+}
+
 Napi::Value EditorGetKeywords(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   void* handle = info[0].As<Napi::External<void>>().Data();
@@ -3599,6 +3620,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("editorUnmarkPageForFlatten", Napi::Function::New(env, EditorUnmarkPageForFlatten));
   exports.Set("editorIsPageMarkedForRedaction", Napi::Function::New(env, EditorIsPageMarkedForRedaction));
   exports.Set("editorUnmarkPageForRedaction", Napi::Function::New(env, EditorUnmarkPageForRedaction));
+  exports.Set("editorExtractPagesToBytes", Napi::Function::New(env, EditorExtractPagesToBytes));
 
   // PDF Document Editing (artifact removal, signing, form data)
   exports.Set("documentEraseArtifacts", Napi::Function::New(env, DocumentEraseArtifacts));

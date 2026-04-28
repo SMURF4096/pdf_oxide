@@ -353,6 +353,12 @@ export class DocumentEditor {
   }
 
   /** Save the document to an in-memory Buffer. */
+  /** Extract specific pages (by 0-based index) into a new PDF returned as a Buffer. */
+  extractPagesToBytes(pageIndices: number[]): Buffer {
+    this._throwIfClosed();
+    return native.editorExtractPagesToBytes(this._handle, pageIndices) as Buffer;
+  }
+
   saveToBytes(): Buffer {
     this._throwIfClosed();
     return native.editorSaveToBytes(this._handle) as Buffer;
