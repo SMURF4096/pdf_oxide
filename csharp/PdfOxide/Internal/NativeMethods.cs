@@ -6061,6 +6061,27 @@ namespace PdfOxide.Internal
             out nuint outLen,
             out int errorCode);
 
+        /// <summary>Extracts a subset of pages from the editor into a new in-memory PDF.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_extract_pages_to_bytes")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial IntPtr document_editor_extract_pages_to_bytes(
+            NativeHandle handle, int* pages, nuint count, out nuint outLen, out int errorCode);
+
+        /// <summary>Converts the document in-place to the given PDF/A conformance level.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_convert_to_pdfa")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_convert_to_pdfa(
+            NativeHandle handle, int level, out int errorCode);
+
+        /// <summary>Saves the document with AES-256 encryption and returns the bytes.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_save_encrypted_to_bytes")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr document_editor_save_encrypted_to_bytes(
+            NativeHandle handle,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string userPassword,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string ownerPassword,
+            out nuint outLen, out int errorCode);
+
         /// <summary>Saves the editor to bytes with compress / garbage-collect / linearize options.</summary>
         [LibraryImport(LibName, EntryPoint = "document_editor_save_to_bytes_with_options")]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]

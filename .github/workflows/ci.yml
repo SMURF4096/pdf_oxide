@@ -796,7 +796,10 @@ jobs:
             examples/csharp/09-new-features/InMemoryRoundtrip/InMemoryRoundtrip.csproj \
             examples/csharp/09-new-features/Pkcs12Signing/Pkcs12Signing.csproj \
             examples/csharp/09-new-features/Rfc3161Timestamp/Rfc3161Timestamp.csproj \
-            examples/csharp/09-new-features/DashedStroke/DashedStroke.csproj; do
+            examples/csharp/09-new-features/DashedStroke/DashedStroke.csproj \
+            examples/csharp/09-new-features/EncryptedBytes/EncryptedBytes.csproj \
+            examples/csharp/09-new-features/PageExtraction/PageExtraction.csproj \
+            examples/csharp/09-new-features/PdfaConversion/PdfaConversion.csproj; do
             dotnet run --project "$proj"
           done
 
