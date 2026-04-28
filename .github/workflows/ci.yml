@@ -521,7 +521,7 @@ jobs:
           go run -tags pdf_oxide_dev main.go
           cd "$GITHUB_WORKSPACE/examples/go/06-edit-document"
           go run -tags pdf_oxide_dev main.go "$PDF" /tmp/go_edited.pdf
-          for feat in streaming_table pdf_ua_image in_memory_roundtrip pkcs12_signing rfc3161_timestamp dashed_stroke; do
+          for feat in streaming_table pdf_ua_image in_memory_roundtrip pkcs12_signing rfc3161_timestamp dashed_stroke encrypted_bytes page_extraction pdfa_conversion; do
             cd "$GITHUB_WORKSPACE/examples/go/09-new-features/$feat"
             go run -tags pdf_oxide_dev main.go
           done

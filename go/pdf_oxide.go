@@ -316,6 +316,11 @@ extern int32_t document_editor_save_encrypted(void* handle, const char* path, co
 extern void* document_editor_open_from_bytes(const uint8_t* data, size_t len, int* error_code);
 extern uint8_t* document_editor_save_to_bytes(void* handle, size_t* out_len, int* error_code);
 extern uint8_t* document_editor_save_to_bytes_with_options(void* handle, bool compress, bool garbage_collect, bool linearize, size_t* out_len, int* error_code);
+
+// Editor: v0.3.40 additions
+extern void* document_editor_extract_pages_to_bytes(void* handle, int32_t* pages, size_t count, size_t* out_len, int* error_code);
+extern int document_editor_convert_to_pdfa(void* handle, int32_t level, int* error_code);
+extern void* document_editor_save_encrypted_to_bytes(void* handle, const char* user_password, const char* owner_password, size_t* out_len, int* error_code);
 extern char* document_editor_get_keywords(const void* handle, int* error_code);
 extern int   document_editor_set_keywords(void* handle, const char* keywords, int* error_code);
 extern int32_t document_editor_merge_from_bytes(void* handle, const uint8_t* data, size_t len, int* error_code);
@@ -2238,6 +2243,76 @@ func (editor *DocumentEditor) SaveToBytesWithOptions(compress, garbageCollect, l
 	}
 	if ptr == nil {
 		return nil, fmt.Errorf("pdf_oxide: failed to save editor to bytes with options: %w", ErrInternal)
+	}
+	result := C.GoBytes(unsafe.Pointer(ptr), C.int(outLen))
+	C.free_bytes(unsafe.Pointer(ptr))
+	return result, nil
+}
+
+// ExtractPagesToBytes returns a new PDF containing only the specified 0-based page indices.
+func (editor *DocumentEditor) ExtractPagesToBytes(pageIndices []int) ([]byte, error) {
+	if len(pageIndices) == 0 {
+		return nil, fmt.Errorf("pdf_oxide: ExtractPagesToBytes: no pages specified")
+	}
+	if err := editor.acquireWrite(); err != nil {
+		return nil, err
+	}
+	defer editor.mu.Unlock()
+	pages := make([]C.int32_t, len(pageIndices))
+	for i, p := range pageIndices {
+		pages[i] = C.int32_t(p)
+	}
+	var outLen C.size_t
+	var errorCode C.int
+	ptr := C.document_editor_extract_pages_to_bytes(editor.handle, &pages[0], C.size_t(len(pages)), &outLen, &errorCode)
+	if errorCode != 0 {
+		return nil, ffiError(errorCode)
+	}
+	if ptr == nil {
+		return nil, fmt.Errorf("pdf_oxide: ExtractPagesToBytes failed: %w", ErrInternal)
+	}
+	result := C.GoBytes(unsafe.Pointer(ptr), C.int(outLen))
+	C.free_bytes(unsafe.Pointer(ptr))
+	return result, nil
+}
+
+// ConvertToPdfA converts the document to PDF/A in-place.
+// level: 0=A1b 1=A1a 2=A2b 3=A2a 4=A2u 5=A3b 6=A3a 7=A3u
+func (editor *DocumentEditor) ConvertToPdfA(level int) error {
+	if err := editor.acquireWrite(); err != nil {
+		return err
+	}
+	defer editor.mu.Unlock()
+	var errorCode C.int
+	C.document_editor_convert_to_pdfa(editor.handle, C.int32_t(level), &errorCode)
+	if errorCode != 0 {
+		return ffiError(errorCode)
+	}
+	return nil
+}
+
+// SaveEncryptedToBytes saves the document with AES-256 encryption and returns the bytes.
+// ownerPassword defaults to userPassword if empty.
+func (editor *DocumentEditor) SaveEncryptedToBytes(userPassword, ownerPassword string) ([]byte, error) {
+	if ownerPassword == "" {
+		ownerPassword = userPassword
+	}
+	if err := editor.acquireWrite(); err != nil {
+		return nil, err
+	}
+	defer editor.mu.Unlock()
+	cUser := C.CString(userPassword)
+	defer C.free(unsafe.Pointer(cUser))
+	cOwner := C.CString(ownerPassword)
+	defer C.free(unsafe.Pointer(cOwner))
+	var outLen C.size_t
+	var errorCode C.int
+	ptr := C.document_editor_save_encrypted_to_bytes(editor.handle, cUser, cOwner, &outLen, &errorCode)
+	if errorCode != 0 {
+		return nil, ffiError(errorCode)
+	}
+	if ptr == nil {
+		return nil, fmt.Errorf("pdf_oxide: SaveEncryptedToBytes failed: %w", ErrInternal)
 	}
 	result := C.GoBytes(unsafe.Pointer(ptr), C.int(outLen))
 	C.free_bytes(unsafe.Pointer(ptr))

@@ -881,6 +881,127 @@ pub extern "C" fn document_editor_save_to_bytes_with_options(
     }
 }
 
+/// Extract a subset of pages to a new in-memory PDF. `pages` is a
+/// C array of 0-based page indices; `count` is its length.
+#[no_mangle]
+pub extern "C" fn document_editor_extract_pages_to_bytes(
+    handle: *mut DocumentEditor,
+    pages: *const i32,
+    count: usize,
+    out_len: *mut usize,
+    error_code: *mut i32,
+) -> *mut u8 {
+    if handle.is_null() || pages.is_null() || out_len.is_null() || count == 0 {
+        set_error(error_code, ERR_INVALID_ARG);
+        return ptr::null_mut();
+    }
+    let page_indices: Vec<usize> = unsafe {
+        std::slice::from_raw_parts(pages, count)
+    }
+    .iter()
+    .map(|&i| i as usize)
+    .collect();
+    let editor = handle_mut(handle);
+    match editor.extract_pages_to_bytes(&page_indices) {
+        Ok(bytes) => {
+            set_error(error_code, ERR_SUCCESS);
+            write_out(out_len, bytes.len());
+            vec_to_ffi_bytes(bytes)
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            ptr::null_mut()
+        },
+    }
+}
+
+/// Convert the edited document to PDF/A in-place.
+/// level: 0=A1b 1=A1a 2=A2b 3=A2a 4=A2u 5=A3b 6=A3a 7=A3u
+#[no_mangle]
+pub extern "C" fn document_editor_convert_to_pdfa(
+    handle: *mut DocumentEditor,
+    level: i32,
+    error_code: *mut i32,
+) -> i32 {
+    if handle.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return -1;
+    }
+    use crate::compliance::types::PdfALevel;
+    use crate::compliance::convert_to_pdf_a;
+    let pdf_level = match level {
+        0 => PdfALevel::A1b,
+        1 => PdfALevel::A1a,
+        2 => PdfALevel::A2b,
+        3 => PdfALevel::A2a,
+        4 => PdfALevel::A2u,
+        5 => PdfALevel::A3b,
+        6 => PdfALevel::A3a,
+        7 => PdfALevel::A3u,
+        _ => {
+            set_error(error_code, ERR_INVALID_ARG);
+            return -1;
+        },
+    };
+    let editor = handle_mut(handle);
+    match convert_to_pdf_a(editor.source_mut(), pdf_level) {
+        Ok(_) => {
+            set_error(error_code, ERR_SUCCESS);
+            0
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            -1
+        },
+    }
+}
+
+/// Save the edited document with AES-256 encryption and return bytes.
+/// The returned pointer must be freed with `free_bytes`.
+#[no_mangle]
+pub extern "C" fn document_editor_save_encrypted_to_bytes(
+    handle: *mut DocumentEditor,
+    user_password: *const c_char,
+    owner_password: *const c_char,
+    out_len: *mut usize,
+    error_code: *mut i32,
+) -> *mut u8 {
+    if handle.is_null() || user_password.is_null() || out_len.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return ptr::null_mut();
+    }
+    let user_pwd = match c_str(user_password) {
+        Ok(s) => s,
+        Err(_) => {
+            set_error(error_code, ERR_INVALID_ARG);
+            return ptr::null_mut();
+        },
+    };
+    let owner_pwd = if owner_password.is_null() {
+        user_pwd
+    } else {
+        match c_str(owner_password) {
+            Ok(s) => s,
+            Err(_) => user_pwd,
+        }
+    };
+    let enc_config = crate::editor::EncryptionConfig::new(user_pwd, owner_pwd)
+        .with_algorithm(crate::editor::EncryptionAlgorithm::Aes256);
+    let save_opts = crate::editor::SaveOptions::with_encryption(enc_config);
+    let editor = handle_mut(handle);
+    match editor.save_to_bytes_with_options(save_opts) {
+        Ok(bytes) => {
+            set_error(error_code, ERR_SUCCESS);
+            write_out(out_len, bytes.len());
+            vec_to_ffi_bytes(bytes)
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            ptr::null_mut()
+        },
+    }
+}
+
 /// Merge pages from an in-memory PDF byte buffer into this document.
 #[no_mangle]
 pub extern "C" fn document_editor_merge_from_bytes(
