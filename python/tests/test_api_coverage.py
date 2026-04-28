@@ -969,3 +969,53 @@ class TestPdfACompliance:
         data = doc.to_bytes(compress=True, garbage_collect=True)
         assert data[:5] == _PDF_MAGIC
         assert len(data) > 100
+
+
+# ── PdfDocument: to_bytes_encrypted ─────────────────────────────────────────
+
+
+class TestPdfDocumentEncryptedBytes:
+    def test_to_bytes_encrypted_returns_valid_pdf(self):
+        doc = _make_simple_doc()
+        data = doc.to_bytes_encrypted("user123", "owner456")
+        assert data[:5] == _PDF_MAGIC
+        assert len(data) > 100
+
+    def test_to_bytes_encrypted_owner_password_defaults_to_user(self):
+        doc = _make_simple_doc()
+        data = doc.to_bytes_encrypted("secret")
+        assert data[:5] == _PDF_MAGIC
+
+    def test_to_bytes_encrypted_roundtrip_with_correct_password(self):
+        doc = _make_simple_doc()
+        data = doc.to_bytes_encrypted("userpass", "ownerpass")
+        doc2 = PdfDocument.from_bytes(data, password="userpass")
+        assert doc2.page_count() >= 1
+
+    def test_to_bytes_encrypted_wrong_password_raises(self):
+        doc = _make_simple_doc()
+        data = doc.to_bytes_encrypted("correct", "ownerpass")
+        with pytest.raises(Exception):
+            PdfDocument.from_bytes(data, password="wrong")
+
+    def test_to_bytes_encrypted_with_permission_flags(self):
+        doc = _make_simple_doc()
+        data = doc.to_bytes_encrypted(
+            "user",
+            "owner",
+            allow_print=False,
+            allow_copy=False,
+            allow_modify=False,
+            allow_annotate=False,
+        )
+        assert data[:5] == _PDF_MAGIC
+        doc2 = PdfDocument.from_bytes(data, password="user")
+        assert doc2.page_count() >= 1
+
+    def test_to_bytes_encrypted_larger_than_unencrypted(self):
+        doc1 = _make_simple_doc()
+        doc2 = _make_simple_doc()
+        plain = doc1.to_bytes()
+        encrypted = doc2.to_bytes_encrypted("pw", "pw")
+        assert len(encrypted) > 0
+        assert encrypted[:5] == _PDF_MAGIC
