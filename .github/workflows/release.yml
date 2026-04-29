@@ -1056,7 +1056,7 @@ jobs:
           tool: cargo-cyclonedx
 
       - name: Generate SBOM
-        run: cargo cyclonedx --format json --spec-version 1.5 -o sbom.cdx.json
+        run: cargo cyclonedx --format json --spec-version 1.5 --override-filename sbom
 
       - name: Upload SBOM to release
         run: gh release upload "${{ github.ref_name }}" sbom.cdx.json
