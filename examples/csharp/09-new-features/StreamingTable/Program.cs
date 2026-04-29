@@ -1,4 +1,4 @@
-// StreamingTable with rowspan — v0.3.39
+// StreamingTable with rowspan and batchSize — v0.3.40
 // Run: dotnet run
 
 using System;
@@ -22,11 +22,12 @@ builder.Title("StreamingTable Demo");
 var page = builder.LetterPage();
 page.Font("Helvetica", 10).At(72, 700).Heading(1, "Product Catalogue").At(72, 660);
 
-using (var tbl = page.StreamingTable(columns, repeatHeader: true, maxRowspan: 2))
+using (var tbl = page.StreamingTable(columns, repeatHeader: true, maxRowspan: 2, batchSize: 2))
 {
     tbl.AddRowSpan(("Fruits", 2), ("Apple", 1),   ("crisp",  1));
     tbl.AddRowSpan(("",       1), ("Banana", 1),  ("sweet",  1));
     tbl.AddRowSpan(("Vegetables", 1), ("Carrot", 1), ("earthy", 1));
+    Console.WriteLine($"  batch_count={tbl.BatchCount}, pending={tbl.PendingRowCount}");
     tbl.Build().Done();
 }
 

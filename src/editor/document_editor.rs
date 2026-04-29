@@ -978,33 +978,76 @@ impl DocumentEditor {
         Ok(())
     }
 
-    /// Extract pages to a new document.
-    pub fn extract_pages(&mut self, pages: &[usize], _output: impl AsRef<Path>) -> Result<()> {
-        // Get all page refs
-        let all_refs = self.get_page_refs()?;
+    /// Extract a subset of pages into a new PDF and write it to `output`.
+    ///
+    /// `pages` is a list of 0-based indices to keep. The current document is
+    /// not modified. Works by cloning the document and removing all unwanted
+    /// pages in reverse-index order (same approach used by the WASM binding).
+    pub fn extract_pages(&mut self, pages: &[usize], output: impl AsRef<Path>) -> Result<()> {
+        let bytes = self.extract_pages_to_bytes(pages)?;
+        std::fs::write(output, bytes)?;
+        Ok(())
+    }
 
-        // Validate page indices
+    /// Extract a subset of pages and return the result as PDF bytes.
+    ///
+    /// `pages` is a list of 0-based indices to keep. The current document is
+    /// not modified.
+    pub fn extract_pages_to_bytes(&mut self, pages: &[usize]) -> Result<Vec<u8>> {
+        use crate::editor::EditableDocument;
+
+        if pages.is_empty() {
+            return Err(Error::InvalidPdf("pages list must not be empty".to_string()));
+        }
+
+        let page_count = self.page_count()?;
+
         for &page in pages {
-            if page >= all_refs.len() {
+            if page >= page_count {
                 return Err(Error::InvalidPdf(format!(
                     "Page index {} out of range (document has {} pages)",
-                    page,
-                    all_refs.len()
+                    page, page_count
                 )));
             }
         }
 
-        // For now, implement a simple extraction by copying the source
-        // and removing unwanted pages
-        // A full implementation would rebuild the document with only selected pages
+        // Clone via bytes, then remove all pages not in the keep-set.
+        let keep: std::collections::HashSet<usize> = pages.iter().copied().collect();
+        let snapshot = self.save_to_bytes()?;
+        let mut copy = DocumentEditor::from_bytes(snapshot)?;
+        for i in (0..page_count).rev() {
+            if !keep.contains(&i) {
+                copy.remove_page(i)?;
+            }
+        }
+        copy.save_to_bytes()
+    }
 
-        // This is a placeholder - full implementation would need to:
-        // 1. Create new document structure
-        // 2. Copy only referenced objects
-        // 3. Update page tree
-        // 4. Write new PDF
+    /// Overlay a PNG image onto an existing page at the given position.
+    ///
+    /// `page_index` is 0-based. `x`, `y`, `width`, `height` are in PDF points
+    /// (1/72 inch), measured from the bottom-left of the page.
+    ///
+    /// The PNG bytes are decoded, then appended to the page's content stream as
+    /// an XObject.  The page is saved back after the operation.
+    pub fn add_image_bytes_to_page(
+        &mut self,
+        page_index: usize,
+        png_bytes: &[u8],
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+    ) -> Result<()> {
+        use crate::elements::ImageContent;
+        use crate::geometry::Rect;
 
-        Err(Error::InvalidPdf("Page extraction not yet fully implemented".to_string()))
+        let image = ImageContent::from_bytes(Rect::new(x, y, width, height), png_bytes.to_vec())
+            .map_err(|e| crate::error::Error::Image(e.to_string()))?;
+        self.edit_page(page_index, |page| {
+            page.add_image(image);
+            Ok(())
+        })
     }
 
     /// Merge pages from another PDF into this document.
@@ -9342,17 +9385,19 @@ mod tests {
     // =========================================================================
 
     #[test]
-    fn test_extract_pages_not_implemented() {
+    fn test_extract_pages_works() {
         let mut editor = create_test_editor();
-        // Currently returns "not yet fully implemented"
-        let result = editor.extract_pages(&[0], "/tmp/output.pdf");
-        assert!(result.is_err());
+        let out = std::env::temp_dir().join("pdf_oxide_extract_test.pdf");
+        let result = editor.extract_pages(&[0], &out);
+        let _ = std::fs::remove_file(&out);
+        assert!(result.is_ok());
     }
 
     #[test]
     fn test_extract_pages_out_of_range() {
         let mut editor = create_test_editor();
-        let result = editor.extract_pages(&[99], "/tmp/output.pdf");
+        let out = std::env::temp_dir().join("pdf_oxide_extract_oob.pdf");
+        let result = editor.extract_pages(&[99], &out);
         assert!(result.is_err());
     }
 

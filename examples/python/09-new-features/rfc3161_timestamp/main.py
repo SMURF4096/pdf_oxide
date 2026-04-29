@@ -26,6 +26,12 @@ def main() -> None:
         assert ts.serial == "04", f"unexpected serial: {ts.serial}"
         assert ts.policy_oid == "1.2.3.4.1"
         print("  Timestamp fields verified.")
+        # verify() requires a CMS-wrapped token; bare TSTInfo returns an error
+        try:
+            result = ts.verify()
+            print(f"  verify() → {result}")
+        except RuntimeError as e:
+            print(f"  verify() on bare TSTInfo → error (expected): {str(e)[:60]}")
     except (NotImplementedError, AttributeError):
         print("  SKIP: signatures feature not compiled in.")
 

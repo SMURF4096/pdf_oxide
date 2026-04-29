@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //! WebAssembly bindings for PDF Oxide.
 //!
 //! Provides a JavaScript/TypeScript API for PDF operations in browser
@@ -425,7 +426,7 @@ impl WasmPdfDocument {
     #[wasm_bindgen(js_name = "renderPage")]
     pub fn render_page(&mut self, page_index: usize, dpi: Option<u32>) -> Result<Vec<u8>, JsValue> {
         let opts = crate::rendering::RenderOptions::with_dpi(dpi.unwrap_or(150));
-        let inner = self
+        let mut inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Mutex lock failed"))?;
@@ -1417,20 +1418,23 @@ impl WasmTimestamp {
         self.inner.message_imprint()
     }
 
-    /// Cryptographic verify — not yet implemented.
+    /// Cryptographically verify this TimeStampToken.
+    ///
+    /// Returns `true` when the TSA's signature and `messageDigest` both pass.
+    /// Returns `false` when a crypto check fails (tampered token or wrong key).
+    /// Throws when the token is not CMS-wrapped or uses an unsupported algorithm.
     #[wasm_bindgen]
     pub fn verify(&self) -> Result<bool, JsValue> {
-        Err(JsValue::from_str(
-            "Timestamp.verify() requires CMS signer verification — not yet landed",
-        ))
+        self.inner
+            .verify()
+            .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 }
 
 /// A single existing PDF signature surfaced by
-/// `WasmPdfDocument.signatures()`. `verify()` runs the RSA-PKCS#1 v1.5
-/// signer-attributes check; `verifyDetached()` adds the
-/// `messageDigest` content-hash check. RSA-PSS / ECDSA signers still
-/// throw an `UnsupportedFeature`-mapped JS error.
+/// `WasmPdfDocument.signatures()`. `verify()` runs the signer-attributes
+/// check; `verifyDetached()` adds the `messageDigest` content-hash check.
+/// Supported: RSA-PKCS#1 v1.5, RSA-PSS, ECDSA P-256/P-384.
 #[cfg(feature = "signatures")]
 #[wasm_bindgen]
 pub struct WasmSignature {
@@ -3103,7 +3107,7 @@ impl WasmPdfDocument {
     #[wasm_bindgen(js_name = "flattenToImages")]
     pub fn flatten_to_images(&mut self, dpi: Option<u32>) -> Result<Vec<u8>, JsValue> {
         let dpi = dpi.unwrap_or(150);
-        let inner = self
+        let mut inner = self
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Lock failed"))?;
@@ -3556,6 +3560,9 @@ struct WasmStreamingTableSpec {
     /// Maximum rowspan. 0 or 1 = disabled (default).
     #[serde(default, rename = "maxRowspan", alias = "max_rowspan")]
     max_rowspan: Option<usize>,
+    /// Maximum rows per batch before an automatic flush (default 256).
+    #[serde(default, rename = "batchSize", alias = "batch_size")]
+    batch_size: Option<usize>,
 }
 
 #[derive(serde::Deserialize)]
@@ -3684,6 +3691,18 @@ enum WasmPageOp {
         g: f32,
         b: f32,
     },
+    StrokeRectDashed {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        width: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+        dash: Vec<f32>,
+        phase: f32,
+    },
     StrokeLine {
         x1: f32,
         y1: f32,
@@ -3693,6 +3712,18 @@ enum WasmPageOp {
         r: f32,
         g: f32,
         b: f32,
+    },
+    StrokeLineDashed {
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        width: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+        dash: Vec<f32>,
+        phase: f32,
     },
     NewPageSameSize,
     /// Buffered table: parsed columns + row strings are replayed by
@@ -4067,6 +4098,24 @@ impl WasmDocumentBuilder {
                 } => {
                     rust_page.stroke_rect(x, y, w, h, crate::writer::LineStyle::new(width, r, g, b))
                 },
+                WasmPageOp::StrokeRectDashed {
+                    x,
+                    y,
+                    w,
+                    h,
+                    width,
+                    r,
+                    g,
+                    b,
+                    dash,
+                    phase,
+                } => rust_page.stroke_rect(
+                    x,
+                    y,
+                    w,
+                    h,
+                    crate::writer::LineStyle::new(width, r, g, b).with_dash(&dash, phase),
+                ),
                 WasmPageOp::StrokeLine {
                     x1,
                     y1,
@@ -4082,6 +4131,24 @@ impl WasmDocumentBuilder {
                     x2,
                     y2,
                     crate::writer::LineStyle::new(width, r, g, b),
+                ),
+                WasmPageOp::StrokeLineDashed {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    width,
+                    r,
+                    g,
+                    b,
+                    dash,
+                    phase,
+                } => rust_page.stroke_line(
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    crate::writer::LineStyle::new(width, r, g, b).with_dash(&dash, phase),
                 ),
                 WasmPageOp::NewPageSameSize => rust_page.new_page_same_size(),
                 WasmPageOp::BufferedTable {
@@ -4792,6 +4859,36 @@ impl WasmFluentPageBuilder {
         })
     }
 
+    /// Draw a dashed rectangle border. `dash` is alternating on/off lengths in points; `phase` is the starting offset.
+    #[wasm_bindgen(js_name = "strokeRectDashed")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn stroke_rect_dashed(
+        &mut self,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        width: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+        dash: Vec<f32>,
+        phase: f32,
+    ) -> Result<(), JsValue> {
+        self.push(WasmPageOp::StrokeRectDashed {
+            x,
+            y,
+            w,
+            h,
+            width,
+            r,
+            g,
+            b,
+            dash,
+            phase,
+        })
+    }
+
     /// Draw a straight line with explicit stroke width and RGB colour.
     #[wasm_bindgen(js_name = "strokeLine")]
     #[allow(clippy::too_many_arguments)]
@@ -4815,6 +4912,36 @@ impl WasmFluentPageBuilder {
             r,
             g,
             b,
+        })
+    }
+
+    /// Draw a dashed line. `dash` is alternating on/off lengths in points; `phase` is the starting offset.
+    #[wasm_bindgen(js_name = "strokeLineDashed")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn stroke_line_dashed(
+        &mut self,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        width: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+        dash: Vec<f32>,
+        phase: f32,
+    ) -> Result<(), JsValue> {
+        self.push(WasmPageOp::StrokeLineDashed {
+            x1,
+            y1,
+            x2,
+            y2,
+            width,
+            r,
+            g,
+            b,
+            dash,
+            phase,
         })
     }
 
@@ -4881,16 +5008,19 @@ impl WasmFluentPageBuilder {
                 (c.header, c.width.unwrap_or(100.0), WasmAlign::from_i32(c.align.unwrap_or(0)))
             })
             .collect();
+        let batch_size = parsed.batch_size.unwrap_or(256).max(1);
         Ok(WasmStreamingTable {
             columns,
             repeat_header: parsed.repeat_header,
-            rows: Vec::new(),
+            current_batch: Vec::new(),
+            completed_batches: Vec::new(),
             finished: false,
             mode: parsed.mode.unwrap_or_else(|| "fixed".to_string()),
             sample_rows: parsed.sample_rows.unwrap_or(50),
             min_col_width_pt: parsed.min_col_width_pt.unwrap_or(20.0),
             max_col_width_pt: parsed.max_col_width_pt.unwrap_or(400.0),
             max_rowspan: parsed.max_rowspan.unwrap_or(1),
+            batch_size,
             page_ops: std::rc::Rc::clone(&self.ops),
         })
     }
@@ -4968,14 +5098,18 @@ impl WasmFluentPageBuilder {
 pub struct WasmStreamingTable {
     columns: Vec<(String, f32, WasmAlign)>,
     repeat_header: bool,
-    /// Each cell: (text, rowspan).
-    rows: Vec<Vec<(String, usize)>>,
+    /// Rows accumulating in the current (not-yet-flushed) batch.
+    current_batch: Vec<Vec<(String, usize)>>,
+    /// Fully-completed batches waiting to be assembled at finish().
+    completed_batches: Vec<Vec<Vec<(String, usize)>>>,
     finished: bool,
     mode: String,
     sample_rows: usize,
     min_col_width_pt: f32,
     max_col_width_pt: f32,
     max_rowspan: usize,
+    /// Maximum rows per batch before an automatic flush (default 256).
+    batch_size: usize,
     /// Shared handle to the parent page's op queue — used by `finish()`
     /// to thread the recorded block back onto the page without JS having
     /// to pass the page argument.
@@ -4990,9 +5124,21 @@ impl WasmStreamingTable {
         self.columns.len()
     }
 
+    /// Number of rows in the current (not-yet-flushed) batch.
+    #[wasm_bindgen(js_name = "pendingRowCount")]
+    pub fn pending_row_count(&self) -> usize {
+        self.current_batch.len()
+    }
+
+    /// Number of fully-completed batches waiting for finish().
+    #[wasm_bindgen(js_name = "batchCount")]
+    pub fn batch_count(&self) -> usize {
+        self.completed_batches.len()
+    }
+
     /// Push one row as an array of cell strings (all rowspan=1). Returns an
     /// error if the table has already been finished or if the row's cell count
-    /// does not match the column count.
+    /// does not match the column count. Auto-flushes the batch when full.
     #[wasm_bindgen(js_name = "pushRow")]
     pub fn push_row(&mut self, cells: Vec<String>) -> Result<(), JsValue> {
         if self.finished {
@@ -5005,13 +5151,17 @@ impl WasmStreamingTable {
                 self.columns.len()
             )));
         }
-        self.rows
+        self.current_batch
             .push(cells.into_iter().map(|s| (s, 1usize)).collect());
+        if self.current_batch.len() >= self.batch_size {
+            self.flush_batch();
+        }
         Ok(())
     }
 
     /// Push one row with per-cell rowspan values. `cells` is a JS array of
     /// `[text, rowspan]` two-element arrays. `rowspan == 1` is a normal cell.
+    /// Auto-flushes the batch when full.
     #[wasm_bindgen(js_name = "pushRowSpan")]
     pub fn push_row_span(&mut self, cells: JsValue) -> Result<(), JsValue> {
         if self.finished {
@@ -5026,8 +5176,18 @@ impl WasmStreamingTable {
                 self.columns.len()
             )));
         }
-        self.rows.push(parsed);
+        self.current_batch.push(parsed);
+        if self.current_batch.len() >= self.batch_size {
+            self.flush_batch();
+        }
         Ok(())
+    }
+
+    /// Explicitly flush the current batch to `completed_batches`.
+    /// Called automatically when `batch_size` rows accumulate.
+    #[wasm_bindgen(js_name = "flush")]
+    pub fn flush(&mut self) {
+        self.flush_batch();
     }
 
     /// Seal the streaming table — the buffered rows are flushed onto the
@@ -5039,11 +5199,13 @@ impl WasmStreamingTable {
         if self.finished {
             return Err(JsValue::from_str("StreamingTable already finished"));
         }
+        self.flush_batch();
         self.finished = true;
+        let rows: Vec<Vec<(String, usize)>> = self.completed_batches.drain(..).flatten().collect();
         let op = WasmPageOp::StreamingTableBlock {
             config_columns: std::mem::take(&mut self.columns),
             repeat_header: self.repeat_header,
-            rows: std::mem::take(&mut self.rows),
+            rows,
             mode: self.mode.clone(),
             sample_rows: self.sample_rows,
             min_col_width_pt: self.min_col_width_pt,
@@ -5052,6 +5214,15 @@ impl WasmStreamingTable {
         };
         self.page_ops.borrow_mut().push(op);
         Ok(())
+    }
+}
+
+impl WasmStreamingTable {
+    fn flush_batch(&mut self) {
+        if !self.current_batch.is_empty() {
+            let batch = std::mem::take(&mut self.current_batch);
+            self.completed_batches.push(batch);
+        }
     }
 }
 
@@ -6008,6 +6179,21 @@ mod tests {
     }
 
     #[test]
+    fn test_stroke_rect_dashed_and_stroke_line_dashed_commit() {
+        let mut b = WasmDocumentBuilder::new();
+        let mut p = b.letter_page().unwrap();
+        p.stroke_rect_dashed(50.0, 50.0, 200.0, 100.0, 2.0, 0.0, 0.0, 0.8, vec![3.0, 2.0], 0.0)
+            .unwrap();
+        p.stroke_line_dashed(50.0, 50.0, 250.0, 50.0, 1.0, 0.8, 0.0, 0.0, vec![5.0, 3.0], 1.0)
+            .unwrap();
+        p.done(&mut b).unwrap();
+        let bytes = b.build().unwrap();
+        assert!(bytes.starts_with(b"%PDF-"));
+        // Dash operator must be present
+        assert!(bytes.windows(3).any(|w| w == b" d\n") || bytes.windows(3).any(|w| w == b" d "));
+    }
+
+    #[test]
     fn test_buffered_table_replays_to_rust_table() {
         // Exercise the native path: construct a WasmPageOp::BufferedTable
         // directly and commit through commit_page to prove the replay logic
@@ -6073,6 +6259,53 @@ mod tests {
             text.contains("SKU") || text.contains("Item") || text.contains("Qty"),
             "streaming-table output should contain at least one header cell, got: {text:?}",
         );
+    }
+
+    #[test]
+    fn test_streaming_table_bounded_batch_accumulates_and_flushes() {
+        // Verify that push_row auto-flushes when batch_size is reached and that
+        // the resulting PDF contains all rows regardless of batching.
+        let mut b = WasmDocumentBuilder::new();
+        let mut p = b.letter_page().unwrap();
+        p.font("Helvetica".to_string(), 9.0).unwrap();
+        p.at(72.0, 720.0).unwrap();
+
+        let mut st = WasmStreamingTable {
+            columns: vec![
+                ("ID".into(), 60.0, WasmAlign::Left),
+                ("Value".into(), 120.0, WasmAlign::Left),
+            ],
+            repeat_header: false,
+            current_batch: Vec::new(),
+            completed_batches: Vec::new(),
+            finished: false,
+            mode: "fixed".into(),
+            sample_rows: 50,
+            min_col_width_pt: 20.0,
+            max_col_width_pt: 400.0,
+            max_rowspan: 1,
+            batch_size: 3,
+            page_ops: std::rc::Rc::clone(&p.ops),
+        };
+
+        // Push 7 rows with batch_size=3: expect 2 full batches + 1 partial.
+        for i in 0..7usize {
+            st.push_row(vec![i.to_string(), format!("row-{i}")])
+                .unwrap();
+        }
+        assert_eq!(st.batch_count(), 2, "expected 2 completed batches");
+        assert_eq!(st.pending_row_count(), 1, "expected 1 pending row");
+
+        st.finish().unwrap();
+        p.done(&mut b).unwrap();
+        let bytes = b.build().unwrap();
+        assert!(bytes.starts_with(b"%PDF-"));
+
+        // Re-open and verify row content survived.
+        let mut doc = WasmPdfDocument::new(&bytes, None).unwrap();
+        let text = doc.extract_all_text().unwrap();
+        assert!(text.contains("row-0"), "first row missing");
+        assert!(text.contains("row-6"), "last row missing");
     }
 
     #[test]

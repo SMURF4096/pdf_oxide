@@ -25,6 +25,8 @@
 //!    additive-clamp formula so callers don't have to care whether a
 //!    CMM is linked in.
 
+#![forbid(unsafe_code)]
+
 use std::sync::Arc;
 
 /// PDF rendering intents, per ISO 32000-1:2008 §8.6.5.8 Table 70.

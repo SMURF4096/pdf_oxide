@@ -555,6 +555,23 @@ namespace PdfOxide.Core
         }
 
         /// <summary>
+        /// Embed a JPEG/PNG image at (x, y, w, h) in PDF points.
+        /// No alt text or /Artifact wrapper is added — use
+        /// <see cref="ImageWithAlt"/> or <see cref="ImageArtifact"/> for PDF/UA-1.
+        /// </summary>
+        public unsafe PageBuilder Image(byte[] imageBytes, float x, float y, float w, float h)
+        {
+            ArgumentNullException.ThrowIfNull(imageBytes);
+            if (imageBytes.Length == 0) throw new ArgumentException("imageBytes must not be empty", nameof(imageBytes));
+            fixed (byte* p = imageBytes)
+            {
+                NativeMethods.PdfPageBuilderImage(Handle, p, (nuint)imageBytes.Length, x, y, w, h, out var ec);
+                ExceptionMapper.ThrowIfError(ec);
+            }
+            return this;
+        }
+
+        /// <summary>
         /// Embed an image with an accessibility alt text (PDF/UA-1 Figure element).
         /// <paramref name="imageBytes"/> must contain raw JPEG/PNG/WebP data.
         /// </summary>
@@ -636,6 +653,40 @@ namespace PdfOxide.Core
         {
             NativeMethods.PdfPageBuilderStrokeLine(Handle, x1, y1, x2, y2, width, r, g, b, out var ec);
             ExceptionMapper.ThrowIfError(ec);
+            return this;
+        }
+
+        /// <summary>
+        /// Draw a dashed rectangle border. <paramref name="dash"/> contains alternating
+        /// on/off lengths in points (e.g. [3, 2] = 3pt dash, 2pt gap).
+        /// </summary>
+        public unsafe PageBuilder StrokeRectDashed(float x, float y, float w, float h,
+            float[] dash, float phase = 0f,
+            float width = 1f, float r = 0f, float g = 0f, float b = 0f)
+        {
+            fixed (float* dp = dash)
+            {
+                NativeMethods.PdfPageBuilderStrokeRectDashed(Handle, x, y, w, h, width, r, g, b,
+                    dp, (nuint)(dash?.Length ?? 0), phase, out var ec);
+                ExceptionMapper.ThrowIfError(ec);
+            }
+            return this;
+        }
+
+        /// <summary>
+        /// Draw a dashed line. <paramref name="dash"/> contains alternating
+        /// on/off lengths in points (e.g. [5, 3] = 5pt dash, 3pt gap).
+        /// </summary>
+        public unsafe PageBuilder StrokeLineDashed(float x1, float y1, float x2, float y2,
+            float[] dash, float phase = 0f,
+            float width = 1f, float r = 0f, float g = 0f, float b = 0f)
+        {
+            fixed (float* dp = dash)
+            {
+                NativeMethods.PdfPageBuilderStrokeLineDashed(Handle, x1, y1, x2, y2, width, r, g, b,
+                    dp, (nuint)(dash?.Length ?? 0), phase, out var ec);
+                ExceptionMapper.ThrowIfError(ec);
+            }
             return this;
         }
 
@@ -841,16 +892,21 @@ namespace PdfOxide.Core
         /// Pass ≥2 to enable <see cref="StreamingTable.AddRowSpan"/> for cells that
         /// should span multiple rows.
         /// </param>
+        /// <param name="batchSize">
+        /// Maximum rows to buffer before an automatic flush to the native layer.
+        /// 0 or unset defaults to 256.
+        /// </param>
         public StreamingTable StreamingTable(
             IReadOnlyList<Column> columns,
             bool repeatHeader = true,
             TableMode? mode = null,
-            int maxRowspan = 1)
+            int maxRowspan = 1,
+            int batchSize = 256)
         {
             ArgumentNullException.ThrowIfNull(columns);
             if (columns.Count == 0)
                 throw new ArgumentException("columns must be non-empty", nameof(columns));
-            return new StreamingTable(this, columns, repeatHeader, mode, maxRowspan);
+            return new StreamingTable(this, columns, repeatHeader, mode, maxRowspan, batchSize);
         }
 
         /// <summary>

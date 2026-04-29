@@ -1,6 +1,6 @@
 [package]
 name = "pdf_oxide_cli"
-version = "0.3.39"
+version = "0.3.40"
 edition = "2021"
 description = "CLI for pdf-oxide — the fastest PDF toolkit. 22 commands: text extraction, PDF to markdown, search, merge, split, images, compress, encrypt, watermark, forms, and more."
 license = "MIT OR Apache-2.0"
@@ -14,6 +14,7 @@ categories = ["command-line-utilities", "text-processing"]
 [[bin]]
 name = "pdf-oxide"
 path = "src/main.rs"
+doc = false
 
 # src/lib.rs exists only so the CLI can share modules between bin and unit tests.
 # It has no user-facing API and no doctests, so disable doctest collection to
@@ -25,7 +26,7 @@ doctest = false
 workspace = true
 
 [dependencies]
-pdf_oxide = { version = "0.3.33", path = "..", features = ["rendering", "logging"] }
+pdf_oxide = { version = "0.3.40", path = "..", features = ["rendering", "logging"] }
 clap = { version = "4", features = ["derive"] }
 is-terminal = "0.4"
 serde_json = "1.0"

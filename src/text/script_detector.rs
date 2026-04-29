@@ -25,6 +25,8 @@
 //! - **Chinese**: Create boundaries between Han characters
 //! - **Script Changes**: Create boundaries for non-CJK transitions
 
+#![forbid(unsafe_code)]
+
 use crate::text::CharacterInfo;
 
 /// Detected CJK script types.

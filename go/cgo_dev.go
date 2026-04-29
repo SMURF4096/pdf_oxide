@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //go:build pdf_oxide_dev
 
 // Package pdfoxide provides Go bindings to the pdf_oxide Rust PDF toolkit.

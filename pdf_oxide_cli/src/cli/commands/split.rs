@@ -15,7 +15,14 @@ pub fn run(
 
     let stem = file.file_stem().and_then(|s| s.to_str()).unwrap_or("page");
 
-    let out_dir = output.unwrap_or_else(|| Path::new("."));
+    let default_dir;
+    let out_dir = match output {
+        Some(p) => p,
+        None => {
+            default_dir = super::output_dir_beside(file);
+            &default_dir
+        },
+    };
 
     for &page_idx in &page_indices {
         let mut editor = DocumentEditor::open(file)?;

@@ -22,28 +22,17 @@ use crate::layout::{
 use crate::structure::spatial_table_detector::SpatialTableDetector;
 use crate::structure::table_extractor::{Table, TableRow};
 use crate::XYCutStrategy;
-use lazy_static::lazy_static;
 use regex::{Captures, Regex};
+use std::sync::LazyLock;
 
-lazy_static! {
-    /// Regex for matching URLs in text
-    static ref RE_URL: Regex = Regex::new(r"(https?://[^\s<>\[\]]*[^\s<>\[\].,!?;:])").unwrap();
-
-    /// Regex for matching email addresses
-    static ref RE_EMAIL: Regex = Regex::new(r"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})").unwrap();
-
-    /// Regex for cleaning space before dash in numeric contexts
-    static ref RE_DASH_BEFORE: Regex = Regex::new(r"(\d)\s+(–|—)(\d)").unwrap();
-
-    /// Regex for cleaning space after dash in numeric contexts
-    static ref RE_DASH_AFTER: Regex = Regex::new(r"(\d)(–|—)\s+(\d)").unwrap();
-
-    /// Regex for detecting missing spaces after punctuation
-    /// Pattern: punctuation immediately followed by a letter (no space)
-    /// Note: Rust regex crate doesn't support look-behind, using simple pattern
-    /// False positives (URLs) are filtered by context in replacement
-    static ref RE_PUNCT_SPACE: Regex = Regex::new(r"([.!?;:,])([A-Za-z])").unwrap();
-}
+static RE_URL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(https?://[^\s<>\[\]]*[^\s<>\[\].,!?;:])").unwrap());
+static RE_EMAIL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})").unwrap());
+static RE_DASH_BEFORE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d)\s+(–|—)(\d)").unwrap());
+static RE_DASH_AFTER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(\d)(–|—)\s+(\d)").unwrap());
+static RE_PUNCT_SPACE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"([.!?;:,])([A-Za-z])").unwrap());
 
 /// Converter for PDF to Markdown format.
 ///

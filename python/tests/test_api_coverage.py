@@ -645,6 +645,103 @@ class TestMutations:
         assert doc2.page_rotation(0) == 180
 
 
+# ── PdfDocument: page extraction ─────────────────────────────────────────────
+
+
+def _make_two_page_doc() -> PdfDocument:
+    """Return a PdfDocument with exactly 2 pages."""
+    data = Pdf.from_markdown("# Page One\n\n---\n\n# Page Two").to_bytes()
+    doc = PdfDocument.from_bytes(data)
+    if doc.page_count() < 2:
+        # Merge a second page in
+        extra = Pdf.from_markdown("# Page Two").to_bytes()
+        doc.merge_from(extra)
+    return doc
+
+
+class TestPageExtraction:
+    def test_extract_pages_to_file_reduces_page_count(self, tmp_path):
+        doc = _make_two_page_doc()
+        assert doc.page_count() >= 2
+        out = str(tmp_path / "single.pdf")
+        doc.extract_pages([0], out)
+        result = PdfDocument(out)
+        assert result.page_count() == 1
+
+    def test_extract_pages_preserves_content(self, tmp_path):
+        data = Pdf.from_markdown("KEEPTHIS\n\n---\n\nDROPTHIS").to_bytes()
+        doc = PdfDocument.from_bytes(data)
+        if doc.page_count() < 2:
+            extra = Pdf.from_markdown("DROPTHIS").to_bytes()
+            doc.merge_from(extra)
+        out = str(tmp_path / "kept.pdf")
+        doc.extract_pages([0], out)
+        result = PdfDocument(out)
+        text = result.extract_text(0)
+        assert "KEEPTHIS" in text
+
+    def test_extract_pages_to_bytes_returns_valid_pdf(self):
+        doc = _make_two_page_doc()
+        assert doc.page_count() >= 2
+        data = doc.extract_pages_to_bytes([0])
+        assert data[:5] == _PDF_MAGIC
+
+    def test_extract_pages_to_bytes_correct_page_count(self):
+        doc = _make_two_page_doc()
+        assert doc.page_count() >= 2
+        data = doc.extract_pages_to_bytes([0])
+        result = PdfDocument.from_bytes(data)
+        assert result.page_count() == 1
+
+    def test_extract_pages_to_bytes_multiple_pages(self):
+        data = Pdf.from_markdown("# P1").to_bytes()
+        doc = PdfDocument.from_bytes(data)
+        for i in range(2, 5):
+            extra = Pdf.from_markdown(f"# P{i}").to_bytes()
+            doc.merge_from(extra)
+        total = doc.page_count()
+        assert total >= 3
+        chunk = doc.extract_pages_to_bytes([0, 1])
+        result = PdfDocument.from_bytes(chunk)
+        assert result.page_count() == 2
+
+    def test_extract_pages_chunking_pipeline(self):
+        """Simulate potatochipcoconut's page-splitting use case."""
+        try:
+            from itertools import batched
+        except ImportError:
+            # Python < 3.12 compat
+            from itertools import islice
+
+            def batched(iterable, n):
+                it = iter(iterable)
+                while chunk := list(islice(it, n)):
+                    yield chunk
+
+        data = Pdf.from_markdown("# P1").to_bytes()
+        doc = PdfDocument.from_bytes(data)
+        for i in range(2, 6):
+            extra = Pdf.from_markdown(f"# P{i}").to_bytes()
+            doc.merge_from(extra)
+        total = doc.page_count()
+        assert total >= 4
+
+        chunk_size = 2
+        chunks = []
+        for chunk_indices in batched(range(total), chunk_size):
+            chunk_bytes = doc.extract_pages_to_bytes(list(chunk_indices))
+            assert chunk_bytes[:5] == _PDF_MAGIC
+            chunk_doc = PdfDocument.from_bytes(chunk_bytes)
+            assert chunk_doc.page_count() == len(chunk_indices)
+            chunks.append(chunk_bytes)
+        assert len(chunks) >= 2
+
+    def test_extract_pages_out_of_range_raises(self):
+        doc = _make_two_page_doc()
+        with pytest.raises(RuntimeError):
+            doc.extract_pages_to_bytes([999])
+
+
 # ── DocumentBuilder extras ────────────────────────────────────────────────────
 
 
@@ -801,3 +898,133 @@ class TestSaveOptions:
         path = str(tmp_path / "plain.pdf")
         doc.save(path)
         assert os.path.getsize(path) > 100
+
+
+# ── PdfDocument: PDF/A compliance ────────────────────────────────────────────
+
+
+class TestPdfACompliance:
+    def test_validate_pdf_a_returns_dict_with_required_keys(self):
+        doc = _make_simple_doc()
+        result = doc.validate_pdf_a("2b")
+        assert isinstance(result, dict)
+        assert "valid" in result
+        assert "level" in result
+        assert "errors" in result
+        assert "warnings" in result
+
+    def test_validate_pdf_a_level_echoed_back(self):
+        doc = _make_simple_doc()
+        result = doc.validate_pdf_a("1b")
+        assert result["level"] == "1b"
+
+    def test_validate_pdf_a_errors_is_list(self):
+        doc = _make_simple_doc()
+        result = doc.validate_pdf_a("2b")
+        assert isinstance(result["errors"], list)
+        assert isinstance(result["warnings"], list)
+
+    def test_validate_pdf_a_invalid_level_raises(self):
+        doc = _make_simple_doc()
+        with pytest.raises(ValueError):
+            doc.validate_pdf_a("99z")
+
+    def test_convert_to_pdf_a_returns_dict_with_required_keys(self):
+        doc = _make_simple_doc()
+        result = doc.convert_to_pdf_a("2b")
+        assert isinstance(result, dict)
+        assert "success" in result
+        assert "actions" in result
+        assert "errors" in result
+
+    def test_convert_to_pdf_a_success_is_bool(self):
+        doc = _make_simple_doc()
+        result = doc.convert_to_pdf_a("2b")
+        assert isinstance(result["success"], bool)
+
+    def test_convert_to_pdf_a_actions_is_list(self):
+        doc = _make_simple_doc()
+        result = doc.convert_to_pdf_a("2b")
+        assert isinstance(result["actions"], list)
+        assert isinstance(result["errors"], list)
+
+    def test_convert_to_pdf_a_document_remains_valid_pdf(self):
+        doc = _make_simple_doc()
+        doc.convert_to_pdf_a("2b")
+        data = doc.to_bytes()
+        assert data[:5] == _PDF_MAGIC
+
+    def test_convert_to_pdf_a_validate_after_conversion(self):
+        doc = _make_simple_doc()
+        doc.convert_to_pdf_a("2b")
+        result = doc.validate_pdf_a("2b")
+        assert isinstance(result["valid"], bool)
+
+    def test_convert_to_pdf_a_invalid_level_raises(self):
+        doc = _make_simple_doc()
+        with pytest.raises(ValueError):
+            doc.convert_to_pdf_a("99z")
+
+    def test_convert_to_pdf_a_all_levels_accepted(self):
+        for level in ("1a", "1b", "2a", "2b", "2u", "3a", "3b", "3u"):
+            doc = _make_simple_doc()
+            result = doc.convert_to_pdf_a(level)
+            assert "success" in result, f"level {level!r} did not return expected dict"
+
+    def test_convert_to_pdf_a_bytes_output_pipeline(self):
+        """Full IDP pipeline: open → convert → compress → get bytes."""
+        doc = _make_simple_doc()
+        doc.convert_to_pdf_a("2b")
+        data = doc.to_bytes(compress=True, garbage_collect=True)
+        assert data[:5] == _PDF_MAGIC
+        assert len(data) > 100
+
+
+# ── PdfDocument: to_bytes_encrypted ─────────────────────────────────────────
+
+
+class TestPdfDocumentEncryptedBytes:
+    def test_to_bytes_encrypted_returns_valid_pdf(self):
+        doc = _make_simple_doc()
+        data = doc.to_bytes_encrypted("user123", "owner456")
+        assert data[:5] == _PDF_MAGIC
+        assert len(data) > 100
+
+    def test_to_bytes_encrypted_owner_password_defaults_to_user(self):
+        doc = _make_simple_doc()
+        data = doc.to_bytes_encrypted("secret")
+        assert data[:5] == _PDF_MAGIC
+
+    def test_to_bytes_encrypted_roundtrip_with_correct_password(self):
+        doc = _make_simple_doc()
+        data = doc.to_bytes_encrypted("userpass", "ownerpass")
+        doc2 = PdfDocument.from_bytes(data, password="userpass")
+        assert doc2.page_count() >= 1
+
+    def test_to_bytes_encrypted_wrong_password_raises(self):
+        doc = _make_simple_doc()
+        data = doc.to_bytes_encrypted("correct", "ownerpass")
+        with pytest.raises(RuntimeError):
+            PdfDocument.from_bytes(data, password="wrong")
+
+    def test_to_bytes_encrypted_with_permission_flags(self):
+        doc = _make_simple_doc()
+        data = doc.to_bytes_encrypted(
+            "user",
+            "owner",
+            allow_print=False,
+            allow_copy=False,
+            allow_modify=False,
+            allow_annotate=False,
+        )
+        assert data[:5] == _PDF_MAGIC
+        doc2 = PdfDocument.from_bytes(data, password="user")
+        assert doc2.page_count() >= 1
+
+    def test_to_bytes_encrypted_larger_than_unencrypted(self):
+        doc1 = _make_simple_doc()
+        doc2 = _make_simple_doc()
+        _ = doc1.to_bytes()
+        encrypted = doc2.to_bytes_encrypted("pw", "pw")
+        assert len(encrypted) > 0
+        assert encrypted[:5] == _PDF_MAGIC

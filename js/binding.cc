@@ -238,6 +238,7 @@ extern "C" {
   extern int   document_editor_unmark_page_for_flatten(void* handle, size_t page, int* error_code);
   extern int32_t document_editor_is_page_marked_for_redaction(const void* handle, size_t page);
   extern int   document_editor_unmark_page_for_redaction(void* handle, size_t page, int* error_code);
+  extern uint8_t* document_editor_extract_pages_to_bytes(void* handle, const int32_t* pages, size_t count, size_t* out_len, int* error_code);
 
   // Form Fields
   extern void* pdf_document_get_form_fields(void* handle, int* error_code);
@@ -544,6 +545,10 @@ extern "C" {
                                             float x, float y, float w, float h, int* error_code);
   extern int   pdf_page_builder_barcode_qr(void* page, const char* data,
                                             float x, float y, float size, int* error_code);
+  extern int   pdf_page_builder_image(void* page,
+                                      const uint8_t* bytes, size_t len,
+                                      float x, float y, float w, float h,
+                                      int* error_code);
   extern int   pdf_page_builder_image_with_alt(void* page,
                                                const uint8_t* bytes, size_t len,
                                                float x, float y, float w, float h,
@@ -565,6 +570,14 @@ extern "C" {
   extern int   pdf_page_builder_stroke_line(void* page, float x1, float y1, float x2, float y2,
                                             float width, float r, float g, float b,
                                             int* error_code);
+  extern int   pdf_page_builder_stroke_rect_dashed(void* page, float x, float y, float w, float h,
+                                                   float width, float r, float g, float b,
+                                                   const float* dash_array, size_t n_dash,
+                                                   float phase, int* error_code);
+  extern int   pdf_page_builder_stroke_line_dashed(void* page, float x1, float y1, float x2, float y2,
+                                                   float width, float r, float g, float b,
+                                                   const float* dash_array, size_t n_dash,
+                                                   float phase, int* error_code);
   extern int   pdf_page_builder_text_in_rect(void* page, float x, float y, float w, float h,
                                              const char* text, int align,
                                              int* error_code);
@@ -605,7 +618,12 @@ extern "C" {
                                                             const char* const* cells,
                                                             const size_t* rowspans,
                                                             int* error_code);
-  extern int   pdf_page_builder_streaming_table_finish(void* page, int* error_code);
+  extern int    pdf_page_builder_streaming_table_set_batch_size(void* page, size_t batch_size,
+                                                                int* error_code);
+  extern size_t pdf_page_builder_streaming_table_pending_row_count(void* page);
+  extern size_t pdf_page_builder_streaming_table_batch_count(void* page);
+  extern int    pdf_page_builder_streaming_table_flush(void* page, int* error_code);
+  extern int    pdf_page_builder_streaming_table_finish(void* page, int* error_code);
 
   extern int   pdf_page_builder_done(void* page, int* error_code);
   extern void  pdf_page_builder_free(void* page);
@@ -2166,6 +2184,26 @@ Napi::Value EditorSaveToBytesWithOptions(const Napi::CallbackInfo& info) {
   return buf;
 }
 
+Napi::Value EditorExtractPagesToBytes(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  if (info.Length() < 2) throw Napi::TypeError::New(env, "Expected (handle, pageIndices: number[])");
+  void* handle = info[0].As<Napi::External<void>>().Data();
+  Napi::Array arr = info[1].As<Napi::Array>();
+  uint32_t len = arr.Length();
+  std::vector<int32_t> pages(len);
+  for (uint32_t i = 0; i < len; i++) {
+    pages[i] = static_cast<int32_t>(arr.Get(i).As<Napi::Number>().Int32Value());
+  }
+  size_t outLen = 0;
+  int errorCode = 0;
+  uint8_t* data = document_editor_extract_pages_to_bytes(handle, pages.data(), len, &outLen, &errorCode);
+  if (errorCode != 0) throw Napi::Error::New(env, "extractPages failed: " + getErrorMessage(errorCode));
+  if (!data || outLen == 0) return Napi::Buffer<uint8_t>::New(env, 0);
+  auto buf = Napi::Buffer<uint8_t>::Copy(env, data, outLen);
+  free_bytes(data);
+  return buf;
+}
+
 Napi::Value EditorGetKeywords(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   void* handle = info[0].As<Napi::External<void>>().Data();
@@ -3586,6 +3624,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("editorUnmarkPageForFlatten", Napi::Function::New(env, EditorUnmarkPageForFlatten));
   exports.Set("editorIsPageMarkedForRedaction", Napi::Function::New(env, EditorIsPageMarkedForRedaction));
   exports.Set("editorUnmarkPageForRedaction", Napi::Function::New(env, EditorUnmarkPageForRedaction));
+  exports.Set("editorExtractPagesToBytes", Napi::Function::New(env, EditorExtractPagesToBytes));
 
   // PDF Document Editing (artifact removal, signing, form data)
   exports.Set("documentEraseArtifacts", Napi::Function::New(env, DocumentEraseArtifacts));
@@ -3770,6 +3809,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   extern Napi::Value PageBuilderNewline(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderBarcode1d(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderBarcodeQr(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderImage(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderImageWithAlt(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderImageArtifact(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderRect(const Napi::CallbackInfo&);
@@ -3777,12 +3817,18 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   extern Napi::Value PageBuilderLine(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderStrokeRect(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderStrokeLine(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderStrokeRectDashed(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderStrokeLineDashed(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderTextInRect(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderNewPageSameSize(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderTable(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderStreamingTableBeginV2(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderStreamingTablePushRow(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderStreamingTablePushRowV2(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderStreamingTableSetBatchSize(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderStreamingTablePendingRowCount(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderStreamingTableBatchCount(const Napi::CallbackInfo&);
+  extern Napi::Value PageBuilderStreamingTableFlush(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderStreamingTableFinish(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderDone(const Napi::CallbackInfo&);
   extern Napi::Value PageBuilderFree(const Napi::CallbackInfo&);
@@ -3854,6 +3900,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("pageBuilderNewline", Napi::Function::New(env, PageBuilderNewline));
   exports.Set("pageBuilderBarcode1d", Napi::Function::New(env, PageBuilderBarcode1d));
   exports.Set("pageBuilderBarcodeQr", Napi::Function::New(env, PageBuilderBarcodeQr));
+  exports.Set("pageBuilderImage", Napi::Function::New(env, PageBuilderImage));
   exports.Set("pageBuilderImageWithAlt", Napi::Function::New(env, PageBuilderImageWithAlt));
   exports.Set("pageBuilderImageArtifact", Napi::Function::New(env, PageBuilderImageArtifact));
   exports.Set("pageBuilderRect", Napi::Function::New(env, PageBuilderRect));
@@ -3861,12 +3908,18 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("pageBuilderLine", Napi::Function::New(env, PageBuilderLine));
   exports.Set("pageBuilderStrokeRect", Napi::Function::New(env, PageBuilderStrokeRect));
   exports.Set("pageBuilderStrokeLine", Napi::Function::New(env, PageBuilderStrokeLine));
+  exports.Set("pageBuilderStrokeRectDashed", Napi::Function::New(env, PageBuilderStrokeRectDashed));
+  exports.Set("pageBuilderStrokeLineDashed", Napi::Function::New(env, PageBuilderStrokeLineDashed));
   exports.Set("pageBuilderTextInRect", Napi::Function::New(env, PageBuilderTextInRect));
   exports.Set("pageBuilderNewPageSameSize", Napi::Function::New(env, PageBuilderNewPageSameSize));
   exports.Set("pageBuilderTable", Napi::Function::New(env, PageBuilderTable));
   exports.Set("pageBuilderStreamingTableBeginV2", Napi::Function::New(env, PageBuilderStreamingTableBeginV2));
   exports.Set("pageBuilderStreamingTablePushRow", Napi::Function::New(env, PageBuilderStreamingTablePushRow));
   exports.Set("pageBuilderStreamingTablePushRowV2", Napi::Function::New(env, PageBuilderStreamingTablePushRowV2));
+  exports.Set("pageBuilderStreamingTableSetBatchSize", Napi::Function::New(env, PageBuilderStreamingTableSetBatchSize));
+  exports.Set("pageBuilderStreamingTablePendingRowCount", Napi::Function::New(env, PageBuilderStreamingTablePendingRowCount));
+  exports.Set("pageBuilderStreamingTableBatchCount", Napi::Function::New(env, PageBuilderStreamingTableBatchCount));
+  exports.Set("pageBuilderStreamingTableFlush", Napi::Function::New(env, PageBuilderStreamingTableFlush));
   exports.Set("pageBuilderStreamingTableFinish", Napi::Function::New(env, PageBuilderStreamingTableFinish));
   exports.Set("pageBuilderDone", Napi::Function::New(env, PageBuilderDone));
   exports.Set("pageBuilderFree", Napi::Function::New(env, PageBuilderFree));
@@ -4453,6 +4506,33 @@ Napi::Value PageBuilderBarcodeQr(const Napi::CallbackInfo& info) {
   return env.Undefined();
 }
 
+Napi::Value PageBuilderImage(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  if (!info[1].IsBuffer() && !info[1].IsTypedArray()) {
+    throw Napi::TypeError::New(env, "image: bytes must be a Buffer or Uint8Array");
+  }
+  uint8_t* data;
+  size_t len;
+  if (info[1].IsBuffer()) {
+    auto buf = info[1].As<Napi::Buffer<uint8_t>>();
+    data = buf.Data(); len = buf.ByteLength();
+  } else {
+    auto ta = info[1].As<Napi::TypedArray>();
+    data = reinterpret_cast<uint8_t*>(
+      static_cast<char*>(ta.ArrayBuffer().Data()) + ta.ByteOffset());
+    len = ta.ByteLength();
+  }
+  float x = static_cast<float>(requireNumber(info, 2, "x"));
+  float y = static_cast<float>(requireNumber(info, 3, "y"));
+  float w = static_cast<float>(requireNumber(info, 4, "w"));
+  float h = static_cast<float>(requireNumber(info, 5, "h"));
+  int errorCode = 0;
+  pdf_page_builder_image(p, data, len, x, y, w, h, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.image");
+  return env.Undefined();
+}
+
 Napi::Value PageBuilderImageWithAlt(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   void* p = externPtr(info, 0, "page");
@@ -4584,6 +4664,66 @@ Napi::Value PageBuilderStrokeLine(const Napi::CallbackInfo& info) {
   int errorCode = 0;
   pdf_page_builder_stroke_line(p, x1, y1, x2, y2, width, r, g, b, &errorCode);
   throwOnError(env, errorCode, "PageBuilder.strokeLine");
+  return env.Undefined();
+}
+
+// strokeRectDashed(page, x, y, w, h, width, r, g, b, dash[], phase)
+Napi::Value PageBuilderStrokeRectDashed(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  float x     = static_cast<float>(requireNumber(info, 1, "x"));
+  float y     = static_cast<float>(requireNumber(info, 2, "y"));
+  float w     = static_cast<float>(requireNumber(info, 3, "w"));
+  float h     = static_cast<float>(requireNumber(info, 4, "h"));
+  float width = static_cast<float>(requireNumber(info, 5, "width"));
+  float r     = static_cast<float>(requireNumber(info, 6, "r"));
+  float g     = static_cast<float>(requireNumber(info, 7, "g"));
+  float b     = static_cast<float>(requireNumber(info, 8, "b"));
+  std::vector<float> dash;
+  if (info.Length() > 9 && info[9].IsArray()) {
+    auto arr = info[9].As<Napi::Array>();
+    for (uint32_t i = 0; i < arr.Length(); i++) {
+      dash.push_back(static_cast<float>(arr.Get(i).As<Napi::Number>().DoubleValue()));
+    }
+  }
+  float phase = 0.0f;
+  if (info.Length() > 10 && info[10].IsNumber()) {
+    phase = static_cast<float>(info[10].As<Napi::Number>().DoubleValue());
+  }
+  int errorCode = 0;
+  pdf_page_builder_stroke_rect_dashed(p, x, y, w, h, width, r, g, b,
+      dash.empty() ? nullptr : dash.data(), dash.size(), phase, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.strokeRectDashed");
+  return env.Undefined();
+}
+
+// strokeLineDashed(page, x1, y1, x2, y2, width, r, g, b, dash[], phase)
+Napi::Value PageBuilderStrokeLineDashed(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p  = externPtr(info, 0, "page");
+  float x1 = static_cast<float>(requireNumber(info, 1, "x1"));
+  float y1 = static_cast<float>(requireNumber(info, 2, "y1"));
+  float x2 = static_cast<float>(requireNumber(info, 3, "x2"));
+  float y2 = static_cast<float>(requireNumber(info, 4, "y2"));
+  float width = static_cast<float>(requireNumber(info, 5, "width"));
+  float r  = static_cast<float>(requireNumber(info, 6, "r"));
+  float g  = static_cast<float>(requireNumber(info, 7, "g"));
+  float b  = static_cast<float>(requireNumber(info, 8, "b"));
+  std::vector<float> dash;
+  if (info.Length() > 9 && info[9].IsArray()) {
+    auto arr = info[9].As<Napi::Array>();
+    for (uint32_t i = 0; i < arr.Length(); i++) {
+      dash.push_back(static_cast<float>(arr.Get(i).As<Napi::Number>().DoubleValue()));
+    }
+  }
+  float phase = 0.0f;
+  if (info.Length() > 10 && info[10].IsNumber()) {
+    phase = static_cast<float>(info[10].As<Napi::Number>().DoubleValue());
+  }
+  int errorCode = 0;
+  pdf_page_builder_stroke_line_dashed(p, x1, y1, x2, y2, width, r, g, b,
+      dash.empty() ? nullptr : dash.data(), dash.size(), phase, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.strokeLineDashed");
   return env.Undefined();
 }
 
@@ -4803,6 +4943,39 @@ Napi::Value PageBuilderStreamingTableFinish(const Napi::CallbackInfo& info) {
   int errorCode = 0;
   pdf_page_builder_streaming_table_finish(p, &errorCode);
   throwOnError(env, errorCode, "PageBuilder.streamingTableFinish");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderStreamingTableSetBatchSize(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  size_t batchSize = static_cast<size_t>(requireNumber(info, 1, "batchSize"));
+  int errorCode = 0;
+  pdf_page_builder_streaming_table_set_batch_size(p, batchSize, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.streamingTableSetBatchSize");
+  return env.Undefined();
+}
+
+Napi::Value PageBuilderStreamingTablePendingRowCount(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  size_t count = pdf_page_builder_streaming_table_pending_row_count(p);
+  return Napi::Number::New(env, static_cast<double>(count));
+}
+
+Napi::Value PageBuilderStreamingTableBatchCount(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  size_t count = pdf_page_builder_streaming_table_batch_count(p);
+  return Napi::Number::New(env, static_cast<double>(count));
+}
+
+Napi::Value PageBuilderStreamingTableFlush(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* p = externPtr(info, 0, "page");
+  int errorCode = 0;
+  pdf_page_builder_streaming_table_flush(p, &errorCode);
+  throwOnError(env, errorCode, "PageBuilder.streamingTableFlush");
   return env.Undefined();
 }
 

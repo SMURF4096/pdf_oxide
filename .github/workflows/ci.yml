@@ -12,6 +12,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -27,10 +30,10 @@ jobs:
     name: Format Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: rustfmt
 
@@ -48,7 +51,7 @@ jobs:
     # fixture corpus is gitignored and fetched separately. If no
     # fixtures are checked out in CI, the script exits 0 trivially.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Validate fixtures
         run: ./tools/benchmark-harness/validate_fixtures.sh --strict
@@ -58,15 +61,15 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: clippy
 
       - name: Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: Run Clippy on full workspace
         run: cargo clippy --all-targets --workspace -- -D warnings
@@ -85,23 +88,37 @@ jobs:
           - os: ubuntu-latest
             rust: nightly
     steps:
-      - uses: actions/checkout@v6
+      - name: Free disk space (Linux)
+        if: runner.os == 'Linux'
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           toolchain: ${{ matrix.rust }}
 
       - name: Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           key: ${{ matrix.rust }}
 
       - name: Build
         run: cargo build --verbose
+        if: runner.os != 'Linux'
 
       - name: Run tests
         run: cargo test --verbose
+        env:
+          CARGO_INCREMENTAL: "0"
 
       - name: Build documentation (warnings as errors)
         run: cargo doc --no-deps --workspace
@@ -118,13 +135,13 @@ jobs:
           - ""
           - "python"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: Build with features
         run: cargo build --no-default-features --features "${{ matrix.features }}"
@@ -139,13 +156,13 @@ jobs:
     name: Rust Examples
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           key: rust-examples
 
@@ -181,13 +198,13 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: Build CLI
         run: cargo build -p pdf_oxide_cli
@@ -203,13 +220,13 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: Build MCP server
         run: cargo build -p pdf_oxide_mcp
@@ -233,21 +250,21 @@ jobs:
           large-packages: true
           swap-storage: true
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
 
       - name: Create virtual environment
         run: uv venv
@@ -256,7 +273,7 @@ jobs:
         run: uv pip install maturin pytest
 
       - name: Build Python package
-        run: uv run maturin build --release --features python --out dist
+        run: uv run maturin build --release --features python,ocr --out dist
 
       - name: Install wheel
         shell: bash
@@ -288,6 +305,13 @@ jobs:
           cd "$GITHUB_WORKSPACE/examples/python/09-new-features/in_memory_roundtrip" && uv run python main.py
           cd "$GITHUB_WORKSPACE/examples/python/09-new-features/pkcs12_signing"   && uv run python main.py
           cd "$GITHUB_WORKSPACE/examples/python/09-new-features/rfc3161_timestamp" && uv run python main.py
+          cd "$GITHUB_WORKSPACE/examples/python/09-new-features/dashed_stroke"    && uv run python main.py
+          cd "$GITHUB_WORKSPACE/examples/python/09-new-features/pdfa_conversion"  && uv run python main.py
+          cd "$GITHUB_WORKSPACE/examples/python/09-new-features/page_extraction"  && uv run python main.py
+          cd "$GITHUB_WORKSPACE/examples/python/09-new-features/encrypted_bytes" && uv run python main.py
+          cd "$GITHUB_WORKSPACE/examples/python/09-new-features/compliance_validation" && uv run python main.py
+          cd "$GITHUB_WORKSPACE/examples/python/09-new-features/image_embedding"    && uv run python main.py
+          cd "$GITHUB_WORKSPACE/examples/python/09-new-features/ocr_scanned_pdf"  && uv run python main.py
 
   # WASM build check
   wasm-build:
@@ -304,22 +328,22 @@ jobs:
           large-packages: true
           swap-storage: true
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           targets: wasm32-unknown-unknown
           components: clippy
 
       - name: Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: Build WASM
-        run: cargo build --lib --target wasm32-unknown-unknown --features wasm
+        run: cargo build --lib --target wasm32-unknown-unknown --features wasm,rendering
 
       - name: Clippy WASM
-        run: cargo clippy --target wasm32-unknown-unknown --no-default-features --features wasm --lib -- -D warnings
+        run: cargo clippy --target wasm32-unknown-unknown --no-default-features --features wasm,rendering --lib -- -D warnings
 
       # Validate the produced module using wasm-tools.
       - name: Install wasm-tools
@@ -340,7 +364,7 @@ jobs:
           echo "$PWD/binaryen-version_${ver}/bin" >> "$GITHUB_PATH"
 
       - name: Release WASM build
-        run: cargo build --release --lib --target wasm32-unknown-unknown --no-default-features --features wasm
+        run: cargo build --release --lib --target wasm32-unknown-unknown --no-default-features --features wasm,rendering
 
       - name: wasm-opt -Oz --converge (size gate)
         shell: bash
@@ -360,50 +384,120 @@ jobs:
           after_kb=$(( $(stat -c%s "$out") / 1024 ))
           echo "Before wasm-opt: ${before_kb} KB"
           echo "After  wasm-opt: ${after_kb} KB"
-          # Size regression gate: current baseline after -Oz is ~7.8 MB.
-          # Leave ~20% headroom; tighten after a dedicated size-reduction pass.
-          max_kb=9216
+          # Size regression gate: v0.3.40 baseline after -Oz is ~10.4 MB
+          # (grew from 7.8 MB with new image embedding, encryption, compliance,
+          # and SVG features). Ceiling leaves ~10% headroom; tighten after a
+          # dedicated size-reduction pass.
+          max_kb=11264
           if [ "$after_kb" -gt "$max_kb" ]; then
             echo "::error::wasm bundle ${after_kb} KB exceeds ceiling ${max_kb} KB"
             exit 1
           fi
           wasm-tools validate "$out"
 
-  # C FFI layer build check - the shared library that Go, JS, and C# bindings link against
-  ffi-build:
-    name: FFI Build (${{ matrix.os }})
+  # Build the native library once per OS × feature-variant, then share the
+  # resulting artifact with all binding jobs (Go, Node.js, C#, FFI check).
+  # Avoids rebuilding ~400 MB of Rust code N times per CI run.
+  #
+  # Variants:
+  #   default  — icc only (default features); used by Node.js + C# bare guard
+  #   extended — barcodes,rendering,signatures,tsa-client,system-fonts; native targets; used by C#
+  #   go       — same features, but cross-compiled for CGo (aarch64-darwin / mingw64); used by Go
+  build-lib:
+    name: Build lib (${{ matrix.os }}, ${{ matrix.variant }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            variant: default
+            features: ""
+            extra-target: ""
+          - os: ubuntu-latest
+            variant: extended
+            features: "barcodes,rendering,signatures,tsa-client,system-fonts"
+            extra-target: ""
+          - os: macos-latest
+            variant: default
+            features: ""
+            extra-target: ""
+          - os: macos-latest
+            variant: extended
+            features: "barcodes,rendering,signatures,tsa-client,system-fonts"
+            extra-target: ""
+          - os: macos-latest
+            variant: go
+            features: "barcodes,rendering,signatures,tsa-client,system-fonts"
+            extra-target: "aarch64-apple-darwin"
+          - os: windows-latest
+            variant: default
+            features: ""
+            extra-target: ""
+          - os: windows-latest
+            variant: extended
+            features: "barcodes,rendering,signatures,tsa-client,system-fonts"
+            extra-target: ""
+          - os: windows-latest
+            variant: go
+            features: "barcodes,rendering,signatures,tsa-client,system-fonts"
+            extra-target: "x86_64-pc-windows-gnu"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Add cross-compile target
+        if: matrix.extra-target != ''
+        run: rustup target add ${{ matrix.extra-target }}
 
       - name: Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
-          key: ffi-${{ matrix.os }}
+          key: build-lib-${{ matrix.os }}-${{ matrix.variant }}
 
-      - name: Build library (produces cdylib + rlib)
-        run: cargo build --release --lib
+      - name: Build library
+        shell: bash
+        run: |
+          FEATURE_FLAG=""
+          [ -n "${{ matrix.features }}" ] && FEATURE_FLAG="--features ${{ matrix.features }}"
+          TARGET_FLAG=""
+          [ -n "${{ matrix.extra-target }}" ] && TARGET_FLAG="--target ${{ matrix.extra-target }}"
+          cargo build --release --lib $FEATURE_FLAG $TARGET_FLAG
+
+      # Upload every lib file that exists — paths vary by OS and target.
+      # Downstream jobs download and find the file at its original location.
+      - name: Upload native lib artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: native-lib-${{ matrix.os }}-${{ matrix.variant }}
+          retention-days: 1
+          if-no-files-found: ignore
+          path: |
+            target/release/libpdf_oxide.so
+            target/release/libpdf_oxide.a
+            target/release/libpdf_oxide.dylib
+            target/release/pdf_oxide.dll
+            target/release/pdf_oxide.lib
+            target/x86_64-pc-windows-gnu/release/libpdf_oxide.a
+            target/x86_64-pc-windows-gnu/release/pdf_oxide.dll
+            target/x86_64-pc-windows-gnu/release/pdf_oxide.lib
+            target/aarch64-apple-darwin/release/libpdf_oxide.dylib
+            target/aarch64-apple-darwin/release/libpdf_oxide.a
+            include/pdf_oxide.h
 
   # Go bindings build and test
   go:
     name: Go Bindings (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: [build-lib]
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -413,39 +507,14 @@ jobs:
           # available (>=1.25 required by govulncheck v1.3+).
           go-version: 'stable'
 
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
+      # Download the pre-built native lib (extended features: barcodes,
+      # rendering, signatures, tsa-client, system-fonts). Artifact preserves
+      # the original target/ directory structure so CGo finds it at the
+      # expected path without any extra staging.
+      - name: Download native lib artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          key: go-${{ matrix.os }}
-
-      # Windows uses a GNU Rust target so the resulting `libpdf_oxide.a`
-      # is MinGW-compatible with the gcc linker that Go's CGo invokes by
-      # default. The MSVC target produces `pdf_oxide.lib` (COFF) which
-      # MinGW ld can't read, matching the release.yml cross-compile row.
-      - name: Windows — add GNU Rust target
-        if: matrix.os == 'windows-latest'
-        run: rustup target add x86_64-pc-windows-gnu
-
-      # The Go test suite exercises rendering + signatures + barcodes
-      # + the TSA HTTP client via the FFI, so the native lib has to be
-      # built with matching features — default `icc`-only would make
-      # the stubs fall through to UNSUPPORTED at runtime.
-      - name: Build library (cdylib + rlib + staticlib)
-        shell: bash
-        env:
-          PDF_OXIDE_FEATURES: "barcodes,rendering,signatures,tsa-client,system-fonts"
-        run: |
-          case "${{ matrix.os }}" in
-            windows-latest)
-              cargo build --release --lib --features "$PDF_OXIDE_FEATURES" --target x86_64-pc-windows-gnu
-              ;;
-            macos-latest)
-              cargo build --release --lib --features "$PDF_OXIDE_FEATURES" --target aarch64-apple-darwin
-              ;;
-            *)
-              cargo build --release --lib --features "$PDF_OXIDE_FEATURES"
-              ;;
-          esac
+          name: native-lib-${{ matrix.os }}-${{ matrix.os == 'ubuntu-latest' && 'extended' || 'go' }}
 
       - name: Go build
         working-directory: go
@@ -512,41 +581,35 @@ jobs:
           go run -tags pdf_oxide_dev main.go
           cd "$GITHUB_WORKSPACE/examples/go/06-edit-document"
           go run -tags pdf_oxide_dev main.go "$PDF" /tmp/go_edited.pdf
-          for feat in streaming_table pdf_ua_image in_memory_roundtrip pkcs12_signing rfc3161_timestamp; do
+          for feat in streaming_table pdf_ua_image in_memory_roundtrip pkcs12_signing rfc3161_timestamp dashed_stroke encrypted_bytes page_extraction pdfa_conversion compliance_validation image_embedding; do
             cd "$GITHUB_WORKSPACE/examples/go/09-new-features/$feat"
             go run -tags pdf_oxide_dev main.go
           done
 
   # JavaScript/TypeScript bindings build and test
-  # Mirrors the release.yml build-nodejs job: builds the Rust staticlib, then
-  # runs node-gyp rebuild to produce a real .node addon, matching exactly what
-  # ships to npm.
+  # Downloads the pre-built Rust staticlib then runs node-gyp rebuild to
+  # produce a real .node addon, matching exactly what ships to npm.
   nodejs:
     name: Node.js Bindings (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: [build-lib]
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '20'
 
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
+      - name: Download native lib artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          key: nodejs-${{ matrix.os }}
-
-      - name: Build library (produces cdylib + rlib + staticlib)
-        run: cargo build --release --lib
+          name: native-lib-${{ matrix.os }}-default
 
       - name: Stage staticlib for node-gyp
         shell: bash
@@ -659,6 +722,11 @@ jobs:
           echo "--- in_memory_roundtrip ---"   && timeout 120 node 09-new-features/in_memory_roundtrip/index.js
           echo "--- pkcs12_signing ---"        && timeout 120 node 09-new-features/pkcs12_signing/index.js
           echo "--- rfc3161_timestamp ---"     && timeout 120 node 09-new-features/rfc3161_timestamp/index.js
+          echo "--- dashed_stroke ---"         && timeout 120 node 09-new-features/dashed_stroke/index.js
+          echo "--- encrypted_bytes ---"        && timeout 120 node 09-new-features/encrypted_bytes/index.js
+          echo "--- page_extraction ---"        && timeout 120 node 09-new-features/page_extraction/index.js
+          echo "--- compliance_validation ---"  && timeout 120 node 09-new-features/compliance_validation/index.js
+          echo "--- image_embedding ---"        && timeout 120 node 09-new-features/image_embedding/index.js
 
       - name: Compile TypeScript examples
         if: matrix.os == 'ubuntu-latest'
@@ -669,32 +737,26 @@ jobs:
   csharp:
     name: C# Bindings (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: [build-lib]
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
 
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
+      # C# tests require the extended-features lib (barcodes, rendering,
+      # signatures, tsa-client, system-fonts) so UNSUPPORTED stubs don't
+      # shadow the assertions.
+      - name: Download native lib artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          key: csharp-${{ matrix.os }}
-
-      # C# binding surface exercises barcodes + rendering + signatures
-      # + the TSA HTTP client. Build the native lib with the features
-      # those tests assume so the FFI stubs don't fall through to
-      # UNSUPPORTED at runtime.
-      - name: Build library (produces cdylib + rlib)
-        run: cargo build --release --lib --features barcodes,rendering,signatures,tsa-client,system-fonts
+          name: native-lib-${{ matrix.os }}-extended
 
       - name: Build C# library
         working-directory: csharp/PdfOxide
@@ -783,7 +845,13 @@ jobs:
             examples/csharp/09-new-features/PdfUaImage/PdfUaImage.csproj \
             examples/csharp/09-new-features/InMemoryRoundtrip/InMemoryRoundtrip.csproj \
             examples/csharp/09-new-features/Pkcs12Signing/Pkcs12Signing.csproj \
-            examples/csharp/09-new-features/Rfc3161Timestamp/Rfc3161Timestamp.csproj; do
+            examples/csharp/09-new-features/Rfc3161Timestamp/Rfc3161Timestamp.csproj \
+            examples/csharp/09-new-features/DashedStroke/DashedStroke.csproj \
+            examples/csharp/09-new-features/EncryptedBytes/EncryptedBytes.csproj \
+            examples/csharp/09-new-features/PageExtraction/PageExtraction.csproj \
+            examples/csharp/09-new-features/PdfaConversion/PdfaConversion.csproj \
+            examples/csharp/09-new-features/ComplianceValidation/ComplianceValidation.csproj \
+            examples/csharp/09-new-features/ImageEmbedding/ImageEmbedding.csproj; do
             dotnet run --project "$proj"
           done
 
@@ -796,24 +864,19 @@ jobs:
   csharp-bare-features:
     name: C# bindings — bare-features native lib (regression guard)
     runs-on: ubuntu-latest
+    needs: [build-lib]
     steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
 
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
+      - name: Download native lib artifact (default features)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          key: csharp-bare-ubuntu
-
-      - name: Build native lib — default features only (icc)
-        run: cargo build --release --lib
+          name: native-lib-ubuntu-latest-default
 
       - name: Build C# library
         working-directory: csharp/PdfOxide
@@ -836,7 +899,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       # Free ~15 GB of disk before cargo-llvm-cov runs. The instrumented
       # build writes a second full target tree (target/llvm-cov-target/)
@@ -854,12 +917,12 @@ jobs:
           docker-images: true
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: llvm-tools-preview
 
       - name: Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
@@ -897,13 +960,13 @@ jobs:
     name: Benchmark Smoke Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: Build benchmarks
         run: cargo bench --no-run
@@ -913,7 +976,7 @@ jobs:
     name: Security Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Run security audit
         uses: actions-rust-lang/audit@v1
@@ -923,21 +986,36 @@ jobs:
     name: Dependency Check (cargo-deny)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - name: Check dependencies
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
           arguments: --all-features
 
+  # cargo-geiger: report unsafe code in the dependency tree (informational)
+  geiger:
+    name: Unsafe code audit (cargo-geiger)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          key: geiger
+      - name: Install cargo-geiger
+        run: cargo install --locked cargo-geiger
+      - name: Run cargo-geiger
+        run: cargo geiger --all-features 2>/dev/null || true
+
   # TOML formatting check (taplo)
   taplo:
     name: TOML format (taplo)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           key: taplo
       - name: Install taplo
@@ -952,9 +1030,9 @@ jobs:
     name: Unused deps (cargo-shear)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           key: shear
       - name: Install cargo-shear
@@ -976,9 +1054,9 @@ jobs:
     name: Feature powerset (cargo-hack)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           key: hack
       - name: Install cargo-hack
@@ -1014,7 +1092,7 @@ jobs:
     if: false
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: obi1kenobi/cargo-semver-checks-action@v2
         with:
           feature-group: default-features
@@ -1024,17 +1102,38 @@ jobs:
     name: MSRV build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - name: Read MSRV from Cargo.toml
         id: msrv
         run: |
           v=$(grep -E '^rust-version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
           echo "version=${v:-1.82}" >> "$GITHUB_OUTPUT"
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           toolchain: ${{ steps.msrv.outputs.version }}
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           key: msrv
       - name: Build with MSRV toolchain
         run: cargo build --lib --all-features
+
+  dco:
+    name: DCO check
+    runs-on: ubuntu-latest
+    if: false # temporarily disabled — re-enable before public contributor onboarding
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0
+      - name: Check DCO sign-off
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          MISSING=0
+          while IFS= read -r sha; do
+            if ! git log -1 --pretty=full "$sha" | grep -q "^Signed-off-by:"; then
+              echo "::error::Commit $sha is missing a Signed-off-by trailer"
+              MISSING=$((MISSING+1))
+            fi
+          done < <(git log --pretty=format:"%H" "${BASE}..${HEAD}")
+          [ "$MISSING" -eq 0 ] || exit 1

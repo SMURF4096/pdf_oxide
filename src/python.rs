@@ -73,8 +73,12 @@ impl PyPdfDocument {
             .map_err(|e| PyIOError::new_err(format!("Failed to open PDF: {}", e)))?;
 
         if let Some(pw) = password {
-            doc.authenticate(pw.as_bytes())
+            let ok = doc
+                .authenticate(pw.as_bytes())
                 .map_err(|e| PyRuntimeError::new_err(format!("Authentication failed: {}", e)))?;
+            if !ok {
+                return Err(PyRuntimeError::new_err("Authentication failed: wrong password"));
+            }
         }
 
         let path_str = path.to_string_lossy().into_owned();
@@ -96,8 +100,12 @@ impl PyPdfDocument {
             .map_err(|e| PyIOError::new_err(format!("Failed to open PDF from bytes: {}", e)))?;
 
         if let Some(pw) = password {
-            doc.authenticate(pw.as_bytes())
+            let ok = doc
+                .authenticate(pw.as_bytes())
                 .map_err(|e| PyRuntimeError::new_err(format!("Authentication failed: {}", e)))?;
+            if !ok {
+                return Err(PyRuntimeError::new_err("Authentication failed: wrong password"));
+            }
         }
 
         Ok(PyPdfDocument {
@@ -137,9 +145,16 @@ impl PyPdfDocument {
 
     /// Get number of pages.
     fn page_count(&mut self) -> PyResult<usize> {
-        self.inner
-            .page_count()
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to get page count: {}", e)))
+        if let Some(ref mut editor) = self.editor {
+            use crate::editor::EditableDocument;
+            editor
+                .page_count()
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to get page count: {}", e)))
+        } else {
+            self.inner
+                .page_count()
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to get page count: {}", e)))
+        }
     }
 
     /// Enumerate existing PDF signatures. Returns a list of
@@ -797,6 +812,48 @@ impl PyPdfDocument {
         } else {
             Err(PyRuntimeError::new_err("No editor initialized."))
         }
+    }
+
+    /// Return the (possibly edited) document as encrypted bytes.
+    ///
+    /// Equivalent to `save_encrypted` but returns bytes instead of writing to disk.
+    /// Useful for in-memory pipelines where writing a temporary file is undesirable.
+    #[pyo3(signature = (user_password, owner_password=None, allow_print=true, allow_copy=true, allow_modify=true, allow_annotate=true))]
+    fn to_bytes_encrypted<'py>(
+        &mut self,
+        py: Python<'py>,
+        user_password: &str,
+        owner_password: Option<&str>,
+        allow_print: bool,
+        allow_copy: bool,
+        allow_modify: bool,
+        allow_annotate: bool,
+    ) -> PyResult<Bound<'py, PyBytes>> {
+        use crate::editor::{EncryptionAlgorithm, EncryptionConfig, Permissions, SaveOptions};
+        self.ensure_editor()?;
+        let editor = self
+            .editor
+            .as_mut()
+            .ok_or_else(|| PyRuntimeError::new_err("No editor initialized."))?;
+        let owner_pwd = owner_password.unwrap_or(user_password);
+        let permissions = Permissions {
+            print: allow_print,
+            print_high_quality: allow_print,
+            modify: allow_modify,
+            copy: allow_copy,
+            annotate: allow_annotate,
+            fill_forms: allow_annotate,
+            accessibility: true,
+            assemble: allow_modify,
+        };
+        let config = EncryptionConfig::new(user_password, owner_pwd)
+            .with_algorithm(EncryptionAlgorithm::Aes256)
+            .with_permissions(permissions);
+        let options = SaveOptions::with_encryption(config);
+        let bytes = editor
+            .save_to_bytes_with_options(options)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to encrypt PDF: {}", e)))?;
+        Ok(PyBytes::new(py, &bytes))
     }
 
     /// Set document metadata title.
@@ -1839,6 +1896,45 @@ impl PyPdfDocument {
         Ok(d.into())
     }
 
+    /// Convert document to PDF/A archival format in-place.
+    /// `level` is one of: 1a, 1b, 2a, 2b, 2u, 3a, 3b, 3u.
+    /// Returns a dict with 'success' (bool), 'actions' (list[str]), 'errors' (list[str]).
+    #[pyo3(signature = (level="2b"))]
+    fn convert_to_pdf_a(&mut self, py: Python<'_>, level: &str) -> PyResult<Py<PyAny>> {
+        use crate::compliance::convert_to_pdf_a;
+        use crate::compliance::types::PdfALevel;
+        let pdf_level = match level {
+            "1a" => PdfALevel::A1a,
+            "1b" => PdfALevel::A1b,
+            "2a" => PdfALevel::A2a,
+            "2b" => PdfALevel::A2b,
+            "2u" => PdfALevel::A2u,
+            "3a" => PdfALevel::A3a,
+            "3b" => PdfALevel::A3b,
+            "3u" => PdfALevel::A3u,
+            _ => {
+                return Err(PyValueError::new_err(format!(
+                    "Unknown PDF/A level: '{}'. Use 1a, 1b, 2a, 2b, 2u, 3a, 3b, 3u",
+                    level
+                )))
+            },
+        };
+        let result = convert_to_pdf_a(&mut self.inner, pdf_level)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let d = pyo3::types::PyDict::new(py);
+        d.set_item("success", result.success)?;
+        d.set_item("level", level)?;
+        let actions: Vec<String> = result
+            .actions
+            .iter()
+            .map(|a| a.description.clone())
+            .collect();
+        let errors: Vec<String> = result.errors.iter().map(|e| e.reason.clone()).collect();
+        d.set_item("actions", actions)?;
+        d.set_item("errors", errors)?;
+        Ok(d.into())
+    }
+
     /// Validate PDF/UA accessibility compliance.
     /// Returns a dict with 'valid', 'errors', 'warnings' keys.
     fn validate_pdf_ua(&mut self, py: Python<'_>) -> PyResult<Py<PyAny>> {
@@ -1897,6 +1993,30 @@ impl PyPdfDocument {
         editor
             .extract_pages(&pages, output)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Extract a subset of pages and return them as PDF bytes.
+    /// `pages` is a list of 0-based indices to keep. The source document is not modified.
+    ///
+    /// Example::
+    ///
+    ///     from itertools import batched
+    ///     doc = PdfDocument.from_bytes(pdf_bytes)
+    ///     for chunk in batched(range(doc.page_count()), 50):
+    ///         chunk_bytes = doc.extract_pages_to_bytes(list(chunk))
+    fn extract_pages_to_bytes<'py>(
+        &mut self,
+        py: Python<'py>,
+        pages: Vec<usize>,
+    ) -> PyResult<Bound<'py, PyBytes>> {
+        self.ensure_editor()?;
+        let editor = self.editor.as_mut().ok_or_else(|| {
+            PyRuntimeError::new_err("Internal error: editor missing after initialization")
+        })?;
+        let bytes = editor
+            .extract_pages_to_bytes(&pages)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(PyBytes::new(py, &bytes))
     }
 
     /// Delete a page by index (0-based).
@@ -4143,6 +4263,18 @@ enum PendingPageOp {
         g: f32,
         b: f32,
     },
+    StrokeRectDashed {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        width: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+        dash: Vec<f32>,
+        phase: f32,
+    },
     StrokeLine {
         x1: f32,
         y1: f32,
@@ -4152,6 +4284,18 @@ enum PendingPageOp {
         r: f32,
         g: f32,
         b: f32,
+    },
+    StrokeLineDashed {
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        width: f32,
+        r: f32,
+        g: f32,
+        b: f32,
+        dash: Vec<f32>,
+        phase: f32,
     },
     TextInRect {
         x: f32,
@@ -5336,6 +5480,34 @@ impl PyFluentPageBuilder {
         Ok(slf)
     }
 
+    /// Draw a dashed rectangle border. `dash` is alternating on/off lengths in points.
+    #[pyo3(signature = (x, y, w, h, dash, width=1.0, color=(0.0, 0.0, 0.0), phase=0.0))]
+    fn stroke_rect_dashed<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        dash: Vec<f32>,
+        width: f32,
+        color: (f32, f32, f32),
+        phase: f32,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::StrokeRectDashed {
+            x,
+            y,
+            w,
+            h,
+            width,
+            r: color.0,
+            g: color.1,
+            b: color.2,
+            dash,
+            phase,
+        })?;
+        Ok(slf)
+    }
+
     /// Draw a line with explicit width (points) and RGB colour.
     #[pyo3(signature = (x1, y1, x2, y2, width=1.0, color=(0.0, 0.0, 0.0)))]
     fn stroke_line<'a>(
@@ -5356,6 +5528,34 @@ impl PyFluentPageBuilder {
             r: color.0,
             g: color.1,
             b: color.2,
+        })?;
+        Ok(slf)
+    }
+
+    /// Draw a dashed line. `dash` is alternating on/off lengths in points.
+    #[pyo3(signature = (x1, y1, x2, y2, dash, width=1.0, color=(0.0, 0.0, 0.0), phase=0.0))]
+    fn stroke_line_dashed<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        dash: Vec<f32>,
+        width: f32,
+        color: (f32, f32, f32),
+        phase: f32,
+    ) -> PyResult<PyRefMut<'a, Self>> {
+        slf.push(PendingPageOp::StrokeLineDashed {
+            x1,
+            y1,
+            x2,
+            y2,
+            width,
+            r: color.0,
+            g: color.1,
+            b: color.2,
+            dash,
+            phase,
         })?;
         Ok(slf)
     }
@@ -5405,7 +5605,7 @@ impl PyFluentPageBuilder {
     ///
     /// `columns` is a list of `Column`; `repeat_header=True` redraws
     /// the header row at every page break.
-    #[pyo3(signature = (columns, repeat_header=false, mode="fixed", sample_rows=50, min_col_width_pt=20.0, max_col_width_pt=400.0, max_rowspan=1))]
+    #[pyo3(signature = (columns, repeat_header=false, mode="fixed", sample_rows=50, min_col_width_pt=20.0, max_col_width_pt=400.0, max_rowspan=1, batch_size=256))]
     fn streaming_table(
         slf_handle: Py<Self>,
         py: Python<'_>,
@@ -5416,9 +5616,13 @@ impl PyFluentPageBuilder {
         min_col_width_pt: f32,
         max_col_width_pt: f32,
         max_rowspan: usize,
+        batch_size: usize,
     ) -> PyResult<PyStreamingTable> {
         if columns.is_empty() {
             return Err(PyValueError::new_err("streaming_table requires at least one Column"));
+        }
+        if batch_size == 0 {
+            return Err(PyValueError::new_err("batch_size must be >= 1"));
         }
         let cols: Vec<PyColumn> = columns.into_iter().map(|c| (*c).clone()).collect();
         let _ = py;
@@ -5426,13 +5630,15 @@ impl PyFluentPageBuilder {
             parent: slf_handle,
             columns: cols,
             repeat_header,
-            rows: Vec::new(),
+            current_batch: Vec::new(),
+            completed_batches: Vec::new(),
             finished: false,
             mode: mode.to_string(),
             sample_rows,
             min_col_width_pt,
             max_col_width_pt,
             max_rowspan,
+            batch_size,
         })
     }
 
@@ -5559,6 +5765,22 @@ impl PyFluentPageBuilder {
                     g,
                     b,
                 } => page.stroke_rect(x, y, w, h, crate::writer::LineStyle::new(width, r, g, b)),
+                PendingPageOp::StrokeRectDashed {
+                    x,
+                    y,
+                    w,
+                    h,
+                    width,
+                    r,
+                    g,
+                    b,
+                    dash,
+                    phase,
+                } => {
+                    let style =
+                        crate::writer::LineStyle::new(width, r, g, b).with_dash(&dash, phase);
+                    page.stroke_rect(x, y, w, h, style)
+                },
                 PendingPageOp::StrokeLine {
                     x1,
                     y1,
@@ -5570,6 +5792,22 @@ impl PyFluentPageBuilder {
                     b,
                 } => {
                     page.stroke_line(x1, y1, x2, y2, crate::writer::LineStyle::new(width, r, g, b))
+                },
+                PendingPageOp::StrokeLineDashed {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    width,
+                    r,
+                    g,
+                    b,
+                    dash,
+                    phase,
+                } => {
+                    let style =
+                        crate::writer::LineStyle::new(width, r, g, b).with_dash(&dash, phase);
+                    page.stroke_line(x1, y1, x2, y2, style)
                 },
                 PendingPageOp::TextInRect {
                     x,
@@ -5694,21 +5932,26 @@ pub struct PyStreamingTable {
     parent: Py<PyFluentPageBuilder>,
     columns: Vec<PyColumn>,
     repeat_header: bool,
-    /// Each cell: (text, rowspan).
-    rows: Vec<Vec<(String, usize)>>,
+    /// Rows accumulating in the current (not-yet-flushed) batch.
+    current_batch: Vec<Vec<(String, usize)>>,
+    /// Fully-completed batches waiting to be assembled at finish().
+    completed_batches: Vec<Vec<Vec<(String, usize)>>>,
     finished: bool,
     mode: String,
     sample_rows: usize,
     min_col_width_pt: f32,
     max_col_width_pt: f32,
     max_rowspan: usize,
+    /// Maximum rows per batch before an automatic flush (default 256).
+    batch_size: usize,
 }
 
 #[pymethods]
 impl PyStreamingTable {
     /// Push a single row of string cells (all rowspan=1). Length must match
     /// the number of configured columns; otherwise `ValueError` is raised.
-    fn push_row(&mut self, cells: Vec<String>) -> PyResult<()> {
+    /// Auto-flushes the current batch when `batch_size` is reached.
+    fn push_row(&mut self, py: Python<'_>, cells: Vec<String>) -> PyResult<()> {
         if self.finished {
             return Err(PyRuntimeError::new_err("StreamingTable.finish() already called"));
         }
@@ -5719,14 +5962,18 @@ impl PyStreamingTable {
                 self.columns.len()
             )));
         }
-        self.rows
+        self.current_batch
             .push(cells.into_iter().map(|s| (s, 1usize)).collect());
+        if self.current_batch.len() >= self.batch_size {
+            self._flush_batch(py)?;
+        }
         Ok(())
     }
 
     /// Push a row with per-cell rowspan values. Each element is a
     /// `(text, rowspan)` tuple; rowspan == 1 is a normal cell.
-    fn push_row_span(&mut self, cells: Vec<(String, usize)>) -> PyResult<()> {
+    /// Auto-flushes the current batch when `batch_size` is reached.
+    fn push_row_span(&mut self, py: Python<'_>, cells: Vec<(String, usize)>) -> PyResult<()> {
         if self.finished {
             return Err(PyRuntimeError::new_err("StreamingTable.finish() already called"));
         }
@@ -5737,7 +5984,10 @@ impl PyStreamingTable {
                 self.columns.len()
             )));
         }
-        self.rows.push(cells);
+        self.current_batch.push(cells);
+        if self.current_batch.len() >= self.batch_size {
+            self._flush_batch(py)?;
+        }
         Ok(())
     }
 
@@ -5746,12 +5996,29 @@ impl PyStreamingTable {
         self.columns.len()
     }
 
+    /// Number of rows in the current (not-yet-flushed) batch.
+    fn pending_row_count(&self) -> usize {
+        self.current_batch.len()
+    }
+
+    /// Number of fully-completed batches waiting for finish().
+    fn batch_count(&self) -> usize {
+        self.completed_batches.len()
+    }
+
+    /// Explicitly flush the current batch to `completed_batches`.
+    /// Called automatically when `batch_size` rows accumulate.
+    fn flush(&mut self, py: Python<'_>) -> PyResult<()> {
+        self._flush_batch(py)
+    }
+
     /// Close the streaming table and return the parent
     /// `FluentPageBuilder` for further chaining.
     fn finish(&mut self, py: Python<'_>) -> PyResult<Py<PyFluentPageBuilder>> {
         if self.finished {
             return Err(PyRuntimeError::new_err("StreamingTable.finish() already called"));
         }
+        self._flush_batch(py)?;
         self.finished = true;
 
         let parent_handle = self.parent.clone_ref(py);
@@ -5759,7 +6026,8 @@ impl PyStreamingTable {
         let headers: Vec<String> = self.columns.iter().map(|c| c.header.clone()).collect();
         let widths: Vec<f32> = self.columns.iter().map(|c| c.width).collect();
         let aligns: Vec<i32> = self.columns.iter().map(|c| c.align).collect();
-        let rows = std::mem::take(&mut self.rows);
+        // Assemble all batches into a flat row list for the existing dispatch.
+        let rows: Vec<Vec<(String, usize)>> = self.completed_batches.drain(..).flatten().collect();
         parent_ref.push(PendingPageOp::StreamingTable {
             headers,
             widths,
@@ -5774,6 +6042,18 @@ impl PyStreamingTable {
         })?;
         drop(parent_ref);
         Ok(parent_handle)
+    }
+}
+
+impl PyStreamingTable {
+    /// Move the current batch into `completed_batches` (a no-op if the current
+    /// batch is empty). Frees the batch buffer.
+    fn _flush_batch(&mut self, _py: Python<'_>) -> PyResult<()> {
+        if !self.current_batch.is_empty() {
+            let batch = std::mem::take(&mut self.current_batch);
+            self.completed_batches.push(batch);
+        }
+        Ok(())
     }
 }
 
@@ -6410,13 +6690,18 @@ impl PyTimestamp {
         PyBytes::new(py, self.inner.message_imprint_ref()).into()
     }
 
-    /// Cryptographic verify — not yet implemented. The RFC 3161
-    /// TSA-token signer-verification path is not yet wired through
-    /// the Rust core.
+    /// Cryptographically verify this TimeStampToken.
+    ///
+    /// Parses the outer CMS SignedData and verifies the TSA's signature and
+    /// `messageDigest` attribute (RSA-PKCS#1 v1.5, RSA-PSS, ECDSA P-256/P-384).
+    ///
+    /// Returns `True` when the token is cryptographically valid, `False` when
+    /// the check fails. Raises `RuntimeError` if the token is not CMS-wrapped
+    /// or uses an unsupported algorithm.
     fn verify(&self) -> PyResult<bool> {
-        Err(PyNotImplementedError::new_err(
-            "Timestamp.verify() requires CMS signer verification — not yet landed",
-        ))
+        self.inner
+            .verify()
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
     fn __repr__(&self) -> String {
@@ -6430,10 +6715,10 @@ impl PyTimestamp {
 }
 
 /// A single existing PDF signature surfaced by
-/// `PdfDocument.signatures()`. `verify()` runs the RSA-PKCS#1 v1.5
-/// signer-attributes check; `verify_detached()` adds the
-/// `messageDigest` content-hash check. RSA-PSS / ECDSA signers still
-/// raise `NotImplementedError`.
+/// `PdfDocument.signatures()`. `verify()` runs the signer-attributes
+/// check; `verify_detached()` adds the `messageDigest` content-hash
+/// check. Supported algorithms: RSA-PKCS#1 v1.5, RSA-PSS, ECDSA P-256/P-384.
+/// Unsupported-algorithm signers return `Unknown`.
 #[pyclass(module = "pdf_oxide.pdf_oxide", name = "Signature")]
 pub struct PySignature {
     info: crate::signatures::SignatureInfo,
@@ -6526,8 +6811,8 @@ impl PySignature {
     /// signing. A False result means either the signer check failed
     /// or the content was modified after signing.
     ///
-    /// Raises NotImplementedError for RSA-PSS / ECDSA / unknown
-    /// digest / missing signed_attrs / missing messageDigest.
+    /// Raises NotImplementedError when the digest OID is unrecognised
+    /// or signed attributes / messageDigest are absent.
     fn verify_detached(&self, pdf_data: &[u8]) -> PyResult<bool> {
         let Some(contents) = self.info.contents() else {
             return Err(PyNotImplementedError::new_err(

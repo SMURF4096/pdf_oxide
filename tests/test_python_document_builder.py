@@ -761,3 +761,116 @@ def test_issue_401_two_embedded_fonts_save_encrypted(tmp_path):
         f"issue #401: two-font encrypted PDF ({len(raw)} B) is too small; "
         "font sub-objects for both fonts are likely missing"
     )
+
+
+# ── Dashed stroke tests ──────────────────────────────────────────────────────
+
+
+def test_stroke_rect_dashed_produces_pdf():
+    """stroke_rect_dashed emits a valid PDF containing the dash operator."""
+    doc = pdf_oxide.DocumentBuilder()
+    page = doc.a4_page()
+    page.stroke_rect_dashed(50, 100, 200, 150, dash=[3.0, 2.0], width=1.5, color=(0.0, 0.0, 0.8))
+    page.done()
+    data = doc.build()
+    assert data[:4] == b"%PDF", "output is not a PDF"
+    assert b" d\n" in data or b" d " in data, "dash operator 'd' missing from PDF content"
+
+
+def test_stroke_line_dashed_produces_pdf():
+    """stroke_line_dashed emits a valid PDF containing the dash operator."""
+    doc = pdf_oxide.DocumentBuilder()
+    page = doc.a4_page()
+    page.stroke_line_dashed(
+        50, 80, 250, 80, dash=[5.0, 3.0], width=1.0, color=(0.8, 0.0, 0.0), phase=1.0
+    )
+    page.done()
+    data = doc.build()
+    assert data[:4] == b"%PDF"
+    assert b" d\n" in data or b" d " in data, "dash operator 'd' missing from PDF content"
+
+
+def test_stroke_dashed_chainable():
+    """Dashed stroke methods return self for fluent chaining."""
+    doc = pdf_oxide.DocumentBuilder()
+    page = doc.a4_page()
+    # Both dashed methods should be chainable
+    result = page.stroke_rect_dashed(10, 10, 100, 50, dash=[4.0, 2.0])
+    assert result is page
+    result2 = page.stroke_line_dashed(10, 70, 110, 70, dash=[4.0, 2.0])
+    assert result2 is page
+    page.done()
+    data = doc.build()
+    assert data[:4] == b"%PDF"
+
+
+# ── bounded RowBatch for StreamingTable (#400) ──────────────────────────────
+
+
+def test_streaming_table_batch_size_accepted():
+    """batch_size parameter is accepted and exposed via pending_row_count / batch_count."""
+    doc = pdf_oxide.DocumentBuilder()
+    page = doc.letter_page().font("Helvetica", 9.0).at(72.0, 720.0)
+    st = page.streaming_table(
+        columns=[
+            pdf_oxide.Column("A", width=72.0),
+            pdf_oxide.Column("B", width=72.0),
+        ],
+        batch_size=3,
+    )
+    assert st.pending_row_count() == 0
+    assert st.batch_count() == 0
+    st.push_row(["r0c0", "r0c1"])
+    st.push_row(["r1c0", "r1c1"])
+    assert st.pending_row_count() == 2
+    assert st.batch_count() == 0
+    # Third push fills the batch → auto-flush
+    st.push_row(["r2c0", "r2c1"])
+    assert st.pending_row_count() == 0
+    assert st.batch_count() == 1
+    # One more row in the new batch
+    st.push_row(["r3c0", "r3c1"])
+    assert st.pending_row_count() == 1
+    st.finish().done().build()
+
+
+def test_streaming_table_large_with_batch_size():
+    """500-row table with a small batch_size (50) produces a correct multi-page PDF."""
+    n_rows = 500
+    doc = pdf_oxide.DocumentBuilder()
+    page = doc.letter_page().font("Helvetica", 9.0).at(72.0, 720.0)
+    st = page.streaming_table(
+        columns=[
+            pdf_oxide.Column("ID", width=60.0),
+            pdf_oxide.Column("Name", width=200.0),
+        ],
+        repeat_header=True,
+        batch_size=50,
+    )
+    for i in range(n_rows):
+        st.push_row([str(i), f"Row-{i}"])
+    bytes_ = st.finish().done().build()
+    pdf = pdf_oxide.PdfDocument.from_bytes(bytes_)
+    assert pdf.page_count() > 1
+    full_text = "\n".join(pdf.extract_text(p) for p in range(pdf.page_count()))
+    assert "ID" in full_text
+    assert "Row-0" in full_text
+    assert "Row-499" in full_text
+
+
+def test_streaming_table_explicit_flush():
+    """Calling flush() manually moves the current batch to completed."""
+    doc = pdf_oxide.DocumentBuilder()
+    page = doc.letter_page().font("Helvetica", 9.0).at(72.0, 720.0)
+    st = page.streaming_table(
+        columns=[pdf_oxide.Column("X", width=100.0)],
+        batch_size=256,
+    )
+    st.push_row(["first"])
+    st.push_row(["second"])
+    assert st.batch_count() == 0
+    st.flush()
+    assert st.batch_count() == 1
+    assert st.pending_row_count() == 0
+    st.push_row(["third"])
+    st.finish().done().build()

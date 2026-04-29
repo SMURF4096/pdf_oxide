@@ -153,3 +153,36 @@ pub(super) fn is_rsa_pkcs1v15_sig_oid(oid: ObjectIdentifier) -> bool {
         || oid == OID_SHA512_RSA
         || oid == OID_RSA_ENCRYPTION
 }
+
+// ─── RSA-PSS signature algorithm OID ────────────────────────────────
+
+/// `id-RSASSA-PSS` (RFC 4055 §3.1). Appears in SignerInfo.signature_algorithm
+/// when the signer uses RSA with PSS padding.
+pub(super) const OID_RSASSA_PSS: ObjectIdentifier =
+    ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.10");
+
+// ─── ECDSA signature algorithm OIDs ─────────────────────────────────
+//
+// The digest algorithm is implied by the signature OID for ECDSA.
+
+/// ecdsa-with-SHA256 (RFC 5480 / ANSI X9.62)
+pub(super) const OID_ECDSA_SHA256: ObjectIdentifier =
+    ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.2");
+
+/// ecdsa-with-SHA384 (RFC 5480 / ANSI X9.62)
+pub(super) const OID_ECDSA_SHA384: ObjectIdentifier =
+    ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.3");
+
+/// ecdsa-with-SHA512 (RFC 5480 / ANSI X9.62)
+pub(super) const OID_ECDSA_SHA512: ObjectIdentifier =
+    ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.4");
+
+/// `id-ecPublicKey` — SubjectPublicKeyInfo algorithm OID for EC keys.
+pub(super) const OID_EC_PUBLIC_KEY: ObjectIdentifier =
+    ObjectIdentifier::new_unwrap("1.2.840.10045.2.1");
+
+/// P-256 named curve OID (secp256r1 / prime256v1).
+pub(super) const OID_P256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
+
+/// P-384 named curve OID (secp384r1).
+pub(super) const OID_P384: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.132.0.34");

@@ -130,6 +130,43 @@ export declare class PdfDocument {
   toMarkdownAll(): string;
 
   /**
+   * Validate PDF/A conformance.
+   * @param level - "1a"|"1b"|"2a"|"2b"|"2u"|"3a"|"3b"|"3u" (default "2b")
+   * @returns Validation result with errors and warnings arrays
+   */
+  validatePdfA(
+    level?: '1a' | '1b' | '2a' | '2b' | '2u' | '3a' | '3b' | '3u'
+  ): { compliant: boolean; errors: string[]; warnings: string[] };
+
+  /**
+   * Validate PDF/X conformance.
+   * @param level - "1a_2001"|"1a_2003"|"3_2003"|"4"|"5"|"6" (default "4")
+   * @returns Validation result with errors array
+   */
+  validatePdfX(
+    level?: '1a_2001' | '1a_2003' | '3_2003' | '4' | '5' | '6'
+  ): { compliant: boolean; errors: string[]; warnings: string[] };
+
+  /**
+   * Validate PDF/UA accessibility conformance.
+   * @param level - "ua1" (default, only currently supported level)
+   * @returns Accessibility result with errors, warnings, and stats
+   */
+  validatePdfUA(level?: 'ua1'): {
+    accessible: boolean;
+    errors: string[];
+    warnings: string[];
+    stats: {
+      structureElements: number;
+      images: number;
+      tables: number;
+      formFields: number;
+      annotations: number;
+      pages: number;
+    };
+  };
+
+  /**
    * Closes the document and releases resources
    */
   close(): void;

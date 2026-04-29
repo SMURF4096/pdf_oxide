@@ -22,6 +22,13 @@ try {
   if (ts.serial !== "04") throw new Error(`unexpected serial: ${ts.serial}`);
   if (ts.policyOid !== "1.2.3.4.1") throw new Error(`unexpected policy OID: ${ts.policyOid}`);
   console.log("  Timestamp fields verified.");
+  // verify() requires a CMS-wrapped token; bare TSTInfo returns an error
+  try {
+    const result = ts.verify();
+    console.log(`  verify() → ${result}`);
+  } catch (verifyErr) {
+    console.log(`  verify() on bare TSTInfo → error (expected): ${String(verifyErr).slice(0, 60)}`);
+  }
   ts.close();
 } catch (err) {
   if (err instanceof Error && (err.message.includes("not available") || err.message.includes("error code 8"))) {

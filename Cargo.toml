@@ -59,7 +59,7 @@ manual_checked_ops = "allow"
 
 [package]
 name = "pdf_oxide"
-version = "0.3.39"
+version = "0.3.40"
 # MSRV — driven up from 1.82 for v0.3.38. Transitive deps pulled in
 # this release push the floor to 1.88:
 #   - hybrid-array 0.4.10 (via RustCrypto) → edition 2024 → 1.85
@@ -104,6 +104,25 @@ crate-type = ["cdylib", "rlib", "staticlib"]
 workspace = true
 
 [dependencies]
+# ── cargo-geiger audit (last run: 2026-04-26) ─────────────────────────────────
+# pdf_oxide itself: 91.4% fn coverage, 96.3% expr coverage. Remaining unsafe is
+# in ffi.rs (C ABI boundary), python.rs/wasm.rs (PyO3/wasm-bindgen internals),
+# and font/image parsers (pointer arithmetic for binary format decoding).
+#
+# Dependencies marked ! (unsafe present) are accepted:
+#   aes/sha2/md-5/cbc  — RustCrypto; SIMD intrinsics, formally audited
+#   brotli             — C-derived decompressor; unavoidable unsafe
+#   bytemuck           — safe-transmute library; unsafe is its raison d'être
+#   bytes              — Buf/BufMut ring buffer; unsafe for performance
+#   byteorder          — binary parsing; minimal, well-audited unsafe
+#   chrono             — OS timezone lookup; syscall boundary
+#   encoding_rs        — Mozilla SIMD text decode; audited
+#   getrandom          — OS RNG; syscall boundary
+#   hybrid-array/zerocopy — zero-copy type aliasing; unsafe by design
+#   libc               — OS interface crate; entirely unsafe by design
+#   smallvec           — stack alloc optimisation; well-audited
+# ─────────────────────────────────────────────────────────────────────────────
+
 # Core dependencies
 thiserror = "2.0"
 log = "0.4"
@@ -114,7 +133,6 @@ chrono = "0.4"      # Timestamp generation for benchmark results
 # Parsing
 nom = "8.0"
 regex = "1.12"
-lazy_static = "1.4"
 
 # Data structures
 bytes = "1.5"
@@ -164,16 +182,27 @@ sha2 = "0.11"      # SHA-256 for newer encryption
 stringprep = "0.1" # SASLprep for Unicode PDF passwords (R>=5)
 
 # Digital signatures (optional)
+# NOTE: der/spki/pkcs1/pkcs8/rsa/signature/cms are pinned to 0.7/0.9/0.10/2.x track.
+# der 0.8 + spki 0.8 are stable but the rest of the RustCrypto 0.8 stack
+# (pkcs1 0.8, pkcs8 0.11, rsa 0.10, cms 0.3, signature 3.0) are still RC as of 2026-04.
+# Upgrade the whole block together once all reach stable release.
 x509-parser = { version = "0.18", optional = true }   # X.509 certificate parsing
 cms = { version = "0.2", optional = true }            # CMS/PKCS#7 signatures
 rsa = { version = "0.9", optional = true }            # RSA signing
-der = { version = "0.7", optional = true }            # DER encoding — pinned to 0.7 to match cms 0.2 + x509-tsp 0.1
+der = { version = "0.7", optional = true }            # DER encoding
 spki = { version = "0.7", optional = true }           # SubjectPublicKeyInfo — matches der 0.7
 pkcs1 = { version = "0.7", optional = true }          # PKCS#1 RSA format
 pkcs8 = { version = "0.10", optional = true }         # PKCS#8 private keys
 p12-keystore = { version = "0.2.1", optional = true } # PKCS#12 (.p12/.pfx) parsing
 signature = { version = "2.2", optional = true }      # Signature traits
 sha1 = { version = "0.11", optional = true }          # SHA-1 for legacy signatures
+# sha2 v0.10 alias: rsa 0.9 and p256/p384 0.13 require digest 0.10 trait bounds.
+# Our main codebase uses sha2 0.11 (digest 0.11). The alias lets the signatures
+# module use sha2 0.10 types specifically where rsa::pss / ecdsa crate generics
+# require it, without changing the rest of the codebase. See issue #420.
+sha2_v10 = { package = "sha2", version = "0.10", optional = true }
+p256 = { version = "0.13", optional = true }                       # ECDSA P-256 signature verification
+p384 = { version = "0.13", optional = true }                       # ECDSA P-384 signature verification
 
 # Parallel extraction
 rayon = { version = "1.12", optional = true }
@@ -193,7 +222,10 @@ tract-onnx = { version = "0.22", optional = true }
 tokenizers = { version = "0.22", optional = true, default-features = false, features = ["onig"] }
 
 # OCR - PaddleOCR via ONNX Runtime (optional)
-ort = { version = "2.0.0-rc.11", optional = true, default-features = false, features = ["ndarray"] }
+ort = { version = "=2.0.0-rc.11", optional = true, default-features = false, features = [
+    "ndarray",
+    "load-dynamic",
+] }
 imageproc = { version = "0.26", optional = true }
 
 # Serialization
@@ -322,6 +354,9 @@ signatures = [
     "dep:signature",
     "dep:sha1",
     "dep:x509-tsp",
+    "dep:sha2_v10",
+    "dep:p256",
+    "dep:p384",
 ]
 
 # RFC 3161 TSA HTTP client (optional, on top of signatures). Adds ureq

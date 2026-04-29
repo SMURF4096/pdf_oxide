@@ -569,6 +569,69 @@ namespace PdfOxide.Core
         }
 
         /// <summary>
+        /// Extracts a subset of pages into a new in-memory PDF.
+        /// </summary>
+        /// <param name="pageIndices">Zero-based page indices to extract.</param>
+        public unsafe byte[] ExtractPages(int[] pageIndices)
+        {
+            ThrowIfDisposed();
+            ArgumentNullException.ThrowIfNull(pageIndices);
+            if (pageIndices.Length == 0) return Array.Empty<byte>();
+            fixed (int* pPages = pageIndices)
+            {
+                var ptr = NativeMethods.document_editor_extract_pages_to_bytes(
+                    _handle, pPages, (nuint)pageIndices.Length, out nuint outLen, out int errorCode);
+                ExceptionMapper.ThrowIfError(errorCode);
+                if (ptr == IntPtr.Zero || outLen == 0) return Array.Empty<byte>();
+                try
+                {
+                    var bytes = new byte[(int)outLen];
+                    System.Runtime.InteropServices.Marshal.Copy(ptr, bytes, 0, (int)outLen);
+                    return bytes;
+                }
+                finally
+                {
+                    NativeMethods.FreeBytes(ptr);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Converts the document to PDF/A in-place.
+        /// </summary>
+        /// <param name="level">PDF/A conformance level (default A2b).</param>
+        public void ConvertToPdfA(PdfALevel level = PdfALevel.A2b)
+        {
+            ThrowIfDisposed();
+            NativeMethods.document_editor_convert_to_pdf_a(_handle, (int)level, out int errorCode);
+            ExceptionMapper.ThrowIfError(errorCode);
+        }
+
+        /// <summary>
+        /// Saves the document with AES-256 encryption and returns the bytes.
+        /// </summary>
+        public byte[] SaveEncryptedToBytes(string userPassword, string ownerPassword)
+        {
+            ThrowIfDisposed();
+            ArgumentNullException.ThrowIfNull(userPassword);
+            if (string.IsNullOrEmpty(ownerPassword)) ownerPassword = userPassword;
+            var ptr = NativeMethods.document_editor_save_encrypted_to_bytes(
+                _handle, userPassword, ownerPassword, out nuint outLen, out int errorCode);
+            ExceptionMapper.ThrowIfError(errorCode);
+            if (ptr == IntPtr.Zero || outLen == 0) return Array.Empty<byte>();
+            try
+            {
+                var bytes = new byte[(int)outLen];
+                System.Runtime.InteropServices.Marshal.Copy(ptr, bytes, 0, (int)outLen);
+                return bytes;
+            }
+            finally
+            {
+                NativeMethods.FreeBytes(ptr);
+            }
+        }
+
+        /// <summary>
         /// Saves the editor contents to bytes with compression / garbage-collection / linearize flags.
         /// </summary>
         public byte[] SaveToBytesWithOptions(bool compress, bool garbageCollect, bool linearize)

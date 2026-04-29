@@ -636,6 +636,16 @@ export class PageBuilder {
   }
 
   /**
+   * Embed a JPEG/PNG image at (x, y, w, h) in PDF points.
+   * No alt text or /Artifact wrapper. Use `imageWithAlt` or `imageArtifact`
+   * for PDF/UA-1 accessibility requirements.
+   */
+  image(bytes: Buffer | Uint8Array, x: number, y: number, w: number, h: number): this {
+    native.pageBuilderImage(this.h(), bytes, x, y, w, h);
+    return this;
+  }
+
+  /**
    * Embed an image with an accessibility alt text (PDF/UA-1 §Figure).
    * `bytes` must contain raw JPEG/PNG/WebP image data.
    */
@@ -712,6 +722,45 @@ export class PageBuilder {
     const width = style?.width ?? 1;
     const [r, g, b] = style?.color ?? [0, 0, 0];
     native.pageBuilderStrokeLine(this.h(), x1, y1, x2, y2, width, r, g, b);
+    return this;
+  }
+
+  /**
+   * Draw a dashed rectangle outline. `dash` is the on/off lengths in PDF
+   * points (e.g. `[3, 2]` → 3 pt on, 2 pt off). `phase` offsets the dash
+   * start within the pattern.
+   */
+  strokeRectDashed(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    dash: number[],
+    phase: number = 0,
+    style?: { width?: number; color?: [number, number, number] }
+  ): this {
+    const width = style?.width ?? 1;
+    const [r, g, b] = style?.color ?? [0, 0, 0];
+    native.pageBuilderStrokeRectDashed(this.h(), x, y, w, h, width, r, g, b, dash, phase);
+    return this;
+  }
+
+  /**
+   * Draw a dashed straight line. `dash` / `phase` semantics are the same as
+   * {@link strokeRectDashed}.
+   */
+  strokeLineDashed(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    dash: number[],
+    phase: number = 0,
+    style?: { width?: number; color?: [number, number, number] }
+  ): this {
+    const width = style?.width ?? 1;
+    const [r, g, b] = style?.color ?? [0, 0, 0];
+    native.pageBuilderStrokeLineDashed(this.h(), x1, y1, x2, y2, width, r, g, b, dash, phase);
     return this;
   }
 
@@ -848,6 +897,26 @@ export class PageBuilder {
   /** @internal — push one row with per-cell rowspan values. */
   _streamingTablePushRowV2(cells: Array<[string | null, number]>): void {
     native.pageBuilderStreamingTablePushRowV2(this.h(), cells);
+  }
+
+  /** @internal — set the batch size for the open streaming table. */
+  _streamingTableSetBatchSize(batchSize: number): void {
+    native.pageBuilderStreamingTableSetBatchSize(this.h(), batchSize);
+  }
+
+  /** @internal — return pending row count from native layer. */
+  _streamingTablePendingRowCount(): number {
+    return native.pageBuilderStreamingTablePendingRowCount(this.h());
+  }
+
+  /** @internal — return batch count from native layer. */
+  _streamingTableBatchCount(): number {
+    return native.pageBuilderStreamingTableBatchCount(this.h());
+  }
+
+  /** @internal — flush (mark batch boundary) in native layer. */
+  _streamingTableFlush(): void {
+    native.pageBuilderStreamingTableFlush(this.h());
   }
 
   /** @internal — close the open streaming table. */

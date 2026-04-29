@@ -369,5 +369,20 @@ namespace PdfOxide.Tests
                 $"issue #401: ToBytesEncrypted embedded-font result ({bytes.Length} B) " +
                 "is too small; font sub-objects likely missing from encrypted output");
         }
+
+        [Fact]
+        public void StrokeDashed_ProducesPdfWithDashOperator()
+        {
+            using var builder = DocumentBuilder.Create();
+            builder.A4Page()
+                .StrokeRectDashed(50, 100, 200, 150, new float[] { 3f, 2f }, phase: 0f, width: 1.5f, b: 0.8f)
+                .StrokeLineDashed(50, 80, 250, 80, new float[] { 5f, 3f }, phase: 1f, width: 1f, r: 0.8f)
+                .Done();
+            var bytes = builder.Build();
+            Assert.True(bytes.Length > 100);
+            var text = System.Text.Encoding.Latin1.GetString(bytes);
+            Assert.True(text.Contains(" d\n") || text.Contains(" d "),
+                "PDF content stream missing dash operator 'd'");
+        }
     }
 }

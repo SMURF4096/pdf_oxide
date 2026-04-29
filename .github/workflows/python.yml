@@ -34,43 +34,43 @@ jobs:
         if: runner.os == 'Linux'
         uses: jlumbroso/free-disk-space@main
         with:
-          tool-cache: false
+          tool-cache: true
           android: true
           dotnet: true
           haskell: true
           large-packages: true
           swap-storage: true
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Cache Cargo registry
-        uses: actions/cache@v5
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
         with:
           path: ~/.cargo/registry
           key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Cache Cargo index
-        uses: actions/cache@v5
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
         with:
           path: ~/.cargo/git
           key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Cache Cargo build
-        uses: actions/cache@v5
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
         with:
           path: target
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
 
       - name: Create virtual environment with uv
         run: uv venv
@@ -79,7 +79,9 @@ jobs:
         run: uv pip install maturin pytest
 
       - name: Build Python wheel
-        run: uv run maturin build --release --features python --out dist
+        run: uv run maturin build --release --features python,ocr --out dist
+        env:
+          CARGO_INCREMENTAL: "0"
 
       - name: Install built wheel
         shell: bash
@@ -88,16 +90,17 @@ jobs:
           uv run pip install "$wheel"
 
       - name: Run Rust tests with Python feature
-        # Skip on macOS due to extension-module linking restrictions
-        # Use --lib --tests to run unit and integration tests (both under tests/)
-        # This skips doctests which are validated in main CI
-        #
+        # Skip on macOS due to extension-module linking restrictions.
+        # Skip on Linux: main CI runs full cargo test on Linux; running it
+        # here too exhausts the ~14 GB runner disk after the maturin release
+        # build (release + debug build artifacts exceed available space).
         # CARGO_BUILD_JOBS=2 caps concurrent link-worker spawns so the
         # parallel-link burst stays under the hosted-runner 7 GB RAM
         # ceiling — fixes the rust-lld SIGBUS flake tracked in #399.
-        if: runner.os != 'macOS'
+        if: runner.os == 'Windows'
         env:
           CARGO_BUILD_JOBS: "2"
+          CARGO_INCREMENTAL: "0"
         run: cargo test --lib --tests --features python
 
       - name: Run Python tests
@@ -109,10 +112,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: rustfmt, clippy
 
@@ -123,7 +126,7 @@ jobs:
         run: cargo clippy --features python --all-targets --workspace -- -D warnings
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
 
       - name: Pin Python version
         run: uv python pin 3.11
@@ -190,9 +193,9 @@ jobs:
           - target: aarch64
             manylinux: musllinux_1_2
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
       - name: Build wheels
@@ -200,9 +203,9 @@ jobs:
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
-          args: --release --features python --out dist
+          args: --release --features python,ocr --out dist
       - name: Upload wheels as artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: wheels-linux-${{ matrix.target }}-${{ matrix.manylinux }}
           path: dist/*.whl
@@ -216,18 +219,18 @@ jobs:
       matrix:
         target: [x86_64, aarch64]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --features python --out dist
+          args: --release --features python,ocr --out dist
       - name: Upload wheels as artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: wheels-macos-${{ matrix.target }}
           path: dist/*.whl
@@ -241,9 +244,9 @@ jobs:
       matrix:
         target: [x64, aarch64]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
           architecture: x64
@@ -251,9 +254,9 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --features python --out dist
+          args: --release --features python,ocr --out dist
       - name: Upload wheels as artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: wheels-windows-${{ matrix.target }}
           path: dist/*.whl
@@ -263,47 +266,104 @@ jobs:
     name: Build source distribution
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
           command: sdist
           args: --out dist
       - name: Upload sdist as artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sdist
           path: dist/*.tar.gz
 
-  # Publish to PyPI on release using Trusted Publishing (OIDC — no stored tokens).
-  # Setup: add this repo as a trusted publisher on PyPI for the pdf_oxide project.
-  # See https://docs.pypi.org/trusted-publishers/
+  # Docker smoke tests — install the manylinux / musllinux wheel inside the
+  # actual target distro containers so we catch libc symbol issues (e.g.
+  # __memcmpeq@GLIBC_2.35 on Amazon Linux 2023) before publishing.
+  # Runs only when Linux wheels are available (push/PR to main/develop + release).
+  docker-smoke-test:
+    name: Docker smoke (${{ matrix.distro }})
+    runs-on: ubuntu-latest
+    needs: [build-wheels-linux]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: amazonlinux-2023
+            image: amazonlinux:2023
+            artifact: wheels-linux-x86_64-manylinux_2_28
+          - distro: ubuntu-20.04
+            image: ubuntu:20.04
+            artifact: wheels-linux-x86_64-manylinux_2_28
+          - distro: debian-11
+            image: debian:11-slim
+            artifact: wheels-linux-x86_64-manylinux_2_28
+          - distro: alpine-3
+            image: alpine:3.19
+            artifact: wheels-linux-x86_64-musllinux_1_2
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Download wheel
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/
+
+      - name: Smoke test in ${{ matrix.distro }}
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}/dist:/wheels:ro" \
+            -v "${{ github.workspace }}/tests/fixtures:/fixtures:ro" \
+            -v "${{ github.workspace }}/tests/smoke_docker.py:/smoke_docker.py:ro" \
+            "${{ matrix.image }}" \
+            sh -c '
+              set -e
+              OS_ID=$(. /etc/os-release 2>/dev/null && echo "$ID" || echo unknown)
+              case "$OS_ID" in
+                amzn)
+                  dnf install -y python3-pip > /dev/null 2>&1
+                  ;;
+                ubuntu|debian)
+                  apt-get update -qq
+                  DEBIAN_FRONTEND=noninteractive apt-get install -qq -y python3-pip python3-venv > /dev/null 2>&1
+                  ;;
+                alpine)
+                  apk add --no-cache python3 py3-pip > /dev/null 2>&1
+                  ;;
+              esac
+              python3 -m venv /venv
+              . /venv/bin/activate
+              pip install --quiet --upgrade pip
+              pip install --quiet /wheels/*.whl
+              python3 /smoke_docker.py
+            '
+
   publish:
     name: Publish to PyPI
-    needs: [test, lint, build-wheels-linux, build-wheels-macos, build-wheels-windows, build-sdist]
+    needs: [test, lint, build-wheels-linux, build-wheels-macos, build-wheels-windows, build-sdist, docker-smoke-test]
     runs-on: ubuntu-latest
     if: github.event_name == 'release' && github.event.action == 'published'
-    environment:
-      name: pypi
-      url: https://pypi.org/p/pdf_oxide
     permissions:
-      id-token: write   # Required for OIDC / Trusted Publishing
+      contents: read
 
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: wheels-*
           path: dist
           merge-multiple: true
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: sdist
           path: dist
 
-      - name: Publish to PyPI (Trusted Publishing)
+      - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
           skip-existing: true
 
   # Generate documentation
@@ -312,15 +372,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Install dependencies
         run: |
@@ -337,7 +397,7 @@ jobs:
         run: pdoc --html --output-dir docs-python pdf_oxide
 
       - name: Upload docs
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: python-docs
           path: docs-python/

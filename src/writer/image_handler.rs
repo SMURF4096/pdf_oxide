@@ -160,8 +160,10 @@ impl ImageData {
             },
         };
 
-        // Compress pixel data with Flate
-        let compressed = compress_image_data(&pixels)?;
+        // Compress pixel data: add PNG None-filter byte (0x00) per scanline
+        // then Flate. This produces data valid for DecodeParms Predictor=15.
+        let components = color_space.components();
+        let compressed = compress_image_data(&pixels, width, components)?;
 
         Ok(Self {
             width,
@@ -170,7 +172,10 @@ impl ImageData {
             color_space,
             format: ImageFormat::Png,
             data: compressed,
-            soft_mask: alpha.map(|a| compress_image_data(&a)).transpose()?,
+            // Alpha is 1 component (gray) per pixel.
+            soft_mask: alpha
+                .map(|a| compress_image_data(&a, width, 1))
+                .transpose()?,
         })
     }
 
@@ -370,14 +375,39 @@ fn parse_jpeg_header(data: &[u8]) -> Result<(u32, u32, ColorSpace), ImageError> 
     Err(ImageError::InvalidData("Could not find JPEG dimensions".to_string()))
 }
 
-/// Compress image data using Flate with PNG predictor.
-fn compress_image_data(data: &[u8]) -> Result<Vec<u8>, ImageError> {
+/// Compress raw pixel data using Flate with a PNG None-filter byte (0x00)
+/// prepended to each scanline.
+///
+/// The PDF spec requires that when `FlateDecode` is used with
+/// `DecodeParms/Predictor=15` (PNG adaptive predictor), the decompressed
+/// byte stream must begin each row with a filter-type byte followed by the
+/// (possibly filtered) row samples.  Filter type 0 = None means the samples
+/// are stored verbatim.  Flate still compresses the whole stream, including
+/// the filter bytes, so LZ compression quality is unaffected.
+fn compress_image_data(pixels: &[u8], width: u32, components: u8) -> Result<Vec<u8>, ImageError> {
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
 
+    let row_bytes = width as usize * components as usize;
+
+    if row_bytes == 0 || pixels.is_empty() {
+        let encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        return encoder
+            .finish()
+            .map_err(|e| ImageError::CompressionError(e.to_string()));
+    }
+
+    // Pre-allocate: 1 filter byte per row + all pixel bytes.
+    let num_rows = pixels.len().div_ceil(row_bytes);
+    let mut filtered = Vec::with_capacity(pixels.len() + num_rows);
+    for row in pixels.chunks(row_bytes) {
+        filtered.push(0u8); // filter type 0 = None
+        filtered.extend_from_slice(row);
+    }
+
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
     encoder
-        .write_all(data)
+        .write_all(&filtered)
         .map_err(|e| ImageError::CompressionError(e.to_string()))?;
     encoder
         .finish()
@@ -595,5 +625,92 @@ mod tests {
     fn test_invalid_jpeg_header() {
         let result = parse_jpeg_header(&[0x00, 0x00]);
         assert!(matches!(result, Err(ImageError::InvalidData(_))));
+    }
+
+    // ── issue #425 regression tests ────────────────────────────────────────
+
+    /// Build a minimal PNG in memory using the `image` crate so we can round-
+    /// trip through `from_png()` without touching the filesystem.
+    fn make_png_bytes(width: u32, height: u32, pixels_rgb: &[u8]) -> Vec<u8> {
+        use image::RgbImage;
+        let img = RgbImage::from_raw(width, height, pixels_rgb.to_vec())
+            .expect("pixel buffer size mismatch");
+        let mut buf = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+            .expect("failed to encode PNG");
+        buf
+    }
+
+    #[test]
+    fn test_from_png_compressed_stream_has_filter_bytes() {
+        // 2×2 RGB PNG: red, green, blue, yellow.
+        let pixels: &[u8] = &[255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0];
+        let png = make_png_bytes(2, 2, pixels);
+
+        let image_data = ImageData::from_png(&png).expect("from_png failed");
+        assert_eq!(image_data.width, 2);
+        assert_eq!(image_data.height, 2);
+        assert_eq!(image_data.color_space, ColorSpace::DeviceRGB);
+
+        // Decompress the stored stream and check per-row filter bytes.
+        use flate2::read::ZlibDecoder;
+        use std::io::Read;
+        let mut dec = ZlibDecoder::new(&image_data.data[..]);
+        let mut raw = Vec::new();
+        dec.read_to_end(&mut raw).expect("decompression failed");
+
+        // Layout: 2 rows × (1 filter byte + 2 pixels × 3 channels) = 14 bytes.
+        assert_eq!(raw.len(), 2 * (1 + 2 * 3), "decompressed length mismatch");
+
+        assert_eq!(raw[0], 0x00, "row 0 filter byte must be 0 (None)");
+        assert_eq!(raw[7], 0x00, "row 1 filter byte must be 0 (None)");
+
+        // Pixel values must be preserved after stripping filter bytes.
+        assert_eq!(&raw[1..7], &[255, 0, 0, 0, 255, 0], "row 0 RGB pixels");
+        assert_eq!(&raw[8..14], &[0, 0, 255, 255, 255, 0], "row 1 RGB pixels");
+    }
+
+    #[test]
+    fn test_from_png_xobject_dict_predictor_matches_filter_bytes() {
+        let png = make_png_bytes(3, 2, &[0u8; 3 * 2 * 3]);
+        let image_data = ImageData::from_png(&png).expect("from_png failed");
+        let dict = image_data.build_xobject_dict();
+
+        // Must use FlateDecode (not DCT).
+        assert_eq!(dict["Filter"], Object::Name("FlateDecode".to_string()));
+
+        // DecodeParms must have Predictor=15 (PNG adaptive), matching the
+        // per-row filter bytes we now inject in compress_image_data().
+        let parms = match dict.get("DecodeParms") {
+            Some(Object::Dictionary(d)) => d,
+            _ => panic!("DecodeParms missing or wrong type"),
+        };
+        assert_eq!(parms["Predictor"], Object::Integer(15));
+        assert_eq!(parms["Columns"], Object::Integer(3));
+        assert_eq!(parms["Colors"], Object::Integer(3)); // DeviceRGB
+    }
+
+    #[test]
+    fn test_from_png_grayscale_filter_bytes() {
+        // Grayscale PNG: 2 pixels wide, 1 row.
+        use image::GrayImage;
+        let img = GrayImage::from_raw(2, 1, vec![100u8, 200]).unwrap();
+        let mut buf = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+            .unwrap();
+
+        let image_data = ImageData::from_png(&buf).expect("grayscale from_png failed");
+        assert_eq!(image_data.color_space, ColorSpace::DeviceGray);
+
+        use flate2::read::ZlibDecoder;
+        use std::io::Read;
+        let mut dec = ZlibDecoder::new(&image_data.data[..]);
+        let mut raw = Vec::new();
+        dec.read_to_end(&mut raw).unwrap();
+
+        // 1 row × (1 filter byte + 2 gray pixels) = 3 bytes.
+        assert_eq!(raw.len(), 3);
+        assert_eq!(raw[0], 0x00, "filter byte must be None");
+        assert_eq!(&raw[1..], &[100, 200], "gray pixel values");
     }
 }

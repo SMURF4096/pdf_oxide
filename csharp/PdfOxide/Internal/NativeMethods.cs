@@ -6061,6 +6061,27 @@ namespace PdfOxide.Internal
             out nuint outLen,
             out int errorCode);
 
+        /// <summary>Extracts a subset of pages from the editor into a new in-memory PDF.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_extract_pages_to_bytes")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial IntPtr document_editor_extract_pages_to_bytes(
+            NativeHandle handle, int* pages, nuint count, out nuint outLen, out int errorCode);
+
+        /// <summary>Converts the document in-place to the given PDF/A conformance level.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_convert_to_pdf_a")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int document_editor_convert_to_pdf_a(
+            NativeHandle handle, int level, out int errorCode);
+
+        /// <summary>Saves the document with AES-256 encryption and returns the bytes.</summary>
+        [LibraryImport(LibName, EntryPoint = "document_editor_save_encrypted_to_bytes")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr document_editor_save_encrypted_to_bytes(
+            NativeHandle handle,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string userPassword,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string ownerPassword,
+            out nuint outLen, out int errorCode);
+
         /// <summary>Saves the editor to bytes with compress / garbage-collect / linearize options.</summary>
         [LibraryImport(LibName, EntryPoint = "document_editor_save_to_bytes_with_options")]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
@@ -7335,6 +7356,13 @@ namespace PdfOxide.Internal
         public static partial int PdfPageBuilderBarcodeQr(
             IntPtr page, string data, float x, float y, float size, out int errorCode);
 
+        /// <summary>Embed an image at (x, y, w, h) without accessibility wrapper.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_image", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial int PdfPageBuilderImage(
+            IntPtr page, byte* bytes, nuint len,
+            float x, float y, float w, float h, out int errorCode);
+
         /// <summary>Embed an image with accessibility alt text (PDF/UA-1 Figure).</summary>
         [LibraryImport(LibName, EntryPoint = "pdf_page_builder_image_with_alt", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
@@ -7381,6 +7409,24 @@ namespace PdfOxide.Internal
         public static partial int PdfPageBuilderStrokeLine(
             IntPtr page, float x1, float y1, float x2, float y2,
             float width, float r, float g, float b,
+            out int errorCode);
+
+        /// <summary>Draw a dashed rectangle border. dashArray is alternating on/off lengths in points.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_stroke_rect_dashed")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial int PdfPageBuilderStrokeRectDashed(
+            IntPtr page, float x, float y, float w, float h,
+            float width, float r, float g, float b,
+            float* dashArray, nuint nDash, float phase,
+            out int errorCode);
+
+        /// <summary>Draw a dashed line. dashArray is alternating on/off lengths in points.</summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_stroke_line_dashed")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static unsafe partial int PdfPageBuilderStrokeLineDashed(
+            IntPtr page, float x1, float y1, float x2, float y2,
+            float width, float r, float g, float b,
+            float* dashArray, nuint nDash, float phase,
             out int errorCode);
 
         /// <summary>Place wrapped text inside a rectangle with horizontal alignment (0=Left,1=Center,2=Right).</summary>
@@ -7443,6 +7489,22 @@ namespace PdfOxide.Internal
             byte** cells,
             nuint* rowspans,
             out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_streaming_table_set_batch_size")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderStreamingTableSetBatchSize(IntPtr page, nuint batchSize, out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_streaming_table_pending_row_count")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial nuint PdfPageBuilderStreamingTablePendingRowCount(IntPtr page);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_streaming_table_batch_count")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial nuint PdfPageBuilderStreamingTableBatchCount(IntPtr page);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_page_builder_streaming_table_flush")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfPageBuilderStreamingTableFlush(IntPtr page, out int errorCode);
 
         [LibraryImport(LibName, EntryPoint = "pdf_page_builder_streaming_table_finish")]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]

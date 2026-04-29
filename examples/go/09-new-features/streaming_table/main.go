@@ -1,5 +1,5 @@
-// StreamingTable with rowspan — v0.3.39
-// Run: go run main.go
+// StreamingTable with rowspan and batch_size — v0.3.40
+// Run: go run -tags pdf_oxide_dev main.go
 
 package main
 
@@ -28,6 +28,7 @@ func main() {
 		},
 		RepeatHeader: true,
 		MaxRowspan:   2,
+		BatchSize:    2,
 	}
 
 	b, err := pdfoxide.NewDocumentBuilder()
@@ -55,6 +56,7 @@ func main() {
 		{Text: "Carrot",     Rowspan: 1},
 		{Text: "earthy",     Rowspan: 1},
 	}))
+	fmt.Printf("  batch_count=%d, pending=%d\n", tbl.BatchCount(), tbl.PendingRowCount())
 	_, err = tbl.Finish().Done()
 	must(err)
 

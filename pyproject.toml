@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "pdf_oxide"
-version = "0.3.39"
+version = "0.3.40"
 description = "The fastest Python PDF library: 0.8ms mean, 5× faster than PyMuPDF. Text extraction, markdown conversion, PDF creation. 100% pass rate on 3,830 PDFs."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -149,6 +149,9 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 "__init__.py" = ["F401", "F403"]
 # Allow print statements in scripts
 "scripts/*.py" = ["T201"]
+# Docker smoke script: runs inside containers, not part of the project package.
+# lines-after-imports=2 conflicts with ruff's formatter for module-level statements.
+"tests/smoke_docker.py" = ["I001"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["pdf_oxide"]

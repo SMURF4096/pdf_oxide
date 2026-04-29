@@ -572,6 +572,47 @@ export class PdfDocument {
   validate(): ValidationResult;
 
   /**
+   * Validate PDF/A conformance.
+   * @param level - "1a"|"1b"|"2a"|"2b"|"2u"|"3a"|"3b"|"3u" (default "2b")
+   * @returns Validation result with compliant flag, errors, and warnings
+   */
+  validatePdfA(level?: '1a' | '1b' | '2a' | '2b' | '2u' | '3a' | '3b' | '3u'): {
+    compliant: boolean;
+    errors: string[];
+    warnings: string[];
+  };
+
+  /**
+   * Validate PDF/X conformance.
+   * @param level - "1a_2001"|"1a_2003"|"3_2003"|"4"|"5"|"6" (default "4")
+   * @returns Validation result with compliant flag and errors
+   */
+  validatePdfX(level?: '1a_2001' | '1a_2003' | '3_2003' | '4' | '5' | '6'): {
+    compliant: boolean;
+    errors: string[];
+    warnings: string[];
+  };
+
+  /**
+   * Validate PDF/UA accessibility conformance.
+   * @param level - "ua1" (default, only currently supported level)
+   * @returns Accessibility result with accessible flag, errors, warnings, and element stats
+   */
+  validatePdfUA(level?: 'ua1'): {
+    accessible: boolean;
+    errors: string[];
+    warnings: string[];
+    stats: {
+      structureElements: number;
+      images: number;
+      tables: number;
+      formFields: number;
+      annotations: number;
+      pages: number;
+    };
+  };
+
+  /**
    * Closes the document and releases resources
    */
   close(): void;
@@ -2050,6 +2091,24 @@ export class PageBuilder {
     y1: number,
     x2: number,
     y2: number,
+    style?: { width?: number; color?: [number, number, number] }
+  ): this;
+  strokeRectDashed(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    dash: number[],
+    phase?: number,
+    style?: { width?: number; color?: [number, number, number] }
+  ): this;
+  strokeLineDashed(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    dash: number[],
+    phase?: number,
     style?: { width?: number; color?: [number, number, number] }
   ): this;
   textInRect(x: number, y: number, w: number, h: number, text: string, align?: Align): this;

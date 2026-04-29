@@ -155,12 +155,24 @@ namespace PdfOxide.Core
         private bool _built;
         private bool _disposed;
 
+        /// <summary>
+        /// Number of rows pushed since the last batch boundary.
+        /// Backed by the Rust FFI layer — no C# buffering.
+        /// </summary>
+        public int PendingRowCount =>
+            (int)NativeMethods.PdfPageBuilderStreamingTablePendingRowCount(_page.InternalHandle);
+
+        /// <summary>Number of complete batches recorded by the native layer so far.</summary>
+        public int BatchCount =>
+            (int)NativeMethods.PdfPageBuilderStreamingTableBatchCount(_page.InternalHandle);
+
         internal unsafe StreamingTable(
             PageBuilder page,
             IReadOnlyList<Column> columns,
             bool repeatHeader,
             TableMode? mode,
-            int maxRowspan)
+            int maxRowspan,
+            int batchSize = 256)
         {
             _page = page;
             _nCols = columns.Count;
@@ -213,6 +225,12 @@ namespace PdfOxide.Core
                     minW, maxW,
                     (nuint)Math.Max(1, maxRowspan),
                     out var ec);
+                ExceptionMapper.ThrowIfError(ec);
+
+                NativeMethods.PdfPageBuilderStreamingTableSetBatchSize(
+                    page.InternalHandle,
+                    (nuint)Math.Max(1, batchSize),
+                    out ec);
                 ExceptionMapper.ThrowIfError(ec);
             }
             finally
@@ -324,6 +342,17 @@ namespace PdfOxide.Core
                     if (handles[i].IsAllocated) handles[i].Free();
             }
             return this;
+        }
+
+        /// <summary>
+        /// Explicitly mark a batch boundary in the native layer.
+        /// Normally triggered automatically when the configured batch size is reached.
+        /// </summary>
+        public void Flush()
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            NativeMethods.PdfPageBuilderStreamingTableFlush(_page.InternalHandle, out var ec);
+            ExceptionMapper.ThrowIfError(ec);
         }
 
         /// <summary>

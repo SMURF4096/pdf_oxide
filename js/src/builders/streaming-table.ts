@@ -28,6 +28,7 @@ export class StreamingTable {
   private _columns: Column[];
   private _opened = false;
   private _finished = false;
+  private _rowCount = 0;
 
   /** @internal — constructed via `PageBuilder.streamingTable(...)`. */
   constructor(page: PageBuilder, config: StreamingTableConfig) {
@@ -45,6 +46,37 @@ export class StreamingTable {
 
     this._page._streamingTableBeginV2(headers, widths, aligns, repeat, config.mode, maxRowspan);
     this._opened = true;
+
+    const batchSize = config.batchSize != null && config.batchSize > 0 ? config.batchSize : 256;
+    this._page._streamingTableSetBatchSize(batchSize);
+  }
+
+  /**
+   * Number of rows pushed since the last batch boundary.
+   * Backed by the Rust FFI layer.
+   */
+  get pendingRowCount(): number {
+    return this._page._streamingTablePendingRowCount();
+  }
+
+  /** Number of complete batches recorded by the native layer so far. */
+  get batchCount(): number {
+    return this._page._streamingTableBatchCount();
+  }
+
+  /**
+   * Explicitly mark a batch boundary in the native layer.
+   * Also triggered automatically when the configured batch size is reached.
+   */
+  flush(): this {
+    if (this._finished) throw new Error('StreamingTable already finished');
+    this._page._streamingTableFlush();
+    return this;
+  }
+
+  /** Total rows pushed so far (monotonically increasing). */
+  get rowCount(): number {
+    return this._rowCount;
   }
 
   /** Push a single row (all rowspan=1). Throws if `cells.length !== columns.length`. */
@@ -58,6 +90,7 @@ export class StreamingTable {
       );
     }
     this._page._streamingTablePushRow(cells.map((c) => (c == null ? null : String(c))));
+    this._rowCount++;
     return this;
   }
 
@@ -81,6 +114,7 @@ export class StreamingTable {
       return [c.text, c.rowspan];
     });
     this._page._streamingTablePushRowV2(normalized);
+    this._rowCount++;
     return this;
   }
 

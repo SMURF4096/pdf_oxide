@@ -1,5 +1,7 @@
 //! PDF/A compliance types and data structures.
 
+#![forbid(unsafe_code)]
+
 use std::fmt;
 
 /// PDF/A conformance level.

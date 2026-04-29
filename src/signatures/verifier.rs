@@ -167,9 +167,8 @@ impl SignatureVerifier {
             Ok(super::cms_verify::SignerVerify::Unknown) => {
                 result.status = VerificationStatus::Unknown;
                 result.messages.push(
-                    "Signature could not be verified: signer uses an algorithm the verifier \
-                     does not yet support (RSA-PSS / ECDSA) or the CMS blob lacks signed \
-                     attributes"
+                    "Signature could not be verified: signer uses an unsupported algorithm or \
+                     the CMS blob lacks signed attributes"
                         .to_string(),
                 );
             },

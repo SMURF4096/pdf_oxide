@@ -147,6 +147,45 @@ class PdfDocument {
   }
 
   /**
+   * Validate PDF/A conformance.
+   * @param {string} level - "1a"|"1b"|"2a"|"2b"|"2u"|"3a"|"3b"|"3u" (default "2b")
+   * @returns {{compliant: boolean, errors: string[], warnings: string[]}}
+   */
+  validatePdfA(level = '2b') {
+    this._checkClosed();
+    const levelMap = { '1b': 0, '1a': 1, '2b': 2, '2a': 3, '2u': 4, '3b': 5, '3a': 6, '3u': 7 };
+    const levelInt = levelMap[level];
+    if (levelInt === undefined) throw new RangeError(`Unknown PDF/A level: "${level}"`);
+    return binding.validatePdfALevel(this._handle, levelInt);
+  }
+
+  /**
+   * Validate PDF/X conformance.
+   * @param {string} level - "1a_2001"|"1a_2003"|"3_2003"|"4"|"5"|"6" (default "4")
+   * @returns {{compliant: boolean, errors: string[], warnings: string[]}}
+   */
+  validatePdfX(level = '4') {
+    this._checkClosed();
+    const levelMap = { '1a_2001': 0, '1a_2003': 1, '3_2003': 2, '4': 3, '5': 4, '6': 5 };
+    const levelInt = levelMap[level];
+    if (levelInt === undefined) throw new RangeError(`Unknown PDF/X level: "${level}"`);
+    return binding.validatePdfXLevel(this._handle, levelInt);
+  }
+
+  /**
+   * Validate PDF/UA accessibility conformance.
+   * @param {string} level - "ua1" (default and only supported level)
+   * @returns {{accessible: boolean, errors: string[], warnings: string[], stats: object}}
+   */
+  validatePdfUA(level = 'ua1') {
+    this._checkClosed();
+    const levelMap = { 'ua1': 0 };
+    const levelInt = levelMap[level];
+    if (levelInt === undefined) throw new RangeError(`Unknown PDF/UA level: "${level}"`);
+    return binding.validatePdfUA(this._handle, levelInt);
+  }
+
+  /**
    * Closes the document and releases resources
    */
   close() {

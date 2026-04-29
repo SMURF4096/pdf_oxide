@@ -3,6 +3,8 @@
 //! This module provides basic geometric types and operations used throughout
 //! the layout analysis algorithms.
 
+#![forbid(unsafe_code)]
+
 /// A 2D point in document space.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, Default)]
 pub struct Point {

@@ -2087,10 +2087,39 @@ fn build_pdfua_xmp(title: &str, creator: &str, lang: &str) -> Vec<u8> {
 /// two structs carry the same payload but are owned by different
 /// layers — this keeps the paint pipeline plugged into the standard
 /// writer-side serializer without reaching across module boundaries.
-fn image_content_to_xobject_stream(
+pub(crate) fn image_content_to_xobject_stream(
     image: &crate::elements::ImageContent,
 ) -> (super::image_handler::ImageData, Option<Vec<u8>>) {
     use super::image_handler::{ColorSpace as WColorSpace, ImageData, ImageFormat as WImageFormat};
+
+    // If the caller passed raw PNG or JPEG file bytes directly (e.g. via
+    // `ImageContent::new()` without going through `image_from_bytes()`),
+    // decode them now so the XObject gets the correct pixel dimensions,
+    // colour space, filter params, and PNG per-row filter bytes.
+    //
+    // Detection is by magic number rather than `image.format` so we catch
+    // both cases: (a) format tag matches bytes, (b) caller passed a PNG
+    // buffer but labelled it as something else.
+    let raw = &image.data;
+
+    // PNG magic: \x89 P N G \r \n \x1a \n
+    if raw.len() >= 8 && raw[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] {
+        if let Ok(decoded) = ImageData::from_png(raw) {
+            let soft_mask = decoded.soft_mask.clone();
+            return (decoded, soft_mask);
+        }
+    }
+
+    // JPEG magic: \xFF \xD8
+    if raw.len() >= 2 && raw[0] == 0xFF && raw[1] == 0xD8 {
+        if let Ok(decoded) = ImageData::from_jpeg(raw.to_vec()) {
+            // JPEG has no alpha channel.
+            return (decoded, None);
+        }
+    }
+
+    // Pre-processed path: data was already encoded by `ImageData::from_png()`
+    // (Flate-compressed pixels with per-row filter bytes) or is raw pixels.
     let color_space = match image.color_space {
         crate::elements::ColorSpace::Gray => WColorSpace::DeviceGray,
         crate::elements::ColorSpace::CMYK => WColorSpace::DeviceCMYK,
@@ -3155,5 +3184,289 @@ mod tests {
 
         let annot_count = content.matches("/Type /Annot").count();
         assert_eq!(annot_count, 14, "Expected 14 different annotation types");
+    }
+
+    // ── issue #425: image rendering regression tests ───────────────────────
+
+    fn make_png_bytes(width: u32, height: u32, pixels_rgb: &[u8]) -> Vec<u8> {
+        use image::RgbImage;
+        let img = RgbImage::from_raw(width, height, pixels_rgb.to_vec())
+            .expect("pixel buffer size mismatch");
+        let mut buf = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+            .expect("encode PNG");
+        buf
+    }
+
+    fn make_jpeg_bytes(width: u32, height: u32, pixels_rgb: &[u8]) -> Vec<u8> {
+        use image::RgbImage;
+        let img = RgbImage::from_raw(width, height, pixels_rgb.to_vec())
+            .expect("pixel buffer size mismatch");
+        let mut buf = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Jpeg)
+            .expect("encode JPEG");
+        buf
+    }
+
+    /// `ImageContent::new()` with raw PNG file bytes must produce an XObject
+    /// whose Width/Height come from the PNG header, not from the caller-
+    /// supplied width/height parameters (issue #425 bug 2).
+    #[test]
+    fn test_image_content_raw_png_bytes_decoded_correctly() {
+        use crate::elements::{ImageContent, ImageFormat};
+        use crate::geometry::Rect;
+
+        let png = make_png_bytes(4, 3, &[128u8; 4 * 3 * 3]); // 4×3 solid grey
+        let content = ImageContent::new(
+            Rect::new(0.0, 0.0, 100.0, 100.0),
+            ImageFormat::Png,
+            png,
+            99, // wrong width — should be overridden by PNG header
+            99, // wrong height — should be overridden by PNG header
+        );
+
+        let (image_data, _soft_mask) = image_content_to_xobject_stream(&content);
+        assert_eq!(image_data.width, 4, "width must come from PNG header (4), not user arg (99)");
+        assert_eq!(image_data.height, 3, "height must come from PNG header (3), not user arg (99)");
+
+        // XObject dict must have FlateDecode + Predictor=15 (not raw PNG bytes).
+        use crate::object::Object;
+        let dict = image_data.build_xobject_dict();
+        assert_eq!(dict["Filter"], Object::Name("FlateDecode".to_string()));
+        let parms = match dict.get("DecodeParms") {
+            Some(Object::Dictionary(d)) => d,
+            _ => panic!("DecodeParms missing"),
+        };
+        assert_eq!(parms["Predictor"], Object::Integer(15));
+    }
+
+    /// `ImageContent::new()` with raw JPEG file bytes must produce an XObject
+    /// whose Width/Height come from the JPEG header, not from the caller-
+    /// supplied width/height (issue #425 bug 3 — "zoomed in" JPEG).
+    #[test]
+    fn test_image_content_raw_jpeg_bytes_uses_real_dimensions() {
+        use crate::elements::{ImageContent, ImageFormat};
+        use crate::geometry::Rect;
+
+        // Encode a 6×5 JPEG.
+        let jpeg = make_jpeg_bytes(6, 5, &[200u8; 6 * 5 * 3]);
+        let content = ImageContent::new(
+            Rect::new(0.0, 0.0, 200.0, 380.0),
+            ImageFormat::Jpeg,
+            jpeg,
+            200, // wrong — should be 6
+            380, // wrong — should be 5
+        );
+
+        let (image_data, _soft_mask) = image_content_to_xobject_stream(&content);
+        assert_eq!(image_data.width, 6, "width must come from JPEG header (6), not user arg (200)");
+        assert_eq!(
+            image_data.height, 5,
+            "height must come from JPEG header (5), not user arg (380)"
+        );
+
+        // XObject dict must use DCTDecode.
+        use crate::object::Object;
+        let dict = image_data.build_xobject_dict();
+        assert_eq!(dict["Filter"], Object::Name("DCTDecode".to_string()));
+    }
+
+    /// End-to-end: `image_from_bytes()` with a real PNG must produce a PDF
+    /// that contains a properly-formed FlateDecode+Predictor=15 image stream
+    /// (issue #425 bug 1 — colour loss).
+    #[test]
+    fn test_image_from_bytes_png_produces_valid_flate_stream() {
+        use crate::geometry::Rect;
+        use crate::writer::document_builder::DocumentBuilder;
+
+        let png = make_png_bytes(2, 2, &[255u8, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0]);
+
+        let mut builder = DocumentBuilder::new();
+        let _ = builder
+            .letter_page()
+            .image_from_bytes(&png, Rect::new(0.0, 0.0, 100.0, 100.0))
+            .expect("image_from_bytes failed")
+            .done();
+
+        let pdf_bytes = builder.build().expect("build failed");
+
+        // The PDF must contain FlateDecode and Predictor 15 (for PNG images).
+        let pdf_text = String::from_utf8_lossy(&pdf_bytes);
+        assert!(pdf_text.contains("/FlateDecode"), "must use FlateDecode");
+        assert!(pdf_text.contains("/Predictor 15"), "must declare Predictor 15");
+        // Must NOT use DCTDecode for a PNG source.
+        assert!(!pdf_text.contains("/DCTDecode"), "must not use DCTDecode for PNG");
+    }
+
+    /// Reproduces the exact code from issue #425 using the reporter's actual
+    /// attached images (downloaded to /tmp by the developer).
+    ///
+    /// Run with:
+    ///   cargo test -p pdf_oxide --lib -- write_issue_425_reporter_images --nocapture --ignored
+    #[test]
+    #[ignore]
+    fn write_issue_425_reporter_images() {
+        use crate::elements::{ContentElement, ImageContent, ImageFormat};
+        use crate::geometry::Rect;
+        use crate::writer::document_builder::DocumentBuilder;
+
+        let cats_png = std::fs::read("/tmp/issue_425_img1.png")
+            .expect("PNG not found — run the curl download step first");
+        let cats_jpg = std::fs::read("/tmp/issue_425_img2.jpg")
+            .expect("JPEG not found — run the curl download step first");
+
+        std::fs::create_dir_all("output").unwrap();
+
+        let mut document_builder = DocumentBuilder::new();
+        let page_builder = document_builder.a4_page();
+
+        // Exact layout from the reporter's code:
+        // Top half — image_from_bytes() for both PNG and JPEG
+        let page_builder = page_builder
+            .image_from_bytes(
+                &cats_png,
+                Rect {
+                    x: 50.0,
+                    y: 450.0,
+                    width: 280.0,
+                    height: 380.0,
+                },
+            )
+            .unwrap()
+            .image_from_bytes(
+                &cats_jpg,
+                Rect {
+                    x: 380.0,
+                    y: 450.0,
+                    width: 200.0,
+                    height: 380.0,
+                },
+            )
+            .unwrap();
+
+        // Bottom half — ImageContent::new() for both PNG and JPEG
+        let page_builder = page_builder
+            .element(ContentElement::Image(ImageContent::new(
+                Rect {
+                    x: 50.0,
+                    y: 50.0,
+                    width: 280.0,
+                    height: 380.0,
+                },
+                ImageFormat::Png,
+                cats_png,
+                200,
+                380,
+            )))
+            .element(ContentElement::Image(ImageContent::new(
+                Rect {
+                    x: 380.0,
+                    y: 50.0,
+                    width: 200.0,
+                    height: 380.0,
+                },
+                ImageFormat::Jpeg,
+                cats_jpg,
+                200,
+                380,
+            )));
+
+        let _ = page_builder.done();
+
+        let pdf_bytes = document_builder.build().unwrap();
+        let path = "output/issue_425_reporter_images.pdf";
+        std::fs::write(path, &pdf_bytes).unwrap();
+        println!("\n✓ Written: {}", std::fs::canonicalize(path).unwrap().display());
+        println!("  Top-left:  PNG via image_from_bytes()   — should show cats PNG correctly");
+        println!("  Top-right: JPEG via image_from_bytes()  — should show cats JPEG correctly");
+        println!(
+            "  Bot-left:  PNG via ImageContent::new()  — should show same cats PNG (was blank)"
+        );
+        println!(
+            "  Bot-right: JPEG via ImageContent::new() — should show same cats JPEG (was zoomed)"
+        );
+    }
+
+    /// Visual verification PDF for issue #425.
+    ///
+    /// Run with:
+    ///   cargo test -p pdf_oxide --lib -- write_issue_425_visual_verification --nocapture --ignored
+    ///
+    /// Opens `output/issue_425_images.pdf` — check all 4 images display correctly.
+    #[test]
+    #[ignore]
+    fn write_issue_425_visual_verification() {
+        use crate::elements::{ImageContent, ImageFormat as EImageFormat};
+        use crate::geometry::Rect;
+        use crate::writer::document_builder::DocumentBuilder;
+
+        std::fs::create_dir_all("output").unwrap();
+
+        // Build vivid test images so it's immediately obvious if colours are wrong.
+        // 100×100 solid red PNG
+        let red_png = make_png_bytes(100, 100, &[255u8, 0, 0].repeat(100 * 100));
+        // 100×100 solid blue PNG
+        let blue_png = make_png_bytes(100, 100, &[0u8, 0, 255].repeat(100 * 100));
+        // 100×100 solid green JPEG
+        let green_jpg = make_jpeg_bytes(100, 100, &[0u8, 180, 0].repeat(100 * 100));
+        // 100×100 purple JPEG (for ImageContent path)
+        let purple_jpg = make_jpeg_bytes(100, 100, &[160u8, 0, 160].repeat(100 * 100));
+
+        let mut builder = DocumentBuilder::new();
+        let page = builder.letter_page();
+
+        // Row 1 labels & images via image_from_bytes() ----------------------
+        //   Col 1: red PNG  (bug 1 — colour loss before fix)
+        //   Col 2: green JPEG
+        let page = page
+            .font("Helvetica", 10.0)
+            .at(50.0, 700.0)
+            .text("image_from_bytes() — PNG (should be solid RED):")
+            .at(50.0, 580.0)
+            .text("image_from_bytes() — JPEG (should be solid GREEN):")
+            .image_from_bytes(&red_png, Rect::new(50.0, 450.0, 200.0, 200.0))
+            .unwrap()
+            .image_from_bytes(&green_jpg, Rect::new(300.0, 450.0, 200.0, 200.0))
+            .unwrap();
+
+        // Row 2 labels & images via ImageContent::new() ----------------------
+        //   Col 1: blue PNG  (bug 2 — blank before fix)
+        //   Col 2: purple JPEG (bug 3 — wrong dimensions / zoom before fix)
+        let page = page
+            .at(50.0, 420.0)
+            .text("ImageContent::new() — PNG (should be solid BLUE):")
+            .at(50.0, 300.0)
+            .text("ImageContent::new() — JPEG (should be solid PURPLE):");
+
+        let blue_content = ImageContent::new(
+            Rect::new(50.0, 170.0, 200.0, 200.0),
+            EImageFormat::Png,
+            blue_png,
+            100,
+            100,
+        );
+        let purple_content = ImageContent::new(
+            Rect::new(300.0, 170.0, 200.0, 200.0),
+            EImageFormat::Jpeg,
+            purple_jpg,
+            999, // deliberately wrong pixel dims — fix must use real JPEG dims
+            999,
+        );
+
+        use crate::elements::ContentElement;
+        let _ = page
+            .element(ContentElement::Image(blue_content))
+            .element(ContentElement::Image(purple_content))
+            .done();
+
+        let pdf_bytes = builder.build().unwrap();
+        let path = "output/issue_425_images.pdf";
+        std::fs::write(path, &pdf_bytes).unwrap();
+        println!("\n✓ Written: {}", std::fs::canonicalize(path).unwrap().display());
+        println!("  Open in any PDF viewer and check:");
+        println!("  Top-left  → solid RED   (image_from_bytes PNG)");
+        println!("  Top-right → solid GREEN (image_from_bytes JPEG)");
+        println!("  Bot-left  → solid BLUE  (ImageContent::new PNG)");
+        println!("  Bot-right → solid PURPLE (ImageContent::new JPEG)");
     }
 }

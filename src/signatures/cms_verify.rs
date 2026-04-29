@@ -19,14 +19,15 @@
 //!   should prefer this entry point whenever they have the raw PDF
 //!   byte-range available.
 //!
-//! Supported today: RSA-PKCS#1 v1.5 over SHA-1 / SHA-256 / SHA-384 /
-//! SHA-512. RSA-PSS and ECDSA return [`SignerVerify::Unknown`] until
-//! the respective RustCrypto verifiers are wired up.
+//! Supported: RSA-PKCS#1 v1.5 and RSA-PSS (SHA-256 / SHA-384 / SHA-512); ECDSA with
+//! P-256+SHA-256 and P-384+SHA-384. Other ECDSA curves/hash combinations
+//! return `VerificationStatus::Unknown`.
 
 #![cfg(feature = "signatures")]
 
 use super::crypto::{
-    digest_info_prefix, hash_with_oid, is_rsa_pkcs1v15_sig_oid, OID_RSA_ENCRYPTION,
+    digest_info_prefix, hash_with_oid, is_rsa_pkcs1v15_sig_oid, OID_ECDSA_SHA256, OID_ECDSA_SHA384,
+    OID_ECDSA_SHA512, OID_EC_PUBLIC_KEY, OID_P256, OID_P384, OID_RSASSA_PSS, OID_RSA_ENCRYPTION,
 };
 use crate::error::{Error, Result};
 use cms::cert::x509::Certificate;
@@ -126,6 +127,81 @@ fn parse_signed_data(contents: &[u8]) -> Result<SignedData> {
         .map_err(|e| Error::InvalidPdf(format!("CMS content is not valid SignedData: {e}")))
 }
 
+/// RSA-PSS verification. Uses sha2_v10 (sha2 0.10) / sha1 types because
+/// rsa 0.9's generic VerifyingKey requires digest 0.10 trait bounds.
+fn verify_rsa_pss(
+    pub_key: RsaPublicKey,
+    digest_oid: ObjectIdentifier,
+    signed_attrs: &[u8],
+    sig_bytes: &[u8],
+) -> SignerVerify {
+    use der::oid::db::rfc5912::{ID_SHA_256, ID_SHA_384, ID_SHA_512};
+    use rsa::pss::{Signature as PssSignature, VerifyingKey};
+    use rsa::signature::Verifier;
+
+    let sig = match PssSignature::try_from(sig_bytes) {
+        Ok(s) => s,
+        Err(_) => return SignerVerify::Unknown,
+    };
+    let ok = if digest_oid == ID_SHA_256 {
+        VerifyingKey::<sha2_v10::Sha256>::new(pub_key)
+            .verify(signed_attrs, &sig)
+            .is_ok()
+    } else if digest_oid == ID_SHA_384 {
+        VerifyingKey::<sha2_v10::Sha384>::new(pub_key)
+            .verify(signed_attrs, &sig)
+            .is_ok()
+    } else if digest_oid == ID_SHA_512 {
+        VerifyingKey::<sha2_v10::Sha512>::new(pub_key)
+            .verify(signed_attrs, &sig)
+            .is_ok()
+    } else {
+        // SHA-1 RSA-PSS: sha1 crate uses digest 0.11 so it's incompatible
+        // with rsa 0.9's digest 0.10 bound — treat as Unknown.
+        return SignerVerify::Unknown;
+    };
+    if ok {
+        SignerVerify::Valid
+    } else {
+        SignerVerify::Invalid
+    }
+}
+
+/// ECDSA-P256 with SHA-256: parse the SEC1-encoded public key point,
+/// decode the DER signature, verify the message.
+fn verify_ecdsa_p256(pub_key_bits: &[u8], signed_attrs: &[u8], sig_bytes: &[u8]) -> SignerVerify {
+    use p256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
+    let vk = match VerifyingKey::from_sec1_bytes(pub_key_bits) {
+        Ok(k) => k,
+        Err(_) => return SignerVerify::Unknown,
+    };
+    let sig = match Signature::from_der(sig_bytes) {
+        Ok(s) => s,
+        Err(_) => return SignerVerify::Unknown,
+    };
+    match vk.verify(signed_attrs, &sig) {
+        Ok(()) => SignerVerify::Valid,
+        Err(_) => SignerVerify::Invalid,
+    }
+}
+
+/// ECDSA-P384 with SHA-384.
+fn verify_ecdsa_p384(pub_key_bits: &[u8], signed_attrs: &[u8], sig_bytes: &[u8]) -> SignerVerify {
+    use p384::ecdsa::{signature::Verifier, Signature, VerifyingKey};
+    let vk = match VerifyingKey::from_sec1_bytes(pub_key_bits) {
+        Ok(k) => k,
+        Err(_) => return SignerVerify::Unknown,
+    };
+    let sig = match Signature::from_der(sig_bytes) {
+        Ok(s) => s,
+        Err(_) => return SignerVerify::Unknown,
+    };
+    match vk.verify(signed_attrs, &sig) {
+        Ok(()) => SignerVerify::Valid,
+        Err(_) => SignerVerify::Invalid,
+    }
+}
+
 /// Run the RSA-PKCS#1 v1.5 signer-attributes crypto check. Returns
 /// the outcome plus the `SignerInfo`'s digest OID if the call reached
 /// the attribute-hashing stage — callers that layer a `messageDigest`
@@ -156,8 +232,74 @@ fn run_signer_crypto(sd: &SignedData) -> Result<(SignerVerify, Option<ObjectIden
     };
 
     let sig_alg_oid = signer.signature_algorithm.oid;
+    let sig_bytes = signer.signature.as_bytes();
+
+    // ── ECDSA (P-256 / P-384) ───────────────────────────────────────────────
+    if sig_alg_oid == OID_ECDSA_SHA256
+        || sig_alg_oid == OID_ECDSA_SHA384
+        || sig_alg_oid == OID_ECDSA_SHA512
+    {
+        let Some(cert) = find_signer_certificate(sd, signer) else {
+            return Ok((SignerVerify::Unknown, Some(digest_oid)));
+        };
+        let spki = &cert.tbs_certificate.subject_public_key_info;
+        if spki.algorithm.oid != OID_EC_PUBLIC_KEY {
+            return Ok((SignerVerify::Unknown, Some(digest_oid)));
+        }
+        // Determine named curve from SPKI parameters (an OID encoded as der::Any).
+        let curve_oid: ObjectIdentifier = match spki
+            .algorithm
+            .parameters
+            .as_ref()
+            .and_then(|p| p.to_der().ok())
+            .and_then(|b| ObjectIdentifier::from_der(&b).ok())
+        {
+            Some(oid) => oid,
+            None => return Ok((SignerVerify::Unknown, Some(digest_oid))),
+        };
+        // EC public key bits are SEC1-encoded (uncompressed or compressed point).
+        let pub_key_bits = spki.subject_public_key.raw_bytes();
+        let signed_attrs_bytes = signed_attrs
+            .to_der()
+            .map_err(|e| Error::InvalidPdf(format!("failed to re-encode signed_attrs: {e}")))?;
+
+        let outcome = if curve_oid == OID_P256 && sig_alg_oid == OID_ECDSA_SHA256 {
+            verify_ecdsa_p256(pub_key_bits, &signed_attrs_bytes, sig_bytes)
+        } else if curve_oid == OID_P384 && sig_alg_oid == OID_ECDSA_SHA384 {
+            verify_ecdsa_p384(pub_key_bits, &signed_attrs_bytes, sig_bytes)
+        } else {
+            SignerVerify::Unknown
+        };
+        return Ok((outcome, Some(digest_oid)));
+    }
+
+    // ── RSA-PSS ─────────────────────────────────────────────────────────────
+    if sig_alg_oid == OID_RSASSA_PSS {
+        let Some(cert) = find_signer_certificate(sd, signer) else {
+            return Ok((SignerVerify::Unknown, Some(digest_oid)));
+        };
+        let key_alg_oid = cert.tbs_certificate.subject_public_key_info.algorithm.oid;
+        if key_alg_oid != OID_RSA_ENCRYPTION && key_alg_oid != OID_RSASSA_PSS {
+            return Ok((SignerVerify::Unknown, Some(digest_oid)));
+        }
+        let spki_der = cert
+            .tbs_certificate
+            .subject_public_key_info
+            .to_der()
+            .map_err(|e| Error::InvalidPdf(format!("failed to re-encode signer SPKI: {e}")))?;
+        let pub_key = match RsaPublicKey::from_public_key_der(&spki_der) {
+            Ok(k) => k,
+            Err(_) => return Ok((SignerVerify::Unknown, Some(digest_oid))),
+        };
+        let signed_attrs_bytes = signed_attrs
+            .to_der()
+            .map_err(|e| Error::InvalidPdf(format!("failed to re-encode signed_attrs: {e}")))?;
+        let outcome = verify_rsa_pss(pub_key, digest_oid, &signed_attrs_bytes, sig_bytes);
+        return Ok((outcome, Some(digest_oid)));
+    }
+
+    // ── RSA-PKCS#1 v1.5 ─────────────────────────────────────────────────────
     if !is_rsa_pkcs1v15_sig_oid(sig_alg_oid) {
-        // RSA-PSS and ECDSA land here — scaffold for future slices.
         return Ok((SignerVerify::Unknown, Some(digest_oid)));
     }
 
@@ -192,7 +334,6 @@ fn run_signer_crypto(sd: &SignedData) -> Result<(SignerVerify, Option<ObjectIden
         Err(_) => return Ok((SignerVerify::Unknown, Some(digest_oid))),
     };
 
-    let sig_bytes = signer.signature.as_bytes();
     let outcome = match pub_key.verify(Pkcs1v15Sign::new_unprefixed(), &digest_info, sig_bytes) {
         Ok(()) => SignerVerify::Valid,
         Err(_) => SignerVerify::Invalid,
@@ -308,5 +449,53 @@ mod tests {
     fn detached_rejects_non_cms_bytes() {
         let err = verify_signer_detached(b"not a CMS blob", b"content").unwrap_err();
         assert!(matches!(err, Error::InvalidPdf(_)));
+    }
+
+    #[test]
+    fn ecdsa_p256_invalid_key_returns_unknown() {
+        assert_eq!(
+            verify_ecdsa_p256(b"not-a-sec1-point", b"hello", b"not-a-sig"),
+            SignerVerify::Unknown,
+        );
+    }
+
+    #[test]
+    fn ecdsa_p256_round_trip() {
+        use p256::ecdsa::{signature::Signer, Signature, SigningKey};
+        let sk = SigningKey::from_slice(&[1u8; 32]).expect("valid test key");
+        let vk = *sk.verifying_key();
+        let pub_key_bytes = vk.to_encoded_point(false).as_bytes().to_vec();
+        let msg = b"round-trip test";
+        let sig: Signature = sk.sign(msg);
+        let sig_der = sig.to_der();
+        assert_eq!(verify_ecdsa_p256(&pub_key_bytes, msg, sig_der.as_bytes()), SignerVerify::Valid,);
+        assert_eq!(
+            verify_ecdsa_p256(&pub_key_bytes, b"wrong message", sig_der.as_bytes()),
+            SignerVerify::Invalid,
+        );
+    }
+
+    #[test]
+    fn ecdsa_p384_invalid_key_returns_unknown() {
+        assert_eq!(
+            verify_ecdsa_p384(b"not-a-sec1-point", b"hello", b"not-a-sig"),
+            SignerVerify::Unknown,
+        );
+    }
+
+    #[test]
+    fn ecdsa_p384_round_trip() {
+        use p384::ecdsa::{signature::Signer, Signature, SigningKey};
+        let sk = SigningKey::from_slice(&[2u8; 48]).expect("valid test key");
+        let vk = *sk.verifying_key();
+        let pub_key_bytes = vk.to_encoded_point(false).as_bytes().to_vec();
+        let msg = b"round-trip test";
+        let sig: Signature = sk.sign(msg);
+        let sig_der = sig.to_der();
+        assert_eq!(verify_ecdsa_p384(&pub_key_bytes, msg, sig_der.as_bytes()), SignerVerify::Valid,);
+        assert_eq!(
+            verify_ecdsa_p384(&pub_key_bytes, b"wrong message", sig_der.as_bytes()),
+            SignerVerify::Invalid,
+        );
     }
 }

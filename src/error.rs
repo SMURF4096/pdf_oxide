@@ -2,6 +2,8 @@
 //!
 //! This module defines all error types that can occur during PDF parsing and processing.
 
+#![forbid(unsafe_code)]
+
 /// Result type alias for PDF library operations.
 pub type Result<T> = std::result::Result<T, Error>;
 

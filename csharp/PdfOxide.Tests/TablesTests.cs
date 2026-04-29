@@ -238,5 +238,57 @@ namespace PdfOxide.Tests
             Assert.Throws<ArgumentOutOfRangeException>(() => new Column("h", 0f));
             Assert.Throws<ArgumentOutOfRangeException>(() => new Column("h", -1f));
         }
+
+        [Fact]
+        public void StreamingTable_BoundedBatch_AutoFlushes()
+        {
+            using var builder = DocumentBuilder.Create();
+            var page = builder.LetterPage()
+                .Font("Helvetica", 8f)
+                .At(72f, 720f);
+
+            var cols = new List<Column>
+            {
+                new Column("A", 100f),
+                new Column("B", 100f),
+            };
+
+            // batchSize=3, push 7 rows → 2 full flushes (batch 0..2, 3..5), 1 pending
+            using var t = page.StreamingTable(cols, batchSize: 3);
+            for (int i = 0; i < 7; i++)
+                t.AddRow($"row{i}-a", $"row{i}-b");
+
+            Assert.Equal(2, t.BatchCount);
+            Assert.Equal(1, t.PendingRowCount);
+
+            t.Build();
+
+            page.Done();
+            var bytes = builder.Build();
+            Assert.True(bytes.Length > 256);
+        }
+
+        [Fact]
+        public void StreamingTable_Flush_Drains_Buffer()
+        {
+            using var builder = DocumentBuilder.Create();
+            var page = builder.LetterPage()
+                .Font("Helvetica", 8f)
+                .At(72f, 720f);
+
+            var cols = new List<Column> { new Column("X", 150f) };
+            using var t = page.StreamingTable(cols, batchSize: 100);
+            t.AddRow("first");
+            t.AddRow("second");
+            Assert.Equal(0, t.BatchCount);
+            Assert.Equal(2, t.PendingRowCount);
+            t.Flush();
+            Assert.Equal(1, t.BatchCount);
+            Assert.Equal(0, t.PendingRowCount);
+            t.Build();
+
+            page.Done();
+            builder.Build();
+        }
     }
 }

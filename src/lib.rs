@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // Allow some clippy lints that are too pedantic for this project
 #![allow(clippy::type_complexity)]
 #![allow(clippy::too_many_arguments)]
@@ -133,6 +134,19 @@
 
 #![warn(missing_docs)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+
+// Glibc 2.34 compatibility (#416): LLVM may emit calls to __memcmpeq@GLIBC_2.35,
+// which does not exist in glibc 2.34 (Amazon Linux 2023, some Ubuntu 22.04 builds).
+// A weak stub redirecting to plain memcmp satisfies the reference on older glibc;
+// glibc 2.35's own definition wins when available. global_asm! works with both
+// GNU ld and lld, unlike --defsym which lld rejects for PLT-resolved symbols.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+core::arch::global_asm!(
+    ".weak __memcmpeq",
+    ".type __memcmpeq, @function",
+    "__memcmpeq:",
+    "jmp memcmp@PLT",
+);
 
 // Error handling
 pub mod error;
