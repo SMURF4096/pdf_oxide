@@ -36,7 +36,9 @@
 use super::types::{ComplianceError, ErrorCode, PdfALevel, ValidationResult};
 use super::PdfAValidator;
 use crate::document::PdfDocument;
+use crate::editor::DocumentEditor;
 use crate::error::Result;
+use crate::object::{Object, ObjectRef};
 
 /// Configuration options for PDF/A conversion.
 #[derive(Debug, Clone)]
@@ -254,12 +256,24 @@ impl PdfAConverter {
 
     /// Convert a PDF document to PDF/A compliance.
     ///
-    /// This method modifies the document in place to make it PDF/A compliant.
+    /// Internally builds a [`DocumentEditor`] from the document bytes, stages
+    /// all mutations, commits them in a single save+reparse, then replaces the
+    /// caller's document with the updated version.
     pub fn convert(&self, document: &mut PdfDocument) -> Result<ConversionResult> {
-        let mut result = ConversionResult::new(self.level);
+        let mut editor = DocumentEditor::from_bytes(document.source_bytes.clone())?;
+        let result = self.convert_with_editor(&mut editor)?;
+        // Commit staged changes and propagate the updated document to the caller.
+        editor.commit_in_place()?;
+        *document = editor.into_source();
+        Ok(result)
+    }
 
-        // First, validate to see what needs to be fixed
-        let initial_validation = self.validator.validate(document, self.level)?;
+    /// Core conversion logic operating on a [`DocumentEditor`].
+    fn convert_with_editor(&self, editor: &mut DocumentEditor) -> Result<ConversionResult> {
+        use std::collections::HashSet;
+
+        let mut result = ConversionResult::new(self.level);
+        let initial_validation = self.validator.validate(editor.source_mut(), self.level)?;
 
         if initial_validation.is_compliant {
             result.success = true;
@@ -267,13 +281,26 @@ impl PdfAConverter {
             return Ok(result);
         }
 
-        // Process each error and try to fix it
+        // Apply each fix once even if the same ErrorCode appears multiple times.
+        let mut applied: HashSet<ErrorCode> = HashSet::new();
         for error in &initial_validation.errors {
-            self.try_fix_error(document, error, &mut result)?;
+            self.try_fix_error(editor, error, &mut result, &mut applied)?;
         }
 
-        // Re-validate after fixes
-        let final_validation = self.validator.validate(document, self.level)?;
+        // OutputIntents are required unconditionally for PDF/A-2/3.
+        // The validator only reports DeviceColorWithoutIntent when it recognises
+        // explicit RGB/CMYK operators, but many PDFs embed colour via images or
+        // external graphics states that our content parser doesn't inspect.
+        // Call add_output_intent always; it no-ops if OutputIntents already exists.
+        if !applied.contains(&ErrorCode::MissingOutputIntent)
+            && !applied.contains(&ErrorCode::DeviceColorWithoutIntent)
+        {
+            self.add_output_intent(editor, &mut result)?;
+        }
+
+        // Commit staged mutations so the validator reads the updated document.
+        editor.commit_in_place()?;
+        let final_validation = self.validator.validate(editor.source_mut(), self.level)?;
         result.validation = final_validation.clone();
         result.success = final_validation.is_compliant;
 
@@ -283,20 +310,24 @@ impl PdfAConverter {
     /// Try to fix a compliance error.
     fn try_fix_error(
         &self,
-        document: &mut PdfDocument,
+        editor: &mut DocumentEditor,
         error: &ComplianceError,
         result: &mut ConversionResult,
+        applied: &mut std::collections::HashSet<ErrorCode>,
     ) -> Result<()> {
+        if !applied.insert(error.code) {
+            return Ok(());
+        }
         match error.code {
             ErrorCode::MissingXmpMetadata => {
-                self.add_xmp_metadata(document, result)?;
+                self.add_xmp_metadata(editor, result)?;
             },
             ErrorCode::MissingPdfaIdentification => {
-                self.add_pdfa_identification(document, result)?;
+                self.add_pdfa_identification(editor, result)?;
             },
             ErrorCode::FontNotEmbedded => {
                 if self.config.embed_fonts {
-                    self.embed_font(document, error, result)?;
+                    self.embed_font(editor, error, result)?;
                 } else {
                     result.add_error(ConversionError::new(
                         error.code,
@@ -305,14 +336,14 @@ impl PdfAConverter {
                 }
             },
             ErrorCode::MissingOutputIntent => {
-                self.add_output_intent(document, result)?;
+                self.add_output_intent(editor, result)?;
             },
             ErrorCode::DeviceColorWithoutIntent => {
-                self.add_output_intent(document, result)?;
+                self.add_output_intent(editor, result)?;
             },
             ErrorCode::JavaScriptNotAllowed => {
                 if self.config.remove_javascript {
-                    self.remove_javascript(document, result)?;
+                    self.remove_javascript(editor, result)?;
                 } else {
                     result.add_error(ConversionError::new(
                         error.code,
@@ -322,7 +353,7 @@ impl PdfAConverter {
             },
             ErrorCode::EncryptionNotAllowed => {
                 if self.config.remove_encryption {
-                    self.remove_encryption(document, result)?;
+                    self.remove_encryption(editor, result)?;
                 } else {
                     result.add_error(ConversionError::new(
                         error.code,
@@ -332,7 +363,7 @@ impl PdfAConverter {
             },
             ErrorCode::TransparencyNotAllowed => {
                 if self.config.flatten_transparency && !self.level.allows_transparency() {
-                    self.flatten_transparency(document, result)?;
+                    self.flatten_transparency(editor, result)?;
                 } else if !self.level.allows_transparency() {
                     result.add_error(ConversionError::new(
                         error.code,
@@ -342,7 +373,7 @@ impl PdfAConverter {
             },
             ErrorCode::EmbeddedFileNotAllowed => {
                 if self.config.remove_embedded_files && !self.level.allows_embedded_files() {
-                    self.remove_embedded_files(document, result)?;
+                    self.remove_embedded_files(editor, result)?;
                 } else if !self.level.allows_embedded_files() {
                     result.add_error(ConversionError::new(
                         error.code,
@@ -352,7 +383,7 @@ impl PdfAConverter {
             },
             ErrorCode::MissingDocumentStructure => {
                 if self.config.add_structure && self.level.requires_structure() {
-                    self.add_structure(document, result)?;
+                    self.add_structure(editor, result)?;
                 } else if self.level.requires_structure() {
                     result.add_error(ConversionError::new(
                         error.code,
@@ -361,10 +392,10 @@ impl PdfAConverter {
                 }
             },
             ErrorCode::MissingLanguage => {
-                self.add_language(document, result)?;
+                self.add_language(editor, result)?;
             },
             ErrorCode::MissingAppearanceStream => {
-                self.fix_annotation_appearance(document, error, result)?;
+                self.fix_annotation_appearance(editor, error, result)?;
             },
             // Errors that cannot be automatically fixed
             ErrorCode::FontMissingTables
@@ -397,32 +428,102 @@ impl PdfAConverter {
         Ok(())
     }
 
-    /// Add XMP metadata to the document.
+    /// Add an XMP metadata stream to the document catalog.
+    ///
+    /// Allocates a new stream object with `/Type /Metadata /Subtype /XML`
+    /// and updates the catalog's `/Metadata` entry to reference it.
+    /// Per ISO 19005-1 §6.7.11 the stream must not be compressed.
     fn add_xmp_metadata(
         &self,
-        _document: &mut PdfDocument,
+        editor: &mut DocumentEditor,
         result: &mut ConversionResult,
     ) -> Result<()> {
-        // Generate XMP metadata with PDF/A identification
-        let _xmp_data = self.generate_xmp_metadata();
+        let xmp_bytes = self.generate_xmp_metadata().into_bytes();
 
-        // Note: Actual implementation would add the XMP stream to the catalog
-        // This is a placeholder that records the action
+        // Build the XMP stream — no /Filter, XMP must be plaintext per PDF/A spec.
+        let mut stream_dict = std::collections::HashMap::new();
+        stream_dict.insert("Type".to_string(), Object::Name("Metadata".to_string()));
+        stream_dict.insert("Subtype".to_string(), Object::Name("XML".to_string()));
+        stream_dict.insert("Length".to_string(), Object::Integer(xmp_bytes.len() as i64));
+        let xmp_stream = Object::Stream {
+            dict: stream_dict,
+            data: bytes::Bytes::from(xmp_bytes),
+        };
+
+        let xmp_id = editor.alloc_id();
+        editor.insert_modified(xmp_id, xmp_stream);
+
+        // Patch the catalog to reference the new XMP stream.
+        let mut catalog = load_catalog_for_edit(editor)?;
+        catalog.insert("Metadata".to_string(), Object::Reference(ObjectRef::new(xmp_id, 0)));
+        let catalog_id = catalog_object_id(editor)?;
+        editor.insert_modified(catalog_id, Object::Dictionary(catalog));
 
         result.add_action(
             ConversionAction::new(ActionType::AddedXmpMetadata, "Added XMP metadata stream")
                 .with_fixed_error(ErrorCode::MissingXmpMetadata),
         );
-
         Ok(())
     }
 
-    /// Add PDF/A identification to existing XMP metadata.
+    /// Inject PDF/A identification into an existing XMP metadata stream.
+    ///
+    /// If the catalog already has a `/Metadata` stream, the `pdfaid:part` and
+    /// `pdfaid:conformance` nodes are spliced in before `</rdf:RDF>`.  If the
+    /// stream is absent or unreadable, falls back to [`add_xmp_metadata`].
     fn add_pdfa_identification(
         &self,
-        _document: &mut PdfDocument,
+        editor: &mut DocumentEditor,
         result: &mut ConversionResult,
     ) -> Result<()> {
+        let catalog = load_catalog_for_edit(editor)?;
+
+        let metadata_ref = match catalog.get("Metadata").and_then(|o| o.as_reference()) {
+            Some(r) => r,
+            None => return self.add_xmp_metadata(editor, result),
+        };
+
+        // Prefer a version already staged in this conversion run.
+        let current = editor
+            .get_modified(metadata_ref.id)
+            .cloned()
+            .or_else(|| {
+                editor
+                    .source()
+                    .load_object(metadata_ref)
+                    .ok()
+            });
+
+        // Decode the stream (may be FlateDecode-compressed) before parsing as XML.
+        let current_xml = match &current {
+            Some(obj @ Object::Stream { .. }) => {
+                let decoded = obj.decode_stream_data().unwrap_or_else(|_| {
+                    if let Object::Stream { data, .. } = obj { data.to_vec() } else { vec![] }
+                });
+                String::from_utf8_lossy(&decoded).into_owned()
+            },
+            Some(_) | None => return self.add_xmp_metadata(editor, result),
+        };
+        let mut stream_dict = match current {
+            Some(Object::Stream { dict, .. }) => dict,
+            _ => unreachable!(),
+        };
+
+        let patched = inject_pdfaid(&current_xml, self.level.xmp_part(), self.level.xmp_conformance());
+        let patched_bytes = patched.into_bytes();
+        stream_dict.insert("Length".to_string(), Object::Integer(patched_bytes.len() as i64));
+        // Remove any compression filter — PDF/A requires plaintext XMP.
+        stream_dict.remove("Filter");
+        stream_dict.remove("DecodeParms");
+
+        editor.insert_modified(
+            metadata_ref.id,
+            Object::Stream {
+                dict: stream_dict,
+                data: bytes::Bytes::from(patched_bytes),
+            },
+        );
+
         result.add_action(
             ConversionAction::new(
                 ActionType::AddedPdfaIdentification,
@@ -434,186 +535,296 @@ impl PdfAConverter {
             )
             .with_fixed_error(ErrorCode::MissingPdfaIdentification),
         );
-
         Ok(())
     }
 
-    /// Embed a font that is not embedded.
+    /// Report font as unfixable — font subsetting requires a font engine not yet present.
     fn embed_font(
         &self,
-        _document: &mut PdfDocument,
+        _editor: &mut DocumentEditor,
         error: &ComplianceError,
         result: &mut ConversionResult,
     ) -> Result<()> {
-        // Font embedding would require:
-        // 1. Identifying the font from system fonts
-        // 2. Subsetting to used glyphs
-        // 3. Creating font program stream
-        // 4. Updating font descriptor
-
         let font_name = error.location.as_deref().unwrap_or("Unknown");
-
-        result.add_action(
-            ConversionAction::new(
-                ActionType::EmbeddedFont,
-                format!("Embedded font: {}", font_name),
+        let reason = if is_standard_14_font(font_name) {
+            format!(
+                "Standard Type1 font '{}' requires embedding for PDF/A; \
+                 font subsetting is not yet available in pdf_oxide",
+                font_name
             )
-            .with_fixed_error(ErrorCode::FontNotEmbedded),
-        );
-
+        } else {
+            format!(
+                "Font '{}' has no embedded /FontFile* stream; \
+                 font subsetting is not yet available in pdf_oxide",
+                font_name
+            )
+        };
+        result.add_error(ConversionError::new(ErrorCode::FontNotEmbedded, reason));
         Ok(())
     }
 
-    /// Add output intent with ICC profile.
+    /// Write a real /OutputIntents array with an embedded sRGB ICC profile stream.
     fn add_output_intent(
         &self,
-        _document: &mut PdfDocument,
+        editor: &mut DocumentEditor,
         result: &mut ConversionResult,
     ) -> Result<()> {
-        // Would create OutputIntent dictionary:
-        // << /Type /OutputIntent
-        //    /S /GTS_PDFA1
-        //    /OutputConditionIdentifier (sRGB)
-        //    /RegistryName (http://www.color.org)
-        //    /Info (sRGB IEC61966-2.1)
-        //    /DestOutputProfile <ICC profile stream>
-        // >>
+        let mut catalog = load_catalog_for_edit(editor)?;
+        if catalog.contains_key("OutputIntents") {
+            return Ok(());
+        }
+
+        let icc_bytes: Vec<u8> = self
+            .config
+            .icc_profile
+            .clone()
+            .unwrap_or_else(|| Self::get_srgb_icc_profile().to_vec());
+
+        // Build the ICC profile stream — uncompressed; PDF/A allows but does not
+        // require compression here and plaintext is simplest for validation.
+        let mut icc_dict = std::collections::HashMap::new();
+        icc_dict.insert("N".to_string(), Object::Integer(3)); // sRGB = 3 channels
+        icc_dict.insert("Length".to_string(), Object::Integer(icc_bytes.len() as i64));
+        let icc_stream = Object::Stream { dict: icc_dict, data: bytes::Bytes::from(icc_bytes) };
+        let icc_id = editor.alloc_id();
+        editor.insert_modified(icc_id, icc_stream);
+
+        // Build the OutputIntent dictionary.
+        let mut oi = std::collections::HashMap::new();
+        oi.insert("Type".to_string(), Object::Name("OutputIntent".to_string()));
+        oi.insert("S".to_string(), Object::Name("GTS_PDFA1".to_string()));
+        oi.insert(
+            "OutputConditionIdentifier".to_string(),
+            Object::text_string("sRGB IEC61966-2.1"),
+        );
+        oi.insert(
+            "RegistryName".to_string(),
+            Object::text_string("http://www.color.org"),
+        );
+        oi.insert("Info".to_string(), Object::text_string("sRGB IEC61966-2.1"));
+        oi.insert(
+            "DestOutputProfile".to_string(),
+            Object::Reference(ObjectRef::new(icc_id, 0)),
+        );
+
+        catalog.insert(
+            "OutputIntents".to_string(),
+            Object::Array(vec![Object::Dictionary(oi)]),
+        );
+        let cat_id = catalog_object_id(editor)?;
+        editor.insert_modified(cat_id, Object::Dictionary(catalog));
 
         result.add_action(
             ConversionAction::new(
                 ActionType::AddedOutputIntent,
-                "Added sRGB output intent with ICC profile",
+                "Added sRGB OutputIntent (GTS_PDFA1) with embedded ICC profile",
             )
             .with_fixed_error(ErrorCode::MissingOutputIntent),
         );
-
         Ok(())
     }
 
-    /// Remove JavaScript from the document.
+    /// Remove JavaScript from /Names/JavaScript, /OpenAction (if JS), and /AA entries.
     fn remove_javascript(
         &self,
-        _document: &mut PdfDocument,
+        editor: &mut DocumentEditor,
         result: &mut ConversionResult,
     ) -> Result<()> {
-        // Would remove:
-        // - /JavaScript from names dictionary
-        // - /JS actions from annotations
-        // - /AA (additional actions) with JavaScript
+        let mut touched = false;
 
-        result.add_action(
-            ConversionAction::new(ActionType::RemovedJavaScript, "Removed all JavaScript")
+        // 1. /Names /JavaScript tree
+        if let Some((mut names, names_id)) = load_names_for_edit(editor)? {
+            if names.remove("JavaScript").is_some() {
+                store_names(editor, names, names_id)?;
+                touched = true;
+            }
+        }
+
+        // 2. Catalog /OpenAction if it is a JavaScript action.
+        let mut catalog = load_catalog_for_edit(editor)?;
+        let mut catalog_changed = false;
+        if action_is_javascript(catalog.get("OpenAction"), editor) {
+            catalog.remove("OpenAction");
+            catalog_changed = true;
+        }
+        if let Some(aa_obj) = catalog.get("AA").cloned() {
+            if let Some(cleaned) = strip_js_from_aa(&aa_obj, editor) {
+                if cleaned.is_empty() {
+                    catalog.remove("AA");
+                } else {
+                    catalog.insert("AA".to_string(), Object::Dictionary(cleaned));
+                }
+                catalog_changed = true;
+            }
+        }
+        if catalog_changed {
+            let cat_id = catalog_object_id(editor)?;
+            editor.insert_modified(cat_id, Object::Dictionary(catalog));
+            touched = true;
+        }
+
+        // 3. Per-page /AA entries.
+        let page_count = editor.source_mut().page_count()?;
+        for idx in 0..page_count {
+            let page_ref = match editor.source().get_page_ref(idx) {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+            let page_obj = match editor.source().load_object(page_ref) {
+                Ok(o) => o,
+                Err(_) => continue,
+            };
+            if let Object::Dictionary(mut page_dict) = page_obj {
+                if let Some(aa) = page_dict.get("AA").cloned() {
+                    if let Some(cleaned) = strip_js_from_aa(&aa, editor) {
+                        if cleaned.is_empty() {
+                            page_dict.remove("AA");
+                        } else {
+                            page_dict.insert("AA".to_string(), Object::Dictionary(cleaned));
+                        }
+                        editor.insert_modified(page_ref.id, Object::Dictionary(page_dict));
+                        touched = true;
+                    }
+                }
+            }
+        }
+
+        if touched {
+            result.add_action(
+                ConversionAction::new(
+                    ActionType::RemovedJavaScript,
+                    "Removed JavaScript from /Names, /OpenAction, and /AA entries",
+                )
                 .with_fixed_error(ErrorCode::JavaScriptNotAllowed),
-        );
-
+            );
+        }
         Ok(())
     }
 
-    /// Remove encryption from the document.
+    /// Strip the /Encrypt marker from the trailer.
+    ///
+    /// Safe only when content streams are already accessible — the editor's
+    /// `write_full_to_writer` never writes /Encrypt unless `SaveOptions::encryption`
+    /// is set, so converted output will be unencrypted as long as the source bytes
+    /// were readable (i.e. no password required).
     fn remove_encryption(
         &self,
-        _document: &mut PdfDocument,
+        editor: &mut DocumentEditor,
         result: &mut ConversionResult,
     ) -> Result<()> {
-        result.add_action(
-            ConversionAction::new(ActionType::RemovedEncryption, "Removed document encryption")
-                .with_fixed_error(ErrorCode::EncryptionNotAllowed),
-        );
-
-        Ok(())
-    }
-
-    /// Flatten transparency for PDF/A-1 compliance.
-    fn flatten_transparency(
-        &self,
-        _document: &mut PdfDocument,
-        result: &mut ConversionResult,
-    ) -> Result<()> {
-        // Transparency flattening would:
-        // 1. Identify pages with transparency
-        // 2. Render transparent content to opaque
-        // 3. Replace transparency groups
-
+        // Probe: if we can read page content the source was decrypted.
+        if editor.source_mut().get_page_content_data(0).is_err() {
+            result.add_error(ConversionError::new(
+                ErrorCode::EncryptionNotAllowed,
+                "Document content is inaccessible; cannot strip encryption safely",
+            ));
+            return Ok(());
+        }
+        // The editor's save path already omits /Encrypt from the new trailer
+        // (write_full_to_writer only adds /Encrypt when SaveOptions::encryption is set).
+        // No additional mutation is required — just record the action.
         result.add_action(
             ConversionAction::new(
-                ActionType::FlattenedTransparency,
-                "Flattened transparency on all pages",
+                ActionType::RemovedEncryption,
+                "Encryption marker will be absent from the saved output",
             )
-            .with_fixed_error(ErrorCode::TransparencyNotAllowed),
+            .with_fixed_error(ErrorCode::EncryptionNotAllowed),
         );
-
         Ok(())
     }
 
-    /// Remove embedded files.
-    fn remove_embedded_files(
+    /// Transparency flattening requires a rendering engine — not yet available.
+    fn flatten_transparency(
         &self,
-        _document: &mut PdfDocument,
+        _editor: &mut DocumentEditor,
         result: &mut ConversionResult,
     ) -> Result<()> {
-        result.add_action(
-            ConversionAction::new(ActionType::RemovedEmbeddedFiles, "Removed all embedded files")
-                .with_fixed_error(ErrorCode::EmbeddedFileNotAllowed),
-        );
+        result.add_error(ConversionError::new(
+            ErrorCode::TransparencyNotAllowed,
+            "Transparency flattening requires a rendering engine; use PDF/A-2b or -3b (which \
+             allow transparency) or pre-flatten the document with an external tool",
+        ));
+        Ok(())
+    }
 
+    /// Remove /EmbeddedFiles from the /Names dictionary.
+    fn remove_embedded_files(
+        &self,
+        editor: &mut DocumentEditor,
+        result: &mut ConversionResult,
+    ) -> Result<()> {
+        let removed = if let Some((mut names, names_id)) = load_names_for_edit(editor)? {
+            if names.remove("EmbeddedFiles").is_some() {
+                store_names(editor, names, names_id)?;
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        if removed {
+            result.add_action(
+                ConversionAction::new(
+                    ActionType::RemovedEmbeddedFiles,
+                    "Removed /EmbeddedFiles from /Names",
+                )
+                .with_fixed_error(ErrorCode::EmbeddedFileNotAllowed),
+            );
+        }
         Ok(())
     }
 
     /// Add document structure tree for level A compliance.
     fn add_structure(
         &self,
-        _document: &mut PdfDocument,
+        _editor: &mut DocumentEditor,
         result: &mut ConversionResult,
     ) -> Result<()> {
-        // Structure tree generation would:
-        // 1. Analyze content streams
-        // 2. Build structure elements
-        // 3. Tag content with structure references
-
-        result.add_action(
-            ConversionAction::new(
-                ActionType::AddedStructure,
-                "Added basic document structure tree",
-            )
-            .with_fixed_error(ErrorCode::MissingDocumentStructure),
-        );
-
+        result.add_error(ConversionError::new(
+            ErrorCode::MissingDocumentStructure,
+            "Structure tree generation is not yet implemented; use PDF/A-*b levels which \
+             do not require a tagged document structure",
+        ));
         Ok(())
     }
 
-    /// Add document language.
+    /// Set /Lang on the catalog (default "en").
     fn add_language(
         &self,
-        _document: &mut PdfDocument,
+        editor: &mut DocumentEditor,
         result: &mut ConversionResult,
     ) -> Result<()> {
-        // Would add /Lang to catalog, default to "en"
-
+        let mut catalog = load_catalog_for_edit(editor)?;
+        if !catalog.contains_key("Lang") {
+            catalog.insert("Lang".to_string(), Object::text_string("en"));
+            let cat_id = catalog_object_id(editor)?;
+            editor.insert_modified(cat_id, Object::Dictionary(catalog));
+        }
         result.add_action(
-            ConversionAction::new(ActionType::AddedLanguage, "Added document language: en")
+            ConversionAction::new(ActionType::AddedLanguage, "Set catalog /Lang to 'en'")
                 .with_fixed_error(ErrorCode::MissingLanguage),
         );
-
         Ok(())
     }
 
-    /// Fix annotation appearance stream.
+    /// Fix annotation appearance stream (not yet implemented — too complex without renderer).
     fn fix_annotation_appearance(
         &self,
-        _document: &mut PdfDocument,
+        _editor: &mut DocumentEditor,
         error: &ComplianceError,
         result: &mut ConversionResult,
     ) -> Result<()> {
         let location = error.location.as_deref().unwrap_or("annotation");
-
-        result.add_action(
-            ConversionAction::new(
-                ActionType::FixedAnnotation,
-                format!("Generated appearance stream for {}", location),
-            )
-            .with_fixed_error(ErrorCode::MissingAppearanceStream),
-        );
-
+        result.add_error(ConversionError::new(
+            ErrorCode::MissingAppearanceStream,
+            format!(
+                "Cannot generate appearance stream for {} — annotation rendering \
+                 requires a font/layout engine not yet available",
+                location
+            ),
+        ));
         Ok(())
     }
 
@@ -645,6 +856,193 @@ impl PdfAConverter {
         // Minimal sRGB ICC profile header (would be replaced with full profile)
         // In a production implementation, this would be the complete sRGB profile
         include_bytes!("srgb_profile_placeholder.bin")
+    }
+}
+
+/// Resolve the catalog's object ID from the trailer `/Root` entry.
+fn catalog_object_id(editor: &DocumentEditor) -> Result<u32> {
+    use crate::error::Error;
+    editor
+        .source()
+        .trailer()
+        .as_dict()
+        .and_then(|d| d.get("Root"))
+        .and_then(|r| r.as_reference())
+        .map(|r| r.id)
+        .ok_or_else(|| Error::InvalidPdf("Trailer missing /Root reference".to_string()))
+}
+
+/// Load the catalog dictionary for editing.
+///
+/// Prefers any already-staged version in `editor.modified_objects` so that
+/// multiple fix methods in the same conversion run compose correctly.
+fn load_catalog_for_edit(
+    editor: &mut DocumentEditor,
+) -> Result<std::collections::HashMap<String, Object>> {
+    use crate::error::Error;
+    let catalog_id = catalog_object_id(editor)?;
+    if let Some(staged) = editor.get_modified(catalog_id) {
+        if let Some(d) = staged.as_dict() {
+            return Ok(d.clone());
+        }
+    }
+    editor
+        .source()
+        .load_object(ObjectRef::new(catalog_id, 0))?
+        .as_dict()
+        .cloned()
+        .ok_or_else(|| Error::InvalidPdf("Catalog is not a dictionary".to_string()))
+}
+
+/// Load the /Names dictionary for editing, returning `(dict, indirect_id)`.
+///
+/// `indirect_id == 0` signals the Names dict is inline in the catalog; callers
+/// must use `store_names` which routes to `load_catalog_for_edit` in that case.
+fn load_names_for_edit(
+    editor: &mut DocumentEditor,
+) -> Result<Option<(std::collections::HashMap<String, Object>, u32)>> {
+    let catalog = load_catalog_for_edit(editor)?;
+    let names_obj = match catalog.get("Names") {
+        Some(o) => o.clone(),
+        None => return Ok(None),
+    };
+    match names_obj {
+        Object::Reference(r) => {
+            let id = r.id;
+            if let Some(staged) = editor.get_modified(id) {
+                if let Some(d) = staged.as_dict() {
+                    return Ok(Some((d.clone(), id)));
+                }
+            }
+            match editor.source().load_object(r) {
+                Ok(Object::Dictionary(d)) => Ok(Some((d, id))),
+                _ => Ok(None),
+            }
+        },
+        Object::Dictionary(d) => Ok(Some((d, 0))),
+        _ => Ok(None),
+    }
+}
+
+/// Persist a (possibly modified) Names dict back to the editor.
+///
+/// When `names_id == 0` the dict was inline; it is re-embedded into the catalog.
+/// When the dict is empty after removals the /Names entry is dropped entirely.
+fn store_names(
+    editor: &mut DocumentEditor,
+    names: std::collections::HashMap<String, Object>,
+    names_id: u32,
+) -> Result<()> {
+    if names_id == 0 {
+        let mut catalog = load_catalog_for_edit(editor)?;
+        if names.is_empty() {
+            catalog.remove("Names");
+        } else {
+            catalog.insert("Names".to_string(), Object::Dictionary(names));
+        }
+        let cat_id = catalog_object_id(editor)?;
+        editor.insert_modified(cat_id, Object::Dictionary(catalog));
+    } else if names.is_empty() {
+        // Remove the /Names reference from catalog.
+        let mut catalog = load_catalog_for_edit(editor)?;
+        catalog.remove("Names");
+        let cat_id = catalog_object_id(editor)?;
+        editor.insert_modified(cat_id, Object::Dictionary(catalog));
+    } else {
+        editor.insert_modified(names_id, Object::Dictionary(names));
+    }
+    Ok(())
+}
+
+/// Returns true if the given object (direct or reference) is a JavaScript action.
+fn action_is_javascript(obj: Option<&Object>, editor: &DocumentEditor) -> bool {
+    let Some(action) = obj else { return false };
+    let resolved = match action {
+        Object::Reference(r) => {
+            editor.source().load_object(*r).unwrap_or(Object::Null)
+        },
+        other => other.clone(),
+    };
+    matches!(
+        resolved.as_dict().and_then(|d| d.get("S")).and_then(|o| o.as_name()),
+        Some("JavaScript")
+    )
+}
+
+/// Remove all /AA sub-actions whose /S is /JavaScript.
+///
+/// Returns `Some(cleaned_dict)` if anything was removed, `None` if unchanged.
+fn strip_js_from_aa(
+    aa: &Object,
+    editor: &DocumentEditor,
+) -> Option<std::collections::HashMap<String, Object>> {
+    let aa_dict = match aa {
+        Object::Reference(r) => editor.source().load_object(*r).ok()?.as_dict()?.clone(),
+        Object::Dictionary(d) => d.clone(),
+        _ => return None,
+    };
+    let before = aa_dict.len();
+    let mut out = aa_dict;
+    out.retain(|_, action_obj| {
+        let resolved = match action_obj {
+            Object::Reference(r) => {
+                editor.source().load_object(*r).unwrap_or(Object::Null)
+            },
+            other => other.clone(),
+        };
+        !matches!(
+            resolved.as_dict().and_then(|d| d.get("S")).and_then(|o| o.as_name()),
+            Some("JavaScript")
+        )
+    });
+    if out.len() != before { Some(out) } else { None }
+}
+
+/// True for the 14 standard Type1 fonts that PDF viewers guarantee to have built in.
+fn is_standard_14_font(name: &str) -> bool {
+    matches!(
+        name,
+        "Helvetica"
+            | "Helvetica-Bold"
+            | "Helvetica-Oblique"
+            | "Helvetica-BoldOblique"
+            | "Times-Roman"
+            | "Times-Bold"
+            | "Times-Italic"
+            | "Times-BoldItalic"
+            | "Courier"
+            | "Courier-Bold"
+            | "Courier-Oblique"
+            | "Courier-BoldOblique"
+            | "Symbol"
+            | "ZapfDingbats"
+    )
+}
+
+/// Splice `pdfaid:part` and `pdfaid:conformance` into an existing XMP packet.
+///
+/// Inserts a fresh `<rdf:Description>` carrying the PDF/A identification
+/// immediately before the closing `</rdf:RDF>` tag.  Multiple `rdf:Description`
+/// elements in a single RDF block are legal per the RDF spec and used by all
+/// major PDF/A toolkits.  String-level splicing avoids a heavyweight XML
+/// dependency (KISS).
+fn inject_pdfaid(xml: &str, part: &str, conformance: &str) -> String {
+    let block = format!(
+        "    <rdf:Description rdf:about=\"\" \
+xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">\n\
+      <pdfaid:part>{part}</pdfaid:part>\n\
+      <pdfaid:conformance>{conformance}</pdfaid:conformance>\n\
+    </rdf:Description>\n"
+    );
+    if let Some(idx) = xml.rfind("</rdf:RDF>") {
+        let mut out = String::with_capacity(xml.len() + block.len());
+        out.push_str(&xml[..idx]);
+        out.push_str(&block);
+        out.push_str(&xml[idx..]);
+        out
+    } else {
+        // XMP has no RDF block — caller should have routed to add_xmp_metadata.
+        xml.to_string()
     }
 }
 

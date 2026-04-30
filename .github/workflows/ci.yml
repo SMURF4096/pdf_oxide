@@ -187,6 +187,7 @@ jobs:
           cargo run --example showcase_streaming_table
           cargo run --example showcase_pdf_ua_image
           cargo run --example showcase_in_memory_roundtrip
+          cargo run --example showcase_pdfa_conversion
           cargo run --example showcase_pkcs12_signing --features signatures
           cargo run --example showcase_rfc3161_timestamp --features signatures
 
@@ -726,6 +727,7 @@ jobs:
           echo "--- encrypted_bytes ---"        && timeout 120 node 09-new-features/encrypted_bytes/index.js
           echo "--- page_extraction ---"        && timeout 120 node 09-new-features/page_extraction/index.js
           echo "--- compliance_validation ---"  && timeout 120 node 09-new-features/compliance_validation/index.js
+          echo "--- pdfa_conversion ---"        && timeout 120 node 09-new-features/pdfa_conversion/index.js
           echo "--- image_embedding ---"        && timeout 120 node 09-new-features/image_embedding/index.js
 
       - name: Compile TypeScript examples

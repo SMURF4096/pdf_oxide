@@ -509,6 +509,40 @@ class PdfDocumentImpl {
     };
   }
 
+  /**
+   * Validate PDF/A conformance at a given level.
+   * @param level - "1a"|"1b"|"2a"|"2b"|"2u"|"3a"|"3b"|"3u" (default "2b")
+   */
+  validatePdfA(level: '1a' | '1b' | '2a' | '2b' | '2u' | '3a' | '3b' | '3u' = '2b'): { compliant: boolean; errors: string[]; warnings: string[] } {
+    this.ensureOpen();
+    const levelMap: Record<string, number> = { '1b': 0, '1a': 1, '2b': 2, '2a': 3, '2u': 4, '3b': 5, '3a': 6, '3u': 7 };
+    const levelInt = levelMap[level];
+    if (levelInt === undefined) throw new RangeError(`Unknown PDF/A level: "${level}"`);
+    return native.validatePdfALevel(this._handle, levelInt);
+  }
+
+  /**
+   * Convert document to PDF/A conformance in-place.
+   * @param level - "1b"|"2b"|"2u"|"3b" etc. (default "2b")
+   * @returns true if fully compliant after conversion
+   */
+  convertToPdfA(level: '1a' | '1b' | '2a' | '2b' | '2u' | '3a' | '3b' | '3u' = '2b'): boolean {
+    this.ensureOpen();
+    const levelMap: Record<string, number> = { '1b': 0, '1a': 1, '2b': 2, '2a': 3, '2u': 4, '3b': 5, '3a': 6, '3u': 7 };
+    const levelInt = levelMap[level];
+    if (levelInt === undefined) throw new RangeError(`Unknown PDF/A level: "${level}"`);
+    return native.convertToPdfA(this._handle, levelInt);
+  }
+
+  /**
+   * Return the current document bytes (including any in-place modifications
+   * made by convertToPdfA).
+   */
+  toBuffer(): Buffer {
+    this.ensureOpen();
+    return native.documentGetSourceBytes(this._handle);
+  }
+
   close(): void {
     if (!this._closed && this._handle) {
       native.closeDocument(this._handle);

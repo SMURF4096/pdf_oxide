@@ -583,6 +583,13 @@ export class PdfDocument {
   };
 
   /**
+   * Convert document to PDF/A conformance in-place.
+   * @param level - PDF/A level (default "2b")
+   * @returns true on success
+   */
+  convertToPdfA(level?: '1a' | '1b' | '2a' | '2b' | '2u' | '3a' | '3b' | '3u'): boolean;
+
+  /**
    * Validate PDF/X conformance.
    * @param level - "1a_2001"|"1a_2003"|"3_2003"|"4"|"5"|"6" (default "4")
    * @returns Validation result with compliant flag and errors

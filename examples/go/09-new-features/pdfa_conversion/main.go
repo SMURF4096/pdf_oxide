@@ -1,7 +1,10 @@
-// PDF/A conversion — v0.3.40
+// PDF/A conversion: validate → convert → validate — v0.3.41
 //
-// Demonstrates ConvertToPdfA: build a simple PDF, open it in the editor,
-// convert to PDF/A-2b (level 2), then save the result.
+// Demonstrates the full archival pipeline:
+//   1. Build a PDF in memory
+//   2. Validate PDF/A-2b conformance (expect errors before conversion)
+//   3. Convert to PDF/A-2b
+//   4. Validate again (expect compliant or fewer errors)
 // Run: go run -tags pdf_oxide_dev main.go
 
 package main
@@ -29,7 +32,7 @@ func main() {
 	b, err := pdfoxide.NewDocumentBuilder()
 	must(err)
 	defer b.Close()
-	must(b.Title("PDF/A Conversion Demo"))
+	must(b.Title("PDF/A-2b Conversion Demo"))
 
 	page, err := b.LetterPage()
 	must(err)
@@ -46,27 +49,43 @@ func main() {
 	must(err)
 	fmt.Printf("Original PDF size: %d bytes\n", len(pdfBytes))
 
-	// Open with editor and convert to PDF/A-2b (level index 2).
+	// Step 1: validate before conversion.
+	fmt.Println("Validating PDF/A-2b before conversion...")
+	doc, err := pdfoxide.OpenFromBytes(pdfBytes)
+	must(err)
+	if result, err := doc.ValidatePdfA(2); err != nil {
+		fmt.Printf("  skipped: %v\n", err)
+	} else {
+		fmt.Printf("  compliant: %v, errors: %d\n", result.Compliant, len(result.Errors))
+	}
+	doc.Close()
+
+	// Step 2: convert to PDF/A-2b (level index 2: 0=A1b 1=A1a 2=A2b ...).
+	fmt.Println("Converting to PDF/A-2b...")
 	editor, err := pdfoxide.OpenEditorFromBytes(pdfBytes)
 	must(err)
-	defer editor.Close()
-
-	// ConvertToPdfA: 0=A1b 1=A1a 2=A2b 3=A2a 4=A2u 5=A3b 6=A3a 7=A3u
 	if err := editor.ConvertToPdfA(2); err != nil {
-		// Non-fatal: log and continue — the save below still writes a valid PDF.
-		fmt.Printf("PDF/A conversion note: %v\n", err)
+		fmt.Printf("  conversion note: %v\n", err)
 	} else {
-		fmt.Println("PDF/A-2b conversion succeeded")
+		fmt.Println("  conversion succeeded")
 	}
-
-	result, err := editor.SaveToBytes()
+	outBytes, err := editor.SaveToBytes()
 	must(err)
-	if len(result) == 0 {
-		log.Fatal("saved PDF is empty")
-	}
-	fmt.Printf("Output PDF size: %d bytes\n", len(result))
+	editor.Close()
 
+	// Step 3: validate after conversion.
+	fmt.Println("Validating PDF/A-2b after conversion...")
+	doc2, err := pdfoxide.OpenFromBytes(outBytes)
+	must(err)
+	if result, err := doc2.ValidatePdfA(2); err != nil {
+		fmt.Printf("  skipped: %v\n", err)
+	} else {
+		fmt.Printf("  compliant: %v, errors: %d\n", result.Compliant, len(result.Errors))
+	}
+	doc2.Close()
+
+	fmt.Printf("Output PDF size: %d bytes\n", len(outBytes))
 	path := filepath.Join(outDir, "pdfa.pdf")
-	must(os.WriteFile(path, result, 0o644))
+	must(os.WriteFile(path, outBytes, 0o644))
 	fmt.Printf("Written: %s\n", path)
 }

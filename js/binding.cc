@@ -134,7 +134,9 @@ extern "C" {
   extern void* pdf_validate_pdf_ua(const void* document, PdfUaLevel level, int* error_code);
   extern bool pdf_pdf_ua_is_accessible(const void* results);
   extern void pdf_pdf_ua_results_free(void* results);
-  extern bool pdf_convert_to_pdf_a(void* document, PdfALevel level, int* error_code);
+  extern bool pdf_convert_to_pdf_a(void* document, int32_t level, int* error_code);
+  extern uint8_t* pdf_document_get_source_bytes(void* document, size_t* out_len, int* error_code);
+  extern void free_bytes(uint8_t* ptr);
 
   // Signature Operations
   extern int pdf_document_get_signature_count(const void* document, int* error_code);
@@ -3312,6 +3314,28 @@ Napi::Value ValidatePdfALevel(const Napi::CallbackInfo& info) {
   return obj;
 }
 
+Napi::Value ConvertToPdfA(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* document = info[0].As<Napi::External<void>>().Data();
+  int32_t level = info[1].As<Napi::Number>().Int32Value();
+  int errorCode = 0;
+  bool ok = pdf_convert_to_pdf_a(document, level, &errorCode);
+  if (errorCode != 0 && !ok) throw Napi::Error::New(env, "PDF/A conversion failed: " + getErrorMessage(errorCode));
+  return Napi::Boolean::New(env, ok);
+}
+
+Napi::Value DocumentGetSourceBytes(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* document = info[0].As<Napi::External<void>>().Data();
+  int errorCode = 0;
+  size_t outLen = 0;
+  uint8_t* ptr = pdf_document_get_source_bytes(document, &outLen, &errorCode);
+  if (errorCode != 0 || !ptr) throw Napi::Error::New(env, "Failed to get document bytes: " + getErrorMessage(errorCode));
+  auto buf = Napi::Buffer<uint8_t>::Copy(env, ptr, outLen);
+  free_bytes(ptr);
+  return buf;
+}
+
 Napi::Value ValidatePdfXLevel(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   void* document = info[0].As<Napi::External<void>>().Data();
@@ -3716,6 +3740,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("validatePdfALevel", Napi::Function::New(env, ValidatePdfALevel));
   exports.Set("validatePdfXLevel", Napi::Function::New(env, ValidatePdfXLevel));
   exports.Set("validatePdfUA", Napi::Function::New(env, ValidatePdfUA));
+  exports.Set("convertToPdfA", Napi::Function::New(env, ConvertToPdfA));
+  exports.Set("documentGetSourceBytes", Napi::Function::New(env, DocumentGetSourceBytes));
 
   // Page/Element/Accessor
   exports.Set("getPageElements", Napi::Function::New(env, GetPageElements));

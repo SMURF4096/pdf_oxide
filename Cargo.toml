@@ -453,6 +453,10 @@ name = "showcase_in_memory_roundtrip"
 path = "examples/rust/09-new-features/in_memory_roundtrip/main.rs"
 
 [[example]]
+name = "showcase_pdfa_conversion"
+path = "examples/rust/09-new-features/pdfa_conversion/main.rs"
+
+[[example]]
 name = "showcase_pkcs12_signing"
 path = "examples/rust/09-new-features/pkcs12_signing/main.rs"
 required-features = ["signatures"]

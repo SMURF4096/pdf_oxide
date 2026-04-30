@@ -734,6 +734,42 @@ impl DocumentEditor {
         id
     }
 
+    /// Allocate a new object ID (accessible to sibling crate modules).
+    pub(crate) fn alloc_id(&mut self) -> u32 {
+        self.allocate_object_id()
+    }
+
+    /// Stage a new or modified object (accessible to sibling crate modules).
+    pub(crate) fn insert_modified(&mut self, id: u32, obj: Object) {
+        self.modified_objects.insert(id, obj);
+        self.is_modified = true;
+    }
+
+    /// Look up a staged object by ID (accessible to sibling crate modules).
+    pub(crate) fn get_modified(&self, id: u32) -> Option<&Object> {
+        self.modified_objects.get(&id)
+    }
+
+    /// Serialise all staged changes to bytes, re-parse, and reset staging state
+    /// so that subsequent reads (e.g. from the validator) see the mutations.
+    pub(crate) fn commit_in_place(&mut self) -> Result<()> {
+        if !self.is_modified {
+            return Ok(());
+        }
+        let new_bytes = self.save_to_bytes()?;
+        self.source = PdfDocument::from_bytes(new_bytes)?;
+        self.modified_objects.clear();
+        self.new_objects.clear();
+        self.next_object_id = Self::find_max_object_id(&self.source) + 1;
+        self.is_modified = false;
+        Ok(())
+    }
+
+    /// Consume the editor and return the underlying document.
+    pub fn into_source(self) -> PdfDocument {
+        self.source
+    }
+
     /// Apply page property modifications to a page object.
     ///
     /// Returns a new page object with the modifications applied.
@@ -3327,7 +3363,13 @@ impl DocumentEditor {
                     continue;
                 }
             }
-            match self.source.load_object(ObjectRef { id: obj_id, gen: 0 }) {
+            // Prefer a staged modification over the original source object.
+            let loaded = if let Some(m) = self.modified_objects.get(&obj_id) {
+                Ok(m.clone())
+            } else {
+                self.source.load_object(ObjectRef { id: obj_id, gen: 0 })
+            };
+            match loaded {
                 Ok(obj) => {
                     let obj = if options.compress {
                         compress_stream_if_raw(obj)
@@ -3347,6 +3389,25 @@ impl DocumentEditor {
                         e
                     );
                 },
+            }
+        }
+
+        // Write any new objects from modified_objects whose IDs are not in the
+        // original source xref (e.g. XMP streams allocated by the PDF/A converter).
+        {
+            let already_written: std::collections::HashSet<u32> =
+                xref_entries.iter().map(|(id, _, _, _)| *id).collect();
+            let new_objs: Vec<(u32, Object)> = self
+                .modified_objects
+                .iter()
+                .filter(|(&id, _)| !already_written.contains(&id))
+                .map(|(&id, obj)| (id, obj.clone()))
+                .collect();
+            for (obj_id, obj) in new_objs {
+                let offset = writer.stream_position()?;
+                let bytes = serialize_obj(&serializer, obj_id, 0, &obj, &encryption_handler);
+                writer.write_all(&bytes)?;
+                xref_entries.push((obj_id, offset, 0, true));
             }
         }
 

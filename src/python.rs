@@ -1921,6 +1921,11 @@ impl PyPdfDocument {
         };
         let result = convert_to_pdf_a(&mut self.inner, pdf_level)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        // Sync raw_bytes so that to_bytes() sees the updated document, and
+        // drop any stale editor that was opened from the original bytes.
+        self.raw_bytes = Some(self.inner.source_bytes.to_vec());
+        self.path = None;
+        self.editor = None;
         let d = pyo3::types::PyDict::new(py);
         d.set_item("success", result.success)?;
         d.set_item("level", level)?;
