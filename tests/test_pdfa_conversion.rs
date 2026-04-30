@@ -146,15 +146,13 @@ fn test_add_output_intent_idempotent() {
 
 #[test]
 fn test_remove_javascript_from_names() {
-    use pdf_oxide::compliance::{convert_to_pdf_a, PdfALevel};
-    use pdf_oxide::document::PdfDocument;
     let bytes = build_plain_pdf();
     // We convert normally and just assert the action map is clean — a true
     // JS-injection test requires building a PDF with /Names/JavaScript which
     // our builder does not expose. The remove_javascript path is exercised
     // by the validator finding nothing to remove (idempotent, no panic).
-    let mut doc = PdfDocument::from_bytes(bytes).expect("parse failed");
-    let result = convert_to_pdf_a(&mut doc, PdfALevel::A2b).expect("conversion failed");
+    let mut doc = pdf_oxide::document::PdfDocument::from_bytes(bytes).expect("parse failed");
+    let result = pdf_oxide::compliance::convert_to_pdf_a(&mut doc, pdf_oxide::compliance::PdfALevel::A2b).expect("conversion failed");
     // No JS-related conversion error should appear.
     assert!(
         result.errors.iter().all(|e| e.error_code != pdf_oxide::compliance::ErrorCode::JavaScriptNotAllowed),
@@ -165,13 +163,12 @@ fn test_remove_javascript_from_names() {
 #[test]
 fn test_add_language_sets_lang_key() {
     use pdf_oxide::compliance::{convert_to_pdf_a, PdfALevel};
-    use pdf_oxide::document::PdfDocument;
 
     // For level A (A1a requires structure + lang), the validator emits MissingLanguage.
     // For level B we only warn, so test via direct catalog inspection after conversion.
     // Convert a PDF built with no /Lang.
     let bytes = build_plain_pdf();
-    let mut doc = PdfDocument::from_bytes(bytes).expect("parse failed");
+    let mut doc = pdf_oxide::document::PdfDocument::from_bytes(bytes).expect("parse failed");
 
     // Force MissingLanguage to be triggered by validating against A1b
     // which doesn't require structure but our add_language fires on MissingLanguage.

@@ -995,9 +995,13 @@ impl TextRasterizer {
             let pdf_width = font_info.get_glyph_width(cid);
             let x_advance = pdf_width * font_size / 1000.0;
 
-            // Get Unicode character for space detection
+            // Get Unicode character for space/word-space detection.
+            // Use '\0' as the sentinel for "no mapping" so that bytes without a
+            // Unicode entry (e.g. ligatures and accented chars in symbolic TrueType
+            // fonts that use the Mac Roman cmap path) are not silently treated as
+            // spaces and dropped from the rendered output.
             let char_str = font_info.char_to_unicode(cid as u32).unwrap_or_default();
-            let char_at_pos = char_str.chars().next().unwrap_or(' ');
+            let char_at_pos = char_str.chars().next().unwrap_or('\0');
 
             // Draw glyph outline
             if gid != 0 || char_at_pos.is_whitespace() {
