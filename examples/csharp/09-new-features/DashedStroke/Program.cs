@@ -1,4 +1,4 @@
-// Dashed stroke lines and rectangles — v0.3.40
+// Dashed stroke lines and rectangles — v0.3.41
 // Run: dotnet run
 
 using System;

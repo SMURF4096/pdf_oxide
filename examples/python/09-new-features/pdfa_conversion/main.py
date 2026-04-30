@@ -1,4 +1,4 @@
-# PDF/A conversion: validate → convert → compress → bytes — v0.3.40
+# PDF/A conversion: validate → convert → compress → bytes — v0.3.41
 #
 # Demonstrates the full IDP archival pipeline:
 #   1. Open a PDF from bytes

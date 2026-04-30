@@ -1,4 +1,4 @@
-// Image embedding — v0.3.40
+// Image embedding — v0.3.41
 //
 // Demonstrates embedding JPEG/PNG images into a PDF using raw bytes.
 // No pixel dimensions needed — the library auto-detects them from the

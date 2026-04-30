@@ -1,4 +1,4 @@
-// PDF/A, PDF/X, PDF/UA compliance validation — v0.3.40
+// PDF/A, PDF/X, PDF/UA compliance validation — v0.3.41
 //
 // Demonstrates ValidatePdfA, ValidatePdfX, and ValidatePdfUa on a simple
 // in-memory PDF. Failures are non-fatal: the example prints the result and

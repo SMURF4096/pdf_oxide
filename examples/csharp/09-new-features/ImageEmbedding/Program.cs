@@ -1,4 +1,4 @@
-// Image embedding — v0.3.40
+// Image embedding — v0.3.41
 // Run: dotnet run
 //
 // Demonstrates embedding JPEG/PNG images into a PDF using raw bytes.
