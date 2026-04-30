@@ -6331,9 +6331,9 @@ pub extern "C" fn pdf_convert_to_pdf_a(
     };
     let doc = handle_mut(document);
     match convert_to_pdf_a(doc, pdf_level) {
-        Ok(_) => {
+        Ok(result) => {
             set_error(error_code, ERR_SUCCESS);
-            true
+            result.success
         },
         Err(e) => {
             set_error(error_code, classify_error(&e));

@@ -524,7 +524,7 @@ class PdfDocumentImpl {
   /**
    * Convert document to PDF/A conformance in-place.
    * @param level - "1b"|"2b"|"2u"|"3b" etc. (default "2b")
-   * @returns true if fully compliant after conversion
+   * @returns true if the document is fully PDF/A-compliant after conversion (false if errors remain, e.g. fonts not embeddable without the rendering feature)
    */
   convertToPdfA(level: '1a' | '1b' | '2a' | '2b' | '2u' | '3a' | '3b' | '3u' = '2b'): boolean {
     this.ensureOpen();

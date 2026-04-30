@@ -512,6 +512,11 @@ impl PdfAConverter {
 
         let patched =
             inject_pdfaid(&current_xml, self.level.xmp_part(), self.level.xmp_conformance());
+        // inject_pdfaid returns the input unchanged when </rdf:RDF> is absent.
+        // In that case, fall back to rebuilding XMP from scratch.
+        if patched == current_xml {
+            return self.add_xmp_metadata(editor, result);
+        }
         let patched_bytes = patched.into_bytes();
         stream_dict.insert("Length".to_string(), Object::Integer(patched_bytes.len() as i64));
         // Remove any compression filter — PDF/A requires plaintext XMP.
