@@ -1321,28 +1321,6 @@ fn strip_js_from_aa(
     }
 }
 
-/// True for the 14 standard Type1 fonts that PDF viewers guarantee to have built in.
-#[cfg(feature = "rendering")]
-fn is_standard_14_font(name: &str) -> bool {
-    matches!(
-        name,
-        "Helvetica"
-            | "Helvetica-Bold"
-            | "Helvetica-Oblique"
-            | "Helvetica-BoldOblique"
-            | "Times-Roman"
-            | "Times-Bold"
-            | "Times-Italic"
-            | "Times-BoldItalic"
-            | "Courier"
-            | "Courier-Bold"
-            | "Courier-Oblique"
-            | "Courier-BoldOblique"
-            | "Symbol"
-            | "ZapfDingbats"
-    )
-}
-
 /// Walk every page's /Resources/Font dict and return `(object_id, font_dict)` for
 /// each indirect font object whose /BaseFont matches `target`.
 ///
@@ -1447,11 +1425,7 @@ fn load_system_font_bytes(font_name: &str) -> Option<Vec<u8>> {
     // Strip subset tag prefix "ABCDEF+" if present.
     let clean = {
         let s = font_name.trim_start_matches(|c: char| c.is_ascii_uppercase());
-        if s.starts_with('+') {
-            &s[1..]
-        } else {
-            font_name
-        }
+        s.strip_prefix('+').unwrap_or(font_name)
     };
 
     // Build candidate family names: try exact PS name first, then std14 alias,

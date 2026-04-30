@@ -44,7 +44,7 @@ fn test_convert_xmp_contains_pdfaid_identification() {
 
     convert_to_pdf_a(&mut doc, PdfALevel::A2b).expect("conversion failed");
 
-    let xmp = XmpExtractor::extract(&mut doc)
+    let xmp = XmpExtractor::extract(&doc)
         .expect("XmpExtractor error")
         .expect("no XMP metadata found after conversion");
 
@@ -213,7 +213,7 @@ fn test_convert_all_levels() {
         assert!(!result.actions.is_empty(), "no actions for level {level:?}");
 
         // XMP must be present with correct part/conformance.
-        let xmp = XmpExtractor::extract(&mut doc)
+        let xmp = XmpExtractor::extract(&doc)
             .expect("XmpExtractor error")
             .expect("no XMP after conversion for {level:?}");
         assert!(

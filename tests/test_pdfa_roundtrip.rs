@@ -751,7 +751,7 @@ fn test_xmp_part_and_conformance_per_level() {
         let mut doc = PdfDocument::from_bytes(bytes).expect("parse");
         convert_to_pdf_a(&mut doc, level).expect("convert");
 
-        let xmp = pdf_oxide::extractors::xmp::XmpExtractor::extract(&mut doc)
+        let xmp = pdf_oxide::extractors::xmp::XmpExtractor::extract(&doc)
             .expect("XmpExtractor error")
             .expect("XMP missing after conversion");
 

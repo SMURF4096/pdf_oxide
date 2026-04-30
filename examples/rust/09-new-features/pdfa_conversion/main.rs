@@ -129,7 +129,7 @@ fn scenario_xmp_metadata() -> Result<()> {
     ] {
         let mut d = PdfDocument::from_bytes(build_plain_pdf())?;
         convert_to_pdf_a(&mut d, level)?;
-        let xmp = XmpExtractor::extract(&mut d)?.expect("XMP missing after conversion");
+        let xmp = XmpExtractor::extract(&d)?.expect("XMP missing after conversion");
         assert_eq!(
             xmp.custom.get("pdfaid:part").map(String::as_str),
             Some(part),
