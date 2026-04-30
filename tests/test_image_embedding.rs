@@ -600,3 +600,66 @@ mod format_detection_tests {
         assert!(result.is_err());
     }
 }
+
+mod image_dedup_tests {
+    use pdf_oxide::geometry::Rect;
+    use pdf_oxide::writer::DocumentBuilder;
+
+    /// Build a small PDF that places the same PNG bytes twice (issue #443).
+    /// With deduplication the two placements share one XObject stream;
+    /// without it, the PDF embeds the image data twice and is roughly
+    /// `image_size` bytes larger than it needs to be.
+    #[test]
+    fn test_identical_images_deduplicated() {
+        let png = super::create_test_png(50, 50);
+        let png_size = png.len();
+
+        let mut builder = DocumentBuilder::new();
+        builder
+            .a4_page()
+            .image_from_bytes(&png, Rect::new(50.0, 450.0, 100.0, 100.0))
+            .expect("first image")
+            .image_from_bytes(&png, Rect::new(300.0, 450.0, 100.0, 100.0))
+            .expect("second image (same bytes)")
+            .done();
+
+        let pdf_bytes = builder.build().expect("build");
+
+        // The XObject data should appear only once in the output.
+        // A simple proxy: the total PDF size should be less than
+        // (2 × png_size + 2 KB overhead), meaning the image was not doubled.
+        let threshold = png_size + 2048; // one copy + generous overhead
+        assert!(
+            pdf_bytes.len() < threshold,
+            "PDF ({} B) looks like it contains two copies of the image ({} B each); \
+             expected deduplication to keep it under {} B",
+            pdf_bytes.len(),
+            png_size,
+            threshold,
+        );
+    }
+
+    /// Different images must still produce separate XObjects.
+    #[test]
+    fn test_different_images_not_merged() {
+        let png_a = super::create_test_png(10, 10);
+        let png_b = super::create_test_png(20, 20);
+        assert_ne!(png_a, png_b);
+
+        let mut builder = DocumentBuilder::new();
+        builder
+            .a4_page()
+            .image_from_bytes(&png_a, Rect::new(50.0, 450.0, 100.0, 100.0))
+            .expect("image A")
+            .image_from_bytes(&png_b, Rect::new(300.0, 450.0, 100.0, 100.0))
+            .expect("image B")
+            .done();
+
+        let pdf_bytes = builder.build().expect("build");
+        // Both images together: must be larger than a single image + small overhead
+        assert!(
+            pdf_bytes.len() > png_a.len() + png_b.len(),
+            "PDF should contain both distinct images"
+        );
+    }
+}

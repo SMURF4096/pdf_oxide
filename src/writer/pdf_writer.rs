@@ -1387,9 +1387,25 @@ impl PdfWriter {
         }
         let mut image_ids_per_page: Vec<Vec<(u32, Option<u32>)>> = Vec::with_capacity(page_count);
         let mut image_objects: Vec<(u32, Object, Vec<u8>)> = Vec::new();
+        // Dedup: map raw-encoded-bytes hash → (img_id, soft_mask_id).
+        // Identical image data (same bytes, same format) reuses a single XObject
+        // instead of embedding a redundant copy — fixes #443.
+        let mut image_dedup: HashMap<u64, (u32, Option<u32>)> = HashMap::new();
         for pending in &pending_per_page {
             let mut per_page_ids: Vec<(u32, Option<u32>)> = Vec::with_capacity(pending.len());
             for p in pending {
+                // Hash the raw encoded bytes as the dedup key.
+                use std::hash::{Hash, Hasher};
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                p.image.data.hash(&mut hasher);
+                p.image.format.hash(&mut hasher);
+                let key = hasher.finish();
+
+                if let Some(&ids) = image_dedup.get(&key) {
+                    per_page_ids.push(ids);
+                    continue;
+                }
+
                 // Decode to writer::ImageData — the content stream
                 // builder kept the elements::ImageContent verbatim; we
                 // need the ColorSpace/Filter conversion from elements
@@ -1425,6 +1441,7 @@ impl PdfWriter {
                         Vec::new(),
                     ));
                 }
+                image_dedup.insert(key, (img_id, soft_mask_id));
                 per_page_ids.push((img_id, soft_mask_id));
             }
             image_ids_per_page.push(per_page_ids);

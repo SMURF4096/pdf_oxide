@@ -148,9 +148,6 @@ fn test_add_output_intent_idempotent() {
 fn test_remove_javascript_from_names() {
     use pdf_oxide::compliance::{convert_to_pdf_a, PdfALevel};
     use pdf_oxide::document::PdfDocument;
-    use pdf_oxide::object::{Object, ObjectRef};
-    use pdf_oxide::writer::DocumentBuilder;
-
     let bytes = build_plain_pdf();
     // We convert normally and just assert the action map is clean — a true
     // JS-injection test requires building a PDF with /Names/JavaScript which
@@ -167,7 +164,7 @@ fn test_remove_javascript_from_names() {
 
 #[test]
 fn test_add_language_sets_lang_key() {
-    use pdf_oxide::compliance::{convert_to_pdf_a, validate_pdf_a, PdfALevel};
+    use pdf_oxide::compliance::{convert_to_pdf_a, PdfALevel};
     use pdf_oxide::document::PdfDocument;
 
     // For level A (A1a requires structure + lang), the validator emits MissingLanguage.
