@@ -2,6 +2,133 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [0.3.41] - 2026-04-29
+
+> Real PDF/A conversion, LaTeX symbolic-font glyph rendering fix, and
+> image deduplication — all 7 bindings.
+
+### Community contributors
+
+This release exists because of the community. Special thanks to:
+
+- **[@FireMasterK](https://github.com/FireMasterK)** — reported
+  [#307](https://github.com/yfedoseev/pdf_oxide/issues/307) with a
+  precise reproduction case: a LaTeX-generated PDF where accented characters
+  and ligatures (ú, á, fi) rendered as blank gaps across all pages. The report
+  identified the exact document class (DC/EC TrueType fonts with Mac Roman
+  cmap, no `/Encoding` dict), which made the root cause in
+  `render_cid_direct()` straightforward to isolate and fix.
+
+- **[@sparkyandrew](https://github.com/sparkyandrew)** — followed up on
+  [#425](https://github.com/yfedoseev/pdf_oxide/issues/425) with
+  [#443](https://github.com/yfedoseev/pdf_oxide/issues/443), noticing that
+  the output PDF was 2.32 MB when the two source images summed to under
+  1.6 MB — even after the #425 image-pipeline fix. That single observation
+  pinpointed the missing XObject deduplication: the same image data encoded
+  twice produced two independent compressed streams. Fixed.
+
+- **[@potatochipcoconut](https://github.com/potatochipcoconut)** —
+  [#418](https://github.com/yfedoseev/pdf_oxide/issues/418), the original
+  PDF/A binding-completeness report that drove the full implementation in
+  [#442](https://github.com/yfedoseev/pdf_oxide/issues/442).
+  `convert_to_pdf_a()` existed in Rust but was a no-op: it recorded actions
+  and returned success while leaving the document bytes untouched. The report
+  surfaced this silently-broken state across all seven bindings.
+
+### Scope at-a-glance
+
+- **Real PDF/A conversion** — XMP metadata stream, `pdfaid:part`/`conformance`
+  identification, OutputIntents (sRGB), language tag, JavaScript removal;
+  all 7 bindings (#418, #442).
+- **Symbolic TrueType glyph rendering** — non-ASCII bytes (ú=0xFA, á=0xE1,
+  fi=0x85) in DC/EC-style LaTeX fonts with Mac Roman cmap no longer
+  suppressed as spaces (#307).
+- **Image XObject deduplication** — same image embedded twice no longer
+  re-encoded as two separate compressed streams; PDF size matches the
+  sum of source images (#443).
+
+### Real PDF/A conversion (#418, #442)
+
+`convert_to_pdf_a()` previously recorded conversion actions and returned
+success, but the document bytes were unchanged — the XMP metadata stream
+was constructed in memory and then discarded. This release rewrites the
+conversion core end-to-end:
+
+- **XMP metadata stream** — a standards-compliant XMP packet is serialised
+  and written as an indirect object, then wired into the document catalog as
+  `/Metadata`. `pdfaid:part` and `pdfaid:conformance` are set per level:
+  A1b → `1/B`, A2b → `2/B`, A2u → `2/U`, A3b → `3/B`.
+- **OutputIntents** — a `GTS_PDFA1` output intent referencing sRGB is
+  injected when none is present. Idempotent: a second call detects the
+  existing intent and does not duplicate it.
+- **Language tag** — `/Lang` is written to the catalog when the validator
+  raises `MissingLanguage`.
+- **JavaScript removal** — `/Names/JavaScript` entries are stripped when
+  present.
+- **Source bytes patched** — `doc.source_bytes` is updated in-place; the
+  document is immediately re-parseable after conversion.
+
+All seven bindings expose the updated function:
+
+| Binding | API |
+|---------|-----|
+| Rust    | `convert_to_pdf_a(&mut doc, PdfALevel::A2b)?` |
+| Python  | `pdf_oxide.convert_to_pdf_a(doc, "A2b")` |
+| WASM    | `convertToPdfA(doc, "A2b")` |
+| C FFI   | `pdf_oxide_convert_to_pdf_a(doc, level, &out)` |
+| C#      | `Compliance.ConvertToPdfA(doc, PdfALevel.A2b)` |
+| Go      | `compliance.ConvertToPdfA(doc, compliance.PdfALevelA2b)` |
+| Node.js | `compliance.convertToPdfA(doc, "A2b")` |
+
+### Symbolic TrueType glyph rendering fix (#307)
+
+LaTeX-generated PDFs using DC/EC fonts (`Dcr10`, `Dcsl10`, etc.) embed
+symbolic TrueType fonts with these characteristics:
+
+- `/Flags` has the symbolic bit set (bit 3 = 4)
+- No `/Encoding` dictionary
+- Mac Roman format-0 cmap (platform 1, encoding 0): byte code → glyph ID
+- No Windows Unicode cmap
+
+pdf_oxide correctly routes these through the `render_cid_direct()` path,
+which resolves each content-stream byte to a glyph ID via the Mac Roman
+cmap. The bug was one line in the space-detection guard:
+
+```rust
+// Before — bytes without a Unicode mapping fell through to unwrap_or(' ')
+let char_at_pos = char_str.chars().next().unwrap_or(' ');
+if char_at_pos.is_whitespace() { /* skip draw */ }
+```
+
+Any byte whose Unicode mapping returned `None` — including ú (0xFA → GID 85),
+á (0xE1 → GID 83), and fi (0x85 → GID 75) — was treated as a space, so the
+`is_whitespace()` guard blocked glyph drawing entirely.
+
+```rust
+// After — '\0' is not whitespace; GID ≠ 0 glyphs are drawn correctly
+let char_at_pos = char_str.chars().next().unwrap_or('\0');
+```
+
+Verified pixel-perfect against Poppler and MuPDF on the #307 reproduction
+PDF. Regression-tested across 69 PDFs (120 page comparisons) — zero
+regressions in rendering, plain text, Markdown, and HTML extraction.
+
+### Image XObject deduplication (#443)
+
+When the same image data was passed to `page.image()` or `from_bytes()` on
+multiple pages, pdf_oxide encoded it as independent XObjects — each carrying
+the full compressed pixel data. A 760 KB PNG embedded twice contributed
+1.52 MB instead of 760 KB; the #443 reproduction produced 2.32 MB from
+images totalling under 1.6 MB.
+
+The fix hashes the raw source bytes before encoding. If the same hash is
+already registered in the document's XObject map, the existing reference is
+reused and no new compressed stream is written. The key is the content hash
+(not a filename or object ID), so it works correctly for in-memory images
+and across pages.
+
+---
+
 ## [0.3.40] - 2026-04-27
 
 > Image rendering fixes, dashed stroke + streaming table batch, digital
