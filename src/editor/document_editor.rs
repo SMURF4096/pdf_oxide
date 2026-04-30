@@ -765,6 +765,20 @@ impl DocumentEditor {
         Ok(())
     }
 
+    /// Replace the source document wholesale from external bytes.
+    ///
+    /// Used when a conversion step produces a completely new PDF (e.g. transparency
+    /// flattening via re-rendering) rather than mutating individual objects.
+    /// Clears all staged modifications so subsequent fixes operate on the new document.
+    pub(crate) fn replace_source_bytes(&mut self, bytes: Vec<u8>) -> Result<()> {
+        self.source = PdfDocument::from_bytes(bytes)?;
+        self.modified_objects.clear();
+        self.new_objects.clear();
+        self.next_object_id = Self::find_max_object_id(&self.source) + 1;
+        self.is_modified = true;
+        Ok(())
+    }
+
     /// Consume the editor and return the underlying document.
     pub fn into_source(self) -> PdfDocument {
         self.source
@@ -2786,9 +2800,14 @@ impl DocumentEditor {
                                                         {
                                                             // Check if we've already written this object
                                                             if !written_ids.contains(&ref_obj.id) {
-                                                                if let Ok(font_obj) =
-                                                                    self.source.load_object(ref_obj)
-                                                                {
+                                                                // Prefer a staged modification over the original source.
+                                                                let font_obj = self
+                                                                    .modified_objects
+                                                                    .get(&ref_obj.id)
+                                                                    .cloned()
+                                                                    .map(Ok)
+                                                                    .unwrap_or_else(|| self.source.load_object(ref_obj));
+                                                                if let Ok(font_obj) = font_obj {
                                                                     let offset =
                                                                         writer.stream_position()?;
                                                                     let bytes = serialize_obj(

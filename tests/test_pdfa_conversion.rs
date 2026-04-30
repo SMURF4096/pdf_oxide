@@ -83,6 +83,8 @@ fn test_no_duplicate_xmp_actions() {
 
 #[test]
 fn test_validate_after_convert_clears_xmp_errors() {
+    use pdf_oxide::compliance::ErrorCode;
+
     let bytes = build_plain_pdf();
     let mut doc = PdfDocument::from_bytes(bytes).expect("parse failed");
 
@@ -91,24 +93,28 @@ fn test_validate_after_convert_clears_xmp_errors() {
     let pre_xmp_errors: Vec<_> = pre
         .errors
         .iter()
-        .filter(|e| e.message.contains("pdfaid") || e.message.contains("XMP"))
+        .filter(|e| {
+            e.code == ErrorCode::MissingXmpMetadata || e.code == ErrorCode::MissingPdfaIdentification
+        })
         .collect();
-    assert!(!pre_xmp_errors.is_empty(), "expected XMP errors before conversion");
+    assert!(!pre_xmp_errors.is_empty(), "expected XMP/pdfaid errors before conversion");
 
     // Convert.
     convert_to_pdf_a(&mut doc, PdfALevel::A2b).expect("conversion failed");
 
-    // Post-conversion: XMP errors should be gone.
+    // Post-conversion: XMP + pdfaid + OutputIntent + Language errors must all be gone.
     let post = validate_pdf_a(&mut doc, PdfALevel::A2b).expect("post-validate failed");
-    let post_xmp_errors: Vec<_> = post
-        .errors
-        .iter()
-        .filter(|e| e.message.contains("pdfaid") || e.message.contains("XMP"))
-        .collect();
-    assert!(
-        post_xmp_errors.is_empty(),
-        "XMP errors remain after conversion: {post_xmp_errors:?}"
-    );
+    for code in [
+        ErrorCode::MissingXmpMetadata,
+        ErrorCode::MissingPdfaIdentification,
+        ErrorCode::MissingOutputIntent,
+        ErrorCode::MissingLanguage,
+    ] {
+        assert!(
+            !post.errors.iter().any(|e| e.code == code),
+            "{code:?} still present after conversion: {:?}", post.errors
+        );
+    }
 }
 
 #[test]
@@ -189,6 +195,7 @@ fn test_add_language_sets_lang_key() {
 
 #[test]
 fn test_convert_all_levels() {
+    // Test both B-level and U-level (but not A-level which requires structure).
     for level in [
         PdfALevel::A1b,
         PdfALevel::A2b,
@@ -200,6 +207,7 @@ fn test_convert_all_levels() {
         let result = convert_to_pdf_a(&mut doc, level).expect("conversion failed");
         assert!(!result.actions.is_empty(), "no actions for level {level:?}");
 
+        // XMP must be present with correct part/conformance.
         let xmp = XmpExtractor::extract(&mut doc)
             .expect("XmpExtractor error")
             .expect("no XMP after conversion for {level:?}");
@@ -207,5 +215,32 @@ fn test_convert_all_levels() {
             xmp.custom.contains_key("pdfaid:part"),
             "pdfaid:part missing for level {level:?}"
         );
+
+        // OutputIntents must be present (unconditional per converter logic).
+        let catalog = doc.catalog().expect("no catalog");
+        assert!(
+            catalog.as_dict().map(|d| d.contains_key("OutputIntents")).unwrap_or(false),
+            "/OutputIntents missing after conversion for level {level:?}"
+        );
+
+        // After conversion the document must still be parseable.
+        PdfDocument::from_bytes(doc.source_bytes.clone())
+            .expect("re-parse failed after conversion for level {level:?}");
+
+        // The post-conversion validation must not report any always-fixable errors.
+        let post = pdf_oxide::compliance::validate_pdf_a(&mut doc, level)
+            .expect("post-validate failed");
+        for code in [
+            pdf_oxide::compliance::ErrorCode::MissingXmpMetadata,
+            pdf_oxide::compliance::ErrorCode::MissingPdfaIdentification,
+            pdf_oxide::compliance::ErrorCode::MissingOutputIntent,
+            pdf_oxide::compliance::ErrorCode::MissingLanguage,
+        ] {
+            assert!(
+                !post.errors.iter().any(|e| e.code == code),
+                "{code:?} still present after conversion for level {level:?}: {:?}",
+                post.errors
+            );
+        }
     }
 }

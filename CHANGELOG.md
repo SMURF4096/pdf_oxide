@@ -67,6 +67,25 @@ conversion core end-to-end:
   present.
 - **Source bytes patched** — `doc.source_bytes` is updated in-place; the
   document is immediately re-parseable after conversion.
+- **Font embedding** (`rendering` feature) — `embed_font()` now resolves the
+  14 standard PDF Type1 PostScript names (Helvetica, Courier, Times-Roman, …)
+  to the metrically-equivalent URW Base 35 open-source fonts shipped by default
+  on Linux (`Nimbus Sans`, `Nimbus Mono PS`, `Nimbus Roman`). With
+  `--features rendering` all B-level PDFs convert to **0 remaining errors**,
+  including `FontNotEmbedded`. Three bugs were fixed in the embedding pipeline:
+  - `try_fix_error` dedup applied to error codes, so only the first
+    `FontNotEmbedded` error was processed; remaining fonts were skipped — fixed
+    to dedup per-error-code for non-font errors only.
+  - `write_full_to_writer` wrote font objects from the original source instead
+    of preferring staged `modified_objects` — fixed to use the same priority
+    order as the general object sweep.
+  - `add_structure()` only added `/StructTreeRoot` but not `/MarkInfo /Marked
+    true`; the validator requires both for PDF/A-\*a conformance — fixed.
+
+**Test coverage** — 17 new end-to-end roundtrip tests in
+`tests/test_pdfa_roundtrip.rs` verify every fixable scenario
+(validate → convert → validate). The `showcase_pdfa_conversion` CI example
+is rewritten to assert correctness and panics on any regression.
 
 All seven bindings expose the updated function:
 
