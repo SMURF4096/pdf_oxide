@@ -35,6 +35,14 @@ This release exists because of the community. Special thanks to:
   and returned success while leaving the document bytes untouched. The report
   surfaced this silently-broken state across all seven bindings.
 
+- **[@nickpetrovic](https://github.com/nickpetrovic)** — filed
+  [#444](https://github.com/yfedoseev/pdf_oxide/issues/444) with a
+  precise four-row reproduction table showing ligature glyphs in subset
+  Calibri fonts decoded to wrong Unicode codepoints (`ti`→`O`, `tf`→`[`,
+  `ft`→`e`). The report included the exact PDF and the per-font-subset
+  mapping failures, which led directly to the ICCBased color-space warn
+  spam fix and the rowspan-label reading-order scramble fix.
+
 ### Scope at-a-glance
 
 - **Real PDF/A conversion** — XMP metadata stream, `pdfaid:part`/`conformance`
