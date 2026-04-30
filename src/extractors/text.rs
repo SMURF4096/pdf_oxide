@@ -4256,9 +4256,36 @@ impl<'doc> TextExtractor<'doc> {
                         log::debug!("DeviceN color space using simplified conversion");
                     },
                     _ => {
-                        // Unknown or unsupported color space - use default black
-                        log::warn!(
-                            "Unsupported fill color space: {} with {} components",
+                        // Named color space reference (e.g. "Cs1") or unknown —
+                        // fall back by component count to avoid warn spam.
+                        match components.len() {
+                            1 => {
+                                let gray = components[0];
+                                state.fill_color_rgb = (gray, gray, gray);
+                            },
+                            3 => {
+                                state.fill_color_rgb =
+                                    (components[0], components[1], components[2]);
+                            },
+                            4 => {
+                                state.fill_color_cmyk = Some((
+                                    components[0],
+                                    components[1],
+                                    components[2],
+                                    components[3],
+                                ));
+                                state.fill_color_rgb = cmyk_to_rgb(
+                                    components[0],
+                                    components[1],
+                                    components[2],
+                                    components[3],
+                                );
+                            },
+                            _ => {},
+                        }
+                        log::debug!(
+                            "Unknown fill color space {:?} with {} components; \
+                             applied component-count fallback",
                             state.fill_color_space,
                             components.len()
                         );
@@ -4328,9 +4355,34 @@ impl<'doc> TextExtractor<'doc> {
                         log::debug!("DeviceN stroke color using simplified conversion");
                     },
                     _ => {
-                        // Unknown or unsupported color space
-                        log::warn!(
-                            "Unsupported stroke color space: {} with {} components",
+                        match components.len() {
+                            1 => {
+                                let gray = components[0];
+                                state.stroke_color_rgb = (gray, gray, gray);
+                            },
+                            3 => {
+                                state.stroke_color_rgb =
+                                    (components[0], components[1], components[2]);
+                            },
+                            4 => {
+                                state.stroke_color_cmyk = Some((
+                                    components[0],
+                                    components[1],
+                                    components[2],
+                                    components[3],
+                                ));
+                                state.stroke_color_rgb = cmyk_to_rgb(
+                                    components[0],
+                                    components[1],
+                                    components[2],
+                                    components[3],
+                                );
+                            },
+                            _ => {},
+                        }
+                        log::debug!(
+                            "Unknown stroke color space {:?} with {} components; \
+                             applied component-count fallback",
                             state.stroke_color_space,
                             components.len()
                         );
@@ -4414,8 +4466,34 @@ impl<'doc> TextExtractor<'doc> {
                             }
                         },
                         _ => {
-                            log::warn!(
-                                "Unsupported fill color space: {} with {} components",
+                            match components.len() {
+                                1 => {
+                                    let gray = components[0];
+                                    state.fill_color_rgb = (gray, gray, gray);
+                                },
+                                3 => {
+                                    state.fill_color_rgb =
+                                        (components[0], components[1], components[2]);
+                                },
+                                4 => {
+                                    state.fill_color_cmyk = Some((
+                                        components[0],
+                                        components[1],
+                                        components[2],
+                                        components[3],
+                                    ));
+                                    state.fill_color_rgb = cmyk_to_rgb(
+                                        components[0],
+                                        components[1],
+                                        components[2],
+                                        components[3],
+                                    );
+                                },
+                                _ => {},
+                            }
+                            log::debug!(
+                                "Unknown fill color space {:?} with {} components; \
+                                 applied component-count fallback",
                                 state.fill_color_space,
                                 components.len()
                             );
@@ -4500,8 +4578,34 @@ impl<'doc> TextExtractor<'doc> {
                             }
                         },
                         _ => {
-                            log::warn!(
-                                "Unsupported stroke color space: {} with {} components",
+                            match components.len() {
+                                1 => {
+                                    let gray = components[0];
+                                    state.stroke_color_rgb = (gray, gray, gray);
+                                },
+                                3 => {
+                                    state.stroke_color_rgb =
+                                        (components[0], components[1], components[2]);
+                                },
+                                4 => {
+                                    state.stroke_color_cmyk = Some((
+                                        components[0],
+                                        components[1],
+                                        components[2],
+                                        components[3],
+                                    ));
+                                    state.stroke_color_rgb = cmyk_to_rgb(
+                                        components[0],
+                                        components[1],
+                                        components[2],
+                                        components[3],
+                                    );
+                                },
+                                _ => {},
+                            }
+                            log::debug!(
+                                "Unknown stroke color space {:?} with {} components; \
+                                 applied component-count fallback",
                                 state.stroke_color_space,
                                 components.len()
                             );
@@ -10677,6 +10781,76 @@ mod tests {
 
         let state = extractor.state_stack.current();
         assert!((state.stroke_color_rgb.0 - 0.9).abs() < 0.01);
+    }
+
+    // ========================================================================
+    // REGRESSION: named / unknown color space references (issue #444)
+    // ========================================================================
+
+    /// Named color space reference like "Cs1" should fall back by component
+    /// count rather than emitting a warn! (regression: warn spam on PDFs
+    /// with ICCBased color spaces registered under user-defined names).
+    #[test]
+    fn test_named_fill_color_space_fallback_gray() {
+        let mut e = TextExtractor::new();
+        e.execute_operator_public(Operator::SetFillColorSpace {
+            name: "Cs1".to_string(),
+        })
+        .unwrap();
+        e.execute_operator_public(Operator::SetFillColor { components: vec![0.4] })
+            .unwrap();
+        let state = e.state_stack.current();
+        let (r, g, b) = state.fill_color_rgb;
+        assert!((r - 0.4).abs() < 0.01 && (g - 0.4).abs() < 0.01 && (b - 0.4).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_named_fill_color_space_fallback_rgb() {
+        let mut e = TextExtractor::new();
+        e.execute_operator_public(Operator::SetFillColorSpace {
+            name: "Cs2".to_string(),
+        })
+        .unwrap();
+        e.execute_operator_public(Operator::SetFillColor {
+            components: vec![0.1, 0.2, 0.3],
+        })
+        .unwrap();
+        let state = e.state_stack.current();
+        assert!((state.fill_color_rgb.0 - 0.1).abs() < 0.01);
+        assert!((state.fill_color_rgb.1 - 0.2).abs() < 0.01);
+        assert!((state.fill_color_rgb.2 - 0.3).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_named_fill_color_space_fallback_cmyk() {
+        let mut e = TextExtractor::new();
+        e.execute_operator_public(Operator::SetFillColorSpace {
+            name: "Cs3".to_string(),
+        })
+        .unwrap();
+        e.execute_operator_public(Operator::SetFillColor {
+            components: vec![0.0, 0.0, 0.0, 0.5],
+        })
+        .unwrap();
+        let state = e.state_stack.current();
+        assert!(state.fill_color_cmyk.is_some());
+    }
+
+    #[test]
+    fn test_named_stroke_color_space_fallback_rgb() {
+        let mut e = TextExtractor::new();
+        e.execute_operator_public(Operator::SetStrokeColorSpace {
+            name: "Cs1".to_string(),
+        })
+        .unwrap();
+        e.execute_operator_public(Operator::SetStrokeColor {
+            components: vec![0.5, 0.6, 0.7],
+        })
+        .unwrap();
+        let state = e.state_stack.current();
+        assert!((state.stroke_color_rgb.0 - 0.5).abs() < 0.01);
+        assert!((state.stroke_color_rgb.1 - 0.6).abs() < 0.01);
+        assert!((state.stroke_color_rgb.2 - 0.7).abs() < 0.01);
     }
 
     // ========================================================================

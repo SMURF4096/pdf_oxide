@@ -132,6 +132,48 @@ Verified pixel-perfect against Poppler and MuPDF on the #307 reproduction
 PDF. Regression-tested across 69 PDFs (120 page comparisons) — zero
 regressions in rendering, plain text, Markdown, and HTML extraction.
 
+### Text extraction fixes (#444)
+
+Two issues surfaced while investigating #444 (Calibri ligature mis-mapping,
+which is an upstream macOS Quartz PDF producer bug with no fix possible on
+our side):
+
+**ICCBased color space warn spam** — PDF producers that register ICCBased
+profiles under user-defined names (e.g. `Cs1`, `Cs2`) caused the text
+extractor to fire a `WARN` log on every `sc`/`SC`/`scn`/`SCN` operator
+that used such a name. The catch-all `_` branch in the color-space handler
+did not know how to handle named references, so it logged and left the
+color unchanged. The fix: apply a component-count fallback in that branch
+(1 component → gray, 3 → RGB, 4 → CMYK) and demote the log to `DEBUG`.
+Affected PDFs with large amounts of colored text (like typical Office
+documents) emitted 96+ spurious warnings per page; now silent.
+
+**Text span reading-order scrambling** — `reorder_rowspan_labels`, a
+function that promotes vertically-centered table row labels to sort at
+the top of their row block, was incorrectly activating on single-column
+prose documents (resumes, reports). It identified spans at rightward X
+positions as a "sparse column" and promoted them to wrong Y coordinates,
+causing line-continuation text like `"to assess technical needs and"` or
+`"-making."` to appear before the earlier line they followed.
+
+Root cause: the label-candidate filter did not exclude spans whose Y-band
+already appears in the dense column. Genuine rowspan labels are vertically
+*between* data rows, so their Y-band is absent from the dense column.
+Line-continuation spans share the Y-band of the main column text and must
+not be treated as labels. The fix adds that exclusion:
+
+```rust
+// Before — any sparse-column span in the data Y range
+y > data_bot && y < data_top
+
+// After — additionally exclude spans that align with a dense-column row
+y > data_bot && y < data_top && !dense_bands.contains(&band_of(y))
+```
+
+The original rowspan-label behavior for actual table layouts (CJK lab
+reports, mixed-column tables) is preserved; the existing test confirms
+that genuine between-row labels are still promoted correctly.
+
 ### Image XObject deduplication (#443)
 
 When the same image data was passed to `page.image()` or `from_bytes()` on

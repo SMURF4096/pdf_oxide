@@ -2033,6 +2033,15 @@ impl PdfDocument {
         let data_top = (*data_bands.iter().next_back().unwrap() as f32) * band_pt + band_pt / 2.0;
         let data_bot = (*data_bands.iter().next().unwrap() as f32) * band_pt - band_pt / 2.0;
 
+        // Y-bands occupied by the dense column. Genuine rowspan labels are
+        // vertically centred *between* data rows, so their Y-band must NOT
+        // appear in this set. Spans whose Y aligns with the dense column are
+        // line-continuation text on the same logical line, not labels.
+        let dense_bands: HashSet<i32> = dense_col
+            .iter()
+            .map(|&i| band_of(spans[i].bbox.y))
+            .collect();
+
         // Collect "label" candidates: spans that sit in a "sparse"
         // column — one that holds meaningfully fewer spans than the
         // most populous column. A candidate only qualifies when it
@@ -2050,7 +2059,9 @@ impl PdfDocument {
                 .copied()
                 .filter(|&i| {
                     let y = spans[i].bbox.y;
-                    y > data_bot && y < data_top
+                    // Exclude spans on the same Y-band as the dense column:
+                    // those are line-continuation text, not rowspan labels.
+                    y > data_bot && y < data_top && !dense_bands.contains(&band_of(y))
                 })
                 .collect();
             if in_data.len() >= 2 {
@@ -15409,6 +15420,72 @@ mod tests {
             pos_l2 > pos_l1 + 3,
             "L2 must come after several data rows of L1's block, got {:?}",
             texts
+        );
+    }
+
+    /// Regression: line-continuation spans that share a Y-band with the dense
+    /// column must NOT be promoted by `reorder_rowspan_labels` (issue #444).
+    ///
+    /// A resume-like PDF has two X groups: a dense main-text column (x=63)
+    /// and a sparse rightward column (x=430) whose spans are all on the SAME
+    /// lines as the dense column (same Y-bands). The sparse spans are
+    /// line-continuation text, not rowspan labels, so they must stay in their
+    /// natural sorted position rather than being hoisted to wrong Y values.
+    #[test]
+    fn test_rowspan_label_skips_spans_aligned_with_dense_column() {
+        use crate::layout::TextSpan;
+
+        fn mk(text: &str, x: f32, y: f32) -> TextSpan {
+            TextSpan {
+                artifact_type: None,
+                text: text.to_string(),
+                bbox: crate::geometry::Rect::new(x, y, 80.0, 10.0),
+                font_size: 12.0,
+                font_name: "Arial".into(),
+                font_weight: crate::layout::FontWeight::Normal,
+                is_italic: false,
+                is_monospace: false,
+                color: crate::layout::Color::black(),
+                mcid: None,
+                sequence: 0,
+                split_boundary_before: false,
+                offset_semantic: false,
+                char_spacing: 0.0,
+                word_spacing: 0.0,
+                horizontal_scaling: 100.0,
+                primary_detected: false,
+                char_widths: vec![],
+            }
+        }
+
+        // Dense column (x=63): 10 spans at y=640,620,600,580,560,540,520,500,480,460
+        // Sparse column (x=430): 4 spans at y=600,560,520,480 — same lines as dense
+        // After reorder_rowspan_labels the sparse spans must NOT be promoted.
+        let ys_dense = [640.0f32, 620.0, 600.0, 580.0, 560.0, 540.0, 520.0, 500.0, 480.0, 460.0];
+        let ys_sparse = [600.0f32, 560.0, 520.0, 480.0]; // all on same Y as dense rows
+
+        let mut spans: Vec<TextSpan> = Vec::new();
+        for &y in &ys_dense {
+            spans.push(mk(&format!("dense_y{}", y as i32), 63.0, y));
+        }
+        for &y in &ys_sparse {
+            spans.push(mk(&format!("sparse_y{}", y as i32), 430.0, y));
+        }
+
+        // Sort descending Y, X ascending (as extract_spans does before calling this)
+        spans.sort_by(|a, b| {
+            crate::utils::row_aware_span_cmp(a.bbox.y, a.bbox.x, b.bbox.y, b.bbox.x)
+        });
+        let before: Vec<String> = spans.iter().map(|s| s.text.clone()).collect();
+
+        super::PdfDocument::reorder_rowspan_labels(&mut spans);
+
+        let after: Vec<String> = spans.iter().map(|s| s.text.clone()).collect();
+        assert_eq!(
+            before, after,
+            "reorder_rowspan_labels must not change order when sparse spans \
+             share Y-bands with the dense column; \
+             before={before:?} after={after:?}"
         );
     }
 
