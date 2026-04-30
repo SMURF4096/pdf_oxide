@@ -59,15 +59,11 @@ fn build_pdf_with_open_action_js() -> Vec<u8> {
 
     // Obj 2: Pages
     offsets.push(out.len());
-    out.extend_from_slice(
-        b"2 0 obj\n<< /Type /Pages /Count 1 /Kids [4 0 R] >>\nendobj\n",
-    );
+    out.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Count 1 /Kids [4 0 R] >>\nendobj\n");
 
     // Obj 3: JavaScript action
     offsets.push(out.len());
-    out.extend_from_slice(
-        b"3 0 obj\n<< /S /JavaScript /JS (app.alert(1)) >>\nendobj\n",
-    );
+    out.extend_from_slice(b"3 0 obj\n<< /S /JavaScript /JS (app.alert(1)) >>\nendobj\n");
 
     // Obj 4: Page
     offsets.push(out.len());
@@ -97,21 +93,15 @@ fn build_pdf_with_names_javascript() -> Vec<u8> {
 
     // Obj 1: Catalog with /Names referencing the names dict
     offsets.push(out.len());
-    out.extend_from_slice(
-        b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Names 3 0 R >>\nendobj\n",
-    );
+    out.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Names 3 0 R >>\nendobj\n");
 
     // Obj 2: Pages
     offsets.push(out.len());
-    out.extend_from_slice(
-        b"2 0 obj\n<< /Type /Pages /Count 1 /Kids [5 0 R] >>\nendobj\n",
-    );
+    out.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Count 1 /Kids [5 0 R] >>\nendobj\n");
 
     // Obj 3: Names dict with /JavaScript
     offsets.push(out.len());
-    out.extend_from_slice(
-        b"3 0 obj\n<< /JavaScript 4 0 R >>\nendobj\n",
-    );
+    out.extend_from_slice(b"3 0 obj\n<< /JavaScript 4 0 R >>\nendobj\n");
 
     // Obj 4: JavaScript name tree (minimal leaf)
     offsets.push(out.len());
@@ -219,7 +209,10 @@ fn test_output_intent_error_cleared_after_convert() {
 
     let catalog = doc.catalog().expect("catalog");
     assert!(
-        catalog.as_dict().map(|d| d.contains_key("OutputIntents")).unwrap_or(false),
+        catalog
+            .as_dict()
+            .map(|d| d.contains_key("OutputIntents"))
+            .unwrap_or(false),
         "/OutputIntents must be present in catalog after conversion"
     );
 
@@ -241,7 +234,8 @@ fn test_output_intent_action_recorded() {
     let result = convert_to_pdf_a(&mut doc, PdfALevel::A2b).expect("convert");
     assert!(
         conversion_action_types(&result).contains(&ActionType::AddedOutputIntent),
-        "expected AddedOutputIntent action, got: {:?}", result.actions
+        "expected AddedOutputIntent action, got: {:?}",
+        result.actions
     );
 }
 
@@ -276,7 +270,8 @@ fn test_language_action_recorded() {
         .expect("convert");
     assert!(
         conversion_action_types(&result).contains(&ActionType::AddedLanguage),
-        "expected AddedLanguage action, got: {:?}", result.actions
+        "expected AddedLanguage action, got: {:?}",
+        result.actions
     );
 }
 
@@ -293,7 +288,8 @@ fn test_javascript_open_action_removed() {
     let pre = validate_pdf_a(&mut doc, PdfALevel::A2b).expect("pre-validate");
     assert!(
         validation_error_codes(&pre).contains(&ErrorCode::JavaScriptNotAllowed),
-        "expected JavaScriptNotAllowed before conversion, got: {:?}", pre.errors
+        "expected JavaScriptNotAllowed before conversion, got: {:?}",
+        pre.errors
     );
 
     convert_to_pdf_a(&mut doc, PdfALevel::A2b).expect("convert");
@@ -308,7 +304,10 @@ fn test_javascript_open_action_removed() {
     // Catalog must no longer have /OpenAction.
     let catalog = doc.catalog().expect("catalog");
     assert!(
-        !catalog.as_dict().map(|d| d.contains_key("OpenAction")).unwrap_or(false),
+        !catalog
+            .as_dict()
+            .map(|d| d.contains_key("OpenAction"))
+            .unwrap_or(false),
         "/OpenAction must be removed from catalog"
     );
 }
@@ -321,13 +320,15 @@ fn test_javascript_names_tree_removed() {
     let pre = validate_pdf_a(&mut doc, PdfALevel::A2b).expect("pre-validate");
     assert!(
         validation_error_codes(&pre).contains(&ErrorCode::JavaScriptNotAllowed),
-        "expected JavaScriptNotAllowed before conversion, got: {:?}", pre.errors
+        "expected JavaScriptNotAllowed before conversion, got: {:?}",
+        pre.errors
     );
 
     let result = convert_to_pdf_a(&mut doc, PdfALevel::A2b).expect("convert");
     assert!(
         conversion_action_types(&result).contains(&ActionType::RemovedJavaScript),
-        "expected RemovedJavaScript action, got: {:?}", result.actions
+        "expected RemovedJavaScript action, got: {:?}",
+        result.actions
     );
 
     let post = validate_pdf_a(&mut doc, PdfALevel::A2b).expect("post-validate");
@@ -350,7 +351,8 @@ fn test_structure_tree_added_for_level_a() {
     let pre = validate_pdf_a(&mut doc, PdfALevel::A2a).expect("pre-validate");
     assert!(
         validation_error_codes(&pre).contains(&ErrorCode::MissingDocumentStructure),
-        "expected MissingDocumentStructure before conversion, got: {:?}", pre.errors
+        "expected MissingDocumentStructure before conversion, got: {:?}",
+        pre.errors
     );
 
     // Enable structure generation.
@@ -360,7 +362,8 @@ fn test_structure_tree_added_for_level_a() {
 
     assert!(
         conversion_action_types(&result).contains(&ActionType::AddedStructure),
-        "expected AddedStructure action, got: {:?}", result.actions
+        "expected AddedStructure action, got: {:?}",
+        result.actions
     );
 
     // Post: MissingDocumentStructure must be gone.
@@ -379,7 +382,8 @@ fn test_structure_not_required_for_level_b() {
     let pre = validate_pdf_a(&mut doc, PdfALevel::A2b).expect("pre-validate");
     assert!(
         !validation_error_codes(&pre).contains(&ErrorCode::MissingDocumentStructure),
-        "A2b must not require structure tree, got: {:?}", pre.errors
+        "A2b must not require structure tree, got: {:?}",
+        pre.errors
     );
 }
 
@@ -449,8 +453,14 @@ fn test_font_embedded_clears_error_when_system_font_available() {
 
     // After conversion, the post-validate FontNotEmbedded count must not increase.
     let post = validate_pdf_a(&mut doc, PdfALevel::A2b).expect("post-validate");
-    let pre_count = validation_error_codes(&pre).iter().filter(|&&c| c == ErrorCode::FontNotEmbedded).count();
-    let post_count = validation_error_codes(&post).iter().filter(|&&c| c == ErrorCode::FontNotEmbedded).count();
+    let pre_count = validation_error_codes(&pre)
+        .iter()
+        .filter(|&&c| c == ErrorCode::FontNotEmbedded)
+        .count();
+    let post_count = validation_error_codes(&post)
+        .iter()
+        .filter(|&&c| c == ErrorCode::FontNotEmbedded)
+        .count();
     assert!(
         post_count <= pre_count,
         "font embedding must not increase FontNotEmbedded errors: {pre_count} before, {post_count} after"
@@ -475,9 +485,7 @@ fn build_pdf_with_annotation_no_ap() -> Vec<u8> {
 
     // Obj 2: Pages
     offsets.push(out.len());
-    out.extend_from_slice(
-        b"2 0 obj\n<< /Type /Pages /Count 1 /Kids [3 0 R] >>\nendobj\n",
-    );
+    out.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Count 1 /Kids [3 0 R] >>\nendobj\n");
 
     // Obj 3: Page with /Annots referencing obj 4
     offsets.push(out.len());
@@ -522,7 +530,8 @@ fn test_annotation_appearance_synthesised() {
     let result = convert_to_pdf_a(&mut doc, PdfALevel::A2b).expect("convert");
     assert!(
         conversion_action_types(&result).contains(&ActionType::FixedAnnotation),
-        "expected FixedAnnotation action, got: {:?}", result.actions
+        "expected FixedAnnotation action, got: {:?}",
+        result.actions
     );
 
     let post = validate_pdf_a(&mut doc, PdfALevel::A2b).expect("post-validate");
@@ -562,20 +571,12 @@ fn build_pdf_with_transparency() -> Vec<u8> {
 
     // Obj 4: ExtGState with /ca (fill opacity) less than 1 → triggers transparency
     offsets.push(out.len());
-    out.extend_from_slice(
-        b"4 0 obj\n<< /Type /ExtGState /ca 0.5 /CA 0.5 >>\nendobj\n",
-    );
+    out.extend_from_slice(b"4 0 obj\n<< /Type /ExtGState /ca 0.5 /CA 0.5 >>\nendobj\n");
 
     // Obj 5: Content stream using the transparent ExtGState
     let content = b"q /GS1 gs 100 100 200 200 re f Q";
     offsets.push(out.len());
-    out.extend_from_slice(
-        format!(
-            "5 0 obj\n<< /Length {} >>\nstream\n",
-            content.len()
-        )
-        .as_bytes(),
-    );
+    out.extend_from_slice(format!("5 0 obj\n<< /Length {} >>\nstream\n", content.len()).as_bytes());
     out.extend_from_slice(content);
     out.extend_from_slice(b"\nendstream\nendobj\n");
 
@@ -610,7 +611,8 @@ fn test_transparency_flattened_for_a1b() {
     let result = convert_to_pdf_a(&mut doc, PdfALevel::A1b).expect("convert");
     assert!(
         conversion_action_types(&result).contains(&ActionType::FlattenedTransparency),
-        "expected FlattenedTransparency action, got: {:?}", result.actions
+        "expected FlattenedTransparency action, got: {:?}",
+        result.actions
     );
 
     // Post: transparency error must be gone.
@@ -661,7 +663,12 @@ fn test_output_intents_not_duplicated_on_second_convert() {
     if let Some(pdf_oxide::object::Object::Array(arr)) =
         catalog.as_dict().and_then(|d| d.get("OutputIntents"))
     {
-        assert_eq!(arr.len(), 1, "OutputIntents duplicated after two conversions: {} entries", arr.len());
+        assert_eq!(
+            arr.len(),
+            1,
+            "OutputIntents duplicated after two conversions: {} entries",
+            arr.len()
+        );
     }
 }
 

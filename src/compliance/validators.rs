@@ -152,7 +152,9 @@ pub fn validate_fonts(
             },
             None => continue,
         };
-        let Some(fonts) = font_map.as_dict() else { continue };
+        let Some(fonts) = font_map.as_dict() else {
+            continue;
+        };
 
         for font_obj in fonts.values() {
             let (resolved, font_id) = match font_obj {
@@ -180,8 +182,13 @@ fn check_font_embedding(
     result: &mut ValidationResult,
     seen: &mut std::collections::HashSet<u32>,
 ) -> Result<()> {
-    let Some(font_dict) = font.as_dict() else { return Ok(()) };
-    let subtype = font_dict.get("Subtype").and_then(|o| o.as_name()).unwrap_or("");
+    let Some(font_dict) = font.as_dict() else {
+        return Ok(());
+    };
+    let subtype = font_dict
+        .get("Subtype")
+        .and_then(|o| o.as_name())
+        .unwrap_or("");
     let base_font = font_dict
         .get("BaseFont")
         .and_then(|o| o.as_name())
@@ -195,8 +202,10 @@ fn check_font_embedding(
 
     // Type0 (composite): check the first CIDFont in /DescendantFonts.
     if subtype == "Type0" {
-        if let Some(desc_arr) =
-            font_dict.get("DescendantFonts").and_then(|o| o.as_array()).cloned()
+        if let Some(desc_arr) = font_dict
+            .get("DescendantFonts")
+            .and_then(|o| o.as_array())
+            .cloned()
         {
             if let Some(first) = desc_arr.into_iter().next() {
                 let cid = match &first {
@@ -224,9 +233,7 @@ fn check_font_embedding(
         .as_ref()
         .and_then(|d| d.as_dict())
         .map(|d| {
-            d.contains_key("FontFile")
-                || d.contains_key("FontFile2")
-                || d.contains_key("FontFile3")
+            d.contains_key("FontFile") || d.contains_key("FontFile2") || d.contains_key("FontFile3")
         })
         .unwrap_or(false);
 

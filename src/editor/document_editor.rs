@@ -2806,7 +2806,10 @@ impl DocumentEditor {
                                                                     .get(&ref_obj.id)
                                                                     .cloned()
                                                                     .map(Ok)
-                                                                    .unwrap_or_else(|| self.source.load_object(ref_obj));
+                                                                    .unwrap_or_else(|| {
+                                                                        self.source
+                                                                            .load_object(ref_obj)
+                                                                    });
                                                                 if let Ok(font_obj) = font_obj {
                                                                     let offset =
                                                                         writer.stream_position()?;

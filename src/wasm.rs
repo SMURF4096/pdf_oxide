@@ -2988,9 +2988,13 @@ impl WasmPdfDocument {
             .inner
             .lock()
             .map_err(|_| JsValue::from_str("Lock failed"))?;
-        let result =
-            convert_to_pdf_a(&mut inner, pdf_level).map_err(|e| JsValue::from_str(&e.to_string()))?;
-        let actions: Vec<String> = result.actions.iter().map(|a| a.description.clone()).collect();
+        let result = convert_to_pdf_a(&mut inner, pdf_level)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let actions: Vec<String> = result
+            .actions
+            .iter()
+            .map(|a| a.description.clone())
+            .collect();
         let errors: Vec<String> = result.errors.iter().map(|e| e.reason.clone()).collect();
         serde_wasm_bindgen::to_value(&serde_json::json!({
             "success": result.success,

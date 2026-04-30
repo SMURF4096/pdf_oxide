@@ -15461,7 +15461,9 @@ mod tests {
         // Dense column (x=63): 10 spans at y=640,620,600,580,560,540,520,500,480,460
         // Sparse column (x=430): 4 spans at y=600,560,520,480 — same lines as dense
         // After reorder_rowspan_labels the sparse spans must NOT be promoted.
-        let ys_dense = [640.0f32, 620.0, 600.0, 580.0, 560.0, 540.0, 520.0, 500.0, 480.0, 460.0];
+        let ys_dense = [
+            640.0f32, 620.0, 600.0, 580.0, 560.0, 540.0, 520.0, 500.0, 480.0, 460.0,
+        ];
         let ys_sparse = [600.0f32, 560.0, 520.0, 480.0]; // all on same Y as dense rows
 
         let mut spans: Vec<TextSpan> = Vec::new();

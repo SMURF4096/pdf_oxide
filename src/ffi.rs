@@ -6263,7 +6263,9 @@ pub extern "C" fn pdf_merge(
 
 // ─── PDF/A Validation ──────────────────────────────────────────────────────
 
-use crate::compliance::{convert_to_pdf_a, validate_pdf_a, PdfALevel, ValidationResult as PdfAValidationResult};
+use crate::compliance::{
+    convert_to_pdf_a, validate_pdf_a, PdfALevel, ValidationResult as PdfAValidationResult,
+};
 
 pub struct FfiPdfAResults {
     result: PdfAValidationResult,

@@ -94,7 +94,8 @@ fn test_validate_after_convert_clears_xmp_errors() {
         .errors
         .iter()
         .filter(|e| {
-            e.code == ErrorCode::MissingXmpMetadata || e.code == ErrorCode::MissingPdfaIdentification
+            e.code == ErrorCode::MissingXmpMetadata
+                || e.code == ErrorCode::MissingPdfaIdentification
         })
         .collect();
     assert!(!pre_xmp_errors.is_empty(), "expected XMP/pdfaid errors before conversion");
@@ -112,7 +113,8 @@ fn test_validate_after_convert_clears_xmp_errors() {
     ] {
         assert!(
             !post.errors.iter().any(|e| e.code == code),
-            "{code:?} still present after conversion: {:?}", post.errors
+            "{code:?} still present after conversion: {:?}",
+            post.errors
         );
     }
 }
@@ -158,11 +160,17 @@ fn test_remove_javascript_from_names() {
     // our builder does not expose. The remove_javascript path is exercised
     // by the validator finding nothing to remove (idempotent, no panic).
     let mut doc = pdf_oxide::document::PdfDocument::from_bytes(bytes).expect("parse failed");
-    let result = pdf_oxide::compliance::convert_to_pdf_a(&mut doc, pdf_oxide::compliance::PdfALevel::A2b).expect("conversion failed");
+    let result =
+        pdf_oxide::compliance::convert_to_pdf_a(&mut doc, pdf_oxide::compliance::PdfALevel::A2b)
+            .expect("conversion failed");
     // No JS-related conversion error should appear.
     assert!(
-        result.errors.iter().all(|e| e.error_code != pdf_oxide::compliance::ErrorCode::JavaScriptNotAllowed),
-        "unexpected JS conversion error: {:?}", result.errors
+        result
+            .errors
+            .iter()
+            .all(|e| e.error_code != pdf_oxide::compliance::ErrorCode::JavaScriptNotAllowed),
+        "unexpected JS conversion error: {:?}",
+        result.errors
     );
 }
 
@@ -186,10 +194,7 @@ fn test_add_language_sets_lang_key() {
     let catalog = doc.catalog().expect("no catalog");
     // If Lang was set, it must be a string value.
     if let Some(lang) = catalog.as_dict().and_then(|d| d.get("Lang")) {
-        assert!(
-            lang.as_string().is_some(),
-            "/Lang must be a PDF string, got: {:?}", lang
-        );
+        assert!(lang.as_string().is_some(), "/Lang must be a PDF string, got: {:?}", lang);
     }
 }
 
@@ -219,7 +224,10 @@ fn test_convert_all_levels() {
         // OutputIntents must be present (unconditional per converter logic).
         let catalog = doc.catalog().expect("no catalog");
         assert!(
-            catalog.as_dict().map(|d| d.contains_key("OutputIntents")).unwrap_or(false),
+            catalog
+                .as_dict()
+                .map(|d| d.contains_key("OutputIntents"))
+                .unwrap_or(false),
             "/OutputIntents missing after conversion for level {level:?}"
         );
 
@@ -228,8 +236,8 @@ fn test_convert_all_levels() {
             .expect("re-parse failed after conversion for level {level:?}");
 
         // The post-conversion validation must not report any always-fixable errors.
-        let post = pdf_oxide::compliance::validate_pdf_a(&mut doc, level)
-            .expect("post-validate failed");
+        let post =
+            pdf_oxide::compliance::validate_pdf_a(&mut doc, level).expect("post-validate failed");
         for code in [
             pdf_oxide::compliance::ErrorCode::MissingXmpMetadata,
             pdf_oxide::compliance::ErrorCode::MissingPdfaIdentification,

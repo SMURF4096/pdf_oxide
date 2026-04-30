@@ -10797,8 +10797,10 @@ mod tests {
             name: "Cs1".to_string(),
         })
         .unwrap();
-        e.execute_operator_public(Operator::SetFillColor { components: vec![0.4] })
-            .unwrap();
+        e.execute_operator_public(Operator::SetFillColor {
+            components: vec![0.4],
+        })
+        .unwrap();
         let state = e.state_stack.current();
         let (r, g, b) = state.fill_color_rgb;
         assert!((r - 0.4).abs() < 0.01 && (g - 0.4).abs() < 0.01 && (b - 0.4).abs() < 0.01);

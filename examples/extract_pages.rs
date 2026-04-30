@@ -31,7 +31,7 @@ fn main() {
             eprintln!("SKIP {}: {}", input, e);
             let _ = std::fs::write(out_dir.join("SKIP"), format!("{}", e));
             std::process::exit(0);
-        }
+        },
     };
 
     let page_count = match doc.page_count() {
@@ -40,10 +40,13 @@ fn main() {
             eprintln!("SKIP {} (page_count): {}", input, e);
             let _ = std::fs::write(out_dir.join("SKIP"), format!("{}", e));
             std::process::exit(0);
-        }
+        },
     };
 
-    let opts = ConversionOptions { include_images: false, ..ConversionOptions::default() };
+    let opts = ConversionOptions {
+        include_images: false,
+        ..ConversionOptions::default()
+    };
     let to_extract = page_count.min(max_pages);
 
     for page_idx in 0..to_extract {
@@ -52,21 +55,21 @@ fn main() {
         match doc.extract_text(page_idx) {
             Ok(txt) => {
                 let _ = std::fs::write(out_dir.join(format!("{}.txt", label)), txt);
-            }
+            },
             Err(e) => eprintln!("WARN txt p{} {}: {}", page_idx + 1, input, e),
         }
 
         match doc.to_markdown(page_idx, &opts) {
             Ok(md) => {
                 let _ = std::fs::write(out_dir.join(format!("{}.md", label)), md);
-            }
+            },
             Err(e) => eprintln!("WARN md  p{} {}: {}", page_idx + 1, input, e),
         }
 
         match doc.to_html(page_idx, &opts) {
             Ok(html) => {
                 let _ = std::fs::write(out_dir.join(format!("{}.html", label)), html);
-            }
+            },
             Err(e) => eprintln!("WARN html p{} {}: {}", page_idx + 1, input, e),
         }
 

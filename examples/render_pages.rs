@@ -20,7 +20,7 @@ fn run() -> i32 {
         eprintln!("Usage: render_pages <input.pdf> <output_dir> [max_pages]");
         return 1;
     }
-    let input   = &args[1];
+    let input = &args[1];
     let out_dir = std::path::Path::new(&args[2]);
     let max_pages: usize = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(2);
 
@@ -35,7 +35,7 @@ fn run() -> i32 {
             eprintln!("SKIP {}: {}", input, e);
             let _ = std::fs::write(out_dir.join("SKIP"), format!("{}", e));
             return 0;
-        }
+        },
     };
 
     let page_count = match doc.page_count() {
@@ -44,7 +44,7 @@ fn run() -> i32 {
             eprintln!("SKIP {} (page_count): {}", input, e);
             let _ = std::fs::write(out_dir.join("SKIP"), format!("{}", e));
             return 0;
-        }
+        },
     };
 
     let opts = RenderOptions::with_dpi(150);
@@ -59,10 +59,10 @@ fn run() -> i32 {
                 } else {
                     eprintln!("OK  {}", out_path.display());
                 }
-            }
+            },
             Err(e) => {
                 eprintln!("WARN: render failed page {} of {}: {}", page_idx + 1, input, e);
-            }
+            },
         }
     }
     0

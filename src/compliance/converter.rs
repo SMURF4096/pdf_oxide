@@ -317,10 +317,8 @@ impl PdfAConverter {
     ) -> Result<()> {
         // FontNotEmbedded is location-specific (each font is a separate error);
         // all other codes are document-level and only need to be applied once.
-        if error.code != ErrorCode::FontNotEmbedded {
-            if !applied.insert(error.code) {
-                return Ok(());
-            }
+        if error.code != ErrorCode::FontNotEmbedded && !applied.insert(error.code) {
+            return Ok(());
         }
         match error.code {
             ErrorCode::MissingXmpMetadata => {
@@ -491,18 +489,17 @@ impl PdfAConverter {
         let current = editor
             .get_modified(metadata_ref.id)
             .cloned()
-            .or_else(|| {
-                editor
-                    .source()
-                    .load_object(metadata_ref)
-                    .ok()
-            });
+            .or_else(|| editor.source().load_object(metadata_ref).ok());
 
         // Decode the stream (may be FlateDecode-compressed) before parsing as XML.
         let current_xml = match &current {
             Some(obj @ Object::Stream { .. }) => {
                 let decoded = obj.decode_stream_data().unwrap_or_else(|_| {
-                    if let Object::Stream { data, .. } = obj { data.to_vec() } else { vec![] }
+                    if let Object::Stream { data, .. } = obj {
+                        data.to_vec()
+                    } else {
+                        vec![]
+                    }
                 });
                 String::from_utf8_lossy(&decoded).into_owned()
             },
@@ -513,7 +510,8 @@ impl PdfAConverter {
             _ => unreachable!(),
         };
 
-        let patched = inject_pdfaid(&current_xml, self.level.xmp_part(), self.level.xmp_conformance());
+        let patched =
+            inject_pdfaid(&current_xml, self.level.xmp_part(), self.level.xmp_conformance());
         let patched_bytes = patched.into_bytes();
         stream_dict.insert("Length".to_string(), Object::Integer(patched_bytes.len() as i64));
         // Remove any compression filter — PDF/A requires plaintext XMP.
@@ -585,13 +583,19 @@ impl PdfAConverter {
         let ff_id = editor.alloc_id();
         editor.insert_modified(
             ff_id,
-            Object::Stream { dict: ff_dict, data: bytes::Bytes::from(font_bytes) },
+            Object::Stream {
+                dict: ff_dict,
+                data: bytes::Bytes::from(font_bytes),
+            },
         );
 
         // Update every matching font object to reference a FontDescriptor with FontFile2.
         for (font_id, mut font_dict) in font_objects {
             // Build or update the FontDescriptor.
-            let desc_id = match font_dict.get("FontDescriptor").and_then(|o| o.as_reference()) {
+            let desc_id = match font_dict
+                .get("FontDescriptor")
+                .and_then(|o| o.as_reference())
+            {
                 Some(r) => {
                     // Load existing descriptor and add FontFile2 to it.
                     if let Ok(existing) = editor.source().load_object(r) {
@@ -670,7 +674,10 @@ impl PdfAConverter {
         let mut icc_dict = std::collections::HashMap::new();
         icc_dict.insert("N".to_string(), Object::Integer(3)); // sRGB = 3 channels
         icc_dict.insert("Length".to_string(), Object::Integer(icc_bytes.len() as i64));
-        let icc_stream = Object::Stream { dict: icc_dict, data: bytes::Bytes::from(icc_bytes) };
+        let icc_stream = Object::Stream {
+            dict: icc_dict,
+            data: bytes::Bytes::from(icc_bytes),
+        };
         let icc_id = editor.alloc_id();
         editor.insert_modified(icc_id, icc_stream);
 
@@ -682,20 +689,11 @@ impl PdfAConverter {
             "OutputConditionIdentifier".to_string(),
             Object::text_string("sRGB IEC61966-2.1"),
         );
-        oi.insert(
-            "RegistryName".to_string(),
-            Object::text_string("http://www.color.org"),
-        );
+        oi.insert("RegistryName".to_string(), Object::text_string("http://www.color.org"));
         oi.insert("Info".to_string(), Object::text_string("sRGB IEC61966-2.1"));
-        oi.insert(
-            "DestOutputProfile".to_string(),
-            Object::Reference(ObjectRef::new(icc_id, 0)),
-        );
+        oi.insert("DestOutputProfile".to_string(), Object::Reference(ObjectRef::new(icc_id, 0)));
 
-        catalog.insert(
-            "OutputIntents".to_string(),
-            Object::Array(vec![Object::Dictionary(oi)]),
-        );
+        catalog.insert("OutputIntents".to_string(), Object::Array(vec![Object::Dictionary(oi)]));
         let cat_id = catalog_object_id(editor)?;
         editor.insert_modified(cat_id, Object::Dictionary(catalog));
 
@@ -982,11 +980,7 @@ impl PdfAConverter {
                 Ok(o) => o,
                 Err(_) => continue,
             };
-            let annots_arr = match page_obj
-                .as_dict()
-                .and_then(|d| d.get("Annots"))
-                .cloned()
-            {
+            let annots_arr = match page_obj.as_dict().and_then(|d| d.get("Annots")).cloned() {
                 Some(a) => match editor.source().resolve_references(&a, 1) {
                     Ok(o) => o,
                     Err(_) => continue,
@@ -1068,30 +1062,24 @@ impl PdfAConverter {
                 img_dict.insert("Subtype".to_string(), Object::Name("Image".to_string()));
                 img_dict.insert("Width".to_string(), Object::Integer(img_w as i64));
                 img_dict.insert("Height".to_string(), Object::Integer(img_h as i64));
-                img_dict
-                    .insert("ColorSpace".to_string(), Object::Name("DeviceRGB".to_string()));
+                img_dict.insert("ColorSpace".to_string(), Object::Name("DeviceRGB".to_string()));
                 img_dict.insert("BitsPerComponent".to_string(), Object::Integer(8));
-                img_dict
-                    .insert("Length".to_string(), Object::Integer(raw_rgb.len() as i64));
+                img_dict.insert("Length".to_string(), Object::Integer(raw_rgb.len() as i64));
                 let img_id = editor.alloc_id();
                 editor.insert_modified(
                     img_id,
-                    Object::Stream { dict: img_dict, data: bytes::Bytes::from(raw_rgb) },
+                    Object::Stream {
+                        dict: img_dict,
+                        data: bytes::Bytes::from(raw_rgb),
+                    },
                 );
 
                 // Form XObject: content stream "q W 0 0 H cm /Im Do Q".
-                let content = format!(
-                    "q {} 0 0 {} 0 0 cm /Im Do Q",
-                    img_w, img_h
-                );
+                let content = format!("q {} 0 0 {} 0 0 cm /Im Do Q", img_w, img_h);
                 let mut res_dict = std::collections::HashMap::new();
                 let mut xobj_dict = std::collections::HashMap::new();
-                xobj_dict.insert(
-                    "Im".to_string(),
-                    Object::Reference(ObjectRef::new(img_id, 0)),
-                );
-                res_dict
-                    .insert("XObject".to_string(), Object::Dictionary(xobj_dict));
+                xobj_dict.insert("Im".to_string(), Object::Reference(ObjectRef::new(img_id, 0)));
+                res_dict.insert("XObject".to_string(), Object::Dictionary(xobj_dict));
                 let mut form_dict = std::collections::HashMap::new();
                 form_dict.insert("Type".to_string(), Object::Name("XObject".to_string()));
                 form_dict.insert("Subtype".to_string(), Object::Name("Form".to_string()));
@@ -1105,10 +1093,7 @@ impl PdfAConverter {
                     ]),
                 );
                 form_dict.insert("Resources".to_string(), Object::Dictionary(res_dict));
-                form_dict.insert(
-                    "Length".to_string(),
-                    Object::Integer(content.len() as i64),
-                );
+                form_dict.insert("Length".to_string(), Object::Integer(content.len() as i64));
                 let form_id = editor.alloc_id();
                 editor.insert_modified(
                     form_id,
@@ -1120,10 +1105,7 @@ impl PdfAConverter {
 
                 // /AP dict pointing to the Form XObject.
                 let mut ap_dict = std::collections::HashMap::new();
-                ap_dict.insert(
-                    "N".to_string(),
-                    Object::Reference(ObjectRef::new(form_id, 0)),
-                );
+                ap_dict.insert("N".to_string(), Object::Reference(ObjectRef::new(form_id, 0)));
                 let mut updated_annot = annot_dict;
                 updated_annot.insert("AP".to_string(), Object::Dictionary(ap_dict));
                 editor.insert_modified(annot_ref.id, Object::Dictionary(updated_annot));
@@ -1293,13 +1275,14 @@ fn store_names(
 fn action_is_javascript(obj: Option<&Object>, editor: &DocumentEditor) -> bool {
     let Some(action) = obj else { return false };
     let resolved = match action {
-        Object::Reference(r) => {
-            editor.source().load_object(*r).unwrap_or(Object::Null)
-        },
+        Object::Reference(r) => editor.source().load_object(*r).unwrap_or(Object::Null),
         other => other.clone(),
     };
     matches!(
-        resolved.as_dict().and_then(|d| d.get("S")).and_then(|o| o.as_name()),
+        resolved
+            .as_dict()
+            .and_then(|d| d.get("S"))
+            .and_then(|o| o.as_name()),
         Some("JavaScript")
     )
 }
@@ -1320,17 +1303,22 @@ fn strip_js_from_aa(
     let mut out = aa_dict;
     out.retain(|_, action_obj| {
         let resolved = match action_obj {
-            Object::Reference(r) => {
-                editor.source().load_object(*r).unwrap_or(Object::Null)
-            },
+            Object::Reference(r) => editor.source().load_object(*r).unwrap_or(Object::Null),
             other => other.clone(),
         };
         !matches!(
-            resolved.as_dict().and_then(|d| d.get("S")).and_then(|o| o.as_name()),
+            resolved
+                .as_dict()
+                .and_then(|d| d.get("S"))
+                .and_then(|o| o.as_name()),
             Some("JavaScript")
         )
     });
-    if out.len() != before { Some(out) } else { None }
+    if out.len() != before {
+        Some(out)
+    } else {
+        None
+    }
 }
 
 /// True for the 14 standard Type1 fonts that PDF viewers guarantee to have built in.
@@ -1430,7 +1418,9 @@ fn std14_alias(ps_name: &str) -> Option<(&'static str, fontdb::Weight, fontdb::S
         "Helvetica" => Some(("Nimbus Sans", fontdb::Weight::NORMAL, fontdb::Style::Normal)),
         "Helvetica-Bold" => Some(("Nimbus Sans", fontdb::Weight::BOLD, fontdb::Style::Normal)),
         "Helvetica-Oblique" => Some(("Nimbus Sans", fontdb::Weight::NORMAL, fontdb::Style::Italic)),
-        "Helvetica-BoldOblique" => Some(("Nimbus Sans", fontdb::Weight::BOLD, fontdb::Style::Italic)),
+        "Helvetica-BoldOblique" => {
+            Some(("Nimbus Sans", fontdb::Weight::BOLD, fontdb::Style::Italic))
+        },
         // Times family → Nimbus Roman / C059
         "Times-Roman" => Some(("Nimbus Roman", fontdb::Weight::NORMAL, fontdb::Style::Normal)),
         "Times-Bold" => Some(("Nimbus Roman", fontdb::Weight::BOLD, fontdb::Style::Normal)),
@@ -1439,8 +1429,12 @@ fn std14_alias(ps_name: &str) -> Option<(&'static str, fontdb::Weight, fontdb::S
         // Courier family → Nimbus Mono PS / Liberation Mono
         "Courier" => Some(("Nimbus Mono PS", fontdb::Weight::NORMAL, fontdb::Style::Normal)),
         "Courier-Bold" => Some(("Nimbus Mono PS", fontdb::Weight::BOLD, fontdb::Style::Normal)),
-        "Courier-Oblique" => Some(("Nimbus Mono PS", fontdb::Weight::NORMAL, fontdb::Style::Italic)),
-        "Courier-BoldOblique" => Some(("Nimbus Mono PS", fontdb::Weight::BOLD, fontdb::Style::Italic)),
+        "Courier-Oblique" => {
+            Some(("Nimbus Mono PS", fontdb::Weight::NORMAL, fontdb::Style::Italic))
+        },
+        "Courier-BoldOblique" => {
+            Some(("Nimbus Mono PS", fontdb::Weight::BOLD, fontdb::Style::Italic))
+        },
         _ => None,
     }
 }
@@ -1453,12 +1447,20 @@ fn load_system_font_bytes(font_name: &str) -> Option<Vec<u8>> {
     // Strip subset tag prefix "ABCDEF+" if present.
     let clean = {
         let s = font_name.trim_start_matches(|c: char| c.is_ascii_uppercase());
-        if s.starts_with('+') { &s[1..] } else { font_name }
+        if s.starts_with('+') {
+            &s[1..]
+        } else {
+            font_name
+        }
     };
 
     // Build candidate family names: try exact PS name first, then std14 alias,
     // then the base family split on '-'.
-    let weight = if clean.contains("Bold") { fontdb::Weight::BOLD } else { fontdb::Weight::NORMAL };
+    let weight = if clean.contains("Bold") {
+        fontdb::Weight::BOLD
+    } else {
+        fontdb::Weight::NORMAL
+    };
     let style = if clean.contains("Italic") || clean.contains("Oblique") {
         fontdb::Style::Italic
     } else {
