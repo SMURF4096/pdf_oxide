@@ -51,6 +51,16 @@ This release exists because of the community. Special thanks to:
   scope unambiguous — every image with transparency was affected — and
   led directly to the missing `DecodeParms` fix in `build_soft_mask_dict()`.
 
+- **[@truffle-dev](https://github.com/truffle-dev)** — first code
+  contribution to the project: completed the CLI output-path fix for
+  [#412](https://github.com/yfedoseev/pdf_oxide/issues/412) in
+  [#452](https://github.com/yfedoseev/pdf_oxide/pull/452). The original
+  audit in #412 covered all 11 CLI commands with exact line references and
+  two proposed design options; the PR was clean on first submission. Picks
+  up the four commands (`crop`, `decrypt`, `delete`, `reorder`) missed by
+  the earlier partial fix, and also enforces `-o/--output` for `merge`
+  instead of silently defaulting to the first input's directory.
+
 ### Scope at-a-glance
 
 - **Real PDF/A conversion** — XMP metadata stream, `pdfaid:part`/`conformance`
@@ -69,6 +79,10 @@ This release exists because of the community. Special thanks to:
 - **Barcode SVG generation** — `pdf_barcode_get_svg` no longer returns
   `ERR_UNSUPPORTED`; generates real SVG for all 8 barcode types including
   QR (#421).
+- **CLI output routing** — `crop`, `decrypt`, `delete`, and `reorder` now
+  write default output beside the input file instead of the current working
+  directory; `merge` now requires `-o/--output` and errors up front instead
+  of silently defaulting to the first input's directory. Completes #412.
 
 ### Real PDF/A conversion (#418, #442)
 
@@ -268,6 +282,28 @@ causes were blocking a real implementation:
 `pdf_barcode_get_svg` now returns a valid SVG string for all supported
 barcode types (Code128, Code39, EAN-13, EAN-8, UPC-A, ITF, Code93,
 Codabar, QR) when the `barcodes` feature is enabled.
+
+### CLI output routing (#412, #452)
+
+A previous partial fix (commit `9dd94c0`) introduced `output_beside()` /
+`output_dir_beside()` helpers and converted five commands (`watermark`,
+`compress`, `flatten`, `rotate`, `split`). Four binary-output commands
+were missed and continued resolving the default output path relative to
+the current working directory:
+
+- **`crop`** — now writes `<stem>_cropped.pdf` beside the input file.
+- **`decrypt`** — now writes `<stem>_decrypted.pdf` beside the input file.
+- **`delete`** — now writes `<stem>_deleted.pdf` beside the input file.
+- **`reorder`** — now writes `<stem>_reordered.pdf` beside the input file.
+
+**`merge`** previously silently defaulted to writing `merged.pdf` in the
+directory of the first input file when `-o/--output` was omitted. This
+silent fallback was the riskiest behavior in the CLI: callers who expected
+output beside a specific file got a surprise in a potentially unrelated
+directory. `merge` now requires `-o/--output` and exits with a clear error
+message if it is missing.
+
+No library code was changed — all five files are in `pdf_oxide_cli`.
 
 ---
 
