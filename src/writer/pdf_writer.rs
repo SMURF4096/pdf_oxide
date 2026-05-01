@@ -1387,32 +1387,31 @@ impl PdfWriter {
         }
         let mut image_ids_per_page: Vec<Vec<(u32, Option<u32>)>> = Vec::with_capacity(page_count);
         let mut image_objects: Vec<(u32, Object, Vec<u8>)> = Vec::new();
-        // Dedup: map raw-encoded-bytes hash → (img_id, soft_mask_id).
-        // Identical image data (same bytes, same format) reuses a single XObject
-        // instead of embedding a redundant copy — fixes #443.
+        // Dedup: map normalized-stream-bytes hash → (img_id, soft_mask_id).
+        // Hash is computed AFTER image_content_to_xobject_stream() normalizes
+        // the bytes so both image APIs (image_from_bytes / ImageContent::new)
+        // produce the same hash for the same logical image — fixes #443.
         let mut image_dedup: HashMap<(u64, usize), (u32, Option<u32>)> = HashMap::new();
         for pending in &pending_per_page {
             let mut per_page_ids: Vec<(u32, Option<u32>)> = Vec::with_capacity(pending.len());
             for p in pending {
-                // Build a (hash, byte_length) dedup key. Including the exact
-                // byte length as a second discriminator makes accidental u64
-                // collisions between different images effectively impossible.
+                // Normalize first — both APIs converge to the same stream bytes
+                // here regardless of how the caller originally stored the pixels.
+                let (data, soft_mask) = image_content_to_xobject_stream(&p.image);
+
+                // Build a (hash, byte_length) dedup key over the normalized
+                // stream bytes. Including the exact byte length as a second
+                // discriminator makes accidental u64 collisions effectively
+                // impossible.
                 use std::hash::{Hash, Hasher};
                 let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                p.image.data.hash(&mut hasher);
-                p.image.format.hash(&mut hasher);
-                let key = (hasher.finish(), p.image.data.len());
+                data.data.hash(&mut hasher);
+                let key = (hasher.finish(), data.data.len());
 
                 if let Some(&ids) = image_dedup.get(&key) {
                     per_page_ids.push(ids);
                     continue;
                 }
-
-                // Decode to writer::ImageData — the content stream
-                // builder kept the elements::ImageContent verbatim; we
-                // need the ColorSpace/Filter conversion from elements
-                // to build the XObject dict.
-                let (data, soft_mask) = image_content_to_xobject_stream(&p.image);
                 let img_id = self.alloc_obj_id();
                 let soft_mask_id = if soft_mask.is_some() {
                     Some(self.alloc_obj_id())
