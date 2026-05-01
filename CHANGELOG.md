@@ -50,7 +50,8 @@ This release exists because of the community. Special thanks to:
   all 7 bindings (#418, #442).
 - **Symbolic TrueType glyph rendering** — non-ASCII bytes (ú=0xFA, á=0xE1,
   fi=0x85) in DC/EC-style LaTeX fonts with Mac Roman cmap no longer
-  suppressed as spaces (#307).
+  suppressed as spaces (partially fixes #307; follow-up cases reported
+  by FireMasterK on 2026-04-29 remain open).
 - **Image XObject deduplication** — same image embedded twice no longer
   re-encoded as two separate compressed streams; PDF size matches the
   sum of source images (#443).
