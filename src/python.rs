@@ -6168,9 +6168,11 @@ fn generate_barcode_svg(barcode_type: i32, data: String) -> PyResult<String> {
         5 => BarcodeType::Itf,
         6 => BarcodeType::Code93,
         7 => BarcodeType::Codabar,
-        _ => return Err(pyo3::exceptions::PyValueError::new_err(
-            format!("unknown barcode_type {barcode_type}; valid values are 0–7")
-        )),
+        _ => {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "unknown barcode_type {barcode_type}; valid values are 0–7"
+            )))
+        },
     };
     BarcodeGenerator::generate_1d_svg(bt, &data, &BarcodeOptions::default())
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))

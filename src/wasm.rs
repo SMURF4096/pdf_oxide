@@ -117,9 +117,11 @@ pub fn generate_barcode_svg(barcode_type: i32, data: String) -> Result<String, J
         5 => BarcodeType::Itf,
         6 => BarcodeType::Code93,
         7 => BarcodeType::Codabar,
-        _ => return Err(JsValue::from_str(&format!(
-            "unknown barcodeType {barcode_type}; valid values are 0–7"
-        ))),
+        _ => {
+            return Err(JsValue::from_str(&format!(
+                "unknown barcodeType {barcode_type}; valid values are 0–7"
+            )))
+        },
     };
     BarcodeGenerator::generate_1d_svg(bt, &data, &BarcodeOptions::default())
         .map_err(|e| JsValue::from_str(&e.to_string()))
@@ -139,8 +141,7 @@ pub fn generate_qr_svg(data: String, error_correction: i32, size: u32) -> Result
         _ => QrErrorCorrection::Medium,
     };
     let opts = QrCodeOptions::new().size(size).error_correction(ec);
-    BarcodeGenerator::generate_qr_svg(&data, &opts)
-        .map_err(|e| JsValue::from_str(&e.to_string()))
+    BarcodeGenerator::generate_qr_svg(&data, &opts).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 // ============================================================================

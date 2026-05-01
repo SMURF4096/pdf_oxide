@@ -2839,7 +2839,11 @@ pub extern "C" fn pdf_barcode_get_svg(
                 7 => BarcodeType::Codabar,
                 _ => BarcodeType::Code128,
             };
-            BarcodeGenerator::generate_1d_svg(barcode_type, &bc.source_data, &BarcodeOptions::default())
+            BarcodeGenerator::generate_1d_svg(
+                barcode_type,
+                &bc.source_data,
+                &BarcodeOptions::default(),
+            )
         };
         match result {
             Ok(svg) => {

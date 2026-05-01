@@ -722,10 +722,7 @@ mod soft_mask_decode_parms_tests {
         let png = super::create_test_png_rgba(8, 8);
         let image = ImageData::from_png(&png).expect("should parse RGBA PNG");
 
-        assert!(
-            image.soft_mask.is_some(),
-            "RGBA PNG must produce a soft mask"
-        );
+        assert!(image.soft_mask.is_some(), "RGBA PNG must produce a soft mask");
 
         let dict = image
             .build_soft_mask_dict()
@@ -746,10 +743,7 @@ mod soft_mask_decode_parms_tests {
             Some(&Object::Integer(1)),
             "Colors must be 1 (grayscale alpha)"
         );
-        assert_eq!(
-            parms.get("BitsPerComponent"),
-            Some(&Object::Integer(8)),
-        );
+        assert_eq!(parms.get("BitsPerComponent"), Some(&Object::Integer(8)),);
         assert_eq!(
             parms.get("Columns"),
             Some(&Object::Integer(8)),
@@ -761,10 +755,7 @@ mod soft_mask_decode_parms_tests {
     fn test_opaque_png_has_no_soft_mask() {
         let png = super::create_test_png(8, 8);
         let image = ImageData::from_png(&png).expect("should parse RGB PNG");
-        assert!(
-            image.soft_mask.is_none(),
-            "RGB PNG without alpha must not produce a soft mask"
-        );
+        assert!(image.soft_mask.is_none(), "RGB PNG without alpha must not produce a soft mask");
         assert!(
             image.build_soft_mask_dict().is_none(),
             "build_soft_mask_dict must return None for opaque images"
