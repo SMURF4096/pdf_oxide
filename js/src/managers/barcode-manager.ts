@@ -241,7 +241,11 @@ export class BarcodeManager extends EventEmitter {
     return '';
   }
 
-  async generateQrSvg(data: string, errorCorrection: QrErrorCorrection = QrErrorCorrection.M, sizePx: number = 300): Promise<string> {
+  async generateQrSvg(
+    data: string,
+    errorCorrection: QrErrorCorrection = QrErrorCorrection.M,
+    sizePx: number = 300
+  ): Promise<string> {
     if (this.native?.generateQRCode && this.native?.barcodeGetSVG && this.native?.freeBarcode) {
       const handle = this.native.generateQRCode(data, errorCorrection);
       try {

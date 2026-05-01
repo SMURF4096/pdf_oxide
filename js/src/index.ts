@@ -738,7 +738,11 @@ function generateBarcodeSvg(data: string, format: number = 0, sizePx: number = 3
 
 // Generate a QR code as a vector SVG string.
 // errorCorrection: 0=Low, 1=Medium, 2=Quartile, 3=High.
-function generateQrCodeSvg(data: string, errorCorrection: number = 1, sizePx: number = 300): string {
+function generateQrCodeSvg(
+  data: string,
+  errorCorrection: number = 1,
+  sizePx: number = 300
+): string {
   const handle = native.generateQRCode(data, errorCorrection);
   try {
     return native.barcodeGetSVG(handle, sizePx) as string;
@@ -792,8 +796,6 @@ export {
   BarcodeErrorCorrection,
   BarcodeFormat,
   BarcodeManager,
-  generateBarcodeSvg,
-  generateQrCodeSvg,
   // Phase 2.5: Batch Processing API
   BatchManager,
   CacheManager,
@@ -826,6 +828,8 @@ export {
   FontProperties,
   FormFieldManager,
   FormFieldType,
+  generateBarcodeSvg,
+  generateQrCodeSvg,
   getPdfOxideVersion,
   // Version info
   getVersion,
