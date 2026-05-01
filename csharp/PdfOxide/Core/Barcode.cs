@@ -39,6 +39,24 @@ namespace PdfOxide.Core
             _handle = handle;
         }
 
+        /// <summary>Generate a QR code image from the given payload.</summary>
+        /// <param name="data">Payload to encode (text, URL, etc.).</param>
+        /// <param name="errorCorrection">0=Low, 1=Medium, 2=Quartile, 3=High (default Medium).</param>
+        /// <param name="sizePx">Target size in pixels (clamped to ≥1).</param>
+        public static Barcode GenerateQrCode(string data, int errorCorrection = 1, int sizePx = 300)
+        {
+            ArgumentNullException.ThrowIfNull(data);
+            if (data.Length == 0) throw new ArgumentException("data must not be empty.", nameof(data));
+            if (sizePx <= 0) throw new ArgumentException("sizePx must be > 0.", nameof(sizePx));
+
+            var handle = NativeMethods.PdfGenerateQrCode(data, errorCorrection, sizePx, out int err);
+            if (handle == IntPtr.Zero)
+            {
+                ExceptionMapper.ThrowIfError(err);
+            }
+            return new Barcode(handle);
+        }
+
         /// <summary>
         /// Generate a barcode image from the given payload.
         /// </summary>
@@ -126,6 +144,17 @@ namespace PdfOxide.Core
             {
                 NativeMethods.FreeBytes(ptr);
             }
+        }
+
+        /// <summary>Returns the barcode as a vector SVG string.</summary>
+        public string ToSvg()
+        {
+            ThrowIfDisposed();
+            var ptr = NativeMethods.PdfBarcodeGetSvg(_handle, 0, out int err);
+            ExceptionMapper.ThrowIfError(err);
+            if (ptr == IntPtr.Zero) return string.Empty;
+            try { return StringMarshaler.PtrToString(ptr); }
+            finally { NativeMethods.FreeString(ptr); }
         }
 
         /// <inheritdoc />

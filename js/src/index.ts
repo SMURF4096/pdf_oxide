@@ -725,6 +725,28 @@ class PdfImpl {
   }
 }
 
+// Generate a 1D barcode as a vector SVG string.
+// format: 0=Code128, 1=Code39, 2=EAN13, 3=EAN8, 4=UPCA, 5=ITF, 6=Code93, 7=Codabar.
+function generateBarcodeSvg(data: string, format: number = 0, sizePx: number = 300): string {
+  const handle = native.generateBarcode(format, data);
+  try {
+    return native.barcodeGetSVG(handle, sizePx) as string;
+  } finally {
+    native.freeBarcode(handle);
+  }
+}
+
+// Generate a QR code as a vector SVG string.
+// errorCorrection: 0=Low, 1=Medium, 2=Quartile, 3=High.
+function generateQrCodeSvg(data: string, errorCorrection: number = 1, sizePx: number = 300): string {
+  const handle = native.generateQRCode(data, errorCorrection);
+  try {
+    return native.barcodeGetSVG(handle, sizePx) as string;
+  } finally {
+    native.freeBarcode(handle);
+  }
+}
+
 // Export as ES module
 const getVersion = native.getVersion;
 const getPdfOxideVersion = native.getPdfOxideVersion;
@@ -770,6 +792,8 @@ export {
   BarcodeErrorCorrection,
   BarcodeFormat,
   BarcodeManager,
+  generateBarcodeSvg,
+  generateQrCodeSvg,
   // Phase 2.5: Batch Processing API
   BatchManager,
   CacheManager,

@@ -3263,6 +3263,24 @@ func (bc *BarcodeImage) SourceData() string {
 	return data
 }
 
+// SVGData returns the barcode rendered as a vector SVG string.
+func (bc *BarcodeImage) SVGData() (string, error) {
+	if bc.handle == nil {
+		return "", ErrInternal
+	}
+	var errorCode C.int
+	cSvg := C.pdf_barcode_get_svg(bc.handle, 0, &errorCode)
+	if errorCode != 0 {
+		return "", ffiError(errorCode)
+	}
+	if cSvg == nil {
+		return "", ErrInternal
+	}
+	svg := C.GoString(cSvg)
+	C.free_string(cSvg)
+	return svg, nil
+}
+
 // Close releases barcode resources
 func (bc *BarcodeImage) Close() {
 	if bc.handle != nil {

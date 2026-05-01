@@ -2141,6 +2141,14 @@ namespace PdfOxide.Internal
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial IntPtr PdfBarcodeGetImagePng(IntPtr handle, int sizePx, out int outLen, out int errorCode);
 
+        [LibraryImport(LibName, EntryPoint = "pdf_barcode_get_svg", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr PdfBarcodeGetSvg(IntPtr handle, int sizePx, out int errorCode);
+
+        [LibraryImport(LibName, EntryPoint = "pdf_generate_qr_code", StringMarshalling = StringMarshalling.Utf8)]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial IntPtr PdfGenerateQrCode(string data, int errorCorrection, int sizePx, out int errorCode);
+
         [LibraryImport(LibName, EntryPoint = "pdf_barcode_free", StringMarshalling = StringMarshalling.Utf8)]
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial void PdfBarcodeFree(IntPtr handle);

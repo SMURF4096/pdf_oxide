@@ -43,6 +43,14 @@ This release exists because of the community. Special thanks to:
   mapping failures, which led directly to the ICCBased color-space warn
   spam fix and the rowspan-label reading-order scramble fix.
 
+- **[@RubberDuckShobe](https://github.com/RubberDuckShobe)** — reported
+  [#450](https://github.com/yfedoseev/pdf_oxide/issues/450): any PDF
+  containing a PNG with an alpha channel showed a diagonal stripe through
+  the image. A minimal reproduction confirmed the bug was reproducible
+  across Acrobat, Preview, and browser PDF viewers. The report made the
+  scope unambiguous — every image with transparency was affected — and
+  led directly to the missing `DecodeParms` fix in `build_soft_mask_dict()`.
+
 ### Scope at-a-glance
 
 - **Real PDF/A conversion** — XMP metadata stream, `pdfaid:part`/`conformance`
@@ -55,6 +63,12 @@ This release exists because of the community. Special thanks to:
 - **Image XObject deduplication** — same image embedded twice no longer
   re-encoded as two separate compressed streams; PDF size matches the
   sum of source images (#443).
+- **Diagonal-line artifact in transparent images fixed** — missing
+  `DecodeParms` in the soft-mask XObject caused a visible diagonal stripe
+  in any PNG with an alpha channel (#450).
+- **Barcode SVG generation** — `pdf_barcode_get_svg` no longer returns
+  `ERR_UNSUPPORTED`; generates real SVG for all 8 barcode types including
+  QR (#421).
 
 ### Real PDF/A conversion (#418, #442)
 
@@ -191,11 +205,69 @@ the full compressed pixel data. A 760 KB PNG embedded twice contributed
 1.52 MB instead of 760 KB; the #443 reproduction produced 2.32 MB from
 images totalling under 1.6 MB.
 
-The fix hashes the raw source bytes before encoding. If the same hash is
-already registered in the document's XObject map, the existing reference is
-reused and no new compressed stream is written. The key is the content hash
-(not a filename or object ID), so it works correctly for in-memory images
-and across pages.
+The fix hashes the normalised stream bytes **after** calling
+`image_content_to_xobject_stream()`. Hashing before normalisation failed
+across API paths: an image supplied via `page.image()` (which accepts raw
+file bytes and decodes them internally) and the same image supplied via
+`ImageContent::from_bytes()` produced different pre-encoding byte strings but
+identical post-normalisation compressed streams. Hashing after normalisation
+ensures the key is stable regardless of which API path the caller used. The
+key is `(hash, byte_length)` over the compressed pixel data; if a matching
+entry is already registered in the document's XObject map, the existing
+reference is reused and no new stream is written.
+
+### Diagonal-line artifact in images with transparency (#450)
+
+PDFs with PNG images that have an alpha channel displayed a diagonal stripe
+across the image when opened in Acrobat, Preview, and most other viewers.
+
+Root cause: `compress_image_data()` prepends a PNG None-filter byte (`0x00`)
+before every scanline before Flate-compressing the pixel data. This is
+required by `FlateDecode` with `DecodeParms/Predictor=15`. The main image
+XObject carried the correct `DecodeParms` dictionary — but `build_soft_mask_dict()`,
+which builds the `/SMask` XObject for the alpha channel, emitted no
+`DecodeParms` at all. Viewers therefore decompressed the raw Flate stream,
+then treated the leading `0x00` filter byte of each row as an alpha pixel,
+shifting every row one byte to the right. The cumulative horizontal offset
+over hundreds of rows appears as a diagonal stripe.
+
+Fixed by adding the same `DecodeParms` dictionary to the soft-mask stream:
+
+```
+DecodeParms { Predictor=15, Colors=1, BitsPerComponent=8, Columns=<width> }
+```
+
+Reported by **[@RubberDuckShobe](https://github.com/RubberDuckShobe)** in
+[#450](https://github.com/yfedoseev/pdf_oxide/issues/450). Any PDF built with
+`page.image()` or `ImageContent::from_bytes()` where the source PNG has an
+alpha channel was affected; the fix is purely in the soft-mask stream header
+and does not change pixel data.
+
+### Barcode SVG generation (#421)
+
+`pdf_barcode_get_svg` was a stub returning `ERR_UNSUPPORTED`. Two root
+causes were blocking a real implementation:
+
+1. **Format sentinel collision** — `pdf_generate_qr_code` stored
+   `FfiBarcodeImage.format = 0`, the same value as `pdf_generate_barcode`
+   with `format = 0` (Code128). The `get_svg` function had no way to
+   distinguish QR from Code128. Fixed: QR codes now use the internal
+   sentinel value `100` (outside the 0–7 range of 1D barcode types); the
+   public `pdf_barcode_get_format` return value for QR codes changes from
+   `0` to `100` accordingly.
+
+2. **Missing SVG rendering path** — `barcoders` 2.0 ships
+   `barcoders::generators::svg::SVG` (enabled by default via `features =
+   ["svg"]`), so no new dependency was required. For 1D barcodes, the
+   encoding step is now factored into a private `encode_1d` helper shared
+   by both `generate_1d` (PNG) and the new `generate_1d_svg` (SVG). For
+   QR codes, `generate_qr_svg` rebuilds the code matrix from
+   `qrcode::QrCode::to_colors()` and emits a compact inline SVG with
+   `<rect>` elements — no raster stage.
+
+`pdf_barcode_get_svg` now returns a valid SVG string for all supported
+barcode types (Code128, Code39, EAN-13, EAN-8, UPC-A, ITF, Code93,
+Codabar, QR) when the `barcodes` feature is enabled.
 
 ---
 

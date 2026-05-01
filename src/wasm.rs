@@ -98,6 +98,52 @@ pub fn disable_logging() {
 }
 
 // ============================================================================
+// Standalone barcode SVG generation (no document needed)
+// ============================================================================
+
+/// Generate a 1D barcode as an SVG string.
+///
+/// `barcodeType`: 0=Code128, 1=Code39, 2=EAN13, 3=EAN8, 4=UPCA, 5=ITF, 6=Code93, 7=Codabar.
+#[cfg(feature = "barcodes")]
+#[wasm_bindgen(js_name = "generateBarcodeSvg")]
+pub fn generate_barcode_svg(barcode_type: i32, data: String) -> Result<String, JsValue> {
+    use crate::writer::{BarcodeGenerator, BarcodeOptions, BarcodeType};
+    let bt = match barcode_type {
+        0 => BarcodeType::Code128,
+        1 => BarcodeType::Code39,
+        2 => BarcodeType::Ean13,
+        3 => BarcodeType::Ean8,
+        4 => BarcodeType::UpcA,
+        5 => BarcodeType::Itf,
+        6 => BarcodeType::Code93,
+        7 => BarcodeType::Codabar,
+        _ => return Err(JsValue::from_str(&format!(
+            "unknown barcodeType {barcode_type}; valid values are 0–7"
+        ))),
+    };
+    BarcodeGenerator::generate_1d_svg(bt, &data, &BarcodeOptions::default())
+        .map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+/// Generate a QR code as an SVG string.
+///
+/// `errorCorrection`: 0=Low, 1=Medium, 2=Quartile, 3=High. `size`: advisory pixel size.
+#[cfg(feature = "barcodes")]
+#[wasm_bindgen(js_name = "generateQrSvg")]
+pub fn generate_qr_svg(data: String, error_correction: i32, size: u32) -> Result<String, JsValue> {
+    use crate::writer::{BarcodeGenerator, QrCodeOptions, QrErrorCorrection};
+    let ec = match error_correction {
+        0 => QrErrorCorrection::Low,
+        2 => QrErrorCorrection::Quartile,
+        3 => QrErrorCorrection::High,
+        _ => QrErrorCorrection::Medium,
+    };
+    let opts = QrCodeOptions::new().size(size).error_correction(ec);
+    BarcodeGenerator::generate_qr_svg(&data, &opts)
+        .map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+// ============================================================================
 // WasmPdfDocument — read, convert, search, extract, and edit PDFs
 // ============================================================================
 

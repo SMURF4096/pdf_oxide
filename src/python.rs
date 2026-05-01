@@ -6152,6 +6152,49 @@ fn reset_pyo3_log_cache() {
 /// logging.basicConfig(level=logging.WARNING)
 /// ```
 ///
+/// Generate a 1D barcode as an SVG string.
+///
+/// `barcode_type`: 0=Code128, 1=Code39, 2=EAN13, 3=EAN8, 4=UPCA, 5=ITF, 6=Code93, 7=Codabar.
+#[cfg(feature = "barcodes")]
+#[pyfunction]
+fn generate_barcode_svg(barcode_type: i32, data: String) -> PyResult<String> {
+    use crate::writer::{BarcodeGenerator, BarcodeOptions, BarcodeType};
+    let bt = match barcode_type {
+        0 => BarcodeType::Code128,
+        1 => BarcodeType::Code39,
+        2 => BarcodeType::Ean13,
+        3 => BarcodeType::Ean8,
+        4 => BarcodeType::UpcA,
+        5 => BarcodeType::Itf,
+        6 => BarcodeType::Code93,
+        7 => BarcodeType::Codabar,
+        _ => return Err(pyo3::exceptions::PyValueError::new_err(
+            format!("unknown barcode_type {barcode_type}; valid values are 0–7")
+        )),
+    };
+    BarcodeGenerator::generate_1d_svg(bt, &data, &BarcodeOptions::default())
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+}
+
+/// Generate a QR code as an SVG string.
+///
+/// `error_correction`: 0=Low, 1=Medium (default), 2=Quartile, 3=High.
+/// `size`: target pixel size (advisory for module sizing).
+#[cfg(feature = "barcodes")]
+#[pyfunction]
+fn generate_qr_svg(data: String, error_correction: i32, size: u32) -> PyResult<String> {
+    use crate::writer::{BarcodeGenerator, QrCodeOptions, QrErrorCorrection};
+    let ec = match error_correction {
+        0 => QrErrorCorrection::Low,
+        2 => QrErrorCorrection::Quartile,
+        3 => QrErrorCorrection::High,
+        _ => QrErrorCorrection::Medium,
+    };
+    let opts = QrCodeOptions::new().size(size).error_correction(ec);
+    BarcodeGenerator::generate_qr_svg(&data, &opts)
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+}
+
 /// Called automatically when the `pdf_oxide` module is imported — users do
 /// not need to call it directly. Kept as a public function for backward
 /// compatibility.
@@ -6915,6 +6958,10 @@ fn pdf_oxide(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTimestamp>()?;
     m.add_class::<PyTsaClient>()?;
     m.add_function(pyo3::wrap_pyfunction!(py_sign_pdf_bytes, m)?)?;
+    #[cfg(feature = "barcodes")]
+    m.add_function(pyo3::wrap_pyfunction!(generate_barcode_svg, m)?)?;
+    #[cfg(feature = "barcodes")]
+    m.add_function(pyo3::wrap_pyfunction!(generate_qr_svg, m)?)?;
     m.add("VERSION", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

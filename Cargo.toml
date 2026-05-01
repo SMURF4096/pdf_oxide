@@ -441,8 +441,17 @@ path = "bench/rust_bench.rs"
 
 # ── v0.3.39 per-feature examples (examples/rust/09-new-features/) ─────────────
 [[example]]
+name = "showcase_barcode_svg"
+path = "examples/rust/09-new-features/barcode_svg/main.rs"
+required-features = ["barcodes"]
+
+[[example]]
 name = "showcase_streaming_table"
 path = "examples/rust/09-new-features/streaming_table/main.rs"
+
+[[example]]
+name = "showcase_image_embedding"
+path = "examples/rust/09-new-features/image_embedding/main.rs"
 
 [[example]]
 name = "showcase_pdf_ua_image"
