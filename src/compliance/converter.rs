@@ -677,7 +677,7 @@ impl PdfAConverter {
         // Build the ICC profile stream — uncompressed; PDF/A allows but does not
         // require compression here and plaintext is simplest for validation.
         let mut icc_dict = std::collections::HashMap::new();
-        icc_dict.insert("N".to_string(), Object::Integer(3)); // sRGB = 3 channels
+        icc_dict.insert("N".to_string(), Object::Integer(icc_channel_count(&icc_bytes) as i64));
         icc_dict.insert("Length".to_string(), Object::Integer(icc_bytes.len() as i64));
         let icc_stream = Object::Stream {
             dict: icc_dict,
@@ -1422,10 +1422,48 @@ fn std14_alias(ps_name: &str) -> Option<(&'static str, fontdb::Weight, fontdb::S
     }
 }
 
+/// Parse the number of colorant channels from an ICC profile header (bytes 16–19).
+/// Falls back to 3 (sRGB) when the profile is too short or the color space is unknown.
+fn icc_channel_count(icc: &[u8]) -> i32 {
+    // ICC.1 §7.2.6: colour space field is a 4-byte ASCII string at offset 16.
+    if icc.len() < 20 {
+        return 3;
+    }
+    match &icc[16..20] {
+        b"XYZ " | b"Lab " | b"RGB " | b"Luv " | b"YCbr" | b"Yxy " => 3,
+        b"CMYK" => 4,
+        b"GRAY" => 1,
+        b"HSV " | b"HLS " => 3,
+        b"CMY " => 3,
+        b"2CLR" => 2,
+        b"3CLR" => 3,
+        b"4CLR" => 4,
+        b"5CLR" => 5,
+        b"6CLR" => 6,
+        b"7CLR" => 7,
+        b"8CLR" => 8,
+        _ => 3,
+    }
+}
+
+#[cfg(feature = "rendering")]
+static CONVERTER_FONTDB: std::sync::OnceLock<std::sync::Arc<fontdb::Database>> =
+    std::sync::OnceLock::new();
+
+#[cfg(feature = "rendering")]
+fn converter_fontdb() -> std::sync::Arc<fontdb::Database> {
+    CONVERTER_FONTDB
+        .get_or_init(|| {
+            let mut db = fontdb::Database::new();
+            db.load_system_fonts();
+            std::sync::Arc::new(db)
+        })
+        .clone()
+}
+
 #[cfg(feature = "rendering")]
 fn load_system_font_bytes(font_name: &str) -> Option<Vec<u8>> {
-    let mut db = fontdb::Database::new();
-    db.load_system_fonts();
+    let db = converter_fontdb();
 
     // Strip subset tag prefix "ABCDEF+" if present.
     let clean = {

@@ -775,7 +775,9 @@ impl DocumentEditor {
         self.modified_objects.clear();
         self.new_objects.clear();
         self.next_object_id = Self::find_max_object_id(&self.source) + 1;
-        self.is_modified = true;
+        // is_modified stays false: the source already holds the new bytes and
+        // no objects are staged, so commit_in_place() would be a no-op anyway.
+        // Subsequent insert_modified/alloc calls will flip it back to true.
         Ok(())
     }
 
