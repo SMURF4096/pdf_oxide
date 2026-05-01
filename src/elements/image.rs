@@ -256,7 +256,7 @@ impl Default for ImageContent {
 }
 
 /// Supported image formats.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ImageFormat {
     /// JPEG format
     Jpeg,

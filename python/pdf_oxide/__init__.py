@@ -136,6 +136,8 @@ from .pdf_oxide import (  # noqa: E402
     Table,
     TextSpan,
     disable_logging,
+    generate_barcode_svg,
+    generate_qr_svg,
     get_log_level,
     set_log_level,
     setup_logging,
@@ -183,6 +185,9 @@ __all__ = [
     "OcrConfig",
     # Office
     "OfficeConverter",
+    # Barcodes (#421)
+    "generate_barcode_svg",
+    "generate_qr_svg",
     # Logging
     "setup_logging",
     "set_log_level",

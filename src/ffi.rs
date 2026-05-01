@@ -2735,7 +2735,7 @@ pub extern "C" fn pdf_generate_qr_code(
             set_error(error_code, ERR_SUCCESS);
             Box::into_raw(Box::new(FfiBarcodeImage {
                 data: png_bytes,
-                format: 0,
+                format: 100, // 100 = QR; avoids collision with 1D barcode format 0 (Code128)
                 source_data: data_str.to_string(),
             }))
         },
@@ -2814,13 +2814,53 @@ pub extern "C" fn pdf_barcode_get_image_png(
 
 #[no_mangle]
 pub extern "C" fn pdf_barcode_get_svg(
-    _barcode_handle: *const FfiBarcodeImage,
+    barcode_handle: *const FfiBarcodeImage,
     _size_px: i32,
     error_code: *mut i32,
 ) -> *mut c_char {
-    // SVG generation not directly available — PNG is the primary output
-    set_error(error_code, _ERR_UNSUPPORTED);
-    ptr::null_mut()
+    if barcode_handle.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return ptr::null_mut();
+    }
+    #[cfg(feature = "barcodes")]
+    {
+        let bc = handle_ref(barcode_handle);
+        let result = if bc.format == 100 {
+            BarcodeGenerator::generate_qr_svg(&bc.source_data, &QrCodeOptions::default())
+        } else {
+            let barcode_type = match bc.format {
+                0 => BarcodeType::Code128,
+                1 => BarcodeType::Code39,
+                2 => BarcodeType::Ean13,
+                3 => BarcodeType::Ean8,
+                4 => BarcodeType::UpcA,
+                5 => BarcodeType::Itf,
+                6 => BarcodeType::Code93,
+                7 => BarcodeType::Codabar,
+                _ => BarcodeType::Code128,
+            };
+            BarcodeGenerator::generate_1d_svg(
+                barcode_type,
+                &bc.source_data,
+                &BarcodeOptions::default(),
+            )
+        };
+        match result {
+            Ok(svg) => {
+                set_error(error_code, ERR_SUCCESS);
+                to_c_string(&svg)
+            },
+            Err(e) => {
+                set_error(error_code, classify_error(&e));
+                ptr::null_mut()
+            },
+        }
+    }
+    #[cfg(not(feature = "barcodes"))]
+    {
+        set_error(error_code, _ERR_UNSUPPORTED);
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
@@ -6263,7 +6303,9 @@ pub extern "C" fn pdf_merge(
 
 // ─── PDF/A Validation ──────────────────────────────────────────────────────
 
-use crate::compliance::{validate_pdf_a, PdfALevel, ValidationResult as PdfAValidationResult};
+use crate::compliance::{
+    convert_to_pdf_a, validate_pdf_a, PdfALevel, ValidationResult as PdfAValidationResult,
+};
 
 pub struct FfiPdfAResults {
     result: PdfAValidationResult,
@@ -6301,6 +6343,62 @@ pub extern "C" fn pdf_validate_pdf_a_level(
             ptr::null_mut()
         },
     }
+}
+
+#[no_mangle]
+pub extern "C" fn pdf_convert_to_pdf_a(
+    document: *mut PdfDocument,
+    level: i32,
+    error_code: *mut i32,
+) -> bool {
+    if document.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return false;
+    }
+    let pdf_level = match level {
+        0 => PdfALevel::A1b,
+        1 => PdfALevel::A1a,
+        2 => PdfALevel::A2b,
+        3 => PdfALevel::A2a,
+        4 => PdfALevel::A2u,
+        5 => PdfALevel::A3b,
+        6 => PdfALevel::A3a,
+        7 => PdfALevel::A3u,
+        _ => {
+            set_error(error_code, ERR_INVALID_ARG);
+            return false;
+        },
+    };
+    let doc = handle_mut(document);
+    match convert_to_pdf_a(doc, pdf_level) {
+        Ok(result) => {
+            set_error(error_code, ERR_SUCCESS);
+            result.success
+        },
+        Err(e) => {
+            set_error(error_code, classify_error(&e));
+            false
+        },
+    }
+}
+
+/// Return a copy of the document's current source bytes (after any in-place
+/// conversion). `out_len` receives the byte count. Free with `free_bytes`.
+#[no_mangle]
+pub extern "C" fn pdf_document_get_source_bytes(
+    document: *mut PdfDocument,
+    out_len: *mut usize,
+    error_code: *mut i32,
+) -> *mut u8 {
+    if document.is_null() || out_len.is_null() {
+        set_error(error_code, ERR_INVALID_ARG);
+        return ptr::null_mut();
+    }
+    let doc = handle_mut(document);
+    let bytes = doc.source_bytes.clone();
+    set_error(error_code, ERR_SUCCESS);
+    write_out(out_len, bytes.len());
+    vec_to_ffi_bytes(bytes)
 }
 
 #[no_mangle]

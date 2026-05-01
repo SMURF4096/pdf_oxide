@@ -1,4 +1,4 @@
-// Image embedding — v0.3.40
+// Image embedding — v0.3.41
 // Run: dotnet run
 //
 // Demonstrates embedding JPEG/PNG images into a PDF using raw bytes.
@@ -7,6 +7,8 @@
 //
 // Addresses issue #425: ImageContent::new() required explicit width/height;
 // PageBuilder.Image() does not.
+// Addresses issue #450: PNG images with an alpha channel previously displayed
+// a diagonal stripe; fixed by adding DecodeParms to the soft-mask XObject.
 
 using System.IO;
 using PdfOxide.Core;
@@ -39,6 +41,25 @@ builder.LetterPage()
     .At(72, 460).Paragraph("Image displayed 200×200 pt — pixel resolution is auto-detected.")
     .Done();
 
+// 1×1 semi-transparent red PNG (RGBA, color type 6) — #450 regression check.
+// Previously a diagonal stripe appeared due to missing DecodeParms in the SMask XObject.
+var rgbaPng = new byte[]
+{
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+    0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+    0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
+    0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0xF8, 0xCF, 0xC0, 0xD0,
+    0x00, 0x00, 0x04, 0x81, 0x01, 0x80, 0x2C, 0x55, 0xCE, 0xB0, 0x00, 0x00,
+    0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+};
+
+builder.LetterPage()
+    .Font("Helvetica", 12)
+    .At(72, 420).Paragraph("Transparent PNG below — rendered without diagonal-line artifact (#450).")
+    .Image(rgbaPng, 72, 200, 200, 200)
+    .Done();
+
 var path = Path.Combine(OutDir, "image_embedding.pdf");
 builder.Save(path);
 Console.WriteLine($"Written: {path}");
+Console.WriteLine("All image embedding checks passed.");

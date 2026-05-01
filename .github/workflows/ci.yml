@@ -184,9 +184,12 @@ jobs:
           cargo run --example tutorial_edit_document -- "$PDF" /tmp/edited.pdf
           cargo run --example tutorial_forms_annotations -- "$PDF"
           cargo run --example tutorial_batch_processing -- "$PDF" "$PDF"
+          cargo run --example showcase_barcode_svg --features barcodes
           cargo run --example showcase_streaming_table
+          cargo run --example showcase_image_embedding
           cargo run --example showcase_pdf_ua_image
           cargo run --example showcase_in_memory_roundtrip
+          cargo run --example showcase_pdfa_conversion
           cargo run --example showcase_pkcs12_signing --features signatures
           cargo run --example showcase_rfc3161_timestamp --features signatures
 
@@ -273,7 +276,7 @@ jobs:
         run: uv pip install maturin pytest
 
       - name: Build Python package
-        run: uv run maturin build --release --features python,ocr --out dist
+        run: uv run maturin build --release --features python,ocr,barcodes --out dist
 
       - name: Install wheel
         shell: bash
@@ -300,6 +303,7 @@ jobs:
           cd "$GITHUB_WORKSPACE/examples/python/06-edit-document"    && uv run python main.py "$PDF" /tmp/py_edited.pdf
           cd "$GITHUB_WORKSPACE/examples/python/07-forms-annotations" && uv run python main.py "$PDF"
           cd "$GITHUB_WORKSPACE/examples/python/08-batch-processing"  && uv run python main.py "$PDF" "$PDF"
+          cd "$GITHUB_WORKSPACE/examples/python/09-new-features/barcode_svg"       && uv run python main.py
           cd "$GITHUB_WORKSPACE/examples/python/09-new-features/streaming_table"  && uv run python main.py
           cd "$GITHUB_WORKSPACE/examples/python/09-new-features/pdf_ua_image"     && uv run python main.py
           cd "$GITHUB_WORKSPACE/examples/python/09-new-features/in_memory_roundtrip" && uv run python main.py
@@ -581,7 +585,7 @@ jobs:
           go run -tags pdf_oxide_dev main.go
           cd "$GITHUB_WORKSPACE/examples/go/06-edit-document"
           go run -tags pdf_oxide_dev main.go "$PDF" /tmp/go_edited.pdf
-          for feat in streaming_table pdf_ua_image in_memory_roundtrip pkcs12_signing rfc3161_timestamp dashed_stroke encrypted_bytes page_extraction pdfa_conversion compliance_validation image_embedding; do
+          for feat in barcode_svg streaming_table pdf_ua_image in_memory_roundtrip pkcs12_signing rfc3161_timestamp dashed_stroke encrypted_bytes page_extraction pdfa_conversion compliance_validation image_embedding; do
             cd "$GITHUB_WORKSPACE/examples/go/09-new-features/$feat"
             go run -tags pdf_oxide_dev main.go
           done
@@ -609,7 +613,7 @@ jobs:
       - name: Download native lib artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: native-lib-${{ matrix.os }}-default
+          name: native-lib-${{ matrix.os }}-extended
 
       - name: Stage staticlib for node-gyp
         shell: bash
@@ -717,6 +721,7 @@ jobs:
           echo "--- 05-extract-structured ---" && timeout 120 node 05-extract-structured/index.js "$PDF"
           echo "--- 07-forms-annotations ---"  && timeout 120 node 07-forms-annotations/index.js "$PDF"
           echo "--- 08-batch-processing ---"   && timeout 120 node 08-batch-processing/index.js "$PDF" "$PDF"
+          echo "--- barcode_svg ---"           && timeout 120 node 09-new-features/barcode_svg/index.js
           echo "--- streaming_table ---"       && timeout 120 node 09-new-features/streaming_table/index.js
           echo "--- pdf_ua_image ---"          && timeout 120 node 09-new-features/pdf_ua_image/index.js
           echo "--- in_memory_roundtrip ---"   && timeout 120 node 09-new-features/in_memory_roundtrip/index.js
@@ -726,6 +731,7 @@ jobs:
           echo "--- encrypted_bytes ---"        && timeout 120 node 09-new-features/encrypted_bytes/index.js
           echo "--- page_extraction ---"        && timeout 120 node 09-new-features/page_extraction/index.js
           echo "--- compliance_validation ---"  && timeout 120 node 09-new-features/compliance_validation/index.js
+          echo "--- pdfa_conversion ---"        && timeout 120 node 09-new-features/pdfa_conversion/index.js
           echo "--- image_embedding ---"        && timeout 120 node 09-new-features/image_embedding/index.js
 
       - name: Compile TypeScript examples
@@ -841,6 +847,7 @@ jobs:
           dotnet run --project examples/csharp/06-edit-document/EditDocument.csproj -- "$PDF" /tmp/cs_edited.pdf
           dotnet run --project examples/csharp/08-batch-processing/BatchProcessing.csproj -- "$PDF" "$PDF"
           for proj in \
+            examples/csharp/09-new-features/BarcodeSvg/BarcodeSvg.csproj \
             examples/csharp/09-new-features/StreamingTable/StreamingTable.csproj \
             examples/csharp/09-new-features/PdfUaImage/PdfUaImage.csproj \
             examples/csharp/09-new-features/InMemoryRoundtrip/InMemoryRoundtrip.csproj \

@@ -134,7 +134,9 @@ extern "C" {
   extern void* pdf_validate_pdf_ua(const void* document, PdfUaLevel level, int* error_code);
   extern bool pdf_pdf_ua_is_accessible(const void* results);
   extern void pdf_pdf_ua_results_free(void* results);
-  extern bool pdf_convert_to_pdf_a(void* document, PdfALevel level, int* error_code);
+  extern bool pdf_convert_to_pdf_a(void* document, int32_t level, int* error_code);
+  extern uint8_t* pdf_document_get_source_bytes(void* document, size_t* out_len, int* error_code);
+  extern void free_bytes(uint8_t* ptr);
 
   // Signature Operations
   extern int pdf_document_get_signature_count(const void* document, int* error_code);
@@ -173,8 +175,8 @@ extern "C" {
   extern int pdf_save_rendered_image(const void* image, const char* path, int* error_code);
 
   // Barcode Operations
-  extern void* pdf_generate_qr_code(const char* data, QrErrorCorrectionLevel error_correction, int* error_code);
-  extern void* pdf_generate_barcode(BarcodeFormat format, const char* data, int* error_code);
+  extern void* pdf_generate_qr_code(const char* data, int error_correction, int size_px, int* error_code);
+  extern void* pdf_generate_barcode(const char* data, int format, int size_px, int* error_code);
   extern uint8_t* pdf_barcode_get_image_png(const void* barcode, int size_px, size_t* out_size, int* error_code);
   extern char* pdf_barcode_get_svg(const void* barcode, int size_px, int* error_code);
   extern void pdf_barcode_free(void* barcode);
@@ -1347,7 +1349,7 @@ Napi::Value GenerateQRCode(const Napi::CallbackInfo& info) {
   QrErrorCorrectionLevel errorCorrection = (QrErrorCorrectionLevel)info[1].As<Napi::Number>().Int32Value();
   int errorCode = 0;
 
-  void* barcode = pdf_generate_qr_code(data.c_str(), errorCorrection, &errorCode);
+  void* barcode = pdf_generate_qr_code(data.c_str(), (int)errorCorrection, 300, &errorCode);
 
   if (errorCode != 0 || !barcode) {
     throw Napi::Error::New(env, "Failed to generate QR code: " + getErrorMessage(errorCode));
@@ -1367,7 +1369,7 @@ Napi::Value GenerateBarcode(const Napi::CallbackInfo& info) {
   std::string data = info[1].As<Napi::String>().Utf8Value();
   int errorCode = 0;
 
-  void* barcode = pdf_generate_barcode(format, data.c_str(), &errorCode);
+  void* barcode = pdf_generate_barcode(data.c_str(), (int)format, 300, &errorCode);
 
   if (errorCode != 0 || !barcode) {
     throw Napi::Error::New(env, "Failed to generate barcode: " + getErrorMessage(errorCode));
@@ -3312,6 +3314,28 @@ Napi::Value ValidatePdfALevel(const Napi::CallbackInfo& info) {
   return obj;
 }
 
+Napi::Value ConvertToPdfA(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* document = info[0].As<Napi::External<void>>().Data();
+  int32_t level = info[1].As<Napi::Number>().Int32Value();
+  int errorCode = 0;
+  bool ok = pdf_convert_to_pdf_a(document, level, &errorCode);
+  if (errorCode != 0 && !ok) throw Napi::Error::New(env, "PDF/A conversion failed: " + getErrorMessage(errorCode));
+  return Napi::Boolean::New(env, ok);
+}
+
+Napi::Value DocumentGetSourceBytes(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  void* document = info[0].As<Napi::External<void>>().Data();
+  int errorCode = 0;
+  size_t outLen = 0;
+  uint8_t* ptr = pdf_document_get_source_bytes(document, &outLen, &errorCode);
+  if (errorCode != 0 || !ptr) throw Napi::Error::New(env, "Failed to get document bytes: " + getErrorMessage(errorCode));
+  auto buf = Napi::Buffer<uint8_t>::Copy(env, ptr, outLen);
+  free_bytes(ptr);
+  return buf;
+}
+
 Napi::Value ValidatePdfXLevel(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   void* document = info[0].As<Napi::External<void>>().Data();
@@ -3716,6 +3740,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("validatePdfALevel", Napi::Function::New(env, ValidatePdfALevel));
   exports.Set("validatePdfXLevel", Napi::Function::New(env, ValidatePdfXLevel));
   exports.Set("validatePdfUA", Napi::Function::New(env, ValidatePdfUA));
+  exports.Set("convertToPdfA", Napi::Function::New(env, ConvertToPdfA));
+  exports.Set("documentGetSourceBytes", Napi::Function::New(env, DocumentGetSourceBytes));
 
   // Page/Element/Accessor
   exports.Set("getPageElements", Napi::Function::New(env, GetPageElements));

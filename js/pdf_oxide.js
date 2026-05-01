@@ -160,6 +160,19 @@ class PdfDocument {
   }
 
   /**
+   * Convert document to PDF/A conformance in-place.
+   * @param {string} level - "1b"|"2b"|"2u"|"3b" etc. (default "2b")
+   * @returns {boolean} true on success
+   */
+  convertToPdfA(level = '2b') {
+    this._checkClosed();
+    const levelMap = { '1b': 0, '1a': 1, '2b': 2, '2a': 3, '2u': 4, '3b': 5, '3a': 6, '3u': 7 };
+    const levelInt = levelMap[level];
+    if (levelInt === undefined) throw new RangeError(`Unknown PDF/A level: "${level}"`);
+    return binding.convertToPdfA(this._handle, levelInt);
+  }
+
+  /**
    * Validate PDF/X conformance.
    * @param {string} level - "1a_2001"|"1a_2003"|"3_2003"|"4"|"5"|"6" (default "4")
    * @returns {{compliant: boolean, errors: string[], warnings: string[]}}

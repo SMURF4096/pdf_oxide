@@ -223,21 +223,7 @@ pub struct BarcodeGenerator;
 
 #[cfg(feature = "barcodes")]
 impl BarcodeGenerator {
-    /// Generate a 1D barcode as PNG bytes.
-    ///
-    /// # Arguments
-    /// * `barcode_type` - The type of barcode to generate
-    /// * `data` - The data to encode
-    /// * `options` - Barcode generation options
-    ///
-    /// # Returns
-    /// PNG image bytes
-    pub fn generate_1d(
-        barcode_type: BarcodeType,
-        data: &str,
-        options: &BarcodeOptions,
-    ) -> Result<Vec<u8>> {
-        use barcoders::generators::image::*;
+    fn encode_1d(barcode_type: BarcodeType, data: &str) -> Result<Vec<u8>> {
         use barcoders::sym::codabar::Codabar;
         use barcoders::sym::code128::Code128;
         use barcoders::sym::code39::Code39;
@@ -246,43 +232,31 @@ impl BarcodeGenerator {
         use barcoders::sym::ean8::EAN8;
         use barcoders::sym::tf::TF;
 
-        // Generate the barcode encoding
-        let encoded: Vec<u8> = match barcode_type {
+        match barcode_type {
             BarcodeType::Code128 => {
-                // Code128 requires a character set prefix per barcoders library:
-                // \u{00C0} = À - Character set A (uppercase, control chars)
-                // \u{0181} = Ɓ - Character set B (alphanumeric, most common)
-                // \u{0106} = Ć - Character set C (numeric pairs)
-                // Auto-prepend character set B if not specified
+                // Auto-prepend charset B (\u{0181}) if no charset prefix present
                 let data_with_prefix = if data.starts_with('\u{00C0}')
                     || data.starts_with('\u{0181}')
                     || data.starts_with('\u{0106}')
                 {
                     data.to_string()
                 } else {
-                    format!("\u{0181}{}", data) // Default to character set B (alphanumeric)
+                    format!("\u{0181}{}", data)
                 };
-                let barcode = Code128::new(&data_with_prefix)
-                    .map_err(|e| Error::Barcode(format!("Code128 encoding error: {}", e)))?;
-                barcode.encode()
+                Code128::new(&data_with_prefix)
+                    .map_err(|e| Error::Barcode(format!("Code128 encoding error: {}", e)))
+                    .map(|b| b.encode())
             },
-            BarcodeType::Code39 => {
-                let barcode = Code39::new(data)
-                    .map_err(|e| Error::Barcode(format!("Code39 encoding error: {}", e)))?;
-                barcode.encode()
-            },
-            BarcodeType::Ean13 => {
-                let barcode = EAN13::new(data)
-                    .map_err(|e| Error::Barcode(format!("EAN-13 encoding error: {}", e)))?;
-                barcode.encode()
-            },
-            BarcodeType::Ean8 => {
-                let barcode = EAN8::new(data)
-                    .map_err(|e| Error::Barcode(format!("EAN-8 encoding error: {}", e)))?;
-                barcode.encode()
-            },
+            BarcodeType::Code39 => Code39::new(data)
+                .map_err(|e| Error::Barcode(format!("Code39 encoding error: {}", e)))
+                .map(|b| b.encode()),
+            BarcodeType::Ean13 => EAN13::new(data)
+                .map_err(|e| Error::Barcode(format!("EAN-13 encoding error: {}", e)))
+                .map(|b| b.encode()),
+            BarcodeType::Ean8 => EAN8::new(data)
+                .map_err(|e| Error::Barcode(format!("EAN-8 encoding error: {}", e)))
+                .map(|b| b.encode()),
             BarcodeType::UpcA => {
-                // UPC-A is EAN-13 with leading 0
                 let upc_data = if data.len() == 11 {
                     format!("0{}", data)
                 } else if data.len() == 12 {
@@ -290,31 +264,35 @@ impl BarcodeGenerator {
                 } else {
                     return Err(Error::Barcode("UPC-A requires 11 or 12 digits".to_string()));
                 };
-                let barcode = EAN13::new(&upc_data)
-                    .map_err(|e| Error::Barcode(format!("UPC-A encoding error: {}", e)))?;
-                barcode.encode()
+                EAN13::new(&upc_data)
+                    .map_err(|e| Error::Barcode(format!("UPC-A encoding error: {}", e)))
+                    .map(|b| b.encode())
             },
-            BarcodeType::Itf => {
-                let barcode = TF::interleaved(data)
-                    .map_err(|e| Error::Barcode(format!("ITF encoding error: {}", e)))?;
-                barcode.encode()
-            },
-            BarcodeType::Code93 => {
-                let barcode = Code93::new(data)
-                    .map_err(|e| Error::Barcode(format!("Code93 encoding error: {}", e)))?;
-                barcode.encode()
-            },
-            BarcodeType::Codabar => {
-                let barcode = Codabar::new(data)
-                    .map_err(|e| Error::Barcode(format!("Codabar encoding error: {}", e)))?;
-                barcode.encode()
-            },
-        };
+            BarcodeType::Itf => TF::interleaved(data)
+                .map_err(|e| Error::Barcode(format!("ITF encoding error: {}", e)))
+                .map(|b| b.encode()),
+            BarcodeType::Code93 => Code93::new(data)
+                .map_err(|e| Error::Barcode(format!("Code93 encoding error: {}", e)))
+                .map(|b| b.encode()),
+            BarcodeType::Codabar => Codabar::new(data)
+                .map_err(|e| Error::Barcode(format!("Codabar encoding error: {}", e)))
+                .map(|b| b.encode()),
+        }
+    }
 
-        // Render to image
+    /// Generate a 1D barcode as PNG bytes.
+    pub fn generate_1d(
+        barcode_type: BarcodeType,
+        data: &str,
+        options: &BarcodeOptions,
+    ) -> Result<Vec<u8>> {
+        use barcoders::generators::image::*;
+
+        let encoded = Self::encode_1d(barcode_type, data)?;
+
         let image_gen = Image::PNG {
             height: options.height,
-            xdim: 1, // Base module width
+            xdim: 1,
             rotation: Rotation::Zero,
             foreground: Color::new(options.foreground),
             background: Color::new(options.background),
@@ -324,7 +302,6 @@ impl BarcodeGenerator {
             .generate(&encoded)
             .map_err(|e| Error::Barcode(format!("Image generation error: {}", e)))?;
 
-        // Scale to desired width if needed
         if let Ok(img) = image::load_from_memory(&png_bytes) {
             let scaled = img.resize_exact(
                 options.width,
@@ -339,6 +316,25 @@ impl BarcodeGenerator {
         } else {
             Ok(png_bytes)
         }
+    }
+
+    /// Generate a 1D barcode as SVG string.
+    pub fn generate_1d_svg(
+        barcode_type: BarcodeType,
+        data: &str,
+        options: &BarcodeOptions,
+    ) -> Result<String> {
+        use barcoders::generators::svg::{Color, SVG};
+
+        let encoded = Self::encode_1d(barcode_type, data)?;
+
+        let svg_gen = SVG::new(options.height)
+            .foreground(Color::new(options.foreground))
+            .background(Color::new(options.background));
+
+        svg_gen
+            .generate(&encoded)
+            .map_err(|e| Error::Barcode(format!("SVG generation error: {}", e)))
     }
 
     /// Generate a QR code as PNG bytes.
@@ -417,6 +413,54 @@ impl BarcodeGenerator {
             .map_err(|e| Error::Barcode(format!("PNG encoding error: {}", e)))?;
 
         Ok(buf)
+    }
+
+    /// Generate a QR code as SVG string.
+    pub fn generate_qr_svg(data: &str, options: &QrCodeOptions) -> Result<String> {
+        use qrcode::{EcLevel, QrCode};
+
+        let ec_level = match options.error_correction {
+            QrErrorCorrection::Low => EcLevel::L,
+            QrErrorCorrection::Medium => EcLevel::M,
+            QrErrorCorrection::Quartile => EcLevel::Q,
+            QrErrorCorrection::High => EcLevel::H,
+        };
+
+        let code = QrCode::with_error_correction_level(data, ec_level)
+            .map_err(|e| Error::Barcode(format!("QR code encoding error: {}", e)))?;
+
+        let qr_width = code.width();
+        let quiet = options.quiet_zone as usize;
+        let module_count = qr_width + quiet * 2;
+        let module_size = (options.size as usize / module_count).max(1);
+        let svg_size = module_count * module_size;
+
+        let fg = options.foreground;
+        let bg = options.background;
+        let fg_hex = format!("#{:02X}{:02X}{:02X}", fg[0], fg[1], fg[2]);
+        let bg_hex = format!("#{:02X}{:02X}{:02X}", bg[0], bg[1], bg[2]);
+
+        let mut rects = String::new();
+        for (y, row) in code.to_colors().chunks(qr_width).enumerate() {
+            for (x, &module) in row.iter().enumerate() {
+                if module == qrcode::Color::Dark {
+                    let rx = (quiet + x) * module_size;
+                    let ry = (quiet + y) * module_size;
+                    rects.push_str(&format!(
+                        r#"<rect x="{}" y="{}" width="{}" height="{}"/>"#,
+                        rx, ry, module_size, module_size
+                    ));
+                }
+            }
+        }
+
+        Ok(format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {s} {s}" width="{s}" height="{s}"><rect width="{s}" height="{s}" fill="{bg}"/><g fill="{fg}">{rects}</g></svg>"#,
+            s = svg_size,
+            bg = bg_hex,
+            fg = fg_hex,
+            rects = rects
+        ))
     }
 
     /// Generate a QR code with default options.

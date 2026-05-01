@@ -138,6 +138,10 @@ export declare class PdfDocument {
     level?: '1a' | '1b' | '2a' | '2b' | '2u' | '3a' | '3b' | '3u'
   ): { compliant: boolean; errors: string[]; warnings: string[] };
 
+  convertToPdfA(
+    level?: '1a' | '1b' | '2a' | '2b' | '2u' | '3a' | '3b' | '3u'
+  ): boolean;
+
   /**
    * Validate PDF/X conformance.
    * @param level - "1a_2001"|"1a_2003"|"3_2003"|"4"|"5"|"6" (default "4")

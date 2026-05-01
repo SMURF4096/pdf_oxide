@@ -60,6 +60,7 @@ export interface BarcodeGenerationConfig {
   format?: BarcodeFormat;
   width?: number;
   height?: number;
+  sizePx?: number;
   errorCorrection?: BarcodeErrorCorrection;
   margin?: number;
 }
@@ -221,8 +222,39 @@ export class BarcodeManager extends EventEmitter {
   }
 
   async barcodeToSvg(barcodeData: Buffer, sizePx: number = 256): Promise<string> {
+    // Legacy: wraps existing PNG bytes in an SVG <image> element.
+    // For real vector SVG use generateBarcodeSvg() / generateQrCodeSvg() from the top-level API.
     const encoded = barcodeData.toString('base64');
     return `<svg xmlns="http://www.w3.org/2000/svg"><image href="data:image/png;base64,${encoded}"/></svg>`;
+  }
+
+  async generateSvg(data: string, config?: BarcodeGenerationConfig): Promise<string> {
+    const format = config?.format ?? BarcodeFormat.CODE128;
+    if (this.native?.generateBarcode && this.native?.barcodeGetSVG && this.native?.freeBarcode) {
+      const handle = this.native.generateBarcode(format, data);
+      try {
+        return this.native.barcodeGetSVG(handle, config?.sizePx ?? 300) as string;
+      } finally {
+        this.native.freeBarcode(handle);
+      }
+    }
+    return '';
+  }
+
+  async generateQrSvg(
+    data: string,
+    errorCorrection: QrErrorCorrection = QrErrorCorrection.M,
+    sizePx: number = 300
+  ): Promise<string> {
+    if (this.native?.generateQRCode && this.native?.barcodeGetSVG && this.native?.freeBarcode) {
+      const handle = this.native.generateQRCode(data, errorCorrection);
+      try {
+        return this.native.barcodeGetSVG(handle, sizePx) as string;
+      } finally {
+        this.native.freeBarcode(handle);
+      }
+    }
+    return '';
   }
 
   async addBarcodeToPage(

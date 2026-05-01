@@ -259,6 +259,17 @@ impl ImageData {
             dict.insert("ColorSpace".to_string(), Object::Name("DeviceGray".to_string()));
             dict.insert("BitsPerComponent".to_string(), Object::Integer(8));
             dict.insert("Filter".to_string(), Object::Name("FlateDecode".to_string()));
+            // The alpha data is compressed by compress_image_data(), which
+            // prepends a PNG None-filter byte (0x00) to every scanline.
+            // Without DecodeParms/Predictor=15 the viewer would interpret
+            // those filter bytes as pixel data, shifting every row by one
+            // byte and producing a diagonal-line artifact (#450).
+            let mut decode_parms = HashMap::new();
+            decode_parms.insert("Predictor".to_string(), Object::Integer(15));
+            decode_parms.insert("Colors".to_string(), Object::Integer(1));
+            decode_parms.insert("BitsPerComponent".to_string(), Object::Integer(8));
+            decode_parms.insert("Columns".to_string(), Object::Integer(self.width as i64));
+            dict.insert("DecodeParms".to_string(), Object::Dictionary(decode_parms));
             dict.insert("Length".to_string(), Object::Integer(mask_data.len() as i64));
             dict
         })

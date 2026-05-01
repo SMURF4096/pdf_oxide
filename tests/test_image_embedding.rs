@@ -36,6 +36,50 @@ const MINIMAL_JPEG: &[u8] = &[
     0xD9,
 ];
 
+/// Create a minimal valid RGBA PNG image in memory (alpha channel present)
+fn create_test_png_rgba(width: u32, height: u32) -> Vec<u8> {
+    use std::io::Write;
+
+    let mut data = Vec::new();
+    data.extend_from_slice(b"\x89PNG\r\n\x1a\n");
+
+    let mut raw_pixels = Vec::new();
+    for _ in 0..height {
+        raw_pixels.push(0); // None-filter byte per row
+        for _ in 0..width {
+            raw_pixels.extend_from_slice(&[255, 0, 0, 128]); // half-transparent red
+        }
+    }
+
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(&raw_pixels).unwrap();
+    let compressed = encoder.finish().unwrap();
+
+    fn write_chunk(out: &mut Vec<u8>, chunk_type: &[u8; 4], chunk_data: &[u8]) {
+        out.extend_from_slice(&(chunk_data.len() as u32).to_be_bytes());
+        out.extend_from_slice(chunk_type);
+        out.extend_from_slice(chunk_data);
+        let mut crc_data = Vec::new();
+        crc_data.extend_from_slice(chunk_type);
+        crc_data.extend_from_slice(chunk_data);
+        out.extend_from_slice(&crc32fast::hash(&crc_data).to_be_bytes());
+    }
+
+    let mut ihdr_data = Vec::new();
+    ihdr_data.extend_from_slice(&width.to_be_bytes());
+    ihdr_data.extend_from_slice(&height.to_be_bytes());
+    ihdr_data.push(8); // bit depth
+    ihdr_data.push(6); // color type RGBA
+    ihdr_data.push(0); // compression
+    ihdr_data.push(0); // filter
+    ihdr_data.push(0); // interlace
+    write_chunk(&mut data, b"IHDR", &ihdr_data);
+    write_chunk(&mut data, b"IDAT", &compressed);
+    write_chunk(&mut data, b"IEND", &[]);
+
+    data
+}
+
 /// Create a minimal valid PNG image in memory
 fn create_test_png(width: u32, height: u32) -> Vec<u8> {
     use std::io::Write;
@@ -598,5 +642,123 @@ mod format_detection_tests {
         let unknown = vec![0x00, 0x01, 0x02, 0x03];
         let result = ImageData::from_bytes(&unknown);
         assert!(result.is_err());
+    }
+}
+
+mod image_dedup_tests {
+    use pdf_oxide::geometry::Rect;
+    use pdf_oxide::writer::DocumentBuilder;
+
+    /// Build a small PDF that places the same PNG bytes twice (issue #443).
+    /// With deduplication the two placements share one XObject stream;
+    /// without it, the PDF embeds the image data twice and is roughly
+    /// `image_size` bytes larger than it needs to be.
+    #[test]
+    fn test_identical_images_deduplicated() {
+        let png = super::create_test_png(50, 50);
+        let png_size = png.len();
+
+        let mut builder = DocumentBuilder::new();
+        builder
+            .a4_page()
+            .image_from_bytes(&png, Rect::new(50.0, 450.0, 100.0, 100.0))
+            .expect("first image")
+            .image_from_bytes(&png, Rect::new(300.0, 450.0, 100.0, 100.0))
+            .expect("second image (same bytes)")
+            .done();
+
+        let pdf_bytes = builder.build().expect("build");
+
+        // The XObject data should appear only once in the output.
+        // A simple proxy: the total PDF size should be less than
+        // (2 × png_size + 2 KB overhead), meaning the image was not doubled.
+        let threshold = png_size + 2048; // one copy + generous overhead
+        assert!(
+            pdf_bytes.len() < threshold,
+            "PDF ({} B) looks like it contains two copies of the image ({} B each); \
+             expected deduplication to keep it under {} B",
+            pdf_bytes.len(),
+            png_size,
+            threshold,
+        );
+    }
+
+    /// Different images must still produce separate XObjects.
+    #[test]
+    fn test_different_images_not_merged() {
+        let png_a = super::create_test_png(10, 10);
+        let png_b = super::create_test_png(20, 20);
+        assert_ne!(png_a, png_b);
+
+        let mut builder = DocumentBuilder::new();
+        builder
+            .a4_page()
+            .image_from_bytes(&png_a, Rect::new(50.0, 450.0, 100.0, 100.0))
+            .expect("image A")
+            .image_from_bytes(&png_b, Rect::new(300.0, 450.0, 100.0, 100.0))
+            .expect("image B")
+            .done();
+
+        let pdf_bytes = builder.build().expect("build");
+        // Both images together: must be larger than a single image + small overhead
+        assert!(
+            pdf_bytes.len() > png_a.len() + png_b.len(),
+            "PDF should contain both distinct images"
+        );
+    }
+}
+
+/// Regression tests for #450: diagonal-line artifact in images with transparency.
+///
+/// Root cause: `build_soft_mask_dict()` omitted `DecodeParms`, so viewers
+/// mistook the PNG None-filter bytes for alpha pixels, shifting every row by
+/// one byte and producing a visible diagonal stripe.
+mod soft_mask_decode_parms_tests {
+    use pdf_oxide::object::Object;
+    use pdf_oxide::writer::ImageData;
+
+    #[test]
+    fn test_soft_mask_dict_has_decode_parms() {
+        let png = super::create_test_png_rgba(8, 8);
+        let image = ImageData::from_png(&png).expect("should parse RGBA PNG");
+
+        assert!(image.soft_mask.is_some(), "RGBA PNG must produce a soft mask");
+
+        let dict = image
+            .build_soft_mask_dict()
+            .expect("soft_mask is Some so dict must be Some");
+
+        let parms = match dict.get("DecodeParms") {
+            Some(Object::Dictionary(d)) => d,
+            other => panic!("SMask XObject must have DecodeParms dict, got: {other:?}"),
+        };
+
+        assert_eq!(
+            parms.get("Predictor"),
+            Some(&Object::Integer(15)),
+            "Predictor must be 15 (PNG adaptive)"
+        );
+        assert_eq!(
+            parms.get("Colors"),
+            Some(&Object::Integer(1)),
+            "Colors must be 1 (grayscale alpha)"
+        );
+        assert_eq!(parms.get("BitsPerComponent"), Some(&Object::Integer(8)),);
+        assert_eq!(
+            parms.get("Columns"),
+            Some(&Object::Integer(8)),
+            "Columns must match image width"
+        );
+    }
+
+    #[test]
+    fn test_opaque_png_has_no_soft_mask() {
+        let png = super::create_test_png(8, 8);
+        let image = ImageData::from_png(&png).expect("should parse RGB PNG");
+        assert!(image.soft_mask.is_none(), "RGB PNG without alpha must not produce a soft mask");
+        assert!(
+            image.build_soft_mask_dict().is_none(),
+            "build_soft_mask_dict must return None for opaque images"
+        );
     }
 }

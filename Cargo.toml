@@ -59,7 +59,7 @@ manual_checked_ops = "allow"
 
 [package]
 name = "pdf_oxide"
-version = "0.3.40"
+version = "0.3.41"
 # MSRV — driven up from 1.82 for v0.3.38. Transitive deps pulled in
 # this release push the floor to 1.88:
 #   - hybrid-array 0.4.10 (via RustCrypto) → edition 2024 → 1.85
@@ -441,8 +441,17 @@ path = "bench/rust_bench.rs"
 
 # ── v0.3.39 per-feature examples (examples/rust/09-new-features/) ─────────────
 [[example]]
+name = "showcase_barcode_svg"
+path = "examples/rust/09-new-features/barcode_svg/main.rs"
+required-features = ["barcodes"]
+
+[[example]]
 name = "showcase_streaming_table"
 path = "examples/rust/09-new-features/streaming_table/main.rs"
+
+[[example]]
+name = "showcase_image_embedding"
+path = "examples/rust/09-new-features/image_embedding/main.rs"
 
 [[example]]
 name = "showcase_pdf_ua_image"
@@ -451,6 +460,10 @@ path = "examples/rust/09-new-features/pdf_ua_image/main.rs"
 [[example]]
 name = "showcase_in_memory_roundtrip"
 path = "examples/rust/09-new-features/in_memory_roundtrip/main.rs"
+
+[[example]]
+name = "showcase_pdfa_conversion"
+path = "examples/rust/09-new-features/pdfa_conversion/main.rs"
 
 [[example]]
 name = "showcase_pkcs12_signing"

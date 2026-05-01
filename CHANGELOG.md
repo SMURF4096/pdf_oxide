@@ -2,6 +2,311 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [0.3.41] - 2026-04-29
+
+> Real PDF/A conversion, LaTeX symbolic-font glyph rendering fix, and
+> image deduplication — all 7 bindings.
+
+### Community contributors
+
+This release exists because of the community. Special thanks to:
+
+- **[@FireMasterK](https://github.com/FireMasterK)** — reported
+  [#307](https://github.com/yfedoseev/pdf_oxide/issues/307) with a
+  precise reproduction case: a LaTeX-generated PDF where accented characters
+  and ligatures (ú, á, fi) rendered as blank gaps across all pages. The report
+  identified the exact document class (DC/EC TrueType fonts with Mac Roman
+  cmap, no `/Encoding` dict), which made the root cause in
+  `render_cid_direct()` straightforward to isolate and fix.
+
+- **[@sparkyandrew](https://github.com/sparkyandrew)** — followed up on
+  [#425](https://github.com/yfedoseev/pdf_oxide/issues/425) with
+  [#443](https://github.com/yfedoseev/pdf_oxide/issues/443), noticing that
+  the output PDF was 2.32 MB when the two source images summed to under
+  1.6 MB — even after the #425 image-pipeline fix. That single observation
+  pinpointed the missing XObject deduplication: the same image data encoded
+  twice produced two independent compressed streams. Fixed.
+
+- **[@potatochipcoconut](https://github.com/potatochipcoconut)** —
+  [#418](https://github.com/yfedoseev/pdf_oxide/issues/418), the original
+  PDF/A binding-completeness report that drove the full implementation in
+  [#442](https://github.com/yfedoseev/pdf_oxide/issues/442).
+  `convert_to_pdf_a()` existed in Rust but was a no-op: it recorded actions
+  and returned success while leaving the document bytes untouched. The report
+  surfaced this silently-broken state across all seven bindings.
+
+- **[@nickpetrovic](https://github.com/nickpetrovic)** — filed
+  [#444](https://github.com/yfedoseev/pdf_oxide/issues/444) with a
+  precise four-row reproduction table showing ligature glyphs in subset
+  Calibri fonts decoded to wrong Unicode codepoints (`ti`→`O`, `tf`→`[`,
+  `ft`→`e`). The report included the exact PDF and the per-font-subset
+  mapping failures, which led directly to the ICCBased color-space warn
+  spam fix and the rowspan-label reading-order scramble fix.
+
+- **[@RubberDuckShobe](https://github.com/RubberDuckShobe)** — reported
+  [#450](https://github.com/yfedoseev/pdf_oxide/issues/450): any PDF
+  containing a PNG with an alpha channel showed a diagonal stripe through
+  the image. A minimal reproduction confirmed the bug was reproducible
+  across Acrobat, Preview, and browser PDF viewers. The report made the
+  scope unambiguous — every image with transparency was affected — and
+  led directly to the missing `DecodeParms` fix in `build_soft_mask_dict()`.
+
+- **[@truffle-dev](https://github.com/truffle-dev)** — first code
+  contribution to the project: completed the CLI output-path fix for
+  [#412](https://github.com/yfedoseev/pdf_oxide/issues/412) in
+  [#452](https://github.com/yfedoseev/pdf_oxide/pull/452). The original
+  audit in #412 covered all 11 CLI commands with exact line references and
+  two proposed design options; the PR was clean on first submission. Picks
+  up the four commands (`crop`, `decrypt`, `delete`, `reorder`) missed by
+  the earlier partial fix, and also enforces `-o/--output` for `merge`
+  instead of silently defaulting to the first input's directory.
+
+### Scope at-a-glance
+
+- **Real PDF/A conversion** — XMP metadata stream, `pdfaid:part`/`conformance`
+  identification, OutputIntents (sRGB), language tag, JavaScript removal;
+  all 7 bindings (#418, #442).
+- **Symbolic TrueType glyph rendering** — non-ASCII bytes (ú=0xFA, á=0xE1,
+  fi=0x85) in DC/EC-style LaTeX fonts with Mac Roman cmap no longer
+  suppressed as spaces (partially fixes #307; follow-up cases reported
+  by FireMasterK on 2026-04-29 remain open).
+- **Image XObject deduplication** — same image embedded twice no longer
+  re-encoded as two separate compressed streams; PDF size matches the
+  sum of source images (#443).
+- **Diagonal-line artifact in transparent images fixed** — missing
+  `DecodeParms` in the soft-mask XObject caused a visible diagonal stripe
+  in any PNG with an alpha channel (#450).
+- **Barcode SVG generation** — `pdf_barcode_get_svg` no longer returns
+  `ERR_UNSUPPORTED`; generates real SVG for all 8 barcode types including
+  QR (#421).
+- **CLI output routing** — `crop`, `decrypt`, `delete`, and `reorder` now
+  write default output beside the input file instead of the current working
+  directory; `merge` now requires `-o/--output` and errors up front instead
+  of silently defaulting to the first input's directory. Completes #412.
+
+### Real PDF/A conversion (#418, #442)
+
+`convert_to_pdf_a()` previously recorded conversion actions and returned
+success, but the document bytes were unchanged — the XMP metadata stream
+was constructed in memory and then discarded. This release rewrites the
+conversion core end-to-end:
+
+- **XMP metadata stream** — a standards-compliant XMP packet is serialised
+  and written as an indirect object, then wired into the document catalog as
+  `/Metadata`. `pdfaid:part` and `pdfaid:conformance` are set per level:
+  A1b → `1/B`, A2b → `2/B`, A2u → `2/U`, A3b → `3/B`.
+- **OutputIntents** — a `GTS_PDFA1` output intent referencing sRGB is
+  injected when none is present. Idempotent: a second call detects the
+  existing intent and does not duplicate it.
+- **Language tag** — `/Lang` is written to the catalog when the validator
+  raises `MissingLanguage`.
+- **JavaScript removal** — `/Names/JavaScript` entries are stripped when
+  present.
+- **Source bytes patched** — `doc.source_bytes` is updated in-place; the
+  document is immediately re-parseable after conversion.
+- **Font embedding** (`rendering` feature) — `embed_font()` now resolves the
+  14 standard PDF Type1 PostScript names (Helvetica, Courier, Times-Roman, …)
+  to the metrically-equivalent URW Base 35 open-source fonts shipped by default
+  on Linux (`Nimbus Sans`, `Nimbus Mono PS`, `Nimbus Roman`). With
+  `--features rendering` all B-level PDFs convert to **0 remaining errors**,
+  including `FontNotEmbedded`. Three bugs were fixed in the embedding pipeline:
+  - `try_fix_error` dedup applied to error codes, so only the first
+    `FontNotEmbedded` error was processed; remaining fonts were skipped — fixed
+    to dedup per-error-code for non-font errors only.
+  - `write_full_to_writer` wrote font objects from the original source instead
+    of preferring staged `modified_objects` — fixed to use the same priority
+    order as the general object sweep.
+  - `add_structure()` only added `/StructTreeRoot` but not `/MarkInfo /Marked
+    true`; the validator requires both for PDF/A-\*a conformance — fixed.
+
+**Test coverage** — 17 new end-to-end roundtrip tests in
+`tests/test_pdfa_roundtrip.rs` verify every fixable scenario
+(validate → convert → validate). The `showcase_pdfa_conversion` CI example
+is rewritten to assert correctness and panics on any regression.
+
+All seven bindings expose the updated function:
+
+| Binding | API |
+|---------|-----|
+| Rust    | `convert_to_pdf_a(&mut doc, PdfALevel::A2b)?` |
+| Python  | `pdf_oxide.convert_to_pdf_a(doc, "A2b")` |
+| WASM    | `convertToPdfA(doc, "A2b")` |
+| C FFI   | `pdf_oxide_convert_to_pdf_a(doc, level, &out)` |
+| C#      | `Compliance.ConvertToPdfA(doc, PdfALevel.A2b)` |
+| Go      | `compliance.ConvertToPdfA(doc, compliance.PdfALevelA2b)` |
+| Node.js | `compliance.convertToPdfA(doc, "A2b")` |
+
+### Symbolic TrueType glyph rendering fix (#307)
+
+LaTeX-generated PDFs using DC/EC fonts (`Dcr10`, `Dcsl10`, etc.) embed
+symbolic TrueType fonts with these characteristics:
+
+- `/Flags` has the symbolic bit set (bit 3 = 4)
+- No `/Encoding` dictionary
+- Mac Roman format-0 cmap (platform 1, encoding 0): byte code → glyph ID
+- No Windows Unicode cmap
+
+pdf_oxide correctly routes these through the `render_cid_direct()` path,
+which resolves each content-stream byte to a glyph ID via the Mac Roman
+cmap. The bug was one line in the space-detection guard:
+
+```rust
+// Before — bytes without a Unicode mapping fell through to unwrap_or(' ')
+let char_at_pos = char_str.chars().next().unwrap_or(' ');
+if char_at_pos.is_whitespace() { /* skip draw */ }
+```
+
+Any byte whose Unicode mapping returned `None` — including ú (0xFA → GID 85),
+á (0xE1 → GID 83), and fi (0x85 → GID 75) — was treated as a space, so the
+`is_whitespace()` guard blocked glyph drawing entirely.
+
+```rust
+// After — '\0' is not whitespace; GID ≠ 0 glyphs are drawn correctly
+let char_at_pos = char_str.chars().next().unwrap_or('\0');
+```
+
+Verified pixel-perfect against Poppler and MuPDF on the #307 reproduction
+PDF. Regression-tested across 69 PDFs (120 page comparisons) — zero
+regressions in rendering, plain text, Markdown, and HTML extraction.
+
+### Text extraction fixes (#444)
+
+Two issues surfaced while investigating #444 (Calibri ligature mis-mapping,
+which is an upstream macOS Quartz PDF producer bug with no fix possible on
+our side):
+
+**ICCBased color space warn spam** — PDF producers that register ICCBased
+profiles under user-defined names (e.g. `Cs1`, `Cs2`) caused the text
+extractor to fire a `WARN` log on every `sc`/`SC`/`scn`/`SCN` operator
+that used such a name. The catch-all `_` branch in the color-space handler
+did not know how to handle named references, so it logged and left the
+color unchanged. The fix: apply a component-count fallback in that branch
+(1 component → gray, 3 → RGB, 4 → CMYK) and demote the log to `DEBUG`.
+Affected PDFs with large amounts of colored text (like typical Office
+documents) emitted 96+ spurious warnings per page; now silent.
+
+**Text span reading-order scrambling** — `reorder_rowspan_labels`, a
+function that promotes vertically-centered table row labels to sort at
+the top of their row block, was incorrectly activating on single-column
+prose documents (resumes, reports). It identified spans at rightward X
+positions as a "sparse column" and promoted them to wrong Y coordinates,
+causing line-continuation text like `"to assess technical needs and"` or
+`"-making."` to appear before the earlier line they followed.
+
+Root cause: the label-candidate filter did not exclude spans whose Y-band
+already appears in the dense column. Genuine rowspan labels are vertically
+*between* data rows, so their Y-band is absent from the dense column.
+Line-continuation spans share the Y-band of the main column text and must
+not be treated as labels. The fix adds that exclusion:
+
+```rust
+// Before — any sparse-column span in the data Y range
+y > data_bot && y < data_top
+
+// After — additionally exclude spans that align with a dense-column row
+y > data_bot && y < data_top && !dense_bands.contains(&band_of(y))
+```
+
+The original rowspan-label behavior for actual table layouts (CJK lab
+reports, mixed-column tables) is preserved; the existing test confirms
+that genuine between-row labels are still promoted correctly.
+
+### Image XObject deduplication (#443)
+
+When the same image data was passed to `page.image()` or `from_bytes()` on
+multiple pages, pdf_oxide encoded it as independent XObjects — each carrying
+the full compressed pixel data. A 760 KB PNG embedded twice contributed
+1.52 MB instead of 760 KB; the #443 reproduction produced 2.32 MB from
+images totalling under 1.6 MB.
+
+The fix hashes the normalised stream bytes **after** calling
+`image_content_to_xobject_stream()`. Hashing before normalisation failed
+across API paths: an image supplied via `page.image()` (which accepts raw
+file bytes and decodes them internally) and the same image supplied via
+`ImageContent::from_bytes()` produced different pre-encoding byte strings but
+identical post-normalisation compressed streams. Hashing after normalisation
+ensures the key is stable regardless of which API path the caller used. The
+key is `(hash, byte_length)` over the compressed pixel data; if a matching
+entry is already registered in the document's XObject map, the existing
+reference is reused and no new stream is written.
+
+### Diagonal-line artifact in images with transparency (#450)
+
+PDFs with PNG images that have an alpha channel displayed a diagonal stripe
+across the image when opened in Acrobat, Preview, and most other viewers.
+
+Root cause: `compress_image_data()` prepends a PNG None-filter byte (`0x00`)
+before every scanline before Flate-compressing the pixel data. This is
+required by `FlateDecode` with `DecodeParms/Predictor=15`. The main image
+XObject carried the correct `DecodeParms` dictionary — but `build_soft_mask_dict()`,
+which builds the `/SMask` XObject for the alpha channel, emitted no
+`DecodeParms` at all. Viewers therefore decompressed the raw Flate stream,
+then treated the leading `0x00` filter byte of each row as an alpha pixel,
+shifting every row one byte to the right. The cumulative horizontal offset
+over hundreds of rows appears as a diagonal stripe.
+
+Fixed by adding the same `DecodeParms` dictionary to the soft-mask stream:
+
+```
+DecodeParms { Predictor=15, Colors=1, BitsPerComponent=8, Columns=<width> }
+```
+
+Reported by **[@RubberDuckShobe](https://github.com/RubberDuckShobe)** in
+[#450](https://github.com/yfedoseev/pdf_oxide/issues/450). Any PDF built with
+`page.image()` or `ImageContent::from_bytes()` where the source PNG has an
+alpha channel was affected; the fix is purely in the soft-mask stream header
+and does not change pixel data.
+
+### Barcode SVG generation (#421)
+
+`pdf_barcode_get_svg` was a stub returning `ERR_UNSUPPORTED`. Two root
+causes were blocking a real implementation:
+
+1. **Format sentinel collision** — `pdf_generate_qr_code` stored
+   `FfiBarcodeImage.format = 0`, the same value as `pdf_generate_barcode`
+   with `format = 0` (Code128). The `get_svg` function had no way to
+   distinguish QR from Code128. Fixed: QR codes now use the internal
+   sentinel value `100` (outside the 0–7 range of 1D barcode types); the
+   public `pdf_barcode_get_format` return value for QR codes changes from
+   `0` to `100` accordingly.
+
+2. **Missing SVG rendering path** — `barcoders` 2.0 ships
+   `barcoders::generators::svg::SVG` (enabled by default via `features =
+   ["svg"]`), so no new dependency was required. For 1D barcodes, the
+   encoding step is now factored into a private `encode_1d` helper shared
+   by both `generate_1d` (PNG) and the new `generate_1d_svg` (SVG). For
+   QR codes, `generate_qr_svg` rebuilds the code matrix from
+   `qrcode::QrCode::to_colors()` and emits a compact inline SVG with
+   `<rect>` elements — no raster stage.
+
+`pdf_barcode_get_svg` now returns a valid SVG string for all supported
+barcode types (Code128, Code39, EAN-13, EAN-8, UPC-A, ITF, Code93,
+Codabar, QR) when the `barcodes` feature is enabled.
+
+### CLI output routing (#412, #452)
+
+A previous partial fix (commit `9dd94c0`) introduced `output_beside()` /
+`output_dir_beside()` helpers and converted five commands (`watermark`,
+`compress`, `flatten`, `rotate`, `split`). Four binary-output commands
+were missed and continued resolving the default output path relative to
+the current working directory:
+
+- **`crop`** — now writes `<stem>_cropped.pdf` beside the input file.
+- **`decrypt`** — now writes `<stem>_decrypted.pdf` beside the input file.
+- **`delete`** — now writes `<stem>_deleted.pdf` beside the input file.
+- **`reorder`** — now writes `<stem>_reordered.pdf` beside the input file.
+
+**`merge`** previously silently defaulted to writing `merged.pdf` in the
+directory of the first input file when `-o/--output` was omitted. This
+silent fallback was the riskiest behavior in the CLI: callers who expected
+output beside a specific file got a surprise in a potentially unrelated
+directory. `merge` now requires `-o/--output` and exits with a clear error
+message if it is missing.
+
+No library code was changed — all five files are in `pdf_oxide_cli`.
+
+---
+
 ## [0.3.40] - 2026-04-27
 
 > Image rendering fixes, dashed stroke + streaming table batch, digital

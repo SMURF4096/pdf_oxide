@@ -64,7 +64,7 @@ pub fn validate_xmp_metadata(
             if part.is_none() {
                 result.add_error(
                     ComplianceError::new(
-                        ErrorCode::MissingXmpMetadata,
+                        ErrorCode::MissingPdfaIdentification,
                         "XMP metadata missing pdfaid:part identification",
                     )
                     .with_clause("6.7.11"),
@@ -74,7 +74,7 @@ pub fn validate_xmp_metadata(
             if conformance.is_none() {
                 result.add_error(
                     ComplianceError::new(
-                        ErrorCode::MissingXmpMetadata,
+                        ErrorCode::MissingPdfaIdentification,
                         "XMP metadata missing pdfaid:conformance identification",
                     )
                     .with_clause("6.7.11"),
@@ -120,28 +120,133 @@ pub fn validate_xmp_metadata(
     Ok(())
 }
 
-/// Validate font embedding requirements.
-///
-/// Note: This is a simplified version that checks the document catalog.
-/// Full font validation requires the rendering feature for page resource access.
+/// Validate font embedding requirements by walking all page resources.
 pub fn validate_fonts(
     document: &mut PdfDocument,
-    level: PdfALevel,
+    _level: PdfALevel,
     result: &mut ValidationResult,
 ) -> Result<()> {
-    // Font validation requires accessing page resources, which needs the rendering feature.
-    // For now, we'll just note that fonts should be checked.
-    // The full validation will be available when rendering feature is enabled.
+    let page_count = document.page_count()?;
+    let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
 
-    result.add_warning(ComplianceWarning::new(
-        WarningCode::PartialCheck,
-        "Font embedding check requires rendering feature for full validation",
-    ));
+    for idx in 0..page_count {
+        let page_ref = match document.get_page_ref(idx) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        let page_obj = match document.load_object(page_ref) {
+            Ok(o) => o,
+            Err(_) => continue,
+        };
+        let resources_obj = match page_obj.as_dict().and_then(|d| d.get("Resources")).cloned() {
+            Some(r) => match document.resolve_references(&r, 2) {
+                Ok(o) => o,
+                Err(_) => continue,
+            },
+            None => continue,
+        };
+        let font_map = match resources_obj.as_dict().and_then(|d| d.get("Font")).cloned() {
+            Some(f) => match document.resolve_references(&f, 1) {
+                Ok(o) => o,
+                Err(_) => continue,
+            },
+            None => continue,
+        };
+        let Some(fonts) = font_map.as_dict() else {
+            continue;
+        };
 
-    // Suppress unused variable warning
-    let _ = level;
-    let _ = document;
+        for font_obj in fonts.values() {
+            let (resolved, font_id) = match font_obj {
+                Object::Reference(r) => {
+                    if !seen.insert(r.id) {
+                        continue;
+                    }
+                    match document.load_object(*r) {
+                        Ok(o) => (o, r.id),
+                        Err(_) => continue,
+                    }
+                },
+                other => (other.clone(), 0),
+            };
+            check_font_embedding(&resolved, document, result, &mut seen)?;
+            let _ = font_id;
+        }
+    }
+    Ok(())
+}
 
+fn check_font_embedding(
+    font: &Object,
+    document: &mut PdfDocument,
+    result: &mut ValidationResult,
+    seen: &mut std::collections::HashSet<u32>,
+) -> Result<()> {
+    let Some(font_dict) = font.as_dict() else {
+        return Ok(());
+    };
+    let subtype = font_dict
+        .get("Subtype")
+        .and_then(|o| o.as_name())
+        .unwrap_or("");
+    let base_font = font_dict
+        .get("BaseFont")
+        .and_then(|o| o.as_name())
+        .unwrap_or("Unknown")
+        .to_string();
+
+    // Type3 fonts embed glyph procedures inline — treated as embedded.
+    if subtype == "Type3" {
+        return Ok(());
+    }
+
+    // Type0 (composite): check the first CIDFont in /DescendantFonts.
+    if subtype == "Type0" {
+        if let Some(desc_arr) = font_dict
+            .get("DescendantFonts")
+            .and_then(|o| o.as_array())
+            .cloned()
+        {
+            if let Some(first) = desc_arr.into_iter().next() {
+                let cid = match &first {
+                    Object::Reference(r) => {
+                        if !seen.insert(r.id) {
+                            return Ok(());
+                        }
+                        document.load_object(*r)?
+                    },
+                    other => other.clone(),
+                };
+                return check_font_embedding(&cid, document, result, seen);
+            }
+        }
+        return Ok(());
+    }
+
+    // For all other subtypes, check /FontDescriptor for a /FontFile* entry.
+    let descriptor = match font_dict.get("FontDescriptor") {
+        Some(Object::Reference(r)) => document.load_object(*r).ok(),
+        Some(other) => Some(other.clone()),
+        None => None,
+    };
+    let has_file = descriptor
+        .as_ref()
+        .and_then(|d| d.as_dict())
+        .map(|d| {
+            d.contains_key("FontFile") || d.contains_key("FontFile2") || d.contains_key("FontFile3")
+        })
+        .unwrap_or(false);
+
+    if !has_file {
+        result.add_error(
+            ComplianceError::new(
+                ErrorCode::FontNotEmbedded,
+                format!("Font '{}' ({}) has no embedded /FontFile* stream", base_font, subtype),
+            )
+            .with_clause("6.3.4")
+            .with_location(&base_font),
+        );
+    }
     Ok(())
 }
 
@@ -192,14 +297,17 @@ pub fn validate_colors(
             );
 
             if uses_device_color && !has_output_intent {
-                result.add_warning(ComplianceWarning::new(
-                    WarningCode::MissingRecommendedMetadata,
-                    format!(
-                        "Page {} uses device-dependent color operators without output intent",
-                        page_idx + 1
-                    ),
-                ));
-                break; // One warning per page is sufficient
+                result.add_error(
+                    ComplianceError::new(
+                        ErrorCode::DeviceColorWithoutIntent,
+                        format!(
+                            "Page {} uses device-dependent color operators without /OutputIntents",
+                            page_idx + 1
+                        ),
+                    )
+                    .with_clause("6.2.3"),
+                );
+                break; // One error per page is enough
             }
         }
     }
