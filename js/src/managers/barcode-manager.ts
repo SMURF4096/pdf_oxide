@@ -229,7 +229,7 @@ export class BarcodeManager extends EventEmitter {
   }
 
   async generateSvg(data: string, config?: BarcodeGenerationConfig): Promise<string> {
-    const format = config?.format ?? BarcodeFormat.Code128;
+    const format = config?.format ?? BarcodeFormat.CODE128;
     if (this.native?.generateBarcode && this.native?.barcodeGetSVG && this.native?.freeBarcode) {
       const handle = this.native.generateBarcode(format, data);
       try {

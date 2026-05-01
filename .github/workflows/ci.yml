@@ -276,7 +276,7 @@ jobs:
         run: uv pip install maturin pytest
 
       - name: Build Python package
-        run: uv run maturin build --release --features python,ocr --out dist
+        run: uv run maturin build --release --features python,ocr,barcodes --out dist
 
       - name: Install wheel
         shell: bash
