@@ -145,6 +145,65 @@ impl Default for GeometricStrategy {
     }
 }
 
+/// Strict check for whether a page's spans form a real multi-column layout.
+///
+/// Per ISO 32000-1:2008 §14.8.2.3.1 reading order proceeds top-to-bottom
+/// (and "from column to column" only "in a multiple-column layout"). The
+/// criterion for "is this multiple-column?" is up to the implementer.
+/// Phase 3 of the #457 refactor tightens it to:
+///
+///   - ≥3 distinct vertical whitespace gutters between merged text bands
+///   - Each gutter ≥ `median_char_width × 4` wide
+///   - Text bands on both sides of each gutter (implicit: a gutter is a
+///     gap between two non-empty merged x-intervals)
+///
+/// The 3-gutter bar is deliberately strict: it picks up 4+-column
+/// newsletters and not 2-column form layouts. 2-column academic papers
+/// SHOULD reach the column-aware path via the struct tree (tagged) or
+/// by passing `reading_order="column_aware"` explicitly. Untagged
+/// 2-column docs default to single-column ordering, matching pdfplumber.
+fn is_likely_columnar(spans: &[TextSpan]) -> bool {
+    if spans.len() < 6 {
+        return false;
+    }
+
+    // Median char width estimate — font_size × 0.5 is a rough but stable
+    // proxy across most Latin fonts (lowercase x-height ≈ 0.5 em).
+    let mut sizes: Vec<f32> = spans.iter().map(|s| s.font_size).collect();
+    sizes.sort_by(|a, b| crate::utils::safe_float_cmp(*a, *b));
+    let median_size = sizes[sizes.len() / 2];
+    let gutter_min = (median_size * 0.5) * 4.0;
+
+    // Build merged x-intervals (text bands) across the whole page.
+    let mut intervals: Vec<(f32, f32)> = spans
+        .iter()
+        .map(|s| (s.bbox.x, s.bbox.x + s.bbox.width))
+        .collect();
+    intervals.sort_by(|a, b| crate::utils::safe_float_cmp(a.0, b.0));
+
+    let mut merged: Vec<(f32, f32)> = Vec::new();
+    for (start, end) in intervals {
+        if let Some(last) = merged.last_mut() {
+            if start <= last.1 {
+                last.1 = last.1.max(end);
+                continue;
+            }
+        }
+        merged.push((start, end));
+    }
+
+    // Count gaps between merged bands that exceed the gutter minimum.
+    let mut gutters = 0;
+    for w in merged.windows(2) {
+        let gap = w[1].0 - w[0].1;
+        if gap >= gutter_min {
+            gutters += 1;
+        }
+    }
+
+    gutters >= 3
+}
+
 impl ReadingOrderStrategy for GeometricStrategy {
     fn apply(
         &self,
@@ -155,7 +214,26 @@ impl ReadingOrderStrategy for GeometricStrategy {
             return Ok(Vec::new());
         }
 
-        // Detect column boundaries
+        // Single-column path (the new default per #457 Step 3).
+        // Sort by y descending (top first) using the row-aware comparator
+        // that quantizes near-equal y values into bands so same-line items
+        // sort by x within the band. Matches pdfplumber's default and
+        // resolves the form-style false-column-detection bug.
+        if !is_likely_columnar(&spans) {
+            let mut indexed: Vec<(usize, TextSpan)> = spans.into_iter().enumerate().collect();
+            indexed.sort_by(|(_, a), (_, b)| {
+                crate::utils::row_aware_span_cmp(a.bbox.y, a.bbox.x, b.bbox.y, b.bbox.x)
+            });
+            return Ok(indexed
+                .into_iter()
+                .enumerate()
+                .map(|(order, (_, span))| {
+                    OrderedTextSpan::with_info(span, order, ReadingOrderInfo::geometric())
+                })
+                .collect());
+        }
+
+        // Detect column boundaries (multi-column path)
         let boundaries = self.detect_columns(&spans);
 
         // Assign spans to columns (using indices instead of references)
@@ -291,37 +369,78 @@ mod tests {
     }
 
     #[test]
-    fn test_two_columns() {
-        // Phase 8: Updated test to work with adaptive threshold
-        // Using explicit column gap threshold to ensure deterministic behavior
+    fn test_two_columns_default_to_row_order() {
+        // Phase 3 of #457: 2-column synthetic input (1 gutter) does NOT
+        // trigger column-aware mode under the strict ≥3-gutter criterion.
+        // Output is row-aware: same-y items together left-to-right, then
+        // next y row.
         let spans = vec![
-            // Left column
             make_span("Left 1", 50.0, 100.0),
             make_span("Left 2", 50.0, 50.0),
-            // Right column (gap > 20pt)
             make_span("Right 1", 200.0, 100.0),
             make_span("Right 2", 200.0, 50.0),
         ];
 
-        // Use explicit threshold since test data doesn't have realistic word gaps
-        let strategy = GeometricStrategy::with_column_gap(30.0);
+        let strategy = GeometricStrategy::new();
         let context = ReadingOrderContext::new();
         let ordered = strategy.apply(spans, &context).unwrap();
 
-        // Left column first, then right column
+        // Top row first (y=100, x=50 then x=200), then bottom row (y=50).
         assert_eq!(ordered[0].span.text, "Left 1");
-        assert_eq!(ordered[1].span.text, "Left 2");
-        assert_eq!(ordered[2].span.text, "Right 1");
+        assert_eq!(ordered[1].span.text, "Right 1");
+        assert_eq!(ordered[2].span.text, "Left 2");
         assert_eq!(ordered[3].span.text, "Right 2");
     }
 
     #[test]
-    fn test_geometric_splits_column_by_y_gap() {
-        // Spans in same X column but two Y-clusters:
-        // Cluster A: y=700, y=690, y=680 (header area)
-        // Gap: 400pt
-        // Cluster B: y=280, y=270, y=260 (content area)
-        // Should produce 2 groups, not 1
+    fn test_is_likely_columnar_gating() {
+        // 1 gutter (2-column form): NOT columnar.
+        let two_col = vec![
+            make_span("A", 50.0, 100.0),
+            make_span("B", 50.0, 80.0),
+            make_span("C", 50.0, 60.0),
+            make_span("D", 200.0, 100.0),
+            make_span("E", 200.0, 80.0),
+            make_span("F", 200.0, 60.0),
+        ];
+        assert!(
+            !is_likely_columnar(&two_col),
+            "2-column layout (1 gutter) must default to single-column"
+        );
+
+        // 3 gutters wide enough to qualify: IS columnar.
+        let four_col = vec![
+            make_span("A", 50.0, 100.0),
+            make_span("A2", 50.0, 80.0),
+            make_span("B", 200.0, 100.0),
+            make_span("B2", 200.0, 80.0),
+            make_span("C", 350.0, 100.0),
+            make_span("C2", 350.0, 80.0),
+            make_span("D", 500.0, 100.0),
+            make_span("D2", 500.0, 80.0),
+        ];
+        assert!(
+            is_likely_columnar(&four_col),
+            "4-column layout (3 wide gutters) must trigger column-aware mode"
+        );
+
+        // Too few spans: NOT columnar (degenerate input).
+        let tiny = vec![
+            make_span("A", 50.0, 100.0),
+            make_span("B", 200.0, 100.0),
+            make_span("C", 350.0, 100.0),
+            make_span("D", 500.0, 100.0),
+        ];
+        assert!(!is_likely_columnar(&tiny), "fewer than 6 spans is not enough signal");
+    }
+
+    #[test]
+    fn test_single_column_y_gap_does_not_split_under_strict_criterion() {
+        // Phase 3 of #457: a single x-band with a large y-gap is no longer
+        // partitioned into separate "groups" by the geometric strategy. The
+        // strategy is now responsible only for ordering — paragraph / section
+        // breaks are derived elsewhere (struct tree on tagged docs, line
+        // clustering on untagged). Output is simple top-to-bottom.
         let spans = vec![
             make_span("Header1", 50.0, 700.0),
             make_span("Header2", 50.0, 690.0),
@@ -335,53 +454,25 @@ mod tests {
         let context = ReadingOrderContext::new();
         let ordered = strategy.apply(spans, &context).unwrap();
 
-        // All 6 spans should be present
+        // Headers come first (higher y), content second.
         assert_eq!(ordered.len(), 6);
-
-        // Header spans should share one group, content spans another
-        let header_groups: Vec<_> = ordered
-            .iter()
-            .filter(|s| s.span.text.starts_with("Header"))
-            .map(|s| s.group_id)
-            .collect();
-        let content_groups: Vec<_> = ordered
-            .iter()
-            .filter(|s| s.span.text.starts_with("Content"))
-            .map(|s| s.group_id)
-            .collect();
-
-        // All headers should have the same group
-        assert!(
-            header_groups.windows(2).all(|w| w[0] == w[1]),
-            "All header spans should be in the same group: {:?}",
-            header_groups
-        );
-        // All content should have the same group
-        assert!(
-            content_groups.windows(2).all(|w| w[0] == w[1]),
-            "All content spans should be in the same group: {:?}",
-            content_groups
-        );
-        // Header and content groups should differ
-        assert_ne!(
-            header_groups[0], content_groups[0],
-            "Header and content should be in different groups"
-        );
+        assert_eq!(ordered[0].span.text, "Header1");
+        assert_eq!(ordered[5].span.text, "Content3");
     }
 
     #[test]
-    fn test_adaptive_column_detection() {
-        // Test that adaptive threshold correctly detects columns
-        // when there are many word-level gaps and one large column gap
+    fn test_two_column_form_does_not_trigger_column_aware() {
+        // Form-style 2-column label/value layout: 1 gutter, narrower than
+        // the strict gutter_min. Must default to row-aware single-column
+        // (the bug that issue #211 PDF #3 exposed).
         let spans = vec![
-            // Left column - multiple words with small gaps
             make_span("Word1", 50.0, 100.0),
-            make_span("Word2", 55.0, 100.0), // 5pt gap (word spacing)
-            make_span("Word3", 60.0, 100.0), // 5pt gap (word spacing)
+            make_span("Word2", 55.0, 100.0),
+            make_span("Word3", 60.0, 100.0),
             make_span("Word4", 50.0, 50.0),
-            make_span("Word5", 55.0, 50.0), // 5pt gap (word spacing)
-            // Right column - large gap (>3x median)
-            make_span("RightWord1", 200.0, 100.0), // 140pt gap (column)
+            make_span("Word5", 55.0, 50.0),
+            // "Right column" — but only 140pt away with a single gutter.
+            make_span("RightWord1", 200.0, 100.0),
             make_span("RightWord2", 200.0, 50.0),
         ];
 
@@ -389,27 +480,13 @@ mod tests {
         let context = ReadingOrderContext::new();
         let ordered = strategy.apply(spans, &context).unwrap();
 
-        // Should detect two columns and process left first
-        // All left column words should come before right column
-        let left_indices: Vec<_> = ordered
-            .iter()
-            .enumerate()
-            .filter(|(_, s)| s.span.text.starts_with("Word"))
-            .map(|(i, _)| i)
-            .collect();
-        let right_indices: Vec<_> = ordered
-            .iter()
-            .enumerate()
-            .filter(|(_, s)| s.span.text.starts_with("Right"))
-            .map(|(i, _)| i)
-            .collect();
-
-        // All left column indices should be less than all right column indices
+        // Same-y items must be adjacent (row-aware), so RightWord1 (y=100)
+        // appears immediately after Word1..Word3 in the y=100 row, not at
+        // the very end of the list.
+        let pos = |t: &str| ordered.iter().position(|s| s.span.text == t).unwrap();
         assert!(
-            left_indices
-                .iter()
-                .all(|&l| right_indices.iter().all(|&r| l < r)),
-            "Left column should be processed before right column"
+            pos("RightWord1") < pos("Word4"),
+            "RightWord1 (y=100) must precede Word4 (y=50) in row-aware order"
         );
     }
 }
