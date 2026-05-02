@@ -37,6 +37,7 @@ pub mod logging;
 pub mod metrics;
 // pub mod input_parsers;  // Keep disabled - for PDF creation feature later
 pub mod ordered_span;
+pub mod page_order;
 pub mod reading_order;
 pub mod text_processing;
 
@@ -55,6 +56,7 @@ pub use metrics::{BatchMetrics, ExtractionMetrics};
 pub use ordered_span::{
     OrderedSpans, OrderedTextSpan, ReadingOrderInfo, ReadingOrderSource, StructRole,
 };
+pub use page_order::page_reading_order;
 pub use reading_order::{ReadingOrderContext, ReadingOrderStrategy, XYCutStrategy};
 pub use text_processing::WhitespaceNormalizer;
 
