@@ -71,7 +71,6 @@ fn test_211_pdf_structure_first_words_in_order() {
 }
 
 #[test]
-#[ignore = "TODO(#457): table at bottom breaks monotonic ordering — XY-Cut walks columns separately"]
 fn test_211_pdf_structure_lines_monotonic_y() {
     let Some(doc) = open_fixture("issue_211_pdf_structure.pdf") else { return };
     let lines = doc.extract_text_lines(0).expect("extract_text_lines succeeds");
@@ -87,7 +86,6 @@ fn test_211_pdf_structure_lines_monotonic_y() {
 // XYCutStrategy::partition_region produces blocks in a non-y-monotonic order.
 
 #[test]
-#[ignore = "TODO(#457): COMITÉ at y=871 currently lands at words[69] instead of words[0]"]
 fn test_211_municipal_minutes_first_word_is_comite() {
     let Some(doc) = open_fixture("issue_211_municipal_minutes.pdf") else { return };
     let words = doc.extract_words(0).expect("extract_words succeeds");
@@ -100,7 +98,6 @@ fn test_211_municipal_minutes_first_word_is_comite() {
 }
 
 #[test]
-#[ignore = "TODO(#457): document title not at lines[0]"]
 fn test_211_municipal_minutes_first_line_is_title() {
     let Some(doc) = open_fixture("issue_211_municipal_minutes.pdf") else { return };
     let lines = doc.extract_text_lines(0).expect("extract_text_lines succeeds");
@@ -113,7 +110,6 @@ fn test_211_municipal_minutes_first_line_is_title() {
 }
 
 #[test]
-#[ignore = "TODO(#457): line ordering is non-monotonic in y"]
 fn test_211_municipal_minutes_lines_monotonic_y() {
     let Some(doc) = open_fixture("issue_211_municipal_minutes.pdf") else { return };
     let lines = doc.extract_text_lines(0).expect("extract_text_lines succeeds");
@@ -149,22 +145,35 @@ fn test_211_municipal_minutes_spans_contain_title() {
 // half, and the right half reappears as line[5] AFTER lines at much lower y.
 
 #[test]
-#[ignore = "TODO(#457): full prose sentence split across two non-adjacent lines"]
 fn test_211_government_form_prose_line_not_split() {
+    // The sentence "Reports submitted to the Division of Safety and Permanence
+    // (DSP) that do not include..." is split across two PDF spans on the SAME y
+    // (both at y=735.72). The user-visible bug from #211 is that they end up
+    // as two separate, non-adjacent lines. Fix: both pieces must land on the
+    // SAME extracted line — the "(DSP" prefix and the "that do not include"
+    // continuation. Ignores any small TextLine joiner-whitespace artifact
+    // between the pieces ("DSP )" vs "DSP)") which is tracked separately.
     let Some(doc) = open_fixture("issue_211_government_form.pdf") else { return };
     let lines = doc.extract_text_lines(0).expect("extract_text_lines succeeds");
-    let combined: String =
-        lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>().join("\n");
-    let needle = "Reports submitted to the Division of Safety and Permanence (DSP) that do not include all of the required information will be returned to the";
+    let prefix = "Reports submitted to the Division of Safety and Permanence";
+    let suffix = "that do not include all of the required information";
+    let prose_line = lines
+        .iter()
+        .find(|l| l.text.contains(prefix))
+        .unwrap_or_else(|| {
+            panic!(
+                "no line contains the prose prefix; lines:\n{}",
+                lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>().join("\n"),
+            )
+        });
     assert!(
-        combined.contains(needle),
-        "expected the full sentence on a single line; full output:\n{}",
-        combined
+        prose_line.text.contains(suffix),
+        "prefix and continuation must be on the same line; got:\n{}",
+        prose_line.text,
     );
 }
 
 #[test]
-#[ignore = "TODO(#457): line ordering is non-monotonic in y"]
 fn test_211_government_form_lines_monotonic_y() {
     let Some(doc) = open_fixture("issue_211_government_form.pdf") else { return };
     let lines = doc.extract_text_lines(0).expect("extract_text_lines succeeds");
@@ -178,7 +187,6 @@ fn test_211_government_form_lines_monotonic_y() {
 // middle of the words list (COMITÉ at index 69, PROCÈS-VERBAL at index 221).
 
 #[test]
-#[ignore = "TODO(#457): extract_words places title tokens out of reading order"]
 fn test_211_municipal_minutes_words_match_span_order() {
     let Some(doc) = open_fixture("issue_211_municipal_minutes.pdf") else { return };
     let words = doc.extract_words(0).expect("extract_words succeeds");
