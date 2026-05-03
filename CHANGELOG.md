@@ -52,6 +52,14 @@ All notable changes to PDFOxide are documented here.
   `SignatureException [8500]`. Added a Rust regression test that
   opens @gevorgter's exact reproducer PDF and asserts `render_page`
   succeeds. The fixture is pinned in `pdf_oxide_tests`.
+- **#462** — dropped the `scripts/modernize_stubs.py` post-processor
+  and the `python_version = "3.8"` setting from `rylai.toml`. Rylai's
+  default already emits PEP-585 / PEP-604 syntax with
+  `from __future__ import annotations` at the top, so post-processing
+  was duplicate work in opposite directions. Runtime support for
+  Python 3.8/3.9 is unaffected — `.pyi` stubs are type-checker
+  artifacts, never imported at runtime. Reported by @monchin with a
+  clean diagnosis of the root cause.
 
 ### Behavior changes
 
@@ -135,6 +143,13 @@ This release exists because of the community. Special thanks to:
   while testing PR #445; the investigation traced it to the empty
   `source_bytes` field and produced the one-line fix in this
   release ([#456](https://github.com/yfedoseev/pdf_oxide/issues/456)).
+- **[@monchin](https://github.com/monchin)** — pointed out
+  ([#462](https://github.com/yfedoseev/pdf_oxide/issues/462)) that
+  `scripts/modernize_stubs.py` was redundant work because rylai itself
+  controls the typing flavour via its `python_version` setting, and
+  noted that `office`/`barcodes`/`ocr` feature alignment between
+  `rylai.toml` and the released wheel is worth a follow-up. The
+  cleaner stub pipeline ships in this release.
 
 ## [0.3.42] - 2026-05-02
 

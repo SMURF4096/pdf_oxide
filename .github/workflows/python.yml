@@ -135,12 +135,11 @@ jobs:
         run: uv sync --group dev
 
       - name: Generate .pyi from Rust
-        run: |
-          uvx rylai -o python/pdf_oxide/
-          # Modernise rylai's pre-PEP-585 typing so basedpyright is
-          # clean — the deprecated-typing noise is fixable via
-          # post-processing, not upstream.
-          python scripts/modernize_stubs.py python/pdf_oxide/pdf_oxide.pyi
+        # rylai's default emits PEP-585 / PEP-604 syntax with
+        # `from __future__ import annotations` at the top; runtime
+        # support for Python 3.8/3.9 is unaffected because .pyi is a
+        # type-checker artifact, not a runtime module. Issue #462.
+        run: uvx rylai -o python/pdf_oxide/
 
       # ruff runs without --fix in CI (CI verifies; developers auto-fix locally).
       - name: Ruff lint

@@ -185,12 +185,11 @@ lint = { composite = [
     "ruff check . --fix",
     "ty check .",
 ] }
-# Generate .pyi from Rust (Rylai) and modernise the output so it
-# type-checks clean against basedpyright. Use: `pdm run stub_gen`.
-stub_gen = { composite = [
-    "uvx rylai -o python/pdf_oxide/",
-    "python scripts/modernize_stubs.py python/pdf_oxide/pdf_oxide.pyi",
-] }
+# Generate .pyi from Rust via rylai. rylai's default emits modern
+# PEP-585 / PEP-604 syntax with `from __future__ import annotations`,
+# so no post-processing is needed (issue #462). Use:
+# `pdm run stub_gen`.
+stub_gen = "uvx rylai -o python/pdf_oxide/"
 
 # basedpyright — stricter pyright fork. CI-enforced (see .github/workflows/python.yml).
 # The auto-generated pdf_oxide.pyi is produced by rylai upstream and
@@ -200,14 +199,16 @@ stub_gen = { composite = [
 # code in this package still gets the default strictness.
 [tool.basedpyright]
 include = ["python/pdf_oxide"]
-# PEP-585 / PEP-604 modernisation is handled by scripts/modernize_stubs.py;
-# leave reportDeprecated at warn for whatever we forgot to rewrite.
+# rylai emits modern PEP-585 / PEP-604 syntax directly. Bare generics
+# (e.g. `dict | None` for opaque pyo3 `Object` enums) are intentional —
+# rylai can't infer element types when the Rust side is opaque, so we
+# silence `reportMissingTypeArgument` rather than guess defaults.
 reportAny = "none"
 reportUnknownArgumentType = "none"
 reportUnknownMemberType = "none"
 reportUnknownParameterType = "none"
 reportUnknownVariableType = "none"
 reportMissingParameterType = "none"
-reportMissingTypeArgument = "warning"
+reportMissingTypeArgument = "none"
 reportImplicitOverride = "none"
 reportUnannotatedClassAttribute = "none"
