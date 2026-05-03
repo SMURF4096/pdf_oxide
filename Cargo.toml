@@ -59,7 +59,7 @@ manual_checked_ops = "allow"
 
 [package]
 name = "pdf_oxide"
-version = "0.3.41"
+version = "0.3.42"
 # MSRV — driven up from 1.82 for v0.3.38. Transitive deps pulled in
 # this release push the floor to 1.88:
 #   - hybrid-array 0.4.10 (via RustCrypto) → edition 2024 → 1.85
@@ -260,7 +260,6 @@ tiny-skia = { version = "0.12", optional = true }
 fontdb = { version = "0.23", optional = true }
 rustybuzz = { version = "0.20", optional = true }
 
-lzw = "0.10.0"
 uuid = { version = "1.23", features = ["v4", "js"] }
 
 # Barcode/QR code generation (optional)

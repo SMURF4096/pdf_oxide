@@ -1,5 +1,5 @@
 // Regression test for #421: pdf_barcode_get_svg was a stub returning ERR_UNSUPPORTED.
-// This test verifies the fix on HEAD (release/v0.3.41).
+// This test verifies the fix on HEAD (release/v0.3.42).
 
 #[cfg(feature = "barcodes")]
 #[test]

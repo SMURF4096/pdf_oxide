@@ -1,4 +1,4 @@
-// PDF/UA accessible + decorative images — v0.3.39
+// PDF/UA accessible + decorative images
 // Run: dotnet run
 
 using System;

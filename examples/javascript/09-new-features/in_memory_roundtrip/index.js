@@ -1,4 +1,4 @@
-// In-memory round-trip: build() → bytes → PdfDocument.openFromBuffer() — v0.3.39
+// In-memory round-trip: build() → bytes → PdfDocument.openFromBuffer()
 // Run: node index.js
 
 import path from "node:path";

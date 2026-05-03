@@ -1,4 +1,4 @@
-# PDF/A, PDF/X, PDF/UA compliance validation — v0.3.41
+# PDF/A, PDF/X, PDF/UA compliance validation
 #
 # Run: python main.py
 

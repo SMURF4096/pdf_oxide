@@ -1,4 +1,4 @@
-// Image embedding — v0.3.41 (TypeScript)
+// Image embedding (TypeScript)
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";

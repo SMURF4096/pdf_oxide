@@ -1,4 +1,4 @@
-// RFC 3161 Timestamp parsing + TsaClient construction — v0.3.39
+// RFC 3161 Timestamp parsing + TsaClient construction
 //
 // Parses a pre-encoded bare TSTInfo blob and verifies its fields.
 // Also constructs a TsaClient (requires tsa-client feature).

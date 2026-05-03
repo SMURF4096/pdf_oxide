@@ -1,4 +1,4 @@
-// Page extraction to bytes — v0.3.41
+// Page extraction to bytes
 //
 // Demonstrates ExtractPagesToBytes: build a 2-page PDF, extract only page 0,
 // and write the single-page result to disk.

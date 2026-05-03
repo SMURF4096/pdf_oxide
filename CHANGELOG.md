@@ -2,6 +2,140 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [0.3.42] - 2026-05-02
+
+> Text-extraction reading-order rewire — fixes [#211](https://github.com/yfedoseev/pdf_oxide/issues/211)
+> and closes the [#457](https://github.com/yfedoseev/pdf_oxide/issues/457) refactor.
+
+### Highlights
+
+- `extract_words` and `extract_text_lines` now honor the structure tree
+  on tagged PDFs (per ISO 32000-1:2008 §14.7 / §14.8.2.3) instead of
+  applying XY-Cut block partitioning. On the three #211 fixtures from
+  pdfplumber's public test corpus this restores correct reading order
+  for centered titles above body text (Quebec municipal minutes case)
+  and stops splitting prose lines across phantom column gutters in
+  form-style layouts (US child-welfare report case).
+- Spurious markdown / HTML tables on form-style layouts (label-colon-
+  value pairs) are gone — spatial table detection is now gated on a
+  real-grid validator (≥2 rows × ≥2 cols, ≥50% of rows with at least
+  two non-empty cells).
+- New `include_artifacts` kwarg on `extract_words` /
+  `extract_text_lines` (Python) gates the spec-correct behavior of
+  excluding `/Artifact`-tagged content (running headers, footers,
+  page numbers, watermarks; ISO 32000-1:2008 §14.8.2.2.1).
+  **Default is `True`** — preserves pre-0.3.42 behavior so existing
+  scripts don't lose content. Pass `include_artifacts=False` to
+  opt into the spec-correct exclude. The default may flip in a
+  future major release once the artifact-detection heuristic is
+  hardened against false positives on docs whose body text recurs
+  across pages.
+- The default API surface is now knob-free: `region`,
+  `word_gap_threshold`, `line_gap_threshold`, `profile` are deprecated
+  on `extract_words` / `extract_text_lines` (Python). They still work
+  but emit `DeprecationWarning`; they will move to a separate
+  `extract_*_advanced` surface in a future release.
+- ~6× faster on `extract_words` / `extract_text_lines` because the
+  XY-Cut partition is no longer in the hot path.
+
+### Fixes
+
+- **#211 — `extract_words` / `extract_text_lines` produce wrong reading
+  order on tagged PDFs.** Headings and prose lines that XY-Cut had
+  moved out of position now appear where the document author marked
+  them via the `/StructTreeRoot` MCID order. Reported by @ankursri494
+  against pdfplumber's `pdf_structure.pdf`, `2023-06-20-PV.pdf`, and
+  `150109DSP-Milw-505-90D.pdf` test fixtures.
+
+### Behavior changes
+
+- `extract_words(page)` / `extract_text_lines(page)` gain an
+  `include_artifacts` kwarg (default `True` — backward-compatible).
+  Pass `include_artifacts=False` to drop spans tagged as artifacts
+  per ISO 32000-1:2008 §14.8.2.2.1. Word counts on documents with
+  running headers / footers will decrease in that mode.
+- Multi-column reading-order detection on untagged PDFs is now
+  conservative: column-aware mode opts in only when the page
+  presents ≥3 distinct vertical gutters, each ≥`median_char_width × 4`
+  wide, with text on both sides. 1- and 2-column synthetic layouts
+  default to row-aware top-to-bottom ordering — matches pdfplumber.
+  Tagged multi-column PDFs are unaffected: they reach the column-aware
+  path via the structure tree.
+- `to_markdown(page)` / `to_html(page)` no longer emit `<table>` for
+  layout-only structures detected by the spatial heuristic. Real
+  tables (`<Table>` in the struct tree, or grids ≥2×2 with ≥50% of
+  rows populating ≥2 cells) still render as tables.
+
+### Refactor #457 — internal
+
+- New `pdf_oxide::pipeline::page_reading_order(doc, page)` helper:
+  single source of truth for canonical reading-order span sequence.
+  Tagged + struct tree (no `/Suspects`) → walks the tree; otherwise
+  → geometric top-to-bottom + y-tolerance. Companion variant
+  `page_reading_order_no_artifacts` strips spans tagged as
+  `/Artifact` for the spec-correct exclude case.
+- `extract_words_with_thresholds` and
+  `extract_text_lines_with_thresholds` delegate through the helper
+  for the default code path (artifacts retained). New
+  `extract_words_with_thresholds_no_artifacts` and
+  `extract_text_lines_with_thresholds_no_artifacts` surfaces are
+  available for the spec-correct artifact-excluded behavior. The
+  `profile=Some(...)` path retains its previous XY-Cut behavior
+  pending the planned removal of the `profile` kwarg.
+- `GeometricStrategy` now defaults to row-aware top-to-bottom ordering;
+  column-aware mode gated by the strict multi-column criterion above.
+- `Table::is_real_grid()` introduced as the real-table validator;
+  `extract_page_tables` filters the spatial heuristic's output through it.
+
+### Validation
+
+75-PDF stratified-sample corpus (academic, mixed, forms, government,
+newspapers, theses, plus the three #211 fixtures) compared between
+0.3.41 and 0.3.42 across all eight extraction methods on the first
+3 pages of each PDF — 1592 comparisons total. **Zero content
+regressions**: every word the baseline extracted is also extracted
+by 0.3.42; only ordering / line-grouping / table-rendering changed.
+
+### Dependencies
+
+- **#453** — drop the unused `lzw` direct dependency. `LzwDecoder`
+  already routed through `weezl` plus a custom fallback; the `lzw`
+  crate was declared in `Cargo.toml` but never imported. Silences
+  RUSTSEC-2020-0144 (unmaintained advisory) for downstream cargo-deny
+  consumers as a side-effect.
+- **#454 (partial)** — `cargo update` lockfile refresh: `fax 0.2.6 → 0.2.7`,
+  `imageproc 0.26.1 → 0.26.2`, `js-sys` / `web-sys` `0.3.95 → 0.3.97`,
+  `pdfium-render 0.9.0 → 0.9.1`, `rustls 0.23.39 → 0.23.40`,
+  `wasm-bindgen` family `0.2.118 → 0.2.120`, plus 12 other transitive
+  patch / minor bumps. The remaining major-version items in #454
+  (RustCrypto 0.8 stack — `pkcs8 0.11`, `spki 0.8`, `der 0.8`,
+  `digest 0.11`, `crypto-common 0.2`, `block-buffer 0.12`) stay
+  pinned: `rsa 0.10` and `p256 0.14` / `p384 0.14` are still RC
+  upstream as of 2026-04 (see the existing pin note in
+  `Cargo.toml:185-187`).
+
+### Community contributors
+
+This release exists because of the community. Special thanks to:
+
+- **[@ankursri494](https://github.com/ankursri494)** — reported
+  [#211](https://github.com/yfedoseev/pdf_oxide/issues/211) with three
+  carefully chosen pdfplumber-corpus fixtures (`pdf_structure.pdf`,
+  `2023-06-20-PV.pdf`, `150109DSP-Milw-505-90D.pdf`) that isolate three
+  distinct failure modes — wrong reading order on tagged PDFs, dropped
+  document headings, and prose-line splits at form gutters. They also
+  kept the issue alive through two rounds of "is this still broken on
+  the latest version?", which forced the deeper investigation that
+  ultimately exposed the architectural gap behind #457. Without that
+  persistence and that specific repro set, this rewire would not have
+  shipped.
+- **[@lingcoder](https://github.com/lingcoder)** — flagged the
+  unmaintained `lzw` advisory in
+  [#453](https://github.com/yfedoseev/pdf_oxide/issues/453) with a
+  precise pointer to RUSTSEC-2020-0144 and the `weezl` migration
+  path; the investigation surfaced that the dep was unreferenced
+  entirely, turning it into a one-line cleanup.
+
 ## [0.3.41] - 2026-04-29
 
 > Real PDF/A conversion, LaTeX symbolic-font glyph rendering fix, and

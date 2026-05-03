@@ -1,4 +1,4 @@
-# Barcode SVG generation — v0.3.41
+# Barcode SVG generation
 #
 # Demonstrates generating 1D barcodes and QR codes as vector SVG strings.
 # Run: python main.py

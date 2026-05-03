@@ -1,4 +1,4 @@
-// Encrypted in-memory save — v0.3.41
+// Encrypted in-memory save
 //
 // Demonstrates SaveEncryptedToBytes: build a PDF, open it in the editor,
 // encrypt it with AES-256 and return the bytes without touching disk mid-way.

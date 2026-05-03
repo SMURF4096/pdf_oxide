@@ -1,4 +1,4 @@
-# RFC 3161 Timestamp parsing + TsaClient construction — v0.3.39
+# RFC 3161 Timestamp parsing + TsaClient construction
 #
 # Run: python main.py
 

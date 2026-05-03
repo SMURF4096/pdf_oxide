@@ -1,4 +1,4 @@
-// StreamingTable with rowspan and batchSize — v0.3.40
+// StreamingTable with rowspan and batchSize
 // Run: node index.js
 
 import path from "node:path";

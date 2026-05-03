@@ -7527,16 +7527,49 @@ impl PdfDocument {
         word_gap_threshold: Option<f32>,
         profile: Option<crate::config::ExtractionProfile>,
     ) -> Result<Vec<crate::layout::Word>> {
-        use crate::layout::{clustering, AdaptiveLayoutParams, DocumentProperties, Word};
-        use crate::pipeline::reading_order::xycut::XYCutStrategy;
+        // Default: include /Artifact-tagged spans (matches pre-0.3.42
+        // behavior). The spec-correct (§14.8.2.2.1) variant lives in
+        // [`Self::extract_words_with_thresholds_no_artifacts`].
+        self.extract_words_inner(page_index, word_gap_threshold, profile, true)
+    }
 
-        let spans = match profile {
+    /// Same as [`Self::extract_words_with_thresholds`] but drops spans tagged
+    /// as `/Artifact` (running headers/footers, page numbers, watermarks;
+    /// ISO 32000-1:2008 §14.8.2.2.1). The spec-correct variant.
+    pub fn extract_words_with_thresholds_no_artifacts(
+        &self,
+        page_index: usize,
+        word_gap_threshold: Option<f32>,
+        profile: Option<crate::config::ExtractionProfile>,
+    ) -> Result<Vec<crate::layout::Word>> {
+        self.extract_words_inner(page_index, word_gap_threshold, profile, false)
+    }
+
+    fn extract_words_inner(
+        &self,
+        page_index: usize,
+        word_gap_threshold: Option<f32>,
+        profile: Option<crate::config::ExtractionProfile>,
+        include_artifacts: bool,
+    ) -> Result<Vec<crate::layout::Word>> {
+        use crate::layout::{clustering, AdaptiveLayoutParams, DocumentProperties, Word};
+
+        // Span source. The default (no profile) flows through the canonical
+        // `page_reading_order` helper (issue #457): tagged → struct tree,
+        // untagged → geometric top-to-bottom. The legacy profile path keeps
+        // its previous XY-Cut + row-aware-sort behavior pending the planned
+        // removal of `profile`.
+        let spans: Vec<crate::layout::TextSpan> = match profile {
             Some(p) => {
+                use crate::pipeline::reading_order::xycut::XYCutStrategy;
                 let config = crate::extractors::TextExtractionConfig::new().with_profile(p);
                 let mut s = self.extract_spans_raw_with_extraction_config(page_index, config)?;
                 s.sort_by(|a, b| {
                     crate::utils::row_aware_span_cmp(a.bbox.y, a.bbox.x, b.bbox.y, b.bbox.x)
                 });
+                if !include_artifacts {
+                    s.retain(|span| span.artifact_type.is_none());
+                }
                 let erase = self
                     .erase_regions
                     .lock_or_recover()
@@ -7545,19 +7578,27 @@ impl PdfDocument {
                 if let Some(regions) = erase {
                     s.retain(|span| !regions.iter().any(|r| r.intersects(&span.bbox)));
                 }
-                s
+                let strategy = XYCutStrategy::new();
+                strategy
+                    .partition_region(&s)
+                    .into_iter()
+                    .flatten()
+                    .collect()
             },
-            None => self.extract_spans(page_index)?,
+            None => {
+                let ordered = if include_artifacts {
+                    crate::pipeline::page_reading_order(self, page_index)?
+                } else {
+                    crate::pipeline::page_reading_order_no_artifacts(self, page_index)?
+                };
+                ordered.into_iter().map(|os| os.span).collect()
+            },
         };
         if spans.is_empty() {
             return Ok(Vec::new());
         }
 
-        // Step 1: Partition page into logical blocks (columns/paragraphs) using XY-Cut
-        let strategy = XYCutStrategy::new();
-        let blocks = strategy.partition_region(&spans);
-
-        // Step 2: Compute adaptive parameters from all characters for consistent thresholds
+        // Compute adaptive parameters from all characters for consistent thresholds.
         let media_box = self
             .get_page_media_box(page_index)
             .unwrap_or((0.0, 0.0, 612.0, 792.0));
@@ -7577,40 +7618,40 @@ impl PdfDocument {
             params.word_gap_threshold = wgt;
         }
 
-        // Step 3: Extract words from each block independently
+        // Walk spans in canonical reading order, clustering chars within each span
+        // into words. Since spans come pre-ordered, a flat iteration suffices —
+        // no block-by-block partition is needed.
         let mut words = Vec::new();
-        for block_spans in blocks {
-            for span in block_spans {
-                let span_chars = span.to_chars();
-                if span_chars.is_empty() {
-                    continue;
-                }
+        for span in &spans {
+            let span_chars = span.to_chars();
+            if span_chars.is_empty() {
+                continue;
+            }
 
-                // Group characters within THIS SPAN. Since PDF spans are often words or line fragments,
-                // this is much safer than global or block-level character clustering.
-                let clusters =
-                    clustering::cluster_chars_into_words(&span_chars, params.word_gap_threshold);
+            // Group characters within THIS SPAN. Since PDF spans are often words or line fragments,
+            // this is much safer than global character clustering.
+            let clusters =
+                clustering::cluster_chars_into_words(&span_chars, params.word_gap_threshold);
 
-                for cluster_indices in clusters {
-                    let cluster_chars: Vec<_> = cluster_indices
-                        .iter()
-                        .map(|&i| span_chars[i].clone())
-                        .collect();
+            for cluster_indices in clusters {
+                let cluster_chars: Vec<_> = cluster_indices
+                    .iter()
+                    .map(|&i| span_chars[i].clone())
+                    .collect();
 
-                    let mut current_word_chars = Vec::new();
-                    for c in cluster_chars {
-                        if c.char.is_whitespace() || c.char == '\n' || c.char == '\r' {
-                            if !current_word_chars.is_empty() {
-                                words.push(Word::from_chars(current_word_chars));
-                                current_word_chars = Vec::new();
-                            }
-                        } else {
-                            current_word_chars.push(c);
+                let mut current_word_chars = Vec::new();
+                for c in cluster_chars {
+                    if c.char.is_whitespace() || c.char == '\n' || c.char == '\r' {
+                        if !current_word_chars.is_empty() {
+                            words.push(Word::from_chars(current_word_chars));
+                            current_word_chars = Vec::new();
                         }
+                    } else {
+                        current_word_chars.push(c);
                     }
-                    if !current_word_chars.is_empty() {
-                        words.push(Word::from_chars(current_word_chars));
-                    }
+                }
+                if !current_word_chars.is_empty() {
+                    words.push(Word::from_chars(current_word_chars));
                 }
             }
         }
@@ -7669,16 +7710,60 @@ impl PdfDocument {
         line_gap_threshold: Option<f32>,
         profile: Option<crate::config::ExtractionProfile>,
     ) -> Result<Vec<crate::layout::TextLine>> {
-        use crate::layout::{clustering, AdaptiveLayoutParams, DocumentProperties, TextLine, Word};
-        use crate::pipeline::reading_order::xycut::XYCutStrategy;
+        // Default: include /Artifact-tagged spans (pre-0.3.42 behavior).
+        // Spec-correct variant: [`Self::extract_text_lines_with_thresholds_no_artifacts`].
+        self.extract_text_lines_inner(
+            page_index,
+            word_gap_threshold,
+            line_gap_threshold,
+            profile,
+            true,
+        )
+    }
 
-        let spans = match profile {
+    /// Same as [`Self::extract_text_lines_with_thresholds`] but drops spans
+    /// tagged as `/Artifact` (running headers/footers, page numbers,
+    /// watermarks; ISO 32000-1:2008 §14.8.2.2.1). Spec-correct variant.
+    pub fn extract_text_lines_with_thresholds_no_artifacts(
+        &self,
+        page_index: usize,
+        word_gap_threshold: Option<f32>,
+        line_gap_threshold: Option<f32>,
+        profile: Option<crate::config::ExtractionProfile>,
+    ) -> Result<Vec<crate::layout::TextLine>> {
+        self.extract_text_lines_inner(
+            page_index,
+            word_gap_threshold,
+            line_gap_threshold,
+            profile,
+            false,
+        )
+    }
+
+    fn extract_text_lines_inner(
+        &self,
+        page_index: usize,
+        word_gap_threshold: Option<f32>,
+        line_gap_threshold: Option<f32>,
+        profile: Option<crate::config::ExtractionProfile>,
+        include_artifacts: bool,
+    ) -> Result<Vec<crate::layout::TextLine>> {
+        use crate::layout::{clustering, AdaptiveLayoutParams, DocumentProperties, TextLine, Word};
+
+        // Span source. Default (no profile) → canonical `page_reading_order`
+        // helper (issue #457). Legacy profile path keeps XY-Cut + row-aware
+        // sort pending the planned removal of `profile`.
+        let spans: Vec<crate::layout::TextSpan> = match profile {
             Some(p) => {
+                use crate::pipeline::reading_order::xycut::XYCutStrategy;
                 let config = crate::extractors::TextExtractionConfig::new().with_profile(p);
                 let mut s = self.extract_spans_raw_with_extraction_config(page_index, config)?;
                 s.sort_by(|a, b| {
                     crate::utils::row_aware_span_cmp(a.bbox.y, a.bbox.x, b.bbox.y, b.bbox.x)
                 });
+                if !include_artifacts {
+                    s.retain(|span| span.artifact_type.is_none());
+                }
                 let erase = self
                     .erase_regions
                     .lock_or_recover()
@@ -7687,19 +7772,27 @@ impl PdfDocument {
                 if let Some(regions) = erase {
                     s.retain(|span| !regions.iter().any(|r| r.intersects(&span.bbox)));
                 }
-                s
+                let strategy = XYCutStrategy::new();
+                strategy
+                    .partition_region(&s)
+                    .into_iter()
+                    .flatten()
+                    .collect()
             },
-            None => self.extract_spans(page_index)?,
+            None => {
+                let ordered = if include_artifacts {
+                    crate::pipeline::page_reading_order(self, page_index)?
+                } else {
+                    crate::pipeline::page_reading_order_no_artifacts(self, page_index)?
+                };
+                ordered.into_iter().map(|os| os.span).collect()
+            },
         };
         if spans.is_empty() {
             return Ok(Vec::new());
         }
 
-        // Step 1: Partition page into logical blocks (columns/paragraphs) using XY-Cut
-        let strategy = XYCutStrategy::new();
-        let blocks = strategy.partition_region(&spans);
-
-        // Step 2: Compute adaptive parameters
+        // Compute adaptive parameters
         let media_box = self
             .get_page_media_box(page_index)
             .unwrap_or((0.0, 0.0, 612.0, 792.0));
@@ -7719,58 +7812,53 @@ impl PdfDocument {
             params.line_gap_threshold = lgt;
         }
 
-        // Step 3: Process each block independently
-        let mut all_lines = Vec::new();
-
-        for block_spans in blocks {
-            let mut block_words = Vec::new();
-
-            // Extract words for this block (same logic as extract_words)
-            for span in block_spans {
-                let span_chars = span.to_chars();
-                if span_chars.is_empty() {
-                    continue;
-                }
-
-                let clusters =
-                    clustering::cluster_chars_into_words(&span_chars, params.word_gap_threshold);
-                for cluster_indices in clusters {
-                    let cluster_chars: Vec<_> = cluster_indices
-                        .iter()
-                        .map(|&i| span_chars[i].clone())
-                        .collect();
-                    let mut current_word_chars = Vec::new();
-                    for c in cluster_chars {
-                        if c.char.is_whitespace() || c.char == '\n' || c.char == '\r' {
-                            if !current_word_chars.is_empty() {
-                                block_words.push(Word::from_chars(current_word_chars));
-                                current_word_chars = Vec::new();
-                            }
-                        } else {
-                            current_word_chars.push(c);
-                        }
-                    }
-                    if !current_word_chars.is_empty() {
-                        block_words.push(Word::from_chars(current_word_chars));
-                    }
-                }
-            }
-
-            if block_words.is_empty() {
+        // Walk spans in canonical reading order, clustering chars → words.
+        // No block partition; spans are already pre-ordered.
+        let mut words: Vec<Word> = Vec::new();
+        for span in &spans {
+            let span_chars = span.to_chars();
+            if span_chars.is_empty() {
                 continue;
             }
 
-            // Cluster words -> lines WITHIN THIS BLOCK
-            let line_clusters =
-                clustering::cluster_words_into_lines(&block_words, params.line_gap_threshold);
-
-            for cluster_indices in line_clusters {
-                let cluster_words: Vec<_> = cluster_indices
+            let clusters =
+                clustering::cluster_chars_into_words(&span_chars, params.word_gap_threshold);
+            for cluster_indices in clusters {
+                let cluster_chars: Vec<_> = cluster_indices
                     .iter()
-                    .map(|&i| block_words[i].clone())
+                    .map(|&i| span_chars[i].clone())
                     .collect();
-                all_lines.push(TextLine::new(cluster_words));
+                let mut current_word_chars = Vec::new();
+                for c in cluster_chars {
+                    if c.char.is_whitespace() || c.char == '\n' || c.char == '\r' {
+                        if !current_word_chars.is_empty() {
+                            words.push(Word::from_chars(current_word_chars));
+                            current_word_chars = Vec::new();
+                        }
+                    } else {
+                        current_word_chars.push(c);
+                    }
+                }
+                if !current_word_chars.is_empty() {
+                    words.push(Word::from_chars(current_word_chars));
+                }
             }
+        }
+
+        if words.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Cluster words → lines using global y-tolerance. Same-y words merge
+        // into the same line regardless of which span they came from — the
+        // span ordering already handled the multi-column / structure-tree
+        // sequencing decision upstream.
+        let line_clusters = clustering::cluster_words_into_lines(&words, params.line_gap_threshold);
+
+        let mut all_lines = Vec::new();
+        for cluster_indices in line_clusters {
+            let cluster_words: Vec<_> = cluster_indices.iter().map(|&i| words[i].clone()).collect();
+            all_lines.push(TextLine::new(cluster_words));
         }
 
         Ok(all_lines)
@@ -9502,13 +9590,30 @@ impl PdfDocument {
             spans
         };
 
-        let tables = crate::structure::spatial_table_detector::detect_tables_with_lines(
+        let raw_tables = crate::structure::spatial_table_detector::detect_tables_with_lines(
             input_spans,
             &paths,
             &config,
         );
 
-        if !tables.is_empty() {
+        // Per #457 Step 4: spatial detection without struct-tree backing
+        // is prone to false positives on form-style layouts (label-colon-
+        // value pairs that align horizontally, form fillable boxes drawn
+        // with thin lines). Drop tables that don't look like real grids.
+        let raw_count = raw_tables.len();
+        let tables: Vec<crate::structure::Table> = raw_tables
+            .into_iter()
+            .filter(|t| t.is_real_grid())
+            .collect();
+
+        if raw_count != tables.len() {
+            log::debug!(
+                "Spatial table detection: filtered {} non-real-grid candidates on page {} ({} kept)",
+                raw_count - tables.len(),
+                page_index,
+                tables.len(),
+            );
+        } else if !tables.is_empty() {
             log::debug!(
                 "Found {} table(s) via hybrid spatial detection for page {}",
                 tables.len(),

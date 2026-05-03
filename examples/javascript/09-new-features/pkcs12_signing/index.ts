@@ -1,4 +1,4 @@
-// PKCS#12 CMS signing — v0.3.39 (TypeScript)
+// PKCS#12 CMS signing (TypeScript)
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";

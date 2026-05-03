@@ -86,6 +86,29 @@ impl Table {
         }
     }
 
+    /// Check whether this table looks like a real data grid as opposed to
+    /// spurious spatial output (form layouts, label-colon-value pairs).
+    ///
+    /// A real grid (per #457 Step 4) has:
+    /// - ≥2 rows
+    /// - ≥2 columns
+    /// - Consistent column population: at least 50% of rows must have
+    ///   at least 2 non-empty cells. Filters out the common
+    ///   form-as-table false positive where rows look like
+    ///   `| Single label, all other slots empty | | | |`.
+    pub fn is_real_grid(&self) -> bool {
+        if self.col_count < 2 || self.rows.len() < 2 {
+            return false;
+        }
+        let rows_with_two_or_more_filled_cells = self
+            .rows
+            .iter()
+            .filter(|r| r.cells.iter().filter(|c| !c.text.trim().is_empty()).count() >= 2)
+            .count();
+        let ratio = rows_with_two_or_more_filled_cells as f32 / self.rows.len() as f32;
+        ratio >= 0.5
+    }
+
     /// Render the table as clean, space-padded plain text.
     pub fn render_text(&self) -> String {
         let col_count = self.col_count;

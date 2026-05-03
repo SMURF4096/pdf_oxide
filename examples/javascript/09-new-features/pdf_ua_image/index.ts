@@ -1,4 +1,4 @@
-// PDF/UA accessible + decorative images — v0.3.39 (TypeScript)
+// PDF/UA accessible + decorative images (TypeScript)
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";

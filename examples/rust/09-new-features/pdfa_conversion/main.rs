@@ -1,4 +1,4 @@
-// PDF/A conversion: validate → convert → validate — v0.3.41
+// PDF/A conversion: validate → convert → validate
 //
 // Demonstrates and verifies the full archival pipeline across all fixable
 // compliance scenarios. Each section:

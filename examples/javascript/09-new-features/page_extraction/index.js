@@ -1,4 +1,4 @@
-// Page extraction and chunking — v0.3.40
+// Page extraction and chunking
 //
 // Demonstrates DocumentEditor.extractPagesToBytes() to split a multi-page PDF
 // into per-chunk Buffers — all in memory, no temp files or S3.

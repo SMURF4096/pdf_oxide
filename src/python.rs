@@ -409,30 +409,62 @@ impl PyPdfDocument {
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to extract characters: {}", e)))
     }
 
-    /// Extract words.
+    /// Extract words from a page.
     ///
     /// Args:
     ///     page (int): Page index (0-based)
-    ///     region (tuple, optional): (x, y, width, height) to filter by
-    ///     word_gap_threshold (float, optional): Override for the horizontal gap
-    ///         (in PDF points) used to split characters into words. Smaller values
-    ///         produce more words.
-    ///     profile (ExtractionProfile, optional): Pre-tuned extraction profile
-    ///         that controls how raw text is parsed from the PDF content stream.
-    #[pyo3(signature = (page, region=None, word_gap_threshold=None, profile=None))]
+    ///     include_artifacts (bool, optional): Include words tagged as
+    ///         `/Artifact` (running headers/footers, page numbers,
+    ///         watermarks; ISO 32000-1:2008 §14.8.2.2.1). Default
+    ///         **True** for backward compatibility with 0.3.41 — the
+    ///         pre-existing code path returned all spans regardless of
+    ///         artifact tag and the cross-build regression sweep showed
+    ///         flipping the default would surface as a content
+    ///         regression on PDFs whose running-artifact heuristic
+    ///         over-triggers on real content. Pass `False` to get the
+    ///         spec-correct behavior (artifact-tagged spans excluded).
+    ///
+    ///     region, word_gap_threshold, profile (deprecated, optional):
+    ///         Power-user overrides retained for backward compatibility.
+    ///         Passing any of these emits a DeprecationWarning. They will
+    ///         move to a separate `extract_words_advanced` method in a
+    ///         future minor release.
+    #[pyo3(signature = (page, *, include_artifacts=true, region=None, word_gap_threshold=None, profile=None))]
     fn extract_words(
         &mut self,
+        py: Python<'_>,
         page: usize,
+        include_artifacts: bool,
         region: Option<(f32, f32, f32, f32)>,
         word_gap_threshold: Option<f32>,
         profile: Option<PyExtractionProfile>,
     ) -> PyResult<Vec<PyWord>> {
         use crate::layout::{RectFilterMode, SpatialCollectionFiltering};
 
-        let words = self
-            .inner
-            .extract_words_with_thresholds(page, word_gap_threshold, profile.map(|p| p.inner))
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to extract words: {}", e)))?;
+        if region.is_some() || word_gap_threshold.is_some() || profile.is_some() {
+            warn_deprecated_kwargs(
+                py,
+                "extract_words",
+                &["region", "word_gap_threshold", "profile"],
+            );
+        }
+
+        // Default (`include_artifacts=False`, the new spec-correct path)
+        // routes through the `_no_artifacts` variant. The legacy
+        // include-artifacts path keeps the pre-0.3.42 output verbatim.
+        let words = if include_artifacts {
+            self.inner
+                .extract_words_with_thresholds(page, word_gap_threshold, profile.map(|p| p.inner))
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to extract words: {}", e)))?
+        } else {
+            self.inner
+                .extract_words_with_thresholds_no_artifacts(
+                    page,
+                    word_gap_threshold,
+                    profile.map(|p| p.inner),
+                )
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to extract words: {}", e)))?
+        };
 
         let filtered = if let Some((x, y, w, h)) = region {
             let rect = crate::geometry::Rect::new(x, y, w, h);
@@ -444,21 +476,28 @@ impl PyPdfDocument {
         Ok(filtered.into_iter().map(|w| PyWord { inner: w }).collect())
     }
 
-    /// Extract text lines.
+    /// Extract text lines from a page.
     ///
     /// Args:
     ///     page (int): Page index (0-based)
-    ///     region (tuple, optional): (x, y, width, height) to filter by
-    ///     word_gap_threshold (float, optional): Override for the horizontal gap
-    ///         (in PDF points) used to split characters into words.
-    ///     line_gap_threshold (float, optional): Override for the vertical gap
-    ///         (in PDF points) used to group words into lines.
-    ///     profile (ExtractionProfile, optional): Pre-tuned extraction profile
-    ///         that controls how raw text is parsed from the PDF content stream.
-    #[pyo3(signature = (page, region=None, word_gap_threshold=None, line_gap_threshold=None, profile=None))]
+    ///     include_artifacts (bool, optional): Include lines whose words
+    ///         are tagged as `/Artifact` (running headers/footers, page
+    ///         numbers, watermarks; ISO 32000-1:2008 §14.8.2.2.1).
+    ///         Default **True** for backward compatibility with 0.3.41.
+    ///         Pass `False` to get the spec-correct behavior
+    ///         (artifact-tagged spans excluded).
+    ///
+    ///     region, word_gap_threshold, line_gap_threshold, profile
+    ///         (deprecated, optional): Power-user overrides retained for
+    ///         backward compatibility. Passing any of these emits a
+    ///         DeprecationWarning. They will move to a separate
+    ///         `extract_text_lines_advanced` method in a future release.
+    #[pyo3(signature = (page, *, include_artifacts=true, region=None, word_gap_threshold=None, line_gap_threshold=None, profile=None))]
     fn extract_text_lines(
         &mut self,
+        py: Python<'_>,
         page: usize,
+        include_artifacts: bool,
         region: Option<(f32, f32, f32, f32)>,
         word_gap_threshold: Option<f32>,
         line_gap_threshold: Option<f32>,
@@ -466,15 +505,42 @@ impl PyPdfDocument {
     ) -> PyResult<Vec<PyTextLine>> {
         use crate::layout::{RectFilterMode, SpatialCollectionFiltering};
 
-        let lines = self
-            .inner
-            .extract_text_lines_with_thresholds(
-                page,
-                word_gap_threshold,
-                line_gap_threshold,
-                profile.map(|p| p.inner),
-            )
-            .map_err(|e| PyRuntimeError::new_err(format!("Failed to extract lines: {}", e)))?;
+        if region.is_some()
+            || word_gap_threshold.is_some()
+            || line_gap_threshold.is_some()
+            || profile.is_some()
+        {
+            warn_deprecated_kwargs(
+                py,
+                "extract_text_lines",
+                &[
+                    "region",
+                    "word_gap_threshold",
+                    "line_gap_threshold",
+                    "profile",
+                ],
+            );
+        }
+
+        let lines = if include_artifacts {
+            self.inner
+                .extract_text_lines_with_thresholds(
+                    page,
+                    word_gap_threshold,
+                    line_gap_threshold,
+                    profile.map(|p| p.inner),
+                )
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to extract lines: {}", e)))?
+        } else {
+            self.inner
+                .extract_text_lines_with_thresholds_no_artifacts(
+                    page,
+                    word_gap_threshold,
+                    line_gap_threshold,
+                    profile.map(|p| p.inner),
+                )
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to extract lines: {}", e)))?
+        };
 
         let filtered = if let Some((x, y, w, h)) = region {
             let rect = crate::geometry::Rect::new(x, y, w, h);
@@ -2170,16 +2236,26 @@ impl PyDocPage {
 
     #[getter]
     fn words(&self, py: Python<'_>) -> PyResult<Vec<PyWord>> {
+        // `include_artifacts=true` mirrors the public `PdfDocument.extract_words`
+        // default. If that default is ever flipped (spec-correct exclude), update
+        // this getter (and the `lines` getter below) to match — there's no shared
+        // constant because pyo3 signatures need literal bools.
         self.doc
             .borrow_mut(py)
-            .extract_words(self.page_index, None, None, None)
+            .extract_words(py, self.page_index, true, None, None, None)
     }
 
     #[getter]
     fn lines(&self, py: Python<'_>) -> PyResult<Vec<PyTextLine>> {
-        self.doc
-            .borrow_mut(py)
-            .extract_text_lines(self.page_index, None, None, None, None)
+        self.doc.borrow_mut(py).extract_text_lines(
+            py,
+            self.page_index,
+            true,
+            None,
+            None,
+            None,
+            None,
+        )
     }
 
     #[getter]
@@ -2399,6 +2475,27 @@ impl PyFormField {
     fn __repr__(&self) -> String {
         format!("FormField(name=\"{}\", type=\"{}\")", self.inner.full_name, self.field_type())
     }
+}
+
+/// Emit a `DeprecationWarning` when one of the named kwargs is supplied
+/// to a method whose advanced surface is on the way out (issue #457
+/// Step 5). Best effort: any error from the `warnings` module is
+/// swallowed — the caller still gets the usable result with the
+/// deprecated kwarg honored.
+fn warn_deprecated_kwargs(py: Python<'_>, method: &str, kwargs: &[&str]) {
+    let msg = format!(
+        "{}() kwargs {:?} are deprecated and will move to a separate \
+         {}_advanced method in a future release. The default API is now \
+         knob-free; pass the kwarg only if you genuinely need to override \
+         the spec-correct default.",
+        method, kwargs, method,
+    );
+    let _: PyResult<()> = (|| {
+        let warnings = py.import("warnings")?;
+        let deprecation = py.import("builtins")?.getattr("DeprecationWarning")?;
+        warnings.call_method1("warn", (msg, deprecation))?;
+        Ok(())
+    })();
 }
 
 fn field_value_to_python(value: &RustFieldValue, py: Python<'_>) -> PyResult<Py<PyAny>> {
@@ -2785,11 +2882,11 @@ impl PyPdfPageRegion {
     }
     fn extract_words(&self, py: Python<'_>) -> PyResult<Vec<PyWord>> {
         let mut d = self.doc.bind(py).borrow_mut();
-        d.extract_words(self.page_index, Some(self.bbox()), None, None)
+        d.extract_words(py, self.page_index, true, Some(self.bbox()), None, None)
     }
     fn extract_text_lines(&self, py: Python<'_>) -> PyResult<Vec<PyTextLine>> {
         let mut d = self.doc.bind(py).borrow_mut();
-        d.extract_text_lines(self.page_index, Some(self.bbox()), None, None, None)
+        d.extract_text_lines(py, self.page_index, true, Some(self.bbox()), None, None, None)
     }
     #[pyo3(signature = (table_settings=None))]
     fn extract_tables(

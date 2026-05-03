@@ -1,4 +1,4 @@
-// In-memory round-trip: build() → bytes → PdfDocument::from_bytes() — v0.3.39
+// In-memory round-trip: build() → bytes → PdfDocument::from_bytes()
 //
 // Demonstrates building a PDF entirely in memory (never touching the
 // filesystem mid-way) and re-opening it from raw bytes for text extraction.

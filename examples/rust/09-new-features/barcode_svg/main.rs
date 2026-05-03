@@ -1,4 +1,4 @@
-// Barcode SVG generation — v0.3.41
+// Barcode SVG generation
 //
 // Demonstrates generating 1D barcodes and QR codes as scalable SVG strings
 // (vector output, no rasterisation). Requires the `barcodes` feature.

@@ -1,4 +1,4 @@
-# Dashed stroke lines and rectangles — v0.3.41
+# Dashed stroke lines and rectangles
 #
 # Demonstrates stroke_rect_dashed and stroke_line_dashed on a page.
 # Run: python main.py

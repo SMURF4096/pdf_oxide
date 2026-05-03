@@ -1,4 +1,4 @@
-// PDF/A conversion: validate → convert → validate — v0.3.41
+// PDF/A conversion: validate → convert → validate
 // Run: node index.js
 
 import { DocumentBuilder, PdfDocument } from "pdf-oxide";

@@ -1,4 +1,4 @@
-# StreamingTable with rowspan and batch_size — v0.3.41
+# StreamingTable with rowspan and batch_size
 #
 # batch_size caps memory: the Rust layer auto-flushes every N rows so the
 # client-side buffer stays bounded even for million-row streams.
