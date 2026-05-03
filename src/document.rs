@@ -9509,13 +9509,28 @@ impl PdfDocument {
             spans
         };
 
-        let tables = crate::structure::spatial_table_detector::detect_tables_with_lines(
+        let raw_tables = crate::structure::spatial_table_detector::detect_tables_with_lines(
             input_spans,
             &paths,
             &config,
         );
 
-        if !tables.is_empty() {
+        // Per #457 Step 4: spatial detection without struct-tree backing
+        // is prone to false positives on form-style layouts (label-colon-
+        // value pairs that align horizontally, form fillable boxes drawn
+        // with thin lines). Drop tables that don't look like real grids.
+        let raw_count = raw_tables.len();
+        let tables: Vec<crate::structure::Table> =
+            raw_tables.into_iter().filter(|t| t.is_real_grid()).collect();
+
+        if raw_count != tables.len() {
+            log::debug!(
+                "Spatial table detection: filtered {} non-real-grid candidates on page {} ({} kept)",
+                raw_count - tables.len(),
+                page_index,
+                tables.len(),
+            );
+        } else if !tables.is_empty() {
             log::debug!(
                 "Found {} table(s) via hybrid spatial detection for page {}",
                 tables.len(),
