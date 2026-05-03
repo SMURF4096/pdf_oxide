@@ -7527,13 +7527,38 @@ impl PdfDocument {
         word_gap_threshold: Option<f32>,
         profile: Option<crate::config::ExtractionProfile>,
     ) -> Result<Vec<crate::layout::Word>> {
+        // Default: include /Artifact-tagged spans (matches pre-0.3.42
+        // behavior). The spec-correct (§14.8.2.2.1) variant lives in
+        // [`extract_words_with_thresholds_no_artifacts`].
+        self.extract_words_inner(page_index, word_gap_threshold, profile, true)
+    }
+
+    /// Same as [`extract_words_with_thresholds`] but drops spans tagged
+    /// as `/Artifact` (running headers/footers, page numbers, watermarks;
+    /// ISO 32000-1:2008 §14.8.2.2.1). The spec-correct variant.
+    pub fn extract_words_with_thresholds_no_artifacts(
+        &self,
+        page_index: usize,
+        word_gap_threshold: Option<f32>,
+        profile: Option<crate::config::ExtractionProfile>,
+    ) -> Result<Vec<crate::layout::Word>> {
+        self.extract_words_inner(page_index, word_gap_threshold, profile, false)
+    }
+
+    fn extract_words_inner(
+        &self,
+        page_index: usize,
+        word_gap_threshold: Option<f32>,
+        profile: Option<crate::config::ExtractionProfile>,
+        include_artifacts: bool,
+    ) -> Result<Vec<crate::layout::Word>> {
         use crate::layout::{clustering, AdaptiveLayoutParams, DocumentProperties, Word};
 
         // Span source. The default (no profile) flows through the canonical
         // `page_reading_order` helper (issue #457): tagged → struct tree,
         // untagged → geometric top-to-bottom. The legacy profile path keeps
-        // its previous XY-Cut + row-aware-sort behavior until profile is
-        // removed in Phase 5 of the refactor.
+        // its previous XY-Cut + row-aware-sort behavior pending the planned
+        // removal of `profile`.
         let spans: Vec<crate::layout::TextSpan> = match profile {
             Some(p) => {
                 use crate::pipeline::reading_order::xycut::XYCutStrategy;
@@ -7542,6 +7567,9 @@ impl PdfDocument {
                 s.sort_by(|a, b| {
                     crate::utils::row_aware_span_cmp(a.bbox.y, a.bbox.x, b.bbox.y, b.bbox.x)
                 });
+                if !include_artifacts {
+                    s.retain(|span| span.artifact_type.is_none());
+                }
                 let erase = self
                     .erase_regions
                     .lock_or_recover()
@@ -7553,10 +7581,14 @@ impl PdfDocument {
                 let strategy = XYCutStrategy::new();
                 strategy.partition_region(&s).into_iter().flatten().collect()
             },
-            None => crate::pipeline::page_reading_order(self, page_index)?
-                .into_iter()
-                .map(|os| os.span)
-                .collect(),
+            None => {
+                let ordered = if include_artifacts {
+                    crate::pipeline::page_reading_order(self, page_index)?
+                } else {
+                    crate::pipeline::page_reading_order_no_artifacts(self, page_index)?
+                };
+                ordered.into_iter().map(|os| os.span).collect()
+            },
         };
         if spans.is_empty() {
             return Ok(Vec::new());
@@ -7674,11 +7706,37 @@ impl PdfDocument {
         line_gap_threshold: Option<f32>,
         profile: Option<crate::config::ExtractionProfile>,
     ) -> Result<Vec<crate::layout::TextLine>> {
+        // Default: include /Artifact-tagged spans (pre-0.3.42 behavior).
+        // Spec-correct variant: [`extract_text_lines_with_thresholds_no_artifacts`].
+        self.extract_text_lines_inner(page_index, word_gap_threshold, line_gap_threshold, profile, true)
+    }
+
+    /// Same as [`extract_text_lines_with_thresholds`] but drops spans
+    /// tagged as `/Artifact` (running headers/footers, page numbers,
+    /// watermarks; ISO 32000-1:2008 §14.8.2.2.1). Spec-correct variant.
+    pub fn extract_text_lines_with_thresholds_no_artifacts(
+        &self,
+        page_index: usize,
+        word_gap_threshold: Option<f32>,
+        line_gap_threshold: Option<f32>,
+        profile: Option<crate::config::ExtractionProfile>,
+    ) -> Result<Vec<crate::layout::TextLine>> {
+        self.extract_text_lines_inner(page_index, word_gap_threshold, line_gap_threshold, profile, false)
+    }
+
+    fn extract_text_lines_inner(
+        &self,
+        page_index: usize,
+        word_gap_threshold: Option<f32>,
+        line_gap_threshold: Option<f32>,
+        profile: Option<crate::config::ExtractionProfile>,
+        include_artifacts: bool,
+    ) -> Result<Vec<crate::layout::TextLine>> {
         use crate::layout::{clustering, AdaptiveLayoutParams, DocumentProperties, TextLine, Word};
 
         // Span source. Default (no profile) → canonical `page_reading_order`
         // helper (issue #457). Legacy profile path keeps XY-Cut + row-aware
-        // sort until profile is removed in Phase 5 of the refactor.
+        // sort pending the planned removal of `profile`.
         let spans: Vec<crate::layout::TextSpan> = match profile {
             Some(p) => {
                 use crate::pipeline::reading_order::xycut::XYCutStrategy;
@@ -7687,6 +7745,9 @@ impl PdfDocument {
                 s.sort_by(|a, b| {
                     crate::utils::row_aware_span_cmp(a.bbox.y, a.bbox.x, b.bbox.y, b.bbox.x)
                 });
+                if !include_artifacts {
+                    s.retain(|span| span.artifact_type.is_none());
+                }
                 let erase = self
                     .erase_regions
                     .lock_or_recover()
@@ -7698,10 +7759,14 @@ impl PdfDocument {
                 let strategy = XYCutStrategy::new();
                 strategy.partition_region(&s).into_iter().flatten().collect()
             },
-            None => crate::pipeline::page_reading_order(self, page_index)?
-                .into_iter()
-                .map(|os| os.span)
-                .collect(),
+            None => {
+                let ordered = if include_artifacts {
+                    crate::pipeline::page_reading_order(self, page_index)?
+                } else {
+                    crate::pipeline::page_reading_order_no_artifacts(self, page_index)?
+                };
+                ordered.into_iter().map(|os| os.span).collect()
+            },
         };
         if spans.is_empty() {
             return Ok(Vec::new());

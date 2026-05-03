@@ -31,6 +31,14 @@ use crate::pipeline::{
 ///
 /// Returns an empty vector when the page has no extractable text.
 ///
+/// All extracted spans are returned by default — including any that the
+/// upstream extractor tagged as `/Artifact` (running headers, footers,
+/// page numbers, watermarks; ISO 32000-1:2008 §14.8.2.2.1). Some
+/// downstream callers (e.g. `extract_text` on untagged PDFs) apply
+/// their own artifact filter. Use
+/// [`page_reading_order_no_artifacts`] for the spec-correct
+/// "exclude artifacts" variant.
+///
 /// # Errors
 ///
 /// Returns the underlying parse / extraction error if span extraction
@@ -40,7 +48,28 @@ pub fn page_reading_order(
     doc: &PdfDocument,
     page_index: usize,
 ) -> Result<Vec<OrderedTextSpan>> {
-    let spans = doc.extract_spans(page_index)?;
+    page_reading_order_inner(doc, page_index, /*include_artifacts*/ true)
+}
+
+/// Variant of [`page_reading_order`] that drops spans flagged as
+/// `/Artifact` (running headers, footers, page numbers, watermarks;
+/// ISO 32000-1:2008 §14.8.2.2.1).
+pub fn page_reading_order_no_artifacts(
+    doc: &PdfDocument,
+    page_index: usize,
+) -> Result<Vec<OrderedTextSpan>> {
+    page_reading_order_inner(doc, page_index, /*include_artifacts*/ false)
+}
+
+fn page_reading_order_inner(
+    doc: &PdfDocument,
+    page_index: usize,
+    include_artifacts: bool,
+) -> Result<Vec<OrderedTextSpan>> {
+    let mut spans = doc.extract_spans(page_index)?;
+    if !include_artifacts {
+        spans.retain(|s| s.artifact_type.is_none());
+    }
     if spans.is_empty() {
         return Ok(Vec::new());
     }

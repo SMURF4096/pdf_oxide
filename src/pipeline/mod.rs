@@ -56,7 +56,7 @@ pub use metrics::{BatchMetrics, ExtractionMetrics};
 pub use ordered_span::{
     OrderedSpans, OrderedTextSpan, ReadingOrderInfo, ReadingOrderSource, StructRole,
 };
-pub use page_order::page_reading_order;
+pub use page_order::{page_reading_order, page_reading_order_no_artifacts};
 pub use reading_order::{ReadingOrderContext, ReadingOrderStrategy, XYCutStrategy};
 pub use text_processing::WhitespaceNormalizer;
 
