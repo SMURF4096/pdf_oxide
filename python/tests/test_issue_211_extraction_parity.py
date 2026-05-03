@@ -35,8 +35,7 @@ def _assert_monotonic_line_y(lines) -> None:
     for i, ln in enumerate(lines):
         y = ln.bbox[1]
         assert y <= prev_y + 0.5, (
-            f"lines not monotonic at index {i}: y={y} after prev_y={prev_y}, "
-            f"text={ln.text!r}"
+            f"lines not monotonic at index {i}: y={y} after prev_y={prev_y}, text={ln.text!r}"
         )
         prev_y = y
 
