@@ -337,7 +337,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
-          targets: wasm32-unknown-unknown
+          targets: wasm32-unknown-unknown,wasm32-wasip1
           components: clippy
 
       - name: Cache
@@ -348,6 +348,13 @@ jobs:
 
       - name: Clippy WASM
         run: cargo clippy --target wasm32-unknown-unknown --no-default-features --features wasm,rendering --lib -- -D warnings
+
+      # WASI build target (issue #214). Used by sandboxed agent /
+      # serverless deployments via wasmtime / wasmer / Deno. We only
+      # build to keep `cargo +nightly` out of the equation — runtime
+      # validation lives in the consumer projects.
+      - name: Build WASI (wasm32-wasip1)
+        run: cargo build --lib --target wasm32-wasip1 --no-default-features --features wasm,rendering
 
       # Validate the produced module using wasm-tools.
       - name: Install wasm-tools

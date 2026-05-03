@@ -15,7 +15,6 @@ use crate::xref::{find_xref_offset, parse_xref, CrossRefTable};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
-#[cfg(not(target_arch = "wasm32"))]
 use std::io::{BufRead, BufReader, Cursor, Read, Seek, SeekFrom};
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
@@ -3196,6 +3195,28 @@ impl PdfDocument {
     )]
     pub fn page_count_u32(&self) -> u32 {
         self.page_count().unwrap_or(0) as u32
+    }
+
+    /// Returns the page index range `0..page_count`, or an empty range
+    /// when `page_count()` fails. Issue #447.
+    ///
+    /// Designed for `for i in doc.page_indices() { ... }` so callers
+    /// don't have to write `for i in 0..doc.page_count()?`. The
+    /// fallible-vs-iterator tension that motivated the issue is
+    /// resolved by treating a metadata-broken document as having no
+    /// pages at the iteration level — every per-page extraction call
+    /// is already fallible and surfaces the real error.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// for i in doc.page_indices() {
+    ///     let text = doc.extract_text(i)?;
+    ///     println!("page {}: {} chars", i, text.len());
+    /// }
+    /// ```
+    pub fn page_indices(&self) -> std::ops::Range<usize> {
+        0..self.page_count().unwrap_or(0)
     }
 
     /// Get a page object by index (0-based).
