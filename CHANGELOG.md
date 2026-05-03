@@ -73,35 +73,47 @@ HSMs), and the legacy-PDF policy table.
 ### Release
 
 - New `.github/workflows/release-fips.yml` workflow (manually
-  triggered) builds and publishes parallel `-fips` distributions on
+  triggered) builds and publishes parallel FIPS distributions on
   every package index, all from the same Rust source compiled with
   `--features crypto-aws-lc` so each binary contains only AWS-LC's
   FIPS-validated module:
 
   | Ecosystem | Package | Install |
   |---|---|---|
-  | PyPI | `pdf_oxide-fips` | `pip install pdf_oxide-fips==0.3.44` |
+  | PyPI | `pdf_oxide_fips` | `pip install pdf_oxide_fips==0.3.44` |
   | npm | `pdf-oxide-fips` | `npm install pdf-oxide-fips@0.3.44` |
   | NuGet | `PdfOxide.Fips` | `dotnet add package PdfOxide.Fips --version 0.3.44` |
   | Go | `github.com/yfedoseev/pdf_oxide/go-fips` | `go get github.com/yfedoseev/pdf_oxide/go-fips@v0.3.44` |
 
-  All four versions move in lockstep with the regular release —
-  `-fips` and non-`-fips` distributions of the same release tag are
-  byte-equal in their non-crypto code paths. FIPS-mandated
-  deployments install the `-fips` variant; everyone else stays on
-  the default. Per-build smoke tests in the workflow confirm the
-  FIPS provider is reachable and `crypto_use_fips()` flips the
-  active provider as expected.
+  Platform matrix in v0.3.44 (every binding × every platform):
 
-  Initial scope: Linux x86_64 across all four bindings.
-  macOS / Windows / aarch64 land in v0.3.45 once the AWS-LC FIPS
-  build matrix is validated per platform (different cmake / nasm
-  prerequisites per OS).
+  | Platform | Python | npm | NuGet | Go |
+  |---|:---:|:---:|:---:|:---:|
+  | Linux x86_64 | ✅ | ✅ | ✅ | ✅ |
+  | Linux aarch64 | ✅ | ✅ | ✅ | ✅ |
+  | macOS x86_64 | ✅ | ✅ | ✅ | ✅ |
+  | macOS arm64 | ✅ | ✅ | ✅ | ✅ |
+  | Windows x86_64 | ✅ | ✅ | ✅ | ✅ |
+
+  All distributions move in lockstep with the regular release —
+  FIPS and default variants of the same release tag are byte-equal
+  in their non-crypto code paths. Per-platform smoke tests in the
+  workflow confirm the FIPS provider is reachable AND
+  `crypto_use_fips()` (or equivalent) flips the active provider
+  as expected — catches API mismatches before publishing.
+
+  Why `pdf_oxide_fips` (underscore) for Python: PyPI normalizes
+  hyphens / underscores to the same canonical form per PEP 503
+  (`pip install pdf_oxide_fips` and `pip install pdf-oxide-fips`
+  resolve to the same package). Using underscore in `pyproject.toml`
+  makes the wheel filename and the `import pdf_oxide` path
+  identical to the default distribution — only the package name
+  differs.
 
   Why parallel distributions instead of `pip install pdf_oxide[fips]`:
-  Python extras can only add Python dependencies — they can't swap
-  the compiled native binary baked into a wheel. The industry
-  pattern (cryptography / pyOpenSSL FIPS variants) ships separate
+  Python extras (PEP 508) can add Python dependencies but cannot
+  swap the compiled `.so` baked inside a wheel. The industry
+  pattern (cryptography, pyOpenSSL) ships separate FIPS
   distributions; we follow suit.
 
   Why a `go-fips` submodule path: Go modules are import-path-bound,

@@ -152,7 +152,7 @@ The runtime API is identical across every binding:
 | Want | Install |
 |---|---|
 | Python + default | `pip install pdf_oxide==0.3.44` |
-| Python + FIPS | `pip install pdf_oxide-fips==0.3.44` |
+| Python + FIPS | `pip install pdf_oxide_fips==0.3.44` |
 | Node + default | `npm install pdf-oxide@0.3.44` |
 | Node + FIPS | `npm install pdf-oxide-fips@0.3.44` |
 | .NET + default | `dotnet add package PdfOxide --version 0.3.44` |
