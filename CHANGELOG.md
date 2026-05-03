@@ -20,10 +20,16 @@ All notable changes to PDFOxide are documented here.
   value pairs) are gone — spatial table detection is now gated on a
   real-grid validator (≥2 rows × ≥2 cols, ≥50% of rows with at least
   two non-empty cells).
-- Artifact-tagged content (running headers, footers, page numbers,
-  watermarks; ISO 32000-1:2008 §14.8.2.2.1) is excluded by default
-  from extracted words / lines, matching the spec. Pass
-  `include_artifacts=True` to opt back into the previous behavior.
+- New `include_artifacts` kwarg on `extract_words` /
+  `extract_text_lines` (Python) gates the spec-correct behavior of
+  excluding `/Artifact`-tagged content (running headers, footers,
+  page numbers, watermarks; ISO 32000-1:2008 §14.8.2.2.1).
+  **Default is `True`** — preserves pre-0.3.42 behavior so existing
+  scripts don't lose content. Pass `include_artifacts=False` to
+  opt into the spec-correct exclude. The default may flip in a
+  future major release once the artifact-detection heuristic is
+  hardened against false positives on docs whose body text recurs
+  across pages.
 - The default API surface is now knob-free: `region`,
   `word_gap_threshold`, `line_gap_threshold`, `profile` are deprecated
   on `extract_words` / `extract_text_lines` (Python). They still work
@@ -43,10 +49,11 @@ All notable changes to PDFOxide are documented here.
 
 ### Behavior changes
 
-- `extract_words(page)` / `extract_text_lines(page)` now exclude spans
-  tagged as artifacts by default. Word counts on documents with running
-  headers / footers may decrease. Restore previous output by passing
-  `include_artifacts=True`.
+- `extract_words(page)` / `extract_text_lines(page)` gain an
+  `include_artifacts` kwarg (default `True` — backward-compatible).
+  Pass `include_artifacts=False` to drop spans tagged as artifacts
+  per ISO 32000-1:2008 §14.8.2.2.1. Word counts on documents with
+  running headers / footers will decrease in that mode.
 - Multi-column reading-order detection on untagged PDFs is now
   conservative: column-aware mode opts in only when the page
   presents ≥3 distinct vertical gutters, each ≥`median_char_width × 4`
