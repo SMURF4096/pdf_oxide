@@ -2256,6 +2256,25 @@ impl PyPdfDocument {
         })
     }
 
+    /// Iterable view of all pages in this document. Equivalent to
+    /// `iter(doc)` but explicitly named for discoverability — issue
+    /// #447 — and matches the C# `doc.Pages` / Go `doc.Pages()`
+    /// surface that already exists in those bindings. Each iteration
+    /// yields a `Page` object that exposes per-page extraction APIs.
+    ///
+    /// Example:
+    ///     for page in doc.pages:
+    ///         print(page.text[:80])
+    #[getter]
+    fn pages(slf: Py<Self>, py: Python<'_>) -> PyResult<PyDocPageIter> {
+        let count = slf.borrow_mut(py).page_count()?;
+        Ok(PyDocPageIter {
+            doc: slf,
+            index: 0,
+            count,
+        })
+    }
+
     fn __repr__(&self) -> String {
         format!("PdfDocument(version={}.{})", self.inner.version().0, self.inner.version().1)
     }
