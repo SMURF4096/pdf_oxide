@@ -509,7 +509,12 @@ impl PyPdfDocument {
             warn_deprecated_kwargs(
                 py,
                 "extract_text_lines",
-                &["region", "word_gap_threshold", "line_gap_threshold", "profile"],
+                &[
+                    "region",
+                    "word_gap_threshold",
+                    "line_gap_threshold",
+                    "profile",
+                ],
             )?;
         }
 
@@ -2234,9 +2239,15 @@ impl PyDocPage {
 
     #[getter]
     fn lines(&self, py: Python<'_>) -> PyResult<Vec<PyTextLine>> {
-        self.doc
-            .borrow_mut(py)
-            .extract_text_lines(py, self.page_index, true, None, None, None, None)
+        self.doc.borrow_mut(py).extract_text_lines(
+            py,
+            self.page_index,
+            true,
+            None,
+            None,
+            None,
+            None,
+        )
     }
 
     #[getter]

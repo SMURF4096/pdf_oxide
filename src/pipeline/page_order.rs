@@ -23,9 +23,7 @@
 use crate::document::PdfDocument;
 use crate::error::Result;
 use crate::geometry::Rect;
-use crate::pipeline::{
-    OrderedTextSpan, ReadingOrderContext, TextPipeline, TextPipelineConfig,
-};
+use crate::pipeline::{OrderedTextSpan, ReadingOrderContext, TextPipeline, TextPipelineConfig};
 
 /// Compute the canonical reading-order span sequence for a single page.
 ///
@@ -44,10 +42,7 @@ use crate::pipeline::{
 /// Returns the underlying parse / extraction error if span extraction
 /// itself fails. Structure-tree resolution errors are tolerated and the
 /// helper falls back to geometric order.
-pub fn page_reading_order(
-    doc: &PdfDocument,
-    page_index: usize,
-) -> Result<Vec<OrderedTextSpan>> {
+pub fn page_reading_order(doc: &PdfDocument, page_index: usize) -> Result<Vec<OrderedTextSpan>> {
     page_reading_order_inner(doc, page_index, /*include_artifacts*/ true)
 }
 
@@ -143,7 +138,9 @@ mod tests {
         // returns an error in that case, so the helper propagates. We only
         // assert behavior when the helper succeeds; this test currently only
         // verifies the function compiles and links — runtime check below.
-        let Some(doc) = open("issue_211_pdf_structure.pdf") else { return };
+        let Some(doc) = open("issue_211_pdf_structure.pdf") else {
+            return;
+        };
         // Page 0 IS populated. Just confirm we get a non-empty result.
         let result = page_reading_order(&doc, 0).expect("page 0 should resolve");
         assert!(!result.is_empty(), "page 0 of pdf_structure has spans");
@@ -153,7 +150,9 @@ mod tests {
     fn tagged_pdf_uses_structure_tree_first() {
         // PDF #2 is tagged. Title spans should appear BEFORE body spans in
         // the canonical order, even though XY-Cut moves them.
-        let Some(doc) = open("issue_211_municipal_minutes.pdf") else { return };
+        let Some(doc) = open("issue_211_municipal_minutes.pdf") else {
+            return;
+        };
         let ordered = page_reading_order(&doc, 0).expect("ordering succeeds");
 
         let title_pos = ordered
@@ -177,15 +176,24 @@ mod tests {
     fn untagged_pdf_falls_back_to_geometric() {
         // Smoke test — the simple Lorem fixture. The first ordered span must
         // contain "Titre du document" (the document title at top of page).
-        let Some(doc) = open("issue_211_pdf_structure.pdf") else { return };
+        let Some(doc) = open("issue_211_pdf_structure.pdf") else {
+            return;
+        };
         let ordered = page_reading_order(&doc, 0).expect("ordering succeeds");
         assert!(!ordered.is_empty());
         assert!(
             ordered[0].span.text.contains("Titre")
-                || ordered.iter().take(3).any(|s| s.span.text.contains("Titre")),
+                || ordered
+                    .iter()
+                    .take(3)
+                    .any(|s| s.span.text.contains("Titre")),
             "title 'Titre' must appear among the first few ordered spans; \
              got first 5: {:?}",
-            ordered.iter().take(5).map(|s| &s.span.text).collect::<Vec<_>>(),
+            ordered
+                .iter()
+                .take(5)
+                .map(|s| &s.span.text)
+                .collect::<Vec<_>>(),
         );
     }
 }

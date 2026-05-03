@@ -7529,11 +7529,11 @@ impl PdfDocument {
     ) -> Result<Vec<crate::layout::Word>> {
         // Default: include /Artifact-tagged spans (matches pre-0.3.42
         // behavior). The spec-correct (§14.8.2.2.1) variant lives in
-        // [`extract_words_with_thresholds_no_artifacts`].
+        // [`Self::extract_words_with_thresholds_no_artifacts`].
         self.extract_words_inner(page_index, word_gap_threshold, profile, true)
     }
 
-    /// Same as [`extract_words_with_thresholds`] but drops spans tagged
+    /// Same as [`Self::extract_words_with_thresholds`] but drops spans tagged
     /// as `/Artifact` (running headers/footers, page numbers, watermarks;
     /// ISO 32000-1:2008 §14.8.2.2.1). The spec-correct variant.
     pub fn extract_words_with_thresholds_no_artifacts(
@@ -7579,7 +7579,11 @@ impl PdfDocument {
                     s.retain(|span| !regions.iter().any(|r| r.intersects(&span.bbox)));
                 }
                 let strategy = XYCutStrategy::new();
-                strategy.partition_region(&s).into_iter().flatten().collect()
+                strategy
+                    .partition_region(&s)
+                    .into_iter()
+                    .flatten()
+                    .collect()
             },
             None => {
                 let ordered = if include_artifacts {
@@ -7707,11 +7711,17 @@ impl PdfDocument {
         profile: Option<crate::config::ExtractionProfile>,
     ) -> Result<Vec<crate::layout::TextLine>> {
         // Default: include /Artifact-tagged spans (pre-0.3.42 behavior).
-        // Spec-correct variant: [`extract_text_lines_with_thresholds_no_artifacts`].
-        self.extract_text_lines_inner(page_index, word_gap_threshold, line_gap_threshold, profile, true)
+        // Spec-correct variant: [`Self::extract_text_lines_with_thresholds_no_artifacts`].
+        self.extract_text_lines_inner(
+            page_index,
+            word_gap_threshold,
+            line_gap_threshold,
+            profile,
+            true,
+        )
     }
 
-    /// Same as [`extract_text_lines_with_thresholds`] but drops spans
+    /// Same as [`Self::extract_text_lines_with_thresholds`] but drops spans
     /// tagged as `/Artifact` (running headers/footers, page numbers,
     /// watermarks; ISO 32000-1:2008 §14.8.2.2.1). Spec-correct variant.
     pub fn extract_text_lines_with_thresholds_no_artifacts(
@@ -7721,7 +7731,13 @@ impl PdfDocument {
         line_gap_threshold: Option<f32>,
         profile: Option<crate::config::ExtractionProfile>,
     ) -> Result<Vec<crate::layout::TextLine>> {
-        self.extract_text_lines_inner(page_index, word_gap_threshold, line_gap_threshold, profile, false)
+        self.extract_text_lines_inner(
+            page_index,
+            word_gap_threshold,
+            line_gap_threshold,
+            profile,
+            false,
+        )
     }
 
     fn extract_text_lines_inner(
@@ -7757,7 +7773,11 @@ impl PdfDocument {
                     s.retain(|span| !regions.iter().any(|r| r.intersects(&span.bbox)));
                 }
                 let strategy = XYCutStrategy::new();
-                strategy.partition_region(&s).into_iter().flatten().collect()
+                strategy
+                    .partition_region(&s)
+                    .into_iter()
+                    .flatten()
+                    .collect()
             },
             None => {
                 let ordered = if include_artifacts {
@@ -7833,15 +7853,11 @@ impl PdfDocument {
         // into the same line regardless of which span they came from — the
         // span ordering already handled the multi-column / structure-tree
         // sequencing decision upstream.
-        let line_clusters =
-            clustering::cluster_words_into_lines(&words, params.line_gap_threshold);
+        let line_clusters = clustering::cluster_words_into_lines(&words, params.line_gap_threshold);
 
         let mut all_lines = Vec::new();
         for cluster_indices in line_clusters {
-            let cluster_words: Vec<_> = cluster_indices
-                .iter()
-                .map(|&i| words[i].clone())
-                .collect();
+            let cluster_words: Vec<_> = cluster_indices.iter().map(|&i| words[i].clone()).collect();
             all_lines.push(TextLine::new(cluster_words));
         }
 
@@ -9585,8 +9601,10 @@ impl PdfDocument {
         // value pairs that align horizontally, form fillable boxes drawn
         // with thin lines). Drop tables that don't look like real grids.
         let raw_count = raw_tables.len();
-        let tables: Vec<crate::structure::Table> =
-            raw_tables.into_iter().filter(|t| t.is_real_grid()).collect();
+        let tables: Vec<crate::structure::Table> = raw_tables
+            .into_iter()
+            .filter(|t| t.is_real_grid())
+            .collect();
 
         if raw_count != tables.len() {
             log::debug!(

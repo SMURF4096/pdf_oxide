@@ -22,8 +22,9 @@ use std::path::PathBuf;
 
 fn fixture(name: &str) -> Option<PathBuf> {
     let home = std::env::var("HOME").ok()?;
-    let path =
-        PathBuf::from(home).join("projects/pdf_oxide_tests/pdfs_issue_regression").join(name);
+    let path = PathBuf::from(home)
+        .join("projects/pdf_oxide_tests/pdfs_issue_regression")
+        .join(name);
     if !path.exists() {
         eprintln!("Skipping: {} not found", path.display());
         return None;
@@ -62,7 +63,9 @@ fn assert_monotonic_line_y(lines: &[pdf_oxide::layout::TextLine]) {
 
 #[test]
 fn test_211_pdf_structure_first_words_in_order() {
-    let Some(doc) = open_fixture("issue_211_pdf_structure.pdf") else { return };
+    let Some(doc) = open_fixture("issue_211_pdf_structure.pdf") else {
+        return;
+    };
     let words = doc.extract_words(0).expect("extract_words succeeds");
     assert!(!words.is_empty(), "must extract at least one word");
     assert_eq!(words[0].text, "Titre", "first word should be 'Titre du document'");
@@ -72,8 +75,12 @@ fn test_211_pdf_structure_first_words_in_order() {
 
 #[test]
 fn test_211_pdf_structure_lines_monotonic_y() {
-    let Some(doc) = open_fixture("issue_211_pdf_structure.pdf") else { return };
-    let lines = doc.extract_text_lines(0).expect("extract_text_lines succeeds");
+    let Some(doc) = open_fixture("issue_211_pdf_structure.pdf") else {
+        return;
+    };
+    let lines = doc
+        .extract_text_lines(0)
+        .expect("extract_text_lines succeeds");
     assert!(lines.len() >= 20, "should extract ~22 lines");
     assert_monotonic_line_y(&lines);
 }
@@ -87,32 +94,52 @@ fn test_211_pdf_structure_lines_monotonic_y() {
 
 #[test]
 fn test_211_municipal_minutes_first_word_is_comite() {
-    let Some(doc) = open_fixture("issue_211_municipal_minutes.pdf") else { return };
+    let Some(doc) = open_fixture("issue_211_municipal_minutes.pdf") else {
+        return;
+    };
     let words = doc.extract_words(0).expect("extract_words succeeds");
     assert_eq!(
-        words[0].text, "COMITÉ",
+        words[0].text,
+        "COMITÉ",
         "first word should be 'COMITÉ' from the document title; got {:?} (full prefix: {:?})",
         words.first().map(|w| &w.text),
-        words.iter().take(8).map(|w| w.text.as_str()).collect::<Vec<_>>(),
+        words
+            .iter()
+            .take(8)
+            .map(|w| w.text.as_str())
+            .collect::<Vec<_>>(),
     );
 }
 
 #[test]
 fn test_211_municipal_minutes_first_line_is_title() {
-    let Some(doc) = open_fixture("issue_211_municipal_minutes.pdf") else { return };
-    let lines = doc.extract_text_lines(0).expect("extract_text_lines succeeds");
+    let Some(doc) = open_fixture("issue_211_municipal_minutes.pdf") else {
+        return;
+    };
+    let lines = doc
+        .extract_text_lines(0)
+        .expect("extract_text_lines succeeds");
     assert_eq!(
-        lines[0].text, "COMITÉ DE DÉMOLITION",
+        lines[0].text,
+        "COMITÉ DE DÉMOLITION",
         "first line should be the title; got {:?} (full prefix: {:?})",
         lines.first().map(|l| &l.text),
-        lines.iter().take(5).map(|l| l.text.as_str()).collect::<Vec<_>>(),
+        lines
+            .iter()
+            .take(5)
+            .map(|l| l.text.as_str())
+            .collect::<Vec<_>>(),
     );
 }
 
 #[test]
 fn test_211_municipal_minutes_lines_monotonic_y() {
-    let Some(doc) = open_fixture("issue_211_municipal_minutes.pdf") else { return };
-    let lines = doc.extract_text_lines(0).expect("extract_text_lines succeeds");
+    let Some(doc) = open_fixture("issue_211_municipal_minutes.pdf") else {
+        return;
+    };
+    let lines = doc
+        .extract_text_lines(0)
+        .expect("extract_text_lines succeeds");
     assert_monotonic_line_y(&lines);
 }
 
@@ -120,22 +147,21 @@ fn test_211_municipal_minutes_lines_monotonic_y() {
 fn test_211_municipal_minutes_spans_contain_title() {
     // extract_spans currently DOES include the title in correct order — this
     // is a regression guard for the working path.
-    let Some(doc) = open_fixture("issue_211_municipal_minutes.pdf") else { return };
+    let Some(doc) = open_fixture("issue_211_municipal_minutes.pdf") else {
+        return;
+    };
     let spans = doc.extract_spans(0).expect("extract_spans succeeds");
-    let joined: String =
-        spans.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join(" ");
-    assert!(
-        joined.contains("COMITÉ DE DÉMOLITION"),
-        "spans must contain the document title"
-    );
+    let joined: String = spans
+        .iter()
+        .map(|s| s.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(joined.contains("COMITÉ DE DÉMOLITION"), "spans must contain the document title");
     assert!(joined.contains("PROCÈS-VERBAL"), "spans must contain the subtitle");
     // Title must come before the body in span order
     let title_pos = joined.find("COMITÉ DE DÉMOLITION").unwrap();
     let body_pos = joined.find("Séance publique").unwrap();
-    assert!(
-        title_pos < body_pos,
-        "title must precede body in extract_spans output"
-    );
+    assert!(title_pos < body_pos, "title must precede body in extract_spans output");
 }
 
 // ── PDF #3: government_form — form-style label/value layout ──────────────────
@@ -153,8 +179,12 @@ fn test_211_government_form_prose_line_not_split() {
     // SAME extracted line — the "(DSP" prefix and the "that do not include"
     // continuation. Ignores any small TextLine joiner-whitespace artifact
     // between the pieces ("DSP )" vs "DSP)") which is tracked separately.
-    let Some(doc) = open_fixture("issue_211_government_form.pdf") else { return };
-    let lines = doc.extract_text_lines(0).expect("extract_text_lines succeeds");
+    let Some(doc) = open_fixture("issue_211_government_form.pdf") else {
+        return;
+    };
+    let lines = doc
+        .extract_text_lines(0)
+        .expect("extract_text_lines succeeds");
     let prefix = "Reports submitted to the Division of Safety and Permanence";
     let suffix = "that do not include all of the required information";
     let prose_line = lines
@@ -163,7 +193,11 @@ fn test_211_government_form_prose_line_not_split() {
         .unwrap_or_else(|| {
             panic!(
                 "no line contains the prose prefix; lines:\n{}",
-                lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>().join("\n"),
+                lines
+                    .iter()
+                    .map(|l| l.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
             )
         });
     assert!(
@@ -175,8 +209,12 @@ fn test_211_government_form_prose_line_not_split() {
 
 #[test]
 fn test_211_government_form_lines_monotonic_y() {
-    let Some(doc) = open_fixture("issue_211_government_form.pdf") else { return };
-    let lines = doc.extract_text_lines(0).expect("extract_text_lines succeeds");
+    let Some(doc) = open_fixture("issue_211_government_form.pdf") else {
+        return;
+    };
+    let lines = doc
+        .extract_text_lines(0)
+        .expect("extract_text_lines succeeds");
     assert_monotonic_line_y(&lines);
 }
 
@@ -188,7 +226,9 @@ fn test_211_government_form_lines_monotonic_y() {
 
 #[test]
 fn test_211_municipal_minutes_words_match_span_order() {
-    let Some(doc) = open_fixture("issue_211_municipal_minutes.pdf") else { return };
+    let Some(doc) = open_fixture("issue_211_municipal_minutes.pdf") else {
+        return;
+    };
     let words = doc.extract_words(0).expect("extract_words succeeds");
     let comite_idx = words
         .iter()
