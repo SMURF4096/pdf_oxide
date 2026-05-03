@@ -86,13 +86,45 @@ newspapers, theses, plus the three #211 fixtures) compared between
 regressions**: every word the baseline extracted is also extracted
 by 0.3.42; only ordering / line-grouping / table-rendering changed.
 
+### Dependencies
+
+- **#453** — drop the unused `lzw` direct dependency. `LzwDecoder`
+  already routed through `weezl` plus a custom fallback; the `lzw`
+  crate was declared in `Cargo.toml` but never imported. Silences
+  RUSTSEC-2020-0144 (unmaintained advisory) for downstream cargo-deny
+  consumers as a side-effect.
+- **#454 (partial)** — `cargo update` lockfile refresh: `fax 0.2.6 → 0.2.7`,
+  `imageproc 0.26.1 → 0.26.2`, `js-sys` / `web-sys` `0.3.95 → 0.3.97`,
+  `pdfium-render 0.9.0 → 0.9.1`, `rustls 0.23.39 → 0.23.40`,
+  `wasm-bindgen` family `0.2.118 → 0.2.120`, plus 12 other transitive
+  patch / minor bumps. The remaining major-version items in #454
+  (RustCrypto 0.8 stack — `pkcs8 0.11`, `spki 0.8`, `der 0.8`,
+  `digest 0.11`, `crypto-common 0.2`, `block-buffer 0.12`) stay
+  pinned: `rsa 0.10` and `p256 0.14` / `p384 0.14` are still RC
+  upstream as of 2026-04 (see the existing pin note in
+  `Cargo.toml:185-187`).
+
 ### Community contributors
 
-- **[@ankursri494](https://github.com/ankursri494)** — kept #211 alive
-  through three rounds of "is this still broken on the latest version?".
-  The third round was the charm; the report's three pdfplumber-corpus
-  fixtures isolate three distinct failure modes that this release fixes
-  in one pass.
+This release exists because of the community. Special thanks to:
+
+- **[@ankursri494](https://github.com/ankursri494)** — reported
+  [#211](https://github.com/yfedoseev/pdf_oxide/issues/211) with three
+  carefully chosen pdfplumber-corpus fixtures (`pdf_structure.pdf`,
+  `2023-06-20-PV.pdf`, `150109DSP-Milw-505-90D.pdf`) that isolate three
+  distinct failure modes — wrong reading order on tagged PDFs, dropped
+  document headings, and prose-line splits at form gutters. They also
+  kept the issue alive through two rounds of "is this still broken on
+  the latest version?", which forced the deeper investigation that
+  ultimately exposed the architectural gap behind #457. Without that
+  persistence and that specific repro set, this rewire would not have
+  shipped.
+- **[@lingcoder](https://github.com/lingcoder)** — flagged the
+  unmaintained `lzw` advisory in
+  [#453](https://github.com/yfedoseev/pdf_oxide/issues/453) with a
+  precise pointer to RUSTSEC-2020-0144 and the `weezl` migration
+  path; the investigation surfaced that the dep was unreferenced
+  entirely, turning it into a one-line cleanup.
 
 ## [0.3.41] - 2026-04-29
 
