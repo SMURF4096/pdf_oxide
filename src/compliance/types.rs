@@ -452,6 +452,13 @@ pub enum WarningCode {
     ComplexStructure,
     /// Partial check performed (full validation requires additional features)
     PartialCheck,
+    /// A required-to-embed standard-14 PostScript font has no open-
+    /// source equivalent available to the conversion pipeline
+    /// (e.g. `Symbol`, `ZapfDingbats`). The PDF/A pipeline tracks
+    /// this as a known limitation rather than a hard error so a
+    /// document that's otherwise compliant doesn't fail solely
+    /// because of one unembeddable symbolic font. See issue #451.
+    KnownUnembeddableFont,
 }
 
 impl fmt::Display for WarningCode {
@@ -464,6 +471,7 @@ impl fmt::Display for WarningCode {
             WarningCode::HighResolutionImage => "WARN-005",
             WarningCode::ComplexStructure => "WARN-006",
             WarningCode::PartialCheck => "WARN-007",
+            WarningCode::KnownUnembeddableFont => "WARN-008",
         };
         write!(f, "{}", code)
     }

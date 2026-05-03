@@ -300,7 +300,16 @@ impl PdfAConverter {
 
         // Commit staged mutations so the validator reads the updated document.
         editor.commit_in_place()?;
-        let final_validation = self.validator.validate(editor.source_mut(), self.level)?;
+        let mut final_validation = self.validator.validate(editor.source_mut(), self.level)?;
+
+        // Issue #451: certain standard-14 PostScript fonts have no open-source
+        // equivalent in URW Base35 / SYSTEM_FONTDB and therefore can't be
+        // embedded by `embed_font`. Treat them as known limitations rather
+        // than hard errors — move the matching `FontNotEmbedded` entries
+        // from `errors` to `warnings` so a converted PDF that's otherwise
+        // compliant doesn't get marked as failed solely because of `Symbol`.
+        downgrade_known_unembeddable_fonts(&mut final_validation);
+
         result.validation = final_validation.clone();
         result.success = final_validation.is_compliant;
 
@@ -1608,6 +1617,50 @@ pub fn convert_to_pdf_a(document: &mut PdfDocument, level: PdfALevel) -> Result<
     PdfAConverter::new(level).convert(document)
 }
 
+/// Standard-14 PostScript font names that have no open-source equivalent
+/// reachable from `SYSTEM_FONTDB` / URW Base35 and therefore cannot be
+/// embedded by `embed_font`. Issue #451.
+///
+/// `Symbol` is the headline case — its glyph repertoire is symbolic
+/// (Greek letters, math operators, arrows), not Latin, and URW++'s
+/// closest analogue (`StandardSymbolsPS`) doesn't ship in the standard
+/// `urw-base35-fonts` distribution. `ZapfDingbats` is the same shape of
+/// problem and shows the same symptom on PDFs that use it.
+const KNOWN_UNEMBEDDABLE_FONTS: &[&str] = &["Symbol", "ZapfDingbats"];
+
+/// Move `FontNotEmbedded` errors whose location names a known-
+/// unembeddable standard-14 font into the `warnings` vector, and flip
+/// `is_compliant` if doing so leaves no remaining errors. The user
+/// still sees that the font wasn't embedded — just not as a hard fail.
+fn downgrade_known_unembeddable_fonts(validation: &mut crate::compliance::types::ValidationResult) {
+    use crate::compliance::types::{ComplianceWarning, ErrorCode, WarningCode};
+
+    let (downgraded, kept): (Vec<_>, Vec<_>) =
+        std::mem::take(&mut validation.errors)
+            .into_iter()
+            .partition(|e| {
+                e.code == ErrorCode::FontNotEmbedded
+                    && e.location
+                        .as_deref()
+                        .is_some_and(|loc| KNOWN_UNEMBEDDABLE_FONTS.iter().any(|n| loc.contains(n)))
+            });
+
+    validation.errors = kept;
+    for err in downgraded {
+        validation.warnings.push(ComplianceWarning::new(
+            WarningCode::KnownUnembeddableFont,
+            format!(
+                "{} (downgraded from error per #451 — no open-source equivalent available)",
+                err.message
+            ),
+        ));
+    }
+
+    if validation.errors.is_empty() {
+        validation.is_compliant = true;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1619,6 +1672,73 @@ mod tests {
         assert!(config.remove_javascript);
         assert!(config.remove_encryption);
         assert!(config.flatten_transparency);
+    }
+
+    #[test]
+    fn downgrade_symbol_font_to_warning() {
+        // Issue #451: a `FontNotEmbedded` error for the standard-14
+        // `Symbol` font (which has no open-source equivalent) gets moved
+        // from `errors` to `warnings`, and the validation flips to
+        // compliant if it was the sole remaining error.
+        use crate::compliance::types::{
+            ComplianceError, ErrorCode, ValidationResult, WarningCode,
+        };
+
+        let mut v = ValidationResult::new(PdfALevel::A1b);
+        v.errors.push(
+            ComplianceError::new(ErrorCode::FontNotEmbedded, "font 'Symbol' not embedded")
+                .with_location("Symbol"),
+        );
+        v.is_compliant = false;
+
+        downgrade_known_unembeddable_fonts(&mut v);
+
+        assert!(v.errors.is_empty(), "Symbol error should have been moved");
+        assert_eq!(v.warnings.len(), 1, "exactly one warning should be emitted");
+        assert_eq!(v.warnings[0].code, WarningCode::KnownUnembeddableFont);
+        assert!(
+            v.is_compliant,
+            "validation should flip to compliant once the only remaining error was downgraded"
+        );
+    }
+
+    #[test]
+    fn downgrade_does_not_mask_other_font_errors() {
+        // Non-Symbol font-not-embedded errors stay as errors and the
+        // result remains non-compliant.
+        use crate::compliance::types::{ComplianceError, ErrorCode, ValidationResult};
+
+        let mut v = ValidationResult::new(PdfALevel::A1b);
+        v.errors.push(
+            ComplianceError::new(ErrorCode::FontNotEmbedded, "font 'Helvetica' not embedded")
+                .with_location("Helvetica"),
+        );
+        v.is_compliant = false;
+
+        downgrade_known_unembeddable_fonts(&mut v);
+
+        assert_eq!(v.errors.len(), 1, "non-Symbol error should stay");
+        assert!(v.warnings.is_empty(), "no warning should be emitted");
+        assert!(!v.is_compliant, "still non-compliant");
+    }
+
+    #[test]
+    fn downgrade_handles_zapf_dingbats() {
+        // ZapfDingbats has the same shape of problem as Symbol.
+        use crate::compliance::types::{ComplianceError, ErrorCode, ValidationResult};
+
+        let mut v = ValidationResult::new(PdfALevel::A1b);
+        v.errors.push(
+            ComplianceError::new(ErrorCode::FontNotEmbedded, "font 'ZapfDingbats' not embedded")
+                .with_location("ZapfDingbats"),
+        );
+        v.is_compliant = false;
+
+        downgrade_known_unembeddable_fonts(&mut v);
+
+        assert!(v.errors.is_empty());
+        assert_eq!(v.warnings.len(), 1);
+        assert!(v.is_compliant);
     }
 
     #[test]
