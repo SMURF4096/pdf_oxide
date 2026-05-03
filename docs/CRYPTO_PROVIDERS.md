@@ -138,13 +138,43 @@ isolation handles this for free).
 
 ## Cross-binding exposure
 
-Phase 9 (in-flight) wires the provider choice into every binding:
+The runtime API is identical across every binding:
 
-- Python: `pdf_oxide.crypto.set_provider("aws-lc-rs")`
-- Node.js / TypeScript: `pdf_oxide.crypto.setProvider(...)`
-- C#: `PdfOxide.Crypto.Provider.Use(...)`
-- Go: `pdf_oxide.SetCryptoProvider(...)`
+| Binding | Active | Available | Switch to FIPS |
+|---|---|---|---|
+| Python | `pdf_oxide.crypto_active_provider()` | `pdf_oxide.crypto_available_providers()` | `pdf_oxide.crypto_use_fips()` |
+| Node.js / TS | `pdf_oxide.getActiveCryptoProvider()` | `pdf_oxide.isFipsCryptoAvailable()` | `pdf_oxide.useFipsCryptoProvider()` |
+| C# | `PdfDocument.GetActiveCryptoProvider()` | `PdfDocument.IsFipsCryptoAvailable()` | `PdfDocument.UseFipsCryptoProvider()` |
+| Go | `pdf_oxide.ActiveCryptoProvider()` | `pdf_oxide.IsFipsCryptoAvailable()` | `pdf_oxide.UseFipsCryptoProvider()` |
 
-Phase 10 publishes provider-specific PyPI / npm / NuGet
-distributions (`pdf_oxide` + `pdf_oxide-fips`) so FIPS deployments
-get a single-provider binary as auditors typically require.
+## Picking the right install
+
+| Want | Install |
+|---|---|
+| Python + default | `pip install pdf_oxide==0.3.44` |
+| Python + FIPS | `pip install pdf_oxide-fips==0.3.44` |
+| Node + default | `npm install pdf-oxide@0.3.44` |
+| Node + FIPS | `npm install pdf-oxide-fips@0.3.44` |
+| .NET + default | `dotnet add package PdfOxide --version 0.3.44` |
+| .NET + FIPS | `dotnet add package PdfOxide.Fips --version 0.3.44` |
+| Go + default | `go get github.com/yfedoseev/pdf_oxide/go@v0.3.44` |
+| Go + FIPS | `go get github.com/yfedoseev/pdf_oxide/go-fips@v0.3.44` |
+
+The `-fips` distributions ship single-provider binaries (auditors
+typically require this). Both default and FIPS variants of any
+release tag move in lockstep — non-crypto code paths are byte-equal.
+
+### Why not `pip install pdf_oxide[fips]`?
+
+Python extras (`pip install pkg[extra]`) can add dependencies but
+can't swap the compiled `.so` that ships inside the wheel. The
+industry pattern for FIPS variants is parallel distributions
+(cryptography, pyOpenSSL both ship this way); we follow suit.
+
+### Why `go-fips` instead of a build flag?
+
+Go modules are import-path-bound, so the FIPS variant lives at
+`github.com/yfedoseev/pdf_oxide/go-fips`. Both submodules re-export
+the same Go API surface — only the linked native static lib
+differs. Users pick at `go get` time without needing build tags or
+CGO flags.

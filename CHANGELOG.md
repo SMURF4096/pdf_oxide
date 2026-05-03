@@ -73,16 +73,45 @@ HSMs), and the legacy-PDF policy table.
 ### Release
 
 - New `.github/workflows/release-fips.yml` workflow (manually
-  triggered) builds and publishes the **`pdf_oxide-fips`** PyPI
-  variant — same Rust source, but compiled with
-  `--features python,crypto-aws-lc` so the resulting wheel only
-  contains AWS-LC's FIPS-validated module. FIPS-mandated
-  deployments install the `-fips` package; everyone else stays on
-  the default `pdf_oxide` package. Initial release ships
-  Linux x86_64 only; macOS / Windows / aarch64 land in v0.3.45
-  once the AWS-LC FIPS build matrix is validated on each platform.
-- npm `pdf-oxide-fips` and NuGet `PdfOxide.Fips` distributions
-  follow the same pattern; both are tracked for v0.3.45.
+  triggered) builds and publishes parallel `-fips` distributions on
+  every package index, all from the same Rust source compiled with
+  `--features crypto-aws-lc` so each binary contains only AWS-LC's
+  FIPS-validated module:
+
+  | Ecosystem | Package | Install |
+  |---|---|---|
+  | PyPI | `pdf_oxide-fips` | `pip install pdf_oxide-fips==0.3.44` |
+  | npm | `pdf-oxide-fips` | `npm install pdf-oxide-fips@0.3.44` |
+  | NuGet | `PdfOxide.Fips` | `dotnet add package PdfOxide.Fips --version 0.3.44` |
+  | Go | `github.com/yfedoseev/pdf_oxide/go-fips` | `go get github.com/yfedoseev/pdf_oxide/go-fips@v0.3.44` |
+
+  All four versions move in lockstep with the regular release —
+  `-fips` and non-`-fips` distributions of the same release tag are
+  byte-equal in their non-crypto code paths. FIPS-mandated
+  deployments install the `-fips` variant; everyone else stays on
+  the default. Per-build smoke tests in the workflow confirm the
+  FIPS provider is reachable and `crypto_use_fips()` flips the
+  active provider as expected.
+
+  Initial scope: Linux x86_64 across all four bindings.
+  macOS / Windows / aarch64 land in v0.3.45 once the AWS-LC FIPS
+  build matrix is validated per platform (different cmake / nasm
+  prerequisites per OS).
+
+  Why parallel distributions instead of `pip install pdf_oxide[fips]`:
+  Python extras can only add Python dependencies — they can't swap
+  the compiled native binary baked into a wheel. The industry
+  pattern (cryptography / pyOpenSSL FIPS variants) ships separate
+  distributions; we follow suit.
+
+  Why a `go-fips` submodule path: Go modules are import-path-bound,
+  so users pick at `go get` time:
+  ```
+  go get github.com/yfedoseev/pdf_oxide/go            # default
+  go get github.com/yfedoseev/pdf_oxide/go-fips       # FIPS
+  ```
+  Both submodules re-export the same Go API; only the linked native
+  static lib differs.
 
 ### Tests
 

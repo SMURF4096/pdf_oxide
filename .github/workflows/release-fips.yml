@@ -4,19 +4,21 @@ name: Release (FIPS variant)
 #
 # Manually triggered. Builds `pdf_oxide` with --features crypto-aws-lc
 # (AWS-LC FIPS 140-3 module) and publishes the resulting artifacts as
-# the `pdf_oxide-fips` distribution on each ecosystem's package index:
+# parallel `-fips` distributions on every ecosystem's package index:
 #
-#   PyPI: pdf_oxide-fips
-#   npm:  pdf-oxide-fips
+#   PyPI:  pdf_oxide-fips
+#   npm:   pdf-oxide-fips
 #   NuGet: PdfOxide.Fips
+#   Go:    github.com/yfedoseev/pdf_oxide/go-fips
 #
 # Single-provider binaries — auditors typically require this. The
-# default `pdf_oxide` distribution stays on RustCryptoProvider (no
-# FIPS), built by `release.yml`.
+# default distributions (`pdf_oxide`, `pdf-oxide`, `PdfOxide`,
+# `github.com/yfedoseev/pdf_oxide/go`) stay on RustCryptoProvider
+# (no FIPS), built by `release.yml`.
 #
-# Initial Linux-x86_64 only — Windows / macOS / aarch64 land in
-# follow-up commits once the AWS-LC FIPS build matrix is validated on
-# each platform. Tracking issue: #236.
+# Initial scope: Linux x86_64 across all four bindings — Windows /
+# macOS / aarch64 land in v0.3.45 once AWS-LC FIPS build matrix is
+# validated per platform.
 
 on:
   workflow_dispatch:
@@ -25,7 +27,7 @@ on:
         description: 'Version tag (e.g. v0.3.44)'
         required: true
       publish:
-        description: 'Publish to PyPI (false = dry-run, build artifacts only)'
+        description: 'Publish to package indexes (false = dry-run, build artifacts only)'
         type: boolean
         default: false
 
@@ -38,8 +40,9 @@ env:
   RUSTFLAGS: "-D warnings"
 
 jobs:
-  build-fips-linux:
-    name: Build FIPS wheel (linux x86_64)
+  # ─── PYTHON ────────────────────────────────────────────────────────
+  build-fips-python:
+    name: Build pdf_oxide-fips wheel (linux x86_64)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -62,16 +65,9 @@ jobs:
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Patch package name to pdf_oxide-fips
-        # FIPS variant ships as a parallel distribution. We rewrite the
-        # name in pyproject.toml + Cargo.toml just for this build so
-        # both can coexist on PyPI. SBOM regenerates automatically
-        # in the release pipeline.
         run: |
           set -euo pipefail
           sed -i 's/^name = "pdf_oxide"$/name = "pdf_oxide-fips"/' pyproject.toml
-          # Cargo.toml package name stays pdf_oxide so the Rust API
-          # surface is unchanged for downstream Rust consumers; only
-          # the Python distribution is renamed.
 
       - name: Build FIPS wheel via maturin
         run: |
@@ -97,13 +93,13 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: pdf_oxide-fips-linux-x86_64
+          name: pdf_oxide-fips-python-linux-x86_64
           path: dist/*.whl
           retention-days: 30
 
   publish-fips-pypi:
     name: Publish pdf_oxide-fips to PyPI
-    needs: [build-fips-linux]
+    needs: [build-fips-python]
     runs-on: ubuntu-latest
     if: ${{ inputs.publish }}
     environment:
@@ -112,10 +108,292 @@ jobs:
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
+          name: pdf_oxide-fips-python-linux-x86_64
           path: dist
-          merge-multiple: true
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc # v1
         with:
           packages-dir: dist
+
+  # ─── NPM ───────────────────────────────────────────────────────────
+  build-fips-npm:
+    name: Build pdf-oxide-fips npm package (linux x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          ref: ${{ inputs.version }}
+
+      - name: Install build deps for aws-lc-rs (cmake + nasm)
+        run: sudo apt-get update && sudo apt-get install -y cmake nasm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Build cdylib with FIPS feature
+        # The Node addon links to libpdf_oxide.so produced by Cargo;
+        # building with crypto-aws-lc bakes FIPS in.
+        run: cargo build --release --features crypto-aws-lc
+
+      - name: Patch package name to pdf-oxide-fips
+        # Rename in package.json so npm sees a parallel distribution.
+        # Description prefix flags the FIPS posture for searchers.
+        run: |
+          set -euo pipefail
+          cd js
+          npm version --no-git-tag-version "${VERSION#v}"
+          node -e "
+          const pkg = require('./package.json');
+          pkg.name = 'pdf-oxide-fips';
+          pkg.description = '[FIPS 140-3 validated build] ' + pkg.description;
+          require('fs').writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+        env:
+          VERSION: ${{ inputs.version }}
+
+      - name: Install + build TypeScript wrappers
+        working-directory: js
+        run: |
+          npm ci
+          npm run build:ts
+          # The native addon binary needs to be present in
+          # prebuilds/<platform>/. Copy our cdylib into place.
+          mkdir -p prebuilds/linux-x64
+          cp ../target/release/libpdf_oxide.so prebuilds/linux-x64/pdf_oxide.node
+
+      - name: Smoke-test npm package
+        working-directory: js
+        run: |
+          node -e "
+          const oxide = require('./lib/index.js');
+          if (typeof oxide.useFipsCryptoProvider !== 'function') throw new Error('useFipsCryptoProvider missing');
+          if (!oxide.isFipsCryptoAvailable()) throw new Error('FIPS not available in this build');
+          oxide.useFipsCryptoProvider();
+          if (oxide.getActiveCryptoProvider() !== 'aws-lc-rs') throw new Error('FIPS provider not active');
+          console.log('FIPS npm smoke test passed');
+          "
+
+      - name: Pack tarball
+        working-directory: js
+        run: npm pack --pack-destination ../dist-npm
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pdf-oxide-fips-npm-linux-x86_64
+          path: dist-npm/*.tgz
+          retention-days: 30
+
+  publish-fips-npm:
+    name: Publish pdf-oxide-fips to npm
+    needs: [build-fips-npm]
+    runs-on: ubuntu-latest
+    if: ${{ inputs.publish }}
+    environment:
+      name: npm-fips
+      url: https://www.npmjs.com/package/pdf-oxide-fips
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: pdf-oxide-fips-npm-linux-x86_64
+          path: dist-npm
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Publish
+        run: npm publish dist-npm/*.tgz --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ─── NUGET ─────────────────────────────────────────────────────────
+  build-fips-nuget:
+    name: Build PdfOxide.Fips NuGet package (linux x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          ref: ${{ inputs.version }}
+
+      - name: Install build deps for aws-lc-rs (cmake + nasm)
+        run: sudo apt-get update && sudo apt-get install -y cmake nasm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0'
+
+      - name: Build cdylib with FIPS feature
+        run: cargo build --release --features crypto-aws-lc
+
+      - name: Patch PackageId to PdfOxide.Fips
+        run: |
+          set -euo pipefail
+          cd csharp/PdfOxide
+          # NuGet PackageId rename. Title/Description prefix advertises FIPS.
+          sed -i 's|<PackageId>PdfOxide</PackageId>|<PackageId>PdfOxide.Fips</PackageId>|' PdfOxide.csproj
+          sed -i 's|<Description>|<Description>[FIPS 140-3 validated build] |' PdfOxide.csproj || true
+
+      - name: Stage native lib into runtimes/linux-x64
+        run: |
+          mkdir -p csharp/PdfOxide/runtimes/linux-x64/native
+          cp target/release/libpdf_oxide.so csharp/PdfOxide/runtimes/linux-x64/native/
+
+      - name: Pack
+        working-directory: csharp/PdfOxide
+        run: |
+          dotnet pack -c Release \
+            -p:Version=${VERSION#v} \
+            -p:PackageVersion=${VERSION#v} \
+            -o ../../dist-nuget
+        env:
+          VERSION: ${{ inputs.version }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: PdfOxide.Fips-nuget-linux-x86_64
+          path: dist-nuget/*.nupkg
+          retention-days: 30
+
+  publish-fips-nuget:
+    name: Publish PdfOxide.Fips to NuGet
+    needs: [build-fips-nuget]
+    runs-on: ubuntu-latest
+    if: ${{ inputs.publish }}
+    environment:
+      name: nuget-fips
+      url: https://www.nuget.org/packages/PdfOxide.Fips
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: PdfOxide.Fips-nuget-linux-x86_64
+          path: dist-nuget
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0'
+
+      - name: Push
+        run: |
+          dotnet nuget push dist-nuget/*.nupkg \
+            --api-key "$NUGET_API_KEY" \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+
+  # ─── GO ────────────────────────────────────────────────────────────
+  # Go FIPS distribution lives at the parallel module path
+  # `github.com/yfedoseev/pdf_oxide/go-fips` so users can pick at
+  # `go get` time:
+  #
+  #   go get github.com/yfedoseev/pdf_oxide/go     # default
+  #   go get github.com/yfedoseev/pdf_oxide/go-fips@v0.3.44   # FIPS
+  #
+  # The submodule's `go.mod` declares `module github.com/yfedoseev/pdf_oxide/go-fips`,
+  # vendors the FIPS-built static lib, and re-exports the same Go API
+  # surface (just with the FIPS-baked native lib).
+  build-fips-go:
+    name: Build pdf_oxide go-fips submodule (linux x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          ref: ${{ inputs.version }}
+
+      - name: Install build deps for aws-lc-rs (cmake + nasm)
+        run: sudo apt-get update && sudo apt-get install -y cmake nasm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version: 'stable'
+
+      - name: Build static lib with FIPS feature
+        run: cargo build --release --features crypto-aws-lc
+
+      - name: Stage go-fips submodule
+        # Mirror `go/` to `go-fips/`, rewrite module path, drop FIPS
+        # static lib in. The submodule re-uses the same Go bindings —
+        # the only difference between `go` and `go-fips` is the native
+        # binary linked at cgo time.
+        run: |
+          set -euo pipefail
+          rm -rf go-fips
+          cp -r go go-fips
+          cd go-fips
+          # Rename module path so `go get .../pdf_oxide/go-fips`
+          # resolves correctly.
+          sed -i 's|module github.com/yfedoseev/pdf_oxide/go$|module github.com/yfedoseev/pdf_oxide/go-fips|' go.mod
+          # Stage the FIPS static lib into the location cgo expects.
+          mkdir -p lib/linux_amd64
+          cp ../target/release/libpdf_oxide.a lib/linux_amd64/
+          go vet ./...
+
+      - name: Smoke-test go-fips
+        working-directory: go-fips
+        run: |
+          cat > /tmp/fips_smoke.go <<'EOF'
+          package main
+          import (
+            "fmt"
+            "log"
+            pdf "github.com/yfedoseev/pdf_oxide/go-fips"
+          )
+          func main() {
+            if !pdf.IsFipsCryptoAvailable() {
+              log.Fatal("FIPS not available in this build")
+            }
+            if err := pdf.UseFipsCryptoProvider(); err != nil {
+              log.Fatalf("UseFipsCryptoProvider: %v", err)
+            }
+            if got := pdf.ActiveCryptoProvider(); got != "aws-lc-rs" {
+              log.Fatalf("expected aws-lc-rs, got %s", got)
+            }
+            fmt.Println("FIPS go-fips smoke test passed")
+          }
+          EOF
+          # Run inside go-fips so the local module is picked up.
+          go run /tmp/fips_smoke.go
+
+      - name: Tar go-fips submodule
+        run: tar czf dist-go/pdf_oxide-go-fips-linux-x86_64.tar.gz go-fips/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pdf_oxide-go-fips-linux-x86_64
+          path: dist-go/*.tar.gz
+          retention-days: 30
+
+  # No publish job for Go: the Go module index proxies directly off
+  # the git tag. Tagging the release commit with `go-fips/v0.3.44`
+  # (a submodule tag) makes `go get github.com/yfedoseev/pdf_oxide/go-fips@v0.3.44`
+  # resolve. The release process (manual, by maintainer):
+  #
+  #   git tag -s go-fips/v0.3.44 -m "Go FIPS variant v0.3.44"
+  #   git push origin go-fips/v0.3.44
+  #
+  # Listed here for clarity; not automated to avoid pushing tags
+  # from CI without explicit human confirmation.
