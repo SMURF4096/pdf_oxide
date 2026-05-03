@@ -416,9 +416,13 @@ impl PyPdfDocument {
     ///     include_artifacts (bool, optional): Include words tagged as
     ///         `/Artifact` (running headers/footers, page numbers,
     ///         watermarks; ISO 32000-1:2008 §14.8.2.2.1). Default
-    ///         False — these live outside the document's logical
-    ///         structure and are excluded for spec-compliant extraction.
-    ///         Pass True to opt back into the pre-0.3.42 behavior.
+    ///         **True** for backward compatibility with 0.3.41 — the
+    ///         pre-existing code path returned all spans regardless of
+    ///         artifact tag and the cross-build regression sweep showed
+    ///         flipping the default would surface as a content
+    ///         regression on PDFs whose running-artifact heuristic
+    ///         over-triggers on real content. Pass `False` to get the
+    ///         spec-correct behavior (artifact-tagged spans excluded).
     ///
     ///     region, word_gap_threshold, profile (deprecated, optional):
     ///         Power-user overrides retained for backward compatibility.
@@ -442,7 +446,7 @@ impl PyPdfDocument {
                 py,
                 "extract_words",
                 &["region", "word_gap_threshold", "profile"],
-            )?;
+            );
         }
 
         // Default (`include_artifacts=False`, the new spec-correct path)
@@ -479,9 +483,9 @@ impl PyPdfDocument {
     ///     include_artifacts (bool, optional): Include lines whose words
     ///         are tagged as `/Artifact` (running headers/footers, page
     ///         numbers, watermarks; ISO 32000-1:2008 §14.8.2.2.1).
-    ///         Default False — these live outside the document's logical
-    ///         structure and are excluded for spec-compliant extraction.
-    ///         Pass True to opt back into the pre-0.3.42 behavior.
+    ///         Default **True** for backward compatibility with 0.3.41.
+    ///         Pass `False` to get the spec-correct behavior
+    ///         (artifact-tagged spans excluded).
     ///
     ///     region, word_gap_threshold, line_gap_threshold, profile
     ///         (deprecated, optional): Power-user overrides retained for
@@ -515,7 +519,7 @@ impl PyPdfDocument {
                     "line_gap_threshold",
                     "profile",
                 ],
-            )?;
+            );
         }
 
         let lines = if include_artifacts {
@@ -2232,6 +2236,10 @@ impl PyDocPage {
 
     #[getter]
     fn words(&self, py: Python<'_>) -> PyResult<Vec<PyWord>> {
+        // `include_artifacts=true` mirrors the public `PdfDocument.extract_words`
+        // default. If that default is ever flipped (spec-correct exclude), update
+        // this getter (and the `lines` getter below) to match — there's no shared
+        // constant because pyo3 signatures need literal bools.
         self.doc
             .borrow_mut(py)
             .extract_words(py, self.page_index, true, None, None, None)
@@ -2471,9 +2479,10 @@ impl PyFormField {
 
 /// Emit a `DeprecationWarning` when one of the named kwargs is supplied
 /// to a method whose advanced surface is on the way out (issue #457
-/// Step 5). Failures to emit the warning don't bubble up — the caller
-/// still gets the usable result with the deprecated kwarg honored.
-fn warn_deprecated_kwargs(py: Python<'_>, method: &str, kwargs: &[&str]) -> PyResult<()> {
+/// Step 5). Best effort: any error from the `warnings` module is
+/// swallowed — the caller still gets the usable result with the
+/// deprecated kwarg honored.
+fn warn_deprecated_kwargs(py: Python<'_>, method: &str, kwargs: &[&str]) {
     let msg = format!(
         "{}() kwargs {:?} are deprecated and will move to a separate \
          {}_advanced method in a future release. The default API is now \
@@ -2481,11 +2490,12 @@ fn warn_deprecated_kwargs(py: Python<'_>, method: &str, kwargs: &[&str]) -> PyRe
          the spec-correct default.",
         method, kwargs, method,
     );
-    let warnings = py.import("warnings")?;
-    let deprecation = py.import("builtins")?.getattr("DeprecationWarning")?;
-    warnings
-        .call_method1("warn", (msg, deprecation))
-        .map(|_| ())
+    let _: PyResult<()> = (|| {
+        let warnings = py.import("warnings")?;
+        let deprecation = py.import("builtins")?.getattr("DeprecationWarning")?;
+        warnings.call_method1("warn", (msg, deprecation))?;
+        Ok(())
+    })();
 }
 
 fn field_value_to_python(value: &RustFieldValue, py: Python<'_>) -> PyResult<Py<PyAny>> {

@@ -1,21 +1,15 @@
-//! Issue #211 / refactor #457: text-extraction reading-order baseline.
+//! Issue #211 regression suite: reading-order parity on three pdfplumber
+//! fixtures that drove the #457 rewire.
 //!
-//! These tests pin the failure modes documented in #211 against the three
-//! fixtures from pdfplumber's public test corpus.
+//! Every test in this file is a standing regression guard — the bugs they
+//! describe were fixed in 0.3.42. If one of them starts failing in the
+//! future, the canonical reading-order pipeline (struct tree on tagged
+//! PDFs, geometric fallback otherwise) has drifted again.
 //!
-//! Tests known to fail today (because of the bugs the #457 refactor will fix)
-//! are marked `#[ignore = "TODO(#457): blocked on refactor"]`. They can be
-//! run on demand with `cargo test -- --ignored`. As each phase of the
-//! refactor lands, the relevant `#[ignore]` is removed and the test becomes
-//! a normal regression guard.
-//!
-//! Tests that DO pass today are kept as regular `#[test]` so they catch any
-//! future regression even before the refactor lands.
-//!
-//! Fixtures live in the external pdf_oxide_tests corpus
-//! (`~/projects/pdf_oxide_tests/pdfs_issue_regression/`). Tests skip
-//! gracefully when the corpus is not present, matching the existing
-//! convention in `tests/test_multiline_obj_and_xref.rs`.
+//! Fixtures live in the external pdf_oxide_tests corpus under
+//! `pdfs_issue_regression/`. Tests skip gracefully when the corpus is
+//! not present, matching the existing convention in
+//! `tests/test_multiline_obj_and_xref.rs`.
 
 use pdf_oxide::document::PdfDocument;
 use std::path::PathBuf;

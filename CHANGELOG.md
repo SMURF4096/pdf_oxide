@@ -64,12 +64,15 @@ All notable changes to PDFOxide are documented here.
 - New `pdf_oxide::pipeline::page_reading_order(doc, page)` helper:
   single source of truth for canonical reading-order span sequence.
   Tagged + struct tree (no `/Suspects`) → walks the tree; otherwise
-  → geometric top-to-bottom + y-tolerance. Variant
-  `page_reading_order_with_artifacts` retains artifact-tagged spans.
+  → geometric top-to-bottom + y-tolerance. Companion variant
+  `page_reading_order_no_artifacts` strips spans tagged as
+  `/Artifact` for the spec-correct exclude case.
 - `extract_words_with_thresholds` and
   `extract_text_lines_with_thresholds` delegate through the helper
-  for the default code path; `_keep_artifacts` companions are
-  available for the legacy artifact-included behavior. The
+  for the default code path (artifacts retained). New
+  `extract_words_with_thresholds_no_artifacts` and
+  `extract_text_lines_with_thresholds_no_artifacts` surfaces are
+  available for the spec-correct artifact-excluded behavior. The
   `profile=Some(...)` path retains its previous XY-Cut behavior
   pending the planned removal of the `profile` kwarg.
 - `GeometricStrategy` now defaults to row-aware top-to-bottom ordering;

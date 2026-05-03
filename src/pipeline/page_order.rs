@@ -83,7 +83,9 @@ fn build_context(doc: &PdfDocument, page_index: usize) -> ReadingOrderContext {
     let media_box = doc
         .get_page_media_box(page_index)
         .unwrap_or((0.0, 0.0, 612.0, 792.0));
-    let bbox = Rect::new(media_box.0, media_box.1, media_box.2, media_box.3);
+    // MediaBox is `(llx, lly, urx, ury)` per PDF 32000-1:2008 §7.7.3.3.
+    // `Rect::new` expects `(x, y, width, height)`, so use `from_points`.
+    let bbox = Rect::from_points(media_box.0, media_box.1, media_box.2, media_box.3);
 
     let mut ctx = ReadingOrderContext::new()
         .with_page(page_index as u32)

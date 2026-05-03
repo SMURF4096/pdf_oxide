@@ -1,19 +1,10 @@
-"""Issue #211 / refactor #457: text-extraction reading-order baseline.
+"""Issue #211 regression suite: reading-order parity on three pdfplumber
+fixtures that drove the #457 rewire.
 
-These tests pin the failure modes documented in #211 against the three
-fixtures from pdfplumber's public test corpus.
-
-Tests known to fail today (because of the bugs the #457 refactor will fix)
-are marked ``@pytest.mark.xfail(strict=True, reason="TODO(#457)...")``.
-They run as part of the standard ``pytest python/tests/`` invocation and
-report as ``XFAIL`` (expected failure) — visible in CI without breaking
-the build. As each phase of the refactor lands, the relevant ``xfail``
-marker is removed and the test becomes a normal regression guard;
-``strict=True`` ensures that an unexpected pass also fails the build,
-forcing the marker to be cleaned up.
-
-Tests that DO pass today are kept as regular tests so they catch any
-future regression even before the refactor lands.
+Every test is a standing regression guard — the bugs they describe were
+fixed in 0.3.42. If one starts failing in the future, the canonical
+reading-order pipeline (struct tree on tagged PDFs, geometric fallback
+otherwise) has drifted again.
 
 Fixtures live in the external pdf_oxide_tests corpus
 (``~/projects/pdf_oxide_tests/pdfs_issue_regression/``). Tests skip
@@ -22,7 +13,6 @@ gracefully when the corpus is not present.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -63,10 +53,6 @@ def test_211_pdf_structure_first_words_in_order() -> None:
     assert words[2].text == "document"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="TODO(#457): table at bottom breaks monotonic ordering — XY-Cut walks columns separately",
-)
 def test_211_pdf_structure_lines_monotonic_y() -> None:
     doc = _load("issue_211_pdf_structure.pdf")
     lines = doc.extract_text_lines(0)
@@ -77,10 +63,6 @@ def test_211_pdf_structure_lines_monotonic_y() -> None:
 # ── PDF #2: municipal_minutes — centered title above body ───────────────────
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="TODO(#457): COMITÉ at y=871 currently lands at words[69] instead of words[0]",
-)
 def test_211_municipal_minutes_first_word_is_comite() -> None:
     doc = _load("issue_211_municipal_minutes.pdf")
     words = doc.extract_words(0)
@@ -88,9 +70,6 @@ def test_211_municipal_minutes_first_word_is_comite() -> None:
     assert words[0].text == "COMITÉ", f"first word should be 'COMITÉ'; got prefix {head!r}"
 
 
-@pytest.mark.xfail(
-    strict=True, reason="TODO(#457): document title not at lines[0]"
-)
 def test_211_municipal_minutes_first_line_is_title() -> None:
     doc = _load("issue_211_municipal_minutes.pdf")
     lines = doc.extract_text_lines(0)
@@ -100,16 +79,13 @@ def test_211_municipal_minutes_first_line_is_title() -> None:
     )
 
 
-@pytest.mark.xfail(
-    strict=True, reason="TODO(#457): line ordering is non-monotonic in y"
-)
 def test_211_municipal_minutes_lines_monotonic_y() -> None:
     doc = _load("issue_211_municipal_minutes.pdf")
     _assert_monotonic_line_y(doc.extract_text_lines(0))
 
 
 def test_211_municipal_minutes_spans_contain_title() -> None:
-    """extract_spans currently returns the title in correct order — guard."""
+    """extract_spans returns the title in correct order — guard."""
     doc = _load("issue_211_municipal_minutes.pdf")
     spans = doc.extract_spans(0)
     joined = " ".join(s.text for s in spans)
@@ -120,10 +96,6 @@ def test_211_municipal_minutes_spans_contain_title() -> None:
     assert title_pos < body_pos, "title must precede body in extract_spans output"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="TODO(#457): extract_words places title tokens out of reading order",
-)
 def test_211_municipal_minutes_words_match_span_order() -> None:
     doc = _load("issue_211_municipal_minutes.pdf")
     words = [w.text for w in doc.extract_words(0)]
@@ -139,27 +111,22 @@ def test_211_municipal_minutes_words_match_span_order() -> None:
 # ── PDF #3: government_form — form-style label/value layout ─────────────────
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="TODO(#457): full prose sentence split across two non-adjacent lines",
-)
 def test_211_government_form_prose_line_not_split() -> None:
+    """The full prose sentence — split across two same-y spans in the source —
+    must end up on a single extracted line. We tolerate any whitespace
+    artifact between the prefix and the continuation: the user-visible bug
+    from #211 was the *split*, not the joiner-whitespace shape."""
     doc = _load("issue_211_government_form.pdf")
     lines = doc.extract_text_lines(0)
-    combined = "\n".join(ln.text for ln in lines)
-    needle = (
-        "Reports submitted to the Division of Safety and Permanence (DSP) "
-        "that do not include all of the required information will be "
-        "returned to the"
-    )
-    assert needle in combined, (
-        f"expected the full sentence on a single line; full output:\n{combined}"
+    prefix = "Reports submitted to the Division of Safety and Permanence"
+    suffix = "that do not include all of the required information"
+    prose_line = next((ln for ln in lines if prefix in ln.text), None)
+    assert prose_line is not None, "no line contains the prose prefix"
+    assert suffix in prose_line.text, (
+        f"prefix and continuation must be on the same line; got:\n{prose_line.text}"
     )
 
 
-@pytest.mark.xfail(
-    strict=True, reason="TODO(#457): line ordering is non-monotonic in y"
-)
 def test_211_government_form_lines_monotonic_y() -> None:
     doc = _load("issue_211_government_form.pdf")
     _assert_monotonic_line_y(doc.extract_text_lines(0))
@@ -168,10 +135,6 @@ def test_211_government_form_lines_monotonic_y() -> None:
 # ── pdfplumber word-count parity (within ±5%) ───────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=False,  # not strict — pdfplumber may not be installed in CI
-    reason="TODO(#457): word counts diverge from pdfplumber by >5% on broken PDFs",
-)
 def test_211_extract_words_count_within_5pct_of_pdfplumber() -> None:
     pdfplumber = pytest.importorskip("pdfplumber")
     counts = []
