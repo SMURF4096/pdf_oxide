@@ -1,4 +1,4 @@
-// StreamingTable with rowspan and batch_size — v0.3.41
+// StreamingTable with rowspan and batch_size — v0.3.42
 // Run: go run -tags pdf_oxide_dev main.go
 
 package main

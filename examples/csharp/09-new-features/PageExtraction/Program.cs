@@ -1,4 +1,4 @@
-// Page extraction — v0.3.41
+// Page extraction — v0.3.42
 // Run: dotnet run
 using System;
 using System.IO;

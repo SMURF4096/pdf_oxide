@@ -1,4 +1,4 @@
-// StreamingTable with rowspan and batchSize — v0.3.41
+// StreamingTable with rowspan and batchSize — v0.3.42
 // Run: dotnet run
 
 using System;

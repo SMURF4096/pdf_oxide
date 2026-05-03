@@ -1,4 +1,4 @@
-# Encrypted PDF output — v0.3.41
+# Encrypted PDF output — v0.3.42
 #
 # Run: python main.py
 

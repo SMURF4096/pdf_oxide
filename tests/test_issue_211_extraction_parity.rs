@@ -57,7 +57,7 @@ fn assert_monotonic_line_y(lines: &[pdf_oxide::layout::TextLine]) {
 //
 // Original report symptom (0.3.14): "Words and text-lines are extracted starting
 // from the bottom of the page, and the word order within lines is incorrect."
-// First words / lines are correct on 0.3.41 — the lower table area still
+// First words / lines are correct on 0.3.42 — the lower table area still
 // breaks monotonic ordering because XY-Cut walks each column separately.
 
 #[test]

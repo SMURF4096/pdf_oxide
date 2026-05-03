@@ -1,4 +1,4 @@
-// Barcode SVG generation — v0.3.41
+// Barcode SVG generation — v0.3.42
 //
 // Demonstrates generating 1D barcodes and QR codes as vector SVG strings.
 // Run: go run main.go

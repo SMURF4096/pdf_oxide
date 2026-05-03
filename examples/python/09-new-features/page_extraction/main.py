@@ -1,4 +1,4 @@
-# Page extraction and chunking — v0.3.41
+# Page extraction and chunking — v0.3.42
 #
 # Demonstrates splitting a multi-page PDF into per-chunk byte buffers,
 # replacing pypdf's reader.pages slicing workflow.
