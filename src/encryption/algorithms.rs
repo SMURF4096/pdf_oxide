@@ -94,32 +94,16 @@ pub fn compute_encryption_key(
 
 /// Generate a random encryption key for R>=5.
 ///
-/// PDF 2.0 Spec: For AES-256, the file encryption key is randomly generated.
+/// PDF 2.0 Spec: For AES-256, the file encryption key is randomly
+/// generated (ISO 32000-2 §7.6.4.4). Routes through the active
+/// [`crate::crypto::CryptoProvider`]'s `random_bytes` so the FIPS
+/// provider can supply OS RNG via `aws_lc_rs::rand::SystemRandom`
+/// instead of the previous `SHA-256(uuid_v4 || uuid_v4 ||
+/// timestamp_ns)` cascade — the latter is not cryptographically
+/// suitable as a key generator and is rejected by FIPS auditors.
+/// Issue #236.
 fn generate_random_encryption_key(key_length: usize) -> Vec<u8> {
-    use sha2::{Digest, Sha256};
-
-    // Generate random bytes using multiple UUID/timestamp combinations
-    let mut key = Vec::with_capacity(key_length);
-
-    while key.len() < key_length {
-        let uuid1 = uuid::Uuid::new_v4();
-        let uuid2 = uuid::Uuid::new_v4();
-
-        let mut hasher = Sha256::new();
-        hasher.update(uuid1.as_bytes());
-        hasher.update(uuid2.as_bytes());
-
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default();
-        hasher.update(now.as_nanos().to_le_bytes());
-
-        let hash = hasher.finalize();
-        let remaining = key_length - key.len();
-        key.extend_from_slice(&hash[..remaining.min(32)]);
-    }
-
-    key
+    generate_random_bytes(key_length)
 }
 
 /// Pad or truncate a password to 32 bytes using the standard padding.
@@ -635,29 +619,31 @@ pub fn compute_o_and_oe(
     (o, oe)
 }
 
-/// Generate random bytes using UUID v4 and timestamp mixing.
+/// Generate cryptographically strong random bytes from the active
+/// [`crypto::CryptoProvider`]. Both shipped providers source this
+/// from the OS entropy pool — `getrandom::fill()` for the default
+/// `RustCryptoProvider` and `aws_lc_rs::rand::SystemRandom` for the
+/// FIPS provider. Issue #236.
+///
+/// The previous implementation hashed UUID v4 + system-time
+/// nanoseconds with MD5, which (a) is not cryptographically suitable
+/// for nonces / salts and (b) the MD5 dependency is forbidden under
+/// FIPS. This routes through the provider's `random_bytes` instead.
+///
+/// On the unlikely event the OS RNG fails, panics — calling code
+/// uses these bytes as encryption salts and IVs, where falling back
+/// to a weaker source would silently weaken security. Modern Linux
+/// (`getrandom(2)` since 3.17) and BSDs / macOS / Windows all
+/// guarantee `getrandom`-equivalent never blocks once the entropy
+/// pool is initialized.
+///
+/// [`crypto::CryptoProvider`]: crate::crypto::CryptoProvider
 fn generate_random_bytes(len: usize) -> Vec<u8> {
-    use md5::{Digest, Md5};
-
-    let mut result = Vec::with_capacity(len);
-
-    while result.len() < len {
-        let uuid = uuid::Uuid::new_v4();
-        let mut hasher = Md5::new();
-        hasher.update(uuid.as_bytes());
-
-        // Add timestamp for extra entropy
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default();
-        hasher.update(now.as_nanos().to_le_bytes());
-
-        let hash = hasher.finalize();
-        let remaining = len - result.len();
-        result.extend_from_slice(&hash[..remaining.min(16)]);
-    }
-
-    result
+    let mut buf = vec![0u8; len];
+    crate::crypto::active()
+        .random_bytes(&mut buf)
+        .expect("OS RNG failure — getrandom() / SystemRandom must succeed for crypto operations");
+    buf
 }
 
 /// Truncate password to 127 bytes for UTF-8 (R>=5 requirement).
