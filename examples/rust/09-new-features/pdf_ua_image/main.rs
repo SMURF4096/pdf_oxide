@@ -1,4 +1,4 @@
-// PDF/UA accessible + decorative images — v0.3.39
+// PDF/UA accessible + decorative images
 //
 // Demonstrates two image embedding modes required for PDF/UA conformance:
 //   • image_from_bytes_with_alt  — tagged Figure with alt text for screen readers

@@ -1,4 +1,4 @@
-// PKCS#12 CMS signing — v0.3.39
+// PKCS#12 CMS signing
 //
 // Builds a simple PDF, signs it with a PKCS#12 certificate, and verifies
 // the output contains the expected /ByteRange signature marker.

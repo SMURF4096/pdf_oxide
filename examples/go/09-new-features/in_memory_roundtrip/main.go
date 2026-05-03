@@ -1,4 +1,4 @@
-// In-memory round-trip: Build() → bytes → OpenFromBytes() — v0.3.39
+// In-memory round-trip: Build() → bytes → OpenFromBytes()
 // Run: go run main.go
 
 package main

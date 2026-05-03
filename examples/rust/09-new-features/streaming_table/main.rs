@@ -1,4 +1,4 @@
-// StreamingTable with rowspan — v0.3.39
+// StreamingTable with rowspan
 //
 // Demonstrates creating a multi-page-safe streaming table where the first
 // column spans two rows using rowspan support.

@@ -1,4 +1,4 @@
-// In-memory round-trip — v0.3.39 (TypeScript)
+// In-memory round-trip (TypeScript)
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";

@@ -1,4 +1,4 @@
-// Encrypted PDF bytes — v0.3.42
+// Encrypted PDF bytes
 // Run: dotnet run
 using System;
 using System.IO;

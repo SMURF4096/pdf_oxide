@@ -1,4 +1,4 @@
-// PKCS#12 CMS signing — v0.3.39
+// PKCS#12 CMS signing
 // Run: node index.js
 
 import path from "node:path";

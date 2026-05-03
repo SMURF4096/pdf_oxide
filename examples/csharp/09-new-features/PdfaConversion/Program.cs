@@ -1,4 +1,4 @@
-// PDF/A conversion: validate → convert → validate — v0.3.42
+// PDF/A conversion: validate → convert → validate
 // Run: dotnet run
 using System;
 using System.IO;

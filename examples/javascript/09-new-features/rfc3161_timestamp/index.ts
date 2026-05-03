@@ -1,4 +1,4 @@
-// RFC 3161 Timestamp parsing + TsaClient construction — v0.3.39 (TypeScript)
+// RFC 3161 Timestamp parsing + TsaClient construction (TypeScript)
 
 import { Timestamp, TsaClient, TimestampHashAlgorithm } from "pdf-oxide";
 

@@ -1,4 +1,4 @@
-// Dashed stroke lines and rectangles — v0.3.42
+// Dashed stroke lines and rectangles
 //
 // Demonstrates StrokeRectDashed and StrokeLineDashed on a page.
 // Run: go run -tags pdf_oxide_dev main.go

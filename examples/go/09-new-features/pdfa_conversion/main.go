@@ -1,4 +1,4 @@
-// PDF/A conversion: validate → convert → validate — v0.3.42
+// PDF/A conversion: validate → convert → validate
 //
 // Demonstrates the full archival pipeline:
 //   1. Build a PDF in memory

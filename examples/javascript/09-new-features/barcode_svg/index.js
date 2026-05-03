@@ -1,4 +1,4 @@
-// Barcode SVG generation — v0.3.42
+// Barcode SVG generation
 // Run: node index.js
 
 import path from "node:path";

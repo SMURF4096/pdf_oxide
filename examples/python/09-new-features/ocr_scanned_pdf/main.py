@@ -1,4 +1,4 @@
-# OCR text extraction from scanned PDFs — v0.3.42
+# OCR text extraction from scanned PDFs
 #
 # Prerequisites:
 #   pip install 'pdf_oxide[ocr]'

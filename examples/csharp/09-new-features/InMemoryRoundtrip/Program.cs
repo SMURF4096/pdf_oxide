@@ -1,4 +1,4 @@
-// In-memory round-trip: Build() → bytes → PdfDocument.Open(bytes) — v0.3.39
+// In-memory round-trip: Build() → bytes → PdfDocument.Open(bytes)
 // Run: dotnet run
 
 using System;

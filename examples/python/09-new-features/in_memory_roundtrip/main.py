@@ -1,4 +1,4 @@
-# In-memory round-trip: build() → bytes → PdfDocument.from_bytes() — v0.3.39
+# In-memory round-trip: build() → bytes → PdfDocument.from_bytes()
 #
 # Run: python main.py
 

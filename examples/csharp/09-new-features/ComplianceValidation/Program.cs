@@ -1,4 +1,4 @@
-// PDF/A, PDF/X, PDF/UA compliance validation — v0.3.42
+// PDF/A, PDF/X, PDF/UA compliance validation
 // Run: dotnet run
 using System;
 using PdfOxide.Core;

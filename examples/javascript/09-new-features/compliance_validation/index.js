@@ -1,4 +1,4 @@
-// PDF/A, PDF/X, PDF/UA compliance validation — v0.3.40
+// PDF/A, PDF/X, PDF/UA compliance validation
 // Run: node index.js
 
 import { DocumentBuilder, PdfDocument } from "pdf-oxide";

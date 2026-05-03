@@ -1,4 +1,4 @@
-// StreamingTable with rowspan — v0.3.39 (TypeScript)
+// StreamingTable with rowspan (TypeScript)
 // Compile: npx tsc -p ../../tsconfig.json
 // Run: node ../../dist/09-new-features/streaming_table/index.js
 

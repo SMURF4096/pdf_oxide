@@ -1,4 +1,4 @@
-// Encrypted PDF output — v0.3.40
+// Encrypted PDF output
 // Run: node index.js
 
 import path from "node:path";
