@@ -2,6 +2,84 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [0.3.44] - unreleased
+
+> Pluggable cryptographic provider — FIPS 140-3 compliance for
+> government / regulated deployments.
+
+### Highlights
+
+- **`pdf_oxide::crypto::CryptoProvider` trait** — new abstraction
+  that decouples PDF encryption and signature paths from any one
+  cryptography crate. Two providers ship out of the box:
+  - **`RustCryptoProvider`** (default): pure-Rust stack as before
+    (`sha2`, `aes`, `rsa`, `p256`, `p384`, `getrandom`, `md-5`,
+    `sha1`). Permits every algorithm PDF specs reference, including
+    the legacy MD5+RC4 path required by ISO 32000-1 R≤4 documents.
+  - **`AwsLcProvider`** (opt-in via `--features crypto-aws-lc`):
+    backed by `aws-lc-rs`, FIPS 140-3 validated since 2024. Refuses
+    MD5 / SHA-1-for-signing / RC4 with `Error::AlgorithmNotPermitted`
+    and a clear remediation message.
+- **Single source of randomness.** `src/encryption/algorithms.rs`'s
+  former `SHA-256(uuid_v4 || timestamp_ns || …)` cascade is replaced
+  with `crypto::active().random_bytes()` — under the default
+  provider this is `getrandom::fill()` (OS entropy pool); under FIPS
+  it's `aws_lc_rs::rand::SystemRandom`. Cryptographically suitable
+  for AES-256 file keys and salts; auditable.
+- **Closes [#236](https://github.com/yfedoseev/pdf_oxide/issues/236).**
+
+### Architecture
+
+Three sub-traits compose into `CryptoProvider`:
+
+- `Hasher` — incremental hashing (`update` / `finalize`).
+- `SymmetricCipher` — AES-128/256-CBC (PKCS#7 + no-padding) and RC4.
+- `SignatureVerifier` — RSA-PKCS#1-v1.5, RSA-PSS, ECDSA P-256/P-384.
+
+Plus an opaque `Signer` handle so HSM / PKCS#11 / Cloud KMS
+backends can plug in via `SigningKeyMaterial` (which is
+`#[non_exhaustive]` — future variants for HSM slots etc. are not
+breaking changes).
+
+The `is_legacy_allowed()` policy bit lets each provider declare
+whether MD5 / SHA-1-sign / RC4 are permitted. PDF Standard Security
+R≤4 documents are gated at `EncryptionHandler::new`: under a FIPS
+provider they fail with a remediation message ("re-encrypt at R=6
+or build with the default crypto-rust provider") rather than panic
+deep inside the cipher path.
+
+### Usage
+
+```rust
+use std::sync::Arc;
+use pdf_oxide::crypto::{set_provider, AwsLcProvider};
+
+set_provider(Arc::new(AwsLcProvider::new()))?;
+let doc = pdf_oxide::PdfDocument::open("encrypted-r6.pdf")?;
+```
+
+See `docs/CRYPTO_PROVIDERS.md` for the algorithm coverage matrix,
+custom-provider walkthrough (sovereign-jurisdiction algorithms,
+HSMs), and the legacy-PDF policy table.
+
+### CI
+
+- New `fips` job in `.github/workflows/ci.yml` builds with
+  `--features crypto-aws-lc`, runs the 11-test AwsLcProvider suite
+  including a `cross_provider_aes_compat` check that asserts the
+  FIPS and rust-crypto AES paths produce byte-identical output, and
+  enforces clippy `-D warnings` under the FIPS feature.
+
+### Tests
+
+- 5050 lib tests pass under `--features python,crypto-aws-lc`
+  (5039 default + 11 FIPS-only).
+- 119 encryption tests still pass byte-equal post-rewire to the
+  trait.
+- 69 signatures tests still pass byte-equal post-rewire.
+- Hash vectors validated against NIST FIPS 180-4 for SHA-256/384/512
+  and RFC 1321 / 3174 for MD5 / SHA-1.
+
 ## [0.3.43] - 2026-05-03
 
 > Cross-binding parity, WASI build target, and a basket of issue fixes.
