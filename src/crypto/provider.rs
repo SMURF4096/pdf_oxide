@@ -126,14 +126,20 @@ pub trait SignatureVerifier: Send + Sync {
         signature: &[u8],
     ) -> Result<()>;
 
-    /// Verify an ECDSA signature over a pre-computed digest.
+    /// Verify an ECDSA signature over the *message* bytes. The
+    /// implementation applies the standard hash for the curve
+    /// (SHA-256 for P-256, SHA-384 for P-384) — `aws-lc-rs` and the
+    /// `p256` / `p384` crates' `Verifier::verify` already hash
+    /// internally.
+    ///
     /// `pubkey_sec1` is the SEC1-encoded uncompressed public point
-    /// (`0x04 || X || Y`).
+    /// (`0x04 || X || Y`); `signature_der` is the ASN.1 DER-encoded
+    /// signature (the form CMS / X.509 carry).
     fn verify_ecdsa(
         &self,
         curve: EcCurve,
         pubkey_sec1: &[u8],
-        digest: &[u8],
+        message: &[u8],
         signature_der: &[u8],
     ) -> Result<()>;
 }

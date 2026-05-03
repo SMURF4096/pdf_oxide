@@ -441,7 +441,7 @@ impl SignatureVerifier for RustVerifier {
         &self,
         curve: EcCurve,
         pubkey_sec1: &[u8],
-        digest: &[u8],
+        message: &[u8],
         signature_der: &[u8],
     ) -> Result<()> {
         match curve {
@@ -451,7 +451,7 @@ impl SignatureVerifier for RustVerifier {
                     .map_err(|_| Error::InvalidInput("invalid SEC1 P-256 public key"))?;
                 let sig = Signature::from_der(signature_der)
                     .map_err(|_| Error::InvalidInput("malformed P-256 ECDSA signature DER"))?;
-                vk.verify(digest, &sig)
+                vk.verify(message, &sig)
                     .map_err(|_| Error::Verification("P-256 ECDSA signature did not verify"))
             },
             EcCurve::P384 => {
@@ -460,7 +460,7 @@ impl SignatureVerifier for RustVerifier {
                     .map_err(|_| Error::InvalidInput("invalid SEC1 P-384 public key"))?;
                 let sig = Signature::from_der(signature_der)
                     .map_err(|_| Error::InvalidInput("malformed P-384 ECDSA signature DER"))?;
-                vk.verify(digest, &sig)
+                vk.verify(message, &sig)
                     .map_err(|_| Error::Verification("P-384 ECDSA signature did not verify"))
             },
         }
