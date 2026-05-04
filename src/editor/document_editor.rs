@@ -1692,7 +1692,7 @@ impl DocumentEditor {
                     .owner_password(config.owner_password.as_bytes())
                     .permissions(config.permissions.to_bits())
                     .encrypt_metadata(true)
-                    .build(&id1);
+                    .build(&id1)?;
 
                 // Create encryption handler
                 let handler = EncryptionWriteHandler::new(
@@ -1702,7 +1702,7 @@ impl DocumentEditor {
                     &id1,
                     algorithm,
                     true,
-                );
+                )?;
 
                 (Some((id1, id2)), Some(encrypt_dict), Some(handler))
             } else {

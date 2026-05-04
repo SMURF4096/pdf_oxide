@@ -77,36 +77,24 @@ pub(crate) fn rc4_crypt_impl(key: &[u8], data: &[u8]) -> Vec<u8> {
 /// §7.6.3 Algorithm 1). Under the default
 /// [`crate::crypto::RustCryptoProvider`] this succeeds; under the
 /// FIPS-validated `AwsLcProvider` it returns
-/// [`crate::crypto::Error::AlgorithmNotPermitted`] and we panic
-/// with a clear message — callers (currently only
-/// [`super::handler::EncryptionHandler`]) gate on
-/// `crate::crypto::active().is_legacy_allowed()` before reaching
-/// here, so the panic is unreachable in normal flow.
-///
-/// # Arguments
-///
-/// * `key` - The encryption key (5-16 bytes for PDF)
-/// * `data` - The data to encrypt/decrypt
-///
-/// # Returns
-///
-/// The encrypted/decrypted data
+/// [`crate::Error::InvalidPdf`] (mapped from
+/// `crate::crypto::Error::AlgorithmNotPermitted`) so callers can
+/// surface a clean error to users rather than crashing the process.
 ///
 /// [`CryptoProvider`]: crate::crypto::CryptoProvider
-pub fn rc4_crypt(key: &[u8], data: &[u8]) -> Vec<u8> {
+pub fn rc4_crypt(key: &[u8], data: &[u8]) -> crate::Result<Vec<u8>> {
     crate::crypto::active()
         .symmetric()
         .rc4(key, data)
-        .unwrap_or_else(|_| {
-            // The handler-level FIPS gate (see
-            // `EncryptionHandler::decrypt_*`) prevents reaching this
-            // panic. We deliberately don't fall back to the internal
-            // cipher here — silently bypassing the FIPS rejection
-            // would defeat the point of the active provider.
-            panic!(
-                "RC4 rejected by active CryptoProvider — \
-                 callers must check `is_legacy_allowed()` first"
-            )
+        .map_err(|e| {
+            crate::Error::InvalidPdf(format!(
+                "RC4 rejected by active CryptoProvider '{}': {}. \
+                 RC4 is required for PDF Standard Security R≤4. \
+                 Re-encrypt at R=6 (AES-256) or build pdf_oxide \
+                 without the 'crypto-aws-lc' feature.",
+                crate::crypto::active().name(),
+                e
+            ))
         })
 }
 
@@ -119,11 +107,8 @@ mod tests {
         let key = b"testkey";
         let plaintext = b"Hello, World!";
 
-        // Encrypt
-        let ciphertext = rc4_crypt(key, plaintext);
-
-        // Decrypt (same operation)
-        let decrypted = rc4_crypt(key, &ciphertext);
+        let ciphertext = rc4_crypt(key, plaintext).unwrap();
+        let decrypted = rc4_crypt(key, &ciphertext).unwrap();
 
         assert_eq!(plaintext, &decrypted[..]);
         assert_ne!(plaintext, &ciphertext[..]);
@@ -131,38 +116,25 @@ mod tests {
 
     #[test]
     fn test_rc4_empty() {
-        let key = b"testkey";
-        let data = b"";
-
-        let result = rc4_crypt(key, data);
+        let result = rc4_crypt(b"testkey", b"").unwrap();
         assert_eq!(result.len(), 0);
     }
 
     #[test]
     fn test_rc4_different_keys() {
         let plaintext = b"Secret message";
-
-        let encrypted1 = rc4_crypt(b"key1", plaintext);
-        let encrypted2 = rc4_crypt(b"key2", plaintext);
-
-        // Different keys should produce different ciphertexts
+        let encrypted1 = rc4_crypt(b"key1", plaintext).unwrap();
+        let encrypted2 = rc4_crypt(b"key2", plaintext).unwrap();
         assert_ne!(encrypted1, encrypted2);
     }
 
     #[test]
     fn test_rc4_known_vector() {
-        // Test with a known RC4 test vector
-        // Key: "Key", Plaintext: "Plaintext"
-        // Expected ciphertext: BBF316E8D940AF0AD3
         let key = b"Key";
         let plaintext = b"Plaintext";
-        let ciphertext = rc4_crypt(key, plaintext);
-
-        // Verify it's not the plaintext
+        let ciphertext = rc4_crypt(key, plaintext).unwrap();
         assert_ne!(plaintext, &ciphertext[..]);
-
-        // Verify decryption works
-        let decrypted = rc4_crypt(key, &ciphertext);
+        let decrypted = rc4_crypt(key, &ciphertext).unwrap();
         assert_eq!(plaintext, &decrypted[..]);
     }
 }

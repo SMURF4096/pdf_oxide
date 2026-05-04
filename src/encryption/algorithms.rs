@@ -42,7 +42,7 @@ pub fn compute_encryption_key(
     revision: u32,
     key_length: usize,
     encrypt_metadata: bool,
-) -> Vec<u8> {
+) -> crate::Result<Vec<u8>> {
     // For R>=5, the encryption key is randomly generated, not derived from password
     // PDF 2.0 Spec: Algorithm 8 generates a random 32-byte file encryption key
     if revision >= 5 {
@@ -89,7 +89,7 @@ pub fn compute_encryption_key(
     }
 
     // Step i: Return first key_length bytes (max 16 for MD5)
-    hash[..key_length.min(16)].to_vec()
+    Ok(hash[..key_length.min(16)].to_vec())
 }
 
 /// Generate a random encryption key for R>=5.
@@ -102,7 +102,7 @@ pub fn compute_encryption_key(
 /// timestamp_ns)` cascade — the latter is not cryptographically
 /// suitable as a key generator and is rejected by FIPS auditors.
 /// Issue #236.
-fn generate_random_encryption_key(key_length: usize) -> Vec<u8> {
+fn generate_random_encryption_key(key_length: usize) -> crate::Result<Vec<u8>> {
     generate_random_bytes(key_length)
 }
 
@@ -151,13 +151,14 @@ pub fn authenticate_user_password(
         revision,
         key_length,
         encrypt_metadata,
-    );
+    )
+    .ok()?;
 
     // Compute expected user key
     let expected_user_key = if revision >= 3 {
-        compute_user_key_r3(&key, file_id)
+        compute_user_key_r3(&key, file_id).ok()?
     } else {
-        compute_user_key_r2(&key)
+        compute_user_key_r2(&key).ok()?
     };
 
     // Compare first 16 bytes (constant-time comparison)
@@ -325,7 +326,7 @@ fn algorithm_2b(password: &[u8], salt: &[u8], user_key: &[u8]) -> Vec<u8> {
 /// Compute the user password hash for R=2 (Algorithm 4).
 ///
 /// PDF Spec: Section 7.6.3.4 - Algorithm 4
-fn compute_user_key_r2(key: &[u8]) -> Vec<u8> {
+fn compute_user_key_r2(key: &[u8]) -> crate::Result<Vec<u8>> {
     // Encrypt padding string with key
     super::rc4::rc4_crypt(key, PADDING)
 }
@@ -333,7 +334,7 @@ fn compute_user_key_r2(key: &[u8]) -> Vec<u8> {
 /// Compute the user password hash for R>=3 (Algorithm 5).
 ///
 /// PDF Spec: Section 7.6.3.4 - Algorithm 5
-fn compute_user_key_r3(key: &[u8], file_id: &[u8]) -> Vec<u8> {
+fn compute_user_key_r3(key: &[u8], file_id: &[u8]) -> crate::Result<Vec<u8>> {
     // Step a: Create MD5 hash of padding + file ID
     let mut hasher = Md5::new();
     hasher.update(PADDING);
@@ -346,12 +347,12 @@ fn compute_user_key_r3(key: &[u8], file_id: &[u8]) -> Vec<u8> {
         for byte in &mut modified_key {
             *byte ^= i as u8;
         }
-        hash = super::rc4::rc4_crypt(&modified_key, &hash);
+        hash = super::rc4::rc4_crypt(&modified_key, &hash)?;
     }
 
     // Step c: Append 16 arbitrary bytes (we use zeros)
     hash.extend_from_slice(&[0u8; 16]);
-    hash
+    Ok(hash)
 }
 
 /// Compute the owner password hash (Algorithm 3 for R<=4, Algorithm 8 for R>=5).
@@ -376,7 +377,7 @@ pub fn compute_owner_password_hash(
     user_password: &[u8],
     revision: u32,
     key_length: usize,
-) -> Vec<u8> {
+) -> crate::Result<Vec<u8>> {
     // For R>=5, use SHA-256 based algorithm (Algorithm 8)
     if revision >= 5 {
         return compute_owner_hash_r5(owner_password, user_password);
@@ -415,7 +416,7 @@ pub fn compute_owner_password_hash(
     let padded_user = pad_password(user_password);
 
     // Step g: RC4 encrypt the padded user password
-    let mut result = super::rc4::rc4_crypt(rc4_key, &padded_user);
+    let mut result = super::rc4::rc4_crypt(rc4_key, &padded_user)?;
 
     // Step h: For R >= 3, do 19 more RC4 encryptions with XOR'd keys
     if revision >= 3 {
@@ -424,11 +425,11 @@ pub fn compute_owner_password_hash(
             for byte in &mut modified_key {
                 *byte ^= i as u8;
             }
-            result = super::rc4::rc4_crypt(&modified_key, &result);
+            result = super::rc4::rc4_crypt(&modified_key, &result)?;
         }
     }
 
-    result
+    Ok(result)
 }
 
 /// Compute owner password hash for R>=5 (Algorithm 8 part).
@@ -439,10 +440,10 @@ pub fn compute_owner_password_hash(
 /// - Bytes 0-31: SHA-256(password || owner_validation_salt || U[0..48])
 /// - Bytes 32-39: owner_validation_salt (random 8 bytes)
 /// - Bytes 40-47: owner_key_salt (random 8 bytes)
-fn compute_owner_hash_r5(owner_password: &[u8], _user_password: &[u8]) -> Vec<u8> {
+fn compute_owner_hash_r5(owner_password: &[u8], _user_password: &[u8]) -> crate::Result<Vec<u8>> {
     // Generate random salts
-    let validation_salt = generate_random_bytes(8);
-    let key_salt = generate_random_bytes(8);
+    let validation_salt = generate_random_bytes(8)?;
+    let key_salt = generate_random_bytes(8)?;
 
     // For the initial O computation, we don't have U yet, so we compute a placeholder
     // In practice, the EncryptDictBuilder computes U first, then O
@@ -460,7 +461,7 @@ fn compute_owner_hash_r5(owner_password: &[u8], _user_password: &[u8]) -> Vec<u8
     result.extend_from_slice(&validation_salt); // 8 bytes
     result.extend_from_slice(&key_salt); // 8 bytes
 
-    result
+    Ok(result)
 }
 
 /// Compute the user password hash for the encryption dictionary (Algorithm 4/5/8).
@@ -479,7 +480,11 @@ fn compute_owner_hash_r5(owner_password: &[u8], _user_password: &[u8]) -> Vec<u8
 /// # Returns
 ///
 /// 32-byte user password hash for /U entry (48 bytes for R>=5)
-pub fn compute_user_password_hash(encryption_key: &[u8], file_id: &[u8], revision: u32) -> Vec<u8> {
+pub fn compute_user_password_hash(
+    encryption_key: &[u8],
+    file_id: &[u8],
+    revision: u32,
+) -> crate::Result<Vec<u8>> {
     if revision >= 5 {
         // For R>=5, use the encryption key directly as user password indicator
         // This creates the U value with validation/key salts
@@ -499,9 +504,9 @@ pub fn compute_user_password_hash(encryption_key: &[u8], file_id: &[u8], revisio
 /// - Bytes 0-31: SHA-256(password || user_validation_salt)
 /// - Bytes 32-39: user_validation_salt (random 8 bytes)
 /// - Bytes 40-47: user_key_salt (random 8 bytes)
-fn compute_user_hash_r5(user_password: &[u8]) -> Vec<u8> {
-    let validation_salt = generate_random_bytes(8);
-    let key_salt = generate_random_bytes(8);
+fn compute_user_hash_r5(user_password: &[u8]) -> crate::Result<Vec<u8>> {
+    let validation_salt = generate_random_bytes(8)?;
+    let key_salt = generate_random_bytes(8)?;
 
     let password = truncate_password_utf8(user_password);
 
@@ -515,7 +520,7 @@ fn compute_user_hash_r5(user_password: &[u8]) -> Vec<u8> {
     result.extend_from_slice(&validation_salt); // 8 bytes
     result.extend_from_slice(&key_salt); // 8 bytes
 
-    result
+    Ok(result)
 }
 
 /// PDF 2.0 Algorithm 8: compute U, UE, and the random file encryption key for R>=5.
@@ -528,10 +533,10 @@ pub fn compute_u_and_ue(
     user_password: &[u8],
     key_length: usize,
     revision: u32,
-) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
-    let file_key = generate_random_encryption_key(key_length);
-    let validation_salt = generate_random_bytes(8);
-    let key_salt = generate_random_bytes(8);
+) -> crate::Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
+    let file_key = generate_random_encryption_key(key_length)?;
+    let validation_salt = generate_random_bytes(8)?;
+    let key_salt = generate_random_bytes(8)?;
 
     let password = saslprep_password(user_password);
     let password = truncate_password_utf8(&password);
@@ -564,7 +569,7 @@ pub fn compute_u_and_ue(
     let ue = super::aes::aes256_encrypt_no_padding(&intermediate_key[..32], &iv, &file_key)
         .unwrap_or_default();
 
-    (u, ue, file_key)
+    Ok((u, ue, file_key))
 }
 
 /// PDF 2.0 Algorithm 9: compute O and OE for R>=5.
@@ -578,9 +583,9 @@ pub fn compute_o_and_oe(
     file_key: &[u8],
     u: &[u8],
     revision: u32,
-) -> (Vec<u8>, Vec<u8>) {
-    let validation_salt = generate_random_bytes(8);
-    let key_salt = generate_random_bytes(8);
+) -> crate::Result<(Vec<u8>, Vec<u8>)> {
+    let validation_salt = generate_random_bytes(8)?;
+    let key_salt = generate_random_bytes(8)?;
 
     let password = saslprep_password(owner_password);
     let password = truncate_password_utf8(&password);
@@ -616,7 +621,7 @@ pub fn compute_o_and_oe(
     let oe = super::aes::aes256_encrypt_no_padding(&intermediate_key[..32], &iv, file_key)
         .unwrap_or_default();
 
-    (o, oe)
+    Ok((o, oe))
 }
 
 /// Generate cryptographically strong random bytes from the active
@@ -625,25 +630,26 @@ pub fn compute_o_and_oe(
 /// `RustCryptoProvider` and `aws_lc_rs::rand::SystemRandom` for the
 /// FIPS provider. Issue #236.
 ///
-/// The previous implementation hashed UUID v4 + system-time
-/// nanoseconds with MD5, which (a) is not cryptographically suitable
-/// for nonces / salts and (b) the MD5 dependency is forbidden under
-/// FIPS. This routes through the provider's `random_bytes` instead.
-///
-/// On the unlikely event the OS RNG fails, panics — calling code
-/// uses these bytes as encryption salts and IVs, where falling back
-/// to a weaker source would silently weaken security. Modern Linux
-/// (`getrandom(2)` since 3.17) and BSDs / macOS / Windows all
+/// Returns [`crate::Error::InvalidPdf`] if the OS RNG fails. Modern
+/// Linux (`getrandom(2)` since 3.17) and BSDs / macOS / Windows all
 /// guarantee `getrandom`-equivalent never blocks once the entropy
-/// pool is initialized.
+/// pool is initialized, so this should be unreachable in practice —
+/// but propagating the error keeps `pdf_oxide` from crashing the
+/// host process if it ever fires.
 ///
 /// [`crypto::CryptoProvider`]: crate::crypto::CryptoProvider
-fn generate_random_bytes(len: usize) -> Vec<u8> {
+fn generate_random_bytes(len: usize) -> crate::Result<Vec<u8>> {
     let mut buf = vec![0u8; len];
     crate::crypto::active()
         .random_bytes(&mut buf)
-        .expect("OS RNG failure — getrandom() / SystemRandom must succeed for crypto operations");
-    buf
+        .map_err(|e| {
+            crate::Error::InvalidPdf(format!(
+                "OS RNG failure from CryptoProvider '{}': {}",
+                crate::crypto::active().name(),
+                e
+            ))
+        })?;
+    Ok(buf)
 }
 
 /// Truncate password to 127 bytes for UTF-8 (R>=5 requirement).
@@ -679,22 +685,22 @@ pub fn authenticate_owner_password(
     key_length: usize,
     encrypt_metadata: bool,
     owner_encryption: Option<&[u8]>,
-) -> Option<Vec<u8>> {
+) -> crate::Result<Option<Vec<u8>>> {
     if revision >= 5 {
-        return authenticate_owner_password_r5_r6(
+        return Ok(authenticate_owner_password_r5_r6(
             owner_password,
             owner_key,
             user_key,
             revision,
             owner_encryption,
-        );
+        ));
     }
 
     // Algorithm 7: Authenticate owner password for R≤4
     //
     // Steps a-d: Compute RC4 key from owner password (same as Algorithm 3 steps a-d)
     let password = if owner_password.is_empty() {
-        return None;
+        return Ok(None);
     } else {
         owner_password
     };
@@ -719,7 +725,7 @@ pub fn authenticate_owner_password(
     // Step e: Decrypt the /O value to recover the padded user password
     let user_password_padded = if revision == 2 {
         // R=2: Single RC4 decryption
-        super::rc4::rc4_crypt(rc4_key, owner_key)
+        super::rc4::rc4_crypt(rc4_key, owner_key)?
     } else {
         // R≥3: 20 RC4 decryptions with XOR'd keys (19 down to 0)
         let mut result = owner_key.to_vec();
@@ -728,13 +734,13 @@ pub fn authenticate_owner_password(
             for byte in &mut modified_key {
                 *byte ^= i as u8;
             }
-            result = super::rc4::rc4_crypt(&modified_key, &result);
+            result = super::rc4::rc4_crypt(&modified_key, &result)?;
         }
         result
     };
 
     // Step f: Use recovered user password to authenticate via Algorithm 6
-    authenticate_user_password(
+    Ok(authenticate_user_password(
         &user_password_padded,
         user_key,
         owner_key,
@@ -744,7 +750,7 @@ pub fn authenticate_owner_password(
         key_length,
         encrypt_metadata,
         None, // R<=4 path, no UE needed
-    )
+    ))
 }
 
 /// Verify owner password for R>=5 (PDF 2.0 Algorithm 12 for R5, Algorithm 2.A for R6).
@@ -888,7 +894,8 @@ mod tests {
             revision,
             key_length,
             true,
-        );
+        )
+        .unwrap();
 
         assert_eq!(key.len(), key_length);
     }
@@ -900,7 +907,7 @@ mod tests {
         let revision = 2;
         let key_length = 5; // 40-bit
 
-        let owner_hash = compute_owner_password_hash(owner, user, revision, key_length);
+        let owner_hash = compute_owner_password_hash(owner, user, revision, key_length).unwrap();
 
         // Should produce 32-byte hash
         assert_eq!(owner_hash.len(), 32);
@@ -916,7 +923,7 @@ mod tests {
         let revision = 3;
         let key_length = 16; // 128-bit
 
-        let owner_hash = compute_owner_password_hash(owner, user, revision, key_length);
+        let owner_hash = compute_owner_password_hash(owner, user, revision, key_length).unwrap();
 
         // Should produce 32-byte hash
         assert_eq!(owner_hash.len(), 32);
@@ -929,8 +936,8 @@ mod tests {
         let revision = 3;
         let key_length = 16;
 
-        let hash1 = compute_owner_password_hash(b"", user, revision, key_length);
-        let hash2 = compute_owner_password_hash(user, user, revision, key_length);
+        let hash1 = compute_owner_password_hash(b"", user, revision, key_length).unwrap();
+        let hash2 = compute_owner_password_hash(user, user, revision, key_length).unwrap();
 
         // Both should produce the same result since empty owner uses user password
         assert_eq!(hash1, hash2);
@@ -942,7 +949,7 @@ mod tests {
         let file_id = b"test_file_id";
         let revision = 2;
 
-        let user_hash = compute_user_password_hash(&key, file_id, revision);
+        let user_hash = compute_user_password_hash(&key, file_id, revision).unwrap();
 
         // R=2 always produces 32-byte result
         assert_eq!(user_hash.len(), 32);
@@ -954,7 +961,7 @@ mod tests {
         let file_id = b"test_file_id";
         let revision = 3;
 
-        let user_hash = compute_user_password_hash(&key, file_id, revision);
+        let user_hash = compute_user_password_hash(&key, file_id, revision).unwrap();
 
         // R>=3 produces 32-byte result (16 hash + 16 arbitrary)
         assert_eq!(user_hash.len(), 32);
@@ -971,7 +978,8 @@ mod tests {
         let key_length = 5;
 
         // Step 1: Compute owner hash (O value)
-        let owner_hash = compute_owner_password_hash(owner_pass, user_pass, revision, key_length);
+        let owner_hash =
+            compute_owner_password_hash(owner_pass, user_pass, revision, key_length).unwrap();
 
         // Step 2: Compute encryption key from user password
         let encryption_key = compute_encryption_key(
@@ -982,10 +990,12 @@ mod tests {
             revision,
             key_length,
             true,
-        );
+        )
+        .unwrap();
 
         // Step 3: Compute user hash (U value)
-        let user_hash = compute_user_password_hash(&encryption_key, file_id, revision);
+        let user_hash =
+            compute_user_password_hash(&encryption_key, file_id, revision).unwrap();
 
         // Step 4: Verify authentication works
         let auth_result = authenticate_user_password(
@@ -1014,7 +1024,8 @@ mod tests {
         let revision = 3;
         let key_length = 16;
 
-        let owner_hash = compute_owner_password_hash(owner_pass, user_pass, revision, key_length);
+        let owner_hash =
+            compute_owner_password_hash(owner_pass, user_pass, revision, key_length).unwrap();
         let encryption_key = compute_encryption_key(
             user_pass,
             &owner_hash,
@@ -1023,8 +1034,10 @@ mod tests {
             revision,
             key_length,
             true,
-        );
-        let user_hash = compute_user_password_hash(&encryption_key, file_id, revision);
+        )
+        .unwrap();
+        let user_hash =
+            compute_user_password_hash(&encryption_key, file_id, revision).unwrap();
 
         let auth_result = authenticate_user_password(
             user_pass,
@@ -1150,7 +1163,8 @@ mod tests {
         let key_length = 5;
 
         // Create encryption dict values
-        let owner_hash = compute_owner_password_hash(owner_pass, user_pass, revision, key_length);
+        let owner_hash =
+            compute_owner_password_hash(owner_pass, user_pass, revision, key_length).unwrap();
         let encryption_key = compute_encryption_key(
             user_pass,
             &owner_hash,
@@ -1159,8 +1173,10 @@ mod tests {
             revision,
             key_length,
             true,
-        );
-        let user_hash = compute_user_password_hash(&encryption_key, file_id, revision);
+        )
+        .unwrap();
+        let user_hash =
+            compute_user_password_hash(&encryption_key, file_id, revision).unwrap();
 
         // Owner password should authenticate
         let result = authenticate_owner_password(
@@ -1173,7 +1189,8 @@ mod tests {
             key_length,
             true,
             None,
-        );
+        )
+        .unwrap();
         assert!(result.is_some());
         assert_eq!(result.unwrap(), encryption_key);
     }
@@ -1187,7 +1204,8 @@ mod tests {
         let revision = 3;
         let key_length = 16;
 
-        let owner_hash = compute_owner_password_hash(owner_pass, user_pass, revision, key_length);
+        let owner_hash =
+            compute_owner_password_hash(owner_pass, user_pass, revision, key_length).unwrap();
         let encryption_key = compute_encryption_key(
             user_pass,
             &owner_hash,
@@ -1196,8 +1214,10 @@ mod tests {
             revision,
             key_length,
             true,
-        );
-        let user_hash = compute_user_password_hash(&encryption_key, file_id, revision);
+        )
+        .unwrap();
+        let user_hash =
+            compute_user_password_hash(&encryption_key, file_id, revision).unwrap();
 
         let result = authenticate_owner_password(
             owner_pass,
@@ -1209,7 +1229,8 @@ mod tests {
             key_length,
             true,
             None,
-        );
+        )
+        .unwrap();
         assert!(result.is_some());
         assert_eq!(result.unwrap(), encryption_key);
     }
@@ -1223,7 +1244,8 @@ mod tests {
         let revision = 3;
         let key_length = 16;
 
-        let owner_hash = compute_owner_password_hash(owner_pass, user_pass, revision, key_length);
+        let owner_hash =
+            compute_owner_password_hash(owner_pass, user_pass, revision, key_length).unwrap();
         let encryption_key = compute_encryption_key(
             user_pass,
             &owner_hash,
@@ -1232,8 +1254,10 @@ mod tests {
             revision,
             key_length,
             true,
-        );
-        let user_hash = compute_user_password_hash(&encryption_key, file_id, revision);
+        )
+        .unwrap();
+        let user_hash =
+            compute_user_password_hash(&encryption_key, file_id, revision).unwrap();
 
         let result = authenticate_owner_password(
             b"wrong",
@@ -1245,7 +1269,8 @@ mod tests {
             key_length,
             true,
             None,
-        );
+        )
+        .unwrap();
         assert!(result.is_none());
     }
 
@@ -1272,7 +1297,8 @@ mod tests {
 
         let result = authenticate_owner_password(
             password, &user_key, &owner_key, -1, b"", 5, 32, true, None,
-        );
+        )
+        .unwrap();
         assert!(result.is_some());
 
         // Verify the returned key is SHA-256(password || owner_key_salt || U[0..48])
@@ -1303,7 +1329,8 @@ mod tests {
 
         let result = authenticate_owner_password(
             b"wrong", &user_key, &owner_key, -1, b"", 5, 32, true, None,
-        );
+        )
+        .unwrap();
         assert!(result.is_none());
     }
 }

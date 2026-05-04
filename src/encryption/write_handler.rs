@@ -39,7 +39,7 @@ impl EncryptionWriteHandler {
         file_id: &[u8],
         algorithm: Algorithm,
         encrypt_metadata: bool,
-    ) -> Self {
+    ) -> crate::Result<Self> {
         let (_, revision) = Self::get_version_revision(algorithm);
         let key_length = algorithm.key_length();
 
@@ -51,13 +51,13 @@ impl EncryptionWriteHandler {
             revision,
             key_length,
             encrypt_metadata,
-        );
+        )?;
 
-        Self {
+        Ok(Self {
             encryption_key,
             algorithm,
             encrypt_metadata,
-        }
+        })
     }
 
     /// Create a handler from an already computed encryption key.
@@ -163,7 +163,23 @@ impl EncryptionWriteHandler {
     fn encrypt_with_key(&self, key: &[u8], data: &[u8]) -> Vec<u8> {
         match self.algorithm {
             Algorithm::None => data.to_vec(),
-            Algorithm::RC4_40 | Algorithm::Rc4_128 => rc4::rc4_crypt(key, data),
+            Algorithm::RC4_40 | Algorithm::Rc4_128 => {
+                // RC4 rejection by the FIPS provider should be impossible
+                // here — `EncryptionWriteHandler::new` rejects RC4
+                // algorithms up front under non-legacy providers (see
+                // Issue #236). If it ever fires, fall back to plaintext
+                // matching the AES error path below — this is logged as
+                // a critical error rather than panicking the host.
+                rc4::rc4_crypt(key, data).unwrap_or_else(|e| {
+                    log::error!(
+                        "encrypt_with_key: RC4 unexpectedly rejected: {} — \
+                         returning plaintext (write_handler FIPS gate should \
+                         have prevented this)",
+                        e
+                    );
+                    data.to_vec()
+                })
+            },
             Algorithm::Aes128 => {
                 // Generate random IV
                 let iv = Self::generate_iv();
@@ -290,7 +306,7 @@ mod tests {
 
         // RC4 is symmetric - encrypt again to decrypt
         let obj_key = handler.derive_object_key(1, 0);
-        let decrypted = rc4::rc4_crypt(&obj_key, &ciphertext);
+        let decrypted = rc4::rc4_crypt(&obj_key, &ciphertext).unwrap();
 
         assert_eq!(&decrypted, plaintext);
     }

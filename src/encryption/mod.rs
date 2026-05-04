@@ -444,7 +444,7 @@ impl EncryptDictBuilder {
     ///
     /// # Arguments
     /// * `file_id` - The first element of the PDF file identifier array
-    pub fn build(self, file_id: &[u8]) -> EncryptDict {
+    pub fn build(self, file_id: &[u8]) -> Result<EncryptDict> {
         let (version, revision) = match self.algorithm {
             Algorithm::None => (0, 0),
             Algorithm::RC4_40 => (1, 2),
@@ -452,6 +452,22 @@ impl EncryptDictBuilder {
             Algorithm::Aes128 => (4, 4),
             Algorithm::Aes256 => (5, 6),
         };
+
+        // FIPS gate (Issue #236): the FIPS-validated `AwsLcProvider`
+        // refuses MD5 / RC4 entirely, so writing an R≤4 dict under it
+        // would produce ciphertext that the same provider can't read
+        // back. Reject up front with a clear error rather than letting
+        // the deeper RC4 path return AlgorithmNotPermitted.
+        if revision > 0 && revision <= 4 && !crate::crypto::active().is_legacy_allowed() {
+            return Err(crate::Error::InvalidPdf(format!(
+                "active CryptoProvider '{}' rejects PDF Standard Security R={} \
+                 (R≤4 requires MD5 + RC4; FIPS 140-3 forbids both). \
+                 Use Algorithm::Aes256 (R=6) or build pdf_oxide \
+                 without the 'crypto-aws-lc' feature.",
+                crate::crypto::active().name(),
+                revision
+            )));
+        }
 
         let key_length = self.algorithm.key_length();
 
@@ -466,15 +482,15 @@ impl EncryptDictBuilder {
             // AES-256 (R6): file key is random; U/UE and O/OE are computed per
             // PDF 2.0 Algorithm 8 and 9 using the actual passwords.
             let (user_hash, user_encryption, file_key) =
-                algorithms::compute_u_and_ue(&self.user_password, key_length, revision);
+                algorithms::compute_u_and_ue(&self.user_password, key_length, revision)?;
             let (owner_hash, owner_encryption) = algorithms::compute_o_and_oe(
                 &owner_pass,
                 &self.user_password,
                 &file_key,
                 &user_hash,
                 revision,
-            );
-            return EncryptDict {
+            )?;
+            return Ok(EncryptDict {
                 filter: "Standard".to_string(),
                 sub_filter: None,
                 version,
@@ -488,7 +504,7 @@ impl EncryptDictBuilder {
                 user_encryption: Some(user_encryption),
                 perms: None,
                 stream_crypt_method: None,
-            };
+            });
         }
 
         // Compute owner password hash (O value)
@@ -497,7 +513,7 @@ impl EncryptDictBuilder {
             &self.user_password,
             revision,
             key_length,
-        );
+        )?;
 
         // Compute encryption key from user password
         let encryption_key = algorithms::compute_encryption_key(
@@ -508,12 +524,13 @@ impl EncryptDictBuilder {
             revision,
             key_length,
             self.encrypt_metadata,
-        );
+        )?;
 
         // Compute user password hash (U value)
-        let user_hash = algorithms::compute_user_password_hash(&encryption_key, file_id, revision);
+        let user_hash =
+            algorithms::compute_user_password_hash(&encryption_key, file_id, revision)?;
 
-        EncryptDict {
+        Ok(EncryptDict {
             filter: "Standard".to_string(),
             sub_filter: None,
             version,
@@ -527,7 +544,7 @@ impl EncryptDictBuilder {
             user_encryption: None,
             perms: None,
             stream_crypt_method: None,
-        }
+        })
     }
 }
 
@@ -1212,7 +1229,8 @@ mod tests {
             .user_password(b"user")
             .owner_password(b"owner")
             .permissions(-4)
-            .build(&file_id);
+            .build(&file_id)
+            .unwrap();
         assert_eq!(ed.filter, "Standard");
         assert_eq!(ed.version, 1);
         assert_eq!(ed.revision, 2);
@@ -1226,7 +1244,8 @@ mod tests {
         let file_id = vec![0u8; 16];
         let ed = EncryptDictBuilder::new(Algorithm::Rc4_128)
             .user_password(b"pass")
-            .build(&file_id);
+            .build(&file_id)
+            .unwrap();
         assert_eq!(ed.version, 2);
         assert_eq!(ed.revision, 3);
         assert_eq!(ed.length, Some(128)); // 16 * 8
@@ -1238,7 +1257,8 @@ mod tests {
         let ed = EncryptDictBuilder::new(Algorithm::Aes128)
             .user_password(b"pass")
             .encrypt_metadata(false)
-            .build(&file_id);
+            .build(&file_id)
+            .unwrap();
         assert_eq!(ed.version, 4);
         assert_eq!(ed.revision, 4);
         assert!(!ed.encrypt_metadata);
@@ -1250,7 +1270,8 @@ mod tests {
         let ed = EncryptDictBuilder::new(Algorithm::Aes256)
             .user_password(b"user")
             .owner_password(b"owner")
-            .build(&file_id);
+            .build(&file_id)
+            .unwrap();
         assert_eq!(ed.version, 5);
         assert_eq!(ed.revision, 6);
         assert_eq!(ed.length, Some(256)); // 32 * 8
@@ -1262,7 +1283,8 @@ mod tests {
         let ed = EncryptDictBuilder::new(Algorithm::RC4_40)
             .user_password(b"user_pass")
             // No owner_password set -> should use user_password
-            .build(&file_id);
+            .build(&file_id)
+            .unwrap();
         assert_eq!(ed.filter, "Standard");
         assert!(!ed.owner_password.is_empty());
     }
@@ -1272,7 +1294,8 @@ mod tests {
         let file_id = vec![0u8; 16];
         let ed = EncryptDictBuilder::new(Algorithm::RC4_40)
             .user_password(b"pass")
-            .build(&file_id);
+            .build(&file_id)
+            .unwrap();
         assert_eq!(ed.permissions, -1); // All permissions by default
     }
 
