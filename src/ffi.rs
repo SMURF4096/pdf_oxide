@@ -258,13 +258,28 @@ pub extern "C" fn pdf_oxide_get_log_level() -> i32 {
 /// Returns the name of the active cryptographic provider as a
 /// caller-owned C string. Free with [`free_string`].
 ///
-/// Always returns a non-NULL pointer pointing to either
-/// `"rust-crypto"` (default) or `"aws-lc-rs"` (FIPS provider, when
-/// the binary was built with `--features crypto-aws-lc` and
-/// installed via [`pdf_oxide_crypto_use_fips`]).
+/// **Non-initializing** — if no provider has been installed yet, this
+/// returns `"rust-crypto (default, lazy)"` *without* committing the
+/// `OnceLock`, so a subsequent [`pdf_oxide_crypto_use_fips`] call can
+/// still succeed. If a provider has already been installed (either
+/// explicitly via `pdf_oxide_crypto_use_fips`, or lazily by an earlier
+/// crypto operation on this process), the active provider's actual
+/// name is returned (e.g. `"rust-crypto"` or `"aws-lc-rs"`).
+///
+/// Bindings (Python / Node / C# / Go) call this for display/audit
+/// before optionally calling `crypto_use_fips`; it is intentionally
+/// safe to call first.
 #[no_mangle]
 pub extern "C" fn pdf_oxide_crypto_active_provider() -> *mut c_char {
-    let name = crate::crypto::active().name();
+    use crate::crypto::CryptoProvider;
+    let name = if crate::crypto::is_set() {
+        crate::crypto::active().name().to_string()
+    } else {
+        // Don't initialize the OnceLock — peek at the default
+        // provider's compile-time name and keep `crypto_use_fips`
+        // available for the rest of the call site.
+        format!("{} (default, lazy)", crate::crypto::RustCryptoProvider.name())
+    };
     std::ffi::CString::new(name)
         .map(std::ffi::CString::into_raw)
         .unwrap_or(std::ptr::null_mut())

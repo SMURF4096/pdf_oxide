@@ -145,7 +145,12 @@ jobs:
           uv pip install dist/*.whl
           uv run python -c "
           import pdf_oxide
-          assert pdf_oxide.crypto_active_provider() == 'rust-crypto'
+          # crypto_active_provider() is non-initializing — calling it
+          # before crypto_use_fips() must NOT lazy-install the default
+          # provider. Pre-FIPS, the name carries the lazy marker so we
+          # can distinguish "no provider set" from a committed one.
+          pre = pdf_oxide.crypto_active_provider()
+          assert pre == 'rust-crypto (default, lazy)', pre
           providers = pdf_oxide.crypto_available_providers()
           assert 'aws-lc-rs' in providers, providers
           pdf_oxide.crypto_use_fips()

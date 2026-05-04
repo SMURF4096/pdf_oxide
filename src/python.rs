@@ -7184,12 +7184,23 @@ fn pdf_oxide(m: &Bound<'_, PyModule>) -> PyResult<()> {
 }
 
 /// Return the name of the currently active cryptographic provider
-/// (`"rust-crypto"` for the default permissive provider, or
-/// `"aws-lc-rs"` for the FIPS-validated provider once installed via
-/// :func:`crypto_use_fips`). Issue #236.
+/// (``"rust-crypto"`` for the default permissive provider, or
+/// ``"aws-lc-rs"`` for the FIPS-validated provider once installed via
+/// :func:`crypto_use_fips`).
+///
+/// **Non-initializing** — if no provider has been installed yet, this
+/// returns ``"rust-crypto (default, lazy)"`` *without* committing the
+/// process-wide registry. That means calling this for display/audit
+/// before :func:`crypto_use_fips` is safe and won't lock the FIPS
+/// opt-in out. Issue #236.
 #[pyo3::pyfunction]
 fn crypto_active_provider() -> String {
-    crate::crypto::active().name().to_string()
+    use crate::crypto::CryptoProvider;
+    if crate::crypto::is_set() {
+        crate::crypto::active().name().to_string()
+    } else {
+        format!("{} (default, lazy)", crate::crypto::RustCryptoProvider.name())
+    }
 }
 
 /// List the cryptographic providers compiled into this build.

@@ -994,8 +994,7 @@ mod tests {
         .unwrap();
 
         // Step 3: Compute user hash (U value)
-        let user_hash =
-            compute_user_password_hash(&encryption_key, file_id, revision).unwrap();
+        let user_hash = compute_user_password_hash(&encryption_key, file_id, revision).unwrap();
 
         // Step 4: Verify authentication works
         let auth_result = authenticate_user_password(
@@ -1036,8 +1035,7 @@ mod tests {
             true,
         )
         .unwrap();
-        let user_hash =
-            compute_user_password_hash(&encryption_key, file_id, revision).unwrap();
+        let user_hash = compute_user_password_hash(&encryption_key, file_id, revision).unwrap();
 
         let auth_result = authenticate_user_password(
             user_pass,
@@ -1175,8 +1173,7 @@ mod tests {
             true,
         )
         .unwrap();
-        let user_hash =
-            compute_user_password_hash(&encryption_key, file_id, revision).unwrap();
+        let user_hash = compute_user_password_hash(&encryption_key, file_id, revision).unwrap();
 
         // Owner password should authenticate
         let result = authenticate_owner_password(
@@ -1216,8 +1213,7 @@ mod tests {
             true,
         )
         .unwrap();
-        let user_hash =
-            compute_user_password_hash(&encryption_key, file_id, revision).unwrap();
+        let user_hash = compute_user_password_hash(&encryption_key, file_id, revision).unwrap();
 
         let result = authenticate_owner_password(
             owner_pass,
@@ -1256,8 +1252,7 @@ mod tests {
             true,
         )
         .unwrap();
-        let user_hash =
-            compute_user_password_hash(&encryption_key, file_id, revision).unwrap();
+        let user_hash = compute_user_password_hash(&encryption_key, file_id, revision).unwrap();
 
         let result = authenticate_owner_password(
             b"wrong",

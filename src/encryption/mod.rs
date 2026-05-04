@@ -529,8 +529,7 @@ impl EncryptDictBuilder {
         )?;
 
         // Compute user password hash (U value)
-        let user_hash =
-            algorithms::compute_user_password_hash(&encryption_key, file_id, revision)?;
+        let user_hash = algorithms::compute_user_password_hash(&encryption_key, file_id, revision)?;
 
         Ok(EncryptDict {
             filter: "Standard".to_string(),
