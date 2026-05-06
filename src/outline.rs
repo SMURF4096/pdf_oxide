@@ -223,19 +223,12 @@ impl PdfDocument {
 
     /// Find the page index for a given page object reference.
     fn find_page_index(&self, page_ref: crate::object::ObjectRef) -> Result<usize> {
-        // Get page count to iterate through pages
-        let count = self.page_count()?;
-
-        for i in 0..count {
-            // Get page object reference for this index
-            if let Ok(page_obj_ref) = self.get_page_ref(i) {
-                if page_obj_ref == page_ref {
-                    return Ok(i);
-                }
-            }
-        }
-
-        Err(Error::InvalidPdf(format!("Page reference {:?} not found", page_ref)))
+        // Single tree walk; otherwise per-call get_page_ref(i) is O(n) and the
+        // outer loop becomes O(n²) — outlines with many bookmarks turn into n³.
+        let refs = self.all_page_refs()?;
+        refs.iter()
+            .position(|r| *r == page_ref)
+            .ok_or_else(|| Error::InvalidPdf(format!("Page reference {:?} not found", page_ref)))
     }
 }
 

@@ -171,6 +171,10 @@ pub mod decoders;
 // Colour management (ICC profile handling)
 pub mod color;
 
+// Pluggable cryptographic backend (FIPS / sovereign-jurisdiction
+// providers). Issue #236.
+pub mod crypto;
+
 // Encryption support
 pub mod encryption;
 

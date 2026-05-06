@@ -126,14 +126,11 @@ pub fn validate_fonts(
     _level: PdfALevel,
     result: &mut ValidationResult,
 ) -> Result<()> {
-    let page_count = document.page_count()?;
     let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
 
-    for idx in 0..page_count {
-        let page_ref = match document.get_page_ref(idx) {
-            Ok(r) => r,
-            Err(_) => continue,
-        };
+    // Single tree walk; per-index get_page_ref in a loop is O(n²).
+    let page_refs = document.all_page_refs().unwrap_or_default();
+    for page_ref in page_refs {
         let page_obj = match document.load_object(page_ref) {
             Ok(o) => o,
             Err(_) => continue,

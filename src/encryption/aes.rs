@@ -8,18 +8,33 @@
 //! - AES-256: 32-byte key (PDF 2.0, V=5, R=5/6)
 //!
 //! PDF Spec: Section 7.6.2 - General Encryption Algorithm
+//!
+//! All functions in this module delegate to
+//! [`crate::crypto::active`]'s [`SymmetricCipher`] implementation
+//! so the FIPS-validated `AwsLcProvider` (Phase 6) can swap in for
+//! the default `RustCryptoProvider` without touching any caller.
+//! Issue #236.
+//!
+//! [`SymmetricCipher`]: crate::crypto::SymmetricCipher
 
-use aes::cipher::{BlockModeDecrypt, BlockModeEncrypt, KeyIvInit};
-use aes::{Aes128, Aes256};
-use cbc::{Decryptor, Encryptor};
+use crate::crypto::{active, AesKeySize, Padding};
 
-#[allow(dead_code)]
-type Aes128CbcEnc = Encryptor<Aes128>;
-type Aes128CbcDec = Decryptor<Aes128>;
-
-type Aes256CbcEnc = Encryptor<Aes256>;
-#[allow(dead_code)]
-type Aes256CbcDec = Decryptor<Aes256>;
+fn map_err(e: crate::crypto::Error) -> &'static str {
+    // Preserve the actionable distinction between provider variants
+    // even though the existing public API surface only carries
+    // `&'static str`. The richer variants in `crypto::Error` already
+    // hold `&'static str` payloads, so we forward those without
+    // allocating; only the structured `AlgorithmNotPermitted` and
+    // unknown-future variants get folded to a generic message.
+    match e {
+        crate::crypto::Error::InvalidInput(s) => s,
+        crate::crypto::Error::Verification(s) => s,
+        crate::crypto::Error::Backend(s) => s,
+        crate::crypto::Error::AlgorithmNotPermitted { .. } => {
+            "AES algorithm rejected by active CryptoProvider's policy"
+        },
+    }
+}
 
 /// Encrypt data using AES-128 in CBC mode with PKCS#7 padding.
 ///
@@ -34,29 +49,10 @@ type Aes256CbcDec = Decryptor<Aes256>;
 /// The encrypted data with PKCS#7 padding, or an error if encryption fails
 #[allow(dead_code)]
 pub fn aes128_encrypt(key: &[u8], iv: &[u8], data: &[u8]) -> Result<Vec<u8>, &'static str> {
-    if key.len() != 16 {
-        return Err("AES-128 key must be 16 bytes");
-    }
-    if iv.len() != 16 {
-        return Err("IV must be 16 bytes");
-    }
-
-    // Apply PKCS#7 padding manually
-    let mut padded = data.to_vec();
-    let padding_len = 16 - (data.len() % 16);
-    padded.extend(std::iter::repeat_n(padding_len as u8, padding_len));
-
-    // Encrypt in-place
-    let len = padded.len();
-    let cipher = Aes128CbcEnc::new(
-        key.try_into().map_err(|_| "AES-128 key must be 16 bytes")?,
-        iv.try_into().map_err(|_| "IV must be 16 bytes")?,
-    );
-    cipher
-        .encrypt_padded::<aes::cipher::block_padding::NoPadding>(&mut padded, len)
-        .map_err(|_| "Encryption failed")?;
-
-    Ok(padded)
+    active()
+        .symmetric()
+        .aes_cbc_encrypt(AesKeySize::Aes128, key, iv, data, Padding::Pkcs7)
+        .map_err(map_err)
 }
 
 /// Encrypt data using AES-128 in CBC mode WITHOUT padding.
@@ -68,30 +64,13 @@ pub fn aes128_encrypt_no_padding(
     iv: &[u8],
     data: &[u8],
 ) -> Result<Vec<u8>, &'static str> {
-    if key.len() != 16 {
-        return Err("AES-128 key must be 16 bytes");
-    }
-    if iv.len() != 16 {
-        return Err("IV must be 16 bytes");
-    }
     if data.is_empty() {
         return Ok(Vec::new());
     }
-    if !data.len().is_multiple_of(16) {
-        return Err("Data length must be multiple of 16 for no-padding mode");
-    }
-
-    let mut buffer = data.to_vec();
-    let len = buffer.len();
-    let cipher = Aes128CbcEnc::new(
-        key.try_into().map_err(|_| "AES-128 key must be 16 bytes")?,
-        iv.try_into().map_err(|_| "IV must be 16 bytes")?,
-    );
-    cipher
-        .encrypt_padded::<aes::cipher::block_padding::NoPadding>(&mut buffer, len)
-        .map_err(|_| "Encryption failed")?;
-
-    Ok(buffer)
+    active()
+        .symmetric()
+        .aes_cbc_encrypt(AesKeySize::Aes128, key, iv, data, Padding::None)
+        .map_err(map_err)
 }
 
 /// Decrypt data using AES-256 in CBC mode WITHOUT padding.
@@ -103,26 +82,13 @@ pub fn aes256_decrypt_no_padding(
     iv: &[u8],
     data: &[u8],
 ) -> Result<Vec<u8>, &'static str> {
-    if key.len() != 32 {
-        return Err("AES-256 key must be 32 bytes");
-    }
-    if iv.len() != 16 {
-        return Err("IV must be 16 bytes");
-    }
     if data.is_empty() {
         return Ok(Vec::new());
     }
-    if !data.len().is_multiple_of(16) {
-        return Err("Data length must be multiple of 16 for no-padding mode");
-    }
-
-    let mut buffer = data.to_vec();
-    let cipher = Aes256CbcDec::new(key.try_into().unwrap(), iv.try_into().unwrap());
-    cipher
-        .decrypt_padded::<aes::cipher::block_padding::NoPadding>(&mut buffer)
-        .map_err(|_| "Decryption failed")?;
-
-    Ok(buffer)
+    active()
+        .symmetric()
+        .aes_cbc_decrypt(AesKeySize::Aes256, key, iv, data, Padding::None)
+        .map_err(map_err)
 }
 
 /// Encrypt data using AES-256 in CBC mode without padding.
@@ -134,26 +100,13 @@ pub fn aes256_encrypt_no_padding(
     iv: &[u8],
     data: &[u8],
 ) -> Result<Vec<u8>, &'static str> {
-    if key.len() != 32 {
-        return Err("AES-256 key must be 32 bytes");
-    }
-    if iv.len() != 16 {
-        return Err("IV must be 16 bytes");
-    }
     if data.is_empty() {
         return Ok(Vec::new());
     }
-    if !data.len().is_multiple_of(16) {
-        return Err("Data length must be multiple of 16 for no-padding mode");
-    }
-
-    let mut buffer = data.to_vec();
-    let cipher = Aes256CbcEnc::new(key.try_into().unwrap(), iv.try_into().unwrap());
-    cipher
-        .encrypt_padded::<aes::cipher::block_padding::NoPadding>(&mut buffer, data.len())
-        .map_err(|_| "Encryption failed")?;
-
-    Ok(buffer)
+    active()
+        .symmetric()
+        .aes_cbc_encrypt(AesKeySize::Aes256, key, iv, data, Padding::None)
+        .map_err(map_err)
 }
 
 /// Decrypt data using AES-128 in CBC mode and remove PKCS#7 padding.
@@ -168,138 +121,32 @@ pub fn aes256_encrypt_no_padding(
 ///
 /// The decrypted data with padding removed, or an error if decryption fails
 pub fn aes128_decrypt(key: &[u8], iv: &[u8], data: &[u8]) -> Result<Vec<u8>, &'static str> {
-    if key.len() != 16 {
-        return Err("AES-128 key must be 16 bytes");
-    }
-    if iv.len() != 16 {
-        return Err("IV must be 16 bytes");
-    }
     if data.is_empty() {
         return Ok(Vec::new());
     }
-    if !data.len().is_multiple_of(16) {
-        return Err("Encrypted data length must be multiple of 16");
-    }
-
-    // Decrypt in-place
-    let mut buffer = data.to_vec();
-    let cipher = Aes128CbcDec::new(key.try_into().unwrap(), iv.try_into().unwrap());
-    let decrypted = cipher
-        .decrypt_padded::<aes::cipher::block_padding::NoPadding>(&mut buffer)
-        .map_err(|_| "Decryption failed")?;
-
-    // Remove PKCS#7 padding manually
-    if decrypted.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let padding_len = decrypted[decrypted.len() - 1] as usize;
-    if padding_len == 0 || padding_len > 16 {
-        return Err("Invalid PKCS#7 padding");
-    }
-
-    // Verify padding
-    let data_len = decrypted.len().saturating_sub(padding_len);
-    for &byte in &decrypted[data_len..] {
-        if byte != padding_len as u8 {
-            return Err("Invalid PKCS#7 padding");
-        }
-    }
-
-    Ok(decrypted[..data_len].to_vec())
+    active()
+        .symmetric()
+        .aes_cbc_decrypt(AesKeySize::Aes128, key, iv, data, Padding::Pkcs7)
+        .map_err(map_err)
 }
 
 /// Encrypt data using AES-256 in CBC mode with PKCS#7 padding.
-///
-/// Used for PDF 2.0 encryption (V=5, R=5/6).
-///
-/// # Arguments
-///
-/// * `key` - The 32-byte encryption key
-/// * `iv` - The 16-byte initialization vector
-/// * `data` - The data to encrypt
-///
-/// # Returns
-///
-/// The encrypted data with PKCS#7 padding, or an error if encryption fails
-#[allow(dead_code)]
 pub fn aes256_encrypt(key: &[u8], iv: &[u8], data: &[u8]) -> Result<Vec<u8>, &'static str> {
-    if key.len() != 32 {
-        return Err("AES-256 key must be 32 bytes");
-    }
-    if iv.len() != 16 {
-        return Err("IV must be 16 bytes");
-    }
-
-    // Apply PKCS#7 padding manually
-    let mut padded = data.to_vec();
-    let padding_len = 16 - (data.len() % 16);
-    padded.extend(std::iter::repeat_n(padding_len as u8, padding_len));
-
-    // Encrypt in-place
-    let len = padded.len();
-    let cipher = Aes256CbcEnc::new(key.try_into().unwrap(), iv.try_into().unwrap());
-    cipher
-        .encrypt_padded::<aes::cipher::block_padding::NoPadding>(&mut padded, len)
-        .map_err(|_| "Encryption failed")?;
-
-    Ok(padded)
+    active()
+        .symmetric()
+        .aes_cbc_encrypt(AesKeySize::Aes256, key, iv, data, Padding::Pkcs7)
+        .map_err(map_err)
 }
 
 /// Decrypt data using AES-256 in CBC mode and remove PKCS#7 padding.
-///
-/// Used for PDF 2.0 encryption (V=5, R=5/6).
-///
-/// # Arguments
-///
-/// * `key` - The 32-byte encryption key
-/// * `iv` - The 16-byte initialization vector
-/// * `data` - The encrypted data
-///
-/// # Returns
-///
-/// The decrypted data with padding removed, or an error if decryption fails
-#[allow(dead_code)]
 pub fn aes256_decrypt(key: &[u8], iv: &[u8], data: &[u8]) -> Result<Vec<u8>, &'static str> {
-    if key.len() != 32 {
-        return Err("AES-256 key must be 32 bytes");
-    }
-    if iv.len() != 16 {
-        return Err("IV must be 16 bytes");
-    }
     if data.is_empty() {
         return Ok(Vec::new());
     }
-    if !data.len().is_multiple_of(16) {
-        return Err("Encrypted data length must be multiple of 16");
-    }
-
-    // Decrypt in-place
-    let mut buffer = data.to_vec();
-    let cipher = Aes256CbcDec::new(key.try_into().unwrap(), iv.try_into().unwrap());
-    let decrypted = cipher
-        .decrypt_padded::<aes::cipher::block_padding::NoPadding>(&mut buffer)
-        .map_err(|_| "Decryption failed")?;
-
-    // Remove PKCS#7 padding manually
-    if decrypted.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let padding_len = decrypted[decrypted.len() - 1] as usize;
-    if padding_len == 0 || padding_len > 16 {
-        return Err("Invalid PKCS#7 padding");
-    }
-
-    // Verify padding
-    let data_len = decrypted.len().saturating_sub(padding_len);
-    for &byte in &decrypted[data_len..] {
-        if byte != padding_len as u8 {
-            return Err("Invalid PKCS#7 padding");
-        }
-    }
-
-    Ok(decrypted[..data_len].to_vec())
+    active()
+        .symmetric()
+        .aes_cbc_decrypt(AesKeySize::Aes256, key, iv, data, Padding::Pkcs7)
+        .map_err(map_err)
 }
 
 #[cfg(test)]
@@ -307,66 +154,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_aes128_round_trip() {
-        let key = b"0123456789abcdef"; // 16 bytes
-        let iv = b"fedcba9876543210"; // 16 bytes
-        let plaintext = b"Hello, AES encryption!";
-
-        // Encrypt
-        let ciphertext = aes128_encrypt(key, iv, plaintext).unwrap();
-
-        // Decrypt
-        let decrypted = aes128_decrypt(key, iv, &ciphertext).unwrap();
-
-        assert_eq!(plaintext, &decrypted[..]);
-        assert_ne!(plaintext, &ciphertext[..]);
-    }
-
-    #[test]
-    fn test_aes128_empty() {
-        let key = b"0123456789abcdef";
-        let iv = b"fedcba9876543210";
-        let plaintext = b"";
-
+    fn aes128_encrypt_decrypt_round_trip() {
+        let key = b"PDF-AES-128-key!"; // 16 bytes
+        let iv = b"AES-IV-16-bytes!"; // 16 bytes
+        let plaintext = b"PDF Standard Security Handler V=4 stream content.";
         let ciphertext = aes128_encrypt(key, iv, plaintext).unwrap();
         let decrypted = aes128_decrypt(key, iv, &ciphertext).unwrap();
-
-        assert_eq!(decrypted.len(), 0);
+        assert_eq!(decrypted, plaintext);
     }
 
     #[test]
-    fn test_aes128_block_aligned() {
-        let key = b"0123456789abcdef";
-        let iv = b"fedcba9876543210";
-        let plaintext = b"Exactly16bytes!!"; // 16 bytes
-
-        let ciphertext = aes128_encrypt(key, iv, plaintext).unwrap();
-        let decrypted = aes128_decrypt(key, iv, &ciphertext).unwrap();
-
-        assert_eq!(plaintext, &decrypted[..]);
+    fn aes128_encrypt_block_aligned() {
+        // 16-byte aligned plaintext — PKCS#7 must still pad with a
+        // full block of 0x10.
+        let key = [0x42u8; 16];
+        let iv = [0x13u8; 16];
+        let plaintext = [0x0au8; 16];
+        let ciphertext = aes128_encrypt(&key, &iv, &plaintext).unwrap();
+        assert_eq!(ciphertext.len(), 32, "PKCS#7 must add a full padding block");
+        let decrypted = aes128_decrypt(&key, &iv, &ciphertext).unwrap();
+        assert_eq!(decrypted, plaintext);
     }
 
     #[test]
-    fn test_aes128_invalid_key() {
-        let key = b"short"; // Too short
-        let iv = b"fedcba9876543210";
-        let plaintext = b"data";
-
-        assert!(aes128_encrypt(key, iv, plaintext).is_err());
+    fn aes256_no_padding_round_trip() {
+        let key = [0x07u8; 32];
+        let iv = [0u8; 16]; // V=5 key wrap uses zero IV
+        let plaintext = [0xa5u8; 32];
+        let ciphertext = aes256_encrypt_no_padding(&key, &iv, &plaintext).unwrap();
+        let decrypted = aes256_decrypt_no_padding(&key, &iv, &ciphertext).unwrap();
+        assert_eq!(decrypted, plaintext);
     }
 
     #[test]
-    fn test_aes128_different_keys() {
-        let iv = b"fedcba9876543210";
-        let plaintext = b"Secret message";
-
-        let key1 = b"key1key1key1key1";
-        let key2 = b"key2key2key2key2";
-
-        let encrypted1 = aes128_encrypt(key1, iv, plaintext).unwrap();
-        let encrypted2 = aes128_encrypt(key2, iv, plaintext).unwrap();
-
-        // Different keys should produce different ciphertexts
-        assert_ne!(encrypted1, encrypted2);
+    fn aes_rejects_short_key() {
+        let result = aes128_encrypt(&[0u8; 8], &[0u8; 16], b"data1234data1234");
+        assert!(result.is_err());
     }
 }

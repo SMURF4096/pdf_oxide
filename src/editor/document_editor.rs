@@ -1053,7 +1053,6 @@ impl DocumentEditor {
         }
 
         let page_count = self.page_count()?;
-
         for &page in pages {
             if page >= page_count {
                 return Err(Error::InvalidPdf(format!(
@@ -1063,16 +1062,172 @@ impl DocumentEditor {
             }
         }
 
-        // Clone via bytes, then remove all pages not in the keep-set.
-        let keep: std::collections::HashSet<usize> = pages.iter().copied().collect();
-        let snapshot = self.save_to_bytes()?;
-        let mut copy = DocumentEditor::from_bytes(snapshot)?;
-        for i in (0..page_count).rev() {
-            if !keep.contains(&i) {
-                copy.remove_page(i)?;
+        // Slow path for documents with appended pages from merge_from(): the
+        // fast path swaps page_order, but merged pages live in a separate
+        // vector and aren't represented there.
+        if !self.merged_pages.is_empty() {
+            let keep: std::collections::HashSet<usize> = pages.iter().copied().collect();
+            let snapshot = self.save_to_bytes()?;
+            let mut copy = DocumentEditor::from_bytes(snapshot)?;
+            for i in (0..page_count).rev() {
+                if !keep.contains(&i) {
+                    copy.remove_page(i)?;
+                }
+            }
+            return copy.save_to_bytes();
+        }
+
+        // Fast path: serialise once with a trimmed page_order and a staged
+        // Pages dict, so collect_reachable_ids() drops orphan objects from
+        // dropped pages instead of walking the original page tree.
+        let visible: Vec<i32> = self
+            .page_order
+            .iter()
+            .filter(|&&i| i >= 0)
+            .copied()
+            .collect();
+        let new_order: Vec<i32> = pages.iter().map(|&i| visible[i]).collect();
+
+        // Stage a trimmed /Pages dict in modified_objects so GC reachability
+        // sees only kept pages. write_full_to_writer rebuilds its own Kids
+        // list, so this staging only matters for the GC walk.
+        let pages_ref = self
+            .source
+            .trailer()
+            .as_dict()
+            .and_then(|d| d.get("Root"))
+            .and_then(|r| r.as_reference())
+            .and_then(|catalog_ref| self.source.load_object(catalog_ref).ok())
+            .and_then(|catalog_obj| {
+                catalog_obj
+                    .as_dict()
+                    .and_then(|d| d.get("Pages"))
+                    .and_then(|p| p.as_reference())
+            });
+
+        // Resolve all leaf page refs in one tree walk (avoids O(n²) of calling
+        // get_page_ref(i) per index).
+        let all_refs = self.source.all_page_refs().unwrap_or_default();
+
+        let staged_pages: Option<(u32, Option<Object>)> = if let Some(pages_ref) = pages_ref {
+            let pages_obj = self.source.load_object(pages_ref).ok();
+            let pages_dict = pages_obj.as_ref().and_then(|p| p.as_dict()).cloned();
+            if let Some(mut new_pages_dict) = pages_dict {
+                let mut kids: Vec<Object> = Vec::with_capacity(new_order.len());
+                for &leaf_idx in &new_order {
+                    if leaf_idx >= 0 {
+                        let idx = leaf_idx as usize;
+                        if idx < all_refs.len() {
+                            kids.push(Object::Reference(all_refs[idx]));
+                        }
+                    }
+                }
+                new_pages_dict.insert("Count".to_string(), Object::Integer(kids.len() as i64));
+                new_pages_dict.insert("Kids".to_string(), Object::Array(kids));
+                let prior = self
+                    .modified_objects
+                    .insert(pages_ref.id, Object::Dictionary(new_pages_dict));
+                Some((pages_ref.id, prior))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let saved_order = std::mem::replace(&mut self.page_order, new_order);
+        let saved_is_modified = std::mem::replace(&mut self.is_modified, true);
+
+        let result = self.save_to_bytes();
+
+        // Always restore — even on Err — so the document is observably unchanged.
+        self.page_order = saved_order;
+        self.is_modified = saved_is_modified;
+        if let Some((pages_id, prior)) = staged_pages {
+            match prior {
+                Some(prev_obj) => {
+                    self.modified_objects.insert(pages_id, prev_obj);
+                },
+                None => {
+                    self.modified_objects.remove(&pages_id);
+                },
             }
         }
-        copy.save_to_bytes()
+
+        result
+    }
+
+    /// Extract several non-overlapping page ranges in one call, returning the
+    /// PDF bytes for each.
+    ///
+    /// `ranges` is a list of `(start, end)` tuples interpreted as `[start, end)`
+    /// half-open ranges over current visible pages. `start` may equal `end`
+    /// (empty range is rejected, matching `extract_pages_to_bytes`). Each output
+    /// is independent; this call does not deduplicate work between ranges
+    /// beyond the per-document caches that warm up after the first one.
+    ///
+    /// Mirrors the chunked workflow described in issue #474: a 12k-page
+    /// document split into 3000-page chunks for downstream processing.
+    pub fn extract_page_ranges_to_bytes(
+        &mut self,
+        ranges: &[(usize, usize)],
+    ) -> Result<Vec<Vec<u8>>> {
+        let mut out: Vec<Vec<u8>> = Vec::with_capacity(ranges.len());
+        for &(start, end) in ranges {
+            if end < start {
+                return Err(Error::InvalidPdf(format!(
+                    "Invalid page range: end ({}) < start ({})",
+                    end, start
+                )));
+            }
+            let pages: Vec<usize> = (start..end).collect();
+            out.push(self.extract_pages_to_bytes(&pages)?);
+        }
+        Ok(out)
+    }
+
+    /// Restrict the document to the listed pages, in the order given. The
+    /// pages not listed are dropped (in `page_order`); subsequent
+    /// `save_to_bytes()` / `save()` will produce a PDF containing only the
+    /// selected pages, with garbage-collected resources.
+    ///
+    /// This is the in-place analogue of `extract_pages_to_bytes`: it mutates
+    /// the editor instead of returning bytes, so chained edits (e.g. add
+    /// annotations, then save) work as expected. Equivalent to PyMuPDF's
+    /// `doc.select(page_list)`.
+    pub fn select_pages(&mut self, pages: &[usize]) -> Result<()> {
+        use crate::editor::EditableDocument;
+
+        if pages.is_empty() {
+            return Err(Error::InvalidPdf("pages list must not be empty".to_string()));
+        }
+        let page_count = self.page_count()?;
+        for &p in pages {
+            if p >= page_count {
+                return Err(Error::InvalidPdf(format!(
+                    "Page index {} out of range (document has {} pages)",
+                    p, page_count
+                )));
+            }
+        }
+        if !self.merged_pages.is_empty() {
+            return Err(Error::InvalidPdf(
+                "select_pages does not yet support documents with pages added via merge_from"
+                    .to_string(),
+            ));
+        }
+
+        let visible: Vec<i32> = self
+            .page_order
+            .iter()
+            .filter(|&&i| i >= 0)
+            .copied()
+            .collect();
+        let new_order: Vec<i32> = pages.iter().map(|&i| visible[i]).collect();
+
+        self.page_order = new_order;
+        self.is_modified = true;
+        Ok(())
     }
 
     /// Overlay a PNG image onto an existing page at the given position.
@@ -1692,7 +1847,7 @@ impl DocumentEditor {
                     .owner_password(config.owner_password.as_bytes())
                     .permissions(config.permissions.to_bits())
                     .encrypt_metadata(true)
-                    .build(&id1);
+                    .build(&id1)?;
 
                 // Create encryption handler
                 let handler = EncryptionWriteHandler::new(
@@ -1702,7 +1857,7 @@ impl DocumentEditor {
                     &id1,
                     algorithm,
                     true,
-                );
+                )?;
 
                 (Some((id1, id2)), Some(encrypt_dict), Some(handler))
             } else {
@@ -1985,12 +2140,9 @@ impl DocumentEditor {
 
                     // Collect flattened leaf page refs from the (possibly multi-level) page tree.
                     // page_order indices refer to leaf pages, not Kids array entries.
-                    let mut original_page_refs: Vec<ObjectRef> = Vec::new();
-                    for i in 0..self.original_page_count {
-                        if let Ok(page_ref) = self.source.get_page_ref(i) {
-                            original_page_refs.push(page_ref);
-                        }
-                    }
+                    // Single tree walk — calling get_page_ref(i) in a loop is O(n²).
+                    let original_page_refs: Vec<ObjectRef> =
+                        self.source.all_page_refs().unwrap_or_default();
 
                     // Build visible kids in page_order sequence
                     // page_order contains original leaf-page indices; -1 means removed
@@ -4193,14 +4345,16 @@ impl DocumentEditor {
             _ => return Ok(None),
         };
 
-        // Build page-ref → page-index map once
-        let page_count = self.source.page_count().unwrap_or(0);
-        let mut page_ref_to_index: HashMap<u32, usize> = HashMap::new();
-        for i in 0..page_count {
-            if let Ok(pr) = self.source.get_page_ref(i) {
-                page_ref_to_index.insert(pr.id, i);
-            }
-        }
+        // Build page-ref → page-index map in one tree walk
+        // (per-index get_page_ref is O(n), looping it is O(n²)).
+        let page_ref_to_index: HashMap<u32, usize> = self
+            .source
+            .all_page_refs()
+            .unwrap_or_default()
+            .into_iter()
+            .enumerate()
+            .map(|(i, r)| (r.id, i))
+            .collect();
 
         // Collect root field refs that survive the partial flatten
         let flattened = self.flatten_forms_pages.clone();
@@ -4424,14 +4578,16 @@ impl DocumentEditor {
         // Extract fields from source document
         let source_fields = FormExtractor::extract_fields(&self.source)?;
 
-        // Build page ref -> index map for resolving field page indices
-        let page_count = self.source.page_count()?;
-        let mut page_ref_map: HashMap<u32, usize> = HashMap::new();
-        for i in 0..page_count {
-            if let Ok(page_ref) = self.source.get_page_ref(i) {
-                page_ref_map.insert(page_ref.id, i);
-            }
-        }
+        // Build page ref -> index map for resolving field page indices in
+        // one tree walk (per-index get_page_ref is O(n), looping is O(n²)).
+        let page_ref_map: HashMap<u32, usize> = self
+            .source
+            .all_page_refs()
+            .unwrap_or_default()
+            .into_iter()
+            .enumerate()
+            .map(|(i, r)| (r.id, i))
+            .collect();
 
         let mut result = Vec::new();
 
@@ -9483,6 +9639,83 @@ mod tests {
         let mut editor = create_test_editor();
         let out = std::env::temp_dir().join("pdf_oxide_extract_oob.pdf");
         let result = editor.extract_pages(&[99], &out);
+        assert!(result.is_err());
+    }
+
+    /// Sequential chunked extraction — mirrors issue #474's S3-Lambda
+    /// workflow: open once, extract non-overlapping page ranges in turn,
+    /// each call must (a) succeed, (b) leave the source observably
+    /// unchanged, (c) produce a PDF whose page count matches the slice.
+    #[test]
+    fn test_extract_pages_chunked_sequential() {
+        let mut editor = create_multi_page_editor(10);
+        let original_count = editor.current_page_count();
+
+        for (start, end) in [(0, 3), (3, 6), (6, 10)] {
+            let pages: Vec<usize> = (start..end).collect();
+            let bytes = editor.extract_pages_to_bytes(&pages).unwrap();
+            assert!(!bytes.is_empty());
+
+            // Source document must be unchanged after each call.
+            assert_eq!(
+                editor.current_page_count(),
+                original_count,
+                "source page count changed after chunk {start}..{end}"
+            );
+
+            // Round-trip the chunk and verify its page count.
+            let mut chunk = DocumentEditor::from_bytes(bytes).unwrap();
+            assert_eq!(chunk.page_count().unwrap(), end - start);
+        }
+    }
+
+    /// Out-of-order page selection (non-sequential indices).
+    #[test]
+    fn test_extract_pages_non_sequential() {
+        let mut editor = create_multi_page_editor(5);
+        let bytes = editor.extract_pages_to_bytes(&[3, 0, 4]).unwrap();
+        let mut chunk = DocumentEditor::from_bytes(bytes).unwrap();
+        assert_eq!(chunk.page_count().unwrap(), 3);
+    }
+
+    /// Batch extraction (issue #474 Option A). Each output independently
+    /// reopens with the right page count.
+    #[test]
+    fn test_extract_page_ranges_to_bytes_batch() {
+        let mut editor = create_multi_page_editor(10);
+        let chunks = editor
+            .extract_page_ranges_to_bytes(&[(0, 3), (3, 6), (6, 10)])
+            .unwrap();
+        assert_eq!(chunks.len(), 3);
+        for (i, bytes) in chunks.into_iter().enumerate() {
+            let mut chunk = DocumentEditor::from_bytes(bytes).unwrap();
+            let expected = match i {
+                0 => 3,
+                1 => 3,
+                _ => 4,
+            };
+            assert_eq!(chunk.page_count().unwrap(), expected);
+        }
+    }
+
+    /// In-place selection (issue #474 Option B). After `select_pages`, the
+    /// document has only the listed pages; subsequent `save_to_bytes` round-
+    /// trips with the same count.
+    #[test]
+    fn test_select_pages_in_place() {
+        let mut editor = create_multi_page_editor(5);
+        editor.select_pages(&[1, 3, 4]).unwrap();
+        assert_eq!(editor.current_page_count(), 3);
+        let bytes = editor.save_to_bytes().unwrap();
+        let mut reopened = DocumentEditor::from_bytes(bytes).unwrap();
+        assert_eq!(reopened.page_count().unwrap(), 3);
+    }
+
+    /// `select_pages` validates indices.
+    #[test]
+    fn test_select_pages_out_of_range() {
+        let mut editor = create_multi_page_editor(3);
+        let result = editor.select_pages(&[5]);
         assert!(result.is_err());
     }
 

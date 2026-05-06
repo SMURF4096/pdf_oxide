@@ -39,7 +39,7 @@ impl EncryptionWriteHandler {
         file_id: &[u8],
         algorithm: Algorithm,
         encrypt_metadata: bool,
-    ) -> Self {
+    ) -> crate::Result<Self> {
         let (_, revision) = Self::get_version_revision(algorithm);
         let key_length = algorithm.key_length();
 
@@ -51,13 +51,13 @@ impl EncryptionWriteHandler {
             revision,
             key_length,
             encrypt_metadata,
-        );
+        )?;
 
-        Self {
+        Ok(Self {
             encryption_key,
             algorithm,
             encrypt_metadata,
-        }
+        })
     }
 
     /// Create a handler from an already computed encryption key.
@@ -163,57 +163,64 @@ impl EncryptionWriteHandler {
     fn encrypt_with_key(&self, key: &[u8], data: &[u8]) -> Vec<u8> {
         match self.algorithm {
             Algorithm::None => data.to_vec(),
-            Algorithm::RC4_40 | Algorithm::Rc4_128 => rc4::rc4_crypt(key, data),
+            Algorithm::RC4_40 | Algorithm::Rc4_128 => {
+                // RC4 rejection by the FIPS provider should be impossible
+                // here — `EncryptionWriteHandler::new` rejects RC4
+                // algorithms up front under non-legacy providers (see
+                // Issue #236). If it ever fires, fall back to plaintext
+                // matching the AES error path below — this is logged as
+                // a critical error rather than panicking the host.
+                rc4::rc4_crypt(key, data).unwrap_or_else(|e| {
+                    log::error!(
+                        "encrypt_with_key: RC4 unexpectedly rejected: {} — \
+                         returning plaintext (write_handler FIPS gate should \
+                         have prevented this)",
+                        e
+                    );
+                    data.to_vec()
+                })
+            },
             Algorithm::Aes128 => {
-                // Generate random IV
-                let iv = Self::generate_iv();
-                match aes::aes128_encrypt(key, &iv, data) {
-                    Ok(ciphertext) => {
-                        // Prepend IV to ciphertext
-                        let mut result = iv.to_vec();
-                        result.extend(ciphertext);
-                        result
+                match Self::generate_iv() {
+                    Ok(iv) => match aes::aes128_encrypt(key, &iv, data) {
+                        Ok(ciphertext) => {
+                            let mut result = iv.to_vec();
+                            result.extend(ciphertext);
+                            result
+                        },
+                        Err(_) => data.to_vec(),
                     },
-                    Err(_) => data.to_vec(), // Fallback on error
+                    Err(e) => {
+                        log::error!("encrypt_with_key: AES-128 IV generation failed: {e} — returning plaintext");
+                        data.to_vec()
+                    },
                 }
             },
             Algorithm::Aes256 => {
-                // Generate random IV
-                let iv = Self::generate_iv();
-                match aes::aes256_encrypt(key, &iv, data) {
-                    Ok(ciphertext) => {
-                        // Prepend IV to ciphertext
-                        let mut result = iv.to_vec();
-                        result.extend(ciphertext);
-                        result
+                match Self::generate_iv() {
+                    Ok(iv) => match aes::aes256_encrypt(key, &iv, data) {
+                        Ok(ciphertext) => {
+                            let mut result = iv.to_vec();
+                            result.extend(ciphertext);
+                            result
+                        },
+                        Err(_) => data.to_vec(),
                     },
-                    Err(_) => data.to_vec(), // Fallback on error
+                    Err(e) => {
+                        log::error!("encrypt_with_key: AES-256 IV generation failed: {e} — returning plaintext");
+                        data.to_vec()
+                    },
                 }
             },
         }
     }
 
-    /// Generate a random 16-byte IV for AES encryption.
-    fn generate_iv() -> [u8; 16] {
-        use md5::{Digest, Md5};
-
-        // Generate a UUID and hash it for randomness
-        let uuid = uuid::Uuid::new_v4();
-        let uuid_bytes = uuid.as_bytes();
-
-        let mut hasher = Md5::new();
-        hasher.update(uuid_bytes);
-
-        // Add timestamp for extra entropy
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default();
-        hasher.update(now.as_nanos().to_le_bytes());
-
-        let hash = hasher.finalize();
+    fn generate_iv() -> crate::Result<[u8; 16]> {
         let mut iv = [0u8; 16];
-        iv.copy_from_slice(&hash);
-        iv
+        crate::crypto::active()
+            .random_bytes(&mut iv)
+            .map_err(|e| crate::Error::InvalidPdf(format!("AES IV generation failed: {e}")))?;
+        Ok(iv)
     }
 
     /// Get the encryption algorithm.
@@ -290,7 +297,7 @@ mod tests {
 
         // RC4 is symmetric - encrypt again to decrypt
         let obj_key = handler.derive_object_key(1, 0);
-        let decrypted = rc4::rc4_crypt(&obj_key, &ciphertext);
+        let decrypted = rc4::rc4_crypt(&obj_key, &ciphertext).unwrap();
 
         assert_eq!(&decrypted, plaintext);
     }

@@ -82,6 +82,11 @@ extern "C" {
   extern void pdf_oxide_set_log_level(int level);
   extern int pdf_oxide_get_log_level();
 
+  // Crypto provider (issue #236)
+  extern char* pdf_oxide_crypto_active_provider();
+  extern int pdf_oxide_crypto_fips_available();
+  extern int pdf_oxide_crypto_use_fips();
+
   // Document Operations
   extern void* pdf_document_open(const char* path, int* error_code);
   extern void* pdf_document_open_from_bytes(const uint8_t* data, size_t len, int* error_code);
@@ -2079,6 +2084,41 @@ Napi::Value GetLogLevel(const Napi::CallbackInfo& info) {
   return Napi::Number::New(env, pdf_oxide_get_log_level());
 }
 
+// Crypto provider (issue #236) — runtime opt-in to FIPS-validated
+// `aws-lc-rs` backend. Build the addon with --features fips
+// for the FIPS path to be available; otherwise UseFipsProvider
+// throws.
+Napi::Value GetActiveCryptoProvider(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  char* name = pdf_oxide_crypto_active_provider();
+  if (!name) {
+    return Napi::String::New(env, "unknown");
+  }
+  Napi::String result = Napi::String::New(env, name);
+  free_string(name);
+  return result;
+}
+
+Napi::Value IsFipsCryptoAvailable(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  return Napi::Boolean::New(env, pdf_oxide_crypto_fips_available() != 0);
+}
+
+Napi::Value UseFipsCryptoProvider(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  int code = pdf_oxide_crypto_use_fips();
+  if (code == 0) return env.Undefined();
+  if (code == 1) {
+    throw Napi::Error::New(
+        env,
+        "FIPS provider not compiled in; rebuild addon with --features fips");
+  }
+  if (code == 2) {
+    throw Napi::Error::New(env, "crypto provider already set");
+  }
+  throw Napi::Error::New(env, "pdf_oxide_crypto_use_fips returned unknown error code");
+}
+
 // ============================================================
 // Document Editor (missing wrappers)
 // ============================================================
@@ -3562,6 +3602,11 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   // Logging
   exports.Set("setLogLevel", Napi::Function::New(env, SetLogLevel));
   exports.Set("getLogLevel", Napi::Function::New(env, GetLogLevel));
+
+  // Crypto provider (issue #236) — runtime FIPS opt-in.
+  exports.Set("getActiveCryptoProvider", Napi::Function::New(env, GetActiveCryptoProvider));
+  exports.Set("isFipsCryptoAvailable", Napi::Function::New(env, IsFipsCryptoAvailable));
+  exports.Set("useFipsCryptoProvider", Napi::Function::New(env, UseFipsCryptoProvider));
 
   // Document Operations
   exports.Set("openDocument", Napi::Function::New(env, OpenDocument));

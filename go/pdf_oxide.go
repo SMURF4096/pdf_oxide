@@ -416,6 +416,11 @@ extern void* pdf_document_extract_tables_in_rect(void* handle, int32_t page_inde
 extern void pdf_oxide_set_log_level(int level);
 extern int pdf_oxide_get_log_level();
 
+// Crypto provider (issue #236)
+extern char* pdf_oxide_crypto_active_provider();
+extern int pdf_oxide_crypto_fips_available();
+extern int pdf_oxide_crypto_use_fips();
+
 // OCR (v0.3.27 — FFI bridge wrapping src/ocr::OcrEngine)
 // Returns _ERR_UNSUPPORTED when the Rust crate was built without --features ocr.
 extern void* pdf_ocr_engine_create(const char* det_model_path, const char* rec_model_path, const char* dict_path, int* error_code);
@@ -430,6 +435,7 @@ import "C"
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -3943,6 +3949,56 @@ func SetLogLevel(level LogLevel) {
 // GetLogLevel returns the current log level of the pdf_oxide library.
 func GetLogLevel() LogLevel {
 	return LogLevel(C.pdf_oxide_get_log_level())
+}
+
+// ================================================================
+// Crypto provider (issue #236)
+// ================================================================
+
+// ErrFipsNotCompiled is returned by UseFipsCryptoProvider when the
+// native pdf_oxide library was built without the fips feature.
+var ErrFipsNotCompiled = errors.New("FIPS provider not compiled in; rebuild native lib with --features fips")
+
+// ErrCryptoProviderAlreadySet is returned by UseFipsCryptoProvider
+// when a cryptographic provider has already been installed for the
+// process. The set-once policy is intentional — see
+// docs/CRYPTO_PROVIDERS.md.
+var ErrCryptoProviderAlreadySet = errors.New("cryptographic provider already installed")
+
+// ActiveCryptoProvider returns the name of the currently active
+// cryptographic provider — "rust-crypto" for the default permissive
+// provider, or "aws-lc-rs" once UseFipsCryptoProvider has been
+// called.
+func ActiveCryptoProvider() string {
+	cstr := C.pdf_oxide_crypto_active_provider()
+	if cstr == nil {
+		return "unknown"
+	}
+	defer C.free_string(cstr)
+	return C.GoString(cstr)
+}
+
+// IsFipsCryptoAvailable reports whether the FIPS-validated aws-lc-rs
+// provider was compiled into the native library. Build the lib with
+// --features fips to enable.
+func IsFipsCryptoAvailable() bool {
+	return C.pdf_oxide_crypto_fips_available() != 0
+}
+
+// UseFipsCryptoProvider installs the FIPS-validated aws-lc-rs
+// provider as the process-wide active cryptographic backend. Must
+// be called before any PDF operation that uses crypto.
+func UseFipsCryptoProvider() error {
+	switch C.pdf_oxide_crypto_use_fips() {
+	case 0:
+		return nil
+	case 1:
+		return ErrFipsNotCompiled
+	case 2:
+		return ErrCryptoProviderAlreadySet
+	default:
+		return fmt.Errorf("pdf_oxide_crypto_use_fips returned unknown error code")
+	}
 }
 
 // ================================================================

@@ -63,6 +63,14 @@ allow = [
     # CA root bundle) with no copyleft. Pulled in transitively
     # via `webpki-roots` → `ureq` (our TSA-client HTTP stack).
     "CDLA-Permissive-2.0",
+    # OpenSSL License — permissive, FSF-Free, OSI-approved (with the
+    # advertising clause already retired in OpenSSL 3.0+). Pulled in
+    # transitively via `aws-lc-rs/fips` → `aws-lc-fips-sys` (the
+    # FIPS-validated module is a fork of OpenSSL FIPS Object Module
+    # with additional Amazon validation). Only enters the dep graph
+    # under the opt-in `fips` feature; the default
+    # RustCrypto provider does not pull it.
+    "OpenSSL",
 ]
 
 [bans]

@@ -24,7 +24,6 @@ ignored = [
     "tokenizers",
     "tract-onnx",
     # WASM-only runtime deps (gated on `wasm` feature)
-    "getrandom",
     "getrandom_02",
     "web-sys",
 ]
@@ -59,7 +58,7 @@ manual_checked_ops = "allow"
 
 [package]
 name = "pdf_oxide"
-version = "0.3.43"
+version = "0.3.44"
 # MSRV — driven up from 1.82 for v0.3.38. Transitive deps pulled in
 # this release push the floor to 1.88:
 #   - hybrid-array 0.4.10 (via RustCrypto) → edition 2024 → 1.85
@@ -181,6 +180,14 @@ md-5 = "0.11"      # MD5 for key derivation
 sha2 = "0.11"      # SHA-256 for newer encryption
 stringprep = "0.1" # SASLprep for Unicode PDF passwords (R>=5)
 
+# FIPS-validated CryptoProvider backend (issue #236).
+# `aws-lc-rs` is Amazon's BoringSSL fork; the `fips` feature gates it
+# to NIST FIPS 140-3 algorithms only (validated 2024). Optional
+# because compiling AWS-LC source adds ~5 minutes to a fresh build.
+# Enable via `--features fips` (default: off, falls back to
+# `RustCryptoProvider`).
+aws-lc-rs = { version = "1", optional = true, features = ["fips"] }
+
 # Digital signatures (optional)
 # NOTE: der/spki/pkcs1/pkcs8/rsa/signature/cms are pinned to 0.7/0.9/0.10/2.x track.
 # der 0.8 + spki 0.8 are stable but the rest of the RustCrypto 0.8 stack
@@ -248,7 +255,7 @@ js-sys = { version = "0.3", optional = true }
 console_error_panic_hook = { version = "0.1", optional = true }
 # Forwards Rust `log` macros to the browser console (issue #280)
 console_log = { version = "1", optional = true, features = ["color"] }
-getrandom = { version = "0.4", optional = true, features = ["wasm_js"] }
+getrandom = "0.4"
 getrandom_02 = { package = "getrandom", version = "0.2", optional = true, features = ["js"] }
 serde-wasm-bindgen = { version = "0.6", optional = true }
 
@@ -273,6 +280,14 @@ x509-tsp = { version = "0.1", optional = true }
 ureq = { version = "3", default-features = false, features = ["rustls"], optional = true }
 cmpv2 = { version = "0.2", optional = true }
 
+# `getrandom`'s `wasm_js` backend is only meaningful when targeting
+# `wasm32-unknown-unknown` (browser / WASI runtimes that route entropy
+# via `crypto.getRandomValues`). Pinning it here avoids dragging
+# wasm-specific cfg into native dependency graphs while still keeping
+# the WASM build's RNG functional.
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+getrandom = { version = "0.4", features = ["wasm_js"] }
+
 [dev-dependencies]
 criterion = "0.8"
 tempfile = "3.27"
@@ -285,6 +300,16 @@ default = ["icc"]
 
 # Enable logging for the extraction pipeline
 logging = []
+
+# FIPS 140-3 validated cryptographic backend (issue #236).
+# When enabled, opt into `AwsLcProvider` (Amazon's `aws-lc-rs` with
+# the `fips` feature) as an alternative to the default
+# `RustCryptoProvider`. Pulls in the AWS-LC C source — fresh builds
+# add ~5 minutes. The provider must still be installed at runtime
+# via `pdf_oxide::crypto::set_provider(...)` in your application's
+# main(); compiling with this feature alone does not change the
+# default behaviour.
+fips = ["dep:aws-lc-rs", "aws-lc-rs/fips"]
 
 # Real ICC colour management via qcms (Firefox's colour engine).
 # When enabled, ICCBased colour spaces and CMYK images are converted
@@ -318,7 +343,6 @@ wasm = [
     "dep:js-sys",
     "dep:console_error_panic_hook",
     "dep:console_log",
-    "dep:getrandom",
     "dep:getrandom_02",
     "dep:serde-wasm-bindgen",
     "logging",
@@ -362,7 +386,7 @@ signatures = [
 # for POSTing the TimeStampReq to a Time Stamp Authority. Kept behind a
 # dedicated feature so embedded / WASM / AOT C# builds don't pull in an
 # HTTP stack unless the consumer actually needs it.
-tsa-client = ["signatures", "dep:ureq", "dep:getrandom", "dep:cmpv2"]
+tsa-client = ["signatures", "dep:ureq", "dep:cmpv2"]
 
 # Barcode/QR code generation
 barcodes = ["dep:qrcode", "dep:barcoders"]

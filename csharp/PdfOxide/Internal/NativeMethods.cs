@@ -233,6 +233,33 @@ namespace PdfOxide.Internal
         [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
         public static partial int PdfOxideGetLogLevel();
 
+        // ── Crypto provider (issue #236) ─────────────────────────────
+
+        /// <summary>
+        /// Returns the name of the active cryptographic provider as
+        /// a native UTF-8 string. Caller must free with FreeString.
+        /// </summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_oxide_crypto_active_provider")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial nint PdfOxideCryptoActiveProvider();
+
+        /// <summary>
+        /// 1 if the FIPS-validated aws-lc-rs provider was compiled
+        /// into this binary; 0 otherwise.
+        /// </summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_oxide_crypto_fips_available")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfOxideCryptoFipsAvailable();
+
+        /// <summary>
+        /// Install the FIPS-validated aws-lc-rs provider as the
+        /// process-wide active backend. Returns 0 on success, 1 if
+        /// FIPS not compiled in, 2 if a provider is already set.
+        /// </summary>
+        [LibraryImport(LibName, EntryPoint = "pdf_oxide_crypto_use_fips")]
+        [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+        public static partial int PdfOxideCryptoUseFips();
+
         #endregion
 
         #region Pdf Creation API

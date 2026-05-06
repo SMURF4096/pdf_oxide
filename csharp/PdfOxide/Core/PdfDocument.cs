@@ -1120,6 +1120,66 @@ namespace PdfOxide.Core
         {
             return NativeMethods.PdfOxideGetLogLevel();
         }
+
+        /// <summary>
+        /// Returns the name of the active cryptographic provider —
+        /// <c>"rust-crypto"</c> for the default permissive provider,
+        /// or <c>"aws-lc-rs"</c> for the FIPS-validated provider once
+        /// installed via <see cref="UseFipsCryptoProvider"/>. See
+        /// <see href="https://github.com/yfedoseev/pdf_oxide/issues/236"/>.
+        /// </summary>
+        public static string GetActiveCryptoProvider()
+        {
+            var ptr = NativeMethods.PdfOxideCryptoActiveProvider();
+            if (ptr == IntPtr.Zero) return "unknown";
+            try
+            {
+                return Marshal.PtrToStringUTF8(ptr) ?? "unknown";
+            }
+            finally
+            {
+                NativeMethods.FreeString(ptr);
+            }
+        }
+
+        /// <summary>
+        /// Whether the FIPS-validated <c>aws-lc-rs</c> provider was
+        /// compiled into the native library. Build the native lib
+        /// with <c>--features fips</c> to enable.
+        /// </summary>
+        public static bool IsFipsCryptoAvailable()
+        {
+            return NativeMethods.PdfOxideCryptoFipsAvailable() != 0;
+        }
+
+        /// <summary>
+        /// Install the FIPS-validated <c>aws-lc-rs</c> provider as
+        /// the process-wide active cryptographic backend. Must be
+        /// called before any PDF operation that uses crypto.
+        /// </summary>
+        /// <exception cref="InvalidOperationException">
+        /// FIPS provider not compiled in, or a provider has already
+        /// been installed.
+        /// </exception>
+        public static void UseFipsCryptoProvider()
+        {
+            var code = NativeMethods.PdfOxideCryptoUseFips();
+            switch (code)
+            {
+                case 0: return;
+                case 1:
+                    throw new InvalidOperationException(
+                        "FIPS provider not compiled into pdf_oxide native lib; " +
+                        "rebuild with `cargo build --features fips`.");
+                case 2:
+                    throw new InvalidOperationException(
+                        "Cryptographic provider already installed — " +
+                        "UseFipsCryptoProvider must be called before any PDF operation.");
+                default:
+                    throw new InvalidOperationException(
+                        $"pdf_oxide_crypto_use_fips returned unknown error code {code}.");
+            }
+        }
     }
 
     /// <summary>

@@ -2183,6 +2183,45 @@ impl PyPdfDocument {
         Ok(PyBytes::new(py, &bytes))
     }
 
+    /// Extract several non-overlapping page ranges in one call. Each range is
+    /// `(start, end)` interpreted as `[start, end)`. Returns a list of `bytes`
+    /// objects, one per range, in the same order.
+    ///
+    /// Example::
+    ///
+    ///     doc = PdfDocument.from_bytes(pdf_bytes)
+    ///     n = doc.page_count()
+    ///     ranges = [(i, min(i + 3000, n)) for i in range(0, n, 3000)]
+    ///     chunks = doc.extract_page_ranges_to_bytes(ranges)
+    fn extract_page_ranges_to_bytes<'py>(
+        &mut self,
+        py: Python<'py>,
+        ranges: Vec<(usize, usize)>,
+    ) -> PyResult<Vec<Bound<'py, PyBytes>>> {
+        self.ensure_editor()?;
+        let editor = self.editor.as_mut().ok_or_else(|| {
+            PyRuntimeError::new_err("Internal error: editor missing after initialization")
+        })?;
+        let chunks = editor
+            .extract_page_ranges_to_bytes(&ranges)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(chunks.into_iter().map(|b| PyBytes::new(py, &b)).collect())
+    }
+
+    /// Restrict this document to the listed pages, in the order given.
+    /// Equivalent to PyMuPDF's `doc.select(page_list)`.
+    /// Subsequent `save_to_bytes()` / `save()` produces a PDF containing only
+    /// the selected pages, with garbage-collected resources.
+    fn select_pages(&mut self, pages: Vec<usize>) -> PyResult<()> {
+        self.ensure_editor()?;
+        let editor = self.editor.as_mut().ok_or_else(|| {
+            PyRuntimeError::new_err("Internal error: editor missing after initialization")
+        })?;
+        editor
+            .select_pages(&pages)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
     /// Delete a page by index (0-based).
     fn delete_page(&mut self, index: usize) -> PyResult<()> {
         use crate::editor::EditableDocument;
@@ -7174,7 +7213,78 @@ fn pdf_oxide(m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "barcodes")]
     m.add_function(pyo3::wrap_pyfunction!(generate_qr_svg, m)?)?;
     m.add("VERSION", env!("CARGO_PKG_VERSION"))?;
+    // Cryptographic-provider surface (issue #236) — exposes the
+    // FIPS-validated AwsLcProvider as a runtime opt-in. Functions
+    // (not classes) so callers don't need to instantiate Rust types.
+    m.add_function(pyo3::wrap_pyfunction!(crypto_active_provider, m)?)?;
+    m.add_function(pyo3::wrap_pyfunction!(crypto_available_providers, m)?)?;
+    m.add_function(pyo3::wrap_pyfunction!(crypto_use_fips, m)?)?;
     Ok(())
+}
+
+/// Return the name of the currently active cryptographic provider
+/// (``"rust-crypto"`` for the default permissive provider, or
+/// ``"aws-lc-rs"`` for the FIPS-validated provider once installed via
+/// :func:`crypto_use_fips`).
+///
+/// **Non-initializing** — if no provider has been installed yet, this
+/// returns ``"rust-crypto (default, lazy)"`` *without* committing the
+/// process-wide registry. That means calling this for display/audit
+/// before :func:`crypto_use_fips` is safe and won't lock the FIPS
+/// opt-in out. Issue #236.
+#[pyo3::pyfunction]
+fn crypto_active_provider() -> String {
+    use crate::crypto::CryptoProvider;
+    if crate::crypto::is_set() {
+        crate::crypto::active().name().to_string()
+    } else {
+        format!("{} (default, lazy)", crate::crypto::RustCryptoProvider.name())
+    }
+}
+
+/// List the cryptographic providers compiled into this build.
+///
+/// Always contains ``"rust-crypto"`` (the default permissive
+/// provider). Also contains ``"aws-lc-rs"`` when the wheel was built
+/// with ``--features fips`` — the FIPS 140-3 validated path.
+#[pyo3::pyfunction]
+fn crypto_available_providers() -> Vec<String> {
+    let v = vec!["rust-crypto".to_string()];
+    #[cfg(feature = "fips")]
+    let v = {
+        let mut v = v;
+        v.push("aws-lc-rs".to_string());
+        v
+    };
+    v
+}
+
+/// Install the FIPS-validated ``aws-lc-rs`` provider as the
+/// process-wide active cryptographic backend.
+///
+/// Must be called before any PDF operation that uses crypto (open
+/// encrypted document, verify signature). Set-once: a second call,
+/// or any call after a default provider was lazily-installed,
+/// raises ``RuntimeError`` (the message is forwarded from
+/// ``SetProviderError::to_string()`` and is not part of the public
+/// contract — match on the exception type, not its text).
+///
+/// Raises ``RuntimeError("FIPS feature not compiled in")`` when the
+/// wheel was built without ``--features fips``.
+#[pyo3::pyfunction]
+fn crypto_use_fips() -> pyo3::PyResult<()> {
+    #[cfg(feature = "fips")]
+    {
+        use std::sync::Arc;
+        crate::crypto::set_provider(Arc::new(crate::crypto::AwsLcProvider::new()))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    }
+    #[cfg(not(feature = "fips"))]
+    {
+        Err(pyo3::exceptions::PyRuntimeError::new_err(
+            "FIPS provider not compiled in; build wheel with --features fips",
+        ))
+    }
 }
 
 /// Sign raw PDF bytes and return the signed PDF as `bytes`.

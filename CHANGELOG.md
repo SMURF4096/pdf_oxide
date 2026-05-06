@@ -2,6 +2,282 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [0.3.44] - 2026-05-05
+
+> Pluggable cryptographic provider — FIPS 140-3 compliance for
+> government / regulated deployments.
+
+### Highlights
+
+- **`pdf_oxide::crypto::CryptoProvider` trait** — new abstraction
+  that decouples PDF encryption and signature paths from any one
+  cryptography crate. Two providers ship out of the box:
+  - **`RustCryptoProvider`** (default): pure-Rust stack as before
+    (`sha2`, `aes`, `rsa`, `p256`, `p384`, `getrandom`, `md-5`,
+    `sha1`). Permits every algorithm PDF specs reference, including
+    the legacy MD5+RC4 path required by ISO 32000-1 R≤4 documents.
+  - **`AwsLcProvider`** (opt-in via `--features fips`):
+    backed by `aws-lc-rs`, FIPS 140-3 validated since 2024. Refuses
+    MD5 / SHA-1-for-signing / RC4 with `Error::AlgorithmNotPermitted`
+    and a clear remediation message.
+- **Single source of randomness.** `src/encryption/algorithms.rs`'s
+  former `SHA-256(uuid_v4 || timestamp_ns || …)` cascade is replaced
+  with `crypto::active().random_bytes()` — under the default
+  provider this is `getrandom::fill()` (OS entropy pool); under FIPS
+  it's `aws_lc_rs::rand::SystemRandom`. Cryptographically suitable
+  for AES-256 file keys and salts; auditable.
+- **Closes [#236](https://github.com/yfedoseev/pdf_oxide/issues/236).**
+
+### Architecture
+
+Three sub-traits compose into `CryptoProvider`:
+
+- `Hasher` — incremental hashing (`update` / `finalize`).
+- `SymmetricCipher` — AES-128/256-CBC (PKCS#7 + no-padding) and RC4.
+- `SignatureVerifier` — RSA-PKCS#1-v1.5, RSA-PSS, ECDSA P-256/P-384.
+
+Plus an opaque `Signer` handle so HSM / PKCS#11 / Cloud KMS
+backends can plug in via `SigningKeyMaterial` (which is
+`#[non_exhaustive]` — future variants for HSM slots etc. are not
+breaking changes).
+
+The `is_legacy_allowed()` policy bit lets each provider declare
+whether MD5 / SHA-1-sign / RC4 are permitted. PDF Standard Security
+R≤4 documents are gated at `EncryptionHandler::new`: under a FIPS
+provider they fail with a remediation message ("re-encrypt at R=6
+or build pdf_oxide without the 'fips' feature so the default
+'rust-crypto' provider stays active") rather than panic
+deep inside the cipher path.
+
+### Usage
+
+```rust
+use std::sync::Arc;
+use pdf_oxide::crypto::{set_provider, AwsLcProvider};
+
+set_provider(Arc::new(AwsLcProvider::new()))?;
+let doc = pdf_oxide::PdfDocument::open("encrypted-r6.pdf")?;
+```
+
+See `docs/CRYPTO_PROVIDERS.md` for the algorithm coverage matrix,
+custom-provider walkthrough (sovereign-jurisdiction algorithms,
+HSMs), and the legacy-PDF policy table.
+
+### CI
+
+- New `fips` job in `.github/workflows/ci.yml` builds with
+  `--features fips`, runs the 11-test AwsLcProvider suite
+  including a `cross_provider_aes_compat` check that asserts the
+  FIPS and rust-crypto AES paths produce byte-identical output, and
+  enforces clippy `-D warnings` under the FIPS feature.
+
+### Release
+
+- New `.github/workflows/release-fips.yml` workflow (manually
+  triggered) builds and publishes parallel FIPS distributions on
+  every package index, all from the same Rust source compiled with
+  `--features fips` so each binary contains only AWS-LC's
+  FIPS-validated module:
+
+  | Ecosystem | Package | Install |
+  |---|---|---|
+  | PyPI | `pdf_oxide_fips` | `pip install pdf_oxide_fips==0.3.44` |
+  | npm | `pdf-oxide-fips` | `npm install pdf-oxide-fips@0.3.44` |
+  | NuGet | `PdfOxide.Fips` | `dotnet add package PdfOxide.Fips --version 0.3.44` |
+  | Go | `github.com/yfedoseev/pdf_oxide/go-fips` | `go get github.com/yfedoseev/pdf_oxide/go-fips@v0.3.44` |
+
+  Platform matrix in v0.3.44 (every binding × every platform):
+
+  | Platform | Python | npm | NuGet | Go |
+  |---|:---:|:---:|:---:|:---:|
+  | Linux x86_64 | ✅ | ✅ | ✅ | ✅ |
+  | Linux aarch64 | ✅ | ✅ | ✅ | ✅ |
+  | macOS x86_64 | ✅ | ✅ | ✅ | ✅ |
+  | macOS arm64 | ✅ | ✅ | ✅ | ✅ |
+  | Windows x86_64 | ✅ | ✅ | ✅ | ✅ |
+
+  All distributions move in lockstep with the regular release —
+  FIPS and default variants of the same release tag are byte-equal
+  in their non-crypto code paths. Per-platform smoke tests in the
+  workflow confirm the FIPS provider is reachable AND
+  `crypto_use_fips()` (or equivalent) flips the active provider
+  as expected — catches API mismatches before publishing.
+
+  Why `pdf_oxide_fips` (underscore) for Python: PyPI normalizes
+  hyphens / underscores to the same canonical form per PEP 503
+  (`pip install pdf_oxide_fips` and `pip install pdf-oxide-fips`
+  resolve to the same package). Using underscore in `pyproject.toml`
+  makes the wheel filename and the `import pdf_oxide` path
+  identical to the default distribution — only the package name
+  differs.
+
+  Why parallel distributions instead of `pip install pdf_oxide[fips]`:
+  Python extras (PEP 508) can add Python dependencies but cannot
+  swap the compiled `.so` baked inside a wheel. The industry
+  pattern (cryptography, pyOpenSSL) ships separate FIPS
+  distributions; we follow suit.
+
+  Why a `go-fips` submodule path: Go modules are import-path-bound,
+  so users pick at `go get` time:
+  ```
+  go get github.com/yfedoseev/pdf_oxide/go            # default
+  go get github.com/yfedoseev/pdf_oxide/go-fips       # FIPS
+  ```
+  Both submodules re-export the same Go API; only the linked native
+  static lib differs.
+
+### Fixes
+
+- **Restore `manylinux_2_28` glibc floor for Python wheels.** 0.3.42 and
+  0.3.43 published only `manylinux_2_35` Linux glibc wheels because the
+  release workflow ran `maturin build` directly on `ubuntu-latest`
+  (Ubuntu 24.04, glibc 2.39), letting the runner's glibc set the wheel
+  tag. That excluded Amazon Linux 2023 / AWS Lambda Python (glibc 2.34),
+  RHEL 8, Ubuntu 20.04 and Debian 11 — pip rejected the wheel and fell
+  back to a source build that OOM-killed `rustup-init` inside the Lambda
+  build container. Reported by @potatochipcoconut on
+  [PR #463](https://github.com/yfedoseev/pdf_oxide/pull/463#issuecomment-4376490292).
+  Both `release.yml` (default wheels) and `release-fips.yml`
+  (`pdf_oxide_fips` wheels) now build the Linux glibc wheels via
+  `PyO3/maturin-action` inside the `manylinux_2_28` container, and a CI
+  guard step fails the job if a `manylinux_2_28` wheel is not produced
+  for either Linux target — preventing this regression from recurring.
+  The 0.3.21 baseline (originally added in #284) is restored.
+
+### Performance — `extract_pages_to_bytes` 12–54× faster
+
+Extraction of page ranges from large PDFs is now bound by
+serialisation work instead of redundant document rebuilds and tree
+walks. Closes [#474](https://github.com/yfedoseev/pdf_oxide/issues/474),
+reported by community contributor
+[@potatochipcoconut](https://github.com/potatochipcoconut),
+whose careful root-cause writeup (chunk-by-chunk timings, comparison
+against PyMuPDF's `doc.select()`, and a profiling-grade reproduction
+case from an AWS Lambda IDP pipeline) made this fix possible.
+
+Measured on the public 1112-page / 38 MB *Artificial Intelligence — A
+Modern Approach* corpus (`pdfs_slow2/`) on an idle laptop:
+
+| Workload | 0.3.43 | 0.3.44 | Speedup |
+|---|---|---|---|
+| `extract_pages_to_bytes(0..300)` | 7301 ms / 36 MB out | **382 ms / 12 MB out** | **19×** + 3× smaller |
+| `extract_pages_to_bytes(0..50)`  | 7983 ms / 36 MB out | **155 ms / 4 MB out**  | **51×** + 9× smaller |
+| Sequential 23 × 50-page chunks   | ~3 min               | **1542 ms total**       | ~120× |
+
+Extrapolating to the reporter's 12k-page / 50 MB document chunked
+into five 3000-page slices: an AWS Lambda invocation that previously
+timed out at 900 s after two chunks now finishes the entire
+five-chunk batch in roughly 30 s.
+
+#### Root causes
+
+All in `src/editor/document_editor.rs` + `src/document.rs`:
+
+1. **Triple full-document rewrite.** `extract_pages_to_bytes`
+   serialised the whole doc, re-parsed the bytes, removed pages
+   one at a time, and serialised again — three full passes when
+   one would do. Replaced with a non-mutating in-place trimmed
+   `page_order`, restored after the save (even on `Err`).
+2. **Garbage collector walked the original page tree.** The
+   trimmed `/Pages` dict was rebuilt locally inside
+   `write_full_to_writer`, but `collect_reachable_ids()` started
+   its BFS from the *unmodified* catalog and pulled in every
+   dropped page's resources — so the output never shrank no
+   matter how few pages were kept. Fixed by staging the trimmed
+   `/Pages` dict in `modified_objects` before the save; the
+   GC walker already prefers staged dicts over source.
+3. **`get_page_ref(i)` in a 0..n loop is O(n²).** Each call walks
+   the page tree from the root and stops at the i-th leaf, so
+   collecting all n leaf refs walks 1 + 2 + … + n nodes. New
+   helper `PdfDocument::all_page_refs()` does it in one DFS.
+   The flat-tree common case (root `/Pages` whose `/Count`
+   matches `Kids.len()`) reads the ref array straight out of
+   `/Kids` without touching individual leaves at all.
+
+The same n² loop pattern was lurking in four other call sites
+on the reporter's hot path (their pipeline does PDF/A validate +
+convert before the chunked extract). All five collapsed to a
+single `all_page_refs()` call:
+
+- `src/outline.rs` — `find_page_index` (O(n²) per outline
+  entry → O(n³) on documents with bookmarks).
+- `src/editor/document_editor.rs` line ~4275 — page-ref → index
+  map for partial form-flatten.
+- `src/editor/document_editor.rs` line ~4505 — same map for
+  `get_form_fields()`.
+- `src/compliance/validators.rs` — `validate_fonts`
+  (`doc.validate_pdf_a('2b')`).
+- `src/compliance/converter.rs` — per-page `/AA` strip
+  (`doc.convert_to_pdfa('2b')`).
+
+#### New API
+
+Two additions, both directly requested by @potatochipcoconut in
+#474; both available in Rust and Python (the other bindings can
+be added on demand):
+
+```python
+# Batch extraction — same single-call efficiency, ergonomic for
+# the chunked-for-OCR / chunked-for-S3 pattern.
+chunks = doc.extract_page_ranges_to_bytes(
+    [(0, 3000), (3000, 6000), (6000, 9000), (9000, 12000)]
+)
+
+# In-place selection — equivalent to PyMuPDF's doc.select(...).
+# After this call, the document holds only the listed pages,
+# in the order given. doc.save() / doc.save_to_bytes() then
+# emit only those pages with garbage-collected resources.
+doc.select_pages([1, 4, 7, 99])
+```
+
+#### Known limitation
+
+PDFs whose `/Pages` root publishes shared `/Resources` used by
+*all* leaf pages (typical of high-resolution book scans, atypical
+of office documents with subset fonts) still produce full-size
+chunk output: GC correctly preserves resources reachable from
+kept pages, and a single shared resource pool stays reachable as
+long as any kept page references it. The principled fix is
+per-page resource sub-setting — parsing each kept page's content
+stream to determine which fonts / XObjects are actually used and
+emitting a minimal `/Resources` for that page. That is a feature,
+not a bug fix, and is deferred from this release. The wall-clock
+speedup (12–54×) holds regardless.
+
+### Tests
+
+- 5050 lib tests pass under `--features python,fips`
+  (5039 default + 11 FIPS-only).
+- 119 encryption tests still pass byte-equal post-rewire to the
+  trait.
+- 69 signatures tests still pass byte-equal post-rewire.
+- Hash vectors validated against NIST FIPS 180-4 for SHA-256/384/512
+  and RFC 1321 / 3174 for MD5 / SHA-1.
+- New regression tests cover the issue #474 workflow:
+  `test_extract_pages_chunked_sequential` (4 sequential chunks
+  on the same `DocumentEditor`, source observably unchanged
+  between calls), `test_extract_pages_non_sequential`
+  (out-of-order indices `[3, 0, 4]`),
+  `test_extract_page_ranges_to_bytes_batch`,
+  `test_select_pages_in_place`, and
+  `test_select_pages_out_of_range`.
+
+### Known follow-ups (v0.3.45)
+
+- **`AwsLcProvider` RSA-PKCS#1 v1.5 verify-from-digest
+  ([#475](https://github.com/yfedoseev/pdf_oxide/issues/475))** —
+  `AwsLcProvider::verify_rsa_pkcs1v15` is currently a stub; PDF/CMS
+  signatures using RSA-PKCS#1 v1.5 return `SignerVerify::Unknown`
+  instead of verifying under FIPS. Blocked on
+  `aws-lc-rs` exposing a stable `RSA_PKCS1_PRIM_VERIFY` API.
+  `RustCryptoProvider` (default) is not affected.
+- **`AwsLcProvider` signing wiring** — signing calls are currently
+  routed to `RustCryptoProvider`. Full AWS-LC signing integration
+  lands in v0.3.45.
+- **musllinux Python wheels for the FIPS variant** — FIPS musllinux
+  wheels (Alpine / musl libc) require a musl-targeted
+  `aws-lc-fips-sys` build; work in progress.
+
 ## [0.3.43] - 2026-05-03
 
 > Cross-binding parity, WASI build target, and a basket of issue fixes.

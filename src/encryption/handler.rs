@@ -46,6 +46,24 @@ impl EncryptionHandler {
             dict.revision
         );
 
+        // FIPS / sovereign-compliance gate. PDF Standard Security
+        // R≤4 (ISO 32000-1 §7.6.3) hard-requires MD5 + RC4 (R=2/3)
+        // or MD5 + AES-128 (R=4) — MD5 is forbidden under FIPS
+        // 140-3 regardless of which symmetric cipher follows. We
+        // reject early so callers get a clear error rather than a
+        // panic deep inside the cipher path. Issue #236.
+        if !crate::crypto::active().is_legacy_allowed() && dict.revision <= 4 {
+            return Err(Error::InvalidPdf(format!(
+                "active CryptoProvider '{}' rejects PDF Standard Security R={} \
+                 (R≤4 requires MD5; FIPS 140-3 forbids MD5). \
+                 Re-encrypt the document at R=6 (AES-256) or build pdf_oxide \
+                 without the 'fips' feature so the default \
+                 'rust-crypto' provider stays active.",
+                crate::crypto::active().name(),
+                dict.revision
+            )));
+        }
+
         Ok(Self {
             dict,
             encryption_key: None,
@@ -97,7 +115,7 @@ impl EncryptionHandler {
             self.dict.key_length_bytes(),
             self.dict.encrypt_metadata,
             self.dict.owner_encryption.as_deref(),
-        ) {
+        )? {
             self.encryption_key = Some(key);
             log::info!("Successfully authenticated with owner password");
             return Ok(true);
@@ -152,7 +170,7 @@ impl EncryptionHandler {
         // Decrypt based on algorithm
         match self.algorithm {
             Algorithm::None => Ok(data.to_vec()),
-            Algorithm::RC4_40 | Algorithm::Rc4_128 => Ok(super::rc4::rc4_crypt(&obj_key, data)),
+            Algorithm::RC4_40 | Algorithm::Rc4_128 => super::rc4::rc4_crypt(&obj_key, data),
             Algorithm::Aes128 => {
                 if obj_key.len() < 16 {
                     return Err(Error::InvalidPdf(format!(

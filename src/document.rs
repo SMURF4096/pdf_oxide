@@ -1170,6 +1170,78 @@ impl PdfDocument {
         ids
     }
 
+    /// Return references to every leaf page, in document order, with a single
+    /// page-tree traversal.
+    ///
+    /// Replaces the O(n²) pattern of calling [`get_page_ref`] in a 0..n loop:
+    /// each `get_page_ref(i)` walks the tree from the root and stops at the
+    /// i-th leaf, so collecting all n refs walks 1+2+...+n nodes.
+    ///
+    /// Optimised for the common flat-tree case: when a `Pages` node's
+    /// `Count` matches `Kids.len()`, every kid is a leaf and we can take
+    /// the references straight from the array without loading each leaf.
+    /// Only when the tree is multi-level do we recurse and load child nodes.
+    pub(crate) fn all_page_refs(&self) -> Result<Vec<ObjectRef>> {
+        let catalog = self.catalog()?;
+        let catalog_dict = catalog.as_dict().ok_or_else(|| Error::InvalidObjectType {
+            expected: "Dictionary".to_string(),
+            found: catalog.type_name().to_string(),
+        })?;
+        let pages_ref = catalog_dict
+            .get("Pages")
+            .and_then(|p| p.as_reference())
+            .ok_or_else(|| Error::InvalidPdf("Catalog missing /Pages entry".to_string()))?;
+
+        let mut out: Vec<ObjectRef> = Vec::new();
+        let mut visited: HashSet<ObjectRef> = HashSet::new();
+        self.collect_page_refs(pages_ref, &mut out, &mut visited)?;
+        Ok(out)
+    }
+
+    fn collect_page_refs(
+        &self,
+        node_ref: ObjectRef,
+        out: &mut Vec<ObjectRef>,
+        visited: &mut HashSet<ObjectRef>,
+    ) -> Result<()> {
+        if !visited.insert(node_ref) {
+            return Ok(());
+        }
+        let node = self.load_object(node_ref)?;
+        let dict = match node.as_dict() {
+            Some(d) => d,
+            None => return Ok(()),
+        };
+
+        let kids = match dict.get("Kids").and_then(|k| k.as_array()) {
+            Some(k) => k,
+            None => {
+                // Leaf reached (no /Kids — assume Page).
+                out.push(node_ref);
+                return Ok(());
+            },
+        };
+
+        // Fast path: flat subtree — every kid is a leaf when /Count == kids.len().
+        let count = dict.get("Count").and_then(|c| c.as_integer()).unwrap_or(-1);
+        if count >= 0 && (count as usize) == kids.len() {
+            for kid in kids {
+                if let Some(kid_ref) = kid.as_reference() {
+                    out.push(kid_ref);
+                }
+            }
+            return Ok(());
+        }
+
+        // Mixed tree — recurse into each kid.
+        for kid in kids {
+            if let Some(kid_ref) = kid.as_reference() {
+                self.collect_page_refs(kid_ref, out, visited)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Scan the file to find an object by its header.
     ///
     /// This is a fallback method used when an object is not in the xref table

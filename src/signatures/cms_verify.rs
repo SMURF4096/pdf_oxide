@@ -26,19 +26,47 @@
 #![cfg(feature = "signatures")]
 
 use super::crypto::{
-    digest_info_prefix, hash_with_oid, is_rsa_pkcs1v15_sig_oid, OID_ECDSA_SHA256, OID_ECDSA_SHA384,
-    OID_ECDSA_SHA512, OID_EC_PUBLIC_KEY, OID_P256, OID_P384, OID_RSASSA_PSS, OID_RSA_ENCRYPTION,
+    hash_with_oid, is_rsa_pkcs1v15_sig_oid, OID_ECDSA_SHA256, OID_ECDSA_SHA384, OID_ECDSA_SHA512,
+    OID_EC_PUBLIC_KEY, OID_P256, OID_P384, OID_RSASSA_PSS, OID_RSA_ENCRYPTION,
 };
+use crate::crypto::{self, EcCurve, HashAlgorithm};
 use crate::error::{Error, Result};
 use cms::cert::x509::Certificate;
 use cms::cert::CertificateChoices;
 use cms::content_info::ContentInfo;
 use cms::signed_data::{SignedData, SignerIdentifier, SignerInfo};
 use der::asn1::OctetString;
+use der::oid::db::rfc5912::{ID_SHA_1, ID_SHA_256, ID_SHA_384, ID_SHA_512};
 use der::oid::ObjectIdentifier;
 use der::{Decode, Encode};
 use rsa::pkcs8::DecodePublicKey;
-use rsa::{Pkcs1v15Sign, RsaPublicKey};
+use rsa::traits::PublicKeyParts;
+use rsa::RsaPublicKey;
+
+/// Map a digest OID to the [`HashAlgorithm`] enum used by the
+/// [`crypto::CryptoProvider`] trait. Returns `None` for OIDs the
+/// trait doesn't model (RIPEMD-160 etc.).
+fn digest_oid_to_hash(oid: ObjectIdentifier) -> Option<HashAlgorithm> {
+    if oid == ID_SHA_256 {
+        Some(HashAlgorithm::Sha256)
+    } else if oid == ID_SHA_384 {
+        Some(HashAlgorithm::Sha384)
+    } else if oid == ID_SHA_512 {
+        Some(HashAlgorithm::Sha512)
+    } else if oid == ID_SHA_1 {
+        Some(HashAlgorithm::Sha1)
+    } else {
+        None
+    }
+}
+
+/// Project a parsed `rsa::RsaPublicKey` into the
+/// [`crypto::RsaPublicKey`] wire shape (modulus + exponent BE bytes)
+/// the trait expects. Lets the trait stay independent of any single
+/// crypto crate's key type.
+fn project_rsa_public_key(key: &RsaPublicKey) -> (Vec<u8>, Vec<u8>) {
+    (key.n().to_bytes_be(), key.e().to_bytes_be())
+}
 
 /// Outcome of a `verify_signer*` call.
 ///
@@ -127,78 +155,61 @@ fn parse_signed_data(contents: &[u8]) -> Result<SignedData> {
         .map_err(|e| Error::InvalidPdf(format!("CMS content is not valid SignedData: {e}")))
 }
 
-/// RSA-PSS verification. Uses sha2_v10 (sha2 0.10) / sha1 types because
-/// rsa 0.9's generic VerifyingKey requires digest 0.10 trait bounds.
+/// RSA-PSS verification — routes through the active
+/// [`crypto::CryptoProvider`] so a FIPS-validated provider can take
+/// over without touching this code path. Hash dispatch comes from
+/// the digest OID embedded in the CMS SignerInfo. Unsupported
+/// algorithms (e.g. SHA-1 RSA-PSS — see digest 0.10/0.11 trait-bound
+/// note) return [`SignerVerify::Unknown`].
 fn verify_rsa_pss(
     pub_key: RsaPublicKey,
     digest_oid: ObjectIdentifier,
     signed_attrs: &[u8],
     sig_bytes: &[u8],
 ) -> SignerVerify {
-    use der::oid::db::rfc5912::{ID_SHA_256, ID_SHA_384, ID_SHA_512};
-    use rsa::pss::{Signature as PssSignature, VerifyingKey};
-    use rsa::signature::Verifier;
-
-    let sig = match PssSignature::try_from(sig_bytes) {
-        Ok(s) => s,
-        Err(_) => return SignerVerify::Unknown,
-    };
-    let ok = if digest_oid == ID_SHA_256 {
-        VerifyingKey::<sha2_v10::Sha256>::new(pub_key)
-            .verify(signed_attrs, &sig)
-            .is_ok()
-    } else if digest_oid == ID_SHA_384 {
-        VerifyingKey::<sha2_v10::Sha384>::new(pub_key)
-            .verify(signed_attrs, &sig)
-            .is_ok()
-    } else if digest_oid == ID_SHA_512 {
-        VerifyingKey::<sha2_v10::Sha512>::new(pub_key)
-            .verify(signed_attrs, &sig)
-            .is_ok()
-    } else {
-        // SHA-1 RSA-PSS: sha1 crate uses digest 0.11 so it's incompatible
-        // with rsa 0.9's digest 0.10 bound — treat as Unknown.
+    let Some(hash) = digest_oid_to_hash(digest_oid) else {
         return SignerVerify::Unknown;
     };
-    if ok {
-        SignerVerify::Valid
-    } else {
-        SignerVerify::Invalid
+    let (n, e) = project_rsa_public_key(&pub_key);
+    let pubkey = crypto::RsaPublicKey {
+        modulus_be: &n,
+        exponent_be: &e,
+    };
+    match crypto::active()
+        .verifier()
+        .verify_rsa_pss(&pubkey, hash, signed_attrs, sig_bytes)
+    {
+        Ok(()) => SignerVerify::Valid,
+        Err(crypto::Error::Verification(_)) => SignerVerify::Invalid,
+        Err(_) => SignerVerify::Unknown,
     }
 }
 
-/// ECDSA-P256 with SHA-256: parse the SEC1-encoded public key point,
-/// decode the DER signature, verify the message.
+/// ECDSA-P256 with SHA-256 — routes through the active provider.
 fn verify_ecdsa_p256(pub_key_bits: &[u8], signed_attrs: &[u8], sig_bytes: &[u8]) -> SignerVerify {
-    use p256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
-    let vk = match VerifyingKey::from_sec1_bytes(pub_key_bits) {
-        Ok(k) => k,
-        Err(_) => return SignerVerify::Unknown,
-    };
-    let sig = match Signature::from_der(sig_bytes) {
-        Ok(s) => s,
-        Err(_) => return SignerVerify::Unknown,
-    };
-    match vk.verify(signed_attrs, &sig) {
+    match crypto::active().verifier().verify_ecdsa(
+        EcCurve::P256,
+        pub_key_bits,
+        signed_attrs,
+        sig_bytes,
+    ) {
         Ok(()) => SignerVerify::Valid,
-        Err(_) => SignerVerify::Invalid,
+        Err(crypto::Error::Verification(_)) => SignerVerify::Invalid,
+        Err(_) => SignerVerify::Unknown,
     }
 }
 
-/// ECDSA-P384 with SHA-384.
+/// ECDSA-P384 with SHA-384 — routes through the active provider.
 fn verify_ecdsa_p384(pub_key_bits: &[u8], signed_attrs: &[u8], sig_bytes: &[u8]) -> SignerVerify {
-    use p384::ecdsa::{signature::Verifier, Signature, VerifyingKey};
-    let vk = match VerifyingKey::from_sec1_bytes(pub_key_bits) {
-        Ok(k) => k,
-        Err(_) => return SignerVerify::Unknown,
-    };
-    let sig = match Signature::from_der(sig_bytes) {
-        Ok(s) => s,
-        Err(_) => return SignerVerify::Unknown,
-    };
-    match vk.verify(signed_attrs, &sig) {
+    match crypto::active().verifier().verify_ecdsa(
+        EcCurve::P384,
+        pub_key_bits,
+        signed_attrs,
+        sig_bytes,
+    ) {
         Ok(()) => SignerVerify::Valid,
-        Err(_) => SignerVerify::Invalid,
+        Err(crypto::Error::Verification(_)) => SignerVerify::Invalid,
+        Err(_) => SignerVerify::Unknown,
     }
 }
 
@@ -303,17 +314,12 @@ fn run_signer_crypto(sd: &SignedData) -> Result<(SignerVerify, Option<ObjectIden
         return Ok((SignerVerify::Unknown, Some(digest_oid)));
     }
 
-    // Build the PKCS#1 v1.5 DigestInfo (prefix + hash). Passing this
-    // through `new_unprefixed()` makes rsa 0.9 compare it directly
-    // against the decrypted signature bytes, which sidesteps the
-    // `Digest + AssociatedOid` trait-bound mismatch between rsa 0.9's
-    // digest 0.10 and our sha2 0.11.
-    let Some(prefix) = digest_info_prefix(digest_oid) else {
+    // Map the digest OID to the trait's HashAlgorithm enum. The
+    // trait's `verify_rsa_pkcs1v15` rebuilds the DigestInfo prefix
+    // internally — single source of truth for the PKCS#1 v1.5 wrapper.
+    let Some(hash_algo) = digest_oid_to_hash(digest_oid) else {
         return Ok((SignerVerify::Unknown, Some(digest_oid)));
     };
-    let mut digest_info = Vec::with_capacity(prefix.len() + hash.len());
-    digest_info.extend_from_slice(prefix);
-    digest_info.extend_from_slice(&hash);
 
     let Some(cert) = find_signer_certificate(sd, signer) else {
         return Ok((SignerVerify::Unknown, Some(digest_oid)));
@@ -334,9 +340,18 @@ fn run_signer_crypto(sd: &SignedData) -> Result<(SignerVerify, Option<ObjectIden
         Err(_) => return Ok((SignerVerify::Unknown, Some(digest_oid))),
     };
 
-    let outcome = match pub_key.verify(Pkcs1v15Sign::new_unprefixed(), &digest_info, sig_bytes) {
+    let (n, e) = project_rsa_public_key(&pub_key);
+    let pubkey = crypto::RsaPublicKey {
+        modulus_be: &n,
+        exponent_be: &e,
+    };
+    let outcome = match crypto::active()
+        .verifier()
+        .verify_rsa_pkcs1v15(&pubkey, hash_algo, &hash, sig_bytes)
+    {
         Ok(()) => SignerVerify::Valid,
-        Err(_) => SignerVerify::Invalid,
+        Err(crypto::Error::Verification(_)) => SignerVerify::Invalid,
+        Err(_) => SignerVerify::Unknown,
     };
     Ok((outcome, Some(digest_oid)))
 }

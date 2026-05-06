@@ -761,12 +761,9 @@ impl PdfAConverter {
         }
 
         // 3. Per-page /AA entries.
-        let page_count = editor.source_mut().page_count()?;
-        for idx in 0..page_count {
-            let page_ref = match editor.source().get_page_ref(idx) {
-                Ok(r) => r,
-                Err(_) => continue,
-            };
+        // Single tree walk; per-index get_page_ref in a loop is O(n²).
+        let page_refs = editor.source().all_page_refs().unwrap_or_default();
+        for page_ref in page_refs {
             let page_obj = match editor.source().load_object(page_ref) {
                 Ok(o) => o,
                 Err(_) => continue,

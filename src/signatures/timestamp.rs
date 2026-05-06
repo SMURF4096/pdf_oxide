@@ -117,7 +117,7 @@ impl Timestamp {
     /// Cryptographically verify this TimeStampToken.
     ///
     /// Parses the outer CMS SignedData, extracts the encapsulated TSTInfo
-    /// bytes, then calls [`cms_verify::verify_signer_detached`] — the same
+    /// bytes, then calls [`super::cms_verify::verify_signer_detached`] — the same
     /// path used for PDF signatures, covering RSA-PKCS#1 v1.5, RSA-PSS,
     /// and ECDSA P-256/P-384.
     ///

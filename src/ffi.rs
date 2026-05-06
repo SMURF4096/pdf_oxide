@@ -253,6 +253,78 @@ pub extern "C" fn pdf_oxide_get_log_level() -> i32 {
     }
 }
 
+// ─── Crypto provider (issue #236) ──────────────────────────────────────────
+
+/// Returns the name of the active cryptographic provider as a
+/// caller-owned C string. Free with [`free_string`].
+///
+/// **Non-initializing** — if no provider has been installed yet, this
+/// returns `"rust-crypto (default, lazy)"` *without* committing the
+/// `OnceLock`, so a subsequent [`pdf_oxide_crypto_use_fips`] call can
+/// still succeed. If a provider has already been installed (either
+/// explicitly via `pdf_oxide_crypto_use_fips`, or lazily by an earlier
+/// crypto operation on this process), the active provider's actual
+/// name is returned (e.g. `"rust-crypto"` or `"aws-lc-rs"`).
+///
+/// Bindings (Python / Node / C# / Go) call this for display/audit
+/// before optionally calling `crypto_use_fips`; it is intentionally
+/// safe to call first.
+#[no_mangle]
+pub extern "C" fn pdf_oxide_crypto_active_provider() -> *mut c_char {
+    use crate::crypto::CryptoProvider;
+    let name = if crate::crypto::is_set() {
+        crate::crypto::active().name().to_string()
+    } else {
+        // Don't initialize the OnceLock — peek at the default
+        // provider's compile-time name and keep `crypto_use_fips`
+        // available for the rest of the call site.
+        format!("{} (default, lazy)", crate::crypto::RustCryptoProvider.name())
+    };
+    std::ffi::CString::new(name)
+        .map(std::ffi::CString::into_raw)
+        .unwrap_or(std::ptr::null_mut())
+}
+
+/// Whether the FIPS-validated `aws-lc-rs` provider was compiled
+/// into this binary. Returns 1 if available (built with
+/// `--features fips`), 0 otherwise.
+///
+/// Bindings query this to expose the right list to user code (Python
+/// `available_providers()`, etc.).
+#[no_mangle]
+pub extern "C" fn pdf_oxide_crypto_fips_available() -> i32 {
+    if cfg!(feature = "fips") {
+        1
+    } else {
+        0
+    }
+}
+
+/// Install the FIPS-validated `aws-lc-rs` provider as the
+/// process-wide active cryptographic backend. Set-once: returns
+/// non-zero error code if a provider is already installed (either
+/// explicitly or lazily via a prior crypto operation).
+///
+/// Error codes:
+///   0 = success
+///   1 = FIPS feature not compiled in
+///   2 = provider already set
+#[no_mangle]
+pub extern "C" fn pdf_oxide_crypto_use_fips() -> i32 {
+    #[cfg(feature = "fips")]
+    {
+        use std::sync::Arc;
+        match crate::crypto::set_provider(Arc::new(crate::crypto::AwsLcProvider::new())) {
+            Ok(()) => 0,
+            Err(_) => 2,
+        }
+    }
+    #[cfg(not(feature = "fips"))]
+    {
+        1
+    }
+}
+
 // ─── Memory management ──────────────────────────────────────────────────────
 
 /// Free a string returned by any FFI function.

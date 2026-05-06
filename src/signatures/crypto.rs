@@ -114,7 +114,11 @@ const DIGEST_INFO_SHA512: &[u8] = &[
     0x00, 0x04, 0x40,
 ];
 
-pub(super) fn digest_info_prefix(oid: ObjectIdentifier) -> Option<&'static [u8]> {
+/// `pub(crate)` so the default `crypto::RustCryptoProvider`
+/// implementation in `src/crypto/rust_provider.rs` can re-use the
+/// same OID-to-DigestInfo-prefix table as `cms_verify.rs` and
+/// `signer.rs`. Single source of truth for PKCS#1 v1.5 wrappers.
+pub(crate) fn digest_info_prefix(oid: ObjectIdentifier) -> Option<&'static [u8]> {
     if oid == ID_SHA_1 {
         Some(DIGEST_INFO_SHA1)
     } else if oid == ID_SHA_256 {
