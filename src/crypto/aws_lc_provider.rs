@@ -40,7 +40,9 @@ use aws_lc_rs::iv::FixedLength;
 use aws_lc_rs::rand::{SecureRandom, SystemRandom};
 use aws_lc_rs::signature::{
     self, UnparsedPublicKey, ECDSA_P256_SHA256_ASN1, ECDSA_P384_SHA384_ASN1,
-    RSA_PSS_2048_8192_SHA256, RSA_PSS_2048_8192_SHA384, RSA_PSS_2048_8192_SHA512,
+    RSA_PKCS1_2048_8192_SHA1_FOR_LEGACY_USE_ONLY, RSA_PKCS1_2048_8192_SHA256,
+    RSA_PKCS1_2048_8192_SHA384, RSA_PKCS1_2048_8192_SHA512, RSA_PSS_2048_8192_SHA256,
+    RSA_PSS_2048_8192_SHA384, RSA_PSS_2048_8192_SHA512,
 };
 
 use super::error::{not_permitted, AlgorithmKind, Error, Result};
@@ -276,50 +278,31 @@ impl SignatureVerifier for AwsLcVerifier {
         &self,
         pubkey: &RsaPublicKey<'_>,
         hash: HashAlgorithm,
-        digest_bytes: &[u8],
+        message: &[u8],
         signature: &[u8],
     ) -> Result<()> {
-        // aws-lc-rs takes the RSA public key as DER-encoded
-        // SubjectPublicKeyInfo. We have raw (n, e) — re-encode here
-        // via the small RSA-public-key DER builder below.
+        // FIPS 140-3: SHA-1 is allowed for *verification* of historical
+        // signatures (SP 800-131A) but not for new generation. Use the
+        // dedicated legacy algorithm constant; aws-lc-rs still validates
+        // via its FIPS module.
+        let scheme: &dyn signature::VerificationAlgorithm = match hash {
+            HashAlgorithm::Sha1 => &RSA_PKCS1_2048_8192_SHA1_FOR_LEGACY_USE_ONLY,
+            HashAlgorithm::Sha256 => &RSA_PKCS1_2048_8192_SHA256,
+            HashAlgorithm::Sha384 => &RSA_PKCS1_2048_8192_SHA384,
+            HashAlgorithm::Sha512 => &RSA_PKCS1_2048_8192_SHA512,
+            HashAlgorithm::Md5 => {
+                return Err(not_permitted(
+                    AlgorithmKind::SignatureVerify,
+                    "RSA-PKCS#1-v1.5+MD5",
+                    "FIPS 140-3 disallows MD5 for signature verification",
+                ));
+            },
+        };
+        // aws-lc-rs takes the RSA public key as DER-encoded SubjectPublicKeyInfo.
         let spki = encode_rsa_public_key_der(pubkey)?;
-
-        // aws-lc-rs hashes the message internally for its
-        // RSA_PKCS1_2048_8192_SHA{256,384,512} verifiers, so we'd
-        // normally pass the message. For our flow, the caller has
-        // already produced the digest. Build the DigestInfo and use
-        // the lower-level rsa::pkcs1::verify (not exposed publicly
-        // by aws-lc-rs 1.x — the public surface only verifies-with-
-        // hash). For SHA-1 PKCS1v15 verification the same
-        // limitation applies.
-        //
-        // Workaround: we enforce that callers provide the *digest*
-        // and we convert by appending the DigestInfo prefix and
-        // running the same low-level verifier as for raw RSA. As
-        // aws-lc-rs's stable 1.x surface doesn't expose this, we
-        // currently route through the message-form verifier with a
-        // synthesised "message that hashes to the supplied digest"
-        // — impossible — so we return Backend until aws-lc-rs gains
-        // a `RSA_PKCS1_PRIM_VERIFY` or callers switch to passing
-        // the message.
-        //
-        // Practical answer: in pdf_oxide's existing flow, the
-        // signed_attrs *is* the message. Phase 4 in
-        // `cms_verify.rs` passes the digest to the trait because
-        // the rsa 0.9 `Pkcs1v15Sign::new_unprefixed` requires it.
-        // With aws-lc-rs we want the message.
-        //
-        // For now: reject this entry path with a clear Backend
-        // error and let cms_verify.rs fall back to Unknown — at
-        // worst, signature verification under FIPS reports
-        // Unknown for PKCS1v15 (callers get to see the
-        // "FIPS_AWAITING_INTEGRATION" reason in logs and pick
-        // remediation).
-        let _ = (spki, hash, digest_bytes, signature);
-        Err(Error::Backend(
-            "RSA-PKCS#1-v1.5 verify-from-digest is awaiting aws-lc-rs RSA_PKCS1_PRIM_VERIFY \
-             integration — use RustCryptoProvider for now",
-        ))
+        let key = UnparsedPublicKey::new(scheme, &spki);
+        key.verify(message, signature)
+            .map_err(|_| Error::Verification("RSA-PKCS#1-v1.5 signature did not verify"))
     }
 
     fn verify_rsa_pss(

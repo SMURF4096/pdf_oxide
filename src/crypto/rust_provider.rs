@@ -344,33 +344,50 @@ struct RustVerifier;
 impl SignatureVerifier for RustVerifier {
     /// Verifies a PKCS#1 v1.5 signature.
     ///
-    /// `digest` is the raw hash bytes; we build the DigestInfo (algo
-    /// OID prefix + digest) here and pass it to `rsa::Pkcs1v15Sign::new_unprefixed()`.
-    /// Mirrors the existing pattern at
-    /// `src/signatures/cms_verify.rs:306-337` so Phase 4's migration
-    /// is byte-equal.
+    /// `message` is the raw bytes to verify — the same convention as
+    /// `verify_rsa_pss` / `verify_ecdsa`. We hash it with `hash` here
+    /// and build the DigestInfo before calling
+    /// `rsa::Pkcs1v15Sign::new_unprefixed()`.
     fn verify_rsa_pkcs1v15(
         &self,
         pubkey: &RsaPublicKey<'_>,
         hash: HashAlgorithm,
-        digest: &[u8],
+        message: &[u8],
         signature: &[u8],
     ) -> Result<()> {
         use crate::signatures::crypto::digest_info_prefix;
         use rsa::pkcs1v15::Pkcs1v15Sign;
         use rsa::RsaPublicKey as RcRsa;
 
-        if digest.len() != hash.output_size() {
-            return Err(Error::InvalidInput(
-                "PKCS#1 v1.5 digest length does not match hash algorithm",
-            ));
-        }
-
-        let oid = match hash {
-            HashAlgorithm::Sha1 => der::oid::db::rfc5912::ID_SHA_1,
-            HashAlgorithm::Sha256 => der::oid::db::rfc5912::ID_SHA_256,
-            HashAlgorithm::Sha384 => der::oid::db::rfc5912::ID_SHA_384,
-            HashAlgorithm::Sha512 => der::oid::db::rfc5912::ID_SHA_512,
+        let (oid, digest) = match hash {
+            HashAlgorithm::Sha1 => {
+                use sha1::Digest as _;
+                (
+                    der::oid::db::rfc5912::ID_SHA_1,
+                    sha1::Sha1::digest(message).to_vec(),
+                )
+            },
+            HashAlgorithm::Sha256 => {
+                use sha2_v10::Digest as _;
+                (
+                    der::oid::db::rfc5912::ID_SHA_256,
+                    sha2_v10::Sha256::digest(message).to_vec(),
+                )
+            },
+            HashAlgorithm::Sha384 => {
+                use sha2_v10::Digest as _;
+                (
+                    der::oid::db::rfc5912::ID_SHA_384,
+                    sha2_v10::Sha384::digest(message).to_vec(),
+                )
+            },
+            HashAlgorithm::Sha512 => {
+                use sha2_v10::Digest as _;
+                (
+                    der::oid::db::rfc5912::ID_SHA_512,
+                    sha2_v10::Sha512::digest(message).to_vec(),
+                )
+            },
             HashAlgorithm::Md5 => {
                 return Err(Error::Verification(
                     "MD5 not supported for RSA-PKCS#1-v1.5 signature verification",
@@ -382,7 +399,7 @@ impl SignatureVerifier for RustVerifier {
             .ok_or(Error::Backend("no DigestInfo prefix table entry for selected hash"))?;
         let mut digest_info = Vec::with_capacity(prefix.len() + digest.len());
         digest_info.extend_from_slice(prefix);
-        digest_info.extend_from_slice(digest);
+        digest_info.extend_from_slice(&digest);
 
         let n = rsa::BigUint::from_bytes_be(pubkey.modulus_be);
         let e = rsa::BigUint::from_bytes_be(pubkey.exponent_be);
@@ -473,7 +490,7 @@ impl SignatureVerifier for RustVerifier {
         &self,
         _pubkey: &RsaPublicKey<'_>,
         _hash: HashAlgorithm,
-        _digest: &[u8],
+        _message: &[u8],
         _signature: &[u8],
     ) -> Result<()> {
         Err(Error::Backend("RSA verification requires the 'signatures' cargo feature"))
