@@ -51,7 +51,16 @@ impl CryptoProvider for RustCryptoProvider {
 
     fn hasher(&self, algo: HashAlgorithm) -> Result<Box<dyn Hasher>> {
         Ok(match algo {
-            HashAlgorithm::Md5 => Box::new(Md5Hasher::new()),
+            HashAlgorithm::Md5 => {
+                #[cfg(feature = "legacy-crypto")]
+                { Box::new(Md5Hasher::new()) }
+                #[cfg(not(feature = "legacy-crypto"))]
+                { return Err(Error::AlgorithmNotPermitted {
+                    kind: crate::crypto::error::AlgorithmKind::Hash,
+                    name: "MD5",
+                    reason: "legacy-crypto feature disabled at compile time",
+                }); }
+            },
             HashAlgorithm::Sha1 => {
                 #[cfg(feature = "signatures")]
                 {
@@ -98,13 +107,16 @@ impl CryptoProvider for RustCryptoProvider {
 // crypto module.
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "legacy-crypto")]
 struct Md5Hasher(md5::Md5);
+#[cfg(feature = "legacy-crypto")]
 impl Md5Hasher {
     fn new() -> Self {
         use md5::Digest;
         Self(md5::Md5::new())
     }
 }
+#[cfg(feature = "legacy-crypto")]
 impl Hasher for Md5Hasher {
     fn update(&mut self, data: &[u8]) {
         use md5::Digest;
@@ -239,14 +251,24 @@ impl SymmetricCipher for RustSymmetric {
         }
     }
 
+    #[cfg_attr(not(feature = "legacy-crypto"), allow(unused_variables))]
     fn rc4(&self, key: &[u8], data: &[u8]) -> Result<Vec<u8>> {
-        if key.is_empty() || key.len() > 256 {
-            return Err(Error::InvalidInput("RC4 key must be 1..=256 bytes"));
+        #[cfg(not(feature = "legacy-crypto"))]
+        { return Err(Error::AlgorithmNotPermitted {
+            kind: crate::crypto::error::AlgorithmKind::SymmetricCipher,
+            name: "RC4",
+            reason: "legacy-crypto feature disabled at compile time",
+        }); }
+        #[cfg(feature = "legacy-crypto")]
+        {
+            if key.is_empty() || key.len() > 256 {
+                return Err(Error::InvalidInput("RC4 key must be 1..=256 bytes"));
+            }
+            // Calls the in-tree pure cipher impl directly (not the
+            // `pub fn rc4_crypt` wrapper, which itself routes through us
+            // — that would loop). Byte-equal to pre-Phase-3 output.
+            Ok(crate::encryption::rc4::rc4_crypt_impl(key, data))
         }
-        // Calls the in-tree pure cipher impl directly (not the
-        // `pub fn rc4_crypt` wrapper, which itself routes through us
-        // — that would loop). Byte-equal to pre-Phase-3 output.
-        Ok(crate::encryption::rc4::rc4_crypt_impl(key, data))
     }
 }
 
@@ -620,6 +642,7 @@ mod tests {
 
     use hex_literal::hex;
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn md5_empty() {
         let p = provider();
@@ -628,6 +651,7 @@ mod tests {
         assert_eq!(h.finalize(), hex!("d41d8cd98f00b204e9800998ecf8427e"));
     }
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn md5_abc() {
         let p = provider();
@@ -756,6 +780,7 @@ mod tests {
 
     // --- RC4 round-trip (PDF R≤4 path).
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn rc4_round_trip() {
         let p = provider();

@@ -46,6 +46,18 @@ impl EncryptionHandler {
             dict.revision
         );
 
+        // Compile-time gate: when legacy-crypto is disabled, R≤4 is unconditionally
+        // unsupported since MD5 key-derivation is not compiled in.
+        #[cfg(not(feature = "legacy-crypto"))]
+        if dict.revision <= 4 {
+            return Err(Error::InvalidPdf(format!(
+                "pdf_oxide compiled without 'legacy-crypto': PDF Standard Security R={} \
+                 (R≤4 requires MD5 key derivation) is not supported. \
+                 Add `features = [\"legacy-crypto\"]` (the default) to re-enable.",
+                dict.revision
+            )));
+        }
+
         // FIPS / sovereign-compliance gate. PDF Standard Security
         // R≤4 (ISO 32000-1 §7.6.3) hard-requires MD5 + RC4 (R=2/3)
         // or MD5 + AES-128 (R=4) — MD5 is forbidden under FIPS
@@ -164,12 +176,33 @@ impl EncryptionHandler {
             .as_ref()
             .ok_or_else(|| Error::InvalidPdf("Not authenticated".to_string()))?;
 
-        // Compute object-specific key
-        let obj_key = self.compute_object_key(key, obj_num, gen_num)?;
-
         // Decrypt based on algorithm
         match self.algorithm {
-            Algorithm::None => Ok(data.to_vec()),
+            Algorithm::None => return Ok(data.to_vec()),
+            Algorithm::Aes256 => {
+                // AES-256 uses the file encryption key directly (no per-object key derivation)
+                // per ISO 32000-2:2020 Section 7.6.3.3
+                if key.len() < 32 {
+                    return Err(Error::InvalidPdf(format!(
+                        "AES-256 file key too short: {} bytes (need 32)",
+                        key.len()
+                    )));
+                }
+                if data.len() < 16 {
+                    return Err(Error::InvalidPdf("AES encrypted data too short".to_string()));
+                }
+                let (iv, ciphertext) = data.split_at(16);
+                return super::aes::aes256_decrypt(&key[..32], iv, ciphertext)
+                    .map_err(|e| Error::InvalidPdf(format!("AES-256 decryption failed: {}", e)));
+            },
+            _ => {},
+        }
+
+        // Per-object key derivation via MD5 — required for RC4 and AES-128 (R≤4).
+        let obj_key = self.compute_object_key(key, obj_num, gen_num)?;
+
+        // Decrypt based on algorithm (AES-256 and None already handled above)
+        match self.algorithm {
             Algorithm::RC4_40 | Algorithm::Rc4_128 => super::rc4::rc4_crypt(&obj_key, data),
             Algorithm::Aes128 => {
                 if obj_key.len() < 16 {
@@ -185,22 +218,7 @@ impl EncryptionHandler {
                 super::aes::aes128_decrypt(&obj_key[..16], iv, ciphertext)
                     .map_err(|e| Error::InvalidPdf(format!("AES-128 decryption failed: {}", e)))
             },
-            Algorithm::Aes256 => {
-                // AES-256 uses the file encryption key directly (no per-object key derivation)
-                // per ISO 32000-2:2020 Section 7.6.3.3
-                if key.len() < 32 {
-                    return Err(Error::InvalidPdf(format!(
-                        "AES-256 file key too short: {} bytes (need 32)",
-                        key.len()
-                    )));
-                }
-                if data.len() < 16 {
-                    return Err(Error::InvalidPdf("AES encrypted data too short".to_string()));
-                }
-                let (iv, ciphertext) = data.split_at(16);
-                super::aes::aes256_decrypt(&key[..32], iv, ciphertext)
-                    .map_err(|e| Error::InvalidPdf(format!("AES-256 decryption failed: {}", e)))
-            },
+            Algorithm::None | Algorithm::Aes256 => unreachable!("handled above"),
         }
     }
 
@@ -233,27 +251,37 @@ impl EncryptionHandler {
     /// # Returns
     ///
     /// The object-specific key
+    #[cfg_attr(not(feature = "legacy-crypto"), allow(unused_variables))]
     fn compute_object_key(&self, base_key: &[u8], obj_num: u32, gen_num: u32) -> Result<Vec<u8>> {
-        use md5::{Digest, Md5};
+        // Unreachable when legacy-crypto is off: handler::new() rejects R≤4.
+        #[cfg(not(feature = "legacy-crypto"))]
+        return Err(Error::InvalidPdf(
+            "compute_object_key requires legacy-crypto feature (MD5)".to_string()
+        ));
 
-        let mut hasher = Md5::new();
+        #[cfg(feature = "legacy-crypto")]
+        {
+            use md5::{Digest, Md5};
 
-        // Step a: Extend key with object/generation number
-        hasher.update(base_key);
-        hasher.update(&obj_num.to_le_bytes()[..3]); // Low 3 bytes
-        hasher.update(&gen_num.to_le_bytes()[..2]); // Low 2 bytes
+            let mut hasher = Md5::new();
 
-        // Step b: For AES, add "sAlT" string
-        if self.algorithm.is_aes() {
-            hasher.update(b"sAlT");
+            // Step a: Extend key with object/generation number
+            hasher.update(base_key);
+            hasher.update(&obj_num.to_le_bytes()[..3]); // Low 3 bytes
+            hasher.update(&gen_num.to_le_bytes()[..2]); // Low 2 bytes
+
+            // Step b: For AES, add "sAlT" string
+            if self.algorithm.is_aes() {
+                hasher.update(b"sAlT");
+            }
+
+            // Step c: MD5 hash
+            let hash = hasher.finalize();
+
+            // Step d: Key is first (n + 5) bytes, max 16
+            let key_len = (base_key.len() + 5).min(16);
+            return Ok(hash[..key_len].to_vec());
         }
-
-        // Step c: MD5 hash
-        let hash = hasher.finalize();
-
-        // Step d: Key is first (n + 5) bytes, max 16
-        let key_len = (base_key.len() + 5).min(16);
-        Ok(hash[..key_len].to_vec())
     }
 }
 
@@ -264,6 +292,7 @@ mod tests {
     // Note: Full integration tests would require creating encrypted PDFs
     // or using real encrypted PDF samples. These are basic unit tests.
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_compute_object_key_rc4() {
         let base_key = &[0x01, 0x23, 0x45, 0x67, 0x89];
@@ -275,6 +304,7 @@ mod tests {
         assert_eq!(obj_key.len(), 10);
     }
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_compute_object_key_aes() {
         let base_key = &[0x01; 16];
@@ -286,6 +316,7 @@ mod tests {
         assert_eq!(obj_key.len(), 16);
     }
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_decrypt_stream_aes128_with_short_key() {
         // RC4-40 produces a 10-byte key; AES needs 16. Should error, not panic.

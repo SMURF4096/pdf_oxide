@@ -8,6 +8,7 @@
 //!
 //! This is a simple, straightforward implementation of RC4 for PDF decryption.
 
+#[cfg(feature = "legacy-crypto")]
 /// Simple RC4 cipher implementation.
 ///
 /// RC4 is a stream cipher that generates a pseudorandom keystream based on the key.
@@ -17,6 +18,7 @@ struct Rc4Cipher {
     j: u8,
 }
 
+#[cfg(feature = "legacy-crypto")]
 impl Rc4Cipher {
     /// Initialize RC4 cipher with a key.
     ///
@@ -61,6 +63,7 @@ impl Rc4Cipher {
 /// arise if both went through the trait. PDF callers go through
 /// [`rc4_crypt`] (which routes through the active provider so a
 /// FIPS provider can reject it).
+#[cfg(feature = "legacy-crypto")]
 pub(crate) fn rc4_crypt_impl(key: &[u8], data: &[u8]) -> Vec<u8> {
     let mut cipher = Rc4Cipher::new(key);
     let mut result = data.to_vec();
@@ -113,7 +116,7 @@ pub fn rc4_crypt(key: &[u8], data: &[u8]) -> crate::Result<Vec<u8>> {
         })
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "legacy-crypto"))]
 mod tests {
     use super::*;
 

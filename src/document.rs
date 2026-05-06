@@ -15490,6 +15490,7 @@ mod tests {
 
     /// Encrypted PDFs that require a password must return `Error::EncryptedPdf`
     /// instead of silently returning empty text / zero pages.
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_encrypted_pdf_returns_error_without_password() {
         let pdf_path = "tests/fixtures/encrypted_needs_password.pdf";
@@ -15520,6 +15521,7 @@ mod tests {
     }
 
     /// After authenticating with the correct password, extraction should succeed.
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_encrypted_pdf_works_after_authentication() {
         let pdf_path = "tests/fixtures/encrypted_needs_password.pdf";
@@ -15745,6 +15747,7 @@ mod tests {
 
     /// PDFs that are encrypted but authenticated with empty password (the common
     /// case for permission-only encryption) must continue to work without error.
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_encrypted_pdf_with_empty_password_still_works() {
         let pdf_path = "tests/fixtures/encrypted_cid_truetype.pdf";
@@ -15765,6 +15768,7 @@ mod tests {
         assert!(!text.trim().is_empty(), "Should extract non-empty text");
     }
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_encrypted_pdf_with_compressed_object_streams() {
         // Encrypted PDFs with /Type /ObjStm streams must NOT have those streams

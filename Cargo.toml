@@ -176,7 +176,7 @@ fax = "0.2"                                                                     
 # Encryption support
 aes = "0.9"        # AES encryption for PDF 1.6+
 cbc = "0.2"        # CBC mode for AES
-md-5 = "0.11"      # MD5 for key derivation
+md-5 = { version = "0.11", optional = true } # MD5 for legacy R≤4 key derivation
 sha2 = "0.11"      # SHA-256 for newer encryption
 stringprep = "0.1" # SASLprep for Unicode PDF passwords (R>=5)
 
@@ -296,7 +296,7 @@ wasm-bindgen-test = "0.3"
 hex-literal = "1.1.0"
 
 [features]
-default = ["icc"]
+default = ["icc", "legacy-crypto"]
 
 # Enable logging for the extraction pipeline
 logging = []
@@ -317,6 +317,12 @@ fips = ["dep:aws-lc-rs", "aws-lc-rs/fips"]
 # additive-clamp fallback. Pure Rust, so WASM and C# AOT targets keep
 # working without a C toolchain dependency.
 icc = ["dep:qcms"]
+
+# Gate MD5 key-derivation (R≤4 PDF Standard Security) and RC4 cipher
+# behind this feature. Default-on so existing users keep full R≤4 read/write
+# support; opt out with `default-features = false` when building for
+# environments that must not load legacy cryptography.
+legacy-crypto = ["dep:md-5"]
 
 # Python bindings (v0.1.0)
 python = [

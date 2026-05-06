@@ -24,6 +24,21 @@ All notable changes to PDFOxide are documented here.
   verifiers — RSA-PKCS#1 v1.5 signature verification now works under
   FIPS instead of returning `SignerVerify::Unknown`.
 
+### Added
+
+- **`legacy-crypto` compile-time feature flag (default-on)
+  ([#230](https://github.com/yfedoseev/pdf_oxide/issues/230))** —
+  New default-on Cargo feature that gates MD5 key-derivation and RC4
+  cipher support for PDF Standard Security R≤4 documents. Downstream
+  crates that must not load legacy cryptography can opt out with
+  `default-features = false`; they will receive a clear
+  `Error::InvalidPdf` instead of silently accepting RC4/MD5-encrypted
+  PDFs. The `md-5` crate is now an optional dependency gated behind
+  this feature. RC4 (pure Rust, no crate) is also disabled: both
+  `RustCryptoProvider::rc4()` and `rc4_crypt_impl` are compiled out,
+  and the provider returns `AlgorithmNotPermitted` at runtime when the
+  feature is absent. Phase A of Issue #230.
+
 ### Changed
 
 - **Stub parity gate for Python wheels

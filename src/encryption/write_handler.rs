@@ -7,7 +7,6 @@ use super::aes;
 use super::algorithms;
 use super::rc4;
 use super::Algorithm;
-use md5::{Digest, Md5};
 
 /// Handler for encrypting PDF objects during write operations.
 ///
@@ -89,6 +88,7 @@ impl EncryptionWriteHandler {
     ///
     /// For R=2-4, the object key is derived by appending the object number
     /// and generation number to the base key, then hashing.
+    #[cfg_attr(not(feature = "legacy-crypto"), allow(unused_variables))]
     fn derive_object_key(&self, obj_num: u32, gen_num: u16) -> Vec<u8> {
         let (_, revision) = Self::get_version_revision(self.algorithm);
 
@@ -97,28 +97,39 @@ impl EncryptionWriteHandler {
             return self.encryption_key.clone();
         }
 
-        // Algorithm 1: Derive object-specific key
-        let mut hasher = Md5::new();
+        // R<=4 (RC4 or AES-128): derive per-object key via MD5 (Algorithm 1).
+        // Unreachable when legacy-crypto is off — write_handler::new() delegates
+        // to compute_encryption_key which rejects R<=4 without the feature.
+        #[cfg(not(feature = "legacy-crypto"))]
+        { return self.encryption_key.clone(); }
 
-        // Start with the encryption key
-        hasher.update(&self.encryption_key);
+        #[cfg(feature = "legacy-crypto")]
+        {
+            use md5::{Digest, Md5};
 
-        // Append object number (3 bytes, little-endian)
-        hasher.update(&obj_num.to_le_bytes()[..3]);
+            // Algorithm 1: Derive object-specific key
+            let mut hasher = Md5::new();
 
-        // Append generation number (2 bytes, little-endian)
-        hasher.update(gen_num.to_le_bytes());
+            // Start with the encryption key
+            hasher.update(&self.encryption_key);
 
-        // For AES, append the "sAlT" salt bytes
-        if self.algorithm.is_aes() {
-            hasher.update(b"sAlT");
+            // Append object number (3 bytes, little-endian)
+            hasher.update(&obj_num.to_le_bytes()[..3]);
+
+            // Append generation number (2 bytes, little-endian)
+            hasher.update(gen_num.to_le_bytes());
+
+            // For AES, append the "sAlT" salt bytes
+            if self.algorithm.is_aes() {
+                hasher.update(b"sAlT");
+            }
+
+            let hash = hasher.finalize();
+
+            // Key length is min(n + 5, 16) for RC4, min(n + 5, 16) for AES-128
+            let key_length = (self.encryption_key.len() + 5).min(16);
+            hash[..key_length].to_vec()
         }
-
-        let hash = hasher.finalize();
-
-        // Key length is min(n + 5, 16) for RC4, min(n + 5, 16) for AES-128
-        let key_length = (self.encryption_key.len() + 5).min(16);
-        hash[..key_length].to_vec()
     }
 
     /// Encrypt a string for a specific object.
@@ -244,6 +255,7 @@ impl EncryptionWriteHandler {
 mod tests {
     use super::*;
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_object_key_derivation_rc4() {
         let key = vec![0x01, 0x02, 0x03, 0x04, 0x05]; // 40-bit key
@@ -261,6 +273,7 @@ mod tests {
         assert_eq!(obj_key1.len(), 10); // 5 + 5 = 10
     }
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_object_key_derivation_aes128() {
         let key = vec![0u8; 16]; // 128-bit key
@@ -287,6 +300,7 @@ mod tests {
         assert_eq!(obj_key, key);
     }
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_rc4_encryption_roundtrip() {
         let key = vec![0x01, 0x02, 0x03, 0x04, 0x05];

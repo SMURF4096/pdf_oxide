@@ -170,9 +170,10 @@ impl EmbeddedFile {
             );
         }
 
-        // Calculate checksum (MD5)
-        let checksum = md5_hash(&self.data);
-        params.insert("CheckSum".to_string(), Object::String(checksum));
+        // CheckSum: MD5 per PDF spec (ISO 32000-1 §7.11.4). When legacy-crypto
+        // is disabled we omit the optional field rather than fail.
+        #[cfg(feature = "legacy-crypto")]
+        params.insert("CheckSum".to_string(), Object::String(md5_hash(&self.data)));
 
         dict.insert("Params".to_string(), Object::Dictionary(params));
 
@@ -284,7 +285,8 @@ impl EmbeddedFilesBuilder {
     }
 }
 
-/// MD5 hash function for checksum calculation.
+/// MD5 hash function for embedded-file checksum (PDF spec §7.11.4).
+#[cfg(feature = "legacy-crypto")]
 fn md5_hash(data: &[u8]) -> Vec<u8> {
     use md5::{Digest, Md5};
 
@@ -360,6 +362,7 @@ mod tests {
 
         if let Some(Object::Dictionary(params)) = dict.get("Params") {
             assert!(params.contains_key("Size"));
+            #[cfg(feature = "legacy-crypto")]
             assert!(params.contains_key("CheckSum"));
         } else {
             panic!("Params should be a dictionary");
@@ -373,6 +376,7 @@ mod tests {
         assert!(result.len() > 2);
     }
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_md5_hash() {
         let hash = md5_hash(b"test data");
