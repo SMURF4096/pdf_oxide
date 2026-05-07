@@ -181,7 +181,7 @@ export class SearchStream extends Readable {
    * Implement async iteration protocol for `for await...of` support
    * @returns AsyncIterator for iterating over search results
    */
-  async *[Symbol.asyncIterator](): AsyncGenerator<SearchResultData, void, unknown> {
+  async *[Symbol.asyncIterator](): AsyncGenerator<SearchResultData, undefined, unknown> {
     // Initialize on first iteration
     if (!this._initialized) {
       this._initialize();
@@ -329,7 +329,7 @@ export class ExtractionStream extends Readable {
    * Implement async iteration protocol for `for await...of` support
    * @returns AsyncGenerator for iterating over extraction progress
    */
-  async *[Symbol.asyncIterator](): AsyncGenerator<ExtractionProgressData, void, unknown> {
+  async *[Symbol.asyncIterator](): AsyncGenerator<ExtractionProgressData, undefined, unknown> {
     // Process each page
     while (this._currentPage < this.endPage) {
       try {
@@ -472,7 +472,7 @@ export class MetadataStream extends Readable {
    * Implement async iteration protocol for `for await...of` support
    * @returns AsyncGenerator for iterating over page metadata
    */
-  async *[Symbol.asyncIterator](): AsyncGenerator<PageMetadataData, void, unknown> {
+  async *[Symbol.asyncIterator](): AsyncGenerator<PageMetadataData, undefined, unknown> {
     // Process each page
     while (this._currentPage < this.endPage) {
       try {

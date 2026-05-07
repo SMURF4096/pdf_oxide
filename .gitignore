@@ -375,3 +375,4 @@ examples/**/node_modules/
 examples/**/bin/
 examples/**/obj/
 examples/**/dist/
+*.rlib

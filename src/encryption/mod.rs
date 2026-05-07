@@ -619,22 +619,32 @@ impl Permissions {
 ///
 /// A tuple of (permanent_id, changing_id) as 16-byte vectors
 pub fn generate_file_id() -> (Vec<u8>, Vec<u8>) {
-    use md5::{Digest, Md5};
-
-    // Generate a UUID v4 and hash it with MD5 to get 16 bytes
     let uuid = uuid::Uuid::new_v4();
     let uuid_bytes = uuid.as_bytes();
 
-    let mut hasher = Md5::new();
-    hasher.update(uuid_bytes);
-
-    // Add current time for extra uniqueness
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
-    hasher.update(now.as_nanos().to_le_bytes());
 
-    let id = hasher.finalize().to_vec();
+    // PDF spec (ISO 32000-1 §14.4) specifies MD5; when legacy-crypto is off
+    // we use SHA-256 truncated to 16 bytes — still a unique opaque identifier.
+    #[cfg(feature = "legacy-crypto")]
+    let id = {
+        use md5::{Digest, Md5};
+        let mut h = Md5::new();
+        h.update(uuid_bytes);
+        h.update(now.as_nanos().to_le_bytes());
+        h.finalize().to_vec()
+    };
+
+    #[cfg(not(feature = "legacy-crypto"))]
+    let id = {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(uuid_bytes);
+        h.update(now.as_nanos().to_le_bytes());
+        h.finalize()[..16].to_vec()
+    };
 
     // For new PDFs, both IDs are the same
     (id.clone(), id)
@@ -1223,6 +1233,7 @@ mod tests {
 
     // === EncryptDictBuilder tests ===
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_builder_rc4_40() {
         let file_id = vec![0u8; 16];
@@ -1240,6 +1251,7 @@ mod tests {
         assert!(ed.encrypt_metadata);
     }
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_builder_rc4_128() {
         let file_id = vec![0u8; 16];
@@ -1252,6 +1264,7 @@ mod tests {
         assert_eq!(ed.length, Some(128)); // 16 * 8
     }
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_builder_aes128() {
         let file_id = vec![0u8; 16];
@@ -1278,6 +1291,7 @@ mod tests {
         assert_eq!(ed.length, Some(256)); // 32 * 8
     }
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_builder_owner_password_defaults_to_user() {
         let file_id = vec![0u8; 16];
@@ -1290,6 +1304,7 @@ mod tests {
         assert!(!ed.owner_password.is_empty());
     }
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_builder_default_permissions() {
         let file_id = vec![0u8; 16];

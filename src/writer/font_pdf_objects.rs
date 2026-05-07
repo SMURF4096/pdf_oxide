@@ -95,7 +95,7 @@ pub fn build_embedded_font_objects(
     // produces the same subset name (helps reproducible builds).
     let base_font = font.subset_name().to_string();
 
-    // ── 1. FontFile2 stream — subset TrueType bytes ──────────────────────
+    // ── 1. Font file stream — subset TrueType or CFF bytes ───────────────
     // Run the Typst `subsetter` over the original face, keeping only the
     // glyphs this document actually references (plus GID 0 / .notdef,
     // which `subset_font_bytes` always adds). The returned `GlyphRemapper`
@@ -103,20 +103,25 @@ pub fn build_embedded_font_objects(
     // to the caller so the content stream, `/W`, and `ToUnicode` all see
     // the same subset GIDs.
     //
-    // If the font was registered but never used in any content stream,
-    // `used_glyphs()` is empty; `subset_font_bytes` still produces a
-    // valid (tiny) subset containing just .notdef. That keeps registered-
-    // but-unused fonts round-trip-safe at minimal cost.
-    //
-    // Length1 must equal the byte length of the embedded TTF per PDF
-    // spec §9.9.
+    // CFF/OTF fonts (magic `OTTO`) must be embedded as FontFile3 with
+    // subtype CIDFontType0C; TrueType fonts use FontFile2 with Length1.
+    // Using the wrong key causes PDF readers to misparse the font data
+    // (bug #449).
     let (font_bytes, remapper) =
         crate::fonts::subset_font_bytes(font.font_data(), 0, font.used_glyphs())
             .map_err(|e| Error::Font(format!("font subsetting failed: {e}")))?;
-    let length1 = font_bytes.len() as i64;
+    let is_cff = font_bytes.starts_with(b"OTTO");
+    let byte_len = font_bytes.len() as i64;
     let mut ff_dict: HashMap<String, Object> = HashMap::new();
-    ff_dict.insert("Length".to_string(), ObjectSerializer::integer(length1));
-    ff_dict.insert("Length1".to_string(), ObjectSerializer::integer(length1));
+    ff_dict.insert("Length".to_string(), ObjectSerializer::integer(byte_len));
+    if is_cff {
+        // PDF spec §9.9 Table 126: FontFile3 streams carry /Subtype.
+        // CIDFontType0C signals CFF-based CID font data.
+        ff_dict.insert("Subtype".to_string(), ObjectSerializer::name("CIDFontType0C"));
+    } else {
+        // Length1 is required for FontFile2 (TrueType) per PDF spec §9.9.
+        ff_dict.insert("Length1".to_string(), ObjectSerializer::integer(byte_len));
+    }
     out.push((
         font_file_id,
         Object::Stream {
@@ -126,6 +131,8 @@ pub fn build_embedded_font_objects(
     ));
 
     // ── 2. FontDescriptor (§9.8.1, Table 122) ────────────────────────────
+    // CFF fonts reference the stream via FontFile3; TrueType via FontFile2.
+    let font_file_key = if is_cff { "FontFile3" } else { "FontFile2" };
     let (llx, lly, urx, ury) = font.bbox;
     let descriptor = ObjectSerializer::dict(vec![
         ("Type", ObjectSerializer::name("FontDescriptor")),
@@ -141,34 +148,41 @@ pub fn build_embedded_font_objects(
         ("CapHeight", ObjectSerializer::integer(font.cap_height as i64)),
         ("XHeight", ObjectSerializer::integer(font.x_height as i64)),
         ("StemV", ObjectSerializer::integer(font.stem_v as i64)),
-        ("FontFile2", ObjectSerializer::reference(font_file_id, 0)),
+        (font_file_key, ObjectSerializer::reference(font_file_id, 0)),
     ]);
     out.push((descriptor_id, descriptor));
 
-    // ── 3. CIDFontType2 (§9.7.4, Table 117) ──────────────────────────────
-    // /CIDToGIDMap /Identity is the right call when the source font's GIDs
-    // *are* the CIDs we expose, which is exactly what Identity-H encoding
-    // gives us. The /W array carries glyph widths indexed by CID/GID.
+    // ── 3. CIDFont dict (§9.7.4, Table 117) ──────────────────────────────
+    // CFF fonts → CIDFontType0; TrueType → CIDFontType2 + CIDToGIDMap.
+    // The subsetter always creates an identity GID→CID mapping so the
+    // content stream GIDs are also the CIDs for both font kinds.
+    // CIDToGIDMap is specific to CIDFontType2 (ISO 32000-1 §9.7.4.2) and
+    // must not appear for CIDFontType0 (bug #449).
     let widths_str = font.generate_widths_array(&remapper);
     let cid_system_info = ObjectSerializer::dict(vec![
         ("Registry", ObjectSerializer::string("Adobe")),
         ("Ordering", ObjectSerializer::string("Identity")),
         ("Supplement", ObjectSerializer::integer(0)),
     ]);
-    let cidfont = ObjectSerializer::dict(vec![
+    let cidfont_subtype = if is_cff {
+        "CIDFontType0"
+    } else {
+        "CIDFontType2"
+    };
+    let mut cidfont_entries: Vec<(&str, Object)> = vec![
         ("Type", ObjectSerializer::name("Font")),
-        ("Subtype", ObjectSerializer::name("CIDFontType2")),
+        ("Subtype", ObjectSerializer::name(cidfont_subtype)),
         ("BaseFont", ObjectSerializer::name(&base_font)),
         ("CIDSystemInfo", cid_system_info),
         ("FontDescriptor", ObjectSerializer::reference(descriptor_id, 0)),
-        ("CIDToGIDMap", ObjectSerializer::name("Identity")),
-        // /W is parsed by ObjectSerializer::dict only as an Object; for the
-        // raw "[ gid [ widths... ] ... ]" string the existing helper emits,
-        // we wrap as a pre-formatted array via Raw using the writer's
-        // string-injection escape — but ObjectSerializer doesn't expose
-        // that, so build the array structurally instead.
+        // /W carries glyph widths indexed by CID/GID.
         ("W", parse_widths_string_to_array(&widths_str)),
-    ]);
+    ];
+    if !is_cff {
+        // CIDToGIDMap /Identity: source GIDs are the CIDs (TrueType only).
+        cidfont_entries.insert(5, ("CIDToGIDMap", ObjectSerializer::name("Identity")));
+    }
+    let cidfont = ObjectSerializer::dict(cidfont_entries);
     out.push((cidfont_id, cidfont));
 
     // ── 4. ToUnicode CMap stream (§9.10.2) ───────────────────────────────

@@ -152,14 +152,14 @@ The runtime API is identical across every binding:
 
 | Want | Install |
 |---|---|
-| Python + default | `pip install pdf_oxide==0.3.44` |
-| Python + FIPS | `pip install pdf_oxide_fips==0.3.44` |
-| Node + default | `npm install pdf-oxide@0.3.44` |
-| Node + FIPS | `npm install pdf-oxide-fips@0.3.44` |
-| .NET + default | `dotnet add package PdfOxide --version 0.3.44` |
-| .NET + FIPS | `dotnet add package PdfOxide.Fips --version 0.3.44` |
-| Go + default | `go get github.com/yfedoseev/pdf_oxide/go@v0.3.44` |
-| Go + FIPS | `go get github.com/yfedoseev/pdf_oxide/go-fips@v0.3.44` |
+| Python + default | `pip install pdf_oxide==0.3.45` |
+| Python + FIPS | `pip install pdf_oxide_fips==0.3.45` |
+| Node + default | `npm install pdf-oxide@0.3.45` |
+| Node + FIPS | `npm install pdf-oxide-fips@0.3.45` |
+| .NET + default | `dotnet add package PdfOxide --version 0.3.45` |
+| .NET + FIPS | `dotnet add package PdfOxide.Fips --version 0.3.45` |
+| Go + default | `go get github.com/yfedoseev/pdf_oxide/go@v0.3.45` |
+| Go + FIPS | `go get github.com/yfedoseev/pdf_oxide/go-fips@v0.3.45` |
 
 The `-fips` distributions ship single-provider binaries (auditors
 typically require this). Both default and FIPS variants of any

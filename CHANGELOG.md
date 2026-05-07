@@ -2,6 +2,70 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [0.3.45] - 2026-05-07
+
+### Fixed
+
+- **CJK OTF (CFF) font subsetter corrupts glyph order
+  ([#449](https://github.com/yfedoseev/pdf_oxide/issues/449))** —
+  OTF fonts with CFF outlines (SFNT magic `OTTO`) were embedded as
+  `FontFile2 / CIDFontType2` (the TrueType path), causing PDF readers
+  to misparse the CFF data and render wrong glyphs. Writer now detects
+  CFF magic post-subsetting and emits the correct PDF object graph:
+  `FontFile3` (with `/Subtype /CIDFontType0C`) + `CIDFontType0` (no
+  `CIDToGIDMap`).
+- **`AwsLcProvider::verify_rsa_pkcs1v15` now fully implemented
+  ([#475](https://github.com/yfedoseev/pdf_oxide/issues/475))** —
+  Changed `SignatureVerifier::verify_rsa_pkcs1v15` to accept the raw
+  message bytes (consistent with `verify_rsa_pss` / `verify_ecdsa`).
+  Under the default `RustCryptoProvider` the hash is now computed
+  inside the trait implementation. Under `AwsLcProvider` (FIPS) the
+  new call path uses aws-lc-rs's `RSA_PKCS1_2048_8192_SHA{256,384,512}`
+  verifiers — RSA-PKCS#1 v1.5 signature verification now works under
+  FIPS instead of returning `SignerVerify::Unknown`.
+- **`render_page_fit` produces images smaller than the requested box
+  ([#480](https://github.com/yfedoseev/pdf_oxide/issues/480))** —
+  Integer-DPI conversion via `floor()` lost up to 3 pixels from the
+  constrained dimension (e.g. a 1040 px fit yielded 1037 px on Letter).
+  The renderer now computes a float scale directly (`fit_px / page_pt`)
+  and stores it in the crate-private `RenderOptions::scale_override`
+  field, bypassing the DPI round-trip entirely. The constrained
+  dimension is now exact for all integer pixel inputs. Reported by
+  @gevorgter.
+
+### Added
+
+- **`legacy-crypto` compile-time feature flag (default-on)
+  ([#230](https://github.com/yfedoseev/pdf_oxide/issues/230))** —
+  New default-on Cargo feature that gates MD5 key-derivation and RC4
+  cipher support for PDF Standard Security R≤4 documents. Downstream
+  crates that must not load legacy cryptography can opt out with
+  `default-features = false`; they will receive a clear
+  `Error::InvalidPdf` instead of silently accepting RC4/MD5-encrypted
+  PDFs. The `md-5` crate is now an optional dependency gated behind
+  this feature. RC4 (pure Rust, no crate) is also disabled: both
+  `RustCryptoProvider::rc4()` and `rc4_crypt_impl` are compiled out,
+  and the provider returns `AlgorithmNotPermitted` at runtime when the
+  feature is absent. Phase A of Issue #230.
+
+### Changed
+
+- **Stub parity gate for Python wheels
+  ([#464](https://github.com/yfedoseev/pdf_oxide/issues/464))** —
+  `rylai.toml` now uses `--features python` only (matching the released
+  wheel) so generated `.pyi` stubs no longer include symbols from
+  `office` or other optional features. A new CI step
+  (`Verify stub symbol parity`) checks that every stub symbol exists in
+  the installed wheel.
+- **TypeScript 6 + @types/node 25 upgrade for JS bindings
+  ([#438](https://github.com/yfedoseev/pdf_oxide/issues/438),
+  [#440](https://github.com/yfedoseev/pdf_oxide/issues/440))** —
+  JS dev dependencies bumped to TypeScript `^6.0.3` and `@types/node`
+  `^25.6.0`. `tsconfig.json` gains `"types": ["node"]` (required by
+  @types/node 25's ambient-global model) and `"ignoreDeprecations": "6.0"`
+  (to acknowledge the TS6-deprecated `moduleResolution: node` — full
+  migration to `node16` deferred until the import-path audit is done).
+
 ## [0.3.44] - 2026-05-05
 
 > Pluggable cryptographic provider — FIPS 140-3 compliance for
@@ -264,13 +328,6 @@ speedup (12–54×) holds regardless.
 
 ### Known follow-ups (v0.3.45)
 
-- **`AwsLcProvider` RSA-PKCS#1 v1.5 verify-from-digest
-  ([#475](https://github.com/yfedoseev/pdf_oxide/issues/475))** —
-  `AwsLcProvider::verify_rsa_pkcs1v15` is currently a stub; PDF/CMS
-  signatures using RSA-PKCS#1 v1.5 return `SignerVerify::Unknown`
-  instead of verifying under FIPS. Blocked on
-  `aws-lc-rs` exposing a stable `RSA_PKCS1_PRIM_VERIFY` API.
-  `RustCryptoProvider` (default) is not affected.
 - **`AwsLcProvider` signing wiring** — signing calls are currently
   routed to `RustCryptoProvider`. Full AWS-LC signing integration
   lands in v0.3.45.

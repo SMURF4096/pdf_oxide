@@ -196,16 +196,18 @@ pub fn render_page_fit(
     if fit_w_px == 0 || fit_h_px == 0 {
         return Err(crate::Error::InvalidPdf("fit width/height must be positive".into()));
     }
-    let media = doc.get_page_media_box(page_num)?;
-    let page_w_pt = (media.2 - media.0).max(1.0);
-    let page_h_pt = (media.3 - media.1).max(1.0);
+    let page_info = doc.get_page_info(page_num)?;
+    let rotation = page_info.rotation % 360;
+    let (page_w_pt, page_h_pt) = if rotation == 90 || rotation == 270 {
+        (page_info.media_box.height.max(1.0), page_info.media_box.width.max(1.0))
+    } else {
+        (page_info.media_box.width.max(1.0), page_info.media_box.height.max(1.0))
+    };
 
-    let dpi_for_w = (fit_w_px as f32 * 72.0 / page_w_pt).floor().max(1.0) as u32;
-    let dpi_for_h = (fit_h_px as f32 * 72.0 / page_h_pt).floor().max(1.0) as u32;
-    let dpi = dpi_for_w.min(dpi_for_h);
-
+    // Compute scale as a float ratio to avoid integer-DPI quantization (issue #480).
+    let scale = (fit_w_px as f32 / page_w_pt).min(fit_h_px as f32 / page_h_pt);
     let mut opts = options.clone();
-    opts.dpi = dpi;
+    opts.scale_override = Some(scale);
     render_page(doc, page_num, &opts)
 }
 

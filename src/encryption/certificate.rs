@@ -525,34 +525,10 @@ impl CertEncryptDict {
 
 /// Generate a cryptographically secure random key.
 fn generate_random_key(length: usize) -> Result<Vec<u8>> {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    // Use a combination of system time and process ID as entropy source
-    // In production, this should use a proper CSPRNG (getrandom crate)
-    let mut key = Vec::with_capacity(length);
-
-    // Get time-based entropy
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
-    let time_nanos = now.as_nanos();
-
-    // Use MD5 to mix entropy (not ideal, but available in the crate)
-    use md5::{Digest, Md5};
-
-    let mut hasher = Md5::new();
-    hasher.update(time_nanos.to_le_bytes());
-    hasher.update(std::process::id().to_le_bytes());
-
-    // Generate enough bytes
-    while key.len() < length {
-        let hash = hasher.finalize_reset();
-        key.extend_from_slice(&hash);
-        hasher.update(&key);
-        hasher.update(time_nanos.wrapping_add(key.len() as u128).to_le_bytes());
-    }
-
-    key.truncate(length);
+    let mut key = vec![0u8; length];
+    crate::crypto::active()
+        .random_bytes(&mut key)
+        .map_err(|e| crate::Error::InvalidPdf(format!("failed to generate random key: {e}")))?;
     Ok(key)
 }
 

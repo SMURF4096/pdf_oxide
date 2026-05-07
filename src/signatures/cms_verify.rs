@@ -233,14 +233,19 @@ fn run_signer_crypto(sd: &SignedData) -> Result<(SignerVerify, Option<ObjectIden
     };
 
     let digest_oid = signer.digest_alg.oid;
-    let Some(hash) = hash_with_oid(
-        digest_oid,
-        &signed_attrs
-            .to_der()
-            .map_err(|e| Error::InvalidPdf(format!("failed to re-encode signed_attrs: {e}")))?,
-    ) else {
+    // Guard: reject digest OIDs we cannot map to a HashAlgorithm so
+    // callers get Unknown instead of a provider-level error for unknown
+    // algorithms (same behaviour as before the refactor).
+    let Some(hash_algo) = digest_oid_to_hash(digest_oid) else {
         return Ok((SignerVerify::Unknown, Some(digest_oid)));
     };
+
+    // Encode the signed attributes once; every verifier receives the raw
+    // message bytes (not a pre-computed digest) so providers that hash
+    // internally (aws-lc-rs 1.x) can use their message-level APIs.
+    let signed_attrs_bytes = signed_attrs
+        .to_der()
+        .map_err(|e| Error::InvalidPdf(format!("failed to re-encode signed_attrs: {e}")))?;
 
     let sig_alg_oid = signer.signature_algorithm.oid;
     let sig_bytes = signer.signature.as_bytes();
@@ -270,10 +275,6 @@ fn run_signer_crypto(sd: &SignedData) -> Result<(SignerVerify, Option<ObjectIden
         };
         // EC public key bits are SEC1-encoded (uncompressed or compressed point).
         let pub_key_bits = spki.subject_public_key.raw_bytes();
-        let signed_attrs_bytes = signed_attrs
-            .to_der()
-            .map_err(|e| Error::InvalidPdf(format!("failed to re-encode signed_attrs: {e}")))?;
-
         let outcome = if curve_oid == OID_P256 && sig_alg_oid == OID_ECDSA_SHA256 {
             verify_ecdsa_p256(pub_key_bits, &signed_attrs_bytes, sig_bytes)
         } else if curve_oid == OID_P384 && sig_alg_oid == OID_ECDSA_SHA384 {
@@ -302,9 +303,6 @@ fn run_signer_crypto(sd: &SignedData) -> Result<(SignerVerify, Option<ObjectIden
             Ok(k) => k,
             Err(_) => return Ok((SignerVerify::Unknown, Some(digest_oid))),
         };
-        let signed_attrs_bytes = signed_attrs
-            .to_der()
-            .map_err(|e| Error::InvalidPdf(format!("failed to re-encode signed_attrs: {e}")))?;
         let outcome = verify_rsa_pss(pub_key, digest_oid, &signed_attrs_bytes, sig_bytes);
         return Ok((outcome, Some(digest_oid)));
     }
@@ -314,13 +312,8 @@ fn run_signer_crypto(sd: &SignedData) -> Result<(SignerVerify, Option<ObjectIden
         return Ok((SignerVerify::Unknown, Some(digest_oid)));
     }
 
-    // Map the digest OID to the trait's HashAlgorithm enum. The
-    // trait's `verify_rsa_pkcs1v15` rebuilds the DigestInfo prefix
-    // internally — single source of truth for the PKCS#1 v1.5 wrapper.
-    let Some(hash_algo) = digest_oid_to_hash(digest_oid) else {
-        return Ok((SignerVerify::Unknown, Some(digest_oid)));
-    };
-
+    // `hash_algo` was mapped from `digest_oid` at the top of this
+    // function; if we reach here it is valid.
     let Some(cert) = find_signer_certificate(sd, signer) else {
         return Ok((SignerVerify::Unknown, Some(digest_oid)));
     };
@@ -345,10 +338,14 @@ fn run_signer_crypto(sd: &SignedData) -> Result<(SignerVerify, Option<ObjectIden
         modulus_be: &n,
         exponent_be: &e,
     };
-    let outcome = match crypto::active()
-        .verifier()
-        .verify_rsa_pkcs1v15(&pubkey, hash_algo, &hash, sig_bytes)
-    {
+    // Pass the full message (signed_attrs bytes) — the provider hashes
+    // internally, consistent with verify_rsa_pss and verify_ecdsa.
+    let outcome = match crypto::active().verifier().verify_rsa_pkcs1v15(
+        &pubkey,
+        hash_algo,
+        &signed_attrs_bytes,
+        sig_bytes,
+    ) {
         Ok(()) => SignerVerify::Valid,
         Err(crypto::Error::Verification(_)) => SignerVerify::Invalid,
         Err(_) => SignerVerify::Unknown,

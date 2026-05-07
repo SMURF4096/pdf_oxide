@@ -41,7 +41,7 @@ jobs:
   fips-lib:
     name: Rust lib (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:

@@ -430,4 +430,38 @@ mod tests {
         assert!(subsetter.is_empty());
         assert!(subsetter.subset_tag().is_none());
     }
+
+    /// Regression test for #449: subsetting a CFF/OTF font must not change
+    /// the font's SFNT magic bytes — the output must remain a valid CFF font
+    /// (starts with "OTTO") so callers can detect the font type and emit the
+    /// correct PDF objects (FontFile3 / CIDFontType0, not FontFile2 / CIDFontType2).
+    #[test]
+    fn test_subset_cff_otf_preserves_magic() {
+        let font_path =
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/fonts/StandardSymbolsPS.otf");
+        let font_bytes = std::fs::read(font_path).expect("StandardSymbolsPS.otf fixture missing");
+
+        // Confirm the input is a CFF/OTF font
+        assert_eq!(&font_bytes[..4], b"OTTO", "fixture is not a CFF/OTF font");
+
+        // Subset to a handful of glyphs (plus .notdef which subset_font_bytes always adds)
+        let mut used = BTreeSet::new();
+        used.insert(1u16);
+        used.insert(2u16);
+        used.insert(3u16);
+
+        let (subset_bytes, remapper) =
+            subset_font_bytes(&font_bytes, 0, &used).expect("subsetting should succeed");
+
+        // The subset must still be a CFF/OTF font
+        assert!(
+            subset_bytes.starts_with(b"OTTO"),
+            "subsetting corrupted CFF magic bytes: {:?}",
+            &subset_bytes[..4.min(subset_bytes.len())]
+        );
+
+        // GID 0 (.notdef) is always preserved; our requested glyphs should map
+        assert!(remapper.get(0).is_some(), ".notdef (GID 0) must survive");
+        assert!(remapper.get(1).is_some(), "GID 1 must survive");
+    }
 }

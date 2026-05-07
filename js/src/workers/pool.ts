@@ -66,9 +66,9 @@ export class WorkerPool {
       for (let i = 0; i < this.poolSize; i++) {
         const worker = new Worker(path.join(__dirname, 'worker.js'));
 
-        worker.on('error', (error) => {
+        worker.on('error', (error: unknown) => {
           console.error(`Worker ${i} error:`, error);
-          this.handleWorkerError(error);
+          this.handleWorkerError(error instanceof Error ? error : new Error(String(error)));
         });
 
         worker.on('exit', (code) => {

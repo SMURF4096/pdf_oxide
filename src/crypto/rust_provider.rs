@@ -46,12 +46,25 @@ impl CryptoProvider for RustCryptoProvider {
     }
 
     fn is_legacy_allowed(&self) -> bool {
-        true
+        cfg!(feature = "legacy-crypto")
     }
 
     fn hasher(&self, algo: HashAlgorithm) -> Result<Box<dyn Hasher>> {
         Ok(match algo {
-            HashAlgorithm::Md5 => Box::new(Md5Hasher::new()),
+            HashAlgorithm::Md5 => {
+                #[cfg(feature = "legacy-crypto")]
+                {
+                    Box::new(Md5Hasher::new())
+                }
+                #[cfg(not(feature = "legacy-crypto"))]
+                {
+                    return Err(Error::AlgorithmNotPermitted {
+                        kind: crate::crypto::error::AlgorithmKind::Hash,
+                        name: "MD5",
+                        reason: "legacy-crypto feature disabled at compile time",
+                    });
+                }
+            },
             HashAlgorithm::Sha1 => {
                 #[cfg(feature = "signatures")]
                 {
@@ -98,13 +111,16 @@ impl CryptoProvider for RustCryptoProvider {
 // crypto module.
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "legacy-crypto")]
 struct Md5Hasher(md5::Md5);
+#[cfg(feature = "legacy-crypto")]
 impl Md5Hasher {
     fn new() -> Self {
         use md5::Digest;
         Self(md5::Md5::new())
     }
 }
+#[cfg(feature = "legacy-crypto")]
 impl Hasher for Md5Hasher {
     fn update(&mut self, data: &[u8]) {
         use md5::Digest;
@@ -239,14 +255,26 @@ impl SymmetricCipher for RustSymmetric {
         }
     }
 
+    #[cfg_attr(not(feature = "legacy-crypto"), allow(unused_variables))]
     fn rc4(&self, key: &[u8], data: &[u8]) -> Result<Vec<u8>> {
-        if key.is_empty() || key.len() > 256 {
-            return Err(Error::InvalidInput("RC4 key must be 1..=256 bytes"));
+        #[cfg(not(feature = "legacy-crypto"))]
+        {
+            Err(Error::AlgorithmNotPermitted {
+                kind: crate::crypto::error::AlgorithmKind::SymmetricCipher,
+                name: "RC4",
+                reason: "legacy-crypto feature disabled at compile time",
+            })
         }
-        // Calls the in-tree pure cipher impl directly (not the
-        // `pub fn rc4_crypt` wrapper, which itself routes through us
-        // — that would loop). Byte-equal to pre-Phase-3 output.
-        Ok(crate::encryption::rc4::rc4_crypt_impl(key, data))
+        #[cfg(feature = "legacy-crypto")]
+        {
+            if key.is_empty() || key.len() > 256 {
+                return Err(Error::InvalidInput("RC4 key must be 1..=256 bytes"));
+            }
+            // Calls the in-tree pure cipher impl directly (not the
+            // `pub fn rc4_crypt` wrapper, which itself routes through us
+            // — that would loop). Byte-equal to pre-Phase-3 output.
+            Ok(crate::encryption::rc4::rc4_crypt_impl(key, data))
+        }
     }
 }
 
@@ -344,33 +372,38 @@ struct RustVerifier;
 impl SignatureVerifier for RustVerifier {
     /// Verifies a PKCS#1 v1.5 signature.
     ///
-    /// `digest` is the raw hash bytes; we build the DigestInfo (algo
-    /// OID prefix + digest) here and pass it to `rsa::Pkcs1v15Sign::new_unprefixed()`.
-    /// Mirrors the existing pattern at
-    /// `src/signatures/cms_verify.rs:306-337` so Phase 4's migration
-    /// is byte-equal.
+    /// `message` is the raw bytes to verify — the same convention as
+    /// `verify_rsa_pss` / `verify_ecdsa`. We hash it with `hash` here
+    /// and build the DigestInfo before calling
+    /// `rsa::Pkcs1v15Sign::new_unprefixed()`.
     fn verify_rsa_pkcs1v15(
         &self,
         pubkey: &RsaPublicKey<'_>,
         hash: HashAlgorithm,
-        digest: &[u8],
+        message: &[u8],
         signature: &[u8],
     ) -> Result<()> {
         use crate::signatures::crypto::digest_info_prefix;
         use rsa::pkcs1v15::Pkcs1v15Sign;
         use rsa::RsaPublicKey as RcRsa;
 
-        if digest.len() != hash.output_size() {
-            return Err(Error::InvalidInput(
-                "PKCS#1 v1.5 digest length does not match hash algorithm",
-            ));
-        }
-
-        let oid = match hash {
-            HashAlgorithm::Sha1 => der::oid::db::rfc5912::ID_SHA_1,
-            HashAlgorithm::Sha256 => der::oid::db::rfc5912::ID_SHA_256,
-            HashAlgorithm::Sha384 => der::oid::db::rfc5912::ID_SHA_384,
-            HashAlgorithm::Sha512 => der::oid::db::rfc5912::ID_SHA_512,
+        let (oid, digest) = match hash {
+            HashAlgorithm::Sha1 => {
+                use sha1::Digest as _;
+                (der::oid::db::rfc5912::ID_SHA_1, sha1::Sha1::digest(message).to_vec())
+            },
+            HashAlgorithm::Sha256 => {
+                use sha2_v10::Digest as _;
+                (der::oid::db::rfc5912::ID_SHA_256, sha2_v10::Sha256::digest(message).to_vec())
+            },
+            HashAlgorithm::Sha384 => {
+                use sha2_v10::Digest as _;
+                (der::oid::db::rfc5912::ID_SHA_384, sha2_v10::Sha384::digest(message).to_vec())
+            },
+            HashAlgorithm::Sha512 => {
+                use sha2_v10::Digest as _;
+                (der::oid::db::rfc5912::ID_SHA_512, sha2_v10::Sha512::digest(message).to_vec())
+            },
             HashAlgorithm::Md5 => {
                 return Err(Error::Verification(
                     "MD5 not supported for RSA-PKCS#1-v1.5 signature verification",
@@ -382,7 +415,7 @@ impl SignatureVerifier for RustVerifier {
             .ok_or(Error::Backend("no DigestInfo prefix table entry for selected hash"))?;
         let mut digest_info = Vec::with_capacity(prefix.len() + digest.len());
         digest_info.extend_from_slice(prefix);
-        digest_info.extend_from_slice(digest);
+        digest_info.extend_from_slice(&digest);
 
         let n = rsa::BigUint::from_bytes_be(pubkey.modulus_be);
         let e = rsa::BigUint::from_bytes_be(pubkey.exponent_be);
@@ -473,7 +506,7 @@ impl SignatureVerifier for RustVerifier {
         &self,
         _pubkey: &RsaPublicKey<'_>,
         _hash: HashAlgorithm,
-        _digest: &[u8],
+        _message: &[u8],
         _signature: &[u8],
     ) -> Result<()> {
         Err(Error::Backend("RSA verification requires the 'signatures' cargo feature"))
@@ -596,13 +629,17 @@ mod tests {
     fn name_and_legacy_policy() {
         let p = provider();
         assert_eq!(p.name(), "rust-crypto");
+        #[cfg(feature = "legacy-crypto")]
         assert!(p.is_legacy_allowed());
+        #[cfg(not(feature = "legacy-crypto"))]
+        assert!(!p.is_legacy_allowed());
     }
 
     // --- Hash vectors (RFCs / NIST FIPS 180-4) ---
 
     use hex_literal::hex;
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn md5_empty() {
         let p = provider();
@@ -611,6 +648,7 @@ mod tests {
         assert_eq!(h.finalize(), hex!("d41d8cd98f00b204e9800998ecf8427e"));
     }
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn md5_abc() {
         let p = provider();
@@ -739,6 +777,7 @@ mod tests {
 
     // --- RC4 round-trip (PDF R≤4 path).
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn rc4_round_trip() {
         let p = provider();

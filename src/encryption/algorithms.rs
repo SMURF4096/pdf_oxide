@@ -6,8 +6,9 @@
 //! PDF Spec: Section 7.6.3 - Standard Security Handler
 //! PDF 2.0 Spec (ISO 32000-2:2020): Section 7.6.4.3.3 - Algorithm 8-11 for R>=5
 
-use md5::{Digest, Md5};
-use sha2::{Sha256, Sha384, Sha512};
+#[cfg(feature = "legacy-crypto")]
+use md5::Md5;
+use sha2::{Digest, Sha256, Sha384, Sha512};
 
 /// Padding string used in PDF encryption (32 bytes).
 ///
@@ -34,6 +35,7 @@ const PADDING: &[u8; 32] = b"\x28\xBF\x4E\x5E\x4E\x75\x8A\x41\
 /// # Returns
 ///
 /// The derived encryption key
+#[cfg_attr(not(feature = "legacy-crypto"), allow(unused_variables))]
 pub fn compute_encryption_key(
     password: &[u8],
     owner_key: &[u8],
@@ -49,47 +51,56 @@ pub fn compute_encryption_key(
         return generate_random_encryption_key(key_length);
     }
 
-    let mut hasher = Md5::new();
+    // R<=4 requires MD5 key derivation; needs the legacy-crypto feature.
+    #[cfg(not(feature = "legacy-crypto"))]
+    return Err(crate::Error::InvalidPdf(
+        "pdf_oxide built without 'legacy-crypto': PDF Standard Security R≤4 (MD5 key derivation) is not supported".to_string()
+    ));
 
-    // Step a: Pad or truncate password to 32 bytes
-    let mut padded_password = [0u8; 32];
-    let pass_len = password.len().min(32);
-    padded_password[..pass_len].copy_from_slice(&password[..pass_len]);
-    if pass_len < 32 {
-        padded_password[pass_len..].copy_from_slice(&PADDING[..(32 - pass_len)]);
-    }
+    #[cfg(feature = "legacy-crypto")]
+    {
+        let mut hasher = Md5::new();
 
-    // Step b: Pass the password to MD5
-    hasher.update(padded_password);
-
-    // Step c: Pass the owner password hash
-    hasher.update(owner_key);
-
-    // Step d: Pass permissions as 32-bit little-endian
-    hasher.update(permissions.to_le_bytes());
-
-    // Step e: Pass the file identifier
-    hasher.update(file_id);
-
-    // Step f: For R >= 4, if EncryptMetadata is false, pass 0xFFFFFFFF
-    if revision >= 4 && !encrypt_metadata {
-        hasher.update([0xFF, 0xFF, 0xFF, 0xFF]);
-    }
-
-    // Step g: Finish MD5 hash
-    let mut hash = hasher.finalize().to_vec();
-
-    // Step h: For R >= 3, do 50 additional MD5 iterations on first key_length bytes
-    if revision >= 3 {
-        for _ in 0..50 {
-            let mut hasher = Md5::new();
-            hasher.update(&hash[..key_length.min(16)]);
-            hash = hasher.finalize().to_vec();
+        // Step a: Pad or truncate password to 32 bytes
+        let mut padded_password = [0u8; 32];
+        let pass_len = password.len().min(32);
+        padded_password[..pass_len].copy_from_slice(&password[..pass_len]);
+        if pass_len < 32 {
+            padded_password[pass_len..].copy_from_slice(&PADDING[..(32 - pass_len)]);
         }
-    }
 
-    // Step i: Return first key_length bytes (max 16 for MD5)
-    Ok(hash[..key_length.min(16)].to_vec())
+        // Step b: Pass the password to MD5
+        hasher.update(padded_password);
+
+        // Step c: Pass the owner password hash
+        hasher.update(owner_key);
+
+        // Step d: Pass permissions as 32-bit little-endian
+        hasher.update(permissions.to_le_bytes());
+
+        // Step e: Pass the file identifier
+        hasher.update(file_id);
+
+        // Step f: For R >= 4, if EncryptMetadata is false, pass 0xFFFFFFFF
+        if revision >= 4 && !encrypt_metadata {
+            hasher.update([0xFF, 0xFF, 0xFF, 0xFF]);
+        }
+
+        // Step g: Finish MD5 hash
+        let mut hash = hasher.finalize().to_vec();
+
+        // Step h: For R >= 3, do 50 additional MD5 iterations on first key_length bytes
+        if revision >= 3 {
+            for _ in 0..50 {
+                let mut h = Md5::new();
+                h.update(&hash[..key_length.min(16)]);
+                hash = h.finalize().to_vec();
+            }
+        }
+
+        // Step i: Return first key_length bytes (max 16 for MD5)
+        Ok(hash[..key_length.min(16)].to_vec())
+    }
 }
 
 /// Generate a random encryption key for R>=5.
@@ -126,6 +137,7 @@ pub fn pad_password(password: &[u8]) -> Vec<u8> {
 /// PDF 2.0 Spec: Algorithm 11 - Authenticating user password for R>=5
 ///
 /// Returns the encryption key if authentication succeeds.
+#[cfg_attr(not(feature = "legacy-crypto"), allow(unused_variables))]
 pub fn authenticate_user_password(
     password: &[u8],
     user_key: &[u8],
@@ -142,35 +154,43 @@ pub fn authenticate_user_password(
         return authenticate_user_password_r5_r6(password, user_key, revision, user_encryption);
     }
 
-    // Compute encryption key from password
-    let key = compute_encryption_key(
-        password,
-        owner_key,
-        permissions,
-        file_id,
-        revision,
-        key_length,
-        encrypt_metadata,
-    )
-    .ok()?;
-
-    // Compute expected user key
-    let expected_user_key = if revision >= 3 {
-        compute_user_key_r3(&key, file_id).ok()?
-    } else {
-        compute_user_key_r2(&key).ok()?
-    };
-
-    // Compare first 16 bytes (constant-time comparison)
-    if user_key.len() < 16 || expected_user_key.len() < 16 {
-        return None;
-    }
-    let matches = constant_time_compare(&user_key[..16], &expected_user_key[..16]);
-
-    if matches {
-        Some(key)
-    } else {
+    #[cfg(not(feature = "legacy-crypto"))]
+    {
         None
+    }
+
+    #[cfg(feature = "legacy-crypto")]
+    {
+        // Compute encryption key from password
+        let key = compute_encryption_key(
+            password,
+            owner_key,
+            permissions,
+            file_id,
+            revision,
+            key_length,
+            encrypt_metadata,
+        )
+        .ok()?;
+
+        // Compute expected user key
+        let expected_user_key = if revision >= 3 {
+            compute_user_key_r3(&key, file_id).ok()?
+        } else {
+            compute_user_key_r2(&key).ok()?
+        };
+
+        // Compare first 16 bytes (constant-time comparison)
+        if user_key.len() < 16 || expected_user_key.len() < 16 {
+            return None;
+        }
+        let matches = constant_time_compare(&user_key[..16], &expected_user_key[..16]);
+
+        if matches {
+            Some(key)
+        } else {
+            None
+        }
     }
 }
 
@@ -326,6 +346,7 @@ fn algorithm_2b(password: &[u8], salt: &[u8], user_key: &[u8]) -> Vec<u8> {
 /// Compute the user password hash for R=2 (Algorithm 4).
 ///
 /// PDF Spec: Section 7.6.3.4 - Algorithm 4
+#[cfg(feature = "legacy-crypto")]
 fn compute_user_key_r2(key: &[u8]) -> crate::Result<Vec<u8>> {
     // Encrypt padding string with key
     super::rc4::rc4_crypt(key, PADDING)
@@ -334,6 +355,7 @@ fn compute_user_key_r2(key: &[u8]) -> crate::Result<Vec<u8>> {
 /// Compute the user password hash for R>=3 (Algorithm 5).
 ///
 /// PDF Spec: Section 7.6.3.4 - Algorithm 5
+#[cfg(feature = "legacy-crypto")]
 fn compute_user_key_r3(key: &[u8], file_id: &[u8]) -> crate::Result<Vec<u8>> {
     // Step a: Create MD5 hash of padding + file ID
     let mut hasher = Md5::new();
@@ -372,6 +394,7 @@ fn compute_user_key_r3(key: &[u8], file_id: &[u8]) -> crate::Result<Vec<u8>> {
 /// # Returns
 ///
 /// 32-byte owner password hash for /O entry (48 bytes for R>=5)
+#[cfg_attr(not(feature = "legacy-crypto"), allow(unused_variables))]
 pub fn compute_owner_password_hash(
     owner_password: &[u8],
     user_password: &[u8],
@@ -383,53 +406,61 @@ pub fn compute_owner_password_hash(
         return compute_owner_hash_r5(owner_password, user_password);
     }
 
+    #[cfg(not(feature = "legacy-crypto"))]
+    return Err(crate::Error::InvalidPdf(
+        "pdf_oxide built without 'legacy-crypto': PDF Standard Security R≤4 (MD5+RC4) is not supported".to_string()
+    ));
+
     // Algorithm 3 for R<=4
-    // Step a: Use owner password, or user password if owner is empty
-    let password = if owner_password.is_empty() {
-        user_password
-    } else {
-        owner_password
-    };
+    #[cfg(feature = "legacy-crypto")]
+    {
+        // Step a: Use owner password, or user password if owner is empty
+        let password = if owner_password.is_empty() {
+            user_password
+        } else {
+            owner_password
+        };
 
-    // Step b: Pad the password to 32 bytes
-    let padded_password = pad_password(password);
+        // Step b: Pad the password to 32 bytes
+        let padded_password = pad_password(password);
 
-    // Step c: Initialize MD5 and pass the padded password
-    let mut hasher = Md5::new();
-    hasher.update(&padded_password);
-    let mut hash = hasher.finalize().to_vec();
+        // Step c: Initialize MD5 and pass the padded password
+        let mut hasher = Md5::new();
+        hasher.update(&padded_password);
+        let mut hash = hasher.finalize().to_vec();
 
-    // Step d: For R >= 3, do 50 additional MD5 iterations
-    if revision >= 3 {
-        for _ in 0..50 {
-            let mut hasher = Md5::new();
-            hasher.update(&hash[..key_length.min(16)]);
-            hash = hasher.finalize().to_vec();
-        }
-    }
-
-    // Step e: Use first key_length bytes as RC4 key (max 16)
-    let rc4_key_len = key_length.min(16);
-    let rc4_key = &hash[..rc4_key_len];
-
-    // Step f: Pad the user password
-    let padded_user = pad_password(user_password);
-
-    // Step g: RC4 encrypt the padded user password
-    let mut result = super::rc4::rc4_crypt(rc4_key, &padded_user)?;
-
-    // Step h: For R >= 3, do 19 more RC4 encryptions with XOR'd keys
-    if revision >= 3 {
-        for i in 1..=19 {
-            let mut modified_key = rc4_key.to_vec();
-            for byte in &mut modified_key {
-                *byte ^= i as u8;
+        // Step d: For R >= 3, do 50 additional MD5 iterations
+        if revision >= 3 {
+            for _ in 0..50 {
+                let mut h = Md5::new();
+                h.update(&hash[..key_length.min(16)]);
+                hash = h.finalize().to_vec();
             }
-            result = super::rc4::rc4_crypt(&modified_key, &result)?;
         }
-    }
 
-    Ok(result)
+        // Step e: Use first key_length bytes as RC4 key (max 16)
+        let rc4_key_len = key_length.min(16);
+        let rc4_key = &hash[..rc4_key_len];
+
+        // Step f: Pad the user password
+        let padded_user = pad_password(user_password);
+
+        // Step g: RC4 encrypt the padded user password
+        let mut result = super::rc4::rc4_crypt(rc4_key, &padded_user)?;
+
+        // Step h: For R >= 3, do 19 more RC4 encryptions with XOR'd keys
+        if revision >= 3 {
+            for i in 1..=19 {
+                let mut modified_key = rc4_key.to_vec();
+                for byte in &mut modified_key {
+                    *byte ^= i as u8;
+                }
+                result = super::rc4::rc4_crypt(&modified_key, &result)?;
+            }
+        }
+
+        Ok(result)
+    }
 }
 
 /// Compute owner password hash for R>=5 (Algorithm 8 part).
@@ -480,6 +511,7 @@ fn compute_owner_hash_r5(owner_password: &[u8], _user_password: &[u8]) -> crate:
 /// # Returns
 ///
 /// 32-byte user password hash for /U entry (48 bytes for R>=5)
+#[cfg_attr(not(feature = "legacy-crypto"), allow(unused_variables))]
 pub fn compute_user_password_hash(
     encryption_key: &[u8],
     file_id: &[u8],
@@ -488,8 +520,14 @@ pub fn compute_user_password_hash(
     if revision >= 5 {
         // For R>=5, use the encryption key directly as user password indicator
         // This creates the U value with validation/key salts
-        compute_user_hash_r5(encryption_key)
-    } else if revision >= 3 {
+        return compute_user_hash_r5(encryption_key);
+    }
+    #[cfg(not(feature = "legacy-crypto"))]
+    return Err(crate::Error::InvalidPdf(
+        "pdf_oxide built without 'legacy-crypto': PDF Standard Security R≤4 (MD5+RC4) is not supported".to_string()
+    ));
+    #[cfg(feature = "legacy-crypto")]
+    if revision >= 3 {
         compute_user_key_r3(encryption_key, file_id)
     } else {
         compute_user_key_r2(encryption_key)
@@ -675,6 +713,7 @@ fn truncate_password_utf8(password: &[u8]) -> Vec<u8> {
 /// PDF 2.0 Spec: Algorithm 12 - Authenticating owner password for R>=5
 ///
 /// Returns the encryption key if authentication succeeds.
+#[cfg_attr(not(feature = "legacy-crypto"), allow(unused_variables))]
 pub fn authenticate_owner_password(
     owner_password: &[u8],
     user_key: &[u8],
@@ -696,61 +735,63 @@ pub fn authenticate_owner_password(
         ));
     }
 
+    #[cfg(not(feature = "legacy-crypto"))]
+    return Ok(None);
+
     // Algorithm 7: Authenticate owner password for R≤4
-    //
-    // Steps a-d: Compute RC4 key from owner password (same as Algorithm 3 steps a-d)
-    let password = if owner_password.is_empty() {
-        return Ok(None);
-    } else {
-        owner_password
-    };
-
-    let padded_password = pad_password(password);
-
-    let mut hasher = Md5::new();
-    hasher.update(&padded_password);
-    let mut hash = hasher.finalize().to_vec();
-
-    if revision >= 3 {
-        for _ in 0..50 {
-            let mut h = Md5::new();
-            h.update(&hash[..key_length.min(16)]);
-            hash = h.finalize().to_vec();
+    #[cfg(feature = "legacy-crypto")]
+    {
+        // Steps a-d: Compute RC4 key from owner password (same as Algorithm 3 steps a-d)
+        if owner_password.is_empty() {
+            return Ok(None);
         }
-    }
+        let padded_password = pad_password(owner_password);
 
-    let rc4_key_len = key_length.min(16);
-    let rc4_key = &hash[..rc4_key_len];
+        let mut hasher = Md5::new();
+        hasher.update(&padded_password);
+        let mut hash = hasher.finalize().to_vec();
 
-    // Step e: Decrypt the /O value to recover the padded user password
-    let user_password_padded = if revision == 2 {
-        // R=2: Single RC4 decryption
-        super::rc4::rc4_crypt(rc4_key, owner_key)?
-    } else {
-        // R≥3: 20 RC4 decryptions with XOR'd keys (19 down to 0)
-        let mut result = owner_key.to_vec();
-        for i in (0..=19).rev() {
-            let mut modified_key = rc4_key.to_vec();
-            for byte in &mut modified_key {
-                *byte ^= i as u8;
+        if revision >= 3 {
+            for _ in 0..50 {
+                let mut h = Md5::new();
+                h.update(&hash[..key_length.min(16)]);
+                hash = h.finalize().to_vec();
             }
-            result = super::rc4::rc4_crypt(&modified_key, &result)?;
         }
-        result
-    };
 
-    // Step f: Use recovered user password to authenticate via Algorithm 6
-    Ok(authenticate_user_password(
-        &user_password_padded,
-        user_key,
-        owner_key,
-        permissions,
-        file_id,
-        revision,
-        key_length,
-        encrypt_metadata,
-        None, // R<=4 path, no UE needed
-    ))
+        let rc4_key_len = key_length.min(16);
+        let rc4_key = &hash[..rc4_key_len];
+
+        // Step e: Decrypt the /O value to recover the padded user password
+        let user_password_padded = if revision == 2 {
+            // R=2: Single RC4 decryption
+            super::rc4::rc4_crypt(rc4_key, owner_key)?
+        } else {
+            // R≥3: 20 RC4 decryptions with XOR'd keys (19 down to 0)
+            let mut result = owner_key.to_vec();
+            for i in (0..=19).rev() {
+                let mut modified_key = rc4_key.to_vec();
+                for byte in &mut modified_key {
+                    *byte ^= i as u8;
+                }
+                result = super::rc4::rc4_crypt(&modified_key, &result)?;
+            }
+            result
+        };
+
+        // Step f: Use recovered user password to authenticate via Algorithm 6
+        return Ok(authenticate_user_password(
+            &user_password_padded,
+            user_key,
+            owner_key,
+            permissions,
+            file_id,
+            revision,
+            key_length,
+            encrypt_metadata,
+            None, // R<=4 path, no UE needed
+        ));
+    }
 }
 
 /// Verify owner password for R>=5 (PDF 2.0 Algorithm 12 for R5, Algorithm 2.A for R6).
@@ -877,6 +918,7 @@ mod tests {
         assert!(!constant_time_compare(a, b));
     }
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_compute_encryption_key() {
         let password = b"user";
@@ -900,6 +942,7 @@ mod tests {
         assert_eq!(key.len(), key_length);
     }
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_owner_password_hash_r2() {
         let owner = b"owner";
@@ -916,6 +959,7 @@ mod tests {
         // For R=2, decrypt with same RC4 key should give padded user password
     }
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_owner_password_hash_r3() {
         let owner = b"owner";
@@ -929,6 +973,7 @@ mod tests {
         assert_eq!(owner_hash.len(), 32);
     }
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_owner_password_hash_empty_owner() {
         // When owner password is empty, user password should be used
@@ -943,6 +988,7 @@ mod tests {
         assert_eq!(hash1, hash2);
     }
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_user_password_hash_r2() {
         let key = [0u8; 5]; // 40-bit key
@@ -955,6 +1001,7 @@ mod tests {
         assert_eq!(user_hash.len(), 32);
     }
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_user_password_hash_r3() {
         let key = [0u8; 16]; // 128-bit key
@@ -967,6 +1014,7 @@ mod tests {
         assert_eq!(user_hash.len(), 32);
     }
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_encryption_roundtrip_r2() {
         // Test that we can create owner/user hashes and authenticate
@@ -1013,6 +1061,7 @@ mod tests {
         assert_eq!(auth_result.unwrap(), encryption_key);
     }
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_encryption_roundtrip_r3() {
         // Test with R=3 (128-bit encryption)
@@ -1053,6 +1102,7 @@ mod tests {
         assert_eq!(auth_result.unwrap(), encryption_key);
     }
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_authenticate_user_password_short_user_key() {
         // /U value shorter than 16 bytes should return None, not panic
@@ -1151,6 +1201,7 @@ mod tests {
         assert!(result.is_none());
     }
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_authenticate_owner_password_r2_roundtrip() {
         let owner_pass = b"owner123";
@@ -1192,6 +1243,7 @@ mod tests {
         assert_eq!(result.unwrap(), encryption_key);
     }
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_authenticate_owner_password_r3_roundtrip() {
         let owner_pass = b"owner456";
@@ -1231,6 +1283,7 @@ mod tests {
         assert_eq!(result.unwrap(), encryption_key);
     }
 
+    #[cfg(feature = "legacy-crypto")]
     #[test]
     fn test_authenticate_owner_password_wrong_password() {
         let owner_pass = b"owner123";

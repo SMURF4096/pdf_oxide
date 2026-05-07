@@ -58,7 +58,7 @@ manual_checked_ops = "allow"
 
 [package]
 name = "pdf_oxide"
-version = "0.3.44"
+version = "0.3.45"
 # MSRV — driven up from 1.82 for v0.3.38. Transitive deps pulled in
 # this release push the floor to 1.88:
 #   - hybrid-array 0.4.10 (via RustCrypto) → edition 2024 → 1.85
@@ -174,11 +174,11 @@ base64 = "0.22"                                                                 
 fax = "0.2"                                                                                # CCITT Group 3/4 decompression for scanned PDFs (more lenient with malformed EOFB)
 
 # Encryption support
-aes = "0.9"        # AES encryption for PDF 1.6+
-cbc = "0.2"        # CBC mode for AES
-md-5 = "0.11"      # MD5 for key derivation
-sha2 = "0.11"      # SHA-256 for newer encryption
-stringprep = "0.1" # SASLprep for Unicode PDF passwords (R>=5)
+aes = "0.9"                                  # AES encryption for PDF 1.6+
+cbc = "0.2"                                  # CBC mode for AES
+md-5 = { version = "0.11", optional = true } # MD5 for legacy R≤4 key derivation
+sha2 = "0.11"                                # SHA-256 for newer encryption
+stringprep = "0.1"                           # SASLprep for Unicode PDF passwords (R>=5)
 
 # FIPS-validated CryptoProvider backend (issue #236).
 # `aws-lc-rs` is Amazon's BoringSSL fork; the `fips` feature gates it
@@ -296,7 +296,7 @@ wasm-bindgen-test = "0.3"
 hex-literal = "1.1.0"
 
 [features]
-default = ["icc"]
+default = ["icc", "legacy-crypto"]
 
 # Enable logging for the extraction pipeline
 logging = []
@@ -317,6 +317,12 @@ fips = ["dep:aws-lc-rs", "aws-lc-rs/fips"]
 # additive-clamp fallback. Pure Rust, so WASM and C# AOT targets keep
 # working without a C toolchain dependency.
 icc = ["dep:qcms"]
+
+# Gate MD5 key-derivation (R≤4 PDF Standard Security) and RC4 cipher
+# behind this feature. Default-on so existing users keep full R≤4 read/write
+# support; opt out with `default-features = false` when building for
+# environments that must not load legacy cryptography.
+legacy-crypto = ["dep:md-5"]
 
 # Python bindings (v0.1.0)
 python = [

@@ -49,6 +49,11 @@ pub struct RenderOptions {
     pub render_annotations: bool,
     /// JPEG quality (1-100, default: 85)
     pub jpeg_quality: u8,
+    /// Explicit float scale factor set by `render_page_fit`.
+    /// When `Some`, bypasses integer-DPI quantization so fit dimensions are
+    /// exact (issue #480). Not part of the public API; set via
+    /// `render_page_fit` only.
+    pub(crate) scale_override: Option<f32>,
 }
 
 impl Default for RenderOptions {
@@ -59,6 +64,7 @@ impl Default for RenderOptions {
             background: Some([1.0, 1.0, 1.0, 1.0]), // White background
             render_annotations: true,
             jpeg_quality: 85,
+            scale_override: None,
         }
     }
 }
@@ -156,15 +162,26 @@ impl PageRenderer {
         let media_box = page_info.media_box;
 
         // Calculate output dimensions, accounting for page rotation
-        let scale = self.options.dpi as f32 / 72.0;
         let rotation = page_info.rotation % 360;
         let (page_w, page_h) = if rotation == 90 || rotation == 270 {
             (media_box.height, media_box.width) // Swap for landscape
         } else {
             (media_box.width, media_box.height)
         };
-        let width = (page_w * scale).ceil() as u32;
-        let height = (page_h * scale).ceil() as u32;
+        let scale = self
+            .options
+            .scale_override
+            .unwrap_or(self.options.dpi as f32 / 72.0);
+        let (width, height) = if self.options.scale_override.is_some() {
+            // Float scale path: round to avoid off-by-one from exact fractional pixels.
+            // Clamp to 1 so extreme aspect ratios never produce a 0-sized pixmap.
+            (
+                ((page_w * scale).round() as u32).max(1),
+                ((page_h * scale).round() as u32).max(1),
+            )
+        } else {
+            ((page_w * scale).ceil() as u32, (page_h * scale).ceil() as u32)
+        };
 
         // Create pixmap
         let mut pixmap = Pixmap::new(width, height)

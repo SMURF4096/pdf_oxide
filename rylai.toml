@@ -9,4 +9,8 @@ format = ["uvx ruff format", "uvx ruff check --select I --fix"]
 # Issue #462.
 
 [features]
-enabled = ["python", "office"]
+# Match the released wheel's feature set exactly so the emitted stubs
+# describe only symbols that are actually present at runtime (issue #464).
+# CI regenerates the stub and runs a symbol-parity check after building
+# the release-feature wheel (see python.yml "Verify stub symbol parity" step).
+enabled = ["python"]

@@ -89,6 +89,15 @@ jobs:
           wheel=$(ls dist/*.whl)
           uv run pip install "$wheel"
 
+      - name: Generate stubs and verify symbol parity
+        # Regenerate .pyi stub (using rylai.toml features, i.e. --features python)
+        # then confirm every stub symbol exists in the installed wheel (issue #464).
+        # Uses the test wheel (python,ocr,barcodes) which is a superset of the
+        # release wheel; any stub symbol absent here is certainly absent at release.
+        run: |
+          uvx rylai -o python/pdf_oxide/
+          uv run python scripts/check_stub_parity.py python/pdf_oxide/pdf_oxide.pyi
+
       - name: Run Rust tests with Python feature
         # Skip on macOS due to extension-module linking restrictions.
         # Skip on Linux: main CI runs full cargo test on Linux; running it

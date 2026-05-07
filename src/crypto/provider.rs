@@ -106,12 +106,18 @@ pub trait SymmetricCipher: Send + Sync {
 /// historical signatures). Use [`Signer`] for generation — that path
 /// rejects SHA-1 under FIPS.
 pub trait SignatureVerifier: Send + Sync {
-    /// Verify an RSA-PKCS#1-v1.5 signature over a pre-computed digest.
+    /// Verify an RSA-PKCS#1-v1.5 signature over the raw *message* bytes.
+    ///
+    /// The implementation hashes `message` with `hash` internally — the
+    /// same convention as `verify_rsa_pss` and `verify_ecdsa`. Passing
+    /// the message (rather than a pre-computed digest) allows providers
+    /// that only expose a message-level API (e.g., aws-lc-rs 1.x) to
+    /// implement this without a lower-level primitive.
     fn verify_rsa_pkcs1v15(
         &self,
         pubkey: &RsaPublicKey<'_>,
         hash: HashAlgorithm,
-        digest: &[u8],
+        message: &[u8],
         signature: &[u8],
     ) -> Result<()>;
 
