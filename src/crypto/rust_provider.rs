@@ -46,7 +46,7 @@ impl CryptoProvider for RustCryptoProvider {
     }
 
     fn is_legacy_allowed(&self) -> bool {
-        true
+        cfg!(feature = "legacy-crypto")
     }
 
     fn hasher(&self, algo: HashAlgorithm) -> Result<Box<dyn Hasher>> {
@@ -629,7 +629,10 @@ mod tests {
     fn name_and_legacy_policy() {
         let p = provider();
         assert_eq!(p.name(), "rust-crypto");
+        #[cfg(feature = "legacy-crypto")]
         assert!(p.is_legacy_allowed());
+        #[cfg(not(feature = "legacy-crypto"))]
+        assert!(!p.is_legacy_allowed());
     }
 
     // --- Hash vectors (RFCs / NIST FIPS 180-4) ---

@@ -111,7 +111,7 @@ jobs:
     name: Python wheel (${{ matrix.label }})
     needs: [validate]
     runs-on: ${{ matrix.runs-on }}
-    timeout-minutes: 60
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -294,7 +294,7 @@ jobs:
     name: npm prebuild (${{ matrix.label }})
     needs: [validate]
     runs-on: ${{ matrix.runs-on }}
-    timeout-minutes: 60
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -470,7 +470,7 @@ jobs:
     name: NuGet runtime ${{ matrix.label }}
     needs: [validate]
     runs-on: ${{ matrix.runs-on }}
-    timeout-minutes: 60
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -626,7 +626,7 @@ jobs:
     name: Go static lib (${{ matrix.label }})
     needs: [validate]
     runs-on: ${{ matrix.runs-on }}
-    timeout-minutes: 60
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:

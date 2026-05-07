@@ -89,8 +89,11 @@ mod tests {
     #[test]
     fn lazy_default_is_rust_crypto() {
         let p = active();
-        assert!(p.is_legacy_allowed());
         assert_eq!(p.name(), "rust-crypto");
+        #[cfg(feature = "legacy-crypto")]
+        assert!(p.is_legacy_allowed());
+        #[cfg(not(feature = "legacy-crypto"))]
+        assert!(!p.is_legacy_allowed());
         // Sanity: MD5 hasher works under default provider (when legacy-crypto is on).
         #[cfg(feature = "legacy-crypto")]
         {

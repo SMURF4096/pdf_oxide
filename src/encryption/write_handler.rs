@@ -64,6 +64,18 @@ impl EncryptionWriteHandler {
     /// This is useful when the key has already been derived during
     /// EncryptDict construction.
     pub fn from_key(encryption_key: Vec<u8>, algorithm: Algorithm, encrypt_metadata: bool) -> Self {
+        #[cfg(not(feature = "legacy-crypto"))]
+        {
+            let (_, revision) = Self::get_version_revision(algorithm);
+            if revision < 5 {
+                panic!(
+                    "EncryptionWriteHandler::from_key: {:?} requires R≤4 key derivation \
+                     (MD5), which is unavailable without the 'legacy-crypto' feature; \
+                     use Algorithm::Aes256",
+                    algorithm
+                );
+            }
+        }
         Self {
             encryption_key,
             algorithm,
@@ -98,11 +110,14 @@ impl EncryptionWriteHandler {
         }
 
         // R<=4 (RC4 or AES-128): derive per-object key via MD5 (Algorithm 1).
-        // Unreachable when legacy-crypto is off — write_handler::new() delegates
-        // to compute_encryption_key which rejects R<=4 without the feature.
+        // Unreachable when legacy-crypto is off — new() rejects R<=4 via
+        // compute_encryption_key, and from_key callers must use R>=5 algorithms.
         #[cfg(not(feature = "legacy-crypto"))]
         {
-            self.encryption_key.clone()
+            unreachable!(
+                "derive_object_key reached R<=4 branch without legacy-crypto; \
+                 use Algorithm::Aes256 or enable the legacy-crypto feature"
+            )
         }
 
         #[cfg(feature = "legacy-crypto")]

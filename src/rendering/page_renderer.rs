@@ -174,7 +174,11 @@ impl PageRenderer {
             .unwrap_or(self.options.dpi as f32 / 72.0);
         let (width, height) = if self.options.scale_override.is_some() {
             // Float scale path: round to avoid off-by-one from exact fractional pixels.
-            ((page_w * scale).round() as u32, (page_h * scale).round() as u32)
+            // Clamp to 1 so extreme aspect ratios never produce a 0-sized pixmap.
+            (
+                ((page_w * scale).round() as u32).max(1),
+                ((page_h * scale).round() as u32).max(1),
+            )
         } else {
             ((page_w * scale).ceil() as u32, (page_h * scale).ceil() as u32)
         };
