@@ -1200,4 +1200,136 @@ mod tests {
         let result = extract_table_from_spans(&table_elem, &spans).unwrap();
         assert_eq!(result.rows[0].cells[0].text, "Hello World");
     }
+
+    /// CJK + fullwidth operator with a gap that *exceeds* the 0.15em threshold must
+    /// still suppress space insertion — this exercises the new CJK-suppression branch
+    /// added in fix #485 (the `test_extract_cell_adjacent_mcid_spans_no_space` test
+    /// above only covers the gap ≤ threshold path, which never reaches this branch).
+    #[test]
+    fn test_extract_cell_cjk_fullwidth_gap_suppresses_space() {
+        use crate::layout::text_block::{Color, FontWeight};
+
+        // Build: TD with three MCIDs: "数" (CJK), "≤" (math op), "量" (CJK)
+        // Place them with a gap of 3.0 pt (> font_size * 0.15 = 1.5 for 10 pt font)
+        // so the gap branch fires, then the CJK suppression should prevent a space.
+        let mut td = StructElem::new(StructType::TD);
+        td.add_child(StructChild::MarkedContentRef { mcid: 10, page: 0 });
+        td.add_child(StructChild::MarkedContentRef { mcid: 11, page: 0 });
+        td.add_child(StructChild::MarkedContentRef { mcid: 12, page: 0 });
+        let mut tr = StructElem::new(StructType::TR);
+        tr.add_child(StructChild::StructElem(Box::new(td)));
+        let mut table_elem = StructElem::new(StructType::Table);
+        table_elem.add_child(StructChild::StructElem(Box::new(tr)));
+
+        let base = crate::layout::TextSpan {
+            artifact_type: None,
+            text: String::new(),
+            bbox: Rect::new(0.0, 100.0, 0.0, 10.0),
+            font_name: "Test".to_string(),
+            font_size: 10.0,
+            font_weight: FontWeight::Normal,
+            is_italic: false,
+            is_monospace: false,
+            color: Color::black(),
+            mcid: None,
+            sequence: 0,
+            split_boundary_before: false,
+            offset_semantic: false,
+            char_spacing: 0.0,
+            word_spacing: 0.0,
+            horizontal_scaling: 1.0,
+            primary_detected: false,
+            char_widths: vec![],
+        };
+        // "数" ends at x=10+10=20; "≤" starts at x=23 → gap=3.0 > 1.5 → gap branch fires
+        // CJK("数")→math_op("≤") with at least one CJK side → suppress space
+        // "≤" ends at x=23+10=33; "量" starts at x=36 → gap=3.0 → suppress space
+        let spans = vec![
+            crate::layout::TextSpan {
+                text: "数".into(),
+                bbox: Rect::new(10.0, 100.0, 10.0, 10.0),
+                mcid: Some(10),
+                ..base.clone()
+            },
+            crate::layout::TextSpan {
+                text: "≤".into(),
+                bbox: Rect::new(23.0, 100.0, 10.0, 10.0),
+                mcid: Some(11),
+                ..base.clone()
+            },
+            crate::layout::TextSpan {
+                text: "量".into(),
+                bbox: Rect::new(36.0, 100.0, 10.0, 10.0),
+                mcid: Some(12),
+                ..base.clone()
+            },
+        ];
+
+        let result = extract_table_from_spans(&table_elem, &spans).unwrap();
+        assert_eq!(
+            result.rows[0].cells[0].text, "数≤量",
+            "CJK + math-op + CJK with gap > 0.15em should not have spaces inserted: \
+             got '{}'",
+            result.rows[0].cells[0].text
+        );
+    }
+
+    /// Counterpart: Latin + Latin with a gap exceeding the threshold MUST insert a space.
+    /// This guards that the CJK-suppression branch does not affect non-CJK pairs.
+    #[test]
+    fn test_extract_cell_latin_gap_inserts_space() {
+        use crate::layout::text_block::{Color, FontWeight};
+
+        let mut td = StructElem::new(StructType::TD);
+        td.add_child(StructChild::MarkedContentRef { mcid: 20, page: 0 });
+        td.add_child(StructChild::MarkedContentRef { mcid: 21, page: 0 });
+        let mut tr = StructElem::new(StructType::TR);
+        tr.add_child(StructChild::StructElem(Box::new(td)));
+        let mut table_elem = StructElem::new(StructType::Table);
+        table_elem.add_child(StructChild::StructElem(Box::new(tr)));
+
+        let base = crate::layout::TextSpan {
+            artifact_type: None,
+            text: String::new(),
+            bbox: Rect::new(0.0, 100.0, 0.0, 10.0),
+            font_name: "Test".to_string(),
+            font_size: 10.0,
+            font_weight: FontWeight::Normal,
+            is_italic: false,
+            is_monospace: false,
+            color: Color::black(),
+            mcid: None,
+            sequence: 0,
+            split_boundary_before: false,
+            offset_semantic: false,
+            char_spacing: 0.0,
+            word_spacing: 0.0,
+            horizontal_scaling: 1.0,
+            primary_detected: false,
+            char_widths: vec![],
+        };
+        // "Hello" ends at 50; "world" starts at 53 → gap=3.0 > 1.5 → space inserted
+        // Neither side is CJK, so the CJK suppression must NOT fire.
+        let spans = vec![
+            crate::layout::TextSpan {
+                text: "Hello".into(),
+                bbox: Rect::new(0.0, 100.0, 50.0, 10.0),
+                mcid: Some(20),
+                ..base.clone()
+            },
+            crate::layout::TextSpan {
+                text: "world".into(),
+                bbox: Rect::new(53.0, 100.0, 30.0, 10.0),
+                mcid: Some(21),
+                ..base.clone()
+            },
+        ];
+
+        let result = extract_table_from_spans(&table_elem, &spans).unwrap();
+        assert_eq!(
+            result.rows[0].cells[0].text, "Hello world",
+            "Latin→Latin with gap > 0.15em should insert a space: got '{}'",
+            result.rows[0].cells[0].text
+        );
+    }
 }
