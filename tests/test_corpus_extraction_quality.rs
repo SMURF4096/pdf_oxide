@@ -464,3 +464,80 @@ fn quality_gate_nougat_040_html() {
 fn quality_gate_nougat_018_html() {
     check_html("nougat_018 (html)", "/tmp/nougat_018.pdf", "/tmp/gt_nougat_018.txt", 0.95);
 }
+
+// ---------------------------------------------------------------------------
+// #486 — to_markdown quality gate for line-less sailing-score table.
+//
+// nougat_018.pdf is a sailing regatta results document.  The table has no
+// ruling lines, so the old code returned no tables and the converter fell
+// back to flat paragraph rendering (Jaccard ≈ 0.64).  With the text-only
+// spatial fallback enabled for converter paths (to_markdown, to_html), the
+// table is now detected spatially and rendered as a proper markdown table.
+//
+// Source: https://github.com/kreuzberg-dev/kreuzberg/blob/main/test_documents/pdf/nougat_018.pdf
+// GT:     https://github.com/kreuzberg-dev/kreuzberg/blob/main/test_documents/expected_output/nougat_018.txt
+// Achieved ≥ 0.90 after fix (threshold = 0.90).
+// ---------------------------------------------------------------------------
+
+/// Extract all pages of a PDF as Markdown and concatenate into a single string.
+/// Returns None when the PDF file is not present (test skips).
+fn extract_all_markdown(pdf_path: &str) -> Option<String> {
+    let bytes = std::fs::read(pdf_path).ok()?;
+    let doc = PdfDocument::from_bytes(bytes).ok()?;
+    let _ = doc.authenticate(b"");
+    let options = ConversionOptions::default();
+    let mut md = String::new();
+    for i in 0..doc.page_count().unwrap_or(0) {
+        if let Ok(t) = doc.to_markdown(i, &options) {
+            md.push_str(&t);
+            md.push('\n');
+        }
+    }
+    Some(md)
+}
+
+fn check_markdown(label: &str, pdf: &str, gt: &str, threshold: f32) {
+    let md = match extract_all_markdown(pdf) {
+        Some(m) => m,
+        None => {
+            eprintln!("SKIP {label}: {pdf} not found");
+            return;
+        },
+    };
+    let gt_text = match std::fs::read_to_string(gt) {
+        Ok(t) => t,
+        Err(_) => {
+            eprintln!("SKIP {label}: ground truth {gt} not found");
+            return;
+        },
+    };
+    // Strip markdown table syntax (|, --, leading/trailing pipes) before Jaccard
+    // so the score reflects actual text tokens rather than formatting characters.
+    let plain: String = md
+        .lines()
+        .map(|line| {
+            // Replace pipe-separated table cells with spaces
+            line.replace('|', " ")
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let j = jaccard(&plain, &gt_text);
+    assert!(
+        j >= threshold,
+        "{label}: Jaccard {j:.3} < threshold {threshold:.2}\n\
+         (PDF: {pdf}, GT: {gt})\n\
+         This is a quality regression — to_markdown score dropped."
+    );
+    eprintln!("PASS {label:<28} j={j:.3}  thr={threshold:.2}");
+}
+
+#[test]
+#[ignore = "requires /tmp/nougat_018.pdf and /tmp/gt_nougat_018.txt"]
+fn quality_gate_nougat_018_markdown() {
+    check_markdown(
+        "nougat_018 (markdown)",
+        "/tmp/nougat_018.pdf",
+        "/tmp/gt_nougat_018.txt",
+        0.90,
+    );
+}

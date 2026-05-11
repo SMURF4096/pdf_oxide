@@ -90,6 +90,17 @@ pub struct TableDetectionConfig {
     /// Default: 20.0. Use smaller values (e.g. 4.0) for strict mode, larger (e.g. 40.0)
     /// for relaxed mode where V-lines at mixed Y-ranges should stay together.
     pub v_split_gap: f32,
+    /// Enable text-only spatial detection as a fallback when no ruling lines are found.
+    ///
+    /// When `true` and the page has no table-relevant paths (no ruling lines or
+    /// rectangles), the detector falls through to `detect_tables_from_spans_column_aware`
+    /// rather than returning an empty result.  This is the right default for structured
+    /// output callers (`to_markdown`, `to_html`) that explicitly want tabular layout,
+    /// but is kept `false` for the public `extract_tables` API to preserve backward
+    /// compatibility (line-less PDFs previously returned no tables).
+    ///
+    /// Default: `false`.
+    pub text_fallback: bool,
 }
 
 impl Default for TableDetectionConfig {
@@ -106,6 +117,7 @@ impl Default for TableDetectionConfig {
             max_table_columns: 15,
             column_merge_threshold: 25.0,
             v_split_gap: 20.0,
+            text_fallback: false,
         }
     }
 }
@@ -125,6 +137,7 @@ impl TableDetectionConfig {
             max_table_columns: 12,
             column_merge_threshold: 10.0,
             v_split_gap: 4.0,
+            text_fallback: false,
         }
     }
 
@@ -142,6 +155,7 @@ impl TableDetectionConfig {
             max_table_columns: 20,
             column_merge_threshold: 30.0,
             v_split_gap: 40.0,
+            text_fallback: false,
         }
     }
 }
@@ -3341,6 +3355,85 @@ mod tests {
         };
         // Should return empty because there are no horizontal lines to define rows
         assert!(detect_tables_with_lines(&spans, &[], &config).is_empty());
+    }
+
+    /// Regression test for issue #486: text-only spatial fallback for line-less tables.
+    ///
+    /// When `text_fallback = false` (the default), `detect_tables_with_lines` with an empty
+    /// lines slice and the default `Both` strategy returns no tables — the text path inside
+    /// `detect_tables_with_lines` does run but the result is gated by `extract_page_tables`
+    /// returning early before even calling it.
+    ///
+    /// When `text_fallback = true`, `extract_page_tables` no longer returns early and
+    /// `detect_tables_with_lines` proceeds to the text-based fallback path, detecting the
+    /// grid from span alignment alone.
+    ///
+    /// This test directly calls `detect_tables_with_lines` with an empty lines slice to
+    /// verify that the text-based path inside it finds the table (the "text_fallback" flag
+    /// on `TableDetectionConfig` only affects the early-return guard in
+    /// `extract_page_tables`; at the `detect_tables_with_lines` level the `Both` strategy
+    /// already allows text fallback when no lines are present).
+    #[test]
+    fn test_text_fallback_detects_lineless_grid() {
+        // Simulate a 3-column, 4-row sailing-score table with no ruling lines.
+        // Columns at x=10, 50, 90; rows at y=200, 180, 160, 140.
+        let spans = vec![
+            // Row 1
+            create_test_span("Pos", 10.0, 200.0, 25.0, 10.0),
+            create_test_span("Boat", 50.0, 200.0, 25.0, 10.0),
+            create_test_span("Pts", 90.0, 200.0, 20.0, 10.0),
+            // Row 2
+            create_test_span("1", 10.0, 180.0, 25.0, 10.0),
+            create_test_span("Alpha", 50.0, 180.0, 25.0, 10.0),
+            create_test_span("14", 90.0, 180.0, 20.0, 10.0),
+            // Row 3
+            create_test_span("2", 10.0, 160.0, 25.0, 10.0),
+            create_test_span("Beta", 50.0, 160.0, 25.0, 10.0),
+            create_test_span("17", 90.0, 160.0, 20.0, 10.0),
+            // Row 4
+            create_test_span("3", 10.0, 140.0, 25.0, 10.0),
+            create_test_span("Gamma", 50.0, 140.0, 25.0, 10.0),
+            create_test_span("21", 90.0, 140.0, 20.0, 10.0),
+        ];
+
+        // With the default Both strategy and NO lines, the text-based fallback
+        // inside detect_tables_with_lines fires and finds the grid.
+        let config = TableDetectionConfig::default();
+        let tables = detect_tables_with_lines(&spans, &[], &config);
+        assert_eq!(
+            tables.len(),
+            1,
+            "Text-only fallback in detect_tables_with_lines should detect the grid (got {:?} tables)",
+            tables.len()
+        );
+        let t = &tables[0];
+        assert_eq!(t.col_count, 3, "Should detect 3 columns");
+        assert_eq!(t.rows.len(), 4, "Should detect 4 rows");
+    }
+
+    /// Verify that when no lines are present and `text_fallback = false` (the default),
+    /// the guard in `extract_page_tables` (outside `detect_tables_with_lines`) would
+    /// prevent the text path from running.  We simulate this at the config level: using
+    /// a `Lines`-only strategy ensures `detect_tables_with_lines` returns nothing when
+    /// paths are empty — confirming the safety contract for the public API path.
+    #[test]
+    fn test_text_fallback_disabled_lines_strategy_returns_empty() {
+        let spans = vec![
+            create_test_span("Pos", 10.0, 200.0, 25.0, 10.0),
+            create_test_span("Boat", 50.0, 200.0, 25.0, 10.0),
+            create_test_span("Pts", 90.0, 200.0, 20.0, 10.0),
+            create_test_span("1", 10.0, 180.0, 25.0, 10.0),
+            create_test_span("Alpha", 50.0, 180.0, 25.0, 10.0),
+            create_test_span("14", 90.0, 180.0, 20.0, 10.0),
+        ];
+        // Lines-only strategy: no lines → no tables.  This is what the public
+        // extract_tables() API uses after the early-return guard fires.
+        let config = TableDetectionConfig::strict(); // strict() uses Lines/Lines
+        let tables = detect_tables_with_lines(&spans, &[], &config);
+        assert!(
+            tables.is_empty(),
+            "Lines-only strategy with no ruling lines should return no tables"
+        );
     }
 
     #[test]

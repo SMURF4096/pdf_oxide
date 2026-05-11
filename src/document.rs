@@ -4224,7 +4224,10 @@ impl PdfDocument {
 
         // Table detection uses base spans only (no widget spans).
         let tables = if options.extract_tables {
-            self.extract_page_tables(page_index, &base_spans, options)
+            // text_fallback=false: extract_text preserves the pre-v0.3.47 behaviour
+            // where line-less pages return no tables.  Only the structured-output
+            // converters (to_markdown, to_html) opt in to text-only spatial fallback.
+            self.extract_page_tables(page_index, &base_spans, options, false)
         } else {
             Vec::new()
         };
@@ -10389,6 +10392,7 @@ impl PdfDocument {
         page_index: usize,
         spans: &[TextSpan],
         options: &crate::converters::ConversionOptions,
+        text_fallback: bool,
     ) -> Vec<crate::structure::Table> {
         // Strategy 1: Structure tree (tagged PDFs)
         let struct_tree_opt = {
@@ -10465,7 +10469,14 @@ impl PdfDocument {
         }
 
         // Strategy 2: Hybrid spatial detection (v0.3.14)
-        let config = options.table_detection_config.clone().unwrap_or_default();
+        let mut config = options.table_detection_config.clone().unwrap_or_default();
+        // Converter callers (to_markdown, to_html) opt in to text-only spatial
+        // fallback so that line-less tables (e.g. sailing-score grids) are still
+        // detected when no ruling lines are present.  The public extract_tables()
+        // API keeps text_fallback = false for backward compatibility.
+        if text_fallback {
+            config.text_fallback = true;
+        }
 
         // Extract vector paths (lines/rects) for visual detection
         let paths = self.extract_paths(page_index).unwrap_or_default();
@@ -10488,8 +10499,14 @@ impl PdfDocument {
                 (config.horizontal_strategy, config.vertical_strategy),
                 (TableStrategy::Text, TableStrategy::Text)
             );
-            if !is_text_only {
+            if !is_text_only && !config.text_fallback {
                 return Vec::new();
+            }
+            if !is_text_only && config.text_fallback {
+                log::debug!(
+                    "No ruling lines on page {} — using text-only spatial fallback (issue #486)",
+                    page_index
+                );
             }
         }
         let paths = table_paths;
@@ -10541,7 +10558,7 @@ impl PdfDocument {
         // value pairs that align horizontally, form fillable boxes drawn
         // with thin lines). Drop tables that don't look like real grids.
         let raw_count = raw_tables.len();
-        let tables: Vec<crate::structure::Table> = raw_tables
+        let mut tables: Vec<crate::structure::Table> = raw_tables
             .into_iter()
             .filter(|t| t.is_real_grid())
             .collect();
@@ -10560,6 +10577,105 @@ impl PdfDocument {
                 page_index
             );
         }
+
+        // Text-only spatial fallback for converter paths (to_markdown / to_html — issue #486).
+        //
+        // Wide data tables (e.g. sailing-score grids with 16-18 columns) exceed the default
+        // `max_table_columns: 15` limit and are rejected by the main pipeline.  When the
+        // caller explicitly opted in to text-only detection (text_fallback=true), retry with
+        // a relaxed config that raises the column ceiling and adjusts tolerances so that
+        // genuinely wide data tables are captured.
+        //
+        // Safety guards:
+        // - Only fires when the main pipeline returned no tables (avoids double-counting).
+        // - Only fires when the caller is a converter (text_fallback=true).
+        // - When ruling lines exist, spans are filtered to the line-bounded region to
+        //   prevent page headers/footers from being erroneously included in the table.
+        // - Results must pass is_real_grid() just like main-pipeline tables.
+        if config.text_fallback && tables.is_empty() {
+            use crate::structure::spatial_table_detector::detect_tables_from_spans_column_aware;
+            // Build a relaxed config derived from the caller's config.
+            // We only raise the limits known to block wide data tables (e.g. sailing
+            // score grids with 16-18 columns that exceed the default max_table_columns=15).
+            let relaxed_config = crate::structure::spatial_table_detector::TableDetectionConfig {
+                // Allow up to 25 columns — covers 17-column sailing score tables.
+                max_table_columns: config.max_table_columns.max(25),
+                // Tighter column grouping than the default 15 pt so that nearby
+                // score columns are not merged into each other.
+                column_tolerance: config.column_tolerance.min(10.0),
+                // Looser merge threshold so that columns with slight X scatter
+                // (e.g. centred numeric cells) are aggregated correctly.
+                column_merge_threshold: config.column_merge_threshold.max(30.0),
+                // Inherit all other settings from caller's config.
+                ..config.clone()
+            };
+
+            // When ruling lines are present on the page, restrict text detection to
+            // spans that fall within the VERTICAL-LINE Y bounds.  Vertical lines
+            // define the table's column structure and their Y extent precisely
+            // delineates the table rows, excluding page headers and footers which
+            // sit above/below the table frame.
+            //
+            // Note: we use V-line Y bounds specifically (not total path bbox) because
+            // H-lines in these PDFs often span the full page height (outer frame),
+            // while V-lines are confined to the interior table region.
+            let candidate_spans: Vec<crate::layout::TextSpan>;
+            let fallback_spans: &[crate::layout::TextSpan] = {
+                let v_lines: Vec<_> = paths
+                    .iter()
+                    .filter(|p| {
+                        p.is_vertical_line(2.0)
+                    })
+                    .collect();
+                if !v_lines.is_empty() {
+                    let vline_y_min =
+                        v_lines.iter().map(|p| p.bbox.y).fold(f32::INFINITY, f32::min);
+                    let vline_y_max = v_lines
+                        .iter()
+                        .map(|p| p.bbox.y + p.bbox.height)
+                        .fold(f32::NEG_INFINITY, f32::max);
+                    // Small margin to include spans whose centres just touch the frame.
+                    const V_MARGIN: f32 = 5.0;
+                    candidate_spans = input_spans
+                        .iter()
+                        .filter(|s| {
+                            let cy = s.bbox.y + s.bbox.height * 0.5;
+                            cy >= vline_y_min - V_MARGIN && cy <= vline_y_max + V_MARGIN
+                        })
+                        .cloned()
+                        .collect();
+                    log::debug!(
+                        "Text fallback (page {}): V-lines Y=[{:.1},{:.1}] — filtered {} spans to {}",
+                        page_index,
+                        vline_y_min,
+                        vline_y_max,
+                        input_spans.len(),
+                        candidate_spans.len()
+                    );
+                    &candidate_spans
+                } else {
+                    input_spans
+                }
+            };
+
+            let text_candidates =
+                detect_tables_from_spans_column_aware(fallback_spans, &relaxed_config);
+            let pre_filter = text_candidates.len();
+            let text_tables: Vec<_> = text_candidates
+                .into_iter()
+                .filter(|t| t.is_real_grid())
+                .collect();
+            if !text_tables.is_empty() {
+                log::debug!(
+                    "Text-only relaxed fallback found {} table(s) on page {} ({} filtered by is_real_grid) — issue #486",
+                    text_tables.len(),
+                    page_index,
+                    pre_filter - text_tables.len(),
+                );
+                tables = text_tables;
+            }
+        }
+
         tables
     }
 
@@ -10609,7 +10725,10 @@ impl PdfDocument {
         let base_spans = self.extract_spans(page_index)?;
 
         let tables = if options.extract_tables {
-            self.extract_page_tables(page_index, &base_spans, options)
+            // text_fallback=true: to_markdown explicitly targets structured output,
+            // so we enable the text-only spatial fallback for line-less tables
+            // (e.g. sailing-score grids with no ruling lines — issue #486).
+            self.extract_page_tables(page_index, &base_spans, options, true)
         } else {
             Vec::new()
         };
@@ -11043,7 +11162,10 @@ impl PdfDocument {
         let base_spans = self.extract_spans(page_index)?;
 
         let tables = if options.extract_tables {
-            self.extract_page_tables(page_index, &base_spans, options)
+            // text_fallback=true: to_html explicitly targets structured output,
+            // so we enable the text-only spatial fallback for line-less tables
+            // (e.g. sailing-score grids with no ruling lines — issue #486).
+            self.extract_page_tables(page_index, &base_spans, options, true)
         } else {
             Vec::new()
         };
@@ -11197,7 +11319,9 @@ impl PdfDocument {
 
         // Step 2: Extract tables if enabled
         let tables = if options.extract_tables {
-            self.extract_page_tables(page_index, &spans, options)
+            // text_fallback=false: to_plain_text uses the conservative pre-v0.3.47
+            // behaviour to avoid false-positive table detection in key-value layouts.
+            self.extract_page_tables(page_index, &spans, options, false)
         } else {
             Vec::new()
         };
