@@ -2435,7 +2435,17 @@ impl FontInfo {
         // Fix B (control-character filter): applied on CMap hits.
         if let Some(lazy_cmap) = &self.to_unicode {
             if let Some(cmap) = lazy_cmap.get() {
-                if let Some(unicode) = cmap.get(&char_code) {
+                let raw_unicode = cmap.get(&char_code);
+
+                // For Identity-encoded fonts, a U+FFFD result coming from a notdefrange
+                // entry is NOT a definitive mapping — the CID-as-Unicode path gives the
+                // correct character (CID == Unicode codepoint).  Treat it as a CMap miss
+                // so we fall through to the Identity fallback below.
+                let effective_hit = raw_unicode.filter(|u| {
+                    *u != "\u{FFFD}" || !matches!(self.encoding, Encoding::Identity)
+                });
+
+                if let Some(unicode) = effective_hit {
                     // Fix B: filter bare C0 control characters (U+0000–U+001F except
                     // tab/LF/CR which are legitimate whitespace in extracted text).
                     // These are never valid visible text and typically indicate a
@@ -2462,17 +2472,26 @@ impl FontInfo {
                         return Some(unicode.clone());
                     }
                 } else {
-                    log::debug!(
-                        "ToUnicode CMap MISS: font='{}' subtype='{}' code=0x{:04X} (cmap has {} entries)",
-                        self.base_font, self.subtype, char_code, cmap.len()
-                    );
+                    if raw_unicode.is_some() {
+                        log::debug!(
+                            "Identity font '{}': notdefrange U+FFFD treated as miss for code 0x{:04X} — falling through to CID-as-Unicode",
+                            self.base_font, char_code
+                        );
+                    } else {
+                        log::debug!(
+                            "ToUnicode CMap MISS: font='{}' subtype='{}' code=0x{:04X} (cmap has {} entries)",
+                            self.base_font, self.subtype, char_code, cmap.len()
+                        );
+                    }
 
                     // Fix A (§9.10.2): for composite (Type0) fonts a present ToUnicode
                     // CMap is the authoritative mapping.  A miss means the glyph has no
                     // Unicode equivalent — do NOT fall through to the predefined-CMap
                     // path which would produce plausible-looking but wrong CJK chars.
-                    // This applies regardless of encoding name or CIDSystemInfo ordering.
-                    if self.subtype == "Type0" {
+                    // Exception: Identity-encoded fonts map CID directly to Unicode, so
+                    // a CMap miss still has a valid fallback (CID == Unicode codepoint).
+                    // Blocking them here would suppress spaces and Latin characters.
+                    if self.subtype == "Type0" && !matches!(self.encoding, Encoding::Identity) {
                         log::debug!(
                             "Type0 font '{}': ToUnicode present but code 0x{:04X} not covered → U+FFFD (no Priority-3 fallback per §9.10.2)",
                             self.base_font, char_code
