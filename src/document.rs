@@ -4701,19 +4701,14 @@ impl PdfDocument {
         let final_text = Self::normalize_arabic_presentation_forms(&final_text);
 
         // Apply whitespace cleanup
-        let mut cleaned_text = crate::converters::whitespace::cleanup_plain_text(&final_text);
+        let cleaned_text = crate::converters::whitespace::cleanup_plain_text(&final_text);
 
-        // Tagged PDFs use their own structure-tree traversal path and
-        // still need the historical end-of-page table block. Untagged
-        // PDFs now inline tables with the flow spans above, so the
-        // end-of-page dump is only run when we came through the
-        // structure-tree branch.
-        if cached_tree.is_some() && !tables.is_empty() {
-            for table in tables {
-                cleaned_text.push_str("\n\n");
-                cleaned_text.push_str(&table.render_text());
-            }
-        }
+        // For tagged PDFs, the structure-tree traversal at line 4306 already
+        // captures all table-cell content via MCIDs. Appending tables here
+        // would double-emit that content (structure-tree text + table render),
+        // dropping precision. For untagged PDFs, tables are inlined via
+        // pending_tables above, so this block is never reached (cached_tree
+        // is None → condition would be false). The block is removed.
 
         // #317 UTF-8 mojibake repair: a run of Latin-1 Supplement chars
         // whose raw bytes form valid UTF-8 decoding to non-Latin-1 code
@@ -7810,6 +7805,13 @@ impl PdfDocument {
             std::collections::HashMap::new();
         let mut first_seen_any: std::collections::HashMap<String, usize> =
             std::collections::HashMap::new();
+        // Track distinct literal texts per signature.  A signature whose digits
+        // are stable across every page (i.e. the literal text never changes) is
+        // NOT a page-number-containing header — it is substantive content that
+        // happens to repeat.  Only suppress signatures where the literal text
+        // varies (at least two distinct forms) meaning digits change per page.
+        let mut literal_variants: std::collections::HashMap<String, std::collections::HashSet<String>> =
+            std::collections::HashMap::new();
         for pi in 0..page_count {
             let spans = match self.extract_spans_raw(pi) {
                 Ok(s) => s,
@@ -7836,7 +7838,8 @@ impl PdfDocument {
             // Collect per-page unique signatures from the chrome bands.
             // Runs even when there's no body content so `first_seen_any`
             // registers the cover page even if it's all-chrome.
-            let mut seen_this_page = std::collections::HashSet::new();
+            let mut seen_this_page: std::collections::HashMap<String, String> =
+                std::collections::HashMap::new();
             for s in spans.iter() {
                 let trimmed = s.text.trim();
                 if trimmed.is_empty() {
@@ -7851,17 +7854,25 @@ impl PdfDocument {
                 if sig.is_empty() || sig.chars().count() < 2 {
                     continue;
                 }
-                seen_this_page.insert(sig);
+                seen_this_page.entry(sig).or_insert_with(|| trimmed.to_string());
             }
             // Track first-seen across ALL pages (even body-content-skipped)
-            for sig in &seen_this_page {
+            for sig in seen_this_page.keys() {
                 first_seen_any.entry(sig.clone()).or_insert(pi);
+            }
+            // Track literal variants — if the literal text for a signature
+            // differs across pages, the digits are varying (page numbers).
+            for (sig, literal) in &seen_this_page {
+                literal_variants
+                    .entry(sig.clone())
+                    .or_default()
+                    .insert(literal.clone());
             }
             if !has_body_content {
                 continue;
             }
             // Count only pages with body content for the recurrence threshold
-            for sig in seen_this_page {
+            for sig in seen_this_page.into_keys() {
                 let entry = occurrences.entry(sig).or_insert((0, pi));
                 entry.0 += 1;
                 if pi < entry.1 {
@@ -7872,7 +7883,18 @@ impl PdfDocument {
         let threshold = (page_count as f32 * 0.5).ceil() as usize;
         let signatures: std::collections::HashMap<String, usize> = occurrences
             .into_iter()
-            .filter(|(_, (count, _))| *count >= threshold.max(2))
+            .filter(|(sig, (count, _))| {
+                if *count < threshold.max(2) {
+                    return false;
+                }
+                // Only suppress if the literal text varied across pages — i.e., the
+                // digits changed, indicating a page number or date that updates per page.
+                // Signatures where all occurrences have the same literal text are
+                // substantive content (facility names, document IDs, etc.) that pdftotext
+                // and pdfium both preserve; suppressing them hurts word-F1 scores.
+                let variants = literal_variants.get(sig).map(|s| s.len()).unwrap_or(0);
+                variants >= 2
+            })
             .map(|(sig, _)| {
                 // Use the earliest page the signature appeared on — which
                 // may be a body-content-skipped cover page that `occurrences`
