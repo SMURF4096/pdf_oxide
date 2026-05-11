@@ -1781,6 +1781,26 @@ impl PdfDocument {
         }
     }
 
+    /// Resolve a single-level indirect reference (PDF spec §7.3.10).
+    ///
+    /// If `obj` is `Object::Reference(...)`, loads and returns the target object.
+    /// For any other object type, returns a clone unchanged.  This is the
+    /// canonical way to handle "any value may be a direct or indirect reference"
+    /// throughout the parser.
+    fn resolve_obj_ref(&self, obj: &Object) -> Object {
+        if let Some(obj_ref) = obj.as_reference() {
+            match self.load_object(obj_ref) {
+                Ok(resolved) => resolved,
+                Err(e) => {
+                    log::warn!("Failed to resolve indirect reference {:?}: {}", obj_ref, e);
+                    obj.clone()
+                },
+            }
+        } else {
+            obj.clone()
+        }
+    }
+
     /// Peek at an XObject's /Subtype without loading the full object.
     /// Returns true if the XObject is a Form XObject, false if Image or unknown.
     /// For compressed objects or on any error, returns true (conservative — will load fully).
@@ -3106,9 +3126,14 @@ impl PdfDocument {
             .as_dict()
             .ok_or_else(|| Error::InvalidPdf("Page is not a dictionary".to_string()))?;
 
-        let media_box = page_dict
+        // Resolve indirect reference if present — PDF spec §7.3.10 permits any value
+        // to be an indirect reference, e.g. `/MediaBox 174 0 R` where 174 0 R is `[0 0 612 792]`.
+        let media_box_obj_raw = page_dict
             .get("MediaBox")
-            .and_then(|o| o.as_array())
+            .ok_or_else(|| Error::InvalidPdf("MediaBox not found or not an array".to_string()))?;
+        let media_box_obj = self.resolve_obj_ref(media_box_obj_raw);
+        let media_box = media_box_obj
+            .as_array()
             .ok_or_else(|| Error::InvalidPdf("MediaBox not found or not an array".to_string()))?;
 
         if media_box.len() < 4 {
@@ -9905,10 +9930,13 @@ impl PdfDocument {
             }
         }
 
-        // Get MediaBox (required, may be inherited)
+        // Get MediaBox (required, may be inherited).
+        // PDF spec §7.3.10: any value may be a direct or indirect reference.
         let media_box = page_dict
             .get("MediaBox")
-            .and_then(|o| o.as_array())
+            .map(|o| self.resolve_obj_ref(o))
+            .as_ref()
+            .and_then(|o| o.as_array().map(|a| a.to_owned()))
             .map(|arr| {
                 let x0 = arr.first().and_then(obj_to_f32).unwrap_or(0.0);
                 let y0 = arr.get(1).and_then(obj_to_f32).unwrap_or(0.0);
@@ -9920,10 +9948,13 @@ impl PdfDocument {
                 0.0, 0.0, 612.0, 792.0, // Letter size default
             ));
 
-        // Get CropBox (optional, falls back to MediaBox)
+        // Get CropBox (optional, falls back to MediaBox).
+        // PDF spec §7.3.10: any value may be a direct or indirect reference.
         let crop_box = page_dict
             .get("CropBox")
-            .and_then(|o| o.as_array())
+            .map(|o| self.resolve_obj_ref(o))
+            .as_ref()
+            .and_then(|o| o.as_array().map(|a| a.to_owned()))
             .map(|arr| {
                 let x0 = arr.first().and_then(obj_to_f32).unwrap_or(0.0);
                 let y0 = arr.get(1).and_then(obj_to_f32).unwrap_or(0.0);
@@ -9932,9 +9963,12 @@ impl PdfDocument {
                 crate::geometry::Rect::from_points(x0, y0, x1, y1)
             });
 
-        // Get rotation (optional, default 0)
+        // Get rotation (optional, default 0).
+        // PDF spec §7.3.10: Rotate may also be an indirect reference.
         let rotation = page_dict
             .get("Rotate")
+            .map(|o| self.resolve_obj_ref(o))
+            .as_ref()
             .and_then(|o| match o {
                 Object::Integer(i) => Some(*i as i32),
                 _ => None,
