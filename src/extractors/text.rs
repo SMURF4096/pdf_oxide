@@ -1975,8 +1975,14 @@ pub struct TextExtractor<'doc> {
     resources: Option<Object>,
     /// Reference to the document (for loading XObjects)
     document: Option<&'doc crate::document::PdfDocument>,
-    /// Set of processed XObject references to avoid duplicates
-    processed_xobjects: HashSet<ObjectRef>,
+    /// Set of processed XObject references to avoid duplicates.
+    /// Key is `(ObjectRef, ctm_key)` where `ctm_key` is the CTM at the time of
+    /// the `Do` operator call, encoded as 6 millipoint-rounded i64 values.
+    /// Using the CTM as part of the key allows the same Form XObject to be
+    /// processed multiple times when invoked with different transformation
+    /// matrices (e.g., the same XObject stamped at different positions on a page),
+    /// while still preventing infinite recursion (same ref + same CTM).
+    processed_xobjects: HashSet<(ObjectRef, [i64; 6])>,
     /// Cached XObject name → ObjectRef mapping for current resources context.
     /// Avoids expensive repeated resolution of the resources/XObject dict chain.
     cached_xobject_refs: HashMap<String, Option<ObjectRef>>,
@@ -4930,13 +4936,38 @@ impl<'doc> TextExtractor<'doc> {
             None => return Ok(()),
         };
 
-        // Skip already-processed XObjects (permanent set — each unique XObject
-        // is processed at most once per page for text extraction)
-        if self.processed_xobjects.contains(&xobject_ref) {
+        // Build a CTM-aware deduplication key.
+        //
+        // Using just `xobject_ref` as the key incorrectly blocked re-processing
+        // the same Form XObject when it was invoked a second time on the same page
+        // with a different CTM (e.g., same header/footer XObject stamped at two
+        // different Y positions, or the nougat_005 pattern where each page's
+        // content stream sets a different `cm` translation before calling `Do`).
+        //
+        // The CTM is encoded as 6 millipoint-rounded i64 values so it can be
+        // stored in a HashSet without floating-point equality hazards.
+        // Infinite-recursion cycles are still prevented because a truly recursive
+        // call re-enters with the *same* XObject ref AND the same CTM at that
+        // nesting depth; the depth limiter (MAX_XOBJECT_DEPTH) provides a
+        // second backstop.
+        let current_ctm = self.state_stack.current().ctm;
+        let ctm_key = [
+            (current_ctm.a * 1000.0) as i64,
+            (current_ctm.b * 1000.0) as i64,
+            (current_ctm.c * 1000.0) as i64,
+            (current_ctm.d * 1000.0) as i64,
+            (current_ctm.e * 1000.0) as i64,
+            (current_ctm.f * 1000.0) as i64,
+        ];
+        let xobj_key = (xobject_ref, ctm_key);
+
+        // Skip already-processed (XObject, CTM) pairs — each unique combination
+        // is processed at most once per page for text extraction.
+        if self.processed_xobjects.contains(&xobj_key) {
             return Ok(());
         }
 
-        self.processed_xobjects.insert(xobject_ref);
+        self.processed_xobjects.insert(xobj_key);
 
         // Get document reference for loading objects.
         let doc = match self.document {
@@ -4962,25 +4993,21 @@ impl<'doc> TextExtractor<'doc> {
 
         // Span result cache: reuse extracted spans from self-contained Form XObjects.
         //
-        // Spans are stored in CTM-transformed page coordinates, so the cache is
-        // only correct when the caller's CTM matches the one at first extraction.
-        // Issue B1 (nougat_005.pdf): a single Form XObject carries every page's
-        // content, and each page's content stream applies a different CTM
-        // translation to position its viewport into that XObject. Reusing the
-        // cached spans returned page 0's coordinates on every page, so every
-        // page emitted identical cross-page text.
+        // The cache key is (ObjectRef, ctm_key) where ctm_key encodes the caller's
+        // CTM as 6 millipoint-rounded i64 values. This allows the same Form XObject
+        // to have independent cached results for each unique CTM it is painted with,
+        // fixing the issue where cross-page reuse of a single Form XObject with
+        // different per-page CTM translations returned stale page-0 coordinates on
+        // all subsequent pages (nougat_005.pdf, Issue B1).
         //
-        // Safe path: only hit the cache when the current CTM is identity. That
-        // covers the common case (reusable headers/footers stamped at the same
-        // origin) without mixing coordinate systems. For non-identity CTMs we
-        // fall through to the fresh extraction below, which applies the caller's
-        // CTM to each span.
-        if self.extract_spans && self.state_stack.current().ctm.is_identity() {
+        // `ctm_key` was already computed above for the `processed_xobjects` guard.
+        let spans_cache_key = (xobject_ref, ctm_key);
+        if self.extract_spans {
             let cached_spans = {
                 doc.xobject_spans_cache
                     .lock()
                     .unwrap()
-                    .get(&xobject_ref)
+                    .get(&spans_cache_key)
                     .cloned()
             };
             if let Some(cached_spans) = cached_spans {
@@ -5193,21 +5220,18 @@ impl<'doc> TextExtractor<'doc> {
                     );
                 }
 
-                // Cache span results for self-contained Form XObjects. Only
-                // safe when the XObject has its own /Resources (font context
-                // is page-independent) AND the current CTM is identity —
-                // otherwise the stored spans are in caller-specific page
-                // coordinates and would poison identity-CTM hits on other
-                // pages (see issue B1).
+                // Cache span results for self-contained Form XObjects.
                 //
-                // Note: is_identity() is checked AFTER the XObject's
-                // /Matrix is concatenated, so XObjects with their own
-                // /Matrix never cache even when the caller CTM is identity.
-                // That's conservative-safe at the cost of re-extraction;
-                // storing spans in XObject-local coords would fix this but
-                // the complexity isn't justified by the current benchmark.
-                let save_identity_ctm = self.state_stack.current().ctm.is_identity();
-                if has_own_resources && self.extract_spans && save_identity_ctm {
+                // The cache key `spans_cache_key` already encodes (ObjectRef, ctm_key),
+                // so each unique (XObject, CTM) pair gets its own entry. There is no
+                // longer any need to restrict caching to identity-CTM invocations —
+                // different CTMs produce different cache entries and therefore cannot
+                // pollute each other (this was the root cause of issue B1).
+                //
+                // We still require `has_own_resources` so that font lookups are
+                // self-contained; XObjects that inherit page-level fonts would
+                // produce spans whose glyph mappings depend on caller context.
+                if has_own_resources && self.extract_spans {
                     let new_spans = if self.spans.len() > spans_before {
                         Some(self.spans[spans_before..].to_vec())
                     } else {
@@ -5216,7 +5240,7 @@ impl<'doc> TextExtractor<'doc> {
                     doc.xobject_spans_cache
                         .lock()
                         .unwrap()
-                        .insert(xobject_ref, new_spans);
+                        .insert(spans_cache_key, new_spans);
                 }
 
                 // Restore graphics state (implicit Q per ISO 32000-1 §8.10.1)
