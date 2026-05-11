@@ -442,6 +442,59 @@ impl HtmlOutputConverter {
         Ok(result)
     }
 
+    /// Render the text content of a single table cell as HTML.
+    ///
+    /// When the cell has `spans`, this walks them in order — mirroring the
+    /// `render_table_markdown` path — so that:
+    /// - Adjacent spans with a meaningful horizontal gap get a space between them
+    ///   (prevents "Label$500.00"-style concatenation).
+    /// - Bold spans are wrapped in `<strong>`, italic spans in `<em>`.
+    ///
+    /// When `spans` is empty the function falls back to `cell.text`.
+    fn render_cell_html(cell: &crate::structure::table_extractor::TableCell) -> String {
+        use crate::layout::FontWeight;
+
+        if cell.spans.is_empty() {
+            // Fallback: no span metadata available — use the pre-built text field.
+            return Self::escape_html(cell.text.trim());
+        }
+
+        let mut out = String::new();
+
+        for (i, span) in cell.spans.iter().enumerate() {
+            let is_bold = matches!(
+                span.font_weight,
+                FontWeight::Bold | FontWeight::Black | FontWeight::ExtraBold | FontWeight::SemiBold
+            );
+            let is_italic = span.is_italic;
+
+            // Insert a space when adjacent same-row spans have a meaningful
+            // horizontal gap (mirrors the body-span logic in convert_semantic_mode
+            // and the span-gap logic in render_table_markdown).
+            if i > 0 {
+                let prev = &cell.spans[i - 1];
+                let has_gap = super::has_horizontal_gap(prev, span);
+                let already_has_space =
+                    out.ends_with(' ') || span.text.starts_with(' ');
+                if has_gap && !already_has_space {
+                    out.push(' ');
+                }
+            }
+
+            let escaped = Self::escape_html(&span.text);
+
+            let styled = match (is_bold, is_italic) {
+                (true, true) => format!("<strong><em>{}</em></strong>", escaped),
+                (true, false) => format!("<strong>{}</strong>", escaped),
+                (false, true) => format!("<em>{}</em>", escaped),
+                (false, false) => escaped,
+            };
+            out.push_str(&styled);
+        }
+
+        out
+    }
+
     /// Render a Table as an HTML table string.
     fn render_table_html(table: &Table) -> String {
         if table.rows.is_empty() {
@@ -475,7 +528,7 @@ impl HtmlOutputConverter {
                     if cell.rowspan > 1 {
                         attrs.push_str(&format!(" rowspan=\"{}\"", cell.rowspan));
                     }
-                    let text = Self::escape_html(cell.text.trim());
+                    let text = Self::render_cell_html(cell);
                     html.push_str(&format!("<th{}>{}</th>", attrs, text));
                 }
                 html.push_str("</tr>\n");
@@ -497,7 +550,7 @@ impl HtmlOutputConverter {
                     if cell.rowspan > 1 {
                         attrs.push_str(&format!(" rowspan=\"{}\"", cell.rowspan));
                     }
-                    let text = Self::escape_html(cell.text.trim());
+                    let text = Self::render_cell_html(cell);
                     html.push_str(&format!("<td{}>{}</td>", attrs, text));
                 }
                 html.push_str("</tr>\n");
@@ -895,5 +948,150 @@ mod tests {
 
         assert_eq!(span_in_table(&inside, &[table.clone()]), Some(0));
         assert_eq!(span_in_table(&outside, &[table]), None);
+    }
+
+    // ============================================================================
+    // render_cell_html() tests — span-walking path (#487)
+    // ============================================================================
+
+    /// Build a raw TextSpan (not OrderedTextSpan) for use in TableCell.spans.
+    fn make_raw_span(
+        text: &str,
+        x: f32,
+        y: f32,
+        width: f32,
+        font_size: f32,
+        weight: FontWeight,
+        italic: bool,
+    ) -> TextSpan {
+        TextSpan {
+            artifact_type: None,
+            text: text.to_string(),
+            bbox: Rect::new(x, y, width, font_size),
+            font_name: "Test".to_string(),
+            font_size,
+            font_weight: weight,
+            is_italic: italic,
+            is_monospace: false,
+            color: Color::black(),
+            mcid: None,
+            sequence: 0,
+            offset_semantic: false,
+            split_boundary_before: false,
+            char_spacing: 0.0,
+            word_spacing: 0.0,
+            horizontal_scaling: 100.0,
+            primary_detected: false,
+            char_widths: vec![],
+        }
+    }
+
+    #[test]
+    fn test_render_cell_html_fallback_to_text_when_no_spans() {
+        // When spans is empty the function returns escaped cell.text (trimmed).
+        use crate::structure::table_extractor::TableCell;
+        let cell = TableCell::new("  hello world  ".to_string(), false);
+        let result = HtmlOutputConverter::render_cell_html(&cell);
+        assert_eq!(result, "hello world");
+    }
+
+    #[test]
+    fn test_render_cell_html_fallback_escapes_html() {
+        use crate::structure::table_extractor::TableCell;
+        let cell = TableCell::new("<b>bold</b> & more".to_string(), false);
+        let result = HtmlOutputConverter::render_cell_html(&cell);
+        assert_eq!(result, "&lt;b&gt;bold&lt;/b&gt; &amp; more");
+    }
+
+    #[test]
+    fn test_render_cell_html_plain_spans() {
+        // Two adjacent normal spans with no gap → concatenated without extra space.
+        use crate::structure::table_extractor::TableCell;
+        let mut cell = TableCell::new(String::new(), false);
+        // Place spans directly adjacent: span1 ends at x=50, span2 starts at x=50.
+        cell.spans.push(make_raw_span("hello", 0.0, 0.0, 50.0, 12.0, FontWeight::Normal, false));
+        cell.spans.push(make_raw_span(" world", 50.0, 0.0, 50.0, 12.0, FontWeight::Normal, false));
+        let result = HtmlOutputConverter::render_cell_html(&cell);
+        // No gap inserted since span2 already starts with a space.
+        assert_eq!(result, "hello world");
+    }
+
+    #[test]
+    fn test_render_cell_html_bold_span() {
+        use crate::structure::table_extractor::TableCell;
+        let mut cell = TableCell::new(String::new(), false);
+        cell.spans.push(make_raw_span("Total", 0.0, 0.0, 30.0, 12.0, FontWeight::Bold, false));
+        let result = HtmlOutputConverter::render_cell_html(&cell);
+        assert_eq!(result, "<strong>Total</strong>");
+    }
+
+    #[test]
+    fn test_render_cell_html_italic_span() {
+        use crate::structure::table_extractor::TableCell;
+        let mut cell = TableCell::new(String::new(), false);
+        cell.spans.push(make_raw_span("Note", 0.0, 0.0, 25.0, 12.0, FontWeight::Normal, true));
+        let result = HtmlOutputConverter::render_cell_html(&cell);
+        assert_eq!(result, "<em>Note</em>");
+    }
+
+    #[test]
+    fn test_render_cell_html_bold_italic_span() {
+        use crate::structure::table_extractor::TableCell;
+        let mut cell = TableCell::new(String::new(), false);
+        cell.spans.push(make_raw_span("Warn", 0.0, 0.0, 25.0, 12.0, FontWeight::Bold, true));
+        let result = HtmlOutputConverter::render_cell_html(&cell);
+        assert_eq!(result, "<strong><em>Warn</em></strong>");
+    }
+
+    #[test]
+    fn test_render_cell_html_gap_inserts_space() {
+        // Span1 ends at x=30, span2 starts at x=35. Gap=5 > 12*0.15=1.8 → space inserted.
+        use crate::structure::table_extractor::TableCell;
+        let mut cell = TableCell::new(String::new(), false);
+        cell.spans.push(make_raw_span("Label", 0.0, 0.0, 30.0, 12.0, FontWeight::Normal, false));
+        cell.spans.push(make_raw_span("Value", 35.0, 0.0, 30.0, 12.0, FontWeight::Normal, false));
+        let result = HtmlOutputConverter::render_cell_html(&cell);
+        assert_eq!(result, "Label Value", "Gap should produce a space: {}", result);
+    }
+
+    #[test]
+    fn test_render_cell_html_no_gap_no_space() {
+        // Span1 ends at x=30, span2 starts at x=30. Gap=0 → no space inserted.
+        use crate::structure::table_extractor::TableCell;
+        let mut cell = TableCell::new(String::new(), false);
+        cell.spans.push(make_raw_span("foo", 0.0, 0.0, 30.0, 12.0, FontWeight::Normal, false));
+        cell.spans.push(make_raw_span("bar", 30.0, 0.0, 30.0, 12.0, FontWeight::Normal, false));
+        let result = HtmlOutputConverter::render_cell_html(&cell);
+        assert_eq!(result, "foobar", "No gap should produce no space: {}", result);
+    }
+
+    #[test]
+    fn test_render_cell_html_mixed_bold_and_plain_with_gap() {
+        // A bold label with a gap before a plain value — matches real table cell pattern.
+        use crate::structure::table_extractor::TableCell;
+        let mut cell = TableCell::new(String::new(), false);
+        cell.spans.push(make_raw_span("Subtotal", 0.0, 0.0, 40.0, 12.0, FontWeight::Bold, false));
+        cell.spans.push(make_raw_span("500.00", 50.0, 0.0, 35.0, 12.0, FontWeight::Normal, false));
+        let result = HtmlOutputConverter::render_cell_html(&cell);
+        assert_eq!(result, "<strong>Subtotal</strong> 500.00", "Result: {}", result);
+    }
+
+    #[test]
+    fn test_render_table_html_uses_spans_for_bold() {
+        // End-to-end: a table whose cell has a bold span should emit <strong>.
+        use crate::structure::table_extractor::{TableCell, TableRow};
+        let mut table = Table::new();
+        let mut row = TableRow::new(false);
+        let mut cell = TableCell::new(String::new(), false);
+        cell.spans.push(make_raw_span("Total", 0.0, 0.0, 30.0, 12.0, FontWeight::Bold, false));
+        row.add_cell(cell);
+        table.add_row(row);
+
+        let result = HtmlOutputConverter::render_table_html(&table);
+        assert!(
+            result.contains("<td><strong>Total</strong></td>"),
+            "Should render bold cell via spans: {}",
+            result
+        );
     }
 }

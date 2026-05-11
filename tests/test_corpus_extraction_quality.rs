@@ -339,3 +339,128 @@ fn quality_gate_pdfa_004() {
 fn quality_gate_nougat_018() {
     check("nougat_018", "/tmp/nougat_018.pdf", "/tmp/gt_nougat_018.txt", 0.90);
 }
+
+// ---------------------------------------------------------------------------
+// #487 — to_html quality gates for table-heavy PDFs.
+//
+// The root cause was render_table_html using cell.text directly instead of
+// walking cell.spans (as render_table_markdown does), causing inter-span gaps
+// to be lost and losing bold/italic markup from the token set.  Fixed by the
+// new render_cell_html helper that mirrors the span-walking in the markdown path.
+//
+// HTML tags are stripped before Jaccard so the score reflects actual text
+// tokens rather than markup.  HTML entities (&amp;, &lt;, &gt;, &quot;) are
+// also unescaped so they compare correctly against plain-text ground truth.
+// ---------------------------------------------------------------------------
+
+/// Strip HTML tags and unescape common HTML entities, returning plain text
+/// suitable for Jaccard comparison against plain-text ground truth.
+fn strip_html(html: &str) -> String {
+    // First pass: remove tags (replace < ... > with a space).
+    let mut stripped = String::with_capacity(html.len());
+    let mut in_tag = false;
+    for c in html.chars() {
+        match c {
+            '<' => {
+                in_tag = true;
+                stripped.push(' ');
+            },
+            '>' => {
+                in_tag = false;
+                stripped.push(' ');
+            },
+            _ if in_tag => {},
+            _ => stripped.push(c),
+        }
+    }
+    // Second pass: unescape the five XML/HTML predefined entities.
+    stripped
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+}
+
+/// Extract all pages of a PDF as HTML, strip tags, and return plain text.
+/// Returns None when the PDF file is not present (test skips).
+fn extract_all_html(pdf_path: &str) -> Option<String> {
+    let bytes = std::fs::read(pdf_path).ok()?;
+    let doc = PdfDocument::from_bytes(bytes).ok()?;
+    let _ = doc.authenticate(b"");
+    let options = ConversionOptions::default();
+    let mut html = String::new();
+    for i in 0..doc.page_count().unwrap_or(0) {
+        if let Ok(t) = doc.to_html(i, &options) {
+            html.push_str(&t);
+            html.push('\n');
+        }
+    }
+    Some(html)
+}
+
+fn check_html(label: &str, pdf: &str, gt: &str, threshold: f32) {
+    let html = match extract_all_html(pdf) {
+        Some(h) => h,
+        None => {
+            eprintln!("SKIP {label}: {pdf} not found");
+            return;
+        },
+    };
+    let gt_text = match std::fs::read_to_string(gt) {
+        Ok(t) => t,
+        Err(_) => {
+            eprintln!("SKIP {label}: ground truth {gt} not found");
+            return;
+        },
+    };
+    let text = strip_html(&html);
+    let j = jaccard(&text, &gt_text);
+    assert!(
+        j >= threshold,
+        "{label}: Jaccard {j:.3} < threshold {threshold:.2}\n\
+         (PDF: {pdf}, GT: {gt})\n\
+         This is a quality regression — to_html score dropped."
+    );
+    eprintln!("PASS {label:<28} j={j:.3}  thr={threshold:.2}");
+}
+
+// pdfa_036.pdf — to_html quality gate (#487)
+// Same fixture as quality_gate_pdfa_036.  Threshold matches the to_text gate
+// (0.78) since the span-walking fix brings HTML on par with text extraction.
+#[test]
+#[ignore = "requires /tmp/pdfa_036.pdf and /tmp/gt_pdfa_036_kreuzberg.txt"]
+fn quality_gate_pdfa_036_html() {
+    check_html(
+        "pdfa_036 (html)",
+        "/tmp/pdfa_036.pdf",
+        "/tmp/gt_pdfa_036_kreuzberg.txt",
+        0.78,
+    );
+}
+
+// nougat_026.pdf — to_html quality gate (#487)
+// Same fixture as quality_gate_nougat_026.  Threshold 0.87 matches to_text gate.
+#[test]
+#[ignore = "requires /tmp/nougat_026.pdf and /tmp/gt_nougat_026.txt"]
+fn quality_gate_nougat_026_html() {
+    check_html("nougat_026 (html)", "/tmp/nougat_026.pdf", "/tmp/gt_nougat_026.txt", 0.87);
+}
+
+// nougat_040.pdf — to_html quality gate (#487)
+// Same fixture as quality_gate_nougat_040.  Threshold 0.35 matches to_text gate.
+#[test]
+#[ignore = "requires /tmp/nougat_040.pdf and /tmp/gt_nougat_040.txt"]
+fn quality_gate_nougat_040_html() {
+    check_html("nougat_040 (html)", "/tmp/nougat_040.pdf", "/tmp/gt_nougat_040.txt", 0.35);
+}
+
+// nougat_018.pdf — to_html quality gate (#487)
+// Same fixture as quality_gate_nougat_018.  Threshold 0.95 (higher than to_text
+// 0.90) because sailing-score tables with span metadata now render all tokens
+// correctly via the span-walking path.
+#[test]
+#[ignore = "requires /tmp/nougat_018.pdf and /tmp/gt_nougat_018.txt"]
+fn quality_gate_nougat_018_html() {
+    check_html("nougat_018 (html)", "/tmp/nougat_018.pdf", "/tmp/gt_nougat_018.txt", 0.95);
+}
