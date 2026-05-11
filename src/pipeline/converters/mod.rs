@@ -116,6 +116,21 @@ fn is_fullwidth_or_math_op(c: char) -> bool {
     )
 }
 
+/// Clause-boundary delimiters that always warrant a space even next to CJK text.
+/// Parentheses, brackets, and quotation marks mark syntactic boundaries and must
+/// not have their surrounding space suppressed by the CJK gap-suppression logic.
+fn is_clause_delimiter(c: char) -> bool {
+    matches!(c,
+        '(' | ')' | '[' | ']' | '{' | '}' |
+        '\u{FF08}' | '\u{FF09}' | // （ ）fullwidth parens
+        '\u{FF3B}' | '\u{FF3D}' | // ［ ］fullwidth brackets
+        '\u{300C}' | '\u{300D}' | // 「 」corner brackets
+        '\u{300E}' | '\u{300F}' | // 『 』white corner brackets
+        '\u{2018}' | '\u{2019}' | // ' ' single smart quotes
+        '\u{201C}' | '\u{201D}'   // " " double smart quotes
+    )
+}
+
 /// Check whether two horizontally adjacent spans have a visible gap between them.
 ///
 /// Returns `true` when the horizontal distance between the end of `prev` and
