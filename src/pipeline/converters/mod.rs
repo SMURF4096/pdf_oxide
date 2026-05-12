@@ -518,4 +518,114 @@ mod tests {
             "math-op→math-op (no CJK) should still apply gap-based logic"
         );
     }
+
+    // ========================================================================
+    // span_in_table cell-aware regression tests (#486 / #487)
+    //
+    // These guarantee that:
+    //   * a span inside the outer table bbox is still "in table" when no cell
+    //     bbox exists (e.g. MCID-based tagged-PDF tables, or unit-test
+    //     fixtures) — preserves the legacy contract
+    //   * a span inside the outer bbox but outside every cell bbox is NOT
+    //     "in table" — sparse score columns whose cells never got detected
+    //     fall through to paragraph flow instead of being silently dropped
+    //     (issue 486 / 487)
+    // ========================================================================
+
+    fn make_table_no_cells(x: f32, y: f32, width: f32, height: f32) -> Table {
+        let mut t = Table::new();
+        t.bbox = Some(crate::geometry::Rect::new(x, y, width, height));
+        t
+    }
+
+    fn make_table_with_cell(
+        table_bbox: (f32, f32, f32, f32),
+        cell_bbox: (f32, f32, f32, f32),
+    ) -> Table {
+        use crate::structure::table_extractor::{TableCell, TableRow};
+        let mut t = Table::new();
+        t.bbox = Some(crate::geometry::Rect::new(
+            table_bbox.0,
+            table_bbox.1,
+            table_bbox.2,
+            table_bbox.3,
+        ));
+        let mut row = TableRow::new(false);
+        let mut cell = TableCell::new(String::new(), false);
+        cell.bbox = Some(crate::geometry::Rect::new(
+            cell_bbox.0,
+            cell_bbox.1,
+            cell_bbox.2,
+            cell_bbox.3,
+        ));
+        row.cells.push(cell);
+        t.rows.push(row);
+        t.col_count = 1;
+        t
+    }
+
+    fn make_ordered_span(x: f32, y: f32) -> crate::pipeline::OrderedTextSpan {
+        let span = crate::layout::TextSpan {
+            text: "test".to_string(),
+            bbox: crate::geometry::Rect::new(x, y, 5.0, 10.0),
+            font_size: 10.0,
+            ..Default::default()
+        };
+        crate::pipeline::OrderedTextSpan::new(span, 0)
+    }
+
+    /// Span inside outer bbox of a Table that has no cells at all — legacy
+    /// passthrough must still return Some.  Covers unit-test fixtures and
+    /// MCID-based tagged-PDF Tables built without per-cell layout.
+    #[test]
+    fn span_in_table_no_cells_legacy_passthrough() {
+        let table = make_table_no_cells(10.0, 50.0, 200.0, 100.0);
+        let span = make_ordered_span(50.0, 70.0); // inside outer bbox
+        assert_eq!(
+            span_in_table(&span, &[table]),
+            Some(0),
+            "no-cell Table preserves legacy outer-bbox contract"
+        );
+    }
+
+    /// Span inside the outer bbox AND owned by a cell → Some.
+    #[test]
+    fn span_in_table_owned_by_cell() {
+        let table = make_table_with_cell(
+            (10.0, 50.0, 200.0, 100.0), // outer
+            (40.0, 60.0, 100.0, 20.0),  // cell at (40..140, 60..80)
+        );
+        let span = make_ordered_span(50.0, 70.0); // inside cell
+        assert_eq!(span_in_table(&span, &[table]), Some(0));
+    }
+
+    /// Span inside outer bbox but outside every cell — sparse score column
+    /// case from issue 486.  Must return None so paragraph flow picks it up.
+    #[test]
+    fn span_in_table_outer_bbox_only_returns_none() {
+        let table = make_table_with_cell(
+            (10.0, 50.0, 200.0, 100.0), // outer: x=10..210, y=50..150
+            (10.0, 50.0, 50.0, 100.0),  // cell only covers x=10..60
+        );
+        // Span at x=150 sits inside outer bbox (10..210) but outside cell
+        // (10..60) — represents a column the detector missed.
+        let span = make_ordered_span(150.0, 70.0);
+        assert_eq!(
+            span_in_table(&span, &[table]),
+            None,
+            "span outside every cell must NOT be marked in_table — \
+             paragraph flow needs to pick it up instead of dropping"
+        );
+    }
+
+    /// Span outside every table's outer bbox → None.
+    #[test]
+    fn span_in_table_outside_all_tables() {
+        let table = make_table_with_cell(
+            (10.0, 50.0, 200.0, 100.0),
+            (40.0, 60.0, 100.0, 20.0),
+        );
+        let span = make_ordered_span(500.0, 500.0);
+        assert_eq!(span_in_table(&span, &[table]), None);
+    }
 }
