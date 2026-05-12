@@ -133,7 +133,15 @@ pub(crate) fn has_horizontal_gap(prev: &TextSpan, current: &TextSpan) -> bool {
     let prev_end_x = prev.bbox.x + prev.bbox.width;
     let gap = current.bbox.x - prev_end_x;
     let threshold = font_size * 0.15;
-    if !(gap > threshold && gap < font_size * 5.0) {
+    // Sub-em gaps are inter-glyph kerning — no space needed.  ANY gap
+    // larger than that, including gaps >5 em (column boundaries on
+    // wide tables — issue 487 pr-138-example.pdf), must result in a
+    // space.  The previous `gap < 5 em` upper bound made the caller
+    // concatenate without separator for huge gaps, gluing tokens like
+    // `3.80%` + `4.41%` into `3.80%4.41%` when the rate-table cells
+    // sit ~265 pt apart and the table detector wasn't able to capture
+    // them as a real grid.
+    if gap <= threshold {
         return false;
     }
 

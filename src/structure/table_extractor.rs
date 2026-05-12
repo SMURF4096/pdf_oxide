@@ -134,6 +134,8 @@ impl Table {
             if self.rows.len() >= 3 && ratio >= 0.7 && dense_row_ratio >= 0.70 {
                 return true;
             }
+            // Consolidated-table path: accept tables with many absolutely-dense
+            // rows alongside sparse header/label rows (issue 486).
             let min_absolute_dense = (self.col_count / 2).max(3);
             return dense_rows >= min_absolute_dense && dense_row_ratio >= 0.40;
         }

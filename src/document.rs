@@ -5720,9 +5720,14 @@ impl PdfDocument {
         // This aligns with the text extractor's font-aware threshold (~50% of space width).
         let space_threshold = font_size * 0.15;
 
-        // Insert space if gap is significant
-        // Also check that gap is not too large (might indicate column boundary)
-        gap > space_threshold && gap < font_size * 5.0
+        // Insert space if gap is significant.  Previously the upper bound was
+        // `gap < font_size * 5.0` on the rationale that very large gaps mean
+        // "column boundary, no space needed" — but downstream the caller
+        // concatenates the two spans together when this returns false, so
+        // "column boundary" actually rendered as `3.80%4.41%` on wide rate
+        // tables (issue 487 pr-138-example.pdf).  Drop the upper bound so any
+        // gap above the inter-glyph threshold gets at least a single space.
+        gap > space_threshold
     }
 
     /// Detect a span whose text is `N.M` (all-digit groups around one dot) and whose
@@ -13725,8 +13730,13 @@ mod tests {
     fn test_should_insert_space_column_gap() {
         let prev = make_test_span("Hello", 0.0, 100.0, 50.0, 12.0);
         let current = make_test_span("World", 200.0, 100.0, 50.0, 12.0);
-        // Column boundary gap is too large (>5x font), should return false
-        assert!(!PdfDocument::should_insert_space(&prev, &current));
+        // Issue 487 (pr-138-example.pdf rate tables): a very large
+        // same-line gap (here 150 pt > 5 em) must still produce a single
+        // space.  The earlier `gap < font_size * 5.0` upper bound made
+        // this return false, after which the caller concatenated the two
+        // spans without a separator and `3.80%` + `4.41%` came out as
+        // `3.80%4.41%`.  Large gap = different column = still a space.
+        assert!(PdfDocument::should_insert_space(&prev, &current));
     }
 
     // ========================================================================
