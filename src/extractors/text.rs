@@ -3350,18 +3350,45 @@ impl<'doc> TextExtractor<'doc> {
             // and one side is a single character. Targets the drop-cap /
             // single-letter-small-caps typography pattern where per-
             // letter emphasis runs would corrupt proper nouns.
+            //
+            // Issue 484 (pr-136-example.pdf): CJK ideographs satisfy
+            // `is_alphabetic()` per Unicode, so a CJK→Latin (or Latin→CJK)
+            // transition between adjacent characters in different fonts —
+            // the standard mixed-script PDF layout pattern — was triggering
+            // cross-font glue and concatenating "神鹰集团" + "Z" into
+            // "神鹰集团Z" with no separator.  Word-F1 against pdftotext
+            // ground truth (which inserts a space at every CJK↔non-CJK
+            // boundary) then loses both the trailing CJK token and the
+            // leading Latin/digit token.  Skip cross-font glue when the
+            // boundary crosses CJK / non-CJK scripts.
+            let is_cjk_char = |c: char| {
+                matches!(
+                    c as u32,
+                    0x3040..=0x309F      // Hiragana
+                    | 0x30A0..=0x30FF    // Katakana
+                    | 0x3400..=0x4DBF    // CJK Unified Ideographs Extension A
+                    | 0x4E00..=0x9FFF    // CJK Unified Ideographs
+                    | 0xAC00..=0xD7AF    // Hangul Syllables
+                    | 0x20000..=0x2A6DF  // CJK Unified Ideographs Extension B
+                    | 0xFF00..=0xFFEF    // Halfwidth and Fullwidth Forms
+                    | 0x3000..=0x303F    // CJK Symbols and Punctuation
+                )
+            };
+            let prev_tail_char = current.text.chars().last();
+            let curr_head_char = span.text.chars().next();
+            let crosses_cjk_boundary = match (prev_tail_char, curr_head_char) {
+                (Some(p), Some(c)) => is_cjk_char(p) != is_cjk_char(c),
+                _ => false,
+            };
             let cross_font_word_glue = !is_same_font
                 && same_line
                 && gap > -1.0
                 && gap < font_size_ref * 0.25
                 && !current.text.is_empty()
                 && !span.text.is_empty()
-                && current
-                    .text
-                    .chars()
-                    .last()
-                    .is_some_and(|c| c.is_alphabetic())
-                && span.text.chars().next().is_some_and(|c| c.is_alphabetic())
+                && !crosses_cjk_boundary
+                && prev_tail_char.is_some_and(|c| c.is_alphabetic())
+                && curr_head_char.is_some_and(|c| c.is_alphabetic())
                 && (current.text.chars().count() == 1 || span.text.chars().count() == 1);
 
             // Merge threshold: Use configured values
@@ -3389,9 +3416,19 @@ impl<'doc> TextExtractor<'doc> {
             // of dollar amounts in separate fixed-width boxes.
             // e.g., "123456" (integer box) + "72" (cents box) with ~10pt gap.
             // Detect this pattern: both spans are pure digits, the second is
-            // exactly 1-2 digits (cents), same line, and gap < 2x font size.
+            // exactly 1-2 digits (cents), same line, and there's a meaningful
+            // column-boundary-sized gap between them.
+            //
+            // Issue 484 (pr-136-example.pdf): without a minimum-gap floor this
+            // also matches tightly-packed adjacent digit characters from CJK
+            // documents that emit each glyph as its own Tj — e.g. the year
+            // "2013" rendered as four separate TjL operators with sub-pixel
+            // gaps was being mangled into "201.3", losing the year token from
+            // word-F1 scoring.  Real "$123 _ 45" split-box layouts always have
+            // a gap > ~half the font size; tight letter spacing is < 0.1 em.
+            let min_decimal_gap = current.font_size * 0.4;
             let decimal_merge = same_line
-                && gap > 0.0
+                && gap > min_decimal_gap
                 && gap < current.font_size * 2.0
                 && !current.text.is_empty()
                 && !span.text.is_empty()
