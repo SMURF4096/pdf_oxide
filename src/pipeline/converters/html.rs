@@ -395,17 +395,30 @@ impl HtmlOutputConverter {
                 in_paragraph = true;
             }
 
-            // Insert a space when same-line spans have a meaningful horizontal
-            // gap, preventing label+value concatenation (e.g. "Subtotal$500.00").
+            // Insert a space when adjacent spans should be separated:
+            //   1. Same-line spans with a meaningful horizontal gap
+            //      (prevents label+value concatenation like "Subtotal$500.00").
+            //   2. Different-line spans within the same paragraph (multi-line
+            //      column headers, e.g. "Inpatient" / "Bed" stacked across two
+            //      visual lines — issue 487 nougat_026).  Without this, the two
+            //      tokens come out as "InpatientBed" because the same_line gate
+            //      above skips the space-insertion check whenever y_diff >
+            //      0.5 × font_size.
             if let Some(prev) = prev_span {
-                let same_line =
-                    (span.span.bbox.y - prev.span.bbox.y).abs() < span.span.font_size * 0.5;
-                if same_line
+                let y_diff = (span.span.bbox.y - prev.span.bbox.y).abs();
+                let same_line = y_diff < span.span.font_size * 0.5;
+                let need_space_between_lines = !same_line
+                    && y_diff > 0.0
+                    && !current_content.is_empty()
+                    && !current_content.ends_with(' ')
+                    && !current_content.ends_with('\n')
+                    && !span.span.text.starts_with(' ');
+                let need_space_same_line = same_line
                     && !current_content.is_empty()
                     && !current_content.ends_with(' ')
                     && !span.span.text.starts_with(' ')
-                    && super::has_horizontal_gap(&prev.span, &span.span)
-                {
+                    && super::has_horizontal_gap(&prev.span, &span.span);
+                if need_space_same_line || need_space_between_lines {
                     current_content.push(' ');
                 }
             }
