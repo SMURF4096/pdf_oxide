@@ -164,25 +164,54 @@ floor for every PDF in the issue 484 set.
   collections, matching the spec's enumeration; misapplication on
   other fonts could produce mojibake on previously-working files.
 
+- **Reject prose / TOC / underline-annotation false-positive
+  tables in `to_html` and `to_markdown`** — Wide pages of
+  ordinary paragraph text were sometimes detected as multi-column
+  tables: word x-positions cluster into "columns" by accident, and
+  decorative horizontal rules (newsletter mastheads, annotation
+  underlines, page borders) tricked the line-based detector into
+  treating two adjacent lines as a header + data row.  The
+  detection pipeline now applies several post-`is_real_grid`
+  guards that look at the *shape* of the candidate's cell
+  content rather than just its grid geometry:
+  - `looks_like_prose_table` rejects a candidate when more than
+    12 % of cells end with a mid-sentence `,` or `;`, more than
+    25 % of cells start with a lowercase ASCII letter
+    (continuation fragments like "and", "the", "to"), or more
+    than 10 % of cells are pure leader dots (the `. . . . . .`
+    runs in tables of contents).
+  - The text-only spatial fallback and the horizontal-rule-
+    bounded path both now require ≥ 3 rows of evidence.  A
+    title plus a wrapped body line is the signature of prose,
+    not a table; only the line-based intersection / cluster
+    paths (which have authoritative visual evidence) still
+    accept 2-row tables.
+  - `should_insert_space` no longer forces a space at the
+    CJK ↔ ASCII-punctuation boundary.  The boundary forced-
+    space added in v0.3.47 was correctly inserting a space at
+    "神鹰集团" + "2015" but was wrongly producing "する ."
+    instead of "する." in Japanese technical text; ASCII
+    clause punctuation hugs the preceding token in every
+    script, so the rule is now suppressed when the
+    transitioning glyph IS the punctuation.
+  - `text_fallback` defaults back to `true` on
+    `TableDetectionConfig`.  The new prose-shape filter
+    replaces the gate-based protection added earlier in the
+    cycle, so the public `extract_tables` API again detects
+    line-less data tables out of the box.
+
 ### Notes
 
-- All 4 987 unit tests pass; one quality-gate test
-  (`test_text_fallback_detects_lineless_grid` in
-  `src/structure/spatial_table_detector.rs`) was updated to set
-  `text_fallback: true` explicitly since the default no longer
-  enables it.
 - `tests/test_corpus_extraction_quality.rs` now strips markdown
   formatting markers (`**bold**`, `*italic*`, `|` separators,
   `---|---|---` rule, `# heading`, ```` ``` ```` fences) before
   computing Jaccard against the plain-text GT — mirrors the HTML
   test's existing `strip_html` step so the score reflects text
   content rather than formatting markup.
-- Four quality-gate Jaccard tests in
-  `tests/test_corpus_extraction_quality.rs` remain failing
-  against their target thresholds (nougat_018 md/html,
-  nougat_026 html, pdfa_036 html); those are tracked
-  under #486, #487 as the remaining partial-fix work.  15 of 19
-  quality gates now pass (up from 13 at the start of this branch).
+- All 19 quality-gate Jaccard tests in
+  `tests/test_corpus_extraction_quality.rs` now pass (up from
+  13 at the start of this branch).  The kreuzberg issue 484
+  corpus passes its F1 floor on every PDF.
 
 ### Thanks
 
