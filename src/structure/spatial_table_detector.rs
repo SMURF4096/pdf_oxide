@@ -3099,39 +3099,129 @@ fn extract_cell_text(cell_span_indices: &[usize], spans: &[TextSpan]) -> String 
     if cell_span_indices.is_empty() {
         return String::new();
     }
-    let mut span_entries: Vec<(f32, String)> = cell_span_indices
+    // Keep the span reference (not just text) so we can decide spacing based
+    // on the geometric gap and CJK/fullwidth-operator boundary state, exactly
+    // like the inline-flow path does in pipeline/converters/mod.rs.  Without
+    // this, the previous `line.join(" ")` was unconditionally inserting a
+    // space between every adjacent span on the same row, splitting compound
+    // tokens like `40000≤Q＜55000` into `40000≤Q ＜55000` and dropping word-F1
+    // for table-heavy CJK documents (issue 484, issue-336).
+    let mut span_entries: Vec<(f32, &TextSpan, String)> = cell_span_indices
         .iter()
         .filter_map(|&idx| {
             spans
                 .get(idx)
-                .map(|s| (s.bbox.center().y, span_text_for_cell(s)))
+                .map(|s| (s.bbox.center().y, s, span_text_for_cell(s)))
         })
         .collect();
     if span_entries.is_empty() {
         return String::new();
     }
     if span_entries.len() == 1 {
-        return span_entries.remove(0).1;
+        return span_entries.remove(0).2;
     }
     span_entries.sort_by(|a, b| crate::utils::safe_float_cmp(b.0, a.0));
-    let mut lines: Vec<Vec<String>> = Vec::new();
-    let mut current_line: Vec<String> = vec![span_entries[0].1.clone()];
+
+    // Group into rows by y proximity, then within a row decide separator per
+    // pair of spans using the same gap/CJK rules as inline text assembly.
+    let mut lines: Vec<Vec<(&TextSpan, String)>> = Vec::new();
+    let mut current_line: Vec<(&TextSpan, String)> =
+        vec![(span_entries[0].1, span_entries[0].2.clone())];
     let mut current_y = span_entries[0].0;
-    for (y, text) in &span_entries[1..] {
+    for (y, span, text) in &span_entries[1..] {
         if (current_y - y).abs() <= 2.0 {
-            current_line.push(text.clone());
+            current_line.push((span, text.clone()));
         } else {
             lines.push(current_line);
-            current_line = vec![text.clone()];
+            current_line = vec![(span, text.clone())];
             current_y = *y;
         }
     }
     lines.push(current_line);
+
     lines
         .iter()
-        .map(|line| line.join(" "))
+        .map(|line| {
+            let mut out = String::new();
+            for (i, (span, text)) in line.iter().enumerate() {
+                if i > 0 {
+                    let (prev_span, _) = line[i - 1];
+                    let separator = cell_span_separator(prev_span, span);
+                    out.push_str(separator);
+                }
+                out.push_str(text);
+            }
+            out
+        })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Decide what (if any) separator to put between two spans within the same
+/// table cell row.  Mirrors the inline-flow has_horizontal_gap logic from
+/// pipeline/converters/mod.rs: insert a space only when there is a real
+/// horizontal gap that exceeds the inter-glyph kerning floor AND the
+/// boundary is not a CJK ↔ CJK / CJK ↔ fullwidth-operator pair (issue 485).
+fn cell_span_separator(prev: &TextSpan, current: &TextSpan) -> &'static str {
+    // Already-present whitespace at the join point — never duplicate.
+    if prev.text.ends_with(' ') || current.text.starts_with(' ') {
+        return "";
+    }
+
+    let prev_end_x = prev.bbox.x + prev.bbox.width;
+    let gap = current.bbox.x - prev_end_x;
+    let font_size = prev.font_size.max(current.font_size).max(1.0);
+
+    // Sub-em gap: glyphs are touching or overlapping (typical inter-glyph
+    // advance).  Don't insert a space — adjacent characters in the same
+    // word/expression must stay glued.  This is what `40000≤Q` + `＜55000`
+    // hits: gap is essentially zero (the source PDF emits the operator as
+    // its own positioned Tj) but the two spans are part of one compound
+    // token in pdftotext's output.
+    let space_threshold = font_size * 0.15;
+    if gap <= space_threshold {
+        return "";
+    }
+    if gap >= font_size * 5.0 {
+        return "";
+    }
+
+    // CJK / fullwidth-operator suppression — same rule as
+    // pipeline::converters::has_horizontal_gap.  pdftotext keeps an
+    // ideograph + adjacent fullwidth/math operator without a separator.
+    let is_cjk = |c: char| {
+        matches!(
+            c as u32,
+            0x3040..=0x309F     // Hiragana
+            | 0x30A0..=0x30FF   // Katakana
+            | 0x4E00..=0x9FFF   // CJK Unified Ideographs
+            | 0xAC00..=0xD7AF   // Hangul
+            | 0x3400..=0x4DBF   // CJK Extension A
+            | 0x20000..=0x2A6DF // CJK Extension B
+        )
+    };
+    let is_fw_op = |c: char| {
+        matches!(
+            c as u32,
+            0xFF0B | 0xFF0D | 0xFF1A | 0xFF1B
+            | 0xFF1C..=0xFF1E       // ＜ ＝ ＞
+            | 0x2260 | 0x2248
+            | 0x2264..=0x2265       // ≤ ≥
+            | 0x00B5 | 0x03BC       // µ μ
+            | 0x00B1 | 0x00D7 | 0x00F7
+        )
+    };
+    let prev_tail = prev.text.chars().next_back();
+    let curr_head = current.text.chars().next();
+    if let (Some(p), Some(c)) = (prev_tail, curr_head) {
+        let p_cjk = is_cjk(p);
+        let c_cjk = is_cjk(c);
+        if (p_cjk || is_fw_op(p)) && (c_cjk || is_fw_op(c)) && (p_cjk || c_cjk) {
+            return "";
+        }
+    }
+
+    " "
 }
 
 fn detect_merged_cells(grid: &GridStructure, spans: &[TextSpan]) -> Vec<Vec<CellMergeInfo>> {
