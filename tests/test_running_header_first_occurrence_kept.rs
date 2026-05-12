@@ -92,21 +92,25 @@ fn first_occurrence_of_running_header_kept_on_page_one() {
     assert!(p1.contains("PageTwoBody"), "page 1 body missing: {p1:?}");
     assert!(p2.contains("PageThreeBody"), "page 2 body missing: {p2:?}");
 
-    // Page 0 — the first occurrence — MUST keep the running-header
-    // title. Pre-fix behaviour would strip it.
+    // v0.3.47 behaviour (commit 3c6562ef): a running header is only
+    // suppressed when its *literal text varies* across pages — i.e. the
+    // digits change, signalling a page number or date.  A header with a
+    // stable literal (a document title that doubles as a per-page
+    // header) is substantive content that pdftotext and pdfium both
+    // preserve, so suppressing it on later pages hurts kreuzberg
+    // word-F1.  "Universal Title" is identical on every page, so it
+    // survives on all three pages.
     assert!(
         p0.contains("Universal Title"),
         "first page should keep the running-header text \
          as it also serves as the cover-page title; got {p0:?}"
     );
-
-    // Pages 1 and 2 drop it as a pagination artifact.
     assert!(
-        !p1.contains("Universal Title"),
-        "page 1 should suppress the running header on second+ occurrences: {p1:?}"
+        p1.contains("Universal Title"),
+        "stable-literal repeats are preserved on page 2 (no digit change); got {p1:?}"
     );
     assert!(
-        !p2.contains("Universal Title"),
-        "page 2 should suppress the running header on second+ occurrences: {p2:?}"
+        p2.contains("Universal Title"),
+        "stable-literal repeats are preserved on page 3 (no digit change); got {p2:?}"
     );
 }

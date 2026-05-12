@@ -5711,7 +5711,16 @@ impl PdfDocument {
             (Some(p), Some(c)) => is_cjk_script(p) != is_cjk_script(c),
             _ => false,
         };
-        if crosses_cjk_boundary && gap > -0.5 && gap < font_size * 5.0 {
+        // ASCII punctuation hugs the preceding token in every script —
+        // pdftotext's GT renders "する." with no space and "神鹰，2015"
+        // with no space before the comma either.  Suppress the boundary
+        // forced-space when the transitioning glyph IS the punctuation;
+        // the space-threshold path below still handles real gaps.
+        let is_clause_punct =
+            |c: char| matches!(c, '.' | ',' | ';' | ':' | '!' | '?' | ')' | ']' | '}');
+        let punct_at_boundary = curr_head.is_some_and(is_clause_punct)
+            || prev_tail.is_some_and(|c| matches!(c, '(' | '[' | '{'));
+        if crosses_cjk_boundary && !punct_at_boundary && gap > -0.5 && gap < font_size * 5.0 {
             return true;
         }
 
@@ -10752,6 +10761,13 @@ impl PdfDocument {
         let mut tables: Vec<crate::structure::Table> = raw_tables
             .into_iter()
             .filter(|t| t.is_real_grid())
+            // Prose-shape filter — applies to line-based detection too: a
+            // PDF with decorative horizontal rules (newsletter mastheads,
+            // press-release banners) can hand `is_real_grid` a "wide data
+            // table" that is actually wrapped paragraphs partitioned by
+            // word x-alignment.  Reject those before they reach the
+            // converter.  See `looks_like_prose_table` for the heuristic.
+            .filter(|t| !looks_like_prose_table(t))
             .collect();
 
         if raw_count != tables.len() {
@@ -10887,7 +10903,20 @@ impl PdfDocument {
             let pre_filter = text_candidates.len();
             let text_tables: Vec<_> = text_candidates
                 .into_iter()
-                .filter(|t| t.is_real_grid())
+                // Text-only detection infers columns from word x-alignment
+                // alone; a title + a wrapped body line (two rows) is the
+                // signature of ordinary prose, not a table.  Require ≥3
+                // rows of evidence before promoting to a table.
+                .filter(|t| t.rows.len() >= 3 && t.is_real_grid())
+                // Prose split across many "columns" is the dominant
+                // false-positive shape for text-only detection on
+                // line-less pages: a paragraph wraps to N lines, words
+                // cluster into N×K cells, and `is_real_grid` accepts the
+                // shape.  Real data-table cells almost never end with a
+                // comma or semicolon (those punctuation marks belong to
+                // running sentences), so a high comma-tail ratio is the
+                // most discriminating prose signal we have.
+                .filter(|t| !looks_like_prose_table(t))
                 .collect();
             if !text_tables.is_empty() {
                 log::debug!(
@@ -12575,6 +12604,69 @@ pub enum ImageFormat {
 /// Extract the /Root reference from a trailer dictionary.
 fn get_root_ref_from_trailer(trailer: &Object) -> Option<ObjectRef> {
     trailer.as_dict()?.get("Root")?.as_reference()
+}
+
+/// Heuristic: does this candidate table actually look like wrapped prose
+/// clustered into x-columns rather than a real grid?
+///
+/// Cell contents in real data tables are atomic units (numbers, codes,
+/// names, short labels): they almost always start with an uppercase
+/// letter, a digit, or a symbol (currency, +/-, punctuation marker) and
+/// rarely end with a mid-sentence comma or semicolon.  Prose-as-table
+/// cells, by contrast, are fragments of running sentences — they
+/// frequently start with a lowercase stopword ("and", "the", "to") because
+/// the column boundary fell mid-clause, and frequently end with `,` or
+/// `;` for the same reason.
+///
+/// We reject the candidate when either signal exceeds its threshold:
+///   • > 12 % of cells end in `,` or `;` (mid-sentence tails), or
+///   • > 25 % of cells start with a lowercase ASCII letter
+///     (continuation fragments).
+///
+/// Thresholds chosen to clear the false positives flagged in the 88-PDF
+/// regression (`searchable.pdf`, the WFMYY press-release, several arxiv
+/// preprints) without disturbing legitimate data tables — sailing scores,
+/// IRS forms, and the CJK traffic-volume grid all stay well below both
+/// bars.
+fn looks_like_prose_table(table: &crate::structure::Table) -> bool {
+    let mut total = 0usize;
+    let mut sentence_tails = 0usize;
+    let mut lower_starts = 0usize;
+    let mut leader_dots = 0usize;
+    for row in &table.rows {
+        for cell in &row.cells {
+            let trimmed = cell.text.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            total += 1;
+            if let Some(last) = trimmed.chars().last() {
+                if matches!(last, ',' | ';') {
+                    sentence_tails += 1;
+                }
+            }
+            if let Some(first) = trimmed.chars().next() {
+                if first.is_ascii_lowercase() {
+                    lower_starts += 1;
+                }
+            }
+            // Table-of-contents leader runs (". . . . . . ." between an
+            // entry's title and its page number) cluster into their own
+            // x-columns and create phantom 10–12-column "tables" out of
+            // an ordinary three-column TOC.  A cell whose content is
+            // exclusively dots and spaces is the leader, not data.
+            if trimmed.chars().all(|c| c == '.' || c == ' ') {
+                leader_dots += 1;
+            }
+        }
+    }
+    if total < 10 {
+        return false;
+    }
+    let tail_ratio = sentence_tails as f32 / total as f32;
+    let lower_ratio = lower_starts as f32 / total as f32;
+    let leader_ratio = leader_dots as f32 / total as f32;
+    tail_ratio > 0.12 || lower_ratio > 0.25 || leader_ratio > 0.10
 }
 
 /// Check whether the object at the xref offset for `obj_ref` looks like a valid header.

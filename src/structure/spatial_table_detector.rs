@@ -117,7 +117,7 @@ impl Default for TableDetectionConfig {
             max_table_columns: 15,
             column_merge_threshold: 25.0,
             v_split_gap: 20.0,
-            text_fallback: false,
+            text_fallback: true,
         }
     }
 }
@@ -137,7 +137,7 @@ impl TableDetectionConfig {
             max_table_columns: 12,
             column_merge_threshold: 10.0,
             v_split_gap: 4.0,
-            text_fallback: false,
+            text_fallback: true,
         }
     }
 
@@ -155,7 +155,7 @@ impl TableDetectionConfig {
             max_table_columns: 20,
             column_merge_threshold: 30.0,
             v_split_gap: 40.0,
-            text_fallback: false,
+            text_fallback: true,
         }
     }
 }
@@ -2974,6 +2974,13 @@ pub fn detect_tables_with_lines(
         if !h_edges.is_empty() && v_edges.is_empty() {
             snap_and_merge(&mut h_edges);
             final_tables = detect_tables_from_horizontal_rules(spans, &h_edges, config);
+            // H-rule bounded detection lacks vertical-line evidence —
+            // columns come from text-edge clustering alone (same shape as
+            // the text-only fallback below).  Two-row results are
+            // virtually always prose that happens to live between
+            // decorative rules (annotation underlines, page borders);
+            // require three rows of evidence before promoting.
+            final_tables.retain(|t| t.rows.len() >= 3);
         }
     }
     // Filter out invalid line-based tables BEFORE overlap checking so that
@@ -2997,6 +3004,14 @@ pub fn detect_tables_with_lines(
         let text_candidates = detect_tables_from_spans_column_aware(spans, config);
         for text_table in text_candidates {
             if !passes_spatial_quality_gate(&text_table) {
+                continue;
+            }
+            // Text-only detection (no ruling lines) infers columns from word
+            // x-alignment alone — two rows of column-aligned words is the
+            // signature of ordinary prose (a title + a wrapped body line),
+            // not a table.  Require at least three rows of evidence before
+            // promoting a span cluster to a table.
+            if text_table.rows.len() < 3 {
                 continue;
             }
             if let Some(text_bbox) = text_table.bbox {
