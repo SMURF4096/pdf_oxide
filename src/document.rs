@@ -10659,13 +10659,11 @@ impl PdfDocument {
 
         // Strategy 2: Hybrid spatial detection (v0.3.14)
         let mut config = options.table_detection_config.clone().unwrap_or_default();
-        // Converter callers (to_markdown, to_html) opt in to text-only spatial
-        // fallback so that line-less tables (e.g. sailing-score grids) are still
-        // detected when no ruling lines are present.  The public extract_tables()
-        // API keeps text_fallback = false for backward compatibility.
-        if text_fallback {
-            config.text_fallback = true;
-        }
+        // Honour the caller's text_fallback choice regardless of the default
+        // on `TableDetectionConfig` — `extract_text` / `to_plain_text` pass
+        // `text_fallback=false` to opt out of text-only spatial fallback even
+        // though the type-level default is `true`.
+        config.text_fallback = text_fallback;
 
         // Extract vector paths (lines/rects) for visual detection
         let paths = self.extract_paths(page_index).unwrap_or_default();
@@ -10751,7 +10749,10 @@ impl PdfDocument {
         // `<p>＜55000</p>` pairs.  Consolidate vertically-adjacent fragments
         // that share an identical column structure BEFORE applying
         // is_real_grid so the merged multi-row table survives the filter.
-        let raw_tables = crate::structure::spatial_table_detector::consolidate_adjacent_table_fragments(raw_tables);
+        let raw_tables =
+            crate::structure::spatial_table_detector::consolidate_adjacent_table_fragments(
+                raw_tables,
+            );
 
         // Per #457 Step 4: spatial detection without struct-tree backing
         // is prone to false positives on form-style layouts (label-colon-

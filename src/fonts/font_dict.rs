@@ -4312,6 +4312,20 @@ fn decode_cjk_raw_charcode(
     }
 }
 
+// Maximum valid CID for each Adobe character collection (Fix C – OOB guard).
+// CIDs beyond these values have no defined Unicode mapping; return None early
+// to avoid accidental wrap-around in future table expansions.
+//
+// Sources:
+//   Adobe-GB1-5    (TN #5079): 30,283 CIDs (0–30,283)
+//   Adobe-Japan1-7 (TN #5078): 23,059 CIDs (0–23,059)
+//   Adobe-CNS1-7   (TN #5080): 20,316 CIDs (0–20,316)
+//   Adobe-Korea1-2 (TN #5093): 18,351 CIDs (0–18,351)
+const CID_MAX_GB1: u16 = 30_283;
+const CID_MAX_JAPAN1: u16 = 23_059;
+const CID_MAX_CNS1: u16 = 20_316;
+const CID_MAX_KOREA1: u16 = 18_351;
+
 /// Lookup Unicode code point for a CID in a predefined Unicode-based CMap.
 ///
 /// Predefined CMaps for CJK fonts map CID values from Adobe character collections to Unicode.
@@ -4333,21 +4347,6 @@ fn decode_cjk_raw_charcode(
 /// - UniJIS-UCS2-H: Adobe-Japan1 (Japanese)
 /// - UniCNS-UCS2-H: Adobe-CNS1 (Traditional Chinese)
 /// - UniKS-UCS2-H: Adobe-Korea1 (Korean)
-
-/// Maximum valid CID for each Adobe character collection (Fix C – OOB guard).
-/// CIDs beyond these values have no defined Unicode mapping; return None early
-/// to avoid accidental wrap-around in future table expansions.
-///
-/// Sources:
-///   Adobe-GB1-5   (TN #5079): 30,283 CIDs (0–30,283)
-///   Adobe-Japan1-7 (TN #5078): 23,059 CIDs (0–23,059)
-///   Adobe-CNS1-7  (TN #5080): 20,316 CIDs (0–20,316)
-///   Adobe-Korea1-2 (TN #5093): 18,351 CIDs (0–18,351)
-const CID_MAX_GB1: u16 = 30_283;
-const CID_MAX_JAPAN1: u16 = 23_059;
-const CID_MAX_CNS1: u16 = 20_316;
-const CID_MAX_KOREA1: u16 = 18_351;
-
 fn lookup_predefined_cmap(
     cmap_name: &str,
     cid_system_info: &Option<CIDSystemInfo>,

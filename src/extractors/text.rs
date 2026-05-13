@@ -5005,13 +5005,17 @@ impl<'doc> TextExtractor<'doc> {
         // nesting depth; the depth limiter (MAX_XOBJECT_DEPTH) provides a
         // second backstop.
         let current_ctm = self.state_stack.current().ctm;
+        // Round to nearest millipoint instead of truncating with `as i64`,
+        // so floating-point noise in the same logical CTM produces a
+        // stable hash key (truncation alone could send 0.99999... and
+        // 1.00001... to different buckets).
         let ctm_key = [
-            (current_ctm.a * 1000.0) as i64,
-            (current_ctm.b * 1000.0) as i64,
-            (current_ctm.c * 1000.0) as i64,
-            (current_ctm.d * 1000.0) as i64,
-            (current_ctm.e * 1000.0) as i64,
-            (current_ctm.f * 1000.0) as i64,
+            (current_ctm.a * 1000.0).round() as i64,
+            (current_ctm.b * 1000.0).round() as i64,
+            (current_ctm.c * 1000.0).round() as i64,
+            (current_ctm.d * 1000.0).round() as i64,
+            (current_ctm.e * 1000.0).round() as i64,
+            (current_ctm.f * 1000.0).round() as i64,
         ];
         let xobj_key = (xobject_ref, ctm_key);
 

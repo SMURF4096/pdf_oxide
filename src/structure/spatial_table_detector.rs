@@ -95,11 +95,18 @@ pub struct TableDetectionConfig {
     /// When `true` and the page has no table-relevant paths (no ruling lines or
     /// rectangles), the detector falls through to `detect_tables_from_spans_column_aware`
     /// rather than returning an empty result.  This is the right default for structured
-    /// output callers (`to_markdown`, `to_html`) that explicitly want tabular layout,
-    /// but is kept `false` for the public `extract_tables` API to preserve backward
-    /// compatibility (line-less PDFs previously returned no tables).
+    /// output callers (`to_markdown`, `to_html`) that explicitly want tabular layout
+    /// and is also relied on by the public `extract_tables` API for line-less PDFs.
+    /// Set to `false` from callers that want the conservative
+    /// "no ruling lines → no tables" behaviour (e.g. plain-text extraction paths
+    /// that explicitly opt out — see `extract_page_tables`).
     ///
-    /// Default: `false`.
+    /// False-positive prose / TOC / underline tables that this default would
+    /// previously have surfaced are filtered post-detection by the
+    /// `looks_like_prose_table` shape gate and a ≥ 3-row evidence requirement
+    /// on text-only and h-rule paths.
+    ///
+    /// Default: `true`.
     pub text_fallback: bool,
 }
 
@@ -3197,9 +3204,13 @@ fn cell_span_separator(prev: &TextSpan, current: &TextSpan) -> &'static str {
     if gap <= space_threshold {
         return "";
     }
-    if gap >= font_size * 5.0 {
-        return "";
-    }
+    // No upper bound: a very large gap (≥ 5 em) used to be treated as a
+    // column boundary and yield no separator, but the caller concatenates
+    // span text when this returns "" — so tokens like `3.80%` and `4.41%`
+    // were rendered as `3.80%4.41%` on wide rate tables.  Mirroring the
+    // inline-flow rule (`pipeline::converters::has_horizontal_gap`), any
+    // gap above the inter-glyph threshold now gets at least a single
+    // space.
 
     // CJK / fullwidth-operator suppression — same rule as
     // pipeline::converters::has_horizontal_gap.  pdftotext keeps an
@@ -3579,20 +3590,18 @@ mod tests {
 
     /// Regression test for issue #486: text-only spatial fallback for line-less tables.
     ///
-    /// When `text_fallback = false` (the default), `detect_tables_with_lines` with an empty
-    /// lines slice and the default `Both` strategy returns no tables — the text path inside
-    /// `detect_tables_with_lines` does run but the result is gated by `extract_page_tables`
-    /// returning early before even calling it.
+    /// `text_fallback = true` is now the default on `TableDetectionConfig` (the
+    /// prose-shape filter and ≥3-row guard suppress the false positives that
+    /// previously motivated a `false` default).  With the default and the `Both`
+    /// strategy, `detect_tables_with_lines` with an empty lines slice falls
+    /// through to the text-based path and detects the grid from span alignment
+    /// alone.  Callers that explicitly want the conservative
+    /// "no ruling lines → no tables" behaviour set `text_fallback = false` and
+    /// the `extract_page_tables` early-return guard in document.rs short-circuits
+    /// before this code is reached.
     ///
-    /// When `text_fallback = true`, `extract_page_tables` no longer returns early and
-    /// `detect_tables_with_lines` proceeds to the text-based fallback path, detecting the
-    /// grid from span alignment alone.
-    ///
-    /// This test directly calls `detect_tables_with_lines` with an empty lines slice to
-    /// verify that the text-based path inside it finds the table (the "text_fallback" flag
-    /// on `TableDetectionConfig` only affects the early-return guard in
-    /// `extract_page_tables`; at the `detect_tables_with_lines` level the `Both` strategy
-    /// already allows text fallback when no lines are present).
+    /// This test directly calls `detect_tables_with_lines` with an empty lines
+    /// slice to verify that the text-based path inside it finds the table.
     #[test]
     fn test_text_fallback_detects_lineless_grid() {
         // Simulate a 3-column, 4-row sailing-score table with no ruling lines.

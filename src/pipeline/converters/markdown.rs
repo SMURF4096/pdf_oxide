@@ -1043,10 +1043,7 @@ impl MarkdownOutputConverter {
                     // split (issue 487 nougat_018): orphan score spans
                     // emitted as "25.10" with sparse cw split into "25 10".
                     let mut processed = String::new();
-                    crate::document::PdfDocument::push_span_text(
-                        &mut processed,
-                        &orphan.span,
-                    );
+                    crate::document::PdfDocument::push_span_text(&mut processed, &orphan.span);
                     result.push_str(&processed);
                 }
             }

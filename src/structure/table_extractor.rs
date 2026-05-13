@@ -651,7 +651,7 @@ fn extract_cell(
                                 let gap = block.bbox.x - (prev.bbox.x + prev.bbox.width);
                                 let font_size =
                                     prev.avg_font_size.max(block.avg_font_size).max(1.0);
-                                if !(gap > font_size * 0.15) {
+                                if gap <= font_size * 0.15 {
                                     false
                                 } else {
                                     // Suppress space insertion when one side is CJK and the

@@ -560,12 +560,8 @@ mod tests {
         ));
         let mut row = TableRow::new(false);
         let mut cell = TableCell::new(String::new(), false);
-        cell.bbox = Some(crate::geometry::Rect::new(
-            cell_bbox.0,
-            cell_bbox.1,
-            cell_bbox.2,
-            cell_bbox.3,
-        ));
+        cell.bbox =
+            Some(crate::geometry::Rect::new(cell_bbox.0, cell_bbox.1, cell_bbox.2, cell_bbox.3));
         row.cells.push(cell);
         t.rows.push(row);
         t.col_count = 1;
@@ -629,10 +625,7 @@ mod tests {
     /// Span outside every table's outer bbox → None.
     #[test]
     fn span_in_table_outside_all_tables() {
-        let table = make_table_with_cell(
-            (10.0, 50.0, 200.0, 100.0),
-            (40.0, 60.0, 100.0, 20.0),
-        );
+        let table = make_table_with_cell((10.0, 50.0, 200.0, 100.0), (40.0, 60.0, 100.0, 20.0));
         let span = make_ordered_span(500.0, 500.0);
         assert_eq!(span_in_table(&span, &[table]), None);
     }
