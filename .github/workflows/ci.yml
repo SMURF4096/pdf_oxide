@@ -78,6 +78,10 @@ jobs:
   test:
     name: Test
     runs-on: ${{ matrix.os }}
+    # Nightly uses the bundled rust-lld linker, which intermittently crashes
+    # with SIGBUS on resource-constrained runners. Don't let a flaky nightly
+    # linker crash block a release; nightly only exists as an early warning.
+    continue-on-error: ${{ matrix.rust == 'nightly' }}
     strategy:
       fail-fast: false
       matrix:
@@ -97,7 +101,9 @@ jobs:
           dotnet: true
           haskell: true
           large-packages: true
-          swap-storage: true
+          # Keep swap: removing it causes OOM-induced SIGBUS in the linker
+          # during parallel link steps (notably nightly's rust-lld).
+          swap-storage: false
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
@@ -109,7 +115,15 @@ jobs:
       - name: Cache
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
-          key: ${{ matrix.rust }}
+          # `cache-bin: false`: rust-cache caches ~/.cargo/bin by default.
+          # On the macos-latest beta runner that cache captured a poisoned
+          # cargo (a rustup-init copy), so a later restore made
+          # `cargo build` run `rustup-init build` → "unexpected argument
+          # 'build'". Not caching the toolchain bin dir removes this class
+          # of failure. The `-v2` key bump abandons the already-poisoned
+          # entries so the next run starts from a clean toolchain.
+          key: ${{ matrix.rust }}-v2
+          cache-bin: "false"
 
       - name: Build
         run: cargo build --verbose
@@ -119,11 +133,26 @@ jobs:
         run: cargo test --verbose
         env:
           CARGO_INCREMENTAL: "0"
+          # Cap parallel link-worker spawns: nightly's bundled rust-lld
+          # SIGBUSes when many test/example binaries link at once on
+          # resource-constrained runners. Same mitigation as the coverage
+          # job. #399.
+          CARGO_BUILD_JOBS: "2"
 
       - name: Build documentation (warnings as errors)
         run: cargo doc --no-deps --workspace
         env:
           RUSTDOCFLAGS: "-D warnings"
+
+      # Reclaim disk before the implicit rust-cache save step. The beta
+      # ubuntu job has hit "No space left on device" during cache save
+      # once target/ + target/doc filled the ~48 GB left after
+      # free-disk-space. doc/ and incremental/ are throwaway and not
+      # cached, so dropping them here is free headroom. Reuses the
+      # `rm -rf target/` cleanup pattern from the coverage job.
+      - name: Reclaim disk before cache save
+        if: runner.os == 'Linux'
+        run: rm -rf target/doc target/debug/incremental
 
   # Test Python bindings feature (only production-ready feature in v0.1.0)
   features:
@@ -225,6 +254,7 @@ jobs:
           cargo run --example showcase_pdf_ua_image
           cargo run --example showcase_in_memory_roundtrip
           cargo run --example showcase_pdfa_conversion
+          cargo run --example showcase_office_conversion
           cargo run --example showcase_pkcs12_signing --features signatures
           cargo run --example showcase_rfc3161_timestamp --features signatures
 
@@ -286,7 +316,9 @@ jobs:
           dotnet: true
           haskell: true
           large-packages: true
-          swap-storage: true
+          # Keep swap: removing it causes OOM-induced SIGBUS in the linker
+          # during parallel link steps (notably nightly's rust-lld).
+          swap-storage: false
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
@@ -350,6 +382,7 @@ jobs:
           cd "$GITHUB_WORKSPACE/examples/python/09-new-features/encrypted_bytes" && uv run python main.py
           cd "$GITHUB_WORKSPACE/examples/python/09-new-features/compliance_validation" && uv run python main.py
           cd "$GITHUB_WORKSPACE/examples/python/09-new-features/image_embedding"    && uv run python main.py
+          cd "$GITHUB_WORKSPACE/examples/python/09-new-features/office_conversion"  && uv run python main.py
           cd "$GITHUB_WORKSPACE/examples/python/09-new-features/ocr_scanned_pdf"  && uv run python main.py
 
   # WASM build check
@@ -365,7 +398,9 @@ jobs:
           dotnet: true
           haskell: true
           large-packages: true
-          swap-storage: true
+          # Keep swap: removing it causes OOM-induced SIGBUS in the linker
+          # during parallel link steps (notably nightly's rust-lld).
+          swap-storage: false
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
@@ -379,10 +414,10 @@ jobs:
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: Build WASM
-        run: cargo build --lib --target wasm32-unknown-unknown --features wasm,rendering
+        run: cargo build --lib --target wasm32-unknown-unknown --features wasm,rendering,barcodes
 
       - name: Clippy WASM
-        run: cargo clippy --target wasm32-unknown-unknown --no-default-features --features wasm,rendering --lib -- -D warnings
+        run: cargo clippy --target wasm32-unknown-unknown --no-default-features --features wasm,rendering,barcodes --lib -- -D warnings
 
       # WASI build target (issue #214). Used by sandboxed agent /
       # serverless deployments via wasmtime / wasmer / Deno. We only
@@ -410,7 +445,7 @@ jobs:
           echo "$PWD/binaryen-version_${ver}/bin" >> "$GITHUB_PATH"
 
       - name: Release WASM build
-        run: cargo build --release --lib --target wasm32-unknown-unknown --no-default-features --features wasm,rendering
+        run: cargo build --release --lib --target wasm32-unknown-unknown --no-default-features --features wasm,rendering,barcodes
 
       - name: wasm-opt -Oz --converge (size gate)
         shell: bash
@@ -432,11 +467,18 @@ jobs:
           after_kb=$(( $(stat -c%s "$out") / 1024 ))
           echo "Before wasm-opt: ${before_kb} KB"
           echo "After  wasm-opt: ${after_kb} KB"
-          # Size regression gate: v0.3.47 baseline after -Oz is ~11.25 MB
-          # (grew from 10.4 MB with fast_image_resize SIMD downscaling and
-          # hayro-jbig2 JBIG2 decoder added to the rendering feature).
-          # Ceiling leaves ~6% headroom above the 11520 KB measured baseline.
-          max_kb=12288
+          # Size regression gate. History after -Oz:
+          #   v0.3.47 ~11.25 MB (fast_image_resize SIMD + hayro-jbig2).
+          #   v0.3.48 ~13.23 MB: the office-converter integration (#159)
+          #     adds the docx/pptx/xlsx writers + the bundled DejaVu
+          #     Sans/Bold Unicode-fallback faces (~1.5 MB of
+          #     `include_bytes!`). WASM exposes `to_*_bytes` /
+          #     `open_from_*_bytes` so the fallback fonts are a required
+          #     part of that feature, not dead weight — the growth is
+          #     legitimate, so the ceiling is raised rather than the
+          #     fonts gated off wasm32.
+          # Ceiling leaves ~6% headroom above the 13546 KB v0.3.48 baseline.
+          max_kb=14336
           if [ "$after_kb" -gt "$max_kb" ]; then
             echo "::error::wasm bundle ${after_kb} KB exceeds ceiling ${max_kb} KB"
             exit 1
@@ -629,7 +671,7 @@ jobs:
           go run -tags pdf_oxide_dev main.go
           cd "$GITHUB_WORKSPACE/examples/go/06-edit-document"
           go run -tags pdf_oxide_dev main.go "$PDF" /tmp/go_edited.pdf
-          for feat in barcode_svg streaming_table pdf_ua_image in_memory_roundtrip pkcs12_signing rfc3161_timestamp dashed_stroke encrypted_bytes page_extraction pdfa_conversion compliance_validation image_embedding; do
+          for feat in barcode_svg streaming_table pdf_ua_image in_memory_roundtrip pkcs12_signing rfc3161_timestamp dashed_stroke encrypted_bytes page_extraction pdfa_conversion compliance_validation image_embedding office_conversion; do
             cd "$GITHUB_WORKSPACE/examples/go/09-new-features/$feat"
             go run -tags pdf_oxide_dev main.go
           done
@@ -777,6 +819,7 @@ jobs:
           echo "--- compliance_validation ---"  && timeout 120 node 09-new-features/compliance_validation/index.js
           echo "--- pdfa_conversion ---"        && timeout 120 node 09-new-features/pdfa_conversion/index.js
           echo "--- image_embedding ---"        && timeout 120 node 09-new-features/image_embedding/index.js
+          echo "--- office_conversion ---"      && timeout 120 node 09-new-features/office_conversion/index.js
 
       - name: Compile TypeScript examples
         if: matrix.os == 'ubuntu-latest'
@@ -902,7 +945,8 @@ jobs:
             examples/csharp/09-new-features/PageExtraction/PageExtraction.csproj \
             examples/csharp/09-new-features/PdfaConversion/PdfaConversion.csproj \
             examples/csharp/09-new-features/ComplianceValidation/ComplianceValidation.csproj \
-            examples/csharp/09-new-features/ImageEmbedding/ImageEmbedding.csproj; do
+            examples/csharp/09-new-features/ImageEmbedding/ImageEmbedding.csproj \
+            examples/csharp/09-new-features/OfficeConversion/OfficeConversion.csproj; do
             dotnet run --project "$proj"
           done
 

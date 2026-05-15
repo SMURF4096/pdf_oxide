@@ -981,10 +981,25 @@ impl MarkdownOutputConverter {
             // boundary).
             if same_line && !current_line.is_empty() {
                 if let Some(prev) = prev_span {
-                    let needs_gap_space = !current_line.ends_with(' ')
-                        && !linkified.starts_with(' ')
-                        && super::has_horizontal_gap(&prev.span, &span.span);
-                    if needs_gap_space {
+                    let no_existing_ws =
+                        !current_line.ends_with(' ') && !linkified.starts_with(' ');
+                    // Visual gap heuristic (issue #260).
+                    let visual_gap = super::has_horizontal_gap(&prev.span, &span.span);
+                    // Punctuation/case heuristic: when prev ends in a sentence
+                    // boundary (`.`, `,`, `;`, `:`, `?`, `!`) and the next span
+                    // begins with an uppercase letter or digit, it's overwhelmingly
+                    // likely a missing space — even if the bbox gap is below the
+                    // visual threshold (tightly typeset academic PDFs are common
+                    // offenders, producing text like "methods.The financial...").
+                    let punct_boundary = current_line
+                        .chars()
+                        .last()
+                        .is_some_and(|c| matches!(c, '.' | ',' | ';' | ':' | '?' | '!'))
+                        && linkified
+                            .chars()
+                            .next()
+                            .is_some_and(|c| c.is_ascii_uppercase() || c.is_ascii_digit());
+                    if no_existing_ws && (visual_gap || punct_boundary) {
                         current_line.push(' ');
                     }
                 }
@@ -2408,6 +2423,7 @@ mod tests {
                 horizontal_scaling: 100.0,
                 primary_detected: false,
                 char_widths: vec![],
+                heading_level: None,
             },
             0,
         )
@@ -2440,6 +2456,7 @@ mod tests {
                 horizontal_scaling: 100.0,
                 primary_detected: false,
                 char_widths: vec![],
+                heading_level: None,
             },
             0,
         )
@@ -2962,6 +2979,7 @@ mod tests {
                 horizontal_scaling: 100.0,
                 primary_detected: false,
                 char_widths: vec![],
+                heading_level: None,
             },
             order,
         );
