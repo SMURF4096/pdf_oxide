@@ -17,6 +17,7 @@ fn make_test_font(name: &str, subtype: &str) -> pdf_oxide::fonts::FontInfo {
         widths: None,
         first_char: None,
         last_char: None,
+        font_matrix_a: 0.001,
         default_width: 1000.0,
         cid_to_gid_map: None,
         cid_system_info: None,

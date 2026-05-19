@@ -2,6 +2,12 @@
 
 All notable changes to PDFOxide are documented here.
 
+## next-release
+
+### Fixed
+- **Type3 font width scaling** - properly observe the font matrix
+  provided in a Type3 font when calculating spacing.
+
 ## [0.3.55] - 2026-05-25
 
 > Ruby + PHP language bindings + multi-line heading reading-order fix

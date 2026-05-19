@@ -6112,8 +6112,14 @@ impl<'doc> TextExtractor<'doc> {
 
         let font = self.cached_current_font.as_deref();
 
-        // Hoist loop-invariant computations
-        let fs_factor = font_size / 1000.0;
+        // Hoist loop-invariant computations (font cannot change mid-operator).
+        // font_matrix_a converts glyph-space widths to text-space units.
+        // Standard fonts (Type1/TrueType): font_matrix_a = 0.001.
+        // Type3 with identity FontMatrix: font_matrix_a = 1.0 (no /1000 division).
+        // Assumes FontMatrix[1] = 0 (no glyph-axis rotation), which holds for all
+        // standard fonts and virtually all Type3 fonts encountered in practice.
+        let font_matrix_a = font.map(|f| f.font_matrix_a).unwrap_or(0.001);
+        let fs_factor = font_size * font_matrix_a;
         let hs_factor = horizontal_scaling / 100.0;
         let cs_hs = char_space * hs_factor;
         let ws_hs = word_space * hs_factor;
@@ -6185,13 +6191,18 @@ impl<'doc> TextExtractor<'doc> {
         let char_space = state.char_space;
         let word_space = state.word_space;
 
-        let fs_factor = font_size / 1000.0;
+        // Disjoint field borrows: cached_current_font (immutable) + tj_span_buffer (mutable)
+        let font = self.cached_current_font.as_deref();
+        // font_matrix_a converts glyph-space widths to text-space units.
+        // Standard fonts (Type1/TrueType): font_matrix_a = 0.001.
+        // Type3 with identity FontMatrix: font_matrix_a = 1.0 (no /1000 division).
+        // Assumes FontMatrix[1] = 0 (no glyph-axis rotation), which holds for all
+        // standard fonts and virtually all Type3 fonts encountered in practice.
+        let font_matrix_a = font.map(|f| f.font_matrix_a).unwrap_or(0.001);
+        let fs_factor = font_size * font_matrix_a;
         let hs_factor = horizontal_scaling / 100.0;
         let cs_hs = char_space * hs_factor;
         let ws_hs = word_space * hs_factor;
-
-        // Disjoint field borrows: cached_current_font (immutable) + tj_span_buffer (mutable)
-        let font = self.cached_current_font.as_deref();
         // Safety: tj_span_buffer is always initialized via begin_text_object()
         let buffer = self
             .tj_span_buffer
@@ -6350,12 +6361,17 @@ impl<'doc> TextExtractor<'doc> {
         let char_space = state.char_space;
         let word_space = state.word_space;
 
-        let fs_factor = font_size / 1000.0;
+        let font = self.cached_current_font.as_deref();
+        // font_matrix_a converts glyph-space widths to text-space units.
+        // Standard fonts (Type1/TrueType): font_matrix_a = 0.001.
+        // Type3 with identity FontMatrix: font_matrix_a = 1.0 (no /1000 division).
+        // Assumes FontMatrix[1] = 0 (no glyph-axis rotation), which holds for all
+        // standard fonts and virtually all Type3 fonts encountered in practice.
+        let font_matrix_a = font.map(|f| f.font_matrix_a).unwrap_or(0.001);
+        let fs_factor = font_size * font_matrix_a;
         let hs_factor = horizontal_scaling / 100.0;
         let cs_hs = char_space * hs_factor;
         let ws_hs = word_space * hs_factor;
-
-        let font = self.cached_current_font.as_deref();
 
         let total_width = if let Some(font) = font {
             if font.subtype != "Type0" {
@@ -6802,7 +6818,13 @@ impl<'doc> TextExtractor<'doc> {
                 500.0 // Default 0.5em
             };
 
-            let fs_factor = font_size / 1000.0;
+            // font_matrix_a converts glyph-space widths to text-space units.
+            // Standard fonts (Type1/TrueType): font_matrix_a = 0.001.
+            // Type3 with identity FontMatrix: font_matrix_a = 1.0 (no /1000 division).
+            // Assumes FontMatrix[1] = 0 (no glyph-axis rotation), which holds for all
+            // standard fonts and virtually all Type3 fonts encountered in practice.
+            let font_matrix_a = font.map(|f| f.font_matrix_a).unwrap_or(0.001);
+            let fs_factor = font_size * font_matrix_a;
             let hs_factor = horizontal_scaling / 100.0;
             let glyph_width_user_space = glyph_width_font_units * fs_factor * hs_factor;
 
@@ -7004,6 +7026,7 @@ mod tests {
             widths: None,
             first_char: None,
             last_char: None,
+            font_matrix_a: 0.001,
             default_width: 1000.0,
             cid_to_gid_map: None,
             cid_system_info: None,
