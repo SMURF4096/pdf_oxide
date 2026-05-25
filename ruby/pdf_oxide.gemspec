@@ -19,17 +19,17 @@ Gem::Specification.new do |spec|
   spec.description = 'Idiomatic Ruby bindings for PDF Oxide. Process, analyze, ' \
                      'and generate PDFs through the libpdf_oxide cdylib used by ' \
                      'the Python, Java, Node, Go, and C# bindings.'
-  spec.homepage = 'https://github.com/fyi-oxide/pdf_oxide'
+  spec.homepage = 'https://github.com/yfedoseev/pdf_oxide'
   # Dual-licensed at the repo root (MIT OR Apache-2.0); mirror that here.
   spec.licenses = ['MIT', 'Apache-2.0']
   spec.required_ruby_version = '>= 3.1.0'
 
   spec.metadata = {
     'homepage_uri' => spec.homepage,
-    'source_code_uri' => 'https://github.com/fyi-oxide/pdf_oxide',
-    'bug_tracker_uri' => 'https://github.com/fyi-oxide/pdf_oxide/issues',
+    'source_code_uri' => 'https://github.com/yfedoseev/pdf_oxide',
+    'bug_tracker_uri' => 'https://github.com/yfedoseev/pdf_oxide/issues',
     'documentation_uri' => 'https://rubydoc.info/gems/pdf_oxide',
-    'changelog_uri' => 'https://github.com/fyi-oxide/pdf_oxide/blob/main/CHANGELOG.md'
+    'changelog_uri' => 'https://github.com/yfedoseev/pdf_oxide/blob/main/CHANGELOG.md'
   }
 
   # ship only library code, the LICENSE, the README, and the Gemfile.

@@ -1,6 +1,6 @@
 # pdf_oxide (PHP)
 
-PHP binding for [pdf_oxide](https://github.com/fyi-oxide/pdf_oxide) — a
+PHP binding for [pdf_oxide](https://github.com/yfedoseev/pdf_oxide) — a
 Rust-backed PDF processing toolkit. This package is pure PHP code on top
 of PHP's built-in FFI extension; the heavy lifting happens in the same
 `libpdf_oxide` cdylib used by the Python, Node, Go, C#, Ruby, and Java
@@ -166,12 +166,12 @@ unit suite still runs on any box.
 
 ## Links
 
-- Root project: https://github.com/fyi-oxide/pdf_oxide
-- Rust source: https://github.com/fyi-oxide/pdf_oxide/tree/main/src
+- Root project: https://github.com/yfedoseev/pdf_oxide
+- Rust source: https://github.com/yfedoseev/pdf_oxide/tree/main/src
 - Packagist: https://packagist.org/packages/oxide/pdf-oxide
 - Other bindings: Python (`pip install pdf_oxide`), Node
   (`npm i pdf_oxide`), Ruby (`gem install pdf_oxide`), Go (`go get
-  github.com/fyi-oxide/pdf-oxide`), C# (`dotnet add package
+  github.com/yfedoseev/pdf_oxide/go`), C# (`dotnet add package
   PdfOxide`), Java (`fyi.oxide:pdf-oxide` on Maven Central).
 
 ## License

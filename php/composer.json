@@ -19,10 +19,10 @@
             "email": "releases@oxide.fyi"
         }
     ],
-    "homepage": "https://github.com/fyi-oxide/pdf_oxide",
+    "homepage": "https://github.com/yfedoseev/pdf_oxide",
     "support": {
-        "issues": "https://github.com/fyi-oxide/pdf_oxide/issues",
-        "source": "https://github.com/fyi-oxide/pdf_oxide"
+        "issues": "https://github.com/yfedoseev/pdf_oxide/issues",
+        "source": "https://github.com/yfedoseev/pdf_oxide"
     },
     "require": {
         "php": ">=8.2",

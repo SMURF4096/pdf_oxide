@@ -1,6 +1,6 @@
 # PDF Oxide — Ruby Bindings
 
-Idiomatic Ruby bindings for [PDF Oxide](https://github.com/fyi-oxide/pdf_oxide),
+Idiomatic Ruby bindings for [PDF Oxide](https://github.com/yfedoseev/pdf_oxide),
 the same `libpdf_oxide` cdylib that powers the Python, Java, Node, Go, C#,
 and PHP bindings.
 
