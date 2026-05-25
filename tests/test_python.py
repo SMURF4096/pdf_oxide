@@ -814,6 +814,33 @@ def test_extract_paths_operations():
         pytest.skip("Test fixture '1.pdf' not available or invalid")
 
 
+def test_extract_paths_layer_field_shape():
+    """Test that extract_paths surfaces the OCG (PDF layer) field.
+
+    The `layer` key must be present on every path dict and be either a
+    non-empty `str` (when the path was emitted inside a `BDC /OC … EMC`
+    region whose property dict resolves to a named OCG) or `None`
+    (when the path was emitted outside any /OC region, or when the
+    PDF has no /OCProperties metadata).
+
+    `simple.pdf` is unlikely to carry OCG metadata, so the assertion
+    targets the field's *shape* (key present, type str-or-None) rather
+    than a specific value. A construction-PDF fixture with OCGs (e.g.
+    exported from Revit or AutoCAD with layers preserved) would let
+    us additionally assert recognizable layer names like "A-GRID".
+    """
+    try:
+        doc = PdfDocument("tests/fixtures/simple.pdf")
+        paths = doc.extract_paths(0)
+        assert isinstance(paths, list)
+        for path in paths:
+            assert isinstance(path, dict)
+            assert "layer" in path, "Path dict should contain 'layer' field"
+            assert path["layer"] is None or isinstance(path["layer"], str)
+    except (OSError, RuntimeError):
+        pytest.skip("Test fixture 'simple.pdf' not available or invalid")
+
+
 def test_extract_images_invalid_page():
     """Test extract_images with invalid page index."""
     try:
