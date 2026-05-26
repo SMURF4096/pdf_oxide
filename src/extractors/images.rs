@@ -2329,12 +2329,7 @@ impl<'doc> PdfImageHandle<'doc> {
         // back into document.rs helpers here.
         image.set_bbox(self.bbox);
         image.set_matrix([
-            self.ctm.a,
-            self.ctm.b,
-            self.ctm.c,
-            self.ctm.d,
-            self.ctm.e,
-            self.ctm.f,
+            self.ctm.a, self.ctm.b, self.ctm.c, self.ctm.d, self.ctm.e, self.ctm.f,
         ]);
         image.set_rotation_degrees(self.rotation_degrees as i32);
 
@@ -2353,12 +2348,12 @@ impl<'doc> PdfImageHandle<'doc> {
                 let obj = self.doc.load_object(obj_ref)?;
                 match obj {
                     crate::object::Object::Stream { data, .. } => Ok(data.to_vec()),
-                    _ => Err(crate::error::Error::Image(
-                        "XObject is not a stream".to_string(),
-                    )),
+                    _ => Err(crate::error::Error::Image("XObject is not a stream".to_string())),
                 }
             },
-            PdfImageSource::Inline { compressed_bytes, .. } => Ok(compressed_bytes.to_vec()),
+            PdfImageSource::Inline {
+                compressed_bytes, ..
+            } => Ok(compressed_bytes.to_vec()),
         }
     }
 }
@@ -2575,6 +2570,9 @@ pub(crate) fn image_handle_from_inline<'doc>(
         rotation_degrees,
         ctm,
         doc,
-        source: PdfImageSource::Inline { stream_object, compressed_bytes },
+        source: PdfImageSource::Inline {
+            stream_object,
+            compressed_bytes,
+        },
     })
 }

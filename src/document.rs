@@ -12730,7 +12730,10 @@ impl PdfDocument {
                 },
                 Operator::Do { name } => {
                     if let Some(ref xobj_dict_map) = xobject_dict {
-                        let ctm = ctm_stack.last().copied().unwrap_or_else(crate::content::Matrix::identity);
+                        let ctm = ctm_stack
+                            .last()
+                            .copied()
+                            .unwrap_or_else(crate::content::Matrix::identity);
                         if let Ok(mut more) = self.collect_handles_from_do(
                             &name,
                             xobj_dict_map,
@@ -12744,7 +12747,10 @@ impl PdfDocument {
                     }
                 },
                 Operator::InlineImage { dict, data } => {
-                    let ctm = ctm_stack.last().copied().unwrap_or_else(crate::content::Matrix::identity);
+                    let ctm = ctm_stack
+                        .last()
+                        .copied()
+                        .unwrap_or_else(crate::content::Matrix::identity);
                     if let Some(handle) =
                         image_handle_from_inline(self, &dict, data, ctm, paint_order)
                     {
@@ -12792,12 +12798,17 @@ impl PdfDocument {
             None => return Ok(Vec::new()),
         };
 
-        let subtype = xobj_dict.get("Subtype").and_then(|s| s.as_name()).unwrap_or("");
+        let subtype = xobj_dict
+            .get("Subtype")
+            .and_then(|s| s.as_name())
+            .unwrap_or("");
 
         match subtype {
             "Image" => {
                 if let Some(ref_obj) = xobject_ref_opt {
-                    if let Some(h) = image_handle_from_xobject(self, ref_obj, xobj_dict, ctm, *paint_order) {
+                    if let Some(h) =
+                        image_handle_from_xobject(self, ref_obj, xobj_dict, ctm, *paint_order)
+                    {
                         *paint_order += 1;
                         Ok(vec![h])
                     } else {
@@ -12806,7 +12817,7 @@ impl PdfDocument {
                 } else {
                     Ok(Vec::new())
                 }
-            }
+            },
             "Form" => {
                 if let (Some(ref_obj), Some(parent_res)) = (xobject_ref_opt, resources) {
                     self.collect_image_handles_from_form_xobject(
@@ -12820,7 +12831,7 @@ impl PdfDocument {
                 } else {
                     Ok(Vec::new())
                 }
-            }
+            },
             _ => Ok(Vec::new()),
         }
     }
@@ -12863,7 +12874,7 @@ impl PdfDocument {
             None => {
                 xobject_stack.pop();
                 return Ok(Vec::new());
-            }
+            },
         };
 
         // Form's own Resources (fallback to the parent's resources if absent).
@@ -12922,12 +12933,12 @@ impl PdfDocument {
                             .insert(xobject_ref, std::sync::Arc::new(data.clone()));
                     }
                     data
-                }
+                },
                 Err(e) => {
                     log::warn!("Failed to decode Form XObject stream: {}, skipping", e);
                     xobject_stack.pop();
                     return Ok(Vec::new());
-                }
+                },
             }
         };
 
@@ -12937,7 +12948,7 @@ impl PdfDocument {
             Err(_) => {
                 xobject_stack.pop();
                 return Ok(Vec::new());
-            }
+            },
         };
 
         // Critical CTM composition:
@@ -12955,18 +12966,18 @@ impl PdfDocument {
                     if let Some(current) = ctm_stack.last() {
                         ctm_stack.push(*current);
                     }
-                }
+                },
                 Operator::RestoreState => {
                     if ctm_stack.len() > 1 {
                         ctm_stack.pop();
                     }
-                }
+                },
                 Operator::Cm { a, b, c, d, e, f } => {
                     if let Some(current) = ctm_stack.last_mut() {
                         let m = crate::content::Matrix { a, b, c, d, e, f };
                         *current = m.multiply(current);
                     }
-                }
+                },
 
                 Operator::Do { name } => {
                     if let Some(ref xobj_d) = form_xobject_dict {
@@ -12985,7 +12996,7 @@ impl PdfDocument {
                             handles.append(&mut more);
                         }
                     }
-                }
+                },
 
                 Operator::InlineImage { dict, data } => {
                     let current_ctm = ctm_stack
@@ -12998,9 +13009,9 @@ impl PdfDocument {
                         handles.push(h);
                         *paint_order += 1;
                     }
-                }
+                },
 
-                _ => {}
+                _ => {},
             }
         }
 
