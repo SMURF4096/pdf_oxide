@@ -143,3 +143,166 @@ fn pdf_filter_from_name_roundtrip() {
         PdfFilter::Other("UnknownFilter".to_string())
     );
 }
+
+// ── Test A: Form XObject does not produce a handle ────────────────────────────
+
+/// Build a minimal PDF whose page Resources/XObject dictionary contains a
+/// Form XObject (not an Image XObject).  The PDF has no actual image content;
+/// `page_image_handles` must return an empty vec because Form XObjects are
+/// not recursed into.
+fn build_pdf_with_form_xobject_only() -> Vec<u8> {
+    // We construct the PDF bytes manually so we can place a /Subtype /Form
+    // XObject in the resources without using the writer (which only writes
+    // Image XObjects).
+    //
+    // Object layout:
+    //   1 Catalog → 2
+    //   2 Pages   → [3]
+    //   3 Page    → Resources: { XObject: { Im0: 5 0 R } }, Contents: 4 0 R
+    //   4 Content stream  (just a `Do` operator that paints the form)
+    //   5 Form XObject stream  (/Type /XObject /Subtype /Form)
+    let content = b"q /Im0 Do Q";
+    let form_stream_data = b""; // empty form content
+    let mut pdf = b"%PDF-1.4\n".to_vec();
+
+    let off1 = pdf.len();
+    pdf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+
+    let off2 = pdf.len();
+    pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+
+    let off3 = pdf.len();
+    pdf.extend_from_slice(
+        b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] \
+          /Contents 4 0 R /Resources << /XObject << /Im0 5 0 R >> >> >>\nendobj\n",
+    );
+
+    let off4 = pdf.len();
+    let content_str = format!("4 0 obj\n<< /Length {} >>\nstream\n", content.len());
+    pdf.extend_from_slice(content_str.as_bytes());
+    pdf.extend_from_slice(content);
+    pdf.extend_from_slice(b"\nendstream\nendobj\n");
+
+    let off5 = pdf.len();
+    let form_str = format!(
+        "5 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 100 100] /Length {} >>\nstream\n",
+        form_stream_data.len()
+    );
+    pdf.extend_from_slice(form_str.as_bytes());
+    pdf.extend_from_slice(form_stream_data);
+    pdf.extend_from_slice(b"\nendstream\nendobj\n");
+
+    let xref_off = pdf.len();
+    pdf.extend_from_slice(b"xref\n0 6\n");
+    pdf.extend_from_slice(b"0000000000 65535 f \n");
+    pdf.extend_from_slice(format!("{:010} 00000 n \n", off1).as_bytes());
+    pdf.extend_from_slice(format!("{:010} 00000 n \n", off2).as_bytes());
+    pdf.extend_from_slice(format!("{:010} 00000 n \n", off3).as_bytes());
+    pdf.extend_from_slice(format!("{:010} 00000 n \n", off4).as_bytes());
+    pdf.extend_from_slice(format!("{:010} 00000 n \n", off5).as_bytes());
+    pdf.extend_from_slice(
+        format!("trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off)
+            .as_bytes(),
+    );
+
+    pdf
+}
+
+#[test]
+fn form_xobject_does_not_produce_image_handle() {
+    // Form XObjects are not recursed into — the handle list must be empty.
+    let pdf_bytes = build_pdf_with_form_xobject_only();
+    let doc = PdfDocument::from_bytes(pdf_bytes).expect("open PDF");
+    let handles = doc.page_image_handles(0).expect("page_image_handles");
+    assert_eq!(
+        handles.len(),
+        0,
+        "Form XObjects must not appear in the handle list; got {} handles",
+        handles.len()
+    );
+}
+
+// ── Test B: N images → paint_order is [0, 1, 2] ──────────────────────────────
+
+fn build_pdf_with_n_jpegs(n: usize) -> Vec<u8> {
+    let mut writer = PdfWriter::with_config(PdfWriterConfig::default());
+    let mut page = writer.add_a4_page();
+    for i in 0..n {
+        let x = (i as f32) * 50.0;
+        let bbox = Rect::new(x, 0.0, 40.0, 40.0);
+        let img = ImageContent::new(bbox, ImageFormat::Jpeg, MINIMAL_JPEG.to_vec(), 1, 1);
+        page.add_element(&ContentElement::Image(img));
+    }
+    page.finish();
+    writer.finish().expect("PDF write failed")
+}
+
+#[test]
+fn three_images_have_paint_order_zero_one_two() {
+    let pdf_bytes = build_pdf_with_n_jpegs(3);
+    let doc = PdfDocument::from_bytes(pdf_bytes).expect("open PDF");
+    let handles = doc.page_image_handles(0).expect("page_image_handles");
+
+    assert_eq!(handles.len(), 3, "expected 3 handles");
+    let paint_orders: Vec<usize> = handles.iter().map(|h| h.paint_order).collect();
+    assert_eq!(
+        paint_orders,
+        vec![0, 1, 2],
+        "paint_order values must be [0, 1, 2] in content-stream order, got {:?}",
+        paint_orders
+    );
+}
+
+// ── Test C: JPEG raw bytes start with SOI marker [0xFF, 0xD8] ─────────────────
+
+#[test]
+fn raw_compressed_bytes_starts_with_jpeg_soi_marker() {
+    let pdf_bytes = build_pdf_with_jpeg(1, 1);
+    let doc = PdfDocument::from_bytes(pdf_bytes).expect("open PDF");
+    let handles = doc.page_image_handles(0).expect("page_image_handles");
+    let handle = handles.into_iter().next().expect("handle");
+
+    let raw = handle.raw_compressed_bytes().expect("raw bytes");
+    assert!(
+        raw.len() >= 2,
+        "raw bytes must be at least 2 bytes for SOI check, got {}",
+        raw.len()
+    );
+    assert_eq!(
+        &raw[..2],
+        &[0xFF, 0xD8],
+        "JPEG raw bytes must start with SOI marker FF D8, got {:02X} {:02X}",
+        raw[0],
+        raw[1]
+    );
+}
+
+// ── Test D: Out-of-bounds page index returns Err ──────────────────────────────
+
+#[test]
+fn out_of_bounds_page_index_returns_err() {
+    let pdf_bytes = build_pdf_with_jpeg(1, 1);
+    let doc = PdfDocument::from_bytes(pdf_bytes).expect("open PDF");
+    // The PDF has only 1 page (index 0); index 999 must be an error.
+    let result = doc.page_image_handles(999);
+    assert!(
+        result.is_err(),
+        "page_image_handles(999) on a 1-page PDF must return Err, got Ok"
+    );
+}
+
+// ── Test E: Inline image decode (placeholder — no writer-level support yet) ───
+
+// The pdf_oxide writer does not currently expose an API for inserting inline
+// images (BI/ID/EI sequences) into content streams. Constructing a correct
+// inline-image PDF by hand requires matching the exact byte offsets expected
+// by the content-stream parser, which is fragile without writer support.
+//
+// This test is left as an `#[ignore]` placeholder until the writer gains
+// first-class inline-image support, at which point it should be filled in
+// following the pattern of the decode test above.
+#[test]
+#[ignore = "inline-image writer support not yet available; fill in once PdfWriter exposes BI/ID/EI"]
+fn inline_image_decode_produces_valid_image() {
+    // TODO: construct a PDF with an inline image and assert decode() succeeds.
+}

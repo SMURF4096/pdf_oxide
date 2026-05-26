@@ -12631,6 +12631,10 @@ impl PdfDocument {
     /// the images you need, or [`PdfImageHandle::raw_compressed_bytes`] to forward
     /// compressed data (e.g. JPEG bytes) without recompression.
     ///
+    /// Note: Form XObjects (PDF subtype `Form`) are not recursed into. Images nested
+    /// inside Form XObjects do not appear in the handle list. This bounds enumeration
+    /// cost; recursive Form XObject traversal is follow-on work.
+    ///
     /// # Examples
     ///
     /// ```no_run
@@ -13298,7 +13302,7 @@ impl PdfDocument {
     }
 
     /// Helper to derive rotation angle from transformation matrix.
-    pub(crate) fn matrix_to_rotation(m: crate::content::Matrix) -> i32 {
+    fn matrix_to_rotation(m: crate::content::Matrix) -> i32 {
         // Compute angle from CTM components (atan2(b, a))
         let angle_rad = m.b.atan2(m.a);
         let angle_deg = (angle_rad.to_degrees().round() as i32) % 360;
@@ -13313,7 +13317,7 @@ impl PdfDocument {
     ///
     /// Transforms all four corners and computes the axis-aligned bounding box,
     /// which correctly handles rotation, shear, and negative scaling.
-    pub(crate) fn transform_bbox_with_ctm(
+    fn transform_bbox_with_ctm(
         &self,
         rect: &crate::geometry::Rect,
         ctm: crate::content::Matrix,

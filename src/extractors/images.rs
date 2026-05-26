@@ -2161,7 +2161,7 @@ mod indexed_tests {
 ///
 /// Knowing the filter chain lets callers decide whether to decode (e.g. skip
 /// decompression for JPEG re-embed pipelines that only need `raw_compressed_bytes`).
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[non_exhaustive]
 pub enum PdfFilter {
     /// JPEG (DCTDecode) — compressed bytes are a valid JPEG file.
@@ -2285,6 +2285,13 @@ pub struct PdfImageHandle<'doc> {
     /// Zero-based index of this image among all images painted on the page,
     /// in content-stream paint order.
     pub paint_order: usize,
+    /// Axis-aligned bounding box of this image in PDF user space, computed
+    /// during Phase 1 by applying the current transformation matrix to the
+    /// unit rectangle `[0,0,1,1]`.
+    pub bbox: crate::geometry::Rect,
+    /// Rotation angle in degrees (0, 90, 180, or 270), derived from the CTM
+    /// during Phase 1.
+    pub rotation_degrees: f32,
 
     // Internal fields
     ctm: crate::content::Matrix,
@@ -2314,9 +2321,9 @@ impl<'doc> PdfImageHandle<'doc> {
 
         let mut image = extract_image_from_xobject(Some(self.doc), obj, obj_ref, None)?;
 
-        let unit_rect = crate::geometry::Rect::new(0.0, 0.0, 1.0, 1.0);
-        let bbox = self.doc.transform_bbox_with_ctm(&unit_rect, self.ctm);
-        image.set_bbox(bbox);
+        // Use pre-computed bbox and rotation from Phase 1 — no need to call
+        // back into document.rs helpers here.
+        image.set_bbox(self.bbox);
         image.set_matrix([
             self.ctm.a,
             self.ctm.b,
@@ -2325,7 +2332,7 @@ impl<'doc> PdfImageHandle<'doc> {
             self.ctm.e,
             self.ctm.f,
         ]);
-        image.set_rotation_degrees(crate::document::PdfDocument::matrix_to_rotation(self.ctm));
+        image.set_rotation_degrees(self.rotation_degrees as i32);
 
         Ok(image)
     }
@@ -2363,14 +2370,69 @@ impl std::fmt::Debug for PdfImageHandle<'_> {
             .field("filter_chain", &self.filter_chain)
             .field("is_inline", &self.is_inline)
             .field("paint_order", &self.paint_order)
+            .field("bbox", &self.bbox)
+            .field("rotation_degrees", &self.rotation_degrees)
             .finish_non_exhaustive()
+    }
+}
+
+/// Derive a rotation angle in degrees from a transformation matrix.
+///
+/// Computes `atan2(b, a)` and rounds to the nearest integer degree.
+fn matrix_to_rotation(m: crate::content::Matrix) -> f32 {
+    let angle_rad = m.b.atan2(m.a);
+    let angle_deg = angle_rad.to_degrees();
+    let normalized = angle_deg % 360.0;
+    if normalized < 0.0 {
+        normalized + 360.0
+    } else {
+        normalized
+    }
+}
+
+/// Transform an axis-aligned bounding rectangle by a CTM.
+///
+/// Transforms all four corners and returns the axis-aligned bounding box of the
+/// result, which correctly handles rotation, shear, and negative scaling.
+fn transform_bbox_with_ctm(
+    rect: &crate::geometry::Rect,
+    ctm: crate::content::Matrix,
+) -> crate::geometry::Rect {
+    let x0 = rect.x;
+    let y0 = rect.y;
+    let x1 = rect.x + rect.width;
+    let y1 = rect.y + rect.height;
+
+    let tx0 = ctm.a * x0 + ctm.c * y0 + ctm.e;
+    let ty0 = ctm.b * x0 + ctm.d * y0 + ctm.f;
+
+    let tx1 = ctm.a * x1 + ctm.c * y0 + ctm.e;
+    let ty1 = ctm.b * x1 + ctm.d * y0 + ctm.f;
+
+    let tx2 = ctm.a * x0 + ctm.c * y1 + ctm.e;
+    let ty2 = ctm.b * x0 + ctm.d * y1 + ctm.f;
+
+    let tx3 = ctm.a * x1 + ctm.c * y1 + ctm.e;
+    let ty3 = ctm.b * x1 + ctm.d * y1 + ctm.f;
+
+    let min_x = tx0.min(tx1).min(tx2).min(tx3);
+    let max_x = tx0.max(tx1).max(tx2).max(tx3);
+    let min_y = ty0.min(ty1).min(ty2).min(ty3);
+    let max_y = ty0.max(ty1).max(ty2).max(ty3);
+
+    crate::geometry::Rect {
+        x: min_x,
+        y: min_y,
+        width: max_x - min_x,
+        height: max_y - min_y,
     }
 }
 
 /// Build a `PdfImageHandle` from an Image XObject dictionary entry.
 ///
 /// Returns `None` if the XObject reference cannot be resolved or the dict lacks
-/// required fields (`Width`, `Height`).
+/// required fields (`Width`, `Height`), or if those fields contain non-positive
+/// values.
 pub(crate) fn image_handle_from_xobject<'doc>(
     doc: &'doc crate::document::PdfDocument,
     obj_ref: ObjectRef,
@@ -2380,8 +2442,16 @@ pub(crate) fn image_handle_from_xobject<'doc>(
 ) -> Option<PdfImageHandle<'doc>> {
     use crate::object::Object;
 
-    let w = xobject_dict.get("Width").and_then(|o| o.as_integer())? as u32;
-    let h = xobject_dict.get("Height").and_then(|o| o.as_integer())? as u32;
+    let w = xobject_dict
+        .get("Width")
+        .and_then(|o| o.as_integer())
+        .filter(|&n| n > 0)
+        .map(|n| n as u32)?;
+    let h = xobject_dict
+        .get("Height")
+        .and_then(|o| o.as_integer())
+        .filter(|&n| n > 0)
+        .map(|n| n as u32)?;
     let bpc = xobject_dict
         .get("BitsPerComponent")
         .and_then(|o| o.as_integer())
@@ -2389,7 +2459,9 @@ pub(crate) fn image_handle_from_xobject<'doc>(
     let byte_size = xobject_dict
         .get("Length")
         .and_then(|o| o.as_integer())
-        .unwrap_or(0) as u64;
+        .filter(|&n| n >= 0)
+        .map(|n| n as u64)
+        .unwrap_or(0);
     let filter_chain = parse_filter_chain(xobject_dict);
     let color_space = xobject_dict
         .get("ColorSpace")
@@ -2413,6 +2485,11 @@ pub(crate) fn image_handle_from_xobject<'doc>(
         color_space
     };
 
+    // Compute bbox and rotation in Phase 1 while the CTM is in scope.
+    let unit_rect = crate::geometry::Rect::new(0.0, 0.0, 1.0, 1.0);
+    let bbox = transform_bbox_with_ctm(&unit_rect, ctm);
+    let rotation_degrees = matrix_to_rotation(ctm);
+
     Some(PdfImageHandle {
         width: w,
         height: h,
@@ -2422,6 +2499,8 @@ pub(crate) fn image_handle_from_xobject<'doc>(
         filter_chain,
         is_inline: false,
         paint_order,
+        bbox,
+        rotation_degrees,
         ctm,
         doc,
         source: PdfImageSource::XObject(obj_ref),
@@ -2441,8 +2520,16 @@ pub(crate) fn image_handle_from_inline<'doc>(
     // Inline image dicts use abbreviated keys; expand them.
     let expanded = crate::extractors::expand_inline_image_dict(dict.clone());
 
-    let w = expanded.get("Width").and_then(|o| o.as_integer())? as u32;
-    let h = expanded.get("Height").and_then(|o| o.as_integer())? as u32;
+    let w = expanded
+        .get("Width")
+        .and_then(|o| o.as_integer())
+        .filter(|&n| n > 0)
+        .map(|n| n as u32)?;
+    let h = expanded
+        .get("Height")
+        .and_then(|o| o.as_integer())
+        .filter(|&n| n > 0)
+        .map(|n| n as u32)?;
     let bpc = expanded
         .get("BitsPerComponent")
         .and_then(|o| o.as_integer())
@@ -2453,6 +2540,11 @@ pub(crate) fn image_handle_from_inline<'doc>(
         .get("ColorSpace")
         .and_then(|cs| parse_color_space(cs).ok())
         .unwrap_or(ColorSpace::DeviceRGB);
+
+    // Compute bbox and rotation in Phase 1 while the CTM is in scope.
+    let unit_rect = crate::geometry::Rect::new(0.0, 0.0, 1.0, 1.0);
+    let bbox = transform_bbox_with_ctm(&unit_rect, ctm);
+    let rotation_degrees = matrix_to_rotation(ctm);
 
     // Build a synthetic Object::Stream so decode() can call extract_image_from_xobject.
     let mut stream_dict = expanded;
@@ -2471,6 +2563,8 @@ pub(crate) fn image_handle_from_inline<'doc>(
         filter_chain,
         is_inline: true,
         paint_order,
+        bbox,
+        rotation_degrees,
         ctm,
         doc,
         source: PdfImageSource::Inline { stream_object, compressed_data: data },
