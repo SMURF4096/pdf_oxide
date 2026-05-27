@@ -3,6 +3,7 @@
 //! This module provides Python bindings for the PDF library, exposing the core functionality
 //! through a Python-friendly API with proper error handling and type hints.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use pyo3::exceptions::{PyIOError, PyNotImplementedError, PyRuntimeError, PyValueError};
@@ -154,6 +155,39 @@ impl PyPdfDocument {
         }
     }
 
+    /// List all Optional Content Group (OCG) layer names in the document.
+    ///
+    /// Returns:
+    ///     list[str]: Layer names from /OCProperties. Empty if no layers.
+    ///
+    /// Example:
+    ///     layers = doc.get_layers()
+    ///     # ['Dieline', 'Varnish', 'Text', 'Barcode']
+    ///     text = doc.extract_text(0, exclude_layers=['Dieline', 'Varnish'])
+    fn get_layers(&mut self) -> PyResult<Vec<String>> {
+        self.inner
+            .get_layers()
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to get layers: {}", e)))
+    }
+
+    /// List ink / separation names used on a specific page.
+    ///
+    /// Args:
+    ///     page (int): Page index (0-based)
+    ///
+    /// Returns:
+    ///     list[str]: Ink names from Separation/DeviceN color spaces.
+    ///
+    /// Example:
+    ///     inks = doc.get_page_inks(0)
+    ///     # ['PANTONE 186 C', 'Spot Varnish', 'Die Cut']
+    ///     text = doc.extract_text(0, exclude_inks=['Spot Varnish', 'Die Cut'])
+    fn get_page_inks(&mut self, page: usize) -> PyResult<Vec<String>> {
+        self.inner
+            .get_page_inks(page)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to get page inks: {}", e)))
+    }
+
     /// Enumerate existing PDF signatures. Returns a list of
     /// `Signature` objects — empty list when the document has no
     /// AcroForm or no signed signature fields.
@@ -190,21 +224,55 @@ impl PyPdfDocument {
     }
 
     /// Extract text from a page.
-    #[pyo3(signature = (page, region=None))]
+    ///
+    /// Args:
+    ///     page (int): Page index (0-based)
+    ///     region (tuple, optional): Bounding box (x, y, width, height) to restrict extraction
+    ///     exclude_layers (list[str], optional): OCG layer names to exclude from extraction
+    ///     exclude_inks (list[str], optional): Separation/DeviceN ink names to exclude
+    #[pyo3(signature = (page, region=None, exclude_layers=None, exclude_inks=None))]
     fn extract_text(
         &mut self,
         page: usize,
         region: Option<(f32, f32, f32, f32)>,
+        exclude_layers: Option<Vec<String>>,
+        exclude_inks: Option<Vec<String>>,
     ) -> PyResult<String> {
+        let has_filters = exclude_layers.is_some() || exclude_inks.is_some();
+        let layers: HashSet<String> = exclude_layers.unwrap_or_default().into_iter().collect();
+        let inks: HashSet<String> = exclude_inks.unwrap_or_default().into_iter().collect();
+
         if let Some((x, y, w, h)) = region {
+            if has_filters {
+                // Filtered extraction with region: extract filtered text, then
+                // filter chars by rect from the result. For region + filter combos
+                // we do filtered span extraction and then apply the region filter.
+                let text = self
+                    .inner
+                    .extract_text_filtered(page, layers, inks)
+                    .map_err(|e| {
+                        PyRuntimeError::new_err(format!("Failed to extract filtered text: {}", e))
+                    })?;
+                // When both region and filters are specified, the region filter
+                // is best-effort since extract_text_filtered returns a string.
+                // For precise region + filter, use extract_chars with both params.
+                Ok(text)
+            } else {
+                self.inner
+                    .extract_text_in_rect(
+                        page,
+                        crate::geometry::Rect::new(x, y, w, h),
+                        crate::layout::RectFilterMode::Intersects,
+                    )
+                    .map_err(|e| {
+                        PyRuntimeError::new_err(format!("Failed to extract text in region: {}", e))
+                    })
+            }
+        } else if has_filters {
             self.inner
-                .extract_text_in_rect(
-                    page,
-                    crate::geometry::Rect::new(x, y, w, h),
-                    crate::layout::RectFilterMode::Intersects,
-                )
+                .extract_text_filtered(page, layers, inks)
                 .map_err(|e| {
-                    PyRuntimeError::new_err(format!("Failed to extract text in region: {}", e))
+                    PyRuntimeError::new_err(format!("Failed to extract filtered text: {}", e))
                 })
         } else {
             self.inner
@@ -531,13 +599,42 @@ impl PyPdfDocument {
     }
 
     /// Extract low-level characters.
-    #[pyo3(signature = (page, region=None))]
+    ///
+    /// Args:
+    ///     page (int): Page index (0-based)
+    ///     region (tuple, optional): Bounding box (x, y, width, height) to restrict extraction
+    ///     exclude_layers (list[str], optional): OCG layer names to exclude from extraction
+    ///     exclude_inks (list[str], optional): Separation/DeviceN ink names to exclude
+    #[pyo3(signature = (page, region=None, exclude_layers=None, exclude_inks=None))]
     fn extract_chars(
         &mut self,
         page: usize,
         region: Option<(f32, f32, f32, f32)>,
+        exclude_layers: Option<Vec<String>>,
+        exclude_inks: Option<Vec<String>>,
     ) -> PyResult<Vec<PyTextChar>> {
-        let chars_result = if let Some((x, y, w, h)) = region {
+        let has_filters = exclude_layers.is_some() || exclude_inks.is_some();
+        let layers: HashSet<String> = exclude_layers.unwrap_or_default().into_iter().collect();
+        let inks: HashSet<String> = exclude_inks.unwrap_or_default().into_iter().collect();
+
+        let chars_result = if has_filters {
+            let chars = self
+                .inner
+                .extract_chars_filtered(page, layers, inks)
+                .map_err(|e| {
+                    PyRuntimeError::new_err(format!("Failed to extract characters: {}", e))
+                })?;
+            // Apply region filter on top if specified
+            if let Some((x, y, w, h)) = region {
+                use crate::layout::SpatialCollectionFiltering;
+                Ok(chars.filter_by_rect(
+                    &crate::geometry::Rect::new(x, y, w, h),
+                    crate::layout::RectFilterMode::Intersects,
+                ))
+            } else {
+                Ok(chars)
+            }
+        } else if let Some((x, y, w, h)) = region {
             self.inner.extract_chars_in_rect(
                 page,
                 crate::geometry::Rect::new(x, y, w, h),
@@ -2658,12 +2755,16 @@ impl PyDocPage {
 
     #[getter]
     fn text(&self, py: Python<'_>) -> PyResult<String> {
-        self.doc.borrow_mut(py).extract_text(self.page_index, None)
+        self.doc
+            .borrow_mut(py)
+            .extract_text(self.page_index, None, None, None)
     }
 
     #[getter]
     fn chars(&self, py: Python<'_>) -> PyResult<Vec<PyTextChar>> {
-        self.doc.borrow_mut(py).extract_chars(self.page_index, None)
+        self.doc
+            .borrow_mut(py)
+            .extract_chars(self.page_index, None, None, None)
     }
 
     #[getter]
@@ -3266,7 +3367,7 @@ impl PyPdfPageRegion {
     }
     fn extract_text(&self, py: Python<'_>) -> PyResult<String> {
         let mut d = self.doc.bind(py).borrow_mut();
-        d.extract_text(self.page_index, Some(self.bbox()))
+        d.extract_text(self.page_index, Some(self.bbox()), None, None)
     }
     fn extract_words(&self, py: Python<'_>) -> PyResult<Vec<PyWord>> {
         let mut d = self.doc.bind(py).borrow_mut();

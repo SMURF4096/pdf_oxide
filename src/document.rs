@@ -8624,6 +8624,129 @@ impl PdfDocument {
         extractor.extract_text_spans(&content_data)
     }
 
+    /// Extract raw text spans with layer and ink exclusion filtering.
+    ///
+    /// Same as [`extract_spans_raw`] but configures the extractor to suppress
+    /// content from specified OCG layers and Separation/DeviceN ink color spaces.
+    fn extract_spans_raw_filtered(
+        &self,
+        page_index: usize,
+        excluded_layers: HashSet<String>,
+        excluded_inks: HashSet<String>,
+    ) -> Result<Vec<crate::layout::TextSpan>> {
+        self.require_authenticated()?;
+        use crate::extractors::TextExtractor;
+
+        let page = self.get_page(page_index)?;
+        let page_dict = page.as_dict().ok_or_else(|| Error::ParseError {
+            offset: 0,
+            reason: "Page is not a dictionary".to_string(),
+        })?;
+
+        if self.page_cannot_have_text(page_dict) {
+            return Ok(Vec::new());
+        }
+
+        let content_data = match self.get_page_content_data(page_index) {
+            Ok(data) => data,
+            Err(e) => {
+                log::warn!(
+                    "Failed to decode content stream for page {}: {}, returning empty",
+                    page_index,
+                    e
+                );
+                return Ok(Vec::new());
+            },
+        };
+
+        if !Self::may_contain_text(&content_data) {
+            return Ok(Vec::new());
+        }
+
+        let mut extractor =
+            TextExtractor::with_config(crate::extractors::TextExtractionConfig::default());
+        extractor.set_excluded_layers(excluded_layers);
+        extractor.set_excluded_inks(excluded_inks);
+        if let Some(resources) = page_dict.get("Resources") {
+            extractor.set_resources(resources.clone());
+            extractor.set_document(self);
+            if let Err(e) = self.load_fonts(resources, &mut extractor) {
+                log::warn!(
+                    "Failed to load fonts for page {}: {}, continuing with defaults",
+                    page_index,
+                    e
+                );
+            }
+        }
+
+        extractor.extract_text_spans(&content_data)
+    }
+
+    /// Extract text from a page, excluding content from specified layers and inks.
+    ///
+    /// Uses a simplified text assembly pipeline (no structure-tree ordering or
+    /// table detection). For most layer/ink filtering use cases this is
+    /// sufficient since the caller is performing targeted extraction.
+    ///
+    /// # Arguments
+    ///
+    /// * `page_index` - Zero-based page index
+    /// * `excluded_layers` - OCG layer names to suppress (empty = no layer filtering)
+    /// * `excluded_inks` - Separation/DeviceN ink names to suppress (empty = no ink filtering)
+    pub fn extract_text_filtered(
+        &self,
+        page_index: usize,
+        excluded_layers: HashSet<String>,
+        excluded_inks: HashSet<String>,
+    ) -> Result<String> {
+        if excluded_layers.is_empty() && excluded_inks.is_empty() {
+            return self.extract_text(page_index);
+        }
+
+        let mut spans =
+            self.extract_spans_raw_filtered(page_index, excluded_layers, excluded_inks)?;
+
+        // Apply media-box clipping (same as extract_spans)
+        if let Ok((llx, lly, urx, ury)) = self.get_page_media_box(page_index) {
+            const EDGE_TOLERANCE_PT: f32 = 2.0;
+            let left = llx - EDGE_TOLERANCE_PT;
+            let bottom = lly - EDGE_TOLERANCE_PT;
+            let right = urx + EDGE_TOLERANCE_PT;
+            let top = ury + EDGE_TOLERANCE_PT;
+            spans.retain(|span| {
+                let sx1 = span.bbox.x;
+                let sx2 = span.bbox.x + span.bbox.width;
+                let sy1 = span.bbox.y;
+                let sy2 = span.bbox.y + span.bbox.height;
+                sx2 > left && sx1 < right && sy2 > bottom && sy1 < top
+            });
+        }
+
+        // Row-aware reading order sort
+        spans.sort_by(|a, b| {
+            crate::utils::row_aware_span_cmp(a.bbox.y, a.bbox.x, b.bbox.y, b.bbox.x)
+        });
+
+        // Build text from spans
+        let mut text = String::new();
+        let mut last_y: Option<f32> = None;
+        for span in &spans {
+            if let Some(prev_y) = last_y {
+                let y_gap = (prev_y - span.bbox.y).abs();
+                if y_gap > span.bbox.height.max(1.0) * 0.5 {
+                    text.push('\n');
+                }
+            }
+            if !text.is_empty() && !text.ends_with('\n') && !text.ends_with(' ') {
+                text.push(' ');
+            }
+            text.push_str(&span.text);
+            last_y = Some(span.bbox.y);
+        }
+
+        Ok(text)
+    }
+
     /// Extract text spans from a page using a specified reading order strategy.
     ///
     /// This method extracts text spans identically to [`extract_spans`](Self::extract_spans),
@@ -8884,6 +9007,162 @@ impl PdfDocument {
     /// # }
     /// ```
     ///
+    /// List all Optional Content Group (OCG) layer names in the document.
+    ///
+    /// Reads `/OCProperties` from the document catalog and returns the `/Name`
+    /// of each OCG dictionary listed in `/OCGs`. These names can be passed to
+    /// `extract_text_filtered` / `extract_chars_filtered` via `excluded_layers`.
+    ///
+    /// Returns an empty vec if the document has no optional content.
+    pub fn get_layers(&self) -> Result<Vec<String>> {
+        let catalog = self.catalog()?;
+        let catalog_dict = catalog
+            .as_dict()
+            .ok_or_else(|| Error::InvalidPdf("Catalog is not a dictionary".to_string()))?;
+
+        let oc_props = match catalog_dict.get("OCProperties") {
+            Some(obj) => {
+                if let Some(r) = obj.as_reference() {
+                    self.load_object(r)?
+                } else {
+                    obj.clone()
+                }
+            },
+            None => return Ok(Vec::new()),
+        };
+
+        let oc_dict = match oc_props.as_dict() {
+            Some(d) => d,
+            None => return Ok(Vec::new()),
+        };
+
+        let ocgs_obj = match oc_dict.get("OCGs") {
+            Some(obj) => {
+                if let Some(r) = obj.as_reference() {
+                    self.load_object(r)?
+                } else {
+                    obj.clone()
+                }
+            },
+            None => return Ok(Vec::new()),
+        };
+
+        let ocgs_arr = match ocgs_obj.as_array() {
+            Some(a) => a,
+            None => return Ok(Vec::new()),
+        };
+
+        let mut names = Vec::new();
+        for item in ocgs_arr {
+            let ocg_obj = if let Some(r) = item.as_reference() {
+                match self.load_object(r) {
+                    Ok(o) => o,
+                    Err(_) => continue,
+                }
+            } else {
+                item.clone()
+            };
+            if let Some(d) = ocg_obj.as_dict() {
+                if let Some(Object::Name(n)) = d.get("Name") {
+                    names.push(n.clone());
+                } else if let Some(Object::String(s)) = d.get("Name") {
+                    if let Ok(text) = String::from_utf8(s.clone()) {
+                        names.push(text);
+                    }
+                }
+            }
+        }
+        Ok(names)
+    }
+
+    /// List ink / separation names used on a specific page.
+    ///
+    /// Scans the page's `/Resources /ColorSpace` dictionary for `/Separation`
+    /// and `/DeviceN` color space definitions and returns their ink names.
+    /// These names can be passed to `extract_text_filtered` /
+    /// `extract_chars_filtered` via `excluded_inks`.
+    pub fn get_page_inks(&self, page_index: usize) -> Result<Vec<String>> {
+        let page = self.get_page(page_index)?;
+        let page_dict = page.as_dict().ok_or_else(|| Error::ParseError {
+            offset: 0,
+            reason: "Page is not a dictionary".to_string(),
+        })?;
+
+        let resources = match page_dict.get("Resources") {
+            Some(r) => {
+                if let Some(rr) = r.as_reference() {
+                    self.load_object(rr)?
+                } else {
+                    r.clone()
+                }
+            },
+            None => return Ok(Vec::new()),
+        };
+
+        let res_dict = match resources.as_dict() {
+            Some(d) => d,
+            None => return Ok(Vec::new()),
+        };
+
+        let cs_obj = match res_dict.get("ColorSpace") {
+            Some(obj) => {
+                if let Some(r) = obj.as_reference() {
+                    self.load_object(r)?
+                } else {
+                    obj.clone()
+                }
+            },
+            None => return Ok(Vec::new()),
+        };
+
+        let cs_dict = match cs_obj.as_dict() {
+            Some(d) => d,
+            None => return Ok(Vec::new()),
+        };
+
+        let mut ink_names = Vec::new();
+        for (_name, cs_def) in cs_dict.iter() {
+            let cs_arr_obj = if let Some(r) = cs_def.as_reference() {
+                match self.load_object(r) {
+                    Ok(o) => o,
+                    Err(_) => continue,
+                }
+            } else {
+                cs_def.clone()
+            };
+
+            if let Some(arr) = cs_arr_obj.as_array() {
+                if arr.len() >= 2 {
+                    if let Some(Object::Name(cs_type)) = arr.first() {
+                        match cs_type.as_str() {
+                            "Separation" => {
+                                // [/Separation /InkName /AlternateCS /TintTransform]
+                                if let Some(Object::Name(ink)) = arr.get(1) {
+                                    ink_names.push(ink.clone());
+                                }
+                            },
+                            "DeviceN" => {
+                                // [/DeviceN [/Ink1 /Ink2 ...] /AlternateCS /TintTransform]
+                                if let Some(Object::Array(inks)) = arr.get(1) {
+                                    for ink_obj in inks {
+                                        if let Object::Name(ink) = ink_obj {
+                                            ink_names.push(ink.clone());
+                                        }
+                                    }
+                                }
+                            },
+                            _ => {},
+                        }
+                    }
+                }
+            }
+        }
+
+        ink_names.sort();
+        ink_names.dedup();
+        Ok(ink_names)
+    }
+
     /// # Performance Note
     ///
     /// Character extraction is typically 30-50% faster than span extraction
@@ -8946,6 +9225,73 @@ impl PdfDocument {
                 return y_cmp;
             }
             // X-ascending (left-to-right)
+            crate::utils::safe_float_cmp(a.bbox.x, b.bbox.x)
+        });
+
+        Ok(chars)
+    }
+
+    /// Extract characters from a page, excluding content from specified layers and inks.
+    ///
+    /// # Arguments
+    ///
+    /// * `page_index` - Zero-based page index
+    /// * `excluded_layers` - OCG layer names to suppress (empty = no layer filtering)
+    /// * `excluded_inks` - Separation/DeviceN ink names to suppress (empty = no ink filtering)
+    pub fn extract_chars_filtered(
+        &self,
+        page_index: usize,
+        excluded_layers: HashSet<String>,
+        excluded_inks: HashSet<String>,
+    ) -> Result<Vec<crate::layout::TextChar>> {
+        use crate::extractors::TextExtractor;
+
+        let page = self.get_page(page_index)?;
+        let page_dict = page.as_dict().ok_or_else(|| Error::ParseError {
+            offset: 0,
+            reason: "Page is not a dictionary".to_string(),
+        })?;
+
+        let content_data = match self.get_page_content_data(page_index) {
+            Ok(data) => data,
+            Err(e) => {
+                log::warn!(
+                    "Failed to decode content stream for page {}: {}, returning empty",
+                    page_index,
+                    e
+                );
+                return Ok(Vec::new());
+            },
+        };
+
+        if !Self::may_contain_text(&content_data) {
+            return Ok(Vec::new());
+        }
+
+        let mut extractor = TextExtractor::new();
+        extractor.set_excluded_layers(excluded_layers);
+        extractor.set_excluded_inks(excluded_inks);
+
+        if let Some(resources) = page_dict.get("Resources") {
+            extractor.set_resources(resources.clone());
+            extractor.set_document(self);
+
+            if let Err(e) = self.load_fonts(resources, &mut extractor) {
+                log::warn!(
+                    "Failed to load fonts for page {}: {}, continuing with defaults",
+                    page_index,
+                    e
+                );
+            }
+        }
+
+        let mut chars = extractor.extract(&content_data)?;
+
+        chars.sort_by(|a, b| {
+            let y_cmp = crate::utils::safe_float_cmp(b.bbox.y, a.bbox.y);
+            if y_cmp != std::cmp::Ordering::Equal {
+                return y_cmp;
+            }
             crate::utils::safe_float_cmp(a.bbox.x, b.bbox.x)
         });
 

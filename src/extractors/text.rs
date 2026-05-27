@@ -1999,6 +1999,10 @@ struct MarkedContentContext {
     /// The /E entry provides the expansion of an abbreviation or acronym.
     /// e.g., "PDF" might expand to "Portable Document Format"
     expansion: Option<String>,
+    /// Whether this marked content context is an excluded Optional Content Group (layer).
+    ///
+    /// Set when tag is "OC" and the OCG /Name matches one of the excluded layers.
+    is_excluded_layer: bool,
 }
 
 /// Text extractor that processes content streams.
@@ -2057,6 +2061,25 @@ pub struct TextExtractor<'doc> {
     /// Per PDF Spec Section 14.6, artifact content should be excluded from text extraction.
     /// This flag is true when any ancestor in the marked_content_stack has is_artifact=true.
     inside_artifact: bool,
+    /// Layer names (Optional Content Groups) to exclude from extraction.
+    ///
+    /// When a BDC operator with tag "OC" references an OCG whose /Name matches
+    /// one of these entries, all content within that marked content scope is suppressed.
+    excluded_layers: HashSet<String>,
+    /// Whether we're currently inside an excluded OCG layer.
+    ///
+    /// True when any ancestor in the marked_content_stack has is_excluded_layer=true.
+    inside_excluded_layer: bool,
+    /// Ink / separation names to exclude from extraction.
+    ///
+    /// When a `cs` operator sets a Separation or DeviceN color space whose ink name(s)
+    /// match one of these entries, subsequent text is suppressed until the color space changes.
+    excluded_inks: HashSet<String>,
+    /// Whether the current fill color space is an excluded ink.
+    ///
+    /// Set when SetFillColorSpace resolves to a Separation or DeviceN color space
+    /// whose ink name(s) intersect with `excluded_inks`.
+    inside_excluded_ink: bool,
     /// Extraction mode: true for spans, false for characters
     extract_spans: bool,
     /// Buffer for accumulating consecutive Tj operators into single spans
@@ -2167,6 +2190,10 @@ impl<'doc> TextExtractor<'doc> {
             span_sequence_counter: 0, // Initialize sequence counter
             marked_content_stack: Vec::new(), // Track marked content contexts
             inside_artifact: false,   // Track artifact state
+            excluded_layers: HashSet::new(),
+            inside_excluded_layer: false,
+            excluded_inks: HashSet::new(),
+            inside_excluded_ink: false,
             tj_offset_history: Vec::with_capacity(1000), // Track TJ offsets for statistical analysis
             tj_character_array: Vec::new(),              // Character tracking for word boundaries
             current_x_position: 0.0,                     // Start at origin
@@ -2208,6 +2235,23 @@ impl<'doc> TextExtractor<'doc> {
     /// Set the document reference for loading XObjects.
     pub fn set_document(&mut self, document: &'doc crate::document::PdfDocument) {
         self.document = Some(document);
+    }
+
+    /// Set layer names (Optional Content Groups) to exclude from extraction.
+    ///
+    /// Content within BDC/EMC scopes tagged "OC" whose OCG /Name matches one of
+    /// the provided names will be suppressed during text extraction.
+    pub fn set_excluded_layers(&mut self, layers: HashSet<String>) {
+        self.excluded_layers = layers;
+    }
+
+    /// Set ink / separation names to exclude from extraction.
+    ///
+    /// When the fill color space is a Separation or DeviceN whose ink name(s)
+    /// intersect with any of the provided names, subsequent text is suppressed
+    /// until the color space changes to a non-excluded one.
+    pub fn set_excluded_inks(&mut self, inks: HashSet<String>) {
+        self.excluded_inks = inks;
     }
 
     // ========================================================================
@@ -2402,6 +2446,30 @@ impl<'doc> TextExtractor<'doc> {
         self.inside_artifact = self.marked_content_stack.iter().any(|ctx| ctx.is_artifact);
     }
 
+    /// Update the excluded-layer state based on the marked content stack.
+    ///
+    /// True if any ancestor in the stack is an excluded OCG layer.
+    /// Called each time a marked content boundary is crossed (BMC/BDC/EMC).
+    fn update_layer_state(&mut self) {
+        self.inside_excluded_layer = self
+            .marked_content_stack
+            .iter()
+            .any(|ctx| ctx.is_excluded_layer);
+    }
+
+    /// Whether content emission should be suppressed.
+    ///
+    /// Returns true when the current graphics/marked-content state means
+    /// extracted text should be discarded. Currently checks:
+    /// - Inside an excluded OCG layer (`inside_excluded_layer`)
+    /// - Inside an excluded ink / separation color space (`inside_excluded_ink`)
+    ///
+    /// Note: artifact filtering is handled separately via span metadata and
+    /// downstream filtering, so `inside_artifact` is intentionally not checked here.
+    fn is_content_suppressed(&self) -> bool {
+        self.inside_excluded_layer || self.inside_excluded_ink
+    }
+
     /// Parse artifact type and subtype from artifact properties dictionary.
     ///
     /// Per PDF Spec Section 14.8.2.2, artifacts have optional /Type and /Subtype entries:
@@ -2528,6 +2596,80 @@ impl<'doc> TextExtractor<'doc> {
             prop_obj.clone()
         };
         resolved.as_dict().cloned()
+    }
+
+    /// Resolve a named color space from the /Resources /ColorSpace dictionary.
+    ///
+    /// PDF content streams reference color spaces by name (e.g. `cs /CS1`).
+    /// Device color spaces like "DeviceRGB" are built-in, but Separation and
+    /// DeviceN color spaces live in the page resources:
+    ///
+    /// ```text
+    /// /Resources << /ColorSpace << /CS1 [/Separation /PANTONE_Red /DeviceCMYK ...] >> >>
+    /// ```
+    ///
+    /// Returns the resolved color space array if the name refers to a resource entry.
+    fn resolve_color_space(&self, name: &str) -> Option<Vec<Object>> {
+        let resources = self.resources.as_ref()?;
+        let res_dict = if let Some(res_ref) = resources.as_reference() {
+            self.document?.load_object(res_ref).ok()?
+        } else {
+            resources.clone()
+        };
+        let res_dict = res_dict.as_dict()?;
+        let cs_dict_obj = res_dict.get("ColorSpace")?;
+        let cs_dict = if let Some(r) = cs_dict_obj.as_reference() {
+            self.document?.load_object(r).ok()?
+        } else {
+            cs_dict_obj.clone()
+        };
+        let cs_dict = cs_dict.as_dict()?;
+        let cs_obj = cs_dict.get(name)?;
+        let resolved = if let Some(r) = cs_obj.as_reference() {
+            self.document?.load_object(r).ok()?
+        } else {
+            cs_obj.clone()
+        };
+        resolved.as_array().cloned()
+    }
+
+    /// Check if a color space name refers to an excluded ink.
+    ///
+    /// Resolves the color space from resources and checks:
+    /// - `[/Separation /InkName /AlternateCS /TintTransform]` — single ink name
+    /// - `[/DeviceN [/Ink1 /Ink2 ...] /AlternateCS /TintTransform]` — multiple ink names
+    ///
+    /// Returns true if any ink name in the color space matches `excluded_inks`.
+    fn is_excluded_ink_color_space(&self, name: &str) -> bool {
+        if self.excluded_inks.is_empty() {
+            return false;
+        }
+        if let Some(cs_array) = self.resolve_color_space(name) {
+            if cs_array.len() >= 2 {
+                if let Some(cs_type) = cs_array[0].as_name() {
+                    match cs_type {
+                        "Separation" => {
+                            // [/Separation /InkName /AlternateCS /TintTransform]
+                            if let Some(ink_name) = cs_array[1].as_name() {
+                                return self.excluded_inks.contains(ink_name);
+                            }
+                        },
+                        "DeviceN" => {
+                            // [/DeviceN [/Ink1 /Ink2 ...] /AlternateCS /TintTransform]
+                            if let Some(ink_names) = cs_array[1].as_array() {
+                                return ink_names.iter().any(|obj| {
+                                    obj.as_name()
+                                        .map(|n| self.excluded_inks.contains(n))
+                                        .unwrap_or(false)
+                                });
+                            }
+                        },
+                        _ => {},
+                    }
+                }
+            }
+        }
+        false
     }
 
     /// Get current ActualText from marked content stack (PDF Spec Section 14.9.4).
@@ -4149,7 +4291,9 @@ impl<'doc> TextExtractor<'doc> {
                                                 final_matrix.f,
                                             ]),
                                         };
-                                        self.chars.push(space_char);
+                                        if !self.is_content_suppressed() {
+                                            self.chars.push(space_char);
+                                        }
                                     }
 
                                     let state_mut = self.state_stack.current_mut();
@@ -4257,6 +4401,11 @@ impl<'doc> TextExtractor<'doc> {
                     .as_ref()
                     .and_then(|name| self.fonts.get(name))
                     .cloned();
+                // Re-evaluate ink exclusion for the restored color space
+                if !self.excluded_inks.is_empty() {
+                    let cs = self.state_stack.current().fill_color_space.clone();
+                    self.inside_excluded_ink = self.is_excluded_ink_color_space(&cs);
+                }
             },
             Operator::Cm { a, b, c, d, e, f } => {
                 let state = self.state_stack.current_mut();
@@ -4267,26 +4416,30 @@ impl<'doc> TextExtractor<'doc> {
 
             // Color operators
             Operator::SetFillRgb { r, g, b } => {
+                // rg operator implicitly sets DeviceRGB — a process color.
+                self.inside_excluded_ink = false;
                 self.state_stack.current_mut().fill_color_rgb = (r, g, b);
             },
             Operator::SetStrokeRgb { r, g, b } => {
                 self.state_stack.current_mut().stroke_color_rgb = (r, g, b);
             },
             Operator::SetFillGray { gray } => {
+                // g operator implicitly sets DeviceGray — a process color,
+                // so clear any active ink exclusion.
+                self.inside_excluded_ink = false;
                 self.state_stack.current_mut().fill_color_rgb = (gray, gray, gray);
             },
             Operator::SetStrokeGray { gray } => {
                 self.state_stack.current_mut().stroke_color_rgb = (gray, gray, gray);
             },
             Operator::SetFillCmyk { c, m, y, k } => {
-                // Store CMYK and convert to RGB for rendering
-                // CMYK to RGB conversion: R = 1 - min(1, C*(1-K) + K)
+                // k operator implicitly sets DeviceCMYK — a process color.
+                self.inside_excluded_ink = false;
                 let state = self.state_stack.current_mut();
                 state.fill_color_cmyk = Some((c, m, y, k));
                 state.fill_color_rgb = cmyk_to_rgb(c, m, y, k);
             },
             Operator::SetStrokeCmyk { c, m, y, k } => {
-                // Store CMYK and convert to RGB for rendering
                 let state = self.state_stack.current_mut();
                 state.stroke_color_cmyk = Some((c, m, y, k));
                 state.stroke_color_rgb = cmyk_to_rgb(c, m, y, k);
@@ -4294,6 +4447,16 @@ impl<'doc> TextExtractor<'doc> {
 
             // Color space operators
             Operator::SetFillColorSpace { name } => {
+                // Check for excluded ink before mutating state (needs &self)
+                let ink_excluded = self.is_excluded_ink_color_space(&name);
+                self.inside_excluded_ink = ink_excluded;
+                if ink_excluded {
+                    log::debug!(
+                        "Fill color space {:?} matches excluded ink, suppressing text",
+                        name
+                    );
+                }
+
                 let state = self.state_stack.current_mut();
                 state.fill_color_space = name.clone();
                 // Reset color when changing color space
@@ -4867,6 +5030,7 @@ impl<'doc> TextExtractor<'doc> {
                     artifact_type: None, // No artifact classification; None for backward compatibility
                     actual_text: None,   // BMC doesn't have ActualText
                     expansion: None,     // BMC doesn't have expansion
+                    is_excluded_layer: false, // BMC cannot carry OCG properties
                 });
                 self.update_artifact_state();
 
@@ -4881,6 +5045,8 @@ impl<'doc> TextExtractor<'doc> {
                 let mut actual_text = None;
                 let mut artifact_type = None;
                 let mut expansion = None;
+
+                let mut is_excluded_layer = false;
 
                 if let Some(props_dict) = self.resolve_bdc_properties(&properties) {
                     if let Some(mcid_obj) = props_dict.get("MCID") {
@@ -4907,6 +5073,27 @@ impl<'doc> TextExtractor<'doc> {
                     if tag == "Artifact" {
                         artifact_type = Self::parse_artifact_type(&props_dict);
                     }
+
+                    // OCG (Optional Content Group / layer) filtering.
+                    // Per ISO 32000-1:2008 Section 8.11.2, content within a BDC
+                    // tagged "OC" references an OCG dictionary with /Type /OCG
+                    // and /Name <layer-name>.
+                    if tag == "OC" && !self.excluded_layers.is_empty() {
+                        if let Some(ocg_name) = props_dict.get("Name") {
+                            if let Some(name_str) = ocg_name.as_name() {
+                                if self.excluded_layers.contains(name_str) {
+                                    is_excluded_layer = true;
+                                    log::debug!("Entering excluded OCG layer: {:?}", name_str);
+                                }
+                            } else if let Some(name_bytes) = ocg_name.as_string() {
+                                let name_str = Self::decode_pdf_text_string(name_bytes);
+                                if self.excluded_layers.contains(&name_str) {
+                                    is_excluded_layer = true;
+                                    log::debug!("Entering excluded OCG layer: {:?}", name_str);
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // Check if this is an artifact (per PDF Spec Section 14.6)
@@ -4917,8 +5104,10 @@ impl<'doc> TextExtractor<'doc> {
                     artifact_type: artifact_type.clone(),
                     actual_text,
                     expansion,
+                    is_excluded_layer,
                 });
                 self.update_artifact_state();
+                self.update_layer_state();
 
                 if is_artifact {
                     if let Some(ref atype) = artifact_type {
@@ -4936,10 +5125,11 @@ impl<'doc> TextExtractor<'doc> {
                 }
                 self.current_mcid = None;
 
-                // Pop from marked content stack and update artifact state
+                // Pop from marked content stack and update artifact/layer state
                 if !self.marked_content_stack.is_empty() {
                     self.marked_content_stack.pop();
                     self.update_artifact_state();
+                    self.update_layer_state();
                 }
             },
 
@@ -5484,7 +5674,9 @@ impl<'doc> TextExtractor<'doc> {
         };
         self.span_sequence_counter += 1;
 
-        self.spans.push(span);
+        if !self.is_content_suppressed() {
+            self.spans.push(span);
+        }
         Ok(())
     }
 
@@ -5980,7 +6172,9 @@ impl<'doc> TextExtractor<'doc> {
 
         // Step 6: Increment sequence counter and add to spans
         self.span_sequence_counter += 1;
-        self.spans.push(span);
+        if !self.is_content_suppressed() {
+            self.spans.push(span);
+        }
 
         Ok(())
     }
@@ -6582,7 +6776,9 @@ impl<'doc> TextExtractor<'doc> {
 
         log::trace!("PUSH space span with offset_semantic={}", span.offset_semantic);
 
-        self.spans.push(span);
+        if !self.is_content_suppressed() {
+            self.spans.push(span);
+        }
 
         // Advance position per ISO 32000-1:2008 §9.4.4
         let state = self.state_stack.current_mut();
@@ -6741,7 +6937,9 @@ impl<'doc> TextExtractor<'doc> {
                     span.offset_semantic
                 );
 
-                self.spans.push(span);
+                if !self.is_content_suppressed() {
+                    self.spans.push(span);
+                }
             }
         }
         Ok(())
@@ -6895,7 +7093,9 @@ impl<'doc> TextExtractor<'doc> {
                         ]),
                     };
 
-                    self.chars.push(text_char);
+                    if !self.is_content_suppressed() {
+                        self.chars.push(text_char);
+                    }
                 }
             }
 
@@ -8451,6 +8651,7 @@ mod tests {
             is_artifact: true,
             actual_text: None,
             expansion: None,
+            is_excluded_layer: false,
         });
         extractor.update_artifact_state();
         assert!(extractor.inside_artifact);
@@ -8465,6 +8666,7 @@ mod tests {
             is_artifact: true,
             actual_text: None,
             expansion: None,
+            is_excluded_layer: false,
         });
         extractor.marked_content_stack.push(MarkedContentContext {
             artifact_type: None,
@@ -8472,6 +8674,7 @@ mod tests {
             is_artifact: false,
             actual_text: None,
             expansion: None,
+            is_excluded_layer: false,
         });
         extractor.update_artifact_state();
         // Should still be inside artifact because parent is artifact
@@ -12594,6 +12797,7 @@ mod tests {
             is_artifact: false,
             actual_text: None,
             expansion: None,
+            is_excluded_layer: false,
         });
 
         extractor
@@ -13125,6 +13329,7 @@ fn test_marked_content_context_with_actual_text() {
         is_artifact: false,
         actual_text: Some("fi".to_string()), // Ligature expansion
         expansion: None,
+        is_excluded_layer: false,
     };
 
     assert_eq!(ctx.actual_text, Some("fi".to_string()));
@@ -13140,6 +13345,7 @@ fn test_marked_content_context_with_expansion() {
         is_artifact: false,
         actual_text: None,
         expansion: Some("Portable Document Format".to_string()),
+        is_excluded_layer: false,
     };
 
     assert_eq!(ctx.expansion, Some("Portable Document Format".to_string()));
@@ -13154,6 +13360,7 @@ fn test_marked_content_context_artifact_with_actual_text() {
         artifact_type: Some(ArtifactType::Pagination(PaginationSubtype::Header)),
         actual_text: Some("Header text".to_string()),
         expansion: None,
+        is_excluded_layer: false,
     };
 
     assert!(ctx.is_artifact);
@@ -13172,6 +13379,7 @@ fn test_get_current_actual_text_finds_first() {
         is_artifact: false,
         actual_text: Some("outer text".to_string()),
         expansion: None,
+        is_excluded_layer: false,
     });
 
     extractor.marked_content_stack.push(MarkedContentContext {
@@ -13180,6 +13388,7 @@ fn test_get_current_actual_text_finds_first() {
         is_artifact: false,
         actual_text: Some("inner text".to_string()),
         expansion: None,
+        is_excluded_layer: false,
     });
 
     // Should return innermost (most recent) ActualText
@@ -13199,6 +13408,7 @@ fn test_get_current_actual_text_skips_none() {
         is_artifact: false,
         actual_text: Some("replacement text".to_string()),
         expansion: None,
+        is_excluded_layer: false,
     });
 
     // Push context without ActualText
@@ -13208,6 +13418,7 @@ fn test_get_current_actual_text_skips_none() {
         is_artifact: false,
         actual_text: None,
         expansion: None,
+        is_excluded_layer: false,
     });
 
     // Should find the ActualText from outer context
