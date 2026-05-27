@@ -9006,7 +9006,7 @@ impl PdfDocument {
     /// # Ok(())
     /// # }
     /// ```
-    ///
+
     /// List all Optional Content Group (OCG) layer names in the document.
     ///
     /// Reads `/OCProperties` from the document catalog and returns the `/Name`

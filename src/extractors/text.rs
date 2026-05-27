@@ -10,6 +10,7 @@ use crate::config::ExtractionProfile;
 use crate::content::graphics_state::{GraphicsStateStack, Matrix};
 use crate::content::operators::{Operator, TextElement};
 use crate::content::parse_and_execute_text_only;
+use crate::content::parse_content_stream;
 use crate::content::parse_content_stream_text_only;
 use crate::error::Result;
 use crate::extract_log_debug;
@@ -2907,12 +2908,17 @@ impl<'doc> TextExtractor<'doc> {
         self.spans.clear();
         self.span_sequence_counter = 0; // Reset sequence counter for this page
 
-        // Streaming parse+execute: operators are processed immediately without
-        // building an intermediate Vec<Operator>. This eliminates allocation of
-        // potentially huge vectors (196K+ operators for graphics-heavy pages)
-        // and improves cache locality.
         extract_log_debug!("Parsing content stream for text extraction");
-        parse_and_execute_text_only(content_stream, |op| self.execute_operator(op))?;
+        if self.excluded_inks.is_empty() {
+            parse_and_execute_text_only(content_stream, |op| self.execute_operator(op))?;
+        } else {
+            // Ink filtering requires color operators (cs, rg, g, k) which the
+            // text-only parser skips. Fall back to the full parser.
+            let operators = parse_content_stream(content_stream)?;
+            for op in operators {
+                self.execute_operator(op)?;
+            }
+        }
 
         // Flush any remaining Tj buffer at end of content stream
         self.flush_tj_span_buffer()?;
@@ -2955,10 +2961,11 @@ impl<'doc> TextExtractor<'doc> {
         self.chars.clear();
         self.spans.clear(); // Ensure spans are clear so they don't poison xobject_spans_cache
 
-        // Parse content stream into operators
-        let operators = parse_content_stream_text_only(content_stream)?;
-
-        // Execute each operator
+        let operators = if self.excluded_inks.is_empty() {
+            parse_content_stream_text_only(content_stream)?
+        } else {
+            parse_content_stream(content_stream)?
+        };
         for op in operators {
             self.execute_operator(op)?;
         }
@@ -5301,7 +5308,8 @@ impl<'doc> TextExtractor<'doc> {
         //
         // `ctm_key` was already computed above for the `processed_xobjects` guard.
         let spans_cache_key = (xobject_ref, ctm_key);
-        if self.extract_spans {
+        let has_filters = !self.excluded_layers.is_empty() || !self.excluded_inks.is_empty();
+        if self.extract_spans && !has_filters {
             let cached_spans = {
                 doc.xobject_spans_cache
                     .lock()
@@ -5506,10 +5514,21 @@ impl<'doc> TextExtractor<'doc> {
                 let state = self.state_stack.current_mut();
                 state.ctm = form_matrix.multiply(&state.ctm);
 
-                // Streaming parse+execute: avoids allocating Vec<Operator>
                 self.xobject_depth += 1;
-                let parse_result =
-                    parse_and_execute_text_only(&stream_data, |op| self.execute_operator(op));
+                let parse_result = if self.excluded_inks.is_empty() {
+                    parse_and_execute_text_only(&stream_data, |op| self.execute_operator(op))
+                } else {
+                    let ops = parse_content_stream(&stream_data);
+                    match ops {
+                        Ok(ops) => {
+                            for op in ops {
+                                self.execute_operator(op)?;
+                            }
+                            Ok(())
+                        },
+                        Err(e) => Err(e),
+                    }
+                };
                 self.xobject_depth -= 1;
                 if let Err(e) = parse_result {
                     log::debug!(
@@ -5530,7 +5549,7 @@ impl<'doc> TextExtractor<'doc> {
                 // We still require `has_own_resources` so that font lookups are
                 // self-contained; XObjects that inherit page-level fonts would
                 // produce spans whose glyph mappings depend on caller context.
-                if has_own_resources && self.extract_spans {
+                if has_own_resources && self.extract_spans && !has_filters {
                     let new_spans = if self.spans.len() > spans_before {
                         Some(self.spans[spans_before..].to_vec())
                     } else {
@@ -5562,6 +5581,13 @@ impl<'doc> TextExtractor<'doc> {
                 }
                 if let Some(cache) = saved_xobj_cache {
                     self.cached_xobject_refs = cache;
+                }
+                // Re-evaluate ink exclusion against the restored color space
+                // and resources. The XObject may have set an excluded ink that
+                // must not persist into the caller's scope.
+                if !self.excluded_inks.is_empty() {
+                    let cs = self.state_stack.current().fill_color_space.clone();
+                    self.inside_excluded_ink = self.is_excluded_ink_color_space(&cs);
                 }
 
                 // Keep xobject_ref in processed_xobjects permanently.
