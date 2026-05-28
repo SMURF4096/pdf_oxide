@@ -110,6 +110,27 @@ class RenderedPixmap(NamedTuple):
     height: int
 
 
+class SeparationPlate(NamedTuple):
+    """A single ink separation plate rendered as grayscale.
+
+    Pixel intensity (0-255) represents the tint percentage of one ink at
+    each point. Used in prepress workflows, ink coverage analysis, and ML
+    pipelines that process packaging/label PDFs.
+
+    Attributes:
+        ink_name (str): Ink name (e.g., "Cyan", "PANTONE 185 C", "Dieline").
+        data (bytes): Grayscale pixels, row-major, top-left origin.
+            ``len(data) == width * height``. 0 = no ink, 255 = full tint.
+        width (int): Image width in pixels.
+        height (int): Image height in pixels.
+    """
+
+    ink_name: str
+    data: bytes
+    width: int
+    height: int
+
+
 from ._async import (  # noqa: E402
     AsyncOfficeConverter,
     AsyncPdf,
@@ -182,6 +203,7 @@ from .pdf_oxide import (  # noqa: E402
 
 __all__ = [
     "RenderedPixmap",
+    "SeparationPlate",
     "PdfDocument",
     "AsyncPdfDocument",
     "AsyncPdf",

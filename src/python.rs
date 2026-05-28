@@ -607,6 +607,106 @@ impl PyPdfDocument {
         }
     }
 
+    /// Render all ink separation plates for a page.
+    ///
+    /// Each plate is a grayscale image where pixel intensity (0-255) represents
+    /// the tint percentage of one ink at each point. Process inks (Cyan, Magenta,
+    /// Yellow, Black) are included if the page uses DeviceCMYK content; spot
+    /// colors are taken from Separation and DeviceN color spaces.
+    ///
+    /// Args:
+    ///     page (int): Zero-based page index.
+    ///     dpi (int, optional): Resolution in DPI (default 150).
+    ///
+    /// Returns:
+    ///     list[SeparationPlate]: One plate per ink. Each has ``ink_name``,
+    ///     ``data`` (grayscale bytes), ``width``, and ``height``.
+    ///
+    /// Example:
+    ///     plates = doc.render_separations(0, dpi=150)
+    ///     for plate in plates:
+    ///         print(f"{plate.ink_name}: {plate.width}x{plate.height}")
+    #[pyo3(signature = (page, dpi=None))]
+    fn render_separations(
+        &mut self,
+        py: Python<'_>,
+        page: usize,
+        dpi: Option<u32>,
+    ) -> PyResult<Vec<Py<pyo3::PyAny>>> {
+        #[cfg(feature = "rendering")]
+        {
+            let dpi_value = dpi.unwrap_or(150);
+            let plates = crate::rendering::render_separations(&self.inner, page, dpi_value)
+                .map_err(|e| {
+                    PyRuntimeError::new_err(format!("Failed to render separations: {e}"))
+                })?;
+            let plate_mod = py.import("pdf_oxide")?;
+            let plate_cls = plate_mod.getattr("SeparationPlate")?;
+            let mut out = Vec::with_capacity(plates.len());
+            for plate in plates {
+                let data = pyo3::types::PyBytes::new(py, &plate.data);
+                let result = plate_cls.call1((
+                    plate.ink_name,
+                    data,
+                    plate.width as i64,
+                    plate.height as i64,
+                ))?;
+                out.push(result.into());
+            }
+            Ok(out)
+        }
+        #[cfg(not(feature = "rendering"))]
+        {
+            let _ = (py, page, dpi);
+            Err(PyRuntimeError::new_err("Rendering feature not enabled."))
+        }
+    }
+
+    /// Render a single ink separation plate for a page.
+    ///
+    /// Returns a grayscale image where pixel intensity (0-255) = tint
+    /// percentage of the named ink. If the ink is not present on the
+    /// page, the plate is all zeros.
+    ///
+    /// Args:
+    ///     page (int): Zero-based page index.
+    ///     ink_name (str): Ink name (e.g., "Cyan", "PANTONE 185 C", "Dieline").
+    ///     dpi (int, optional): Resolution in DPI (default 150).
+    ///
+    /// Returns:
+    ///     SeparationPlate: The plate with ``ink_name``, ``data``, ``width``, ``height``.
+    ///
+    /// Example:
+    ///     dieline = doc.render_separation(0, "Dieline", dpi=150)
+    #[pyo3(signature = (page, ink_name, dpi=None))]
+    fn render_separation(
+        &mut self,
+        py: Python<'_>,
+        page: usize,
+        ink_name: &str,
+        dpi: Option<u32>,
+    ) -> PyResult<Py<pyo3::PyAny>> {
+        #[cfg(feature = "rendering")]
+        {
+            let dpi_value = dpi.unwrap_or(150);
+            let plate = crate::rendering::render_separation(&self.inner, page, ink_name, dpi_value)
+                .map_err(|e| {
+                    PyRuntimeError::new_err(format!("Failed to render separation: {e}"))
+                })?;
+            let plate_mod = py.import("pdf_oxide")?;
+            let plate_cls = plate_mod.getattr("SeparationPlate")?;
+            let data = pyo3::types::PyBytes::new(py, &plate.data);
+            let result =
+                plate_cls.call1((plate.ink_name, data, plate.width as i64, plate.height as i64))?;
+            Ok(result.into())
+        }
+        #[cfg(not(feature = "rendering"))]
+        {
+            let _ = (py, page, ink_name, dpi);
+            Err(PyRuntimeError::new_err("Rendering feature not enabled."))
+        }
+    }
+
     /// Extract low-level characters.
     ///
     /// Args:

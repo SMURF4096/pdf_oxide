@@ -2317,14 +2317,14 @@ impl PageRenderer {
 /// (TK / SMask / AIS) is logged as debug only and not used yet, so it doesn't
 /// need to be cached.
 #[derive(Clone, Debug, Default)]
-struct ParsedExtGState {
-    fill_alpha: Option<f32>,
-    stroke_alpha: Option<f32>,
-    blend_mode: Option<String>,
+pub(crate) struct ParsedExtGState {
+    pub(crate) fill_alpha: Option<f32>,
+    pub(crate) stroke_alpha: Option<f32>,
+    pub(crate) blend_mode: Option<String>,
 }
 
 impl ParsedExtGState {
-    fn apply(&self, gs: &mut GraphicsState) {
+    pub(crate) fn apply(&self, gs: &mut GraphicsState) {
         if let Some(a) = self.fill_alpha {
             gs.fill_alpha = a;
         }
@@ -2372,7 +2372,10 @@ fn parse_ext_g_state(
 /// Parse the fields we need from an ExtGState **entry** (the inner dict, not
 /// the resource dict that holds it). Resolves once if `state_obj` is a
 /// reference. This is the hot helper called per `gs` op in the operator loop.
-fn parse_ext_g_state_inner(state_obj: &Object, doc: &PdfDocument) -> Result<ParsedExtGState> {
+pub(crate) fn parse_ext_g_state_inner(
+    state_obj: &Object,
+    doc: &PdfDocument,
+) -> Result<ParsedExtGState> {
     let mut out = ParsedExtGState::default();
     let state_resolved = doc.resolve_object(state_obj)?;
     let state_dict = match state_resolved.as_dict() {
