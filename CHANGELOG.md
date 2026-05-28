@@ -2,6 +2,16 @@
 
 All notable changes to PDFOxide are documented here.
 
+## next-release
+
+### Added
+- `TextChar::rendered_advance` - provides character advance width
+  including character and word space.
+
+### ⚠️ Breaking Changes
+- external callers constructing TextChar { ... } literals will need
+  to add `rendered_advance: advance_width` for prior behavior
+
 ## [0.3.55] - 2026-05-25
 
 > Ruby + PHP language bindings + multi-line heading reading-order fix

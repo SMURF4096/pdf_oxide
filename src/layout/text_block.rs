@@ -237,20 +237,23 @@ pub struct TextChar {
     /// Glyph advance width from font metrics (device space).
     ///
     /// This is the advance for the glyph shape only — it does **not** include
-    /// character spacing (Tc), word spacing (Tw), or TJ kerning offsets.
-    /// For word-boundary detection, prefer [`rendered_advance`] which includes
-    /// all spacing adjustments and is equivalent to Poppler's `dx` argument.
+    /// character spacing (Tc), word spacing (Tw), or TJ array adjustments.
+    /// For word-boundary detection and the full cursor advance including all
+    /// spacing, use [`rendered_advance`].
     pub advance_width: f32,
 
     /// Actual rendered advance to the next character's origin (device space).
     ///
-    /// This is the full advance used to move the text position after this
-    /// character, including the glyph advance plus character spacing (Tc),
-    /// word spacing (Tw for U+0020), and any TJ kerning adjustments.
+    /// This is the per-glyph cursor advance including character spacing (Tc)
+    /// and word spacing (Tw for U+0020), per the PDF spec Tx formula:
+    /// `(w0 × Tfs / 1000 + Tc + Tw) × Th` converted to device space.
     ///
-    /// Equivalent to Poppler's `dx` argument in `drawChar`, and to the PDF
-    /// spec's Tx formula: `(w0 × Tfs / 1000 + Tc + Tw) × Th` converted to
-    /// device space.
+    /// TJ array adjustments between strings are **not** folded into this
+    /// field.  They are emitted as separate synthetic-space [`TextChar`]s
+    /// inserted between the glyphs they affect, so the overall cursor
+    /// displacement is correctly represented by walking the full char list.
+    ///
+    /// Equivalent to Poppler's `dx` argument in `drawChar`.
     ///
     /// For the last character on a line this falls back to `advance_width`.
     /// Use this field (not `advance_width`) to detect word boundaries:

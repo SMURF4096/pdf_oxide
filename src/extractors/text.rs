@@ -6860,6 +6860,10 @@ impl<'doc> TextExtractor<'doc> {
             } else {
                 glyph_width_user_space
             };
+            // Spread the total advance evenly across the ligature's output chars.
+            // Tc applies once per character *code*, not per output glyph, so this
+            // approximation slightly over-distributes Tc for multi-char ligatures —
+            // the same trade-off advance_width already makes for glyph_width_device.
             let rendered_advance_per_char = if char_count > 0 {
                 tx_device_space / char_count as f32
             } else {
