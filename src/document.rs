@@ -8712,6 +8712,33 @@ impl PdfDocument {
         self.assemble_text_from_spans(page_index, spans, &options)
     }
 
+    /// Extract text from a region of a page with layer/ink filtering applied.
+    ///
+    /// Composes [`extract_text_filtered`] with [`extract_text_in_rect`]: spans
+    /// are filtered by layer/ink first, then by region, then assembled via
+    /// the full text pipeline (structure-tree ordering, table detection,
+    /// column detection, whitespace + line breaks).
+    pub fn extract_text_filtered_in_rect(
+        &self,
+        page_index: usize,
+        excluded_layers: HashSet<String>,
+        excluded_inks: HashSet<String>,
+        region: crate::geometry::Rect,
+        mode: crate::layout::RectFilterMode,
+    ) -> Result<String> {
+        let spans = if excluded_layers.is_empty() && excluded_inks.is_empty() {
+            self.extract_spans(page_index)?
+        } else {
+            self.extract_spans_filtered(page_index, excluded_layers, excluded_inks)?
+        };
+        let options = crate::converters::ConversionOptions {
+            extract_tables: true,
+            include_region: Some((region, mode)),
+            ..Default::default()
+        };
+        self.assemble_text_from_spans(page_index, spans, &options)
+    }
+
     /// Extract text spans from a page using a specified reading order strategy.
     ///
     /// This method extracts text spans identically to [`extract_spans`](Self::extract_spans),
@@ -9046,6 +9073,14 @@ impl PdfDocument {
     /// and `/DeviceN` color space definitions and returns their ink names.
     /// These names can be passed to `extract_text_filtered` /
     /// `extract_chars_filtered` via `excluded_inks`.
+    ///
+    /// **Note:** Only the page's own `/Resources` is walked. Spot inks
+    /// declared inside a Form XObject's local `/Resources /ColorSpace`
+    /// dictionary will not be enumerated — even though the renderer and
+    /// extractor will still honor them at use time. Callers populating a
+    /// UI picker from this list may miss XObject-local inks; if that
+    /// matters, walk the page's XObject resources separately or
+    /// enumerate inks from the content stream operators.
     pub fn get_page_inks(&self, page_index: usize) -> Result<Vec<String>> {
         let page = self.get_page(page_index)?;
         let page_dict = page.as_dict().ok_or_else(|| Error::ParseError {

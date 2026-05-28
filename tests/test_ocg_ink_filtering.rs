@@ -500,6 +500,109 @@ fn test_extract_text_filtered_respects_region() {
     );
 }
 
+fn build_pdf_for_full_pipeline_region_test() -> Vec<u8> {
+    // Page has 3 visible-after-filter runs arranged so that pipeline
+    // assembly (sort + whitespace + line breaks) is observable:
+    //   y=720 x=50:  "Hello"   (line 1, left)
+    //   y=720 x=200: "World"   (line 1, right) -> space between expected
+    //   y=700 x=50:  "Second"  (line 2)         -> newline before expected
+    //   y=650 (excluded OCG layer): "HIDDEN"
+    //   y=100 (outside region): "Footer"
+    let mut pdf = Vec::new();
+    let mut offsets: Vec<usize> = Vec::new();
+    pdf.extend_from_slice(b"%PDF-1.4\n");
+
+    offsets.push(pdf.len());
+    pdf.extend_from_slice(
+        b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R\n\
+           /OCProperties << /OCGs [6 0 R] /D << /ON [6 0 R] >> >> >>\nendobj\n\n",
+    );
+    offsets.push(pdf.len());
+    pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n\n");
+    offsets.push(pdf.len());
+    pdf.extend_from_slice(
+        b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]\n\
+           /Contents 4 0 R\n\
+           /Resources << /Font << /F1 5 0 R >> /Properties << /MC0 6 0 R >> >> >>\nendobj\n\n",
+    );
+
+    let content = b"BT /F1 12 Tf 50 720 Td (Hello) Tj ET \
+                    BT /F1 12 Tf 200 720 Td (World) Tj ET \
+                    BT /F1 12 Tf 50 700 Td (Second) Tj ET \
+                    /OC /MC0 BDC BT /F1 12 Tf 50 650 Td (HIDDEN) Tj ET EMC \
+                    BT /F1 12 Tf 50 100 Td (Footer) Tj ET";
+    offsets.push(pdf.len());
+    let hdr = format!("4 0 obj\n<< /Length {} >>\nstream\n", content.len());
+    pdf.extend_from_slice(hdr.as_bytes());
+    pdf.extend_from_slice(content);
+    pdf.extend_from_slice(b"\nendstream\nendobj\n\n");
+
+    offsets.push(pdf.len());
+    pdf.extend_from_slice(
+        b"5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica\n\
+           /Encoding /WinAnsiEncoding >>\nendobj\n\n",
+    );
+    offsets.push(pdf.len());
+    pdf.extend_from_slice(b"6 0 obj\n<< /Type /OCG /Name /Overlay >>\nendobj\n\n");
+
+    let xref_offset = pdf.len();
+    let n_obj = offsets.len() + 1;
+    let mut xref = format!("xref\n0 {}\n0000000000 65535 f \n", n_obj);
+    for off in &offsets {
+        xref.push_str(&format!("{:010} 00000 n \n", off));
+    }
+    pdf.extend_from_slice(xref.as_bytes());
+    let trailer = format!(
+        "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
+        n_obj, xref_offset
+    );
+    pdf.extend_from_slice(trailer.as_bytes());
+    pdf
+}
+
+#[test]
+fn test_extract_text_filtered_in_rect_uses_full_pipeline() {
+    // extract_text_filtered_in_rect must go through the full text-assembly
+    // pipeline: reading-order sort, whitespace between adjacent runs,
+    // line breaks between rows. Composing layer/ink filters with a region
+    // must NOT regress to char-stream concatenation.
+    let pdf_bytes = build_pdf_for_full_pipeline_region_test();
+    let doc = PdfDocument::from_bytes(pdf_bytes).expect("parse PDF");
+
+    let excluded = HashSet::from(["Overlay".to_string()]);
+    let region = pdf_oxide::geometry::Rect::new(0.0, 600.0, 612.0, 200.0);
+    let text = doc
+        .extract_text_filtered_in_rect(
+            0,
+            excluded,
+            HashSet::new(),
+            region,
+            pdf_oxide::layout::RectFilterMode::Intersects,
+        )
+        .expect("filtered text in rect");
+
+    assert!(text.contains("Hello"), "Hello missing: {:?}", text);
+    assert!(text.contains("World"), "World missing: {:?}", text);
+    assert!(text.contains("Second"), "Second missing: {:?}", text);
+    assert!(!text.contains("HIDDEN"), "HIDDEN should be layer-excluded: {:?}", text);
+    assert!(!text.contains("Footer"), "Footer should be region-excluded: {:?}", text);
+
+    // Whitespace between "Hello" and "World" on the same row.
+    let h = text.find("Hello").unwrap();
+    let w = text.find("World").unwrap();
+    let between = &text[h + "Hello".len()..w];
+    assert!(
+        between.chars().any(|c| c.is_whitespace()),
+        "Expected whitespace between Hello and World; got {:?}",
+        text
+    );
+
+    // Newline or other separator between line 1 and "Second" (line 2).
+    let s = text.find("Second").unwrap();
+    let line_break = &text[w + "World".len()..s];
+    assert!(line_break.contains('\n'), "Expected line break before 'Second'; got {:?}", text);
+}
+
 // ============================================================================
 // Basic OCG filtering (no XObject cache involvement)
 // ============================================================================
@@ -620,6 +723,75 @@ fn test_get_page_inks_returns_separation_names() {
         "SpotRed is in XObject resources, not page, got: {:?}",
         inks
     );
+}
+
+/// Build a minimal PDF whose page-level /Resources/ColorSpace declares
+/// both a /Separation and a /DeviceN entry. Verifies the happy path of
+/// get_page_inks — the previous test only covered the negative case
+/// (XObject-local color space).
+fn build_pdf_with_page_level_inks() -> Vec<u8> {
+    let mut pdf = Vec::new();
+    let mut offsets: Vec<usize> = Vec::new();
+
+    pdf.extend_from_slice(b"%PDF-1.4\n");
+
+    offsets.push(pdf.len());
+    pdf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n\n");
+    offsets.push(pdf.len());
+    pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n\n");
+    offsets.push(pdf.len());
+    pdf.extend_from_slice(
+        b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100]\n\
+           /Contents 4 0 R\n\
+           /Resources << /ColorSpace << /CS1 5 0 R /CS2 6 0 R >> >> >>\nendobj\n\n",
+    );
+    offsets.push(pdf.len());
+    pdf.extend_from_slice(b"4 0 obj\n<< /Length 0 >>\nstream\n\nendstream\nendobj\n\n");
+    offsets.push(pdf.len());
+    pdf.extend_from_slice(
+        b"5 0 obj\n[/Separation /PANTONE#20185#20C /DeviceCMYK 7 0 R]\nendobj\n\n",
+    );
+    offsets.push(pdf.len());
+    pdf.extend_from_slice(
+        b"6 0 obj\n[/DeviceN [/Cyan /Magenta /SpotGold] /DeviceCMYK 7 0 R]\nendobj\n\n",
+    );
+    offsets.push(pdf.len());
+    pdf.extend_from_slice(
+        b"7 0 obj\n<< /FunctionType 2 /Domain [0 1] /N 4 /C0 [0 0 0 0] /C1 [1 0 0 0] >>\nendobj\n\n",
+    );
+
+    let xref_offset = pdf.len();
+    let n_obj = offsets.len() + 1;
+    let mut xref = format!("xref\n0 {}\n0000000000 65535 f \n", n_obj);
+    for off in &offsets {
+        xref.push_str(&format!("{:010} 00000 n \n", off));
+    }
+    pdf.extend_from_slice(xref.as_bytes());
+    let trailer = format!(
+        "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
+        n_obj, xref_offset
+    );
+    pdf.extend_from_slice(trailer.as_bytes());
+    pdf
+}
+
+#[test]
+fn test_get_page_inks_happy_path() {
+    let pdf_bytes = build_pdf_with_page_level_inks();
+    let doc = PdfDocument::from_bytes(pdf_bytes).expect("parse PDF");
+    let inks = doc.get_page_inks(0).expect("get_page_inks");
+
+    // Both Separation and DeviceN ink names should be returned.
+    assert!(
+        inks.iter()
+            .any(|i| i == "PANTONE 185 C" || i == "PANTONE#20185#20C"),
+        "Separation ink missing: {:?}",
+        inks
+    );
+    assert!(inks.contains(&"SpotGold".to_string()), "DeviceN ink missing: {:?}", inks);
+    // Cyan/Magenta are process colorant names declared as DeviceN components
+    // — they're enumerated as plate-able inks at this layer.
+    assert!(inks.contains(&"Cyan".to_string()), "DeviceN component missing: {:?}", inks);
 }
 
 #[test]
