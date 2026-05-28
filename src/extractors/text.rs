@@ -2251,6 +2251,11 @@ impl<'doc> TextExtractor<'doc> {
     /// When the fill color space is a Separation or DeviceN whose ink name(s)
     /// intersect with any of the provided names, subsequent text is suppressed
     /// until the color space changes to a non-excluded one.
+    ///
+    /// **DeviceN behavior:** For DeviceN color spaces (e.g.
+    /// `[/DeviceN [/Cyan /SpotGold] ...]`), text is suppressed if ANY ink in
+    /// the array matches — even process colors sharing the DeviceN definition.
+    /// This is because tint values are not evaluated during extraction.
     pub fn set_excluded_inks(&mut self, inks: HashSet<String>) {
         self.excluded_inks = inks;
     }
@@ -2641,6 +2646,9 @@ impl<'doc> TextExtractor<'doc> {
     /// - `[/DeviceN [/Ink1 /Ink2 ...] /AlternateCS /TintTransform]` — multiple ink names
     ///
     /// Returns true if any ink name in the color space matches `excluded_inks`.
+    ///
+    /// **Note:** For DeviceN, this is all-or-nothing — if any ink matches, the
+    /// entire color space is treated as excluded. Tint values are not evaluated.
     fn is_excluded_ink_color_space(&self, name: &str) -> bool {
         if self.excluded_inks.is_empty() {
             return false;

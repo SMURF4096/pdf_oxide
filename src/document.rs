@@ -8688,6 +8688,10 @@ impl PdfDocument {
     /// table detection). For most layer/ink filtering use cases this is
     /// sufficient since the caller is performing targeted extraction.
     ///
+    /// **Ink filtering note:** For DeviceN color spaces, text is suppressed if
+    /// ANY ink in the DeviceN array matches an excluded ink name. Tint values
+    /// are not evaluated — this is an all-or-nothing match.
+    ///
     /// # Arguments
     ///
     /// * `page_index` - Zero-based page index

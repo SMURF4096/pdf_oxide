@@ -733,3 +733,96 @@ fn test_ocmd_layer_filtering() {
         text_filtered
     );
 }
+
+// ============================================================================
+// Task 3: DeviceN all-or-nothing semantics
+// ============================================================================
+
+fn build_pdf_with_devicen() -> Vec<u8> {
+    let mut pdf = Vec::new();
+    let mut offsets: Vec<usize> = Vec::new();
+
+    pdf.extend_from_slice(b"%PDF-1.4\n");
+
+    offsets.push(pdf.len());
+    pdf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n\n");
+    offsets.push(pdf.len());
+    pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n\n");
+    offsets.push(pdf.len());
+    pdf.extend_from_slice(
+        b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]\n\
+           /Contents 4 0 R\n\
+           /Resources << /Font << /F1 5 0 R >>\n\
+           /ColorSpace << /CS1 6 0 R >> >> >>\nendobj\n\n",
+    );
+
+    let content = b"BT /F1 12 Tf 50 700 Td (PLAIN) Tj ET \
+                    /CS1 cs 1 0 scn BT /F1 12 Tf 50 650 Td (MIXED_INK) Tj ET";
+    offsets.push(pdf.len());
+    let hdr = format!("4 0 obj\n<< /Length {} >>\nstream\n", content.len());
+    pdf.extend_from_slice(hdr.as_bytes());
+    pdf.extend_from_slice(content);
+    pdf.extend_from_slice(b"\nendstream\nendobj\n\n");
+
+    offsets.push(pdf.len());
+    pdf.extend_from_slice(
+        b"5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica\n\
+           /Encoding /WinAnsiEncoding >>\nendobj\n\n",
+    );
+
+    offsets.push(pdf.len());
+    pdf.extend_from_slice(
+        b"6 0 obj\n[/DeviceN [/Cyan /SpotGold] /DeviceRGB 7 0 R]\nendobj\n\n",
+    );
+
+    let tint_fn = b"{ 0 exch }";
+    offsets.push(pdf.len());
+    let fn_hdr = format!(
+        "7 0 obj\n<< /FunctionType 4 /Domain [0.0 1.0 0.0 1.0]\n\
+         /Range [0.0 1.0 0.0 1.0 0.0 1.0] /Length {} >>\nstream\n",
+        tint_fn.len()
+    );
+    pdf.extend_from_slice(fn_hdr.as_bytes());
+    pdf.extend_from_slice(tint_fn);
+    pdf.extend_from_slice(b"\nendstream\nendobj\n\n");
+
+    let xref_offset = pdf.len();
+    let n_obj = offsets.len() + 1;
+    let mut xref = format!("xref\n0 {}\n", n_obj);
+    xref.push_str("0000000000 65535 f \n");
+    for off in &offsets {
+        xref.push_str(&format!("{:010} 00000 n \n", off));
+    }
+    pdf.extend_from_slice(xref.as_bytes());
+    let trailer = format!(
+        "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
+        n_obj, xref_offset
+    );
+    pdf.extend_from_slice(trailer.as_bytes());
+    pdf
+}
+
+#[test]
+fn test_devicen_excludes_entire_colorspace_if_any_ink_matches() {
+    // Documents the all-or-nothing DeviceN behavior:
+    // Excluding "SpotGold" suppresses ALL text in the DeviceN space,
+    // even though Cyan (a process color) is also part of the space.
+    let pdf_bytes = build_pdf_with_devicen();
+    let doc = PdfDocument::from_bytes(pdf_bytes).expect("parse PDF");
+
+    let excluded_inks = HashSet::from(["SpotGold".to_string()]);
+    let text = doc
+        .extract_text_filtered(0, HashSet::new(), excluded_inks)
+        .expect("filtered");
+
+    assert!(
+        text.contains("PLAIN"),
+        "PLAIN (DeviceGray) should survive, got: {:?}",
+        text
+    );
+    assert!(
+        !text.contains("MIXED_INK"),
+        "MIXED_INK should be suppressed (DeviceN contains excluded SpotGold), got: {:?}",
+        text
+    );
+}
