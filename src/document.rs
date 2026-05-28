@@ -12627,8 +12627,8 @@ impl PdfDocument {
     /// XObject dictionary. No pixel data is decoded. Returns a handle per image
     /// in content-stream paint order.
     ///
-    /// Call [`PdfImageHandle::decode`] on individual handles to materialise only
-    /// the images you need, or [`PdfImageHandle::raw_compressed_bytes`] to forward
+    /// Call [`crate::PdfImageHandle::decode`] on individual handles to materialise only
+    /// the images you need, or [`crate::PdfImageHandle::raw_compressed_bytes`] to forward
     /// compressed data (e.g. JPEG bytes) without recompression.
     ///
     /// Form XObjects (subtype `/Form`) are recursed into, matching the behaviour

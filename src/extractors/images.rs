@@ -2245,7 +2245,7 @@ enum PdfImageSource {
 
 /// A lightweight handle to a PDF image that has **not** been decoded yet.
 ///
-/// Created by [`PdfDocument::page_image_handles`], which walks the page content
+/// Created by [`crate::PdfDocument::page_image_handles`], which walks the page content
 /// stream and reads XObject dictionary metadata without decompressing any stream.
 /// Callers can inspect the metadata fields to decide which images to materialise,
 /// then call [`decode`](PdfImageHandle::decode) or
