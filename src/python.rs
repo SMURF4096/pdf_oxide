@@ -261,7 +261,11 @@ impl PyPdfDocument {
                     &crate::geometry::Rect::new(x, y, w, h),
                     crate::layout::RectFilterMode::Intersects,
                 );
-                Ok(filtered.iter().map(|c| c.char.to_string()).collect::<Vec<_>>().join(""))
+                Ok(filtered
+                    .iter()
+                    .map(|c| c.char.to_string())
+                    .collect::<Vec<_>>()
+                    .join(""))
             } else {
                 self.inner
                     .extract_text_in_rect(

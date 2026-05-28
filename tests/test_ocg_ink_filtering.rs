@@ -84,9 +84,7 @@ fn build_pdf_with_ocg_in_xobject() -> Vec<u8> {
 
     // Obj 8: OCG dictionary
     offsets.push(pdf.len());
-    pdf.extend_from_slice(
-        b"8 0 obj\n<< /Type /OCG /Name /HiddenLayer >>\nendobj\n\n",
-    );
+    pdf.extend_from_slice(b"8 0 obj\n<< /Type /OCG /Name /HiddenLayer >>\nendobj\n\n");
 
     // Xref
     let xref_offset = pdf.len();
@@ -140,7 +138,8 @@ fn build_pdf_with_ink_in_xobject() -> Vec<u8> {
     );
 
     // Obj 4: Page content — text before XObject, invoke XObject, text after
-    let page_content = b"BT /F1 12 Tf 50 700 Td (BEFORE) Tj ET /Fm0 Do BT /F1 12 Tf 50 600 Td (AFTER) Tj ET";
+    let page_content =
+        b"BT /F1 12 Tf 50 700 Td (BEFORE) Tj ET /Fm0 Do BT /F1 12 Tf 50 600 Td (AFTER) Tj ET";
     offsets.push(pdf.len());
     let hdr = format!("4 0 obj\n<< /Length {} >>\nstream\n", page_content.len());
     pdf.extend_from_slice(hdr.as_bytes());
@@ -170,9 +169,7 @@ fn build_pdf_with_ink_in_xobject() -> Vec<u8> {
 
     // Obj 7: Separation color space [/Separation /SpotRed /DeviceRGB <tint fn>]
     offsets.push(pdf.len());
-    pdf.extend_from_slice(
-        b"7 0 obj\n[/Separation /SpotRed /DeviceRGB 8 0 R]\nendobj\n\n",
-    );
+    pdf.extend_from_slice(b"7 0 obj\n[/Separation /SpotRed /DeviceRGB 8 0 R]\nendobj\n\n");
 
     // Obj 8: Tint transform function (Type 4 PostScript calculator)
     let tint_fn = b"{ 0 0 }";
@@ -337,9 +334,7 @@ fn build_pdf_with_inline_separation() -> Vec<u8> {
 
     // Obj 6: Separation color space array
     offsets.push(pdf.len());
-    pdf.extend_from_slice(
-        b"6 0 obj\n[/Separation /SpotRed /DeviceRGB 7 0 R]\nendobj\n\n",
-    );
+    pdf.extend_from_slice(b"6 0 obj\n[/Separation /SpotRed /DeviceRGB 7 0 R]\nendobj\n\n");
 
     // Obj 7: Tint transform function
     let tint_fn = b"{ 0 0 }";
@@ -679,9 +674,7 @@ fn build_pdf_with_ocmd() -> Vec<u8> {
     );
     // Obj 6: OCMD referencing OCG
     offsets.push(pdf.len());
-    pdf.extend_from_slice(
-        b"6 0 obj\n<< /Type /OCMD /OCGs [7 0 R] /P /AllOn >>\nendobj\n\n",
-    );
+    pdf.extend_from_slice(b"6 0 obj\n<< /Type /OCMD /OCGs [7 0 R] /P /AllOn >>\nendobj\n\n");
     // Obj 7: OCG
     offsets.push(pdf.len());
     pdf.extend_from_slice(b"7 0 obj\n<< /Type /OCG /Name /MemberLayer >>\nendobj\n\n");
@@ -708,11 +701,7 @@ fn test_ocmd_layer_filtering() {
     let doc = PdfDocument::from_bytes(pdf_bytes).expect("parse PDF");
 
     let layers = doc.get_layers().expect("get_layers");
-    assert!(
-        layers.contains(&"MemberLayer".to_string()),
-        "got: {:?}",
-        layers
-    );
+    assert!(layers.contains(&"MemberLayer".to_string()), "got: {:?}", layers);
 
     let text_all = doc.extract_text(0).expect("unfiltered");
     assert!(text_all.contains("ALWAYS"), "got: {:?}", text_all);
@@ -722,11 +711,7 @@ fn test_ocmd_layer_filtering() {
     let text_filtered = doc
         .extract_text_filtered(0, excluded, HashSet::new())
         .expect("filtered");
-    assert!(
-        text_filtered.contains("ALWAYS"),
-        "got: {:?}",
-        text_filtered
-    );
+    assert!(text_filtered.contains("ALWAYS"), "got: {:?}", text_filtered);
     assert!(
         !text_filtered.contains("MEMBER"),
         "MEMBER should be excluded via OCMD resolution, got: {:?}",
@@ -771,9 +756,7 @@ fn build_pdf_with_devicen() -> Vec<u8> {
     );
 
     offsets.push(pdf.len());
-    pdf.extend_from_slice(
-        b"6 0 obj\n[/DeviceN [/Cyan /SpotGold] /DeviceRGB 7 0 R]\nendobj\n\n",
-    );
+    pdf.extend_from_slice(b"6 0 obj\n[/DeviceN [/Cyan /SpotGold] /DeviceRGB 7 0 R]\nendobj\n\n");
 
     let tint_fn = b"{ 0 exch }";
     offsets.push(pdf.len());
@@ -815,11 +798,7 @@ fn test_devicen_excludes_entire_colorspace_if_any_ink_matches() {
         .extract_text_filtered(0, HashSet::new(), excluded_inks)
         .expect("filtered");
 
-    assert!(
-        text.contains("PLAIN"),
-        "PLAIN (DeviceGray) should survive, got: {:?}",
-        text
-    );
+    assert!(text.contains("PLAIN"), "PLAIN (DeviceGray) should survive, got: {:?}", text);
     assert!(
         !text.contains("MIXED_INK"),
         "MIXED_INK should be suppressed (DeviceN contains excluded SpotGold), got: {:?}",
@@ -896,11 +875,7 @@ fn test_filtering_unrelated_layer_produces_identical_output() {
 
     let text_normal = doc.extract_text(0).expect("unfiltered");
     let text_filtered = doc
-        .extract_text_filtered(
-            0,
-            HashSet::from(["Dieline".to_string()]),
-            HashSet::new(),
-        )
+        .extract_text_filtered(0, HashSet::from(["Dieline".to_string()]), HashSet::new())
         .expect("filtered with non-matching layer");
 
     assert_eq!(
