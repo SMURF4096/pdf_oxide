@@ -9450,15 +9450,26 @@ impl PdfDocument {
     /// Mark spans near the top/bottom of the page whose normalized text
     /// matches a cached running-artifact signature by setting
     /// `artifact_type` to Pagination.
+    /// #553: a bare page number (e.g. " 1 ", "12") varies per page, so it
+    /// never matches a repeated-text signature and leaks into the body. Treat
+    /// a short pure-digit token (1..=9999) as a page-number candidate — only
+    /// applied inside the top/bottom margin band by the caller, so ordinary
+    /// numerals in body text are never affected.
+    fn is_bare_page_number_text(trimmed: &str) -> bool {
+        !trimmed.is_empty()
+            && trimmed.len() <= 4
+            && trimmed.chars().all(|c| c.is_ascii_digit())
+            && trimmed
+                .parse::<u32>()
+                .map(|n| (1..=9999).contains(&n))
+                .unwrap_or(false)
+    }
+
     fn mark_running_artifact_spans(
         &self,
         page_index: usize,
         spans: &mut [crate::layout::TextSpan],
     ) -> Result<()> {
-        let signatures = self.ensure_running_artifact_signatures()?;
-        if signatures.is_empty() {
-            return Ok(());
-        }
         let (_, _, _, page_height) = match self.get_page_media_box(page_index) {
             Ok(mb) => mb,
             Err(_) => return Ok(()),
@@ -9467,6 +9478,18 @@ impl PdfDocument {
             return Ok(());
         }
         let band = page_height * 0.12;
+        // Snapshot baselines of every non-blank span, so the bare-page-number
+        // rule can require a candidate to stand ALONE on its line (#553): a
+        // digit adjacent to other text — e.g. the "8" in "8th" — is content,
+        // not a page number.
+        let occupied_baselines: Vec<f32> = spans
+            .iter()
+            .filter(|s| !s.text.trim().is_empty())
+            .map(|s| s.bbox.y)
+            .collect();
+        // Signature set may be empty (no repeated headers/footers); the
+        // bare-page-number rule below still runs.
+        let signatures = self.ensure_running_artifact_signatures()?;
         for s in spans.iter_mut() {
             if s.artifact_type.is_some() {
                 continue;
@@ -9478,6 +9501,26 @@ impl PdfDocument {
             }
             let trimmed = s.text.trim();
             if trimmed.is_empty() {
+                continue;
+            }
+            // #553: standalone page-number chrome in the margin band — only
+            // when the digit is ISOLATED on its line (no other text span
+            // within ~one line height), so digits embedded in words/runs are
+            // never dropped.
+            if Self::is_bare_page_number_text(trimmed) {
+                let line_tol = s.font_size.max(6.0);
+                let on_line = occupied_baselines
+                    .iter()
+                    .filter(|&&oy| (oy - s.bbox.y).abs() < line_tol)
+                    .count();
+                if on_line <= 1 {
+                    s.artifact_type = Some(crate::extractors::text::ArtifactType::Pagination(
+                        crate::extractors::text::PaginationSubtype::PageNumber,
+                    ));
+                }
+                continue;
+            }
+            if signatures.is_empty() {
                 continue;
             }
             let sig = Self::normalize_artifact_signature(trimmed);
@@ -17071,6 +17114,17 @@ mod tests {
             "#557: per-word RTL spans must be reordered into logical word order \
              without char-flipping (got {texts:?})"
         );
+    }
+
+    // #553: bare page-number detection (applied only inside the margin band).
+    #[test]
+    fn test_is_bare_page_number_text() {
+        for yes in ["1", "12", "999", "1000", "9999", " 7 ".trim()] {
+            assert!(PdfDocument::is_bare_page_number_text(yes), "{yes:?} should be a page number");
+        }
+        for no in ["", "0", "10000", "12345", "1a", "iv", "Page", "1.2", "-1", "1,2"] {
+            assert!(!PdfDocument::is_bare_page_number_text(no), "{no:?} must NOT be a page number");
+        }
     }
 
     // ========================================================================
