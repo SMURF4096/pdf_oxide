@@ -11845,6 +11845,44 @@ impl PdfDocument {
                     }
                 }
             }
+            // #598: width metrics. Two non-subset fonts can share
+            // BaseFont + Subtype + Encoding yet ship different glyph widths —
+            // Standard-14 fonts may carry producer-specific /Widths overrides
+            // (§9.6.2.2), and differently-optimized embeds of the same named
+            // font diverge similarly. Without folding widths into the key,
+            // such fonts collide on the cross-document cache and the second
+            // document gets the first's advances. We hash the simple-font
+            // char range + width table and the Type0 default width. Only
+            // values present inline on this dict are reachable (this is a pure
+            // function over the font object); a referenced /Widths or the
+            // descendant CIDFont /W array falls back to the coarser key — an
+            // accepted, documented limitation, not a new regression.
+            if let Some(Object::Integer(first_char)) = d.get("FirstChar") {
+                7u8.hash(&mut hasher);
+                first_char.hash(&mut hasher);
+            }
+            if let Some(Object::Integer(last_char)) = d.get("LastChar") {
+                8u8.hash(&mut hasher);
+                last_char.hash(&mut hasher);
+            }
+            if let Some(Object::Array(widths)) = d.get("Widths") {
+                9u8.hash(&mut hasher);
+                (widths.len() as u64).hash(&mut hasher);
+                for w in widths {
+                    match w {
+                        Object::Integer(i) => i.hash(&mut hasher),
+                        // Bit-pattern hash so equal widths hash equally
+                        // (these are glyph advances, never NaN in practice).
+                        Object::Real(r) => r.to_bits().hash(&mut hasher),
+                        _ => 0u8.hash(&mut hasher),
+                    }
+                }
+            }
+            // Type0 default width, when present inline on the font dict.
+            if let Some(Object::Integer(dw)) = d.get("DW") {
+                10u8.hash(&mut hasher);
+                dw.hash(&mut hasher);
+            }
         }
         hasher.finish()
     }
@@ -17387,6 +17425,56 @@ mod tests {
         let hash = PdfDocument::font_identity_hash_cheap(&Object::Null);
         // Should not panic, returns some hash
         let _ = hash;
+    }
+
+    // #598: two non-subset fonts sharing BaseFont/Subtype/Encoding but with
+    // different /Widths must NOT share a cross-document cache key.
+    #[test]
+    fn test_font_identity_hash_differs_on_widths() {
+        let base = || {
+            let mut d = std::collections::HashMap::new();
+            d.insert("BaseFont".to_string(), Object::Name("Helvetica".to_string()));
+            d.insert("Subtype".to_string(), Object::Name("Type1".to_string()));
+            d.insert("FirstChar".to_string(), Object::Integer(65));
+            d.insert("LastChar".to_string(), Object::Integer(67));
+            d
+        };
+        // PDF A: monospace override.
+        let mut a = base();
+        a.insert(
+            "Widths".to_string(),
+            Object::Array(vec![Object::Integer(600), Object::Integer(600), Object::Integer(600)]),
+        );
+        // PDF B: real Helvetica metrics — same name, different widths.
+        let mut b = base();
+        b.insert(
+            "Widths".to_string(),
+            Object::Array(vec![Object::Integer(667), Object::Integer(667), Object::Integer(722)]),
+        );
+
+        let hash_a = PdfDocument::font_identity_hash_cheap(&Object::Dictionary(a));
+        let hash_b = PdfDocument::font_identity_hash_cheap(&Object::Dictionary(b));
+        assert_ne!(
+            hash_a, hash_b,
+            "#598: fonts with identical BaseFont but different /Widths must not collide"
+        );
+
+        // Sanity: identical widths still hash equally (genuine cache hits).
+        let mut c = base();
+        c.insert(
+            "Widths".to_string(),
+            Object::Array(vec![Object::Integer(600), Object::Integer(600), Object::Integer(600)]),
+        );
+        let mut a2 = base();
+        a2.insert(
+            "Widths".to_string(),
+            Object::Array(vec![Object::Integer(600), Object::Integer(600), Object::Integer(600)]),
+        );
+        assert_eq!(
+            PdfDocument::font_identity_hash_cheap(&Object::Dictionary(c)),
+            PdfDocument::font_identity_hash_cheap(&Object::Dictionary(a2)),
+            "#598: identical fonts must still share a cache key"
+        );
     }
 
     // #597: Type 3 fonts are document-local and must be kept out of the
