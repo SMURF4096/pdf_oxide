@@ -7023,7 +7023,19 @@ impl PdfDocument {
 
             let text = match display_text {
                 Some(t) if !t.is_empty() => t,
-                _ => continue,
+                _ => {
+                    // CORPUS-5: a widget with no extractable /V value (notably a
+                    // signature field, /FT /Sig) often carries its VISIBLE text
+                    // in the /AP/N appearance stream (e.g. "Firmato
+                    // elettronicamente da ..."). pdftotext / PyMuPDF surface it;
+                    // fall back to the appearance stream so it isn't dropped.
+                    // Fields that DO yield a /V value take the arm above, so this
+                    // never double-extracts.
+                    match self.extract_text_from_ap_stream(&dict) {
+                        Some(ap) if !ap.trim().is_empty() => ap.trim().to_string(),
+                        _ => continue,
+                    }
+                },
             };
 
             // Parse font size from /DA string
