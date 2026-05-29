@@ -40,6 +40,12 @@ use crate::layout::text_block::{TextBlock, TextChar};
 ///         font_weight: FontWeight::Normal,
 ///         color: Color::black(),
 ///         mcid: None,
+///         origin_x: 0.0,
+///         origin_y: 0.0,
+///         rotation_degrees: 0.0,
+///         advance_width: 10.0,
+///         rendered_advance: 10.0,
+///         matrix: None,
 ///     },
 ///     TextChar {
 ///         char: 'i',
@@ -49,6 +55,12 @@ use crate::layout::text_block::{TextBlock, TextChar};
 ///         font_weight: FontWeight::Normal,
 ///         color: Color::black(),
 ///         mcid: None,
+///         origin_x: 11.0,
+///         origin_y: 0.0,
+///         rotation_degrees: 0.0,
+///         advance_width: 5.0,
+///         rendered_advance: 5.0,
+///         matrix: None,
 ///     },
 /// ];
 ///
@@ -157,8 +169,16 @@ pub fn cluster_chars_into_words(chars: &[TextChar], epsilon: f32) -> Vec<Vec<usi
 ///         font_name: "Times".to_string(),
 ///         font_size: 12.0,
 ///         font_weight: FontWeight::Normal,
+///         is_italic: false,
+///         is_monospace: false,
 ///         color: Color::black(),
 ///         mcid: None,
+///         origin_x: 0.0,
+///         origin_y: 0.0,
+///         rotation_degrees: 0.0,
+///         advance_width: 10.0,
+///         rendered_advance: 10.0,
+///         matrix: None,
 ///     },
 /// ];
 /// let word1 = TextBlock::from_chars(chars1);
@@ -170,8 +190,16 @@ pub fn cluster_chars_into_words(chars: &[TextChar], epsilon: f32) -> Vec<Vec<usi
 ///         font_name: "Times".to_string(),
 ///         font_size: 12.0,
 ///         font_weight: FontWeight::Normal,
+///         is_italic: false,
+///         is_monospace: false,
 ///         color: Color::black(),
 ///         mcid: None,
+///         origin_x: 50.0,
+///         origin_y: 1.0,
+///         rotation_degrees: 0.0,
+///         advance_width: 10.0,
+///         rendered_advance: 10.0,
+///         matrix: None,
 ///     },
 /// ];
 /// let word2 = TextBlock::from_chars(chars2);
@@ -410,6 +438,7 @@ mod tests {
             origin_y: bbox.y,
             rotation_degrees: 0.0,
             advance_width: bbox.width,
+            rendered_advance: bbox.width,
             matrix: None,
         }
     }

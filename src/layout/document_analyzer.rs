@@ -446,6 +446,7 @@ mod tests {
             origin_y: bbox.y,
             rotation_degrees: 0.0,
             advance_width: bbox.width,
+            rendered_advance: bbox.width,
             matrix: None,
         }
     }

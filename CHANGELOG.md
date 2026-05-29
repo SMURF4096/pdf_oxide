@@ -2,6 +2,18 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [0.3.57] - 2026-05-29
+
+> _release subtitle finalized at tag time_
+
+### Added
+
+- **`TextChar::rendered_advance`** — per-glyph cursor advance to the next character's origin, including character spacing (Tc) and word spacing (Tw) per the PDF Tx formula, distinct from the shape-only `advance_width`. Enables accurate word-boundary detection and cursor reconstruction. Thanks @haberman. (#602)
+
+### Changed
+
+- **`TextChar` gained a required `rendered_advance` field** — external callers constructing `TextChar { .. }` literals must add `rendered_advance` (set it equal to `advance_width` to preserve prior behaviour). (#602)
+
 ## [0.3.56] - 2026-05-28
 
 > Text-extraction fidelity sweep — XY-cut routing, typed extraction status, OCR API repair, Persian font support, encryption authentication enforcement
@@ -59,7 +71,6 @@ All notable changes to PDFOxide are documented here.
 ### Deprecated
 
 - `PdfDocument.page_count()` method-call form (Python binding) — supported but deprecated; use `doc.page_count` attribute form instead. Removal scheduled for v0.4.0 (#414). Closes #550.
-
 ## [0.3.55] - 2026-05-25
 
 > Ruby + PHP language bindings + multi-line heading reading-order fix
