@@ -4,7 +4,7 @@ All notable changes to PDFOxide are documented here.
 
 ## [0.3.57] - 2026-05-29
 
-> _release subtitle finalized at tag time_
+> Community contributions — separation plate rendering, OCG ink filtering, two-phase image API, and rendered-advance text metrics
 
 ### Added
 
