@@ -6960,9 +6960,15 @@ impl PdfDocument {
                             None => false,
                         };
                         if is_checked {
+                            // A checked box is meaningful state worth surfacing.
                             Some("[x]".to_string())
                         } else {
-                            Some("[ ]".to_string())
+                            // An UNCHECKED box carries no text. Emitting "[ ]"
+                            // here injected noise that pdftotext/PyMuPDF never
+                            // produce — the dominant cause of pdf_oxide being
+                            // the sole outlier on AcroForm-heavy PDFs in the
+                            // cross-corpus sweep (CORPUS-1). Emit nothing.
+                            None
                         }
                     }
                 },
