@@ -158,13 +158,14 @@ pub struct PathExtractor {
     /// Cached XObject name → ObjectRef mapping, built on first lookup.
     cached_xobject_dict: Option<std::collections::HashMap<String, crate::object::ObjectRef>>,
     /// Stack of active Optional Content Group (PDF "layer") names. Each
-    /// `BDC` operator (any tag) pushes an entry — `Some(layer_name)` when
-    /// the tag is `/OC` and the property dict resolves to a named OCG,
-    /// `None` for non-`/OC` marked content or unresolvable OCG names.
-    /// Every `EMC` pops one entry. Always-balanced so the depth tracks
-    /// the active marked-content nesting precisely; the *top* `Some(_)`
-    /// in the stack is the layer name attached to paths finalized while
-    /// inside this region (ISO 32000-1:2008 §8.11, §14.6).
+    /// `BDC`/`BMC` operator (any tag) pushes one entry and each `EMC` pops
+    /// one, so the depth tracks the marked-content nesting precisely
+    /// (ISO 32000-1:2008 §8.11, §14.6). Entries are stored *pre-resolved*
+    /// to the effective layer at that level: an `/OC` tag whose property
+    /// dict resolves to a named OCG stores that name, while non-`/OC`
+    /// marked content (and `/OC` regions whose name did not resolve)
+    /// inherits the layer already in effect. The top entry is therefore
+    /// always the active layer, making `current_layer` O(1).
     oc_layer_stack: Vec<Option<String>>,
 }
 
@@ -199,7 +200,13 @@ impl PathExtractor {
     /// `BDC /Artifact`) so the stack stays balanced and outer OCG context
     /// continues to apply to nested non-OC content.
     pub fn push_oc_layer(&mut self, layer: Option<String>) {
-        self.oc_layer_stack.push(layer);
+        // Store the *effective* layer for this nesting level: an `/OC` tag
+        // with a resolved OCG name takes effect; every other entry (non-OC
+        // `BDC`/`BMC`, or an `/OC` whose name did not resolve) inherits the
+        // layer already in effect. Pre-resolving here keeps `current_layer`
+        // O(1) instead of an O(depth) scan on every finalized path.
+        let effective = layer.or_else(|| self.oc_layer_stack.last().cloned().flatten());
+        self.oc_layer_stack.push(effective);
     }
 
     /// Pop the most recently pushed marked-content entry (called on `EMC`).
@@ -209,16 +216,39 @@ impl PathExtractor {
         self.oc_layer_stack.pop();
     }
 
-    /// Return the innermost `Some(layer)` on the marked-content stack, or
-    /// `None` if no `/OC` region is currently active. Non-OC `BDC` entries
-    /// (`None` slots) are transparent: they do not shadow an outer OCG.
+    /// Current marked-content nesting depth. Paired with [`truncate_oc_layers`]
+    /// to isolate a Form XObject's marked-content scope from its caller.
+    pub(crate) fn oc_layer_depth(&self) -> usize {
+        self.oc_layer_stack.len()
+    }
+
+    /// Drop any marked-content entries pushed above `depth`. Called when a
+    /// Form XObject content stream returns so an unbalanced `BDC` left open
+    /// inside the XObject cannot leak its layer onto the caller's subsequent
+    /// paths. The spec requires per-stream balance (§14.6), but real-world
+    /// PDFs occasionally violate it.
+    pub(crate) fn truncate_oc_layers(&mut self, depth: usize) {
+        self.oc_layer_stack.truncate(depth);
+    }
+
+    /// Return the active Optional Content Group ("layer") name, or `None`
+    /// if no `/OC` region is currently in effect. O(1): each stack entry is
+    /// pre-resolved to its effective layer by [`push_oc_layer`].
     fn current_layer(&self) -> Option<String> {
-        self.oc_layer_stack.iter().rev().find_map(|e| e.clone())
+        self.oc_layer_stack.last().cloned().flatten()
     }
 
     /// Set the page resources for XObject resolution (Issue #40).
     pub fn set_resources(&mut self, resources: crate::object::Object) {
         self.resources = Some(resources);
+    }
+
+    /// The resource dictionary currently in scope — the page resources, or
+    /// the active Form XObject's own `/Resources` after a [`swap_resources`].
+    /// Used to resolve `BDC /OC /Name` property references against the
+    /// current `/Properties` subdictionary (ISO 32000-1:2008 §14.6.2).
+    pub(crate) fn current_resources(&self) -> Option<&crate::object::Object> {
+        self.resources.as_ref()
     }
 
     /// Swap in a new resource scope for `Do` name lookups and return the
@@ -972,5 +1002,50 @@ mod tests {
         ext.push_xobject(r);
         ext.pop_xobject_failed(); // failure path
         assert!(ext.can_process_xobject(r), "Failed XObject should be retryable");
+    }
+
+    #[test]
+    fn test_oc_layer_truncate_isolates_unbalanced_xobject() {
+        // A page-level `/OC` region is active; we then descend into a Form
+        // XObject that opens a `/OC` marker but (malformed) never closes it.
+        // `truncate_oc_layers` back to the entry depth must drop the leaked
+        // entry so the caller's next path keeps the page-level layer rather
+        // than inheriting the XObject's.
+        let mut ext = PathExtractor::new();
+        ext.set_stroke_color(Color::black());
+
+        ext.push_oc_layer(Some("A-GRID".to_string())); // page-level BDC /OC
+        let base = ext.oc_layer_depth();
+
+        // Inside the XObject: opens its own region but leaves it dangling.
+        ext.push_oc_layer(Some("S-COLS".to_string()));
+        ext.move_to(0.0, 0.0);
+        ext.line_to(10.0, 0.0);
+        ext.stroke(); // belongs to the XObject's S-COLS
+                      // (no matching EMC — simulates a malformed XObject stream)
+        ext.truncate_oc_layers(base); // XObject returns
+
+        ext.move_to(0.0, 20.0);
+        ext.line_to(10.0, 20.0);
+        ext.stroke(); // back at page scope → A-GRID, not S-COLS
+
+        let paths = ext.finish();
+        assert_eq!(paths.len(), 2);
+        assert_eq!(paths[0].layer.as_deref(), Some("S-COLS"));
+        assert_eq!(paths[1].layer.as_deref(), Some("A-GRID"));
+    }
+
+    #[test]
+    fn test_oc_layer_effective_is_o1_top_of_stack() {
+        // push_oc_layer pre-resolves the effective layer, so a non-OC `BMC`
+        // nested inside an `/OC` region inherits the OCG name and the top of
+        // the stack is always the active layer.
+        let mut ext = PathExtractor::new();
+        ext.push_oc_layer(Some("A-WALL".to_string())); // BDC /OC
+        ext.push_oc_layer(None); // BMC /Span (non-OC) inherits A-WALL
+        assert_eq!(ext.current_layer().as_deref(), Some("A-WALL"));
+        ext.pop_oc_layer();
+        ext.pop_oc_layer();
+        assert_eq!(ext.current_layer(), None);
     }
 }

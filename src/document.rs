@@ -9866,7 +9866,7 @@ impl PdfDocument {
                 },
                 Operator::BeginMarkedContentDict { tag, properties } => {
                     let layer = if tag == "OC" {
-                        self.resolve_oc_layer_name(page_dict, &properties)
+                        self.resolve_oc_layer_name(extractor.current_resources(), &properties)
                     } else {
                         None
                     };
@@ -9885,77 +9885,106 @@ impl PdfDocument {
     }
 
     /// Resolve a `BDC /OC <properties>` property operand to the human-readable
-    /// `/Name` of the Optional Content Group it refers to (PDF spec
+    /// layer name of the Optional Content it refers to (PDF spec
     /// ISO 32000-1:2008 §8.11, §14.6).
     ///
     /// `properties` is the operand parsed by `Operator::BeginMarkedContentDict`
     /// — per spec it is either:
     ///
-    /// 1. An inline dictionary: read its `/Name` entry directly.
-    /// 2. A name (e.g. `/MC0`) that references `page_dict /Resources
-    ///    /Properties <name>` → an indirect ref to an OCG dictionary → read
-    ///    its `/Name` entry.
+    /// 1. An inline dictionary: an OCG (or OCMD) — read its name directly.
+    /// 2. A name (e.g. `/MC0`) that references `<resources> /Properties
+    ///    <name>` → an OCG or OCMD dictionary → read its name.
+    ///
+    /// `resources` is the resource dictionary currently in scope: the page
+    /// `/Resources` at page level, or the active Form XObject's own
+    /// `/Resources` when extracting inside an XObject (§14.6.2, §8.10.1).
     ///
     /// Returns `None` for malformed PDFs, missing `/Resources /Properties`
-    /// entries, or OCG objects without a `/Name`. Callers treat `None` as
-    /// "path belongs to no named layer" — extraction continues normally.
+    /// entries, or optional-content objects without a resolvable name.
+    /// Callers treat `None` as "path belongs to no named layer" — extraction
+    /// continues normally.
     fn resolve_oc_layer_name(
         &self,
-        page_dict: &std::collections::HashMap<String, crate::object::Object>,
+        resources: Option<&crate::object::Object>,
         properties: &crate::object::Object,
+    ) -> Option<String> {
+        const OC_NAME_MAX_DEPTH: u8 = 8;
+
+        // Case 1: inline dictionary — the property list itself is the OCG (or
+        // OCMD) dictionary.
+        if let Some(dict) = properties.as_dict() {
+            return self.read_oc_name(dict, OC_NAME_MAX_DEPTH);
+        }
+
+        // Case 2: name reference (e.g. `/MC0`) — resolve through the current
+        // resource dict's `/Properties` subdictionary.
+        let prop_name = properties.as_name()?;
+        let resources_obj = self.deref_object(resources?)?;
+        let properties_dict = resources_obj.as_dict()?.get("Properties")?;
+        let properties_obj = self.deref_object(properties_dict)?;
+        let target = properties_obj.as_dict()?.get(prop_name)?;
+        let target_obj = self.deref_object(target)?;
+        self.read_oc_name(target_obj.as_dict()?, OC_NAME_MAX_DEPTH)
+    }
+
+    /// Read the human-readable layer name from an Optional Content dictionary.
+    ///
+    /// - An **OCG** (§8.11.2.1) carries its label in `/Name` — a PDF *text
+    ///   string*, decoded via [`Self::decode_pdf_text_string`] so
+    ///   PDFDocEncoding (Annex D) and UTF-16 (BE/LE, with BOM) layer names
+    ///   round-trip identically to the rest of the library.
+    /// - An **OCMD** (§8.11.3.2, Table 99) has no `/Name` of its own; its
+    ///   member OCGs live in `/OCGs`, which is *either* a single OCG *or* an
+    ///   array of them (array entries may be `null`). We follow the first
+    ///   entry that resolves to a dictionary and read its name.
+    ///
+    /// `depth` bounds the `/OCGs` chain so a malformed PDF whose membership
+    /// dictionary points back to another OCMD cannot recurse forever.
+    /// Returns `None` for missing / non-dictionary / nameless inputs — the
+    /// path is simply left unlabelled.
+    fn read_oc_name(
+        &self,
+        dict: &std::collections::HashMap<String, crate::object::Object>,
+        depth: u8,
     ) -> Option<String> {
         use crate::object::Object;
 
-        // Helper to pull a UTF-8 `/Name` (decoded as a PDF text string) out
-        // of an OCG-like dictionary. OCG `/Name` is a string (§8.11.2.1),
-        // not a `/Name` PDF name.
-        fn read_name_field(dict: &std::collections::HashMap<String, Object>) -> Option<String> {
-            let name_obj = dict.get("Name")?;
-            match name_obj {
-                Object::String(bytes) => {
-                    // PDF spec: text strings may be PDFDocEncoding or UTF-16BE
-                    // with BOM. Detect BOM; otherwise treat as latin-1.
-                    if bytes.starts_with(&[0xFE, 0xFF]) {
-                        let u16s: Vec<u16> = bytes[2..]
-                            .chunks_exact(2)
-                            .map(|c| u16::from_be_bytes([c[0], c[1]]))
-                            .collect();
-                        String::from_utf16(&u16s).ok()
-                    } else {
-                        Some(bytes.iter().map(|&b| b as char).collect())
-                    }
-                },
-                Object::Name(s) => Some(s.clone()),
-                _ => None,
-            }
+        if depth == 0 {
+            return None;
         }
 
-        // Case 1: inline dictionary — read /Name directly.
-        if let Some(dict) = properties.as_dict() {
-            return read_name_field(dict);
+        // OCMD: no /Name of its own — follow /OCGs to the first member OCG.
+        if matches!(dict.get("Type").and_then(|t| t.as_name()), Some("OCMD")) {
+            let ocgs = self.deref_object(dict.get("OCGs")?)?;
+            let first_ocg = match ocgs.as_array() {
+                // /OCGs as an array: first entry that derefs to a dictionary.
+                Some(entries) => entries
+                    .iter()
+                    .find_map(|e| self.deref_object(e).filter(|o| o.as_dict().is_some())),
+                // /OCGs as a single OCG (already a dictionary).
+                None => Some(ocgs.clone()),
+            };
+            return self.read_oc_name(first_ocg?.as_dict()?, depth - 1);
         }
 
-        // Case 2: name reference — look up page /Resources /Properties.
-        let prop_name = properties.as_name()?;
-        let resources = page_dict.get("Resources")?;
-        let resources_obj = if let Some(r) = resources.as_reference() {
-            self.load_object(r).ok()?
-        } else {
-            resources.clone()
-        };
-        let properties_dict = resources_obj.as_dict()?.get("Properties")?;
-        let properties_obj = if let Some(r) = properties_dict.as_reference() {
-            self.load_object(r).ok()?
-        } else {
-            properties_dict.clone()
-        };
-        let target = properties_obj.as_dict()?.get(prop_name)?;
-        let target_obj = if let Some(r) = target.as_reference() {
-            self.load_object(r).ok()?
-        } else {
-            target.clone()
-        };
-        read_name_field(target_obj.as_dict()?)
+        // OCG (or inline property dict): /Name is a PDF text string.
+        match dict.get("Name")? {
+            Object::String(bytes) => Some(Self::decode_pdf_text_string(bytes)),
+            // Tolerate a /Name written as a PDF name object (non-conformant,
+            // but seen in real exports).
+            Object::Name(s) => Some(s.clone()),
+            _ => None,
+        }
+    }
+
+    /// Dereference one level of indirection, loading the target object;
+    /// pass direct objects through unchanged. `None` if a reference fails to
+    /// load — callers treat that as "unresolvable, leave unlabelled".
+    fn deref_object(&self, obj: &crate::object::Object) -> Option<crate::object::Object> {
+        match obj.as_reference() {
+            Some(r) => self.load_object(r).ok(),
+            None => Some(obj.clone()),
+        }
     }
 
     /// Extract rectangles from a page (v0.3.14).
@@ -10236,6 +10265,10 @@ impl PdfDocument {
             None
         };
 
+        // Remember the marked-content nesting depth on entry so we can drop
+        // anything this XObject leaves unbalanced (see truncate below).
+        let oc_base_depth = extractor.oc_layer_depth();
+
         // Process operators from the XObject
         for op in operators {
             match op {
@@ -10361,6 +10394,28 @@ impl PdfDocument {
                     }
                 },
 
+                // Marked content — same Optional Content Group ("layer")
+                // tracking as the page-level loop, but `/OC` property
+                // references resolve against *this* XObject's resource scope
+                // (swapped in above), per §14.6.2 + §8.10.1. CAD exports that
+                // reuse Form XObjects for repeated symbols (gridline labels,
+                // callouts) carry their `/OC` markers and local `/Properties`
+                // here rather than on the page.
+                Operator::BeginMarkedContent { .. } => {
+                    extractor.push_oc_layer(None);
+                },
+                Operator::BeginMarkedContentDict { tag, properties } => {
+                    let layer = if tag == "OC" {
+                        self.resolve_oc_layer_name(extractor.current_resources(), &properties)
+                    } else {
+                        None
+                    };
+                    extractor.push_oc_layer(layer);
+                },
+                Operator::EndMarkedContent => {
+                    extractor.pop_oc_layer();
+                },
+
                 // Skip other operators
                 _ => {},
             }
@@ -10370,6 +10425,10 @@ impl PdfDocument {
         if extractor.has_current_path() {
             extractor.end_path();
         }
+
+        // Drop any marked-content entries this XObject left open so an
+        // unbalanced `BDC` cannot leak its layer onto the caller's paths.
+        extractor.truncate_oc_layers(oc_base_depth);
 
         // Restore the caller's resource scope before popping the cycle guard.
         if let Some(saved) = saved_scope {
@@ -18956,5 +19015,156 @@ mod tests {
 
         let texts: Vec<&str> = spans.iter().map(|s| s.text.as_str()).collect();
         assert_eq!(texts, vec!["September", "11", "th"]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Optional Content (PDF "layer") name resolution — OCG `/Name` decoding,
+    // OCMD `/OCGs` following, and the `/Properties` name-reference path
+    // against the current resource scope. ISO 32000-1:2008 §8.11, §14.6.
+    //
+    // The resolver methods are `&self` only to reach `load_object` for
+    // indirect references; these tests use direct objects, so a throwaway
+    // minimal PDF serves purely as the method receiver.
+    // ─────────────────────────────────────────────────────────────────────
+
+    fn oc_test_doc() -> PdfDocument {
+        PdfDocument::from_bytes(build_minimal_pdf(b"")).unwrap()
+    }
+
+    fn ocg_dict(name: Object) -> Object {
+        let mut d = std::collections::HashMap::new();
+        d.insert("Type".to_string(), Object::Name("OCG".to_string()));
+        d.insert("Name".to_string(), name);
+        Object::Dictionary(d)
+    }
+
+    fn ocmd_dict(ocgs: Object) -> Object {
+        let mut d = std::collections::HashMap::new();
+        d.insert("Type".to_string(), Object::Name("OCMD".to_string()));
+        d.insert("OCGs".to_string(), ocgs);
+        Object::Dictionary(d)
+    }
+
+    fn utf16_string(s: &str, big_endian: bool) -> Object {
+        let mut bytes = if big_endian {
+            vec![0xFE, 0xFF]
+        } else {
+            vec![0xFF, 0xFE]
+        };
+        for u in s.encode_utf16() {
+            if big_endian {
+                bytes.extend_from_slice(&u.to_be_bytes());
+            } else {
+                bytes.extend_from_slice(&u.to_le_bytes());
+            }
+        }
+        Object::String(bytes)
+    }
+
+    #[test]
+    fn test_oc_name_ocg_ascii() {
+        let doc = oc_test_doc();
+        let dict = ocg_dict(Object::String(b"A-GRID".to_vec()));
+        assert_eq!(doc.read_oc_name(dict.as_dict().unwrap(), 8).as_deref(), Some("A-GRID"));
+    }
+
+    #[test]
+    fn test_oc_name_ocg_utf16le_bom() {
+        // Regression for the reuse of decode_pdf_text_string: the previous
+        // inline reader only handled UTF-16BE and fell back to latin-1,
+        // mangling UTF-16LE-encoded layer names. The shared helper decodes
+        // the LE BOM correctly.
+        let doc = oc_test_doc();
+        let dict = ocg_dict(utf16_string("ÁREA-Ø", false));
+        assert_eq!(doc.read_oc_name(dict.as_dict().unwrap(), 8).as_deref(), Some("ÁREA-Ø"));
+    }
+
+    #[test]
+    fn test_oc_name_ocg_utf16be_bom() {
+        let doc = oc_test_doc();
+        let dict = ocg_dict(utf16_string("EJES", true));
+        assert_eq!(doc.read_oc_name(dict.as_dict().unwrap(), 8).as_deref(), Some("EJES"));
+    }
+
+    #[test]
+    fn test_oc_name_ocmd_single_ocg() {
+        // OCMD has no /Name — resolution follows /OCGs (single OCG) to its name.
+        let doc = oc_test_doc();
+        let ocmd = ocmd_dict(ocg_dict(Object::String(b"M-DUCT".to_vec())));
+        assert_eq!(doc.read_oc_name(ocmd.as_dict().unwrap(), 8).as_deref(), Some("M-DUCT"));
+    }
+
+    #[test]
+    fn test_oc_name_ocmd_ocgs_array_first_wins() {
+        // /OCGs may be an array of OCGs; the first resolvable member wins.
+        let doc = oc_test_doc();
+        let arr = Object::Array(vec![
+            ocg_dict(Object::String(b"S-COLS".to_vec())),
+            ocg_dict(Object::String(b"S-BEAM".to_vec())),
+        ]);
+        let ocmd = ocmd_dict(arr);
+        assert_eq!(doc.read_oc_name(ocmd.as_dict().unwrap(), 8).as_deref(), Some("S-COLS"));
+    }
+
+    #[test]
+    fn test_oc_name_ocmd_depth_guard() {
+        // A pathological OCMD chain (each /OCGs points to another OCMD) must
+        // terminate via the depth guard rather than recursing without bound.
+        let doc = oc_test_doc();
+        let mut nested = ocmd_dict(Object::Array(vec![]));
+        for _ in 0..20 {
+            nested = ocmd_dict(nested);
+        }
+        assert_eq!(doc.read_oc_name(nested.as_dict().unwrap(), 8), None);
+    }
+
+    #[test]
+    fn test_resolve_oc_name_via_resources_properties() {
+        // Case 2 (name reference) resolves against the *passed-in* resources.
+        // This is the crux of the Form-XObject fix: the resolver reads
+        // /Properties /<name> from whatever resource scope the caller hands
+        // it — page /Resources at page level, the XObject's own /Resources
+        // when extracting inside a Form XObject.
+        let doc = oc_test_doc();
+        let mut props = std::collections::HashMap::new();
+        props.insert("MC0".to_string(), ocg_dict(Object::String(b"A-WALL-DIM".to_vec())));
+        let mut resources = std::collections::HashMap::new();
+        resources.insert("Properties".to_string(), Object::Dictionary(props));
+        let resources = Object::Dictionary(resources);
+
+        let name_ref = Object::Name("MC0".to_string());
+        assert_eq!(
+            doc.resolve_oc_layer_name(Some(&resources), &name_ref)
+                .as_deref(),
+            Some("A-WALL-DIM")
+        );
+    }
+
+    #[test]
+    fn test_resolve_oc_name_inline_dict() {
+        let doc = oc_test_doc();
+        let inline = ocg_dict(Object::String(b"CORTES".to_vec()));
+        assert_eq!(doc.resolve_oc_layer_name(None, &inline).as_deref(), Some("CORTES"));
+    }
+
+    #[test]
+    fn test_resolve_oc_name_unresolvable_is_none() {
+        // A name reference with no resources in scope yields None (the path
+        // is left unlabelled) rather than an error.
+        let doc = oc_test_doc();
+        let name_ref = Object::Name("MC9".to_string());
+        assert_eq!(doc.resolve_oc_layer_name(None, &name_ref), None);
+    }
+
+    #[test]
+    fn test_extract_paths_layer_none_for_plain_stroke() {
+        // End-to-end through the real page pipeline: a stroked line on a page
+        // with no optional content yields a path whose `layer` is None. Guards
+        // the page-level marked-content refactor against perturbing plain
+        // extraction (and mirrors the Python shape test's synthetic PDF).
+        let doc = PdfDocument::from_bytes(build_minimal_pdf(b"100 100 m 200 200 l S")).unwrap();
+        let paths = doc.extract_paths(0).unwrap();
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].layer, None);
     }
 }
