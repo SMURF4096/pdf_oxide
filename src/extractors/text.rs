@@ -10,6 +10,7 @@ use crate::config::ExtractionProfile;
 use crate::content::graphics_state::{GraphicsStateStack, Matrix};
 use crate::content::operators::{Operator, TextElement};
 use crate::content::parse_and_execute_text_only;
+use crate::content::parse_content_stream;
 use crate::content::parse_content_stream_text_only;
 use crate::error::Result;
 use crate::extract_log_debug;
@@ -1971,6 +1972,24 @@ enum ByteMode {
     ShiftJIS,
 }
 
+/// True when a Type0 font's `/Encoding` is a UTF-8 (variable-width) CMap —
+/// `Uni-Utf8-H` (embedded, pdf.js issue18117) or the Adobe predefined
+/// `UniGB-UTF8-H` / `UniCNS-UTF8-H` / `UniJIS-UTF8-H` / `UniKS-UTF8-H` family.
+/// Such codes are 1–4 bytes and must be segmented by UTF-8 lead-byte rules
+/// (see `decode_text_to_unicode`), not the fixed 1/2-byte `ByteMode`. Matching
+/// on the CMap name keeps the change isolated to these fonts. See #610.
+fn font_has_utf8_cmap(font: &FontInfo) -> bool {
+    if font.subtype != "Type0" {
+        return false;
+    }
+    if let crate::fonts::Encoding::Standard(name) = &font.encoding {
+        let lower = name.to_ascii_lowercase();
+        lower.contains("utf8") || lower.contains("utf-8")
+    } else {
+        false
+    }
+}
+
 /// Get byte grouping mode for a font (v0.3.14).
 fn get_byte_mode(font: Option<&FontInfo>) -> ByteMode {
     if let Some(font) = font {
@@ -1992,6 +2011,12 @@ fn get_byte_mode(font: Option<&FontInfo>) -> ByteMode {
                     if (name.contains("Identity") && !name.contains("OneByteIdentity"))
                         || name.contains("UCS2")
                         || name.contains("UTF16")
+                        // CORPUS-3: bare Adobe predefined horizontal/vertical CMaps
+                        // ("H"/"V", e.g. Adobe-Japan1-H) are 2-byte by definition;
+                        // without this they were read single-byte → CJK garbage
+                        // ("あいうえお" → "CACCCECGCI" on noembed-jis7).
+                        || name == "H"
+                        || name == "V"
                     {
                         ByteMode::TwoByte
                     } else if name.contains("RKSJ") {
@@ -2086,6 +2111,39 @@ fn decode_text_to_unicode(bytes: &[u8], font: Option<&FontInfo>) -> String {
                     }
                 }
             }
+        } else if font_has_utf8_cmap(font) {
+            // Type0 font whose /Encoding is an embedded CMap with a UTF-8
+            // (variable-width) codespace — e.g. `Uni-Utf8-H` (pdf.js
+            // issue18117) and the Adobe predefined `Uni*-UTF8-H` family.
+            // Codes are 1–4 bytes segmented by UTF-8 lead-byte rules, which
+            // exceed the u16 of `TextCharIter`. Segment here into u32 codes
+            // and resolve via the (present) ToUnicode CMap, which is keyed by
+            // the same multi-byte codes. Isolated to UTF-8-CMap fonts: every
+            // other font keeps the path below unchanged. See #610.
+            let n = bytes.len();
+            let mut i = 0;
+            while i < n {
+                let lead = bytes[i];
+                let width = match lead {
+                    0x00..=0x7F => 1,
+                    0xC0..=0xDF => 2,
+                    0xE0..=0xEF => 3,
+                    0xF0..=0xF7 => 4,
+                    _ => 1, // invalid lead byte → consume one, avoids stalling
+                }
+                .min(n - i);
+                let mut code: u32 = 0;
+                for &b in &bytes[i..i + width] {
+                    code = (code << 8) | b as u32;
+                }
+                let char_str = font
+                    .char_to_unicode(code)
+                    .unwrap_or_else(|| fallback_char_to_unicode(code));
+                if char_str != "\u{FFFD}" || preserve_unmapped_glyphs() {
+                    result.push_str(&char_str);
+                }
+                i += width;
+            }
         } else {
             // Complex font: use unified iterator for robust multi-byte decoding
             for (char_code, _) in TextCharIter::new(bytes, Some(font)) {
@@ -2171,6 +2229,10 @@ struct MarkedContentContext {
     /// The /E entry provides the expansion of an abbreviation or acronym.
     /// e.g., "PDF" might expand to "Portable Document Format"
     expansion: Option<String>,
+    /// Whether this marked content context is an excluded Optional Content Group (layer).
+    ///
+    /// Set when tag is "OC" and the OCG /Name matches one of the excluded layers.
+    is_excluded_layer: bool,
 }
 
 /// Text extractor that processes content streams.
@@ -2229,6 +2291,25 @@ pub struct TextExtractor<'doc> {
     /// Per PDF Spec Section 14.6, artifact content should be excluded from text extraction.
     /// This flag is true when any ancestor in the marked_content_stack has is_artifact=true.
     inside_artifact: bool,
+    /// Layer names (Optional Content Groups) to exclude from extraction.
+    ///
+    /// When a BDC operator with tag "OC" references an OCG whose /Name matches
+    /// one of these entries, all content within that marked content scope is suppressed.
+    excluded_layers: HashSet<String>,
+    /// Whether we're currently inside an excluded OCG layer.
+    ///
+    /// True when any ancestor in the marked_content_stack has is_excluded_layer=true.
+    inside_excluded_layer: bool,
+    /// Ink / separation names to exclude from extraction.
+    ///
+    /// When a `cs` operator sets a Separation or DeviceN color space whose ink name(s)
+    /// match one of these entries, subsequent text is suppressed until the color space changes.
+    excluded_inks: HashSet<String>,
+    /// Whether the current fill color space is an excluded ink.
+    ///
+    /// Set when SetFillColorSpace resolves to a Separation or DeviceN color space
+    /// whose ink name(s) intersect with `excluded_inks`.
+    inside_excluded_ink: bool,
     /// Extraction mode: true for spans, false for characters
     extract_spans: bool,
     /// Buffer for accumulating consecutive Tj operators into single spans
@@ -2339,6 +2420,10 @@ impl<'doc> TextExtractor<'doc> {
             span_sequence_counter: 0, // Initialize sequence counter
             marked_content_stack: Vec::new(), // Track marked content contexts
             inside_artifact: false,   // Track artifact state
+            excluded_layers: HashSet::new(),
+            inside_excluded_layer: false,
+            excluded_inks: HashSet::new(),
+            inside_excluded_ink: false,
             tj_offset_history: Vec::with_capacity(1000), // Track TJ offsets for statistical analysis
             tj_character_array: Vec::new(),              // Character tracking for word boundaries
             current_x_position: 0.0,                     // Start at origin
@@ -2380,6 +2465,28 @@ impl<'doc> TextExtractor<'doc> {
     /// Set the document reference for loading XObjects.
     pub fn set_document(&mut self, document: &'doc crate::document::PdfDocument) {
         self.document = Some(document);
+    }
+
+    /// Set layer names (Optional Content Groups) to exclude from extraction.
+    ///
+    /// Content within BDC/EMC scopes tagged "OC" whose OCG /Name matches one of
+    /// the provided names will be suppressed during text extraction.
+    pub fn set_excluded_layers(&mut self, layers: HashSet<String>) {
+        self.excluded_layers = layers;
+    }
+
+    /// Set ink / separation names to exclude from extraction.
+    ///
+    /// When the fill color space is a Separation or DeviceN whose ink name(s)
+    /// intersect with any of the provided names, subsequent text is suppressed
+    /// until the color space changes to a non-excluded one.
+    ///
+    /// **DeviceN behavior:** For DeviceN color spaces (e.g.
+    /// `[/DeviceN [/Cyan /SpotGold] ...]`), text is suppressed if ANY ink in
+    /// the array matches — even process colors sharing the DeviceN definition.
+    /// This is because tint values are not evaluated during extraction.
+    pub fn set_excluded_inks(&mut self, inks: HashSet<String>) {
+        self.excluded_inks = inks;
     }
 
     // ========================================================================
@@ -2574,6 +2681,30 @@ impl<'doc> TextExtractor<'doc> {
         self.inside_artifact = self.marked_content_stack.iter().any(|ctx| ctx.is_artifact);
     }
 
+    /// Update the excluded-layer state based on the marked content stack.
+    ///
+    /// True if any ancestor in the stack is an excluded OCG layer.
+    /// Called each time a marked content boundary is crossed (BMC/BDC/EMC).
+    fn update_layer_state(&mut self) {
+        self.inside_excluded_layer = self
+            .marked_content_stack
+            .iter()
+            .any(|ctx| ctx.is_excluded_layer);
+    }
+
+    /// Whether content emission should be suppressed.
+    ///
+    /// Returns true when the current graphics/marked-content state means
+    /// extracted text should be discarded. Currently checks:
+    /// - Inside an excluded OCG layer (`inside_excluded_layer`)
+    /// - Inside an excluded ink / separation color space (`inside_excluded_ink`)
+    ///
+    /// Note: artifact filtering is handled separately via span metadata and
+    /// downstream filtering, so `inside_artifact` is intentionally not checked here.
+    fn is_content_suppressed(&self) -> bool {
+        self.inside_excluded_layer || self.inside_excluded_ink
+    }
+
     /// Parse artifact type and subtype from artifact properties dictionary.
     ///
     /// Per PDF Spec Section 14.8.2.2, artifacts have optional /Type and /Subtype entries:
@@ -2700,6 +2831,150 @@ impl<'doc> TextExtractor<'doc> {
             prop_obj.clone()
         };
         resolved.as_dict().cloned()
+    }
+
+    /// Resolve a named color space from the /Resources /ColorSpace dictionary.
+    ///
+    /// PDF content streams reference color spaces by name (e.g. `cs /CS1`).
+    /// Device color spaces like "DeviceRGB" are built-in, but Separation and
+    /// DeviceN color spaces live in the page resources:
+    ///
+    /// ```text
+    /// /Resources << /ColorSpace << /CS1 [/Separation /PANTONE_Red /DeviceCMYK ...] >> >>
+    /// ```
+    ///
+    /// Returns the resolved color space array if the name refers to a resource entry.
+    fn resolve_color_space(&self, name: &str) -> Option<Vec<Object>> {
+        let resources = self.resources.as_ref()?;
+        let res_dict = if let Some(res_ref) = resources.as_reference() {
+            self.document?.load_object(res_ref).ok()?
+        } else {
+            resources.clone()
+        };
+        let res_dict = res_dict.as_dict()?;
+        let cs_dict_obj = res_dict.get("ColorSpace")?;
+        let cs_dict = if let Some(r) = cs_dict_obj.as_reference() {
+            self.document?.load_object(r).ok()?
+        } else {
+            cs_dict_obj.clone()
+        };
+        let cs_dict = cs_dict.as_dict()?;
+        let cs_obj = cs_dict.get(name)?;
+        let resolved = if let Some(r) = cs_obj.as_reference() {
+            self.document?.load_object(r).ok()?
+        } else {
+            cs_obj.clone()
+        };
+        resolved.as_array().cloned()
+    }
+
+    /// Check if a color space name refers to an excluded ink.
+    ///
+    /// Resolves the color space from resources and checks:
+    /// - `[/Separation /InkName /AlternateCS /TintTransform]` — single ink name
+    /// - `[/DeviceN [/Ink1 /Ink2 ...] /AlternateCS /TintTransform]` — multiple ink names
+    ///
+    /// Returns true if any ink name in the color space matches `excluded_inks`.
+    ///
+    /// **Note:** For DeviceN, this is all-or-nothing — if any ink matches, the
+    /// entire color space is treated as excluded. Tint values are not evaluated.
+    fn is_excluded_ink_color_space(&self, name: &str) -> bool {
+        if self.excluded_inks.is_empty() {
+            return false;
+        }
+        if let Some(cs_array) = self.resolve_color_space(name) {
+            if cs_array.len() >= 2 {
+                if let Some(cs_type) = cs_array[0].as_name() {
+                    match cs_type {
+                        "Separation" => {
+                            // [/Separation /InkName /AlternateCS /TintTransform]
+                            if let Some(ink_name) = cs_array[1].as_name() {
+                                return self.excluded_inks.contains(ink_name);
+                            }
+                        },
+                        "DeviceN" => {
+                            // [/DeviceN [/Ink1 /Ink2 ...] /AlternateCS /TintTransform]
+                            if let Some(ink_names) = cs_array[1].as_array() {
+                                return ink_names.iter().any(|obj| {
+                                    obj.as_name()
+                                        .map(|n| self.excluded_inks.contains(n))
+                                        .unwrap_or(false)
+                                });
+                            }
+                        },
+                        _ => {},
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Check whether a BDC properties dict represents an excluded OCG or OCMD.
+    ///
+    /// Handles two cases per ISO 32000-1 Section 8.11.2:
+    /// - Direct OCG: dict has `/Name` -> check against excluded layers
+    /// - OCMD: dict has `/Type /OCMD` and `/OCGs` array -> resolve each
+    ///   referenced OCG and check its `/Name` against excluded layers
+    fn check_ocg_excluded(&self, props_dict: &std::collections::HashMap<String, Object>) -> bool {
+        if let Some(ocg_name) = props_dict.get("Name") {
+            return self.ocg_name_is_excluded(ocg_name);
+        }
+
+        if let Some(Object::Name(t)) = props_dict.get("Type") {
+            if t == "OCMD" {
+                if let Some(ocgs_obj) = props_dict.get("OCGs") {
+                    return self.ocmd_ocgs_excluded(ocgs_obj);
+                }
+            }
+        }
+
+        false
+    }
+
+    fn ocg_name_is_excluded(&self, name_obj: &Object) -> bool {
+        if let Some(name_str) = name_obj.as_name() {
+            return self.excluded_layers.contains(name_str);
+        }
+        if let Some(name_bytes) = name_obj.as_string() {
+            let name_str = Self::decode_pdf_text_string(name_bytes);
+            return self.excluded_layers.contains(&name_str);
+        }
+        false
+    }
+
+    /// Resolve OCMD /OCGs and check if any referenced OCG is excluded.
+    /// /OCGs can be a single reference or an array of references.
+    fn ocmd_ocgs_excluded(&self, ocgs_obj: &Object) -> bool {
+        let doc = match self.document {
+            Some(d) => d,
+            None => return false,
+        };
+
+        let refs: Vec<&Object> = if let Some(arr) = ocgs_obj.as_array() {
+            arr.iter().collect()
+        } else {
+            vec![ocgs_obj]
+        };
+
+        for obj in refs {
+            let resolved = if let Some(r) = obj.as_reference() {
+                match doc.load_object(r) {
+                    Ok(o) => o,
+                    Err(_) => continue,
+                }
+            } else {
+                obj.clone()
+            };
+            if let Some(d) = resolved.as_dict() {
+                if let Some(name_obj) = d.get("Name") {
+                    if self.ocg_name_is_excluded(name_obj) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 
     /// Get current ActualText from marked content stack (PDF Spec Section 14.9.4).
@@ -2937,12 +3212,17 @@ impl<'doc> TextExtractor<'doc> {
         self.spans.clear();
         self.span_sequence_counter = 0; // Reset sequence counter for this page
 
-        // Streaming parse+execute: operators are processed immediately without
-        // building an intermediate Vec<Operator>. This eliminates allocation of
-        // potentially huge vectors (196K+ operators for graphics-heavy pages)
-        // and improves cache locality.
         extract_log_debug!("Parsing content stream for text extraction");
-        parse_and_execute_text_only(content_stream, |op| self.execute_operator(op))?;
+        if self.excluded_inks.is_empty() {
+            parse_and_execute_text_only(content_stream, |op| self.execute_operator(op))?;
+        } else {
+            // Ink filtering requires color operators (cs, rg, g, k) which the
+            // text-only parser skips. Fall back to the full parser.
+            let operators = parse_content_stream(content_stream)?;
+            for op in operators {
+                self.execute_operator(op)?;
+            }
+        }
 
         // Flush any remaining Tj buffer at end of content stream
         self.flush_tj_span_buffer()?;
@@ -2996,10 +3276,11 @@ impl<'doc> TextExtractor<'doc> {
         self.chars.clear();
         self.spans.clear(); // Ensure spans are clear so they don't poison xobject_spans_cache
 
-        // Parse content stream into operators
-        let operators = parse_content_stream_text_only(content_stream)?;
-
-        // Execute each operator
+        let operators = if self.excluded_inks.is_empty() {
+            parse_content_stream_text_only(content_stream)?
+        } else {
+            parse_content_stream(content_stream)?
+        };
         for op in operators {
             self.execute_operator(op)?;
         }
@@ -3141,6 +3422,26 @@ impl<'doc> TextExtractor<'doc> {
             .map(|s| (s.bbox.x, s.bbox.y, s.bbox.width, s.font_size))
             .collect();
 
+        // A valid base candidate `j` always has `y_offset = sy - by` in
+        // `[0, bfs*0.5]` (see the gates below), so `by` lies in
+        // `[sy - bfs*0.5, sy] ⊆ [sy - max_fs*0.5, sy]`. Sort span indices by
+        // Y once and, per candidate, binary-search that Y-window instead of
+        // rescanning all spans — this turns the previous O(n²) double loop
+        // (which hung for >30 s on archive.org / Google-Books pages whose
+        // invisible hOCR layer emits thousands of spans, #575) into roughly
+        // O(n log n + n·window). The window is a strict superset of the
+        // acceptable bases, so the result is identical to the full scan.
+        let max_fs = snapshot.iter().map(|s| s.3).fold(0.0f32, f32::max);
+        let max_half_em = max_fs * 0.5;
+        let mut by_order: Vec<usize> = (0..n).collect();
+        by_order.sort_by(|&a, &b| {
+            snapshot[a]
+                .1
+                .partial_cmp(&snapshot[b].1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let ys_sorted: Vec<f32> = by_order.iter().map(|&idx| snapshot[idx].1).collect();
+
         for i in 0..n {
             let (sx, sy, _sw, sfs) = snapshot[i];
             if sfs <= 0.0 {
@@ -3152,7 +3453,11 @@ impl<'doc> TextExtractor<'doc> {
             // lines snaps onto the nearer one.
             let mut best_base_y: Option<f32> = None;
             let mut best_abs_offset = f32::MAX;
-            for j in 0..n {
+            // Candidates have `by ∈ [sy - max_half_em, sy]`; restrict the scan
+            // to that contiguous slice of the Y-sorted index.
+            let lo = ys_sorted.partition_point(|&y| y < sy - max_half_em);
+            let hi = ys_sorted.partition_point(|&y| y <= sy);
+            for &j in &by_order[lo..hi] {
                 if i == j {
                     continue;
                 }
@@ -4443,6 +4748,7 @@ impl<'doc> TextExtractor<'doc> {
                                             origin_y: pos.y,
                                             rotation_degrees,
                                             advance_width: tx.abs(),
+                                            rendered_advance: tx.abs(),
                                             matrix: Some([
                                                 final_matrix.a,
                                                 final_matrix.b,
@@ -4452,7 +4758,9 @@ impl<'doc> TextExtractor<'doc> {
                                                 final_matrix.f,
                                             ]),
                                         };
-                                        self.chars.push(space_char);
+                                        if !self.is_content_suppressed() {
+                                            self.chars.push(space_char);
+                                        }
                                     }
 
                                     let state_mut = self.state_stack.current_mut();
@@ -4568,6 +4876,11 @@ impl<'doc> TextExtractor<'doc> {
                     .as_ref()
                     .and_then(|name| self.fonts.get(name))
                     .cloned();
+                // Re-evaluate ink exclusion for the restored color space
+                if !self.excluded_inks.is_empty() {
+                    let cs = self.state_stack.current().fill_color_space.clone();
+                    self.inside_excluded_ink = self.is_excluded_ink_color_space(&cs);
+                }
             },
             Operator::Cm { a, b, c, d, e, f } => {
                 // Flush the Tj span buffer before changing the CTM.
@@ -4596,26 +4909,30 @@ impl<'doc> TextExtractor<'doc> {
 
             // Color operators
             Operator::SetFillRgb { r, g, b } => {
+                // rg operator implicitly sets DeviceRGB — a process color.
+                self.inside_excluded_ink = false;
                 self.state_stack.current_mut().fill_color_rgb = (r, g, b);
             },
             Operator::SetStrokeRgb { r, g, b } => {
                 self.state_stack.current_mut().stroke_color_rgb = (r, g, b);
             },
             Operator::SetFillGray { gray } => {
+                // g operator implicitly sets DeviceGray — a process color,
+                // so clear any active ink exclusion.
+                self.inside_excluded_ink = false;
                 self.state_stack.current_mut().fill_color_rgb = (gray, gray, gray);
             },
             Operator::SetStrokeGray { gray } => {
                 self.state_stack.current_mut().stroke_color_rgb = (gray, gray, gray);
             },
             Operator::SetFillCmyk { c, m, y, k } => {
-                // Store CMYK and convert to RGB for rendering
-                // CMYK to RGB conversion: R = 1 - min(1, C*(1-K) + K)
+                // k operator implicitly sets DeviceCMYK — a process color.
+                self.inside_excluded_ink = false;
                 let state = self.state_stack.current_mut();
                 state.fill_color_cmyk = Some((c, m, y, k));
                 state.fill_color_rgb = cmyk_to_rgb(c, m, y, k);
             },
             Operator::SetStrokeCmyk { c, m, y, k } => {
-                // Store CMYK and convert to RGB for rendering
                 let state = self.state_stack.current_mut();
                 state.stroke_color_cmyk = Some((c, m, y, k));
                 state.stroke_color_rgb = cmyk_to_rgb(c, m, y, k);
@@ -4623,6 +4940,16 @@ impl<'doc> TextExtractor<'doc> {
 
             // Color space operators
             Operator::SetFillColorSpace { name } => {
+                // Check for excluded ink before mutating state (needs &self)
+                let ink_excluded = self.is_excluded_ink_color_space(&name);
+                self.inside_excluded_ink = ink_excluded;
+                if ink_excluded {
+                    log::debug!(
+                        "Fill color space {:?} matches excluded ink, suppressing text",
+                        name
+                    );
+                }
+
                 let state = self.state_stack.current_mut();
                 state.fill_color_space = name.clone();
                 // Reset color when changing color space
@@ -5196,6 +5523,7 @@ impl<'doc> TextExtractor<'doc> {
                     artifact_type: None, // No artifact classification; None for backward compatibility
                     actual_text: None,   // BMC doesn't have ActualText
                     expansion: None,     // BMC doesn't have expansion
+                    is_excluded_layer: false, // BMC cannot carry OCG properties
                 });
                 self.update_artifact_state();
 
@@ -5210,6 +5538,8 @@ impl<'doc> TextExtractor<'doc> {
                 let mut actual_text = None;
                 let mut artifact_type = None;
                 let mut expansion = None;
+
+                let mut is_excluded_layer = false;
 
                 if let Some(props_dict) = self.resolve_bdc_properties(&properties) {
                     if let Some(mcid_obj) = props_dict.get("MCID") {
@@ -5236,6 +5566,14 @@ impl<'doc> TextExtractor<'doc> {
                     if tag == "Artifact" {
                         artifact_type = Self::parse_artifact_type(&props_dict);
                     }
+
+                    // OCG / OCMD (Optional Content) filtering.
+                    // Per ISO 32000-1:2008 Section 8.11.2:
+                    //  - Direct OCG: << /Type /OCG /Name /LayerName >>
+                    //  - OCMD:       << /Type /OCMD /OCGs [refs...] /P /policy >>
+                    if tag == "OC" && !self.excluded_layers.is_empty() {
+                        is_excluded_layer = self.check_ocg_excluded(&props_dict);
+                    }
                 }
 
                 // Check if this is an artifact (per PDF Spec Section 14.6)
@@ -5246,8 +5584,10 @@ impl<'doc> TextExtractor<'doc> {
                     artifact_type: artifact_type.clone(),
                     actual_text,
                     expansion,
+                    is_excluded_layer,
                 });
                 self.update_artifact_state();
+                self.update_layer_state();
 
                 if is_artifact {
                     if let Some(ref atype) = artifact_type {
@@ -5265,10 +5605,11 @@ impl<'doc> TextExtractor<'doc> {
                 }
                 self.current_mcid = None;
 
-                // Pop from marked content stack and update artifact state
+                // Pop from marked content stack and update artifact/layer state
                 if !self.marked_content_stack.is_empty() {
                     self.marked_content_stack.pop();
                     self.update_artifact_state();
+                    self.update_layer_state();
                 }
             },
 
@@ -5449,7 +5790,8 @@ impl<'doc> TextExtractor<'doc> {
         //
         // `ctm_key` was already computed above for the `processed_xobjects` guard.
         let spans_cache_key = (xobject_ref, ctm_key);
-        if self.extract_spans {
+        let has_filters = !self.excluded_layers.is_empty() || !self.excluded_inks.is_empty();
+        if self.extract_spans && !has_filters {
             let cached_spans = {
                 doc.xobject_spans_cache
                     .lock()
@@ -5654,10 +5996,21 @@ impl<'doc> TextExtractor<'doc> {
                 let state = self.state_stack.current_mut();
                 state.ctm = form_matrix.multiply(&state.ctm);
 
-                // Streaming parse+execute: avoids allocating Vec<Operator>
                 self.xobject_depth += 1;
-                let parse_result =
-                    parse_and_execute_text_only(&stream_data, |op| self.execute_operator(op));
+                let parse_result = if self.excluded_inks.is_empty() {
+                    parse_and_execute_text_only(&stream_data, |op| self.execute_operator(op))
+                } else {
+                    let ops = parse_content_stream(&stream_data);
+                    match ops {
+                        Ok(ops) => {
+                            for op in ops {
+                                self.execute_operator(op)?;
+                            }
+                            Ok(())
+                        },
+                        Err(e) => Err(e),
+                    }
+                };
                 self.xobject_depth -= 1;
                 if let Err(e) = parse_result {
                     log::debug!(
@@ -5678,7 +6031,7 @@ impl<'doc> TextExtractor<'doc> {
                 // We still require `has_own_resources` so that font lookups are
                 // self-contained; XObjects that inherit page-level fonts would
                 // produce spans whose glyph mappings depend on caller context.
-                if has_own_resources && self.extract_spans {
+                if has_own_resources && self.extract_spans && !has_filters {
                     let new_spans = if self.spans.len() > spans_before {
                         Some(self.spans[spans_before..].to_vec())
                     } else {
@@ -5710,6 +6063,13 @@ impl<'doc> TextExtractor<'doc> {
                 }
                 if let Some(cache) = saved_xobj_cache {
                     self.cached_xobject_refs = cache;
+                }
+                // Re-evaluate ink exclusion against the restored color space
+                // and resources. The XObject may have set an excluded ink that
+                // must not persist into the caller's scope.
+                if !self.excluded_inks.is_empty() {
+                    let cs = self.state_stack.current().fill_color_space.clone();
+                    self.inside_excluded_ink = self.is_excluded_ink_color_space(&cs);
                 }
 
                 // Keep xobject_ref in processed_xobjects permanently.
@@ -5822,7 +6182,9 @@ impl<'doc> TextExtractor<'doc> {
         };
         self.span_sequence_counter += 1;
 
-        self.spans.push(span);
+        if !self.is_content_suppressed() {
+            self.spans.push(span);
+        }
         Ok(())
     }
 
@@ -6328,7 +6690,9 @@ impl<'doc> TextExtractor<'doc> {
 
         // Step 6: Increment sequence counter and add to spans
         self.span_sequence_counter += 1;
-        self.spans.push(span);
+        if !self.is_content_suppressed() {
+            self.spans.push(span);
+        }
 
         Ok(())
     }
@@ -6460,8 +6824,14 @@ impl<'doc> TextExtractor<'doc> {
 
         let font = self.cached_current_font.as_deref();
 
-        // Hoist loop-invariant computations
-        let fs_factor = font_size / 1000.0;
+        // Hoist loop-invariant computations (font cannot change mid-operator).
+        // font_matrix_a converts glyph-space widths to text-space units.
+        // Standard fonts (Type1/TrueType): font_matrix_a = 0.001.
+        // Type3 with identity FontMatrix: font_matrix_a = 1.0 (no /1000 division).
+        // Assumes FontMatrix[1] = 0 (no glyph-axis rotation), which holds for all
+        // standard fonts and virtually all Type3 fonts encountered in practice.
+        let font_matrix_a = font.map(|f| f.font_matrix_a).unwrap_or(0.001);
+        let fs_factor = font_size * font_matrix_a;
         let hs_factor = horizontal_scaling / 100.0;
         let cs_hs = char_space * hs_factor;
         let ws_hs = word_space * hs_factor;
@@ -6533,13 +6903,18 @@ impl<'doc> TextExtractor<'doc> {
         let char_space = state.char_space;
         let word_space = state.word_space;
 
-        let fs_factor = font_size / 1000.0;
+        // Disjoint field borrows: cached_current_font (immutable) + tj_span_buffer (mutable)
+        let font = self.cached_current_font.as_deref();
+        // font_matrix_a converts glyph-space widths to text-space units.
+        // Standard fonts (Type1/TrueType): font_matrix_a = 0.001.
+        // Type3 with identity FontMatrix: font_matrix_a = 1.0 (no /1000 division).
+        // Assumes FontMatrix[1] = 0 (no glyph-axis rotation), which holds for all
+        // standard fonts and virtually all Type3 fonts encountered in practice.
+        let font_matrix_a = font.map(|f| f.font_matrix_a).unwrap_or(0.001);
+        let fs_factor = font_size * font_matrix_a;
         let hs_factor = horizontal_scaling / 100.0;
         let cs_hs = char_space * hs_factor;
         let ws_hs = word_space * hs_factor;
-
-        // Disjoint field borrows: cached_current_font (immutable) + tj_span_buffer (mutable)
-        let font = self.cached_current_font.as_deref();
         // Safety: tj_span_buffer is always initialized via begin_text_object()
         let buffer = self
             .tj_span_buffer
@@ -6698,12 +7073,17 @@ impl<'doc> TextExtractor<'doc> {
         let char_space = state.char_space;
         let word_space = state.word_space;
 
-        let fs_factor = font_size / 1000.0;
+        let font = self.cached_current_font.as_deref();
+        // font_matrix_a converts glyph-space widths to text-space units.
+        // Standard fonts (Type1/TrueType): font_matrix_a = 0.001.
+        // Type3 with identity FontMatrix: font_matrix_a = 1.0 (no /1000 division).
+        // Assumes FontMatrix[1] = 0 (no glyph-axis rotation), which holds for all
+        // standard fonts and virtually all Type3 fonts encountered in practice.
+        let font_matrix_a = font.map(|f| f.font_matrix_a).unwrap_or(0.001);
+        let fs_factor = font_size * font_matrix_a;
         let hs_factor = horizontal_scaling / 100.0;
         let cs_hs = char_space * hs_factor;
         let ws_hs = word_space * hs_factor;
-
-        let font = self.cached_current_font.as_deref();
 
         let total_width = if let Some(font) = font {
             if font.subtype != "Type0" {
@@ -6930,7 +7310,9 @@ impl<'doc> TextExtractor<'doc> {
 
         log::trace!("PUSH space span with offset_semantic={}", span.offset_semantic);
 
-        self.spans.push(span);
+        if !self.is_content_suppressed() {
+            self.spans.push(span);
+        }
 
         // Do NOT advance the text matrix here. The caller drives the
         // matrix forward by the *actual* TJ offset via
@@ -7092,7 +7474,9 @@ impl<'doc> TextExtractor<'doc> {
                     span.offset_semantic
                 );
 
-                self.spans.push(span);
+                if !self.is_content_suppressed() {
+                    self.spans.push(span);
+                }
             }
         }
         Ok(())
@@ -7153,12 +7537,26 @@ impl<'doc> TextExtractor<'doc> {
                 500.0 // Default 0.5em
             };
 
-            let fs_factor = font_size / 1000.0;
+            // font_matrix_a converts glyph-space widths to text-space units.
+            // Standard fonts (Type1/TrueType): font_matrix_a = 0.001.
+            // Type3 with identity FontMatrix: font_matrix_a = 1.0 (no /1000 division).
+            // Assumes FontMatrix[1] = 0 (no glyph-axis rotation), which holds for all
+            // standard fonts and virtually all Type3 fonts encountered in practice.
+            let font_matrix_a = font.map(|f| f.font_matrix_a).unwrap_or(0.001);
+            let fs_factor = font_size * font_matrix_a;
             let hs_factor = horizontal_scaling / 100.0;
             let glyph_width_user_space = glyph_width_font_units * fs_factor * hs_factor;
 
+            // Advance position: Tx = (w0 * Tfs + Tc + Tw) * Th
+            let mut tx = glyph_width_user_space;
+            tx += char_space * hs_factor;
+            if char_code == 32 {
+                tx += word_space * hs_factor;
+            }
+
             // For TextChar, we use the device-space width
             let glyph_width_device_space = glyph_width_user_space * combined_char.a.abs();
+            let tx_device_space = tx * combined_char.a.abs();
             let height_device_space = effective_font_size;
 
             // Determine font weight and style
@@ -7202,6 +7600,15 @@ impl<'doc> TextExtractor<'doc> {
             } else {
                 glyph_width_user_space
             };
+            // Spread the total advance evenly across the ligature's output chars.
+            // Tc applies once per character *code*, not per output glyph, so this
+            // approximation slightly over-distributes Tc for multi-char ligatures —
+            // the same trade-off advance_width already makes for glyph_width_device.
+            let rendered_advance_per_char = if char_count > 0 {
+                tx_device_space / char_count as f32
+            } else {
+                tx_device_space
+            };
 
             for (char_index, unicode_char) in unicode_string.chars().enumerate() {
                 let should_skip = unicode_char == '\0'
@@ -7236,6 +7643,7 @@ impl<'doc> TextExtractor<'doc> {
                         origin_y: char_origin_y,
                         rotation_degrees,
                         advance_width: char_width_device,
+                        rendered_advance: rendered_advance_per_char,
                         matrix: Some([
                             final_matrix.a,
                             final_matrix.b,
@@ -7246,15 +7654,10 @@ impl<'doc> TextExtractor<'doc> {
                         ]),
                     };
 
-                    self.chars.push(text_char);
+                    if !self.is_content_suppressed() {
+                        self.chars.push(text_char);
+                    }
                 }
-            }
-
-            // Advance position: Tx = (w0 * Tfs + Tc + Tw) * Th
-            let mut tx = glyph_width_user_space;
-            tx += char_space * hs_factor;
-            if char_code == 32 {
-                tx += word_space * hs_factor;
             }
 
             // Update text matrix in current state per ISO 32000-1:2008 §9.4.4
@@ -7355,6 +7758,7 @@ mod tests {
             widths: None,
             first_char: None,
             last_char: None,
+            font_matrix_a: 0.001,
             default_width: 1000.0,
             cid_to_gid_map: None,
             cid_system_info: None,
@@ -8665,6 +9069,83 @@ mod tests {
         assert!(result, "Should detect citation from font size ratio alone");
     }
 
+    // #575: snap_superscript_baselines was O(n²) (every span scanned against
+    // every other), hanging >30 s on archive.org/Google-Books pages whose
+    // invisible hOCR layer emits tens of thousands of spans. The Y-windowed
+    // rewrite must (a) still snap a superscript onto its base and (b) scale —
+    // 50k spans take ~10-20 s under the old double loop but milliseconds now,
+    // so a generous wall-clock bound catches a quadratic regression without
+    // being flaky.
+    fn snap_span(text: &str, x: f32, y: f32, w: f32, fs: f32, seq: usize) -> TextSpan {
+        TextSpan {
+            artifact_type: None,
+            text: text.to_string(),
+            bbox: Rect::new(x, y, w, fs),
+            font_name: "F1".to_string(),
+            font_size: fs,
+            font_weight: FontWeight::Normal,
+            color: Color::black(),
+            mcid: None,
+            sequence: seq,
+            split_boundary_before: false,
+            offset_semantic: false,
+            is_italic: false,
+            is_monospace: false,
+            char_spacing: 0.0,
+            word_spacing: 0.0,
+            horizontal_scaling: 100.0,
+            primary_detected: false,
+            char_widths: vec![],
+            heading_level: None,
+        }
+    }
+
+    #[test]
+    fn test_snap_superscript_baselines_correctness() {
+        let mut extractor = TextExtractor::new();
+        // Base: 12pt body glyph at y=700, right edge x=130.
+        // Superscript: 6pt glyph just above-right (y=704, x=130).
+        extractor.spans = vec![
+            snap_span("x", 100.0, 700.0, 30.0, 12.0, 0),
+            snap_span("2", 130.0, 704.0, 4.0, 6.0, 1),
+        ];
+        extractor.snap_superscript_baselines();
+        assert_eq!(
+            extractor.spans[1].bbox.y, 700.0,
+            "#575: superscript must snap onto the base baseline (y=700)"
+        );
+    }
+
+    #[test]
+    fn test_snap_superscript_baselines_scales() {
+        let mut extractor = TextExtractor::new();
+        let mut spans = Vec::with_capacity(50_002);
+        // A real base+superscript pair we can assert on.
+        spans.push(snap_span("x", 100.0, 700.0, 30.0, 12.0, 0));
+        spans.push(snap_span("2", 130.0, 704.0, 4.0, 6.0, 1));
+        // 50k body spans spread across the page (distinct Y) — same font size,
+        // so none qualify as bases for each other; the cost is pure iteration.
+        for k in 0..50_000usize {
+            let y = (k as f32) * 2.0; // spread across Y so each window is tiny
+            spans.push(snap_span("a", 50.0, y, 6.0, 10.0, k + 2));
+        }
+        extractor.spans = spans;
+
+        let start = std::time::Instant::now();
+        extractor.snap_superscript_baselines();
+        let elapsed = start.elapsed();
+
+        assert!(
+            elapsed.as_secs() < 5,
+            "#575: snap_superscript_baselines took {elapsed:?} on 50k spans — \
+             likely an O(n²) regression"
+        );
+        assert_eq!(
+            extractor.spans[1].bbox.y, 700.0,
+            "#575: the genuine superscript must still snap to its base"
+        );
+    }
+
     // ========================================================================
     // NEW COMPREHENSIVE TESTS: TextExtractor configuration
     // ========================================================================
@@ -8802,6 +9283,7 @@ mod tests {
             is_artifact: true,
             actual_text: None,
             expansion: None,
+            is_excluded_layer: false,
         });
         extractor.update_artifact_state();
         assert!(extractor.inside_artifact);
@@ -8816,6 +9298,7 @@ mod tests {
             is_artifact: true,
             actual_text: None,
             expansion: None,
+            is_excluded_layer: false,
         });
         extractor.marked_content_stack.push(MarkedContentContext {
             artifact_type: None,
@@ -8823,6 +9306,7 @@ mod tests {
             is_artifact: false,
             actual_text: None,
             expansion: None,
+            is_excluded_layer: false,
         });
         extractor.update_artifact_state();
         // Should still be inside artifact because parent is artifact
@@ -9166,6 +9650,7 @@ mod tests {
                 origin_y: 700.0,
                 rotation_degrees: 0.0,
                 advance_width: 6.0,
+                rendered_advance: 6.0,
                 matrix: None,
             },
             TextChar {
@@ -9182,6 +9667,7 @@ mod tests {
                 origin_y: 700.0,
                 rotation_degrees: 0.0,
                 advance_width: 6.0,
+                rendered_advance: 6.0,
                 matrix: None,
             },
         ];
@@ -9210,6 +9696,7 @@ mod tests {
                 origin_y: 700.0,
                 rotation_degrees: 0.0,
                 advance_width: 6.0,
+                rendered_advance: 6.0,
                 matrix: None,
             },
             TextChar {
@@ -9226,6 +9713,7 @@ mod tests {
                 origin_y: 680.0,
                 rotation_degrees: 0.0,
                 advance_width: 6.0,
+                rendered_advance: 6.0,
                 matrix: None,
             },
         ];
@@ -9260,6 +9748,7 @@ mod tests {
             origin_y: 700.0,
             rotation_degrees: 0.0,
             advance_width: 6.0,
+            rendered_advance: 6.0,
             matrix: None,
         };
 
@@ -9300,6 +9789,7 @@ mod tests {
             origin_y: 700.0,
             rotation_degrees: 0.0,
             advance_width: 6.0,
+            rendered_advance: 6.0,
             matrix: None,
         };
 
@@ -9336,6 +9826,7 @@ mod tests {
             origin_y: 700.0,
             rotation_degrees: 0.0,
             advance_width: advance_em * font_size,
+            rendered_advance: advance_em * font_size,
             matrix: None,
         };
 
@@ -9387,6 +9878,7 @@ mod tests {
             origin_y: 700.0,
             rotation_degrees: 0.0,
             advance_width: 2.5, // 0.278 em × 9 pt
+            rendered_advance: 2.5,
             matrix: None,
         };
 
@@ -9632,6 +10124,7 @@ mod tests {
                 origin_y: 680.0,
                 rotation_degrees: 0.0,
                 advance_width: 6.0,
+                rendered_advance: 6.0,
                 matrix: None,
             },
             TextChar {
@@ -9648,6 +10141,7 @@ mod tests {
                 origin_y: 700.0,
                 rotation_degrees: 0.0,
                 advance_width: 6.0,
+                rendered_advance: 6.0,
                 matrix: None,
             },
         ];
@@ -9677,6 +10171,7 @@ mod tests {
                 origin_y: 700.0,
                 rotation_degrees: 0.0,
                 advance_width: 6.0,
+                rendered_advance: 6.0,
                 matrix: None,
             },
             TextChar {
@@ -9693,6 +10188,7 @@ mod tests {
                 origin_y: 700.0,
                 rotation_degrees: 0.0,
                 advance_width: 6.0,
+                rendered_advance: 6.0,
                 matrix: None,
             },
         ];
@@ -9721,6 +10217,7 @@ mod tests {
                 origin_y: 0.0,
                 rotation_degrees: 0.0,
                 advance_width: 6.0,
+                rendered_advance: 6.0,
                 matrix: None,
             },
             TextChar {
@@ -9737,6 +10234,7 @@ mod tests {
                 origin_y: 700.0,
                 rotation_degrees: 0.0,
                 advance_width: 6.0,
+                rendered_advance: 6.0,
                 matrix: None,
             },
         ];
@@ -12945,6 +13443,7 @@ mod tests {
             is_artifact: false,
             actual_text: None,
             expansion: None,
+            is_excluded_layer: false,
         });
 
         extractor
@@ -13476,6 +13975,7 @@ fn test_marked_content_context_with_actual_text() {
         is_artifact: false,
         actual_text: Some("fi".to_string()), // Ligature expansion
         expansion: None,
+        is_excluded_layer: false,
     };
 
     assert_eq!(ctx.actual_text, Some("fi".to_string()));
@@ -13491,6 +13991,7 @@ fn test_marked_content_context_with_expansion() {
         is_artifact: false,
         actual_text: None,
         expansion: Some("Portable Document Format".to_string()),
+        is_excluded_layer: false,
     };
 
     assert_eq!(ctx.expansion, Some("Portable Document Format".to_string()));
@@ -13505,6 +14006,7 @@ fn test_marked_content_context_artifact_with_actual_text() {
         artifact_type: Some(ArtifactType::Pagination(PaginationSubtype::Header)),
         actual_text: Some("Header text".to_string()),
         expansion: None,
+        is_excluded_layer: false,
     };
 
     assert!(ctx.is_artifact);
@@ -13523,6 +14025,7 @@ fn test_get_current_actual_text_finds_first() {
         is_artifact: false,
         actual_text: Some("outer text".to_string()),
         expansion: None,
+        is_excluded_layer: false,
     });
 
     extractor.marked_content_stack.push(MarkedContentContext {
@@ -13531,6 +14034,7 @@ fn test_get_current_actual_text_finds_first() {
         is_artifact: false,
         actual_text: Some("inner text".to_string()),
         expansion: None,
+        is_excluded_layer: false,
     });
 
     // Should return innermost (most recent) ActualText
@@ -13550,6 +14054,7 @@ fn test_get_current_actual_text_skips_none() {
         is_artifact: false,
         actual_text: Some("replacement text".to_string()),
         expansion: None,
+        is_excluded_layer: false,
     });
 
     // Push context without ActualText
@@ -13559,6 +14064,7 @@ fn test_get_current_actual_text_skips_none() {
         is_artifact: false,
         actual_text: None,
         expansion: None,
+        is_excluded_layer: false,
     });
 
     // Should find the ActualText from outer context

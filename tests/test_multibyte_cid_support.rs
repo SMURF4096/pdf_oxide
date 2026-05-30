@@ -79,6 +79,7 @@ end
         widths: None,
         first_char: None,
         last_char: None,
+        font_matrix_a: 0.001,
         default_width: 1000.0,
         cff_gid_map: None,
         multi_char_map: HashMap::new(),
@@ -168,6 +169,7 @@ end
         widths: None,
         first_char: None,
         last_char: None,
+        font_matrix_a: 0.001,
         default_width: 1000.0,
         cff_gid_map: None,
         multi_char_map: HashMap::new(),
@@ -259,6 +261,7 @@ end
         widths: None,
         first_char: None,
         last_char: None,
+        font_matrix_a: 0.001,
         default_width: 1000.0,
         cff_gid_map: None,
         multi_char_map: HashMap::new(),
@@ -330,6 +333,7 @@ end
         widths: None,
         first_char: None,
         last_char: None,
+        font_matrix_a: 0.001,
         default_width: 1000.0,
         cff_gid_map: None,
         multi_char_map: HashMap::new(),
@@ -406,6 +410,7 @@ end
         widths: None,
         first_char: None,
         last_char: None,
+        font_matrix_a: 0.001,
         default_width: 1000.0,
         cff_gid_map: None,
         multi_char_map: HashMap::new(),
@@ -456,9 +461,10 @@ endbfrange
 
     let mut full_cmap = mixed_cmap.to_string();
 
-    // Add more mixed mappings
-    for i in 4..50 {
-        full_cmap.push_str(&format!("<{:04X}> <{:04X}>\n", i, 0x4E00 + i - 1));
+    // Add more mixed mappings — use codes 0x80..0xAD to avoid conflicting
+    // with the bfrange covering 0x0020..0x007E.
+    for i in 0x80_u32..0xAE {
+        full_cmap.push_str(&format!("<{:04X}> <{:04X}>\n", i, 0x4E00 + i));
     }
 
     full_cmap.push_str(
@@ -496,6 +502,7 @@ end
         widths: None,
         first_char: None,
         last_char: None,
+        font_matrix_a: 0.001,
         default_width: 500.0,
         cff_gid_map: None,
         multi_char_map: HashMap::new(),
@@ -573,6 +580,7 @@ end
         widths: None,
         first_char: None,
         last_char: None,
+        font_matrix_a: 0.001,
         default_width: 1000.0,
         cff_gid_map: None,
         multi_char_map: HashMap::new(),

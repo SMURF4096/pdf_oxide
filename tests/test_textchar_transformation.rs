@@ -32,6 +32,7 @@ fn create_char_with_transform(
         origin_y: y,
         rotation_degrees: rotation,
         advance_width: 10.0,
+        rendered_advance: 10.0,
         matrix,
     }
 }
@@ -134,6 +135,7 @@ fn test_textchar_advance_width() {
         origin_y: 200.0,
         rotation_degrees: 0.0,
         advance_width: 15.5, // Wide character
+        rendered_advance: 15.5,
         matrix: None,
     };
 
@@ -182,6 +184,7 @@ fn test_textchar_with_matrix_builder() {
         origin_y: 200.0,
         rotation_degrees: 0.0,
         advance_width: 10.0,
+        rendered_advance: 10.0,
         matrix: None,
     };
 

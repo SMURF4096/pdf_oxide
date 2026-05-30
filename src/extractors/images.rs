@@ -2154,3 +2154,429 @@ mod indexed_tests {
         assert!((wp[0] - 0.9505).abs() < 1e-6);
     }
 }
+
+// ── Phase 1 / Phase 2 split: enumerate-then-materialize image API ─────────────
+
+/// A PDF stream filter as stored in the `/Filter` key of an image XObject.
+///
+/// Knowing the filter chain lets callers decide whether to decode (e.g. skip
+/// decompression for JPEG re-embed pipelines that only need `raw_compressed_bytes`).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
+pub enum PdfFilter {
+    /// JPEG (DCTDecode) — compressed bytes are a valid JPEG file.
+    DCTDecode,
+    /// JPEG 2000 (JPXDecode).
+    JPXDecode,
+    /// Deflate/zlib (FlateDecode).
+    FlateDecode,
+    /// LZW compression (LZWDecode).
+    LZWDecode,
+    /// CCITT Group 3/4 fax (CCITTFaxDecode).
+    CCITTFaxDecode,
+    /// JBIG2 bi-level compression.
+    JBIG2Decode,
+    /// ASCII hex encoding (ASCIIHexDecode).
+    ASCIIHexDecode,
+    /// ASCII base-85 encoding (ASCII85Decode).
+    ASCII85Decode,
+    /// Run-length encoding (RunLengthDecode).
+    RunLengthDecode,
+    /// Crypt filter (used with encrypted streams).
+    Crypt,
+    /// Any filter not listed above; carries the raw PDF name.
+    Other(String),
+}
+
+impl PdfFilter {
+    /// Map a PDF filter name (or its abbreviated form) to a `PdfFilter` variant.
+    pub fn from_name(name: &str) -> Self {
+        match name {
+            "DCTDecode" | "DCT" => PdfFilter::DCTDecode,
+            "JPXDecode" => PdfFilter::JPXDecode,
+            "FlateDecode" | "Fl" => PdfFilter::FlateDecode,
+            "LZWDecode" | "LZW" => PdfFilter::LZWDecode,
+            "CCITTFaxDecode" | "CCF" => PdfFilter::CCITTFaxDecode,
+            "JBIG2Decode" => PdfFilter::JBIG2Decode,
+            "ASCIIHexDecode" | "AHx" => PdfFilter::ASCIIHexDecode,
+            "ASCII85Decode" | "A85" => PdfFilter::ASCII85Decode,
+            "RunLengthDecode" | "RL" => PdfFilter::RunLengthDecode,
+            "Crypt" => PdfFilter::Crypt,
+            other => PdfFilter::Other(other.to_string()),
+        }
+    }
+}
+
+/// Parses the `/Filter` entry of an image dictionary into a `Vec<PdfFilter>`.
+///
+/// The spec allows either a single name (`/DCTDecode`) or an array of names
+/// (`[/ASCII85Decode /FlateDecode]`).
+pub(crate) fn parse_filter_chain(
+    dict: &std::collections::HashMap<String, crate::object::Object>,
+) -> Vec<PdfFilter> {
+    use crate::object::Object;
+    match dict.get("Filter") {
+        Some(Object::Name(n)) => vec![PdfFilter::from_name(n)],
+        Some(Object::Array(arr)) => arr
+            .iter()
+            .filter_map(|o| o.as_name())
+            .map(PdfFilter::from_name)
+            .collect(),
+        _ => vec![],
+    }
+}
+
+/// Internal image source stored inside a [`PdfImageHandle`].
+enum PdfImageSource {
+    /// Indirect Image XObject reference; loaded on demand.
+    XObject(ObjectRef),
+    /// Inline image: pre-built `Object::Stream` plus the raw compressed bytes.
+    Inline {
+        /// Synthetic `Object::Stream` built from the inline dict + data —
+        /// ready to pass directly to `extract_image_from_xobject`.
+        stream_object: crate::object::Object,
+        /// Raw compressed bytes as they appeared between `ID` and `EI`.
+        /// Stored as `bytes::Bytes` (cheaply cloneable, refcounted) so that
+        /// the same allocation can be shared with the Stream data field
+        /// without duplicating a potentially large JPEG/JBIG2/etc payload.
+        compressed_bytes: bytes::Bytes,
+    },
+}
+
+/// A lightweight handle to a PDF image that has **not** been decoded yet.
+///
+/// Created by [`crate::PdfDocument::page_image_handles`], which walks the page content
+/// stream and reads XObject dictionary metadata without decompressing any stream.
+/// Callers can inspect the metadata fields to decide which images to materialise,
+/// then call [`decode`](PdfImageHandle::decode) or
+/// [`raw_compressed_bytes`](PdfImageHandle::raw_compressed_bytes) only on those
+/// they actually need.
+///
+/// # Example
+///
+/// ```no_run
+/// # use pdf_oxide::PdfDocument;
+/// # let bytes = std::fs::read("page.pdf").unwrap();
+/// let doc = PdfDocument::from_bytes(bytes).unwrap();
+/// // Phase 1: enumerate without decompression
+/// let handles = doc.page_image_handles(0).unwrap();
+/// // Phase 2: decode only images larger than a thumbnail
+/// let images: Vec<_> = handles
+///     .into_iter()
+///     .filter(|h| h.width >= 200 && h.height >= 200)
+///     .map(|h| h.decode())
+///     .collect::<Result<_, _>>()
+///     .unwrap();
+/// ```
+#[non_exhaustive]
+pub struct PdfImageHandle<'doc> {
+    /// Image width in pixels (from XObject `/Width`).
+    pub width: u32,
+    /// Image height in pixels (from XObject `/Height`).
+    pub height: u32,
+    /// Colour space (from XObject `/ColorSpace`).
+    pub color_space: ColorSpace,
+    /// Bits per component (from XObject `/BitsPerComponent`).
+    pub bits_per_component: u8,
+    /// Compressed stream length in bytes (from XObject `/Length`).
+    ///
+    /// For inline images this is `data.len()` as stored between `ID` and `EI`.
+    pub byte_size_compressed: u64,
+    /// Ordered list of filters applied to the stream (outermost first).
+    pub filter_chain: Vec<PdfFilter>,
+    /// `true` if the image is an inline image (embedded in the content stream).
+    pub is_inline: bool,
+    /// Zero-based index of this image among all images painted on the page,
+    /// in content-stream paint order.
+    pub paint_order: usize,
+    /// Axis-aligned bounding box of this image in PDF user space, computed
+    /// during Phase 1 by applying the current transformation matrix to the
+    /// unit rectangle `[0,0,1,1]`.
+    pub bbox: crate::geometry::Rect,
+    /// Rotation angle in degrees (0, 90, 180, or 270), derived from the CTM
+    /// during Phase 1.
+    pub rotation_degrees: f32,
+
+    // Internal fields
+    ctm: crate::content::Matrix,
+    doc: &'doc crate::document::PdfDocument,
+    source: PdfImageSource,
+}
+
+impl<'doc> PdfImageHandle<'doc> {
+    /// Decode this image into a [`PdfImage`].
+    ///
+    /// This is the expensive operation: it decompresses the image stream,
+    /// decodes pixels, and applies colour-space conversions as needed.
+    pub fn decode(self) -> Result<PdfImage> {
+        use crate::extractors::extract_image_from_xobject;
+
+        let xobject_for_extract;
+        let (obj, obj_ref) = match self.source {
+            PdfImageSource::XObject(obj_ref) => {
+                xobject_for_extract = self.doc.load_object(obj_ref)?;
+                (&xobject_for_extract, Some(obj_ref))
+            },
+            PdfImageSource::Inline { stream_object, .. } => {
+                xobject_for_extract = stream_object;
+                (&xobject_for_extract, None)
+            },
+        };
+
+        let mut image = extract_image_from_xobject(Some(self.doc), obj, obj_ref, None)?;
+
+        // Use pre-computed bbox and rotation from Phase 1 — no need to call
+        // back into document.rs helpers here.
+        image.set_bbox(self.bbox);
+        image.set_matrix([
+            self.ctm.a, self.ctm.b, self.ctm.c, self.ctm.d, self.ctm.e, self.ctm.f,
+        ]);
+        image.set_rotation_degrees(self.rotation_degrees as i32);
+
+        Ok(image)
+    }
+
+    /// Return the raw compressed bytes exactly as stored in the PDF stream,
+    /// **without** decompressing them.
+    ///
+    /// For JPEG images (`filter_chain == [DCTDecode]`) these bytes form a valid
+    /// JPEG file and can be written directly to disk or forwarded to a downstream
+    /// pipeline without recompression.
+    pub fn raw_compressed_bytes(self) -> Result<Vec<u8>> {
+        match self.source {
+            PdfImageSource::XObject(obj_ref) => {
+                let obj = self.doc.load_object(obj_ref)?;
+                match obj {
+                    crate::object::Object::Stream { data, .. } => Ok(data.to_vec()),
+                    _ => Err(crate::error::Error::Image("XObject is not a stream".to_string())),
+                }
+            },
+            PdfImageSource::Inline {
+                compressed_bytes, ..
+            } => Ok(compressed_bytes.to_vec()),
+        }
+    }
+}
+
+impl std::fmt::Debug for PdfImageHandle<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PdfImageHandle")
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .field("color_space", &self.color_space)
+            .field("bits_per_component", &self.bits_per_component)
+            .field("byte_size_compressed", &self.byte_size_compressed)
+            .field("filter_chain", &self.filter_chain)
+            .field("is_inline", &self.is_inline)
+            .field("paint_order", &self.paint_order)
+            .field("bbox", &self.bbox)
+            .field("rotation_degrees", &self.rotation_degrees)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Derive a rotation angle in degrees from a transformation matrix.
+///
+/// Computes `atan2(b, a)` and rounds to the nearest integer degree.
+fn matrix_to_rotation(m: crate::content::Matrix) -> f32 {
+    let angle_rad = m.b.atan2(m.a);
+    let angle_deg = angle_rad.to_degrees();
+    let normalized = angle_deg % 360.0;
+    if normalized < 0.0 {
+        normalized + 360.0
+    } else {
+        normalized
+    }
+}
+
+/// Transform an axis-aligned bounding rectangle by a CTM.
+///
+/// Transforms all four corners and returns the axis-aligned bounding box of the
+/// result, which correctly handles rotation, shear, and negative scaling.
+fn transform_bbox_with_ctm(
+    rect: &crate::geometry::Rect,
+    ctm: crate::content::Matrix,
+) -> crate::geometry::Rect {
+    let x0 = rect.x;
+    let y0 = rect.y;
+    let x1 = rect.x + rect.width;
+    let y1 = rect.y + rect.height;
+
+    let tx0 = ctm.a * x0 + ctm.c * y0 + ctm.e;
+    let ty0 = ctm.b * x0 + ctm.d * y0 + ctm.f;
+
+    let tx1 = ctm.a * x1 + ctm.c * y0 + ctm.e;
+    let ty1 = ctm.b * x1 + ctm.d * y0 + ctm.f;
+
+    let tx2 = ctm.a * x0 + ctm.c * y1 + ctm.e;
+    let ty2 = ctm.b * x0 + ctm.d * y1 + ctm.f;
+
+    let tx3 = ctm.a * x1 + ctm.c * y1 + ctm.e;
+    let ty3 = ctm.b * x1 + ctm.d * y1 + ctm.f;
+
+    let min_x = tx0.min(tx1).min(tx2).min(tx3);
+    let max_x = tx0.max(tx1).max(tx2).max(tx3);
+    let min_y = ty0.min(ty1).min(ty2).min(ty3);
+    let max_y = ty0.max(ty1).max(ty2).max(ty3);
+
+    crate::geometry::Rect {
+        x: min_x,
+        y: min_y,
+        width: max_x - min_x,
+        height: max_y - min_y,
+    }
+}
+
+/// Build a `PdfImageHandle` from an Image XObject dictionary entry.
+///
+/// Returns `None` if the XObject reference cannot be resolved or the dict lacks
+/// required fields (`Width`, `Height`), or if those fields contain non-positive
+/// values.
+pub(crate) fn image_handle_from_xobject<'doc>(
+    doc: &'doc crate::document::PdfDocument,
+    obj_ref: ObjectRef,
+    xobject_dict: &std::collections::HashMap<String, crate::object::Object>,
+    ctm: crate::content::Matrix,
+    paint_order: usize,
+) -> Option<PdfImageHandle<'doc>> {
+    use crate::object::Object;
+
+    let w = xobject_dict
+        .get("Width")
+        .and_then(|o| o.as_integer())
+        .filter(|&n| n > 0)
+        .map(|n| n as u32)?;
+    let h = xobject_dict
+        .get("Height")
+        .and_then(|o| o.as_integer())
+        .filter(|&n| n > 0)
+        .map(|n| n as u32)?;
+    let bpc = xobject_dict
+        .get("BitsPerComponent")
+        .and_then(|o| o.as_integer())
+        .unwrap_or(8) as u8;
+    let byte_size = xobject_dict
+        .get("Length")
+        .and_then(|o| o.as_integer())
+        .filter(|&n| n >= 0)
+        .map(|n| n as u64)
+        .unwrap_or(0);
+    let filter_chain = parse_filter_chain(xobject_dict);
+    let color_space = xobject_dict
+        .get("ColorSpace")
+        .and_then(|cs| parse_color_space(cs).ok())
+        .unwrap_or(ColorSpace::DeviceRGB);
+
+    // For an `[/Indexed base hival lookup]` color space (§8.6.6.3), report the
+    // base color space in the handle (the de-indexed output space). Only the
+    // direct-array form is handled here; an indirect `/ColorSpace` reference to
+    // an Indexed array keeps the `Indexed` tag. (Resource-name and indirect-ref
+    // resolution for the handle metadata is a follow-up — see decode() notes.)
+    let color_space = if matches!(&color_space, ColorSpace::Indexed) {
+        if let Some(Object::Array(arr)) = xobject_dict.get("ColorSpace") {
+            if arr.len() >= 2 {
+                arr.get(1)
+                    .and_then(|base| parse_color_space(base).ok())
+                    .unwrap_or(color_space)
+            } else {
+                color_space
+            }
+        } else {
+            color_space
+        }
+    } else {
+        color_space
+    };
+
+    // Compute bbox and rotation in Phase 1 while the CTM is in scope.
+    let unit_rect = crate::geometry::Rect::new(0.0, 0.0, 1.0, 1.0);
+    let bbox = transform_bbox_with_ctm(&unit_rect, ctm);
+    let rotation_degrees = matrix_to_rotation(ctm);
+
+    Some(PdfImageHandle {
+        width: w,
+        height: h,
+        color_space,
+        bits_per_component: bpc,
+        byte_size_compressed: byte_size,
+        filter_chain,
+        is_inline: false,
+        paint_order,
+        bbox,
+        rotation_degrees,
+        ctm,
+        doc,
+        source: PdfImageSource::XObject(obj_ref),
+    })
+}
+
+/// Build a `PdfImageHandle` from an inline image (`BI`/`ID`/`EI` sequence).
+pub(crate) fn image_handle_from_inline<'doc>(
+    doc: &'doc crate::document::PdfDocument,
+    dict: &std::collections::HashMap<String, crate::object::Object>,
+    data: Vec<u8>,
+    ctm: crate::content::Matrix,
+    paint_order: usize,
+) -> Option<PdfImageHandle<'doc>> {
+    use crate::object::Object;
+
+    // Inline image dicts use abbreviated keys; expand them.
+    let expanded = crate::extractors::expand_inline_image_dict(dict.clone());
+
+    let w = expanded
+        .get("Width")
+        .and_then(|o| o.as_integer())
+        .filter(|&n| n > 0)
+        .map(|n| n as u32)?;
+    let h = expanded
+        .get("Height")
+        .and_then(|o| o.as_integer())
+        .filter(|&n| n > 0)
+        .map(|n| n as u32)?;
+    let bpc = expanded
+        .get("BitsPerComponent")
+        .and_then(|o| o.as_integer())
+        .unwrap_or(8) as u8;
+    let byte_size = data.len() as u64;
+    let filter_chain = parse_filter_chain(&expanded);
+    let color_space = expanded
+        .get("ColorSpace")
+        .and_then(|cs| parse_color_space(cs).ok())
+        .unwrap_or(ColorSpace::DeviceRGB);
+
+    // Compute bbox and rotation in Phase 1 while the CTM is in scope.
+    let unit_rect = crate::geometry::Rect::new(0.0, 0.0, 1.0, 1.0);
+    let bbox = transform_bbox_with_ctm(&unit_rect, ctm);
+    let rotation_degrees = matrix_to_rotation(ctm);
+
+    // Build a synthetic Object::Stream so decode() can call extract_image_from_xobject.
+    // Share a single Bytes allocation between the Stream (for decode) and the
+    // handle (for raw_compressed_bytes). Bytes is refcounted, so this avoids
+    // duplicating potentially large image payloads (e.g. 10 MB JPEG → 20 MB RSS).
+    let mut stream_dict = expanded;
+    stream_dict.insert("Subtype".to_string(), Object::Name("Image".to_string()));
+    let compressed_bytes = bytes::Bytes::from(data);
+    let stream_object = Object::Stream {
+        dict: stream_dict,
+        data: compressed_bytes.clone(),
+    };
+
+    Some(PdfImageHandle {
+        width: w,
+        height: h,
+        color_space,
+        bits_per_component: bpc,
+        byte_size_compressed: byte_size,
+        filter_chain,
+        is_inline: true,
+        paint_order,
+        bbox,
+        rotation_degrees,
+        ctm,
+        doc,
+        source: PdfImageSource::Inline {
+            stream_object,
+            compressed_bytes,
+        },
+    })
+}

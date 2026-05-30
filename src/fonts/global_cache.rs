@@ -248,6 +248,7 @@ mod tests {
             widths: None,
             first_char: None,
             last_char: None,
+            font_matrix_a: 0.001,
             default_width: 600.0,
             cid_widths: None,
             cid_default_width: 1000.0,

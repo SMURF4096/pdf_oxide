@@ -19,6 +19,7 @@ use crate::content::parser::parse_content_stream;
 use crate::document::PdfDocument;
 use crate::error::{Error, Result};
 use crate::object::{Object, ObjectRef};
+use crate::rendering::ext_gstate::{parse_ext_g_state_inner, ParsedExtGState};
 use crate::rendering::path_rasterizer::PathRasterizer;
 use crate::rendering::text_rasterizer::TextRasterizer;
 
@@ -2312,31 +2313,6 @@ impl PageRenderer {
     }
 }
 
-/// Parsed effects of a PDF ExtGState dictionary. Only the fields actually
-/// applied during rendering are captured (alpha + blend mode). Anything else
-/// (TK / SMask / AIS) is logged as debug only and not used yet, so it doesn't
-/// need to be cached.
-#[derive(Clone, Debug, Default)]
-struct ParsedExtGState {
-    fill_alpha: Option<f32>,
-    stroke_alpha: Option<f32>,
-    blend_mode: Option<String>,
-}
-
-impl ParsedExtGState {
-    fn apply(&self, gs: &mut GraphicsState) {
-        if let Some(a) = self.fill_alpha {
-            gs.fill_alpha = a;
-        }
-        if let Some(a) = self.stroke_alpha {
-            gs.stroke_alpha = a;
-        }
-        if let Some(ref m) = self.blend_mode {
-            gs.blend_mode = m.clone();
-        }
-    }
-}
-
 /// Resolve the named ExtGState entry from `resources` and parse the fields we
 /// need. Kept as a thin wrapper that re-resolves the resource dict per call —
 /// the hot path in `execute_operators` uses `parse_ext_g_state_inner` against
@@ -2367,44 +2343,6 @@ fn parse_ext_g_state(
         None => return Ok(out),
     };
     parse_ext_g_state_inner(state_obj, doc)
-}
-
-/// Parse the fields we need from an ExtGState **entry** (the inner dict, not
-/// the resource dict that holds it). Resolves once if `state_obj` is a
-/// reference. This is the hot helper called per `gs` op in the operator loop.
-fn parse_ext_g_state_inner(state_obj: &Object, doc: &PdfDocument) -> Result<ParsedExtGState> {
-    let mut out = ParsedExtGState::default();
-    let state_resolved = doc.resolve_object(state_obj)?;
-    let state_dict = match state_resolved.as_dict() {
-        Some(d) => d,
-        None => return Ok(out),
-    };
-
-    if let Some(ca) = state_dict.get("ca") {
-        out.fill_alpha = ca
-            .as_real()
-            .map(|v| v as f32)
-            .or_else(|| ca.as_integer().map(|v| v as f32));
-    }
-    if let Some(ca_upper) = state_dict.get("CA") {
-        out.stroke_alpha = ca_upper
-            .as_real()
-            .map(|v| v as f32)
-            .or_else(|| ca_upper.as_integer().map(|v| v as f32));
-    }
-    if let Some(bm) = state_dict.get("BM") {
-        let mode = match bm {
-            Object::Name(n) => n.clone(),
-            Object::Array(arr) => arr
-                .first()
-                .and_then(|o| o.as_name())
-                .unwrap_or("Normal")
-                .to_string(),
-            _ => "Normal".to_string(),
-        };
-        out.blend_mode = Some(mode);
-    }
-    Ok(out)
 }
 
 /// Resize an RGBA (straight-alpha) byte buffer using SIMD-accelerated bilinear filtering.

@@ -3,6 +3,7 @@
 //! This module provides Python bindings for the PDF library, exposing the core functionality
 //! through a Python-friendly API with proper error handling and type hints.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use pyo3::exceptions::{PyIOError, PyNotImplementedError, PyRuntimeError, PyValueError};
@@ -163,6 +164,39 @@ impl PyPdfDocument {
         Ok(PyPageCount { value })
     }
 
+    /// List all Optional Content Group (OCG) layer names in the document.
+    ///
+    /// Returns:
+    ///     list[str]: Layer names from /OCProperties. Empty if no layers.
+    ///
+    /// Example:
+    ///     layers = doc.get_layers()
+    ///     # ['Dieline', 'Varnish', 'Text', 'Barcode']
+    ///     text = doc.extract_text(0, exclude_layers=['Dieline', 'Varnish'])
+    fn get_layers(&mut self) -> PyResult<Vec<String>> {
+        self.inner
+            .get_layers()
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to get layers: {}", e)))
+    }
+
+    /// List ink / separation names used on a specific page.
+    ///
+    /// Args:
+    ///     page (int): Page index (0-based)
+    ///
+    /// Returns:
+    ///     list[str]: Ink names from Separation/DeviceN color spaces.
+    ///
+    /// Example:
+    ///     inks = doc.get_page_inks(0)
+    ///     # ['PANTONE 186 C', 'Spot Varnish', 'Die Cut']
+    ///     text = doc.extract_text(0, exclude_inks=['Spot Varnish', 'Die Cut'])
+    fn get_page_inks(&mut self, page: usize) -> PyResult<Vec<String>> {
+        self.inner
+            .get_page_inks(page)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to get page inks: {}", e)))
+    }
+
     /// Enumerate existing PDF signatures. Returns a list of
     /// `Signature` objects — empty list when the document has no
     /// AcroForm or no signed signature fields.
@@ -199,21 +233,59 @@ impl PyPdfDocument {
     }
 
     /// Extract text from a page.
-    #[pyo3(signature = (page, region=None))]
+    ///
+    /// Args:
+    ///     page (int): Page index (0-based)
+    ///     region (tuple, optional): Bounding box (x, y, width, height) to restrict extraction
+    ///     exclude_layers (list[str], optional): OCG layer names to exclude from extraction
+    ///     exclude_inks (list[str], optional): Separation/DeviceN ink names to exclude
+    ///
+    /// Note:
+    ///     When ``exclude_layers`` or ``exclude_inks`` are specified, the same
+    ///     full text assembly pipeline is used (structure-tree ordering, table
+    ///     detection, column detection) — excluded content is simply removed
+    ///     before assembly.
+    #[pyo3(signature = (page, region=None, exclude_layers=None, exclude_inks=None))]
     fn extract_text(
         &mut self,
         page: usize,
         region: Option<(f32, f32, f32, f32)>,
+        exclude_layers: Option<Vec<String>>,
+        exclude_inks: Option<Vec<String>>,
     ) -> PyResult<String> {
+        let has_filters = exclude_layers.is_some() || exclude_inks.is_some();
+        let layers: HashSet<String> = exclude_layers.unwrap_or_default().into_iter().collect();
+        let inks: HashSet<String> = exclude_inks.unwrap_or_default().into_iter().collect();
+
         if let Some((x, y, w, h)) = region {
+            if has_filters {
+                self.inner
+                    .extract_text_filtered_in_rect(
+                        page,
+                        layers,
+                        inks,
+                        crate::geometry::Rect::new(x, y, w, h),
+                        crate::layout::RectFilterMode::Intersects,
+                    )
+                    .map_err(|e| {
+                        PyRuntimeError::new_err(format!("Failed to extract filtered text: {}", e))
+                    })
+            } else {
+                self.inner
+                    .extract_text_in_rect(
+                        page,
+                        crate::geometry::Rect::new(x, y, w, h),
+                        crate::layout::RectFilterMode::Intersects,
+                    )
+                    .map_err(|e| {
+                        PyRuntimeError::new_err(format!("Failed to extract text in region: {}", e))
+                    })
+            }
+        } else if has_filters {
             self.inner
-                .extract_text_in_rect(
-                    page,
-                    crate::geometry::Rect::new(x, y, w, h),
-                    crate::layout::RectFilterMode::Intersects,
-                )
+                .extract_text_filtered(page, layers, inks)
                 .map_err(|e| {
-                    PyRuntimeError::new_err(format!("Failed to extract text in region: {}", e))
+                    PyRuntimeError::new_err(format!("Failed to extract filtered text: {}", e))
                 })
         } else {
             self.inner
@@ -539,14 +611,147 @@ impl PyPdfDocument {
         }
     }
 
+    /// Render all ink separation plates for a page.
+    ///
+    /// Each plate is a grayscale image where pixel intensity (0-255) = ink
+    /// coverage (0 = no ink, 255 = full tint). Process inks (Cyan, Magenta,
+    /// Yellow, Black) are included if the page uses DeviceCMYK content; spot
+    /// colors are taken from Separation and DeviceN color spaces. To display
+    /// a plate as black ink on white paper, invert: ``display = 255 - value``.
+    ///
+    /// Args:
+    ///     page (int): Zero-based page index.
+    ///     dpi (int, optional): Resolution in DPI (default 150 — the Rust API
+    ///         has no default; Python defaults to 150 for convenience).
+    ///
+    /// Returns:
+    ///     list[SeparationPlate]: One plate per ink. Each has ``ink_name``,
+    ///     ``data`` (grayscale bytes), ``width``, and ``height``.
+    ///
+    /// Example:
+    ///     plates = doc.render_separations(0, dpi=150)
+    ///     for plate in plates:
+    ///         print(f"{plate.ink_name}: {plate.width}x{plate.height}")
+    #[pyo3(signature = (page, dpi=None))]
+    fn render_separations(
+        &mut self,
+        py: Python<'_>,
+        page: usize,
+        dpi: Option<u32>,
+    ) -> PyResult<Vec<Py<pyo3::PyAny>>> {
+        #[cfg(feature = "rendering")]
+        {
+            let dpi_value = dpi.unwrap_or(150);
+            let plates = crate::rendering::render_separations(&self.inner, page, dpi_value)
+                .map_err(|e| {
+                    PyRuntimeError::new_err(format!("Failed to render separations: {e}"))
+                })?;
+            let plate_mod = py.import("pdf_oxide")?;
+            let plate_cls = plate_mod.getattr("SeparationPlate")?;
+            let mut out = Vec::with_capacity(plates.len());
+            for plate in plates {
+                let data = pyo3::types::PyBytes::new(py, &plate.data);
+                let result = plate_cls.call1((
+                    plate.ink_name,
+                    data,
+                    plate.width as i64,
+                    plate.height as i64,
+                ))?;
+                out.push(result.into());
+            }
+            Ok(out)
+        }
+        #[cfg(not(feature = "rendering"))]
+        {
+            let _ = (py, page, dpi);
+            Err(PyRuntimeError::new_err("Rendering feature not enabled."))
+        }
+    }
+
+    /// Render a single ink separation plate for a page.
+    ///
+    /// Returns a grayscale image where pixel intensity (0-255) = ink coverage
+    /// of the named ink (0 = no ink, 255 = full tint). If the ink is not
+    /// present on the page, the plate is all zeros. To display the plate as
+    /// black ink on white paper, invert: ``display = 255 - value``.
+    ///
+    /// Args:
+    ///     page (int): Zero-based page index.
+    ///     ink_name (str): Ink name (e.g., "Cyan", "PANTONE 185 C", "Dieline").
+    ///     dpi (int, optional): Resolution in DPI (default 150 — the Rust API
+    ///         has no default; Python defaults to 150 for convenience).
+    ///
+    /// Returns:
+    ///     SeparationPlate: The plate with ``ink_name``, ``data``, ``width``, ``height``.
+    ///
+    /// Example:
+    ///     dieline = doc.render_separation(0, "Dieline", dpi=150)
+    #[pyo3(signature = (page, ink_name, dpi=None))]
+    fn render_separation(
+        &mut self,
+        py: Python<'_>,
+        page: usize,
+        ink_name: &str,
+        dpi: Option<u32>,
+    ) -> PyResult<Py<pyo3::PyAny>> {
+        #[cfg(feature = "rendering")]
+        {
+            let dpi_value = dpi.unwrap_or(150);
+            let plate = crate::rendering::render_separation(&self.inner, page, ink_name, dpi_value)
+                .map_err(|e| {
+                    PyRuntimeError::new_err(format!("Failed to render separation: {e}"))
+                })?;
+            let plate_mod = py.import("pdf_oxide")?;
+            let plate_cls = plate_mod.getattr("SeparationPlate")?;
+            let data = pyo3::types::PyBytes::new(py, &plate.data);
+            let result =
+                plate_cls.call1((plate.ink_name, data, plate.width as i64, plate.height as i64))?;
+            Ok(result.into())
+        }
+        #[cfg(not(feature = "rendering"))]
+        {
+            let _ = (py, page, ink_name, dpi);
+            Err(PyRuntimeError::new_err("Rendering feature not enabled."))
+        }
+    }
+
     /// Extract low-level characters.
-    #[pyo3(signature = (page, region=None))]
+    ///
+    /// Args:
+    ///     page (int): Page index (0-based)
+    ///     region (tuple, optional): Bounding box (x, y, width, height) to restrict extraction
+    ///     exclude_layers (list[str], optional): OCG layer names to exclude from extraction
+    ///     exclude_inks (list[str], optional): Separation/DeviceN ink names to exclude
+    #[pyo3(signature = (page, region=None, exclude_layers=None, exclude_inks=None))]
     fn extract_chars(
         &mut self,
         page: usize,
         region: Option<(f32, f32, f32, f32)>,
+        exclude_layers: Option<Vec<String>>,
+        exclude_inks: Option<Vec<String>>,
     ) -> PyResult<Vec<PyTextChar>> {
-        let chars_result = if let Some((x, y, w, h)) = region {
+        let has_filters = exclude_layers.is_some() || exclude_inks.is_some();
+        let layers: HashSet<String> = exclude_layers.unwrap_or_default().into_iter().collect();
+        let inks: HashSet<String> = exclude_inks.unwrap_or_default().into_iter().collect();
+
+        let chars_result = if has_filters {
+            let chars = self
+                .inner
+                .extract_chars_filtered(page, layers, inks)
+                .map_err(|e| {
+                    PyRuntimeError::new_err(format!("Failed to extract characters: {}", e))
+                })?;
+            // Apply region filter on top if specified
+            if let Some((x, y, w, h)) = region {
+                use crate::layout::SpatialCollectionFiltering;
+                Ok(chars.filter_by_rect(
+                    &crate::geometry::Rect::new(x, y, w, h),
+                    crate::layout::RectFilterMode::Intersects,
+                ))
+            } else {
+                Ok(chars)
+            }
+        } else if let Some((x, y, w, h)) = region {
             self.inner.extract_chars_in_rect(
                 page,
                 crate::geometry::Rect::new(x, y, w, h),
@@ -580,7 +785,6 @@ impl PyPdfDocument {
     ///         regression on PDFs whose running-artifact heuristic
     ///         over-triggers on real content. Pass `False` to get the
     ///         spec-correct behavior (artifact-tagged spans excluded).
-    ///
     ///     region, word_gap_threshold, profile (deprecated, optional):
     ///         Power-user overrides retained for backward compatibility.
     ///         Passing any of these emits a DeprecationWarning. They will
@@ -643,7 +847,6 @@ impl PyPdfDocument {
     ///         Default **True** for backward compatibility with 0.3.41.
     ///         Pass `False` to get the spec-correct behavior
     ///         (artifact-tagged spans excluded).
-    ///
     ///     region, word_gap_threshold, line_gap_threshold, profile
     ///         (deprecated, optional): Power-user overrides retained for
     ///         backward compatibility. Passing any of these emits a
@@ -2508,12 +2711,14 @@ impl PyPdfDocument {
     /// Extract a subset of pages and return them as PDF bytes.
     /// `pages` is a list of 0-based indices to keep. The source document is not modified.
     ///
-    /// Example::
+    /// # Example
     ///
-    ///     from itertools import batched
-    ///     doc = PdfDocument.from_bytes(pdf_bytes)
-    ///     for chunk in batched(range(doc.page_count()), 50):
-    ///         chunk_bytes = doc.extract_pages_to_bytes(list(chunk))
+    /// ```python
+    /// from itertools import batched
+    /// doc = PdfDocument.from_bytes(pdf_bytes)
+    /// for chunk in batched(range(doc.page_count()), 50):
+    ///     chunk_bytes = doc.extract_pages_to_bytes(list(chunk))
+    /// ```
     fn extract_pages_to_bytes<'py>(
         &mut self,
         py: Python<'py>,
@@ -2533,12 +2738,14 @@ impl PyPdfDocument {
     /// `(start, end)` interpreted as `[start, end)`. Returns a list of `bytes`
     /// objects, one per range, in the same order.
     ///
-    /// Example::
+    /// # Example
     ///
-    ///     doc = PdfDocument.from_bytes(pdf_bytes)
-    ///     n = doc.page_count()
-    ///     ranges = [(i, min(i + 3000, n)) for i in range(0, n, 3000)]
-    ///     chunks = doc.extract_page_ranges_to_bytes(ranges)
+    /// ```python
+    /// doc = PdfDocument.from_bytes(pdf_bytes)
+    /// n = doc.page_count()
+    /// ranges = [(i, min(i + 3000, n)) for i in range(0, n, 3000)]
+    /// chunks = doc.extract_page_ranges_to_bytes(ranges)
+    /// ```
     fn extract_page_ranges_to_bytes<'py>(
         &mut self,
         py: Python<'py>,
@@ -2831,12 +3038,16 @@ impl PyDocPage {
 
     #[getter]
     fn text(&self, py: Python<'_>) -> PyResult<String> {
-        self.doc.borrow_mut(py).extract_text(self.page_index, None)
+        self.doc
+            .borrow_mut(py)
+            .extract_text(self.page_index, None, None, None)
     }
 
     #[getter]
     fn chars(&self, py: Python<'_>) -> PyResult<Vec<PyTextChar>> {
-        self.doc.borrow_mut(py).extract_chars(self.page_index, None)
+        self.doc
+            .borrow_mut(py)
+            .extract_chars(self.page_index, None, None, None)
     }
 
     #[getter]
@@ -3439,7 +3650,7 @@ impl PyPdfPageRegion {
     }
     fn extract_text(&self, py: Python<'_>) -> PyResult<String> {
         let mut d = self.doc.bind(py).borrow_mut();
-        d.extract_text(self.page_index, Some(self.bbox()))
+        d.extract_text(self.page_index, Some(self.bbox()), None, None)
     }
     fn extract_words(&self, py: Python<'_>) -> PyResult<Vec<PyWord>> {
         let mut d = self.doc.bind(py).borrow_mut();
@@ -4004,6 +4215,16 @@ fn path_to_py_dict(py: Python<'_>, path: &crate::elements::PathContent) -> PyRes
         d.set_item("fill_color", py.None())?;
     }
     d.set_item("operations_count", path.operations.len())?;
+
+    // Optional Content Group (PDF "layer") name resolved from the
+    // enclosing `BDC /OC … EMC` markers in the source content stream.
+    // `None` when the path was emitted outside any /OC region or when
+    // the PDF has no optional-content metadata. See PDF spec
+    // ISO 32000-1:2008 §8.11 (Optional Content) and §14.6 (Marked Content).
+    match path.layer {
+        Some(ref name) => d.set_item("layer", name.as_str())?,
+        None => d.set_item("layer", py.None())?,
+    }
 
     // Expose path operations as list of dicts for vector extraction use cases
     let ops_list = pyo3::types::PyList::empty(py);
