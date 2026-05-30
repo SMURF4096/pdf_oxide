@@ -24,7 +24,12 @@ Then build the wheel (maturin develop --release --features python) and run:
 Exit code is non-zero if any subset's checkable pass-rate falls below the
 matching --baseline floor (CI regression gate; opt-in, not run by default).
 """
-import argparse, json, subprocess, sys, collections
+
+import argparse
+import collections
+import json
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -41,8 +46,9 @@ def extract_text(python_bin, pdf_path, timeout):
         "sys.stdout.write(chr(10).join(d.extract_text(i) for i in range(n)))"
     )
     try:
-        r = subprocess.run([python_bin, "-c", code, str(pdf_path)],
-                           capture_output=True, timeout=timeout)
+        r = subprocess.run(
+            [python_bin, "-c", code, str(pdf_path)], capture_output=True, timeout=timeout
+        )
         return r.stdout.decode("utf-8", "replace") if r.returncode == 0 else ""
     except Exception:
         return ""
@@ -66,13 +72,17 @@ def check(assertion, text):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--bench-data", required=True,
-                    help="olmOCR bench_data dir (contains *.jsonl + pdfs/)")
-    ap.add_argument("--python", default=sys.executable,
-                    help="python with pdf_oxide installed")
+    ap.add_argument(
+        "--bench-data", required=True, help="olmOCR bench_data dir (contains *.jsonl + pdfs/)"
+    )
+    ap.add_argument("--python", default=sys.executable, help="python with pdf_oxide installed")
     ap.add_argument("--timeout", type=float, default=30.0)
-    ap.add_argument("--baseline", action="append", default=[],
-                    help="subset=pct floor, e.g. multi_column=0 (repeatable)")
+    ap.add_argument(
+        "--baseline",
+        action="append",
+        default=[],
+        help="subset=pct floor, e.g. multi_column=0 (repeatable)",
+    )
     args = ap.parse_args()
 
     root = Path(args.bench_data)
