@@ -69,10 +69,10 @@ pub struct FontInfo {
     pub cid_system_info: Option<CIDSystemInfo>,
     /// CIDFont subtype ("CIDFontType0" for CFF, "CIDFontType2" for TrueType)
     pub cid_font_type: Option<String>,
-    /// FontMatrix [a] element — scales glyph-space widths to text-space units.
+    /// `FontMatrix[a]` element — scales glyph-space widths to text-space units.
     /// Standard Type1/TrueType: 0.001 (widths in 1/1000 em).
-    /// Type3 with FontMatrix [1 0 0 1 0 0]: 1.0 (widths already in text-space units).
-    /// advance_in_text_space = width × font_matrix_a × font_size
+    /// Type3 with `FontMatrix [1 0 0 1 0 0]`: 1.0 (widths already in text-space units).
+    /// `advance_in_text_space = width × font_matrix_a × font_size`
     pub font_matrix_a: f32,
     /// Character widths in 1000ths of em (PDF units)
     /// For simple fonts (Type1, TrueType): array indexed by (char_code - first_char)
