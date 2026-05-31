@@ -3429,6 +3429,64 @@ impl PdfDocument {
         crate::structure::parse_structure_tree(self)
     }
 
+    /// Returns the document's structure tree **only when it is trustworthy for
+    /// reading-order purposes**, per ISO 32000-1:2008 §14.8.2.3.1 and §14.7.1.
+    ///
+    /// A `/StructTreeRoot` encodes the producer's *logical structure order* — a
+    /// depth-first traversal of the tag hierarchy — which is authoritative for
+    /// reading order independent of glyph geometry (§14.7.1). It is trusted when
+    /// the document is `/Marked` (Tagged PDF) **or** the catalog directly
+    /// references a `/StructTreeRoot` (PDF 1.3/1.4 tagged files predate the
+    /// `/MarkInfo` dictionary; §7.7.2) — matching the historical gate so output
+    /// for non-suspect documents is byte-for-byte unchanged — **and**
+    /// `/MarkInfo /Suspects` is not `true`. A `true` `/Suspects` flag is the
+    /// spec-sanctioned signal (the `/TagSuspect /Ordering` mechanism,
+    /// §14.8.2.3.1) that page content order may not match logical structure
+    /// order, so the tree is rejected and callers fall back to geometric order.
+    ///
+    /// Shares `structure_tree_cache`, so this costs a single cached parse.
+    pub(crate) fn struct_tree_trustworthy(&self) -> Option<Arc<crate::structure::StructTreeRoot>> {
+        let mark = self.mark_info().unwrap_or_default();
+        // Suspect documents: geometric reading order is spec-correct
+        // (§14.8.2.3.1). This is the only behavioural change versus the legacy
+        // inline gate, which never consulted /Suspects.
+        if mark.suspects {
+            return None;
+        }
+        let cached = self.structure_tree_cache.lock_or_recover().clone();
+        match cached {
+            Some(tree) => tree,
+            None => {
+                let has_struct_tree_root = self
+                    .catalog()
+                    .ok()
+                    .and_then(|cat| cat.as_dict().map(|d| d.contains_key("StructTreeRoot")))
+                    .unwrap_or(false);
+                let tree = if mark.marked || has_struct_tree_root {
+                    self.structure_tree().ok().flatten().map(Arc::new)
+                } else {
+                    None
+                };
+                *self.structure_tree_cache.lock_or_recover() = Some(tree.clone());
+                tree
+            },
+        }
+    }
+
+    /// Whether text extraction uses the Tagged-PDF *logical structure order* (a
+    /// depth-first traversal of `/StructTreeRoot`) rather than geometric
+    /// page-content order for this document.
+    ///
+    /// Returns `true` exactly when the document carries a trustworthy structure
+    /// tree per ISO 32000-1:2008 §14.8.2.3.1 / §14.7.1: it is `/Marked` or the
+    /// catalog references a `/StructTreeRoot`, the tree resolves non-empty, and
+    /// `/MarkInfo /Suspects` is not `true`. When `false`, extraction falls back
+    /// to geometric reading order. This is a read-only introspection accessor;
+    /// it does not change extraction behaviour.
+    pub fn prefers_structure_reading_order(&self) -> bool {
+        self.struct_tree_trustworthy().is_some()
+    }
+
     /// Find the document's default CMYK output-intent profile.
     ///
     /// Per ISO 32000-1:2008 §14.11.5, an `/OutputIntents` array in the
@@ -4777,7 +4835,26 @@ impl PdfDocument {
         options: &crate::converters::ConversionOptions,
     ) -> Result<String> {
         let base_spans = self.extract_spans(page_index)?;
-        self.assemble_text_from_spans(page_index, base_spans, options)
+        let text = self.assemble_text_from_spans(page_index, base_spans, options)?;
+        Ok(Self::apply_mixed_rtl_line_pass(text))
+    }
+
+    /// Per-line UAX #9 pass for mixed-direction lines (bidi item 4): for each
+    /// output line that is confidently RTL and mixes Arabic/Hebrew with
+    /// European/Arabic-Indic numerals or Latin words (e.g. a date
+    /// `14 april 1434 ٤٣٤١`), give the embedded LTR sub-runs their left-to-right
+    /// sublevel (UAX #9 §3.3.4) while leaving the already-logical RTL runs fixed.
+    /// Gated inside `reorder_mixed_rtl_line`, so pure-RTL, pure-LTR, and
+    /// non-RTL lines are returned byte-for-byte unchanged; the ASCII fast path
+    /// keeps all Latin-only extraction identical.
+    fn apply_mixed_rtl_line_pass(text: String) -> String {
+        if text.is_ascii() {
+            return text;
+        }
+        text.split('\n')
+            .map(crate::text::bidi::reorder_mixed_rtl_line)
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     fn assemble_text_from_spans(
@@ -4806,36 +4883,13 @@ impl PdfDocument {
             base_spans = base_spans.filter_by_rect(region, mode);
         }
 
-        // Structure tree: try to load when MarkInfo says "marked" OR when the
-        // catalog directly references a StructTreeRoot (PDF 1.4 documents such
-        // as hello_structure.pdf predate the MarkInfo dictionary but are still
-        // valid tagged PDFs per §14.7.1). Checking the catalog for
-        // /StructTreeRoot is cheap — it's a single dictionary key lookup.
-        let cached_tree = {
-            let cached = self.structure_tree_cache.lock_or_recover().clone();
-            match cached {
-                Some(tree) => tree,
-                None => {
-                    let is_marked = self.mark_info().map(|m| m.marked).unwrap_or(false);
-                    // Fall back to checking the catalog directly when MarkInfo is
-                    // absent or /Marked is false — presence of /StructTreeRoot is
-                    // authoritative for "is this a tagged PDF" per the spec.
-                    let has_struct_tree_root = !is_marked
-                        && self
-                            .catalog()
-                            .ok()
-                            .and_then(|cat| cat.as_dict().map(|d| d.contains_key("StructTreeRoot")))
-                            .unwrap_or(false);
-                    let tree = if is_marked || has_struct_tree_root {
-                        self.structure_tree().ok().flatten().map(Arc::new)
-                    } else {
-                        None
-                    };
-                    *self.structure_tree_cache.lock_or_recover() = Some(tree.clone());
-                    tree
-                },
-            }
-        };
+        // Structure tree: use it for reading order only when it is trustworthy
+        // per the shared predicate (§14.8.2.3.1) — the document is /Marked or
+        // the catalog references a /StructTreeRoot (PDF 1.4 documents such as
+        // hello_structure.pdf predate /MarkInfo but are still tagged, §14.7.1),
+        // AND /MarkInfo /Suspects is not true. Suspect documents fall through to
+        // the geometric `else` arm below, the spec-correct behaviour.
+        let cached_tree = self.struct_tree_trustworthy();
         let widget_spans = self.extract_widget_spans(page_index);
 
         // Table detection uses base spans only (no widget spans).
@@ -6366,6 +6420,18 @@ impl PdfDocument {
         };
         if prev_tail.is_some_and(is_cjk) && curr_head.is_some_and(is_cjk) {
             return false;
+        }
+
+        // Emoji / pictographic → letter boundary: a wide pictographic glyph
+        // (e.g. 📄) abuts the next token, so the proportional-gap test below
+        // would drop the inter-token space (`📄README` instead of `📄 README`).
+        // Word boundaries are reader latitude (ISO 32000-1:2008 §9.10); keep the
+        // space. The alphabetic-follower requirement excludes combined ZWJ/VS
+        // emoji sequences (whose next char is a selector or another pictograph).
+        if prev_tail.is_some_and(crate::extractors::text::is_pictographic)
+            && curr_head.is_some_and(char::is_alphabetic)
+        {
+            return true;
         }
 
         // Calculate horizontal gap
@@ -8176,7 +8242,7 @@ impl PdfDocument {
 
             if let Some(spans) = mcid_map.get(&mcid) {
                 consumed_mcids.insert(mcid);
-                for span in spans {
+                for span in Self::order_mcid_spans(spans) {
                     if let Some(prev) = prev_span {
                         let y_diff = (prev.bbox.y - span.bbox.y).abs();
 
@@ -8263,6 +8329,27 @@ impl PdfDocument {
         Ok(text)
     }
 
+    /// Order one MCID's spans for emission in the structure-order assemblers
+    /// (#608). A single marked-content element can carry spans across several
+    /// visual lines; emitting them in raw extraction order can mis-order them,
+    /// so sort by the canonical reading-order comparator. Skipped for single-
+    /// span MCIDs and for any MCID containing RTL text (whose span order is
+    /// handled by the bidi passes) — both stay byte-identical.
+    fn order_mcid_spans(spans: &[crate::layout::TextSpan]) -> Vec<&crate::layout::TextSpan> {
+        let mut ordered: Vec<&crate::layout::TextSpan> = spans.iter().collect();
+        let has_rtl = |s: &crate::layout::TextSpan| {
+            s.text
+                .chars()
+                .any(|c| crate::text::rtl_detector::is_rtl_text(c as u32))
+        };
+        if spans.len() > 1 && !spans.iter().any(has_rtl) {
+            ordered.sort_by(|a, b| {
+                crate::utils::row_aware_span_cmp(a.bbox.y, a.bbox.x, b.bbox.y, b.bbox.x)
+            });
+        }
+        ordered
+    }
+
     /// Extract text from a Tagged PDF page using pre-computed structure traversal cache.
     ///
     /// This is the optimized version of `extract_text_structure_order` that uses
@@ -8341,7 +8428,7 @@ impl PdfDocument {
 
             if let Some(spans) = mcid_map.get(&mcid) {
                 consumed_mcids.insert(mcid);
-                for span in spans {
+                for span in Self::order_mcid_spans(spans) {
                     if let Some(prev) = prev_span {
                         let y_diff = (prev.bbox.y - span.bbox.y).abs();
                         if y_diff > Self::same_line_threshold(prev, span) {
@@ -8469,6 +8556,56 @@ impl PdfDocument {
         self.postprocess_spans(page_index, spans)
     }
 
+    /// Map a span rectangle (already translated so the page origin is at
+    /// `(0, 0)`) through a clockwise page `/Rotate` of `rot` degrees, returning
+    /// the axis-aligned bounding box in the displayed coordinate frame.
+    ///
+    /// `page_w` / `page_h` are the unrotated page dimensions; for 90° / 270° the
+    /// displayed page is `page_h × page_w`. Per ISO 32000-1:2008 §7.7.3.3 the
+    /// rotation is clockwise and §8.3.3 gives the point transform. `rot` must be
+    /// a normalised multiple of 90 (`0/90/180/270`); any other value returns the
+    /// rectangle unchanged. `rot == 0` is the identity and `rot == 180` is
+    /// numerically identical to the legacy mirror, preserving byte-for-byte
+    /// output for unrotated and 180° pages.
+    pub(crate) fn rotate_span_bbox(
+        bbox: crate::geometry::Rect,
+        rot: i32,
+        page_w: f32,
+        page_h: f32,
+    ) -> crate::geometry::Rect {
+        // Map a point (y-up) by the clockwise display rotation.
+        let map = |x: f32, y: f32| -> (f32, f32) {
+            match rot {
+                90 => (y, page_w - x),
+                180 => (page_w - x, page_h - y),
+                270 => (page_h - y, x),
+                _ => (x, y),
+            }
+        };
+        let (ax, ay) = map(bbox.x, bbox.y);
+        let (bx, by) = map(bbox.x + bbox.width, bbox.y + bbox.height);
+        crate::geometry::Rect::new(ax.min(bx), ay.min(by), (ax - bx).abs(), (ay - by).abs())
+    }
+
+    /// Map a single span's bbox into the displayed frame for a `/Rotate`d page
+    /// (translate to origin → [`rotate_span_bbox`] → translate back).
+    fn map_span_into_rotated_frame(
+        s: &mut crate::layout::TextSpan,
+        rot: i32,
+        llx: f32,
+        lly: f32,
+        w: f32,
+        h: f32,
+    ) {
+        let rel =
+            crate::geometry::Rect::new(s.bbox.x - llx, s.bbox.y - lly, s.bbox.width, s.bbox.height);
+        let m = Self::rotate_span_bbox(rel, rot, w, h);
+        s.bbox.x = llx + m.x;
+        s.bbox.y = lly + m.y;
+        s.bbox.width = m.width;
+        s.bbox.height = m.height;
+    }
+
     fn postprocess_spans(
         &self,
         page_index: usize,
@@ -8503,31 +8640,34 @@ impl PdfDocument {
         }
 
         // Apply page /Rotate to span geometry BEFORE reading-order sorting.
-        // Spans are extracted in raw PDF user space; a page with a /Rotate
-        // entry must be read in its DISPLAYED orientation or the row-aware
-        // sort emits text in the wrong order. /Rotate 180 mirrors both axes —
-        // pdf.js issue14415 is a 180-rotated English page that otherwise comes
-        // out fully word- AND line-reversed ("Authority" last, each line's
-        // words backwards), because the row-aware (Y-desc, X-asc) sort reads
-        // the un-rotated coordinates in reverse of display order. Each span's
-        // own text is already correct (a 180° page only flips span *order*),
-        // so mirroring span positions and re-sorting is sufficient. 90/270
-        // additionally require a width/height swap that interacts with column
-        // detection and table geometry, so they are left for a dedicated change.
-        if let Ok((llx, lly, urx, ury)) = self.get_page_media_box(page_index) {
-            let rot = self
-                .get_page_rotation(page_index)
-                .unwrap_or(0)
-                .rem_euclid(360);
-            if rot == 180 {
-                let w = urx - llx;
-                let h = ury - lly;
-                for s in spans.iter_mut() {
-                    let rel_x = s.bbox.x - llx;
-                    let rel_y = s.bbox.y - lly;
-                    s.bbox.x = llx + (w - (rel_x + s.bbox.width));
-                    s.bbox.y = lly + (h - (rel_y + s.bbox.height));
-                }
+        // Spans are extracted in raw PDF user space; a page with a /Rotate entry
+        // must be read in its DISPLAYED orientation or the row-aware sort emits
+        // text in the wrong order (pdf.js issue14415 is a 180° English page that
+        // otherwise comes out word- and line-reversed). Every span is mapped into
+        // one consistent displayed frame via `rotate_span_bbox` BEFORE any
+        // geometric pass (column detection, table geometry, the row-aware sort),
+        // so 90° / 270° — which additionally swap page width/height — are handled
+        // uniformly alongside 180°. rot == 0 is untouched (byte-identical) and
+        // rot == 180 is numerically identical to the previous mirror. (A
+        // within-span character re-order for rotated multi-glyph spans — the
+        // issue14415 within-line residual — is a tracked follow-up.)
+        // Captured so the same transform is applied to annotation spans appended
+        // later (their /Rect is in unrotated page space too). `None` for rot==0
+        // or unknown media box — those pages are byte-identical.
+        let page_rotation: Option<(i32, f32, f32, f32, f32)> =
+            match self.get_page_media_box(page_index) {
+                Ok((llx, lly, urx, ury)) => {
+                    let rot = self
+                        .get_page_rotation(page_index)
+                        .unwrap_or(0)
+                        .rem_euclid(360);
+                    matches!(rot, 90 | 180 | 270).then_some((rot, llx, lly, urx - llx, ury - lly))
+                },
+                Err(_) => None,
+            };
+        if let Some((rot, llx, lly, w, h)) = page_rotation {
+            for s in spans.iter_mut() {
+                Self::map_span_into_rotated_frame(s, rot, llx, lly, w, h);
             }
         }
 
@@ -8584,8 +8724,16 @@ impl PdfDocument {
         // Append text from non-Widget annotations (/Subtype /Text, FreeText,
         // Stamp, Highlight, etc.) that carry a /Contents entry. These are not
         // part of the page content stream so they are not picked up by the
-        // regular extractor.
+        // regular extractor. On a /Rotate'd page their /Rect-derived bboxes are
+        // in unrotated page space, so map the appended spans into the same
+        // displayed frame as the content spans (no-op for unrotated pages).
+        let pre_annotation_len = spans.len();
         spans.extend(self.annotation_content_spans(page_index));
+        if let Some((rot, llx, lly, w, h)) = page_rotation {
+            for s in spans[pre_annotation_len..].iter_mut() {
+                Self::map_span_into_rotated_frame(s, rot, llx, lly, w, h);
+            }
+        }
 
         // Mark running headers/footers (untagged-PDF heuristic). Spans whose
         // normalized text recurs on >=50% of pages and sits near the top or
@@ -9275,11 +9423,16 @@ impl PdfDocument {
     /// cluster gate both miss it). Mirrors `detect_narrow_gutter_prose`
     /// (`src/pipeline/reading_order/xycut.rs`) at the document-routing layer.
     ///
-    /// Prose-guarded (`mean non-whitespace chars per line > 20`) so numeric /
-    /// short-cell tables — which a bare corridor signal would also match —
-    /// are not routed to XY-cut. This is the conservative, table-safe subset:
-    /// it captures long-line academic references but intentionally NOT short-
-    /// verse layouts (tracked separately under #607).
+    /// Table-safe by construction (#536). Long-line bodies
+    /// (`mean non-whitespace chars per line > 20`) keep the original
+    /// concentration / coverage / centre accept path. Short-line bodies
+    /// (verse / lexicon editions) are admitted only under stricter,
+    /// length-independent guards a numeric / short-cell table cannot satisfy:
+    /// higher concentration and coverage, left/right column char-mass balance,
+    /// and a grid-row signal (a multi-cell table has ≥ 2 wide gaps on most
+    /// rows; a two-column body has one gutter). Full-width display-math /
+    /// heading rows are excluded from the gutter-coverage denominator so a
+    /// minority of them does not veto an otherwise two-column page.
     fn has_persistent_gutter_corridor(
         spans: &[crate::layout::TextSpan],
         median: f32,
@@ -9308,33 +9461,47 @@ impl PdfDocument {
             return false;
         }
 
-        // Prose guard: tables (numeric / short cells) score low mean chars
-        // per line; two-column prose scores high. Mirrors the `mean_chars`
-        // arm of `classify_region_kind`. > 20 is the table-safe floor.
         let total_chars: usize = lines.values().map(|(_, c)| *c).sum();
         let mean_chars = total_chars as f32 / lines.len() as f32;
-        if mean_chars <= 20.0 {
-            return false;
-        }
 
         // Largest within-line gap per line (≥ 6 pt suppresses word spacing);
-        // record the gap midpoint X.
+        // record the gap midpoint X. Also flag full-width lines with no internal
+        // gutter (display equations, full-width headings) so they neither support
+        // nor veto the corridor — they are excluded from the coverage denominator
+        // (Part 1b: display-math robustness, #536/arxiv_math).
         const MIN_GAP_PT: f32 = 6.0;
         let mut gap_positions: Vec<f32> = Vec::new();
+        let mut full_width_lines = 0usize;
+        let mut multi_gap_lines = 0usize;
         for (line_spans, _) in lines.values() {
-            if line_spans.len() < 2 {
+            if line_spans.is_empty() {
                 continue;
             }
             let mut sorted = line_spans.clone();
             sorted.sort_by(|a, b| crate::utils::safe_float_cmp(a.0, b.0));
+            let line_left = sorted.first().map(|s| s.0).unwrap_or(0.0);
+            let line_right = sorted.last().map(|s| s.1).unwrap_or(0.0);
             let mut largest_gap = 0.0_f32;
             let mut largest_mid = 0.0_f32;
+            let mut significant_gaps = 0usize;
             for w in sorted.windows(2) {
                 let gap = w[1].0 - w[0].1;
+                if gap >= MIN_GAP_PT {
+                    significant_gaps += 1;
+                }
                 if gap > largest_gap {
                     largest_gap = gap;
                     largest_mid = (w[0].1 + w[1].0) * 0.5;
                 }
+            }
+            if (line_right - line_left) >= region_width * 0.9 && largest_gap < MIN_GAP_PT {
+                full_width_lines += 1;
+            }
+            // A line with two or more wide internal gaps is a grid row (≥ 3
+            // cells), not a two-column body line (one gutter). Used by the
+            // short-line table discriminator below.
+            if significant_gaps >= 2 {
+                multi_gap_lines += 1;
             }
             if largest_gap >= MIN_GAP_PT {
                 gap_positions.push(largest_mid);
@@ -9343,6 +9510,8 @@ impl PdfDocument {
         if gap_positions.len() < 12 {
             return false;
         }
+        // Coverage denominator excludes full-width display rows.
+        let eff_lines = lines.len().saturating_sub(full_width_lines).max(1);
 
         // Cluster gap midpoints (10 pt radius); find the dominant corridor.
         const CLUSTER_RADIUS_PT: f32 = 10.0;
@@ -9370,29 +9539,58 @@ impl PdfDocument {
             }
         }
 
-        // Concentration ≥ 62 %: one persistent corridor (2-col prose) vs many
-        // weaker corridors (tables). 0.62 admits the measured academic
-        // fixtures (0.65 / 0.69) while staying above the table noise floor.
-        if best_size * 50 < gap_positions.len() * 31 {
-            return false;
-        }
-        // The corridor must be a genuine full-height two-column body: present
-        // on a MAJORITY (≥ 50 %) of all lines, with a solid absolute floor.
-        // Stricter than `detect_narrow_gutter_prose`'s 20 % because this is a
-        // page-routing decision — a mixed prose+table page whose table happens
-        // to share one cell-gap x must NOT be routed to XY-cut (that reorders
-        // the table). Bibliographies put the gutter on nearly every line.
-        if best_size < 16 || best_size * 2 < lines.len() {
+        // Gutter must sit near the page centre (0.30–0.70). A true two-column
+        // body splits down the middle; a table's dominant gap (label column vs
+        // data, or one of several cell boundaries) sits off-centre.
+        let gutter_offset = best_center - x_min;
+        let centre_ok =
+            gutter_offset >= region_width * 0.30 && gutter_offset <= region_width * 0.70;
+        if best_size < 16 || !centre_ok {
             return false;
         }
 
-        // Gutter must sit near the page centre (0.30–0.70). A true two-column
-        // body splits down the middle; a table's dominant gap (label column vs
-        // data, or one of several cell boundaries) sits off-centre and is
-        // rejected here. This is the decisive prose-vs-table discriminator at
-        // the routing layer.
-        let gutter_offset = best_center - x_min;
-        gutter_offset >= region_width * 0.30 && gutter_offset <= region_width * 0.70
+        if mean_chars > 20.0 {
+            // Long-line two-column prose (the v0.3.57 accept path, unchanged
+            // except the coverage denominator now excludes display rows):
+            // concentration ≥ 62 %, coverage ≥ 50 % of (effective) lines.
+            return best_size * 50 >= gap_positions.len() * 31 && best_size * 2 >= eff_lines;
+        }
+
+        // Short-line bodies (verse / lexicon / dictionary editions, #536): the
+        // raw `mean_chars` floor used to reject these along with short-cell
+        // tables. Admit them only under STRICTER, length-independent guards a
+        // short-cell table cannot satisfy (Part 1a).
+        let strict_concentration = best_size * 10 >= gap_positions.len() * 7; // ≥ 70 %
+        let strict_coverage = best_size * 5 >= eff_lines * 3; // ≥ 60 % of lines
+        if !(strict_concentration && strict_coverage) {
+            return false;
+        }
+        // Column char-mass balance: each side of the gutter must carry ≥ 35 % of
+        // the non-whitespace characters. A narrow label / verse-number column
+        // paired with wide data is lopsided and rejected.
+        let (mut left_chars, mut right_chars) = (0usize, 0usize);
+        for s in spans {
+            let cx = s.bbox.x + s.bbox.width * 0.5;
+            if (cx - median).abs() > max_extent {
+                continue;
+            }
+            let n = s.text.chars().filter(|c| !c.is_whitespace()).count();
+            if cx < best_center {
+                left_chars += n;
+            } else {
+                right_chars += n;
+            }
+        }
+        let total = (left_chars + right_chars).max(1) as f32;
+        if (left_chars as f32) < total * 0.35 || (right_chars as f32) < total * 0.35 {
+            return false;
+        }
+        // Grid-row discriminator: a two-column body has ONE wide gap per line
+        // (the gutter); a multi-cell numeric table has ≥ 2 wide gaps on most
+        // rows (cell boundaries). Reject when the majority of lines are grid
+        // rows — this is what keeps short-cell tables off the XY-cut path
+        // without the raw `mean_chars` floor that also blocked short verse.
+        multi_gap_lines * 2 <= eff_lines
     }
 
     /// True if the spans cluster into lines whose leftmost X positions
@@ -10013,6 +10211,53 @@ impl PdfDocument {
     /// ```
     pub fn extract_page_text(&self, page_index: usize) -> Result<crate::layout::PageText> {
         self.extract_page_text_with_options(page_index, ReadingOrder::default())
+    }
+
+    /// Extract a page as typed [`StructuredPage`](crate::structured::StructuredPage)
+    /// regions (issue #536).
+    ///
+    /// Returns the page's text grouped into
+    /// [`StructuredRegion`](crate::structured::StructuredRegion)s — body blocks,
+    /// headings, header/footer/page-number chrome, and marginal labels — in
+    /// reading order, with a best-effort `column_index` for two-column bodies.
+    ///
+    /// Roles are derived from signals already attached to each span: `/Artifact`
+    /// marked content (ISO 32000-1:2008 §14.8.2.2), structure-tree heading levels
+    /// (§14.7.2), and span geometry (§14.8.2.3.1). A tagged PDF with a
+    /// trustworthy `/StructTreeRoot` (see
+    /// [`prefers_structure_reading_order`](Self::prefers_structure_reading_order))
+    /// therefore yields tree-driven roles; untagged PDFs use the geometric /
+    /// font-size fallbacks. This is an additive aggregation layer — it does not
+    /// change any existing extraction output.
+    ///
+    /// # Arguments
+    ///
+    /// * `page_index` - Zero-based page index
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use pdf_oxide::document::PdfDocument;
+    /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut doc = PdfDocument::open("two_column.pdf")?;
+    /// let page = doc.extract_structured(0)?;
+    /// for region in &page.regions {
+    ///     println!("{:?} col={:?}: {}", region.kind, region.column_index, region.text);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn extract_structured(
+        &self,
+        page_index: usize,
+    ) -> Result<crate::structured::StructuredPage> {
+        let page_text = self.extract_page_text(page_index)?;
+        Ok(crate::structured::build_structured_page(
+            page_index,
+            page_text.page_width,
+            page_text.page_height,
+            page_text.spans,
+        ))
     }
 
     /// Extract complete page text data with a specific reading order.
@@ -13206,17 +13451,11 @@ impl PdfDocument {
         let pipeline_config = TextPipelineConfig::from_conversion_options(options);
 
         let (mcid_order, mcid_to_role, mcid_to_block_id) = {
-            let cached_tree = {
-                let cached = self.structure_tree_cache.lock_or_recover().clone();
-                match cached {
-                    Some(tree) => tree,
-                    None => {
-                        let tree = self.structure_tree().ok().flatten().map(Arc::new);
-                        *self.structure_tree_cache.lock_or_recover() = Some(tree.clone());
-                        tree
-                    },
-                }
-            };
+            // Use structure-tree reading order only when trustworthy (§14.8.2.3.1):
+            // honours /MarkInfo /Suspects so markdown stays consistent with
+            // extract_text / to_plain_text. (The /Table-element table path in
+            // extract_page_tables intentionally keeps its own gate.)
+            let cached_tree = self.struct_tree_trustworthy();
 
             if let Some(ref struct_tree) = cached_tree {
                 // Build per-page traversal cache once, then O(1) lookup per page
@@ -13645,8 +13884,17 @@ impl PdfDocument {
         // Step 4: Create pipeline with config
         let pipeline = TextPipeline::with_config(pipeline_config.clone());
 
-        // Step 5: Build reading order context
-        let context = ReadingOrderContext::new().with_page(page_index as u32);
+        // Step 5: Build reading order context. For a trustworthy tagged PDF use
+        // the canonical builder so the StructureTreeStrategy assigns MCID-driven
+        // reading order (§14.8.2.3.1). The HTML converter sorts by
+        // `reading_order` (and only uses Y for line-break gaps), so it honours
+        // the structure order. Untagged / suspect PDFs keep the exact bare
+        // geometric context, so their output is byte-for-byte unchanged.
+        let context = if self.prefers_structure_reading_order() {
+            crate::pipeline::page_order::build_context(self, page_index)
+        } else {
+            ReadingOrderContext::new().with_page(page_index as u32)
+        };
 
         // Step 6: Process through pipeline (applies reading order strategy)
         let ordered_spans = pipeline.process(spans, context)?;
@@ -13774,6 +14022,17 @@ impl PdfDocument {
         page_index: usize,
         options: &crate::converters::ConversionOptions,
     ) -> Result<String> {
+        // #608: for a trustworthy tagged PDF, read in logical structure order
+        // (§14.8.2.3.1) by assembling directly from the structure tree — the
+        // same path `extract_text` uses. The geometric plain-text converter
+        // below regroups spans by Y and would otherwise override the structure
+        // order. Untagged / suspect PDFs fall through to the exact converter
+        // path below, so their output is byte-for-byte unchanged.
+        if self.prefers_structure_reading_order() {
+            let base_spans = self.extract_spans(page_index)?;
+            return self.assemble_text_from_spans(page_index, base_spans, options);
+        }
+
         // Step 1: Extract raw spans (unchanged - this is the foundation)
         let mut spans = self.extract_spans(page_index)?;
 
@@ -13797,7 +14056,17 @@ impl PdfDocument {
         // Step 4: Create pipeline with config
         let pipeline = TextPipeline::with_config(pipeline_config.clone());
 
-        // Step 5: Build reading order context
+        // Step 5: Build reading order context.
+        //
+        // NOTE (#608): for a trustworthy tagged PDF the structure-tree reading
+        // order is honoured by `extract_text` and `to_markdown` (which assemble
+        // directly from MCID order). `to_plain_text` / `to_html` run spans
+        // through the geometric line/column grouping converter, which regroups
+        // by Y position and therefore overrides any per-span `reading_order` the
+        // StructureTreeStrategy would assign. Feeding MCID order here is thus a
+        // no-op for these two converters, so we keep the geometric context — and
+        // its byte-for-byte output — unchanged. Routing structured logical order
+        // through the plain-text/HTML converters is a tracked follow-up.
         let context = ReadingOrderContext::new().with_page(page_index as u32);
 
         // Step 6: Process through pipeline (applies reading order strategy)
@@ -14344,6 +14613,57 @@ impl PdfDocument {
         self.extract_images_filtered(page_index, &ImageExtractFilter::default())
     }
 
+    /// Build the resource-name → colour-space-object map from a resolved
+    /// `/Resources` dictionary's `/ColorSpace` subdictionary (§8.6.3 / §7.8.3),
+    /// resolving one indirect-ref hop per entry so the stored value is a colour
+    /// space name or array. Empty when there is no `/ColorSpace` subdictionary;
+    /// the standard device names parse directly and need no entry. Consumed by
+    /// the image-handle builders so `decode()` / the handle's `color_space` can
+    /// resolve names like `/CS0` (§8.6.6, §8.9.7).
+    fn build_color_space_map(
+        &self,
+        resources: Option<&Object>,
+    ) -> std::collections::HashMap<String, Object> {
+        let mut map = std::collections::HashMap::new();
+        let Some(res) = resources else {
+            return map;
+        };
+        let res = if let Some(r) = res.as_reference() {
+            match self.load_object(r) {
+                Ok(o) => o,
+                Err(_) => return map,
+            }
+        } else {
+            res.clone()
+        };
+        let Some(res_dict) = res.as_dict() else {
+            return map;
+        };
+        let Some(cs_entry) = res_dict.get("ColorSpace") else {
+            return map;
+        };
+        let cs_obj = if let Some(r) = cs_entry.as_reference() {
+            match self.load_object(r) {
+                Ok(o) => o,
+                Err(_) => return map,
+            }
+        } else {
+            cs_entry.clone()
+        };
+        let Some(cs_dict) = cs_obj.as_dict() else {
+            return map;
+        };
+        for (name, value) in cs_dict.iter() {
+            let resolved = if let Some(r) = value.as_reference() {
+                self.load_object(r).unwrap_or_else(|_| value.clone())
+            } else {
+                value.clone()
+            };
+            map.insert(name.clone(), resolved);
+        }
+        map
+    }
+
     /// Enumerate images on a page without decompressing any stream (Phase 1).
     ///
     /// Walks the page content stream once and reads image metadata (dimensions,
@@ -14408,6 +14728,9 @@ impl PdfDocument {
             Ok(ops) => ops,
             Err(_) => return Ok(Vec::new()),
         };
+
+        // Resource-name colour-space map for this page scope (§8.6.6 / §8.9.7).
+        let cs_map = self.build_color_space_map(resources.as_ref());
 
         // Pre-resolve the XObject dictionary once
         let xobject_dict = if let Some(ref res) = resources {
@@ -14476,7 +14799,7 @@ impl PdfDocument {
                         .copied()
                         .unwrap_or_else(crate::content::Matrix::identity);
                     if let Some(handle) =
-                        image_handle_from_inline(self, &dict, data, ctm, paint_order)
+                        image_handle_from_inline(self, &dict, data, ctm, paint_order, &cs_map)
                     {
                         handles.push(handle);
                         paint_order += 1;
@@ -14530,9 +14853,15 @@ impl PdfDocument {
         match subtype {
             "Image" => {
                 if let Some(ref_obj) = xobject_ref_opt {
-                    if let Some(h) =
-                        image_handle_from_xobject(self, ref_obj, xobj_dict, ctm, *paint_order)
-                    {
+                    let cs_map = self.build_color_space_map(resources);
+                    if let Some(h) = image_handle_from_xobject(
+                        self,
+                        ref_obj,
+                        xobj_dict,
+                        ctm,
+                        *paint_order,
+                        &cs_map,
+                    ) {
                         *paint_order += 1;
                         Ok(vec![h])
                     } else {
@@ -14727,9 +15056,15 @@ impl PdfDocument {
                         .last()
                         .copied()
                         .unwrap_or_else(crate::content::Matrix::identity);
-                    if let Some(h) =
-                        image_handle_from_inline(self, &dict, data, current_ctm, *paint_order)
-                    {
+                    let cs_map = self.build_color_space_map(Some(&form_resources));
+                    if let Some(h) = image_handle_from_inline(
+                        self,
+                        &dict,
+                        data,
+                        current_ctm,
+                        *paint_order,
+                        &cs_map,
+                    ) {
                         handles.push(h);
                         *paint_order += 1;
                     }
@@ -16211,6 +16546,43 @@ fn find_substring(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 mod tests {
     use super::*;
     use std::io::Cursor;
+
+    #[test]
+    fn test_rotate_span_bbox_identity_and_180() {
+        let r = crate::geometry::Rect::new(10.0, 20.0, 30.0, 5.0);
+        let (w, h) = (200.0, 100.0);
+
+        // rot == 0 is the identity (byte-identical, unrotated pages untouched).
+        let id = PdfDocument::rotate_span_bbox(r, 0, w, h);
+        assert!((id.x - r.x).abs() < 1e-4 && (id.y - r.y).abs() < 1e-4);
+        assert!((id.width - r.width).abs() < 1e-4 && (id.height - r.height).abs() < 1e-4);
+
+        // rot == 180 matches the legacy mirror: x' = w-(x+width), y' = h-(y+height).
+        let m = PdfDocument::rotate_span_bbox(r, 180, w, h);
+        assert!((m.x - (w - (r.x + r.width))).abs() < 1e-4, "180 x: {}", m.x);
+        assert!((m.y - (h - (r.y + r.height))).abs() < 1e-4, "180 y: {}", m.y);
+        assert!((m.width - r.width).abs() < 1e-4 && (m.height - r.height).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_rotate_span_bbox_90_270_roundtrip_and_swap() {
+        let r = crate::geometry::Rect::new(10.0, 20.0, 30.0, 5.0);
+        // 90° / 270° swap width and height of the AABB.
+        let r90 = PdfDocument::rotate_span_bbox(r, 90, 200.0, 100.0);
+        assert!((r90.width - r.height).abs() < 1e-4, "w/h swap: {}", r90.width);
+        assert!((r90.height - r.width).abs() < 1e-4, "w/h swap: {}", r90.height);
+
+        // Applying 90° four times around a square page returns to the start.
+        let s = crate::geometry::Rect::new(12.0, 34.0, 6.0, 8.0);
+        let p = 100.0;
+        let a = PdfDocument::rotate_span_bbox(s, 90, p, p);
+        let b = PdfDocument::rotate_span_bbox(a, 90, p, p);
+        let c = PdfDocument::rotate_span_bbox(b, 90, p, p);
+        let d = PdfDocument::rotate_span_bbox(c, 90, p, p);
+        assert!((d.x - s.x).abs() < 1e-3, "roundtrip x: {} vs {}", d.x, s.x);
+        assert!((d.y - s.y).abs() < 1e-3, "roundtrip y: {} vs {}", d.y, s.y);
+        assert!((d.width - s.width).abs() < 1e-3 && (d.height - s.height).abs() < 1e-3);
+    }
 
     #[test]
     fn test_parse_valid_header_1_7() {
@@ -20450,7 +20822,69 @@ mod tests {
         assert!(
             !PdfDocument::is_multi_column_page(&spans),
             "short-cell numeric table must NOT be routed as multi-column \
-             (prose guard rejects mean_chars <= 20)"
+             (grid-row discriminator rejects ≥2-gap rows)"
+        );
+    }
+
+    /// #536 Part 1a: a SHORT-line two-column verse body (Bible / lexicon) — one
+    /// short fragment per column, one central gutter per line — used to be
+    /// rejected by the raw `mean_chars <= 20` floor. It must now be admitted via
+    /// the corridor's short-line path (single gap/line, balanced, central).
+    #[test]
+    fn test_corridor_accepts_short_verse_two_column() {
+        let mut spans = Vec::new();
+        for i in 0..20 {
+            let y = 700.0 - i as f32 * 14.0;
+            spans.push(corridor_span("Bereshit", 50.0, y, 45.0)); // 8 chars, →95
+            spans.push(corridor_span("barahem", 300.0, y, 40.0)); // 7 chars, →340
+        }
+        // Call the corridor directly (bypass the upstream bimodal/histogram
+        // gates) with a no-op degenerate-CTM filter.
+        assert!(
+            PdfDocument::has_persistent_gutter_corridor(&spans, 300.0, 10_000.0),
+            "short-verse two-column body (1 gutter/line, balanced) must be admitted"
+        );
+    }
+
+    /// #536 Part 1a guard: a lopsided narrow-label + wide-data table must stay
+    /// rejected even though it has one gap per line — its gutter sits off-centre
+    /// (failing the centre gate) and its columns are lopsided (failing the
+    /// char-mass balance), either of which is sufficient.
+    #[test]
+    fn test_corridor_rejects_label_column_table() {
+        let mut spans = Vec::new();
+        for i in 0..20 {
+            let y = 700.0 - i as f32 * 14.0;
+            spans.push(corridor_span("1", 50.0, y, 8.0)); // tiny label →58
+            spans.push(corridor_span("Descriptionlongdata", 300.0, y, 200.0)); // wide →500
+        }
+        assert!(
+            !PdfDocument::has_persistent_gutter_corridor(&spans, 300.0, 10_000.0),
+            "lopsided narrow-label + wide-data table must be rejected (char balance)"
+        );
+    }
+
+    /// #536 Part 1b: a two-column prose body interleaved with a MINORITY of
+    /// full-width display-math / heading rows must still be detected — the
+    /// full-width rows are excluded from the coverage denominator. Without the
+    /// exclusion the coverage floor (best_size*2 >= lines) fails.
+    #[test]
+    fn test_corridor_survives_minority_display_math() {
+        let mut spans = Vec::new();
+        // 16 two-column prose lines.
+        for i in 0..16 {
+            let y = 700.0 - i as f32 * 14.0;
+            spans.push(corridor_span("Lorem ipsum dolor", 50.0, y, 120.0)); // →170
+            spans.push(corridor_span("sit amet consectetur", 300.0, y, 150.0)); // →450
+        }
+        // 24 full-width display rows (span the page, no internal gutter).
+        for i in 0..24 {
+            let y = 400.0 - i as f32 * 14.0;
+            spans.push(corridor_span("Section heading spanning width", 50.0, y, 400.0));
+        }
+        assert!(
+            PdfDocument::has_persistent_gutter_corridor(&spans, 300.0, 10_000.0),
+            "two-column prose with a minority of full-width display rows must hold"
         );
     }
 
