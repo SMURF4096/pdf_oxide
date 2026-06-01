@@ -970,6 +970,153 @@ pub fn parse_cff_gid_mapping(font_data: &[u8]) -> Option<HashMap<u8, u16>> {
     parse_encoding_table(cff_data, encoding_offset as usize)
 }
 
+/// Build the byte → GID map for a simple CFF font using the PDF font
+/// dictionary's `/Encoding` as the byte → glyph-name source and the CFF
+/// Charset as the glyph-name → GID resolver, per ISO 32000-1 §9.6.6.
+///
+/// This is the correct resolution model for simple Type 1 / TrueType / CFF
+/// fonts. The CFF font program's *own* Encoding table is only authoritative
+/// when there is no PDF-level encoding to consult (an Identity case).
+///
+/// In practice the bug this fixes is prepress-tool-authored subset CFFs
+/// whose internal Encoding lists only `0x20 → space` and `0x41 → A` while
+/// the Charset enumerates the full subset (e.g. `A B C D E F G I K M N O R
+/// S U V X g`). The previous resolution consulted the CFF Encoding directly
+/// and silently dropped every non-A content byte to `.notdef`, producing
+/// bare-A glyphs on every separation plate.
+///
+/// Returns `None` when the result is empty so callers can fall through to
+/// the legacy [`parse_cff_gid_mapping`] for fonts where the PDF-level
+/// encoding genuinely cannot resolve any byte (e.g. `Encoding::Identity`
+/// on a CIDFont — though those normally short-circuit before reaching
+/// this path).
+pub fn parse_cff_gid_mapping_with_pdf_encoding(
+    font_data: &[u8],
+    pdf_encoding: &crate::fonts::font_dict::Encoding,
+    differences: &HashMap<u8, String>,
+) -> Option<HashMap<u8, u16>> {
+    use crate::fonts::font_dict::Encoding;
+
+    if matches!(pdf_encoding, Encoding::Identity) {
+        // Caller has no byte→name mapping to supply — fall through to the
+        // CFF Encoding-driven legacy path.
+        return parse_cff_gid_mapping(font_data);
+    }
+
+    if font_data.len() < 4 {
+        return None;
+    }
+    let cff_data = if font_data[0] != 1 {
+        extract_cff_from_opentype(font_data)?
+    } else {
+        font_data
+    };
+    if cff_data.len() < 4 || cff_data[0] != 1 {
+        return None;
+    }
+    let hdr_size = cff_data[2] as usize;
+
+    let (_, after_name) = parse_index(cff_data, hdr_size)?;
+    let (top_dicts, after_top_dict) = parse_index(cff_data, after_name)?;
+    if top_dicts.is_empty() {
+        return None;
+    }
+    let (string_index, _after_string) = parse_index(cff_data, after_top_dict)?;
+    let (_encoding_offset, charset_offset) = parse_top_dict(top_dicts[0]);
+
+    // §9.6.6 path: build name→GID from the Charset (which always enumerates
+    // every subset glyph), then key bytes through the PDF /Encoding +
+    // /Differences.
+    //
+    // Parse up to 256 charset entries — enough to cover the largest custom
+    // encoding's reachable codepoint set. `parse_charset` stops early when
+    // it runs out of charset data, so over-reading is bounded by the
+    // physical end of the CFF.
+    let charset_sids = if charset_offset > 2 {
+        parse_charset(cff_data, charset_offset as usize, 256)?
+    } else {
+        // charset_offset 0 or 1 = ISOAdobe / Expert / ExpertSubset
+        // predefined charsets. The CFF Standard Encoding + charset path in
+        // `parse_cff_gid_mapping` handles these; defer.
+        return parse_cff_gid_mapping(font_data);
+    };
+
+    let resolved = resolve_bytes_via_pdf_encoding(
+        &charset_sids,
+        &string_index,
+        pdf_encoding,
+        differences,
+    );
+
+    if resolved.is_empty() {
+        // PDF /Encoding yielded zero hits against the Charset. Fall back to
+        // the CFF Encoding-driven path so we never make a working font worse.
+        parse_cff_gid_mapping(font_data)
+    } else {
+        Some(resolved)
+    }
+}
+
+/// Pure-input helper: given a parsed CFF Charset + String INDEX, build the
+/// byte → GID map driven by the PDF font dictionary's `/Encoding` and
+/// `/Differences`. Split out of [`parse_cff_gid_mapping_with_pdf_encoding`]
+/// so the name-resolution logic can be tested without constructing a
+/// custom CFF binary.
+fn resolve_bytes_via_pdf_encoding(
+    charset_sids: &[u16],
+    string_index: &[&[u8]],
+    pdf_encoding: &crate::fonts::font_dict::Encoding,
+    differences: &HashMap<u8, String>,
+) -> HashMap<u8, u16> {
+    use crate::fonts::font_dict::{Encoding, FontInfo};
+
+    // Glyph name → GID (lowest GID wins on duplicate names — first occurrence
+    // in the Charset reflects the subsetter's primary mapping).
+    let mut name_to_gid: HashMap<String, u16> = HashMap::new();
+    for (gid, &sid) in charset_sids.iter().enumerate() {
+        if gid == 0 {
+            continue; // .notdef is implicit and not addressable by name
+        }
+        if let Some(name) = resolve_glyph_name(sid, string_index) {
+            name_to_gid.entry(name).or_insert(gid as u16);
+        }
+    }
+
+    // Base byte → name resolver. WinAnsi / MacRoman / StandardEncoding all
+    // share the existing `gid_to_standard_glyph_name` table (it returns the
+    // Adobe Glyph List name for each byte under WinAnsi semantics; the
+    // ASCII overlap with MacRoman and StandardEncoding is total, and the
+    // small non-ASCII divergences haven't surfaced as a real-world issue —
+    // see Out-of-Scope note in the originating plan).
+    let resolve_base_byte = |byte: u8| -> Option<&'static str> {
+        FontInfo::gid_to_standard_glyph_name(byte as u16)
+    };
+
+    let mut out: HashMap<u8, u16> = HashMap::new();
+    for byte_code in 0u16..256 {
+        let byte = byte_code as u8;
+
+        // §9.6.6: /Differences entries override the base predefined encoding.
+        if let Some(diff_name) = differences.get(&byte) {
+            if let Some(&gid) = name_to_gid.get(diff_name) {
+                out.insert(byte, gid);
+                continue;
+            }
+        }
+
+        let base_name = match pdf_encoding {
+            Encoding::Standard(_) | Encoding::Custom(_) => resolve_base_byte(byte),
+            Encoding::Identity => None, // handled by the outer guard already
+        };
+        if let Some(name) = base_name {
+            if let Some(&gid) = name_to_gid.get(name) {
+                out.insert(byte, gid);
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1816,5 +1963,109 @@ mod tests {
         assert!(parse_cff_gid_mapping(&[]).is_none());
         assert!(parse_cff_gid_mapping(&[0, 1, 2]).is_none());
         assert!(parse_cff_gid_mapping(&[2, 0, 4, 2]).is_none()); // wrong version
+    }
+
+    // ==========================================
+    // resolve_bytes_via_pdf_encoding tests
+    //
+    // These exercise the name-resolution layer in isolation — the layer
+    // that was missing in `parse_cff_gid_mapping` and is the substantive
+    // fix here. The CFF binary parser is reused unchanged, so its tests
+    // remain authoritative for the parsing path.
+    // ==========================================
+
+    use crate::fonts::font_dict::Encoding;
+
+    /// Pin a real-world sparse-CFF subset pattern: charset enumerates
+    /// space, A, B, C, O, V, N (SIDs 1, 34, 35, 36, 48, 55, 47) on GIDs
+    /// 1..=7. PDF /Encoding is WinAnsiEncoding. The resolver must produce
+    /// GIDs for every charset entry — not just for byte 0x41 ("A") as the
+    /// sparse CFF Encoding table would have implied.
+    #[test]
+    fn resolve_via_pdf_encoding_recovers_all_charset_glyphs() {
+        // GID order: 0 = .notdef (implicit), 1 = space, 2 = A, 3 = B,
+        // 4 = C, 5 = O, 6 = V, 7 = N.
+        let charset = [0u16, 1, 34, 35, 36, 48, 55, 47];
+        let string_index: Vec<&[u8]> = Vec::new();
+        let pdf_enc = Encoding::Standard("WinAnsiEncoding".to_string());
+        let differences: HashMap<u8, String> = HashMap::new();
+
+        let map = resolve_bytes_via_pdf_encoding(
+            &charset,
+            &string_index,
+            &pdf_enc,
+            &differences,
+        );
+
+        assert_eq!(map.get(&0x20), Some(&1), "0x20 (space) → GID 1");
+        assert_eq!(map.get(&0x41), Some(&2), "0x41 (A) → GID 2");
+        assert_eq!(map.get(&0x42), Some(&3), "0x42 (B) → GID 3");
+        assert_eq!(map.get(&0x43), Some(&4), "0x43 (C) → GID 4");
+        assert_eq!(map.get(&0x4f), Some(&5), "0x4f (O) → GID 5");
+        assert_eq!(map.get(&0x56), Some(&6), "0x56 (V) → GID 6");
+        assert_eq!(map.get(&0x4e), Some(&7), "0x4e (N) → GID 7");
+
+        // Bytes whose glyph name is not in the Charset stay out.
+        assert!(map.get(&0x7e).is_none(), "0x7e (asciitilde) not in charset");
+    }
+
+    /// /Differences entries override the base predefined encoding.
+    #[test]
+    fn resolve_via_pdf_encoding_honors_differences_array() {
+        // Charset includes "bullet" (SID 116) at GID 1.
+        let charset = [0u16, 116];
+        let string_index: Vec<&[u8]> = Vec::new();
+        let pdf_enc = Encoding::Standard("WinAnsiEncoding".to_string());
+        let mut differences = HashMap::new();
+        // Override byte 0x95 to glyph name "bullet" — WinAnsi's native
+        // 0x95 is also "bullet", but we want to pin that the /Differences
+        // path is exercised (and would beat a divergent base encoding).
+        differences.insert(0x95u8, "bullet".to_string());
+
+        let map = resolve_bytes_via_pdf_encoding(
+            &charset,
+            &string_index,
+            &pdf_enc,
+            &differences,
+        );
+        assert_eq!(map.get(&0x95), Some(&1));
+    }
+
+    /// Identity encoding short-circuits via the outer function; the
+    /// helper itself is a no-op for Identity.
+    #[test]
+    fn resolve_via_pdf_encoding_skips_identity() {
+        let charset = [0u16, 34];
+        let string_index: Vec<&[u8]> = Vec::new();
+        let pdf_enc = Encoding::Identity;
+        let differences: HashMap<u8, String> = HashMap::new();
+        let map = resolve_bytes_via_pdf_encoding(
+            &charset,
+            &string_index,
+            &pdf_enc,
+            &differences,
+        );
+        assert!(map.is_empty(), "Identity → no base byte→name resolution");
+    }
+
+    /// Custom-string SIDs (>=391) resolved through the String INDEX
+    /// land in the name→GID map.
+    #[test]
+    fn resolve_via_pdf_encoding_resolves_custom_string_sids() {
+        // GID 1 is a glyph named "customGlyph" via custom SID 391.
+        let charset = [0u16, 391];
+        let custom: &[u8] = b"customGlyph";
+        let string_index: Vec<&[u8]> = vec![custom];
+        let pdf_enc = Encoding::Standard("WinAnsiEncoding".to_string());
+        let mut differences = HashMap::new();
+        differences.insert(0x21u8, "customGlyph".to_string());
+
+        let map = resolve_bytes_via_pdf_encoding(
+            &charset,
+            &string_index,
+            &pdf_enc,
+            &differences,
+        );
+        assert_eq!(map.get(&0x21), Some(&1));
     }
 }
