@@ -610,6 +610,76 @@ fn parse_top_dict(dict_data: &[u8]) -> (i32, i32) {
     (encoding_offset, charset_offset)
 }
 
+/// Parse the CFF Top DICT and surface (CharStrings, Encoding, charset)
+/// offsets. CharStrings (op 17) points at the CharStrings INDEX whose count
+/// field is the real `nGlyphs` for the font — needed to parse the full
+/// Charset for subsets enumerating >256 glyphs.
+///
+/// Returns `(charstrings_offset, encoding_offset, charset_offset)`.
+fn parse_top_dict_with_charstrings(dict_data: &[u8]) -> (i32, i32, i32) {
+    let mut charstrings_offset: i32 = 0;
+    let mut encoding_offset: i32 = 0;
+    let mut charset_offset: i32 = 0;
+
+    let mut pos = 0;
+    let mut operand_stack: Vec<i32> = Vec::new();
+
+    while pos < dict_data.len() {
+        let b0 = dict_data[pos];
+        if b0 <= 21 {
+            let op = if b0 == 12 {
+                pos += 1;
+                if pos >= dict_data.len() {
+                    break;
+                }
+                (12u16 << 8) | dict_data[pos] as u16
+            } else {
+                b0 as u16
+            };
+
+            match op {
+                15 => {
+                    if let Some(&val) = operand_stack.last() {
+                        charset_offset = val;
+                    }
+                },
+                16 => {
+                    if let Some(&val) = operand_stack.last() {
+                        encoding_offset = val;
+                    }
+                },
+                17 => {
+                    if let Some(&val) = operand_stack.last() {
+                        charstrings_offset = val;
+                    }
+                },
+                _ => {},
+            }
+
+            operand_stack.clear();
+            pos += 1;
+        } else if let Some((val, consumed)) = parse_dict_operand(dict_data, pos) {
+            operand_stack.push(val);
+            pos += consumed;
+        } else {
+            pos += 1;
+        }
+    }
+
+    (charstrings_offset, encoding_offset, charset_offset)
+}
+
+/// Read the 2-byte big-endian `count` field at the start of a CFF INDEX
+/// header (CFF spec §5). For the CharStrings INDEX, this count is `nGlyphs`.
+///
+/// Returns `None` if the header is truncated.
+fn read_index_count(data: &[u8], offset: usize) -> Option<u32> {
+    if offset + 2 > data.len() {
+        return None;
+    }
+    Some(u16::from_be_bytes([data[offset], data[offset + 1]]) as u32)
+}
+
 /// Parse the CFF charset table.
 /// Returns GID → SID mapping (GID 0 is always .notdef).
 fn parse_charset(data: &[u8], offset: usize, num_glyphs: usize) -> Option<Vec<u16>> {
@@ -1049,18 +1119,28 @@ pub fn parse_cff_gid_mapping_with_pdf_encoding(
         return None;
     }
     let (string_index, _after_string) = parse_index(cff_data, after_top_dict)?;
-    let (_encoding_offset, charset_offset) = parse_top_dict(top_dicts[0]);
+    let (charstrings_offset, _encoding_offset, charset_offset) =
+        parse_top_dict_with_charstrings(top_dicts[0]);
 
     // §9.6.6 path: build name→GID from the Charset (which always enumerates
     // every subset glyph), then key bytes through the PDF /Encoding +
     // /Differences.
     //
-    // Parse up to 256 charset entries — enough to cover the largest custom
-    // encoding's reachable codepoint set. `parse_charset` stops early when
-    // it runs out of charset data, so over-reading is bounded by the
-    // physical end of the CFF.
+    // nGlyphs comes from the CharStrings INDEX header (CFF spec §9). Simple
+    // fonts only address ≤256 codes via /Encoding, but a subset's GID space
+    // can exceed 256 — a /Differences entry pointing at a glyph whose CFF
+    // Charset GID is >256 must still resolve. Falls back to 256 if the
+    // CharStrings offset is missing or the INDEX header is truncated.
+    let num_glyphs = if charstrings_offset > 0 {
+        read_index_count(cff_data, charstrings_offset as usize)
+            .map(|n| n as usize)
+            .unwrap_or(256)
+    } else {
+        256
+    };
+
     let charset_sids = if charset_offset > 2 {
-        parse_charset(cff_data, charset_offset as usize, 256)?
+        parse_charset(cff_data, charset_offset as usize, num_glyphs)?
     } else {
         // charset_offset 0 or 1 = ISOAdobe / Expert / ExpertSubset
         // predefined charsets. The CFF Standard Encoding + charset path in
@@ -1105,14 +1185,31 @@ fn resolve_bytes_via_pdf_encoding(
         }
     }
 
-    // Base byte → name resolver. WinAnsi / MacRoman / StandardEncoding all
-    // share the existing `gid_to_standard_glyph_name` table (it returns the
-    // Adobe Glyph List name for each byte under WinAnsi semantics; the
-    // ASCII overlap with MacRoman and StandardEncoding is total, and the
-    // small non-ASCII divergences haven't surfaced as a real-world issue —
-    // see Out-of-Scope note in the originating plan).
-    let resolve_base_byte =
-        |byte: u8| -> Option<&'static str> { FontInfo::gid_to_standard_glyph_name(byte as u16) };
+    // Base byte → glyph-name resolver, selected per ISO 32000-1 §9.6.6.1 +
+    // Annex D. WinAnsi, MacRoman, and StandardEncoding share ASCII names
+    // (0x20-0x7E) but diverge in 0x80-0xFF; the wrong table mis-resolves
+    // high bytes for fonts whose /BaseEncoding is non-WinAnsi.
+    //
+    // `Encoding::Custom(_)` carries the byte→Unicode result of /BaseEncoding
+    // + /Differences merge but loses the named base, so we can't tell whether
+    // the unmodified bytes came from MacRoman or WinAnsi. The high-byte path
+    // for Custom encodings defaults to WinAnsi for backward compatibility;
+    // threading /BaseEncoding through `Encoding::Custom` is a separate
+    // follow-up.
+    let resolve_base_byte = |byte: u8| -> Option<&'static str> {
+        match pdf_encoding {
+            Encoding::Standard(name) => match name.as_str() {
+                "MacRomanEncoding" => mac_roman_byte_to_name(byte),
+                "StandardEncoding" => standard_encoding_byte_to_name(byte),
+                // WinAnsiEncoding, MacExpertEncoding, PDFDocEncoding, and any
+                // unrecognised string fall through to WinAnsi. Mac Expert is
+                // a non-text variant; PDF Doc Encoding overlaps WinAnsi.
+                _ => FontInfo::gid_to_standard_glyph_name(byte as u16),
+            },
+            Encoding::Custom(_) => FontInfo::gid_to_standard_glyph_name(byte as u16),
+            Encoding::Identity => None, // handled by the outer guard already
+        }
+    };
 
     let mut out: HashMap<u8, u16> = HashMap::new();
     for byte_code in 0u16..256 {
@@ -1126,17 +1223,228 @@ fn resolve_bytes_via_pdf_encoding(
             }
         }
 
-        let base_name = match pdf_encoding {
-            Encoding::Standard(_) | Encoding::Custom(_) => resolve_base_byte(byte),
-            Encoding::Identity => None, // handled by the outer guard already
-        };
-        if let Some(name) = base_name {
+        if let Some(name) = resolve_base_byte(byte) {
             if let Some(&gid) = name_to_gid.get(name) {
                 out.insert(byte, gid);
             }
         }
     }
     out
+}
+
+/// Annex D Table D.2 (MacRomanEncoding) byte → glyph name.
+///
+/// ASCII range 0x20-0x7E shares glyph names with WinAnsi; 0x80-0xFF is
+/// the Mac OS Roman repertoire (which is *not* ISO-8859-1). The Apple-logo
+/// glyph at 0xF0 (PUA U+F8FF) has no portable glyph name and returns `None`.
+fn mac_roman_byte_to_name(byte: u8) -> Option<&'static str> {
+    use crate::fonts::font_dict::FontInfo;
+    if (0x20..=0x7E).contains(&byte) {
+        return FontInfo::gid_to_standard_glyph_name(byte as u16);
+    }
+    match byte {
+        0x80 => Some("Adieresis"),
+        0x81 => Some("Aring"),
+        0x82 => Some("Ccedilla"),
+        0x83 => Some("Eacute"),
+        0x84 => Some("Ntilde"),
+        0x85 => Some("Odieresis"),
+        0x86 => Some("Udieresis"),
+        0x87 => Some("aacute"),
+        0x88 => Some("agrave"),
+        0x89 => Some("acircumflex"),
+        0x8A => Some("adieresis"),
+        0x8B => Some("atilde"),
+        0x8C => Some("aring"),
+        0x8D => Some("ccedilla"),
+        0x8E => Some("eacute"),
+        0x8F => Some("egrave"),
+        0x90 => Some("ecircumflex"),
+        0x91 => Some("edieresis"),
+        0x92 => Some("iacute"),
+        0x93 => Some("igrave"),
+        0x94 => Some("icircumflex"),
+        0x95 => Some("idieresis"),
+        0x96 => Some("ntilde"),
+        0x97 => Some("oacute"),
+        0x98 => Some("ograve"),
+        0x99 => Some("ocircumflex"),
+        0x9A => Some("odieresis"),
+        0x9B => Some("otilde"),
+        0x9C => Some("uacute"),
+        0x9D => Some("ugrave"),
+        0x9E => Some("ucircumflex"),
+        0x9F => Some("udieresis"),
+        0xA0 => Some("dagger"),
+        0xA1 => Some("degree"),
+        0xA2 => Some("cent"),
+        0xA3 => Some("sterling"),
+        0xA4 => Some("section"),
+        0xA5 => Some("bullet"),
+        0xA6 => Some("paragraph"),
+        0xA7 => Some("germandbls"),
+        0xA8 => Some("registered"),
+        0xA9 => Some("copyright"),
+        0xAA => Some("trademark"),
+        0xAB => Some("acute"),
+        0xAC => Some("dieresis"),
+        0xAD => Some("notequal"),
+        0xAE => Some("AE"),
+        0xAF => Some("Oslash"),
+        0xB0 => Some("infinity"),
+        0xB1 => Some("plusminus"),
+        0xB2 => Some("lessequal"),
+        0xB3 => Some("greaterequal"),
+        0xB4 => Some("yen"),
+        0xB5 => Some("mu"),
+        0xB6 => Some("partialdiff"),
+        0xB7 => Some("summation"),
+        0xB8 => Some("product"),
+        0xB9 => Some("pi"),
+        0xBA => Some("integral"),
+        0xBB => Some("ordfeminine"),
+        0xBC => Some("ordmasculine"),
+        0xBD => Some("Omega"),
+        0xBE => Some("ae"),
+        0xBF => Some("oslash"),
+        0xC0 => Some("questiondown"),
+        0xC1 => Some("exclamdown"),
+        0xC2 => Some("logicalnot"),
+        0xC3 => Some("radical"),
+        0xC4 => Some("florin"),
+        0xC5 => Some("approxequal"),
+        0xC6 => Some("Delta"),
+        0xC7 => Some("guillemotleft"),
+        0xC8 => Some("guillemotright"),
+        0xC9 => Some("ellipsis"),
+        0xCA => Some("space"), // nonbreakingspace; the canonical glyph name is "space"
+        0xCB => Some("Agrave"),
+        0xCC => Some("Atilde"),
+        0xCD => Some("Otilde"),
+        0xCE => Some("OE"),
+        0xCF => Some("oe"),
+        0xD0 => Some("endash"),
+        0xD1 => Some("emdash"),
+        0xD2 => Some("quotedblleft"),
+        0xD3 => Some("quotedblright"),
+        0xD4 => Some("quoteleft"),
+        0xD5 => Some("quoteright"),
+        0xD6 => Some("divide"),
+        0xD7 => Some("lozenge"),
+        0xD8 => Some("ydieresis"),
+        0xD9 => Some("Ydieresis"),
+        0xDA => Some("fraction"),
+        0xDB => Some("currency"),
+        0xDC => Some("guilsinglleft"),
+        0xDD => Some("guilsinglright"),
+        0xDE => Some("fi"),
+        0xDF => Some("fl"),
+        0xE0 => Some("daggerdbl"),
+        0xE1 => Some("periodcentered"),
+        0xE2 => Some("quotesinglbase"),
+        0xE3 => Some("quotedblbase"),
+        0xE4 => Some("perthousand"),
+        0xE5 => Some("Acircumflex"),
+        0xE6 => Some("Ecircumflex"),
+        0xE7 => Some("Aacute"),
+        0xE8 => Some("Edieresis"),
+        0xE9 => Some("Egrave"),
+        0xEA => Some("Iacute"),
+        0xEB => Some("Icircumflex"),
+        0xEC => Some("Idieresis"),
+        0xED => Some("Igrave"),
+        0xEE => Some("Oacute"),
+        0xEF => Some("Ocircumflex"),
+        0xF0 => None, // Apple-logo PUA glyph; no portable name
+        0xF1 => Some("Ograve"),
+        0xF2 => Some("Uacute"),
+        0xF3 => Some("Ucircumflex"),
+        0xF4 => Some("Ugrave"),
+        0xF5 => Some("dotlessi"),
+        0xF6 => Some("circumflex"),
+        0xF7 => Some("tilde"),
+        0xF8 => Some("macron"),
+        0xF9 => Some("breve"),
+        0xFA => Some("dotaccent"),
+        0xFB => Some("ring"),
+        0xFC => Some("cedilla"),
+        0xFD => Some("hungarumlaut"),
+        0xFE => Some("ogonek"),
+        0xFF => Some("caron"),
+        _ => None,
+    }
+}
+
+/// Annex D Table D.1 (StandardEncoding, PostScript) byte → glyph name.
+///
+/// ASCII range 0x20-0x7E shares glyph names with WinAnsi except a handful
+/// (0x27 quoteright, 0x60 quoteleft, etc.) — those overlap the existing
+/// WinAnsi table's choice of `quoteright` for 0x27. The high-byte range
+/// has its own PostScript repertoire (fraction at 0xA4, ligature `fi`/`fl`
+/// at 0xAE/0xAF, etc.) which differs sharply from WinAnsi.
+///
+/// Bytes left unassigned by StandardEncoding return `None`.
+fn standard_encoding_byte_to_name(byte: u8) -> Option<&'static str> {
+    use crate::fonts::font_dict::FontInfo;
+    if (0x20..=0x7E).contains(&byte) {
+        return FontInfo::gid_to_standard_glyph_name(byte as u16);
+    }
+    match byte {
+        0xA1 => Some("exclamdown"),
+        0xA2 => Some("cent"),
+        0xA3 => Some("sterling"),
+        0xA4 => Some("fraction"),
+        0xA5 => Some("yen"),
+        0xA6 => Some("florin"),
+        0xA7 => Some("section"),
+        0xA8 => Some("currency"),
+        0xA9 => Some("quotesingle"),
+        0xAA => Some("quotedblleft"),
+        0xAB => Some("guillemotleft"),
+        0xAC => Some("guilsinglleft"),
+        0xAD => Some("guilsinglright"),
+        0xAE => Some("fi"),
+        0xAF => Some("fl"),
+        0xB1 => Some("endash"),
+        0xB2 => Some("dagger"),
+        0xB3 => Some("daggerdbl"),
+        0xB4 => Some("periodcentered"),
+        0xB6 => Some("paragraph"),
+        0xB7 => Some("bullet"),
+        0xB8 => Some("quotesinglbase"),
+        0xB9 => Some("quotedblbase"),
+        0xBA => Some("quotedblright"),
+        0xBB => Some("guillemotright"),
+        0xBC => Some("ellipsis"),
+        0xBD => Some("perthousand"),
+        0xBF => Some("questiondown"),
+        0xC1 => Some("grave"),
+        0xC2 => Some("acute"),
+        0xC3 => Some("circumflex"),
+        0xC4 => Some("tilde"),
+        0xC5 => Some("macron"),
+        0xC6 => Some("breve"),
+        0xC7 => Some("dotaccent"),
+        0xC8 => Some("dieresis"),
+        0xCA => Some("ring"),
+        0xCB => Some("cedilla"),
+        0xCD => Some("hungarumlaut"),
+        0xCE => Some("ogonek"),
+        0xCF => Some("caron"),
+        0xE1 => Some("AE"),
+        0xE3 => Some("ordfeminine"),
+        0xE8 => Some("Lslash"),
+        0xE9 => Some("Oslash"),
+        0xEA => Some("OE"),
+        0xEB => Some("ordmasculine"),
+        0xF1 => Some("ae"),
+        0xF5 => Some("dotlessi"),
+        0xF8 => Some("lslash"),
+        0xF9 => Some("oslash"),
+        0xFA => Some("oe"),
+        0xFB => Some("germandbls"),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -2069,5 +2377,106 @@ mod tests {
 
         let map = resolve_bytes_via_pdf_encoding(&charset, &string_index, &pdf_enc, &differences);
         assert_eq!(map.get(&0x21), Some(&1));
+    }
+
+    // ==========================================
+    // Base-encoding selection (§9.6.6.1 / Annex D)
+    //
+    // /BaseEncoding picks which byte→glyph-name table resolves high bytes
+    // 0x80-0xFF. The three predefined bases diverge:
+    //   - WinAnsi 0x80   = "euro"      (Windows-1252)
+    //   - MacRoman 0x80  = "Adieresis" (Annex D Table D.2)
+    //   - Standard 0xA4  = "fraction"  (Annex D Table D.1; WinAnsi = "currency")
+    // Resolving the wrong table for a non-WinAnsi base would mis-route bytes.
+    // ==========================================
+
+    /// MacRomanEncoding: byte 0x80 must resolve via "Adieresis", not "euro".
+    #[test]
+    fn resolve_via_pdf_encoding_uses_mac_roman_table_for_mac_base() {
+        // GID 1 = Adieresis (SID 173, predefined)
+        // GID 2 = euro (custom SID 391 → string_index[0])
+        let charset: Vec<u16> = vec![0, 173, 391];
+        let string_index: Vec<&[u8]> = vec![b"euro"];
+        let differences: HashMap<u8, String> = HashMap::new();
+        let pdf_enc = Encoding::Standard("MacRomanEncoding".to_string());
+
+        let map = resolve_bytes_via_pdf_encoding(&charset, &string_index, &pdf_enc, &differences);
+        assert_eq!(map.get(&0x80), Some(&1), "MacRoman 0x80 → Adieresis (GID 1)");
+    }
+
+    /// StandardEncoding: byte 0xA4 must resolve via "fraction", not "currency".
+    #[test]
+    fn resolve_via_pdf_encoding_uses_standard_encoding_table_for_standard_base() {
+        // GID 1 = fraction (SID 99), GID 2 = currency (SID 103).
+        let charset: Vec<u16> = vec![0, 99, 103];
+        let string_index: Vec<&[u8]> = vec![];
+        let differences: HashMap<u8, String> = HashMap::new();
+        let pdf_enc = Encoding::Standard("StandardEncoding".to_string());
+
+        let map = resolve_bytes_via_pdf_encoding(&charset, &string_index, &pdf_enc, &differences);
+        assert_eq!(map.get(&0xA4), Some(&1), "StandardEncoding 0xA4 → fraction (GID 1)");
+    }
+
+    /// WinAnsiEncoding regression guard: byte 0x80 still resolves to "euro".
+    #[test]
+    fn resolve_via_pdf_encoding_uses_winansi_table_for_winansi_base() {
+        // Same fixture as the MacRoman test — only the declared base differs.
+        let charset: Vec<u16> = vec![0, 173, 391];
+        let string_index: Vec<&[u8]> = vec![b"euro"];
+        let differences: HashMap<u8, String> = HashMap::new();
+        let pdf_enc = Encoding::Standard("WinAnsiEncoding".to_string());
+
+        let map = resolve_bytes_via_pdf_encoding(&charset, &string_index, &pdf_enc, &differences);
+        assert_eq!(map.get(&0x80), Some(&2), "WinAnsi 0x80 → euro (GID 2)");
+    }
+
+    // ==========================================
+    // Charset capacity: full nGlyphs, not capped at 256
+    // ==========================================
+
+    /// `parse_charset` already handles arbitrary nGlyphs; the cap lives in the
+    /// caller (`parse_cff_gid_mapping_with_pdf_encoding`). This pins the
+    /// parser's tolerance for >256 entries so a regression there would
+    /// surface independently of the caller refactor.
+    #[test]
+    fn parse_charset_format0_handles_more_than_256_entries() {
+        // Format 0: 1-byte format + 2-byte SID per non-.notdef GID.
+        let mut data = vec![0x00u8];
+        for gid in 1u16..=299u16 {
+            data.extend_from_slice(&gid.to_be_bytes());
+        }
+        let sids = parse_charset(&data, 0, 300).expect("parse_charset returned None");
+        assert_eq!(sids.len(), 300, "300 entries (GID 0 + 299 enumerated)");
+        assert_eq!(sids[0], 0, "GID 0 is .notdef (SID 0)");
+        assert_eq!(sids[1], 1, "GID 1 → SID 1");
+        assert_eq!(sids[256], 256, "GID 256 → SID 256 (past the old 256 cap)");
+        assert_eq!(sids[299], 299, "GID 299 → SID 299 (last entry)");
+    }
+
+    /// CFF Top DICT must surface the CharStrings INDEX offset (op 17) so
+    /// callers can read the real nGlyphs from the INDEX header instead of
+    /// guessing 256.
+    #[test]
+    fn parse_top_dict_surfaces_charstrings_offset() {
+        // Minimal top DICT: one operand + op 17 (CharStrings).
+        // Operand 1234 encoded as a 3-byte int per CFF DICT encoding:
+        //   b0 = 29 (4-byte int marker is 29? Actually 28 = 2-byte, 29 = 4-byte)
+        // Use the 2-byte form: b0=28, then 2 BE bytes.
+        let mut dict = vec![28u8];
+        dict.extend_from_slice(&1234i16.to_be_bytes());
+        dict.push(17u8); // op 17 = CharStrings
+
+        let (charstrings_offset, _enc, _charset) = parse_top_dict_with_charstrings(&dict);
+        assert_eq!(charstrings_offset, 1234, "Top DICT op 17 → CharStrings offset");
+    }
+
+    /// Read the count field of a CFF INDEX header. nGlyphs is the count of
+    /// the CharStrings INDEX.
+    #[test]
+    fn read_index_count_returns_header_count() {
+        // INDEX header: 2-byte count, 1-byte offSize, then offsets+data.
+        // For this helper we only need the first 2 bytes.
+        let data = [0x01u8, 0x2C]; // count = 300 (0x012C)
+        assert_eq!(read_index_count(&data, 0), Some(300));
     }
 }
