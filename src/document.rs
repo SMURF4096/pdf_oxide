@@ -632,6 +632,80 @@ fn contains_objstm_marker(window: &[u8]) -> bool {
     false
 }
 
+/// Append ink names declared by `Separation` and `DeviceN` colour spaces
+/// in `cs_dict` to `out`. Reserved colorants `/All` and `/None` (§8.6.6.4)
+/// are skipped. Caller is responsible for deduping across multiple calls.
+///
+/// When `doc` is `Some`, indirect references inside each colour-space array
+/// (e.g. a DeviceN whose names list is `4 0 R` rather than inline) are
+/// resolved. Tools that hand-build inline arrays and don't need indirection
+/// resolution can pass `None`.
+///
+/// Used by both [`PdfDocument::get_page_inks`] and
+/// [`PdfDocument::get_page_inks_deep`] so the per-colorant rules live in
+/// exactly one place.
+fn extract_inks_from_color_space_dict(
+    cs_dict: &std::collections::HashMap<String, Object>,
+    doc: Option<&PdfDocument>,
+    out: &mut Vec<String>,
+) {
+    let deref = |obj: &Object| -> Object {
+        match (obj.as_reference(), doc) {
+            (Some(r), Some(d)) => d.load_object(r).unwrap_or_else(|_| obj.clone()),
+            _ => obj.clone(),
+        }
+    };
+
+    for cs_def in cs_dict.values() {
+        let arr = match cs_def.as_array() {
+            Some(a) => a,
+            None => continue,
+        };
+        if arr.len() < 2 {
+            continue;
+        }
+        let cs_type = match arr.first().and_then(Object::as_name) {
+            Some(n) => n,
+            None => continue,
+        };
+        match cs_type {
+            "Separation" => {
+                // §8.6.6.2: [/Separation /InkName /AlternateCS /TintTransform].
+                // The name slot is usually inline but resolve indirects for safety.
+                let name_obj = match arr.get(1) {
+                    Some(o) => deref(o),
+                    None => continue,
+                };
+                if let Some(ink) = name_obj.as_name() {
+                    if ink != "All" && ink != "None" {
+                        out.push(ink.to_string());
+                    }
+                }
+            },
+            "DeviceN" => {
+                // §8.6.6.3: [/DeviceN <names-array> /AlternateCS /TintTransform <attrs>].
+                // The names array is commonly emitted as an indirect reference
+                // when the same colorant set is shared across multiple DeviceN
+                // spaces; resolve before unpacking the names.
+                let names_obj = match arr.get(1) {
+                    Some(o) => deref(o),
+                    None => continue,
+                };
+                if let Some(inks) = names_obj.as_array() {
+                    for ink_obj in inks {
+                        if let Some(ink) = ink_obj.as_name() {
+                            if ink != "All" && ink != "None" {
+                                out.push(ink.to_string());
+                            }
+                        }
+                    }
+                }
+            },
+            _ => {},
+        }
+    }
+}
+
 impl PdfDocument {
     /// Open a PDF document from in-memory bytes.
     ///
@@ -10506,9 +10580,11 @@ impl PdfDocument {
     /// declared inside a Form XObject's local `/Resources /ColorSpace`
     /// dictionary will not be enumerated — even though the renderer and
     /// extractor will still honor them at use time. Callers populating a
-    /// UI picker from this list may miss XObject-local inks; if that
-    /// matters, walk the page's XObject resources separately or
-    /// enumerate inks from the content stream operators.
+    /// UI picker from this list may miss XObject-local inks.
+    ///
+    /// For the full walk that follows `Do` operators into Form XObject
+    /// resources, use [`Self::get_page_inks_deep`] — that is what the
+    /// separation renderer uses to allocate plates.
     pub fn get_page_inks(&self, page_index: usize) -> Result<Vec<String>> {
         let page = self.get_page(page_index)?;
         let page_dict = page.as_dict().ok_or_else(|| Error::ParseError {
@@ -10548,9 +10624,12 @@ impl PdfDocument {
             None => return Ok(Vec::new()),
         };
 
-        let mut ink_names = Vec::new();
-        for (_name, cs_def) in cs_dict.iter() {
-            let cs_arr_obj = if let Some(r) = cs_def.as_reference() {
+        // Resolve any indirect references so the extractor sees inline
+        // arrays. Mirrors the pre-existing per-entry resolve loop.
+        let mut resolved: std::collections::HashMap<String, Object> =
+            std::collections::HashMap::with_capacity(cs_dict.len());
+        for (name, cs_def) in cs_dict.iter() {
+            let v = if let Some(r) = cs_def.as_reference() {
                 match self.load_object(r) {
                     Ok(o) => o,
                     Err(_) => continue,
@@ -10558,43 +10637,208 @@ impl PdfDocument {
             } else {
                 cs_def.clone()
             };
-
-            if let Some(arr) = cs_arr_obj.as_array() {
-                if arr.len() >= 2 {
-                    if let Some(Object::Name(cs_type)) = arr.first() {
-                        match cs_type.as_str() {
-                            "Separation" => {
-                                // [/Separation /InkName /AlternateCS /TintTransform]
-                                // §8.6.6.4: /All and /None are reserved colorant names
-                                // (paint to all / paint to none) and never name a plate.
-                                if let Some(Object::Name(ink)) = arr.get(1) {
-                                    if ink != "All" && ink != "None" {
-                                        ink_names.push(ink.clone());
-                                    }
-                                }
-                            },
-                            "DeviceN" => {
-                                // [/DeviceN [/Ink1 /Ink2 ...] /AlternateCS /TintTransform]
-                                if let Some(Object::Array(inks)) = arr.get(1) {
-                                    for ink_obj in inks {
-                                        if let Object::Name(ink) = ink_obj {
-                                            if ink != "All" && ink != "None" {
-                                                ink_names.push(ink.clone());
-                                            }
-                                        }
-                                    }
-                                }
-                            },
-                            _ => {},
-                        }
-                    }
-                }
-            }
+            resolved.insert(name.clone(), v);
         }
+
+        let mut ink_names = Vec::new();
+        extract_inks_from_color_space_dict(&resolved, Some(self), &mut ink_names);
 
         ink_names.sort();
         ink_names.dedup();
         Ok(ink_names)
+    }
+
+    /// List ink / separation names declared on a page **including** those
+    /// declared inside Form XObjects reached through the page's content-stream
+    /// `Do` operators.
+    ///
+    /// Walks the page's content stream looking for `Do` operators that invoke
+    /// Form XObjects (§8.10), recurses into each form's `/Resources/ColorSpace`
+    /// dictionary, and accumulates `/Separation` and `/DeviceN` ink names from
+    /// every visited resource tree.
+    ///
+    /// **Cycle handling:** indirect XObject references are deduplicated by
+    /// `ObjectRef`; recursion depth is bounded at `MAX_RECURSION_DEPTH` (100).
+    /// A cycle below the depth bound is silently terminated; a tree deeper
+    /// than the bound returns [`Error::RecursionLimitExceeded`].
+    ///
+    /// **Out of scope:** tiling / shading patterns (§8.7) and annotation
+    /// appearance streams (§12.5.5) — both can declare their own colour
+    /// spaces but the separation renderer does not paint into them, so
+    /// surfacing their inks here would create plates that stay empty.
+    pub fn get_page_inks_deep(&self, page_index: usize) -> Result<Vec<String>> {
+        let resources = self.page_resources_for_inks(page_index)?;
+        let content_data = self.get_page_content_data(page_index)?;
+        let operators = crate::content::parser::parse_content_stream(&content_data)?;
+
+        let mut ink_names: Vec<String> = Vec::new();
+        let mut visited: std::collections::HashSet<crate::object::ObjectRef> =
+            std::collections::HashSet::new();
+
+        self.collect_inks_from_resources(&resources, &mut ink_names)?;
+        self.walk_form_xobject_tree_for_inks(
+            &operators,
+            &resources,
+            &mut ink_names,
+            &mut visited,
+            0,
+        )?;
+
+        ink_names.sort();
+        ink_names.dedup();
+        Ok(ink_names)
+    }
+
+    /// Resolve the page's `/Resources` entry, following an indirect
+    /// reference if present. Mirrors the same pattern used by
+    /// [`Self::get_page_inks`]. Internal helper that does not depend on
+    /// the `rendering`-feature-gated [`Self::get_page_resources`].
+    fn page_resources_for_inks(&self, page_index: usize) -> Result<Object> {
+        let page = self.get_page(page_index)?;
+        let page_dict = page.as_dict().ok_or_else(|| Error::ParseError {
+            offset: 0,
+            reason: "Page is not a dictionary".to_string(),
+        })?;
+        let resources = match page_dict.get("Resources") {
+            Some(r) => match r.as_reference() {
+                Some(rr) => self.load_object(rr)?,
+                None => r.clone(),
+            },
+            None => Object::Dictionary(std::collections::HashMap::new()),
+        };
+        Ok(resources)
+    }
+
+    /// Dereference `obj` if it is an indirect reference; otherwise clone.
+    /// Internal helper that mirrors the rendering-gated
+    /// [`Self::resolve_object`] without taking the gate.
+    fn deref_object_for_inks(&self, obj: &Object) -> Result<Object> {
+        match obj.as_reference() {
+            Some(r) => self.load_object(r),
+            None => Ok(obj.clone()),
+        }
+    }
+
+    /// Append inks declared in `resources./ColorSpace` (resolving indirect
+    /// references) to `out`. Internal helper for both
+    /// [`Self::get_page_inks_deep`] and the recursive form walker.
+    fn collect_inks_from_resources(&self, resources: &Object, out: &mut Vec<String>) -> Result<()> {
+        let res_dict = match resources.as_dict() {
+            Some(d) => d,
+            None => return Ok(()),
+        };
+        let cs_obj = match res_dict.get("ColorSpace") {
+            Some(obj) => self.deref_object_for_inks(obj)?,
+            None => return Ok(()),
+        };
+        let cs_dict_raw = match cs_obj.as_dict() {
+            Some(d) => d,
+            None => return Ok(()),
+        };
+
+        let mut resolved: std::collections::HashMap<String, Object> =
+            std::collections::HashMap::with_capacity(cs_dict_raw.len());
+        for (name, cs_def) in cs_dict_raw.iter() {
+            let v = match cs_def.as_reference() {
+                Some(r) => match self.load_object(r) {
+                    Ok(o) => o,
+                    Err(_) => continue,
+                },
+                None => cs_def.clone(),
+            };
+            resolved.insert(name.clone(), v);
+        }
+        extract_inks_from_color_space_dict(&resolved, Some(self), out);
+        Ok(())
+    }
+
+    /// Recursive walker: for every `Operator::Do { name }` in `operators` that
+    /// resolves to a Form XObject, scan that form's `/Resources/ColorSpace`
+    /// and recurse into the form's own content stream.
+    ///
+    /// `visited` is keyed on the XObject's `ObjectRef` (indirect references
+    /// only). Inline-stream forms cannot self-reference (no name to invoke);
+    /// the depth limit is the backstop for any other malformed shape.
+    fn walk_form_xobject_tree_for_inks(
+        &self,
+        operators: &[crate::content::operators::Operator],
+        parent_resources: &Object,
+        out: &mut Vec<String>,
+        visited: &mut std::collections::HashSet<crate::object::ObjectRef>,
+        depth: u32,
+    ) -> Result<()> {
+        if depth >= MAX_RECURSION_DEPTH {
+            return Err(Error::RecursionLimitExceeded(MAX_RECURSION_DEPTH));
+        }
+        let xobjects = match parent_resources.as_dict() {
+            Some(rd) => match rd.get("XObject") {
+                Some(o) => self.deref_object_for_inks(o)?,
+                None => return Ok(()),
+            },
+            None => return Ok(()),
+        };
+        let xobj_dict = match xobjects.as_dict() {
+            Some(d) => d,
+            None => return Ok(()),
+        };
+
+        for op in operators {
+            let name = match op {
+                crate::content::operators::Operator::Do { name } => name,
+                _ => continue,
+            };
+            let xobj_entry = match xobj_dict.get(name) {
+                Some(o) => o,
+                None => continue,
+            };
+            let xobj_ref = xobj_entry.as_reference();
+            if let Some(r) = xobj_ref {
+                // Cycle through indirect refs: silent skip below depth bound.
+                if !visited.insert(r) {
+                    continue;
+                }
+            }
+            let xobj = match self.deref_object_for_inks(xobj_entry) {
+                Ok(o) => o,
+                Err(_) => continue,
+            };
+            let (form_dict, form_stream) = match xobj {
+                Object::Stream { ref dict, .. } => {
+                    if dict.get("Subtype").and_then(Object::as_name) != Some("Form") {
+                        continue;
+                    }
+                    let data = match xobj_ref {
+                        Some(r) => self.decode_stream_with_encryption(&xobj, r)?,
+                        None => xobj.decode_stream_data()?,
+                    };
+                    (dict.clone(), data)
+                },
+                _ => continue,
+            };
+
+            // §8.10.1: form may override resources or inherit the parent's.
+            let form_resources = match form_dict.get("Resources") {
+                Some(res) => self.deref_object_for_inks(res)?,
+                None => parent_resources.clone(),
+            };
+            self.collect_inks_from_resources(&form_resources, out)?;
+
+            // Recurse into the form's own content stream looking for nested
+            // `Do`. Malformed streams are tolerated — we want graceful
+            // degradation in a discovery API, not a hard error.
+            let form_ops = match crate::content::parser::parse_content_stream(&form_stream) {
+                Ok(ops) => ops,
+                Err(_) => continue,
+            };
+            self.walk_form_xobject_tree_for_inks(
+                &form_ops,
+                &form_resources,
+                out,
+                visited,
+                depth + 1,
+            )?;
+        }
+        Ok(())
     }
 
     /// # Performance Note
@@ -12565,7 +12809,7 @@ impl PdfDocument {
                 return Ok(arc);
             }
         }
-        let resolved = self.resolve_object(font_obj)?;
+        let resolved = self.deref_object_for_inks(font_obj)?;
         let info = crate::fonts::FontInfo::from_dict(&resolved, self)?;
         let arc = Arc::new(info);
         if let Some(font_ref) = font_obj.as_reference() {
@@ -21873,5 +22117,80 @@ mod tests {
         let paths = doc.extract_paths(0).unwrap();
         assert_eq!(paths.len(), 1);
         assert_eq!(paths[0].layer, None);
+    }
+}
+
+#[cfg(test)]
+mod ink_dict_extractor_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn name(s: &str) -> Object {
+        Object::Name(s.to_string())
+    }
+
+    fn separation_cs(ink: &str) -> Object {
+        Object::Array(vec![
+            name("Separation"),
+            name(ink),
+            name("DeviceCMYK"),
+            Object::Null,
+        ])
+    }
+
+    fn device_n_cs(inks: &[&str]) -> Object {
+        Object::Array(vec![
+            name("DeviceN"),
+            Object::Array(inks.iter().map(|s| name(s)).collect()),
+            name("DeviceCMYK"),
+            Object::Null,
+        ])
+    }
+
+    #[test]
+    fn extracts_separation_ink_name() {
+        let mut cs_dict = HashMap::new();
+        cs_dict.insert("CS0".to_string(), separation_cs("Pantone-185"));
+        let mut out = Vec::new();
+        extract_inks_from_color_space_dict(&cs_dict, None, &mut out);
+        assert_eq!(out, vec!["Pantone-185".to_string()]);
+    }
+
+    #[test]
+    fn extracts_devicen_ink_names_in_declared_order() {
+        let mut cs_dict = HashMap::new();
+        cs_dict.insert("CS0".to_string(), device_n_cs(&["Cyan", "Magenta", "SpotGold"]));
+        let mut out = Vec::new();
+        extract_inks_from_color_space_dict(&cs_dict, None, &mut out);
+        assert_eq!(
+            out,
+            vec![
+                "Cyan".to_string(),
+                "Magenta".to_string(),
+                "SpotGold".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn skips_all_and_none_colorants() {
+        // §8.6.6.4: /All and /None are reserved; never plate names.
+        let mut cs_dict = HashMap::new();
+        cs_dict.insert("CS0".to_string(), separation_cs("All"));
+        cs_dict.insert("CS1".to_string(), separation_cs("None"));
+        cs_dict.insert("CS2".to_string(), device_n_cs(&["All", "Spot1", "None"]));
+        let mut out = Vec::new();
+        extract_inks_from_color_space_dict(&cs_dict, None, &mut out);
+        assert_eq!(out, vec!["Spot1".to_string()]);
+    }
+
+    #[test]
+    fn ignores_non_separation_color_spaces() {
+        let mut cs_dict = HashMap::new();
+        cs_dict.insert("CS0".to_string(), Object::Array(vec![name("ICCBased"), Object::Null]));
+        cs_dict.insert("CS1".to_string(), name("DeviceCMYK"));
+        let mut out = Vec::new();
+        extract_inks_from_color_space_dict(&cs_dict, None, &mut out);
+        assert!(out.is_empty());
     }
 }

@@ -27,7 +27,11 @@
 //! - **Raster image XObjects** (`Do` with `Subtype /Image`), including
 //!   DeviceN / Separation-encoded TIFFs and CMYK photographs. The
 //!   sample data is dropped. Vector artwork inside Form XObjects is
-//!   recursed into and rendered normally.
+//!   recursed into and rendered normally; spot / DeviceN ink
+//!   *declarations* in nested Form XObject `/Resources` are also
+//!   surfaced as plates via
+//!   [`crate::document::PdfDocument::get_page_inks_deep`] even when the
+//!   form's local content stream doesn't paint them.
 //! - **Shading patterns** (`sh` operator) — gradients used as fills.
 //! - **Tiling and shading patterns** invoked via `scn` / `SCN` with a
 //!   `/Pattern` colour space.
@@ -50,6 +54,39 @@
 //! coverage on the press, not transparent compositing. Callers who need the
 //! transparent intent (e.g. a 50%-alpha spot text overlay) should evaluate it
 //! against the underlying content with [`super::page_renderer`] first.
+//!
+//! # Overprint
+//!
+//! The renderer implements the per-plate overprint model defined in
+//! ISO 32000-1 §11.7.4 ("Overprint Control"). The ExtGState entries
+//! `/OP` (stroke), `/op` (non-stroke), and `/OPM` (overprint mode) are
+//! parsed and applied to the graphics state.
+//!
+//! - **Default (`OP = false`):** for every plate, the spec rule "areas
+//!   of unspecified colorants are erased (painted with a tint value of
+//!   0.0)" applies. A DeviceCMYK fill knocks out underlying Cyan,
+//!   Magenta, Yellow, Black, *and* any spot inks within its shape; a
+//!   Separation `/Pantone-185` fill knocks out underlying process and
+//!   other-spot plates within its shape. This is the standard
+//!   per-plate prepress convention.
+//! - **`OP = true`:** plates outside the source's colorant set are left
+//!   untouched. Designers use this to overlay spot inks on process
+//!   backgrounds without knocking them out (the typical packaging /
+//!   label authoring workflow).
+//! - **`OPM = 1` (Adobe nonzero overprint):** when the source colour
+//!   space is DeviceCMYK and overprint is enabled, a component value of
+//!   exactly `0.0` is treated as "colorant not specified" — the
+//!   matching plate is left untouched. Per §11.7.4.3, OPM applies only
+//!   to DeviceCMYK sources; Separation and DeviceN content is
+//!   unaffected by OPM and routes through OP/op alone.
+//!
+//! Overprint state participates in `q`/`Q` save/restore via the existing
+//! graphics-state stack and propagates into Form XObjects per §8.10.1.
+//! The decision happens in `tint_for_ink`, which returns either
+//! `PaintAction::Paint(tint)` (write tint into the plate; 0.0 = knockout)
+//! or `PaintAction::Skip` (leave the plate untouched). Spot/DeviceN
+//! sources route to their named plates regardless of overprint, matching
+//! the inherent behavior of real separation devices.
 #![allow(
     clippy::field_reassign_with_default,
     clippy::ptr_arg,
@@ -251,12 +288,13 @@ fn render_plates_for_inks(
 
 /// Collect all ink names present on a page.
 ///
-/// CMYK is always returned regardless of whether the page actually
-/// uses CMYK content — emitting four extra all-zero plates is much
-/// cheaper than the recursive operator walk that would be required to
-/// detect CMYK content nested inside Form XObjects (the previous
-/// shallow scan missed those, RED #1). Unused CMYK plates are filtered
-/// out by the short-circuit in [`render_separations`].
+/// CMYK is always returned regardless of whether the page actually uses
+/// CMYK content; unused process plates are filtered out by the per-plate
+/// short-circuit in [`render_separations`].
+///
+/// Spot inks come from [`PdfDocument::get_page_inks_deep`], which walks
+/// the page's content stream into nested Form XObjects (§8.10) so spots
+/// declared in form-local resources are discovered.
 fn collect_page_inks(doc: &PdfDocument, page_num: usize) -> Result<Vec<String>> {
     let mut inks = vec![
         "Cyan".to_string(),
@@ -265,7 +303,7 @@ fn collect_page_inks(doc: &PdfDocument, page_num: usize) -> Result<Vec<String>> 
         "Black".to_string(),
     ];
 
-    let spot_inks = doc.get_page_inks(page_num)?;
+    let spot_inks = doc.get_page_inks_deep(page_num)?;
     for ink in spot_inks {
         if !inks.contains(&ink) {
             inks.push(ink);
@@ -630,9 +668,49 @@ fn load_fonts(doc: &PdfDocument, resources: &Object) -> HashMap<String, Arc<Font
     fonts
 }
 
-/// Compute the tint contribution to `target_ink` for the current colour
-/// state. Returns `None` if the current colour does not touch this
-/// plate; `Some(tint)` otherwise, with `tint` in 0.0..=1.0.
+/// Per-plate routing decision for a single paint operation, after applying
+/// the overprint rules of ISO 32000-1 §11.7.4.
+///
+/// - [`PaintAction::Paint`] writes the given tint into the plate. A tint
+///   of 0.0 is the spec-default "knockout" — the existing
+///   [`fill_separation`] / [`stroke_separation`] use opaque source-over,
+///   so writing 0.0 erases any underlying ink at the touched pixels.
+/// - [`PaintAction::Skip`] leaves the plate completely untouched. Used
+///   when (a) the source colour space doesn't reference this plate and
+///   overprint is enabled, or (b) the source is DeviceCMYK with OPM=1
+///   and the component is exactly 0.0 (the "Adobe nonzero overprint"
+///   rule, §11.7.4).
+enum PaintAction {
+    Paint(f32),
+    Skip,
+}
+
+/// Decide how the current paint operation contributes to `target_ink`,
+/// honoring ISO 32000-1 §11.7.4 (Overprint Control).
+///
+/// The decision tree:
+///
+/// ```text
+/// For each plate P, source colour space S with component vector c[]:
+///
+///   if S = Separation(/All):                              Paint(c[0])
+///   if S = Separation(/None) or empty components:         Skip
+///   if S = Separation(name) and name == P:                Paint(c[0])
+///   if S = Separation(name) and name != P:
+///         overprint? Skip : Paint(0.0)                    // §11.7.4 default knockout
+///
+///   if S = DeviceN(names) and P in names:                 Paint(c[index_of_P])
+///   if S = DeviceN(names) and P not in names:
+///         overprint? Skip : Paint(0.0)
+///
+///   if S = DeviceCMYK / IccCmyk:
+///         if P in {C, M, Y, K}:
+///             overprint && opm == 1 && tint == 0.0 ? Skip : Paint(tint)
+///         else:                                            // spot plate
+///             overprint? Skip : Paint(0.0)                 // §11.7.4 default knockout
+///
+///   if S = RGB/Gray/IccRgb/IccGray:                       Skip
+/// ```
 fn tint_for_ink(
     fill: bool,
     gs: &GraphicsState,
@@ -642,7 +720,7 @@ fn tint_for_ink(
     target_ink: &str,
     fill_components: &[f32],
     stroke_components: &[f32],
-) -> Option<f32> {
+) -> PaintAction {
     let space_name = if fill {
         &gs.fill_color_space
     } else {
@@ -653,10 +731,28 @@ fn tint_for_ink(
     } else {
         stroke_components
     };
+    let overprint = if fill {
+        gs.fill_overprint
+    } else {
+        gs.stroke_overprint
+    };
+    // §11.7.4.3: OPM applies only when the source is DeviceCMYK (or implicit
+    // conversion thereto). The match arms below check this where relevant.
+    let opm = gs.overprint_mode;
+
+    // Default action when the source colour space doesn't name the
+    // target plate: under OP=true, leave it alone; under OP=false (the
+    // spec default), erase it to 0.0 ("areas of unspecified colorants
+    // are erased" — §11.7.4).
+    let other_plate_action = if overprint {
+        PaintAction::Skip
+    } else {
+        PaintAction::Paint(0.0)
+    };
 
     let resolved = resolve_color_space(space_name, color_spaces, resources, doc);
     match resolved {
-        ResolvedSpace::Cmyk => {
+        ResolvedSpace::Cmyk | ResolvedSpace::IccCmyk => {
             let cmyk_state = if fill {
                 gs.fill_color_cmyk
             } else {
@@ -667,35 +763,47 @@ fn tint_for_ink(
             } else if components.len() >= 4 {
                 (components[0], components[1], components[2], components[3])
             } else {
-                return None;
+                return PaintAction::Skip;
             };
-            match target_ink {
-                "Cyan" => Some(c),
-                "Magenta" => Some(m),
-                "Yellow" => Some(y),
-                "Black" => Some(k),
-                _ => None,
+            let tint = match target_ink {
+                "Cyan" => c,
+                "Magenta" => m,
+                "Yellow" => y,
+                "Black" => k,
+                // Spot plate — not in DeviceCMYK's colorant set.
+                _ => return other_plate_action,
+            };
+            // §11.7.4 OPM=1 nonzero overprint: zero source components on
+            // DeviceCMYK are treated as "not specified" — leave the
+            // matching plate untouched. OPM=0 (default) paints zero,
+            // which erases (knocks out) the plate.
+            if overprint && opm == 1 && tint == 0.0 {
+                PaintAction::Skip
+            } else {
+                PaintAction::Paint(tint)
             }
         },
         ResolvedSpace::Rgb
         | ResolvedSpace::Gray
         | ResolvedSpace::IccRgb
         | ResolvedSpace::IccGray => {
-            // RGB / Gray content does not contribute to ink plates.
-            // Converting RGB → CMYK is intentionally not done: prepress
-            // workflows want artwork that was authored in process or
-            // spot colours, not synthesised process from RGB.
-            None
+            // §11.7.4: overprint is a separation-space concept. RGB / Gray
+            // sources do not route to ink plates at all. Converting them
+            // would require a tint transform and is intentionally not done.
+            PaintAction::Skip
         },
         ResolvedSpace::Separation(ink) => {
-            // §8.6.6.4: /All paints to every output separation; /None paints
-            // nothing. Treat the rest as a regular per-ink match.
-            if ink == "None" || components.is_empty() {
-                None
-            } else if ink == "All" || ink == target_ink {
-                Some(components[0])
+            // §8.6.6.4: /All paints to every plate; /None paints nothing.
+            if components.is_empty() || ink == "None" {
+                return PaintAction::Skip;
+            }
+            if ink == "All" {
+                return PaintAction::Paint(components[0]);
+            }
+            if ink == target_ink {
+                PaintAction::Paint(components[0])
             } else {
-                None
+                other_plate_action
             }
         },
         ResolvedSpace::DeviceN(names) => {
@@ -704,26 +812,12 @@ fn tint_for_ink(
                     continue;
                 }
                 if (n == "All" || n == target_ink) && i < components.len() {
-                    return Some(components[i]);
+                    return PaintAction::Paint(components[i]);
                 }
             }
-            None
+            other_plate_action
         },
-        ResolvedSpace::IccCmyk => {
-            // Heuristic: 4-component ICC space = CMYK. See module docs.
-            if components.len() >= 4 {
-                match target_ink {
-                    "Cyan" => Some(components[0]),
-                    "Magenta" => Some(components[1]),
-                    "Yellow" => Some(components[2]),
-                    "Black" => Some(components[3]),
-                    _ => None,
-                }
-            } else {
-                None
-            }
-        },
-        ResolvedSpace::Unknown => None,
+        ResolvedSpace::Unknown => PaintAction::Skip,
     }
 }
 
@@ -792,6 +886,9 @@ struct InheritedState {
     stroke_color_cmyk: Option<(f32, f32, f32, f32)>,
     fill_components: Vec<f32>,
     stroke_components: Vec<f32>,
+    fill_overprint: bool,
+    stroke_overprint: bool,
+    overprint_mode: u8,
 }
 
 /// Execute operators for separation plate rendering, dispatching paint
@@ -822,6 +919,14 @@ fn execute_separation_operators(
             gs.stroke_color_space = inh.stroke_color_space.clone();
             gs.fill_color_cmyk = inh.fill_color_cmyk;
             gs.stroke_color_cmyk = inh.stroke_color_cmyk;
+            // §8.10.1: inherit the caller's overprint state too. Without
+            // this, an outer `gs` setting OP=true would be silently
+            // dropped at the Form XObject boundary and the form's CMYK
+            // content would knock out underlying inks against the
+            // caller's intent.
+            gs.fill_overprint = inh.fill_overprint;
+            gs.stroke_overprint = inh.stroke_overprint;
+            gs.overprint_mode = inh.overprint_mode;
         } else {
             gs.fill_color_space = "DeviceGray".to_string();
             gs.stroke_color_space = "DeviceGray".to_string();
@@ -1088,7 +1193,7 @@ fn execute_separation_operators(
                     let transform = combine_transforms(base_transform, &gs.ctm);
                     let clip = clip_stack.last().and_then(|c| c.as_ref());
                     for (i, &ink) in target_inks.iter().enumerate() {
-                        if let Some(tint) = tint_for_ink(
+                        if let PaintAction::Paint(tint) = tint_for_ink(
                             false,
                             gs,
                             color_spaces,
@@ -1120,7 +1225,7 @@ fn execute_separation_operators(
                     let transform = combine_transforms(base_transform, &gs.ctm);
                     let clip = clip_stack.last().and_then(|c| c.as_ref());
                     for (i, &ink) in target_inks.iter().enumerate() {
-                        if let Some(tint) = tint_for_ink(
+                        if let PaintAction::Paint(tint) = tint_for_ink(
                             true,
                             gs,
                             color_spaces,
@@ -1159,7 +1264,7 @@ fn execute_separation_operators(
                     let transform = combine_transforms(base_transform, &gs.ctm);
                     let clip = clip_stack.last().and_then(|c| c.as_ref());
                     for (i, &ink) in target_inks.iter().enumerate() {
-                        if let Some(tint) = tint_for_ink(
+                        if let PaintAction::Paint(tint) = tint_for_ink(
                             true,
                             gs,
                             color_spaces,
@@ -1198,7 +1303,7 @@ fn execute_separation_operators(
                     let transform = combine_transforms(base_transform, &gs.ctm);
                     let clip = clip_stack.last().and_then(|c| c.as_ref());
                     for (i, &ink) in target_inks.iter().enumerate() {
-                        if let Some(tint) = tint_for_ink(
+                        if let PaintAction::Paint(tint) = tint_for_ink(
                             true,
                             gs,
                             color_spaces,
@@ -1217,7 +1322,7 @@ fn execute_separation_operators(
                                 clip,
                             );
                         }
-                        if let Some(tint) = tint_for_ink(
+                        if let PaintAction::Paint(tint) = tint_for_ink(
                             false,
                             gs,
                             color_spaces,
@@ -1249,7 +1354,7 @@ fn execute_separation_operators(
                     let transform = combine_transforms(base_transform, &gs.ctm);
                     let clip = clip_stack.last().and_then(|c| c.as_ref());
                     for (i, &ink) in target_inks.iter().enumerate() {
-                        if let Some(tint) = tint_for_ink(
+                        if let PaintAction::Paint(tint) = tint_for_ink(
                             true,
                             gs,
                             color_spaces,
@@ -1268,7 +1373,7 @@ fn execute_separation_operators(
                                 clip,
                             );
                         }
-                        if let Some(tint) = tint_for_ink(
+                        if let PaintAction::Paint(tint) = tint_for_ink(
                             false,
                             gs,
                             color_spaces,
@@ -1541,6 +1646,9 @@ fn execute_separation_operators(
                                             stroke_color_cmyk: gs.stroke_color_cmyk,
                                             fill_components: cs.fill_components.clone(),
                                             stroke_components: cs.stroke_components.clone(),
+                                            fill_overprint: gs.fill_overprint,
+                                            stroke_overprint: gs.stroke_overprint,
+                                            overprint_mode: gs.overprint_mode,
                                         };
 
                                         let form_ops = parse_content_stream(&stream_data)?;
@@ -1577,9 +1685,9 @@ fn execute_separation_operators(
 /// The returned advance is shared across all plates (the rasteriser is
 /// deterministic for a given font/text/state, so each plate's advance
 /// agrees) — we use the last computed value, matching the single-plate
-/// behaviour. If no plate is touched (all tints are `None` or render
-/// mode 3) the advance is computed from the font metrics so the text
-/// matrix still progresses correctly.
+/// behaviour. If no plate is touched (every plate's [`PaintAction`] is
+/// `Skip`, or render mode 3) the advance is computed from the font
+/// metrics so the text matrix still progresses correctly.
 #[allow(clippy::too_many_arguments)]
 fn render_text_to_plate(
     pixmaps: &mut [Pixmap],
@@ -1616,8 +1724,8 @@ fn render_text_to_plate(
             &cs.fill_components,
             &cs.stroke_components,
         ) {
-            Some(t) => t,
-            None => continue,
+            PaintAction::Paint(t) => t,
+            PaintAction::Skip => continue,
         };
 
         // Build a faked-grayscale GraphicsState so the rasteriser paints in

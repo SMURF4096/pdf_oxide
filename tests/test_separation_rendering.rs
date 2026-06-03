@@ -968,12 +968,12 @@ mod tests {
     // turns them into passing regression tests.
     // =====================================================================
 
-    /// §11.7.4.4 — Overprint mode. With OP=true and OPM=0 (default), painting
-    /// a Separation ink on top of CMYK content should *add* to the spot plate
-    /// while leaving the underlying CMYK plates unchanged. Without overprint
-    /// the spot paint knocks out the CMYK at those pixels.
+    /// §11.7.4 — Overprint. With OP=true painting a Separation ink on top of
+    /// CMYK content adds to the spot plate while leaving the underlying CMYK
+    /// plates unchanged. Without overprint the spot paint knocks out the CMYK
+    /// at those pixels (covered by the spec-default tests in
+    /// `tests/test_separation_overprint.rs`).
     #[test]
-    #[ignore = "spec gap: overprint (/OP, /op, /OPM) — §11.7 not yet implemented"]
     fn test_overprint_preserves_underlying_ink() {
         // K rect 50% under, Separation rect on top with OP=true via /GS1.
         // Spec: spot paint with overprint preserves underlying K plate.
@@ -996,10 +996,11 @@ mod tests {
         let doc = PdfDocument::from_bytes(pdf).unwrap();
         let plates = render_separations(&doc, 0, 144).unwrap();
 
-        // Sample center of the overlap region (where the spot rect sits on top of K).
+        // Sample center of the overlap. Page is 100x100pt at 144 DPI →
+        // image is 200x200, so PDF (50,50) lands at image (100,100).
         let black = plates.iter().find(|p| p.ink_name == "Black").unwrap();
         let bw = black.width as usize;
-        let center = black.data[(50 * bw) + 50];
+        let center = black.data[(100 * bw) + 100];
         assert!(
             (100..=140).contains(&center),
             "Black plate at overlap should retain ~50% tint under overprinted spot, got {}",
@@ -1008,7 +1009,10 @@ mod tests {
 
         let spot = plates.iter().find(|p| p.ink_name == "SpotInk").unwrap();
         let sw = spot.width as usize;
-        assert!(spot.data[(50 * sw) + 50] > 200, "SpotInk plate should show the overprinted ink");
+        assert!(
+            spot.data[(100 * sw) + 100] > 200,
+            "SpotInk plate should show the overprinted ink"
+        );
     }
 
     /// §9.3.6 — Text rendering mode 3 = "neither fill nor stroke (invisible)".

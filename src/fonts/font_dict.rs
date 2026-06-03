@@ -37,6 +37,14 @@ pub struct FontInfo {
     /// PDF Spec: ISO 32000-1:2008, Section 9.6.2
     /// Typical values: <80 = light, 80-110 = normal/medium, >110 = bold
     pub stem_v: Option<f32>,
+    /// Ascent above the baseline (fraction of em, from FontDescriptor /Ascent).
+    /// Converted from PDF's 1/1000-em units to a fraction of em (raw value ÷ 1000).
+    /// Defaults to 0.95 when the font descriptor is absent (matching Poppler's fallback).
+    pub ascent: f32,
+    /// Descent below the baseline (fraction of em, from FontDescriptor /Descent).
+    /// Converted from PDF's 1/1000-em units to a fraction of em; always ≤ 0.
+    /// Defaults to -0.35 when the font descriptor is absent (matching Poppler's fallback).
+    pub descent: f32,
     /// Embedded TrueType font data (from FontFile2 stream)
     /// Shared via Arc to avoid expensive cloning
     pub embedded_font_data: Option<Arc<Vec<u8>>>,
@@ -441,121 +449,148 @@ impl FontInfo {
 
         // Parse FontDescriptor FIRST to get font flags (needed for encoding decision)
         // PDF Spec: ISO 32000-1:2008, Section 9.6.2 - Font Descriptor
-        let (font_weight, flags, stem_v, mut embedded_font_data, is_truetype_font) =
-            if let Some(descriptor_ref) = font_dict
-                .get("FontDescriptor")
-                .and_then(|obj| obj.as_reference())
-            {
-                // Load the FontDescriptor object
-                if let Ok(descriptor_obj) = doc.load_object(descriptor_ref) {
-                    if let Some(descriptor_dict) = descriptor_obj.as_dict() {
-                        let weight = descriptor_dict
-                            .get("FontWeight")
-                            .and_then(|weight_obj| weight_obj.as_integer())
-                            .map(|w| w as i32);
+        let (
+            font_weight,
+            flags,
+            stem_v,
+            mut embedded_font_data,
+            is_truetype_font,
+            raw_ascent,
+            raw_descent,
+        ) = if let Some(descriptor_ref) = font_dict
+            .get("FontDescriptor")
+            .and_then(|obj| obj.as_reference())
+        {
+            // Load the FontDescriptor object
+            if let Ok(descriptor_obj) = doc.load_object(descriptor_ref) {
+                if let Some(descriptor_dict) = descriptor_obj.as_dict() {
+                    let weight = descriptor_dict
+                        .get("FontWeight")
+                        .and_then(|weight_obj| weight_obj.as_integer())
+                        .map(|w| w as i32);
 
-                        let descriptor_flags = descriptor_dict
-                            .get("Flags")
-                            .and_then(|flags_obj| flags_obj.as_integer())
-                            .map(|f| f as i32);
+                    let descriptor_flags = descriptor_dict
+                        .get("Flags")
+                        .and_then(|flags_obj| flags_obj.as_integer())
+                        .map(|f| f as i32);
 
-                        let stem_v_value = descriptor_dict.get("StemV").and_then(|sv_obj| {
-                            sv_obj
-                                .as_real()
-                                .map(|r| r as f32)
-                                .or_else(|| sv_obj.as_integer().map(|i| i as f32))
-                        });
+                    let stem_v_value = descriptor_dict.get("StemV").and_then(|sv_obj| {
+                        sv_obj
+                            .as_real()
+                            .map(|r| r as f32)
+                            .or_else(|| sv_obj.as_integer().map(|i| i as f32))
+                    });
 
-                        // Load embedded font data from FontFile2 (TrueType), FontFile (Type 1), or FontFile3 (CFF/OpenType)
-                        // IMPORTANT: Track whether font is TrueType or CFF - only TrueType fonts have cmaps!
-                        let (embedded_font, is_truetype_font) =
-                            if let Some(ff2_obj) = descriptor_dict.get("FontFile2") {
-                                log::info!("Font '{}' has FontFile2 entry (TrueType)", base_font);
-                                let font_data = ff2_obj
-                                    .as_reference()
-                                    .and_then(|ff2_ref| {
-                                        doc.load_object(ff2_ref).ok().map(|obj| (obj, ff2_ref))
-                                    })
-                                    .and_then(|(ff2_stream, ff2_ref)| {
-                                        doc.decode_stream_with_encryption(&ff2_stream, ff2_ref).ok()
-                                    })
-                                    .map(|data| {
-                                        log::info!(
-                                            "Font '{}' loaded embedded TrueType font ({} bytes)",
-                                            base_font,
-                                            data.len()
-                                        );
-                                        Arc::new(data)
-                                    });
-                                (font_data, true) // TrueType - can have cmaps
-                            } else if let Some(ff3_obj) = descriptor_dict.get("FontFile3") {
+                    let ascent_value = descriptor_dict.get("Ascent").and_then(|obj| {
+                        obj.as_real()
+                            .map(|r| r as f32)
+                            .or_else(|| obj.as_integer().map(|i| i as f32))
+                    });
+
+                    let descent_value = descriptor_dict.get("Descent").and_then(|obj| {
+                        obj.as_real()
+                            .map(|r| r as f32)
+                            .or_else(|| obj.as_integer().map(|i| i as f32))
+                    });
+
+                    // Load embedded font data from FontFile2 (TrueType), FontFile (Type 1), or FontFile3 (CFF/OpenType)
+                    // IMPORTANT: Track whether font is TrueType or CFF - only TrueType fonts have cmaps!
+                    let (embedded_font, is_truetype_font) = if let Some(ff2_obj) =
+                        descriptor_dict.get("FontFile2")
+                    {
+                        log::info!("Font '{}' has FontFile2 entry (TrueType)", base_font);
+                        let font_data = ff2_obj
+                            .as_reference()
+                            .and_then(|ff2_ref| {
+                                doc.load_object(ff2_ref).ok().map(|obj| (obj, ff2_ref))
+                            })
+                            .and_then(|(ff2_stream, ff2_ref)| {
+                                doc.decode_stream_with_encryption(&ff2_stream, ff2_ref).ok()
+                            })
+                            .map(|data| {
                                 log::info!(
+                                    "Font '{}' loaded embedded TrueType font ({} bytes)",
+                                    base_font,
+                                    data.len()
+                                );
+                                Arc::new(data)
+                            });
+                        (font_data, true) // TrueType - can have cmaps
+                    } else if let Some(ff3_obj) = descriptor_dict.get("FontFile3") {
+                        log::info!(
                             "Font '{}' has FontFile3 entry (CFF/OpenType - no TrueType cmap)",
                             base_font
                         );
-                                let font_data = ff3_obj
-                                    .as_reference()
-                                    .and_then(|ff3_ref| {
-                                        doc.load_object(ff3_ref).ok().map(|obj| (obj, ff3_ref))
-                                    })
-                                    .and_then(|(ff3_stream, ff3_ref)| {
-                                        doc.decode_stream_with_encryption(&ff3_stream, ff3_ref).ok()
-                                    })
-                                    .map(|data| {
-                                        // Wrap raw CFF in OpenType container for ttf-parser
-                                        let data =
-                                            if !data.is_empty() && data[0] == 1 && data.len() > 4 {
-                                                log::info!(
+                        let font_data = ff3_obj
+                            .as_reference()
+                            .and_then(|ff3_ref| {
+                                doc.load_object(ff3_ref).ok().map(|obj| (obj, ff3_ref))
+                            })
+                            .and_then(|(ff3_stream, ff3_ref)| {
+                                doc.decode_stream_with_encryption(&ff3_stream, ff3_ref).ok()
+                            })
+                            .map(|data| {
+                                // Wrap raw CFF in OpenType container for ttf-parser
+                                let data = if !data.is_empty() && data[0] == 1 && data.len() > 4 {
+                                    log::info!(
                                         "Font '{}': Wrapping raw CFF in OpenType ({} bytes)",
                                         base_font,
                                         data.len()
                                     );
-                                                wrap_cff_in_opentype(&data)
-                                            } else {
-                                                log::info!(
+                                    wrap_cff_in_opentype(&data)
+                                } else {
+                                    log::info!(
                                         "Font '{}' loaded embedded CFF/OpenType font ({} bytes)",
                                         base_font,
                                         data.len()
                                     );
-                                                data
-                                            };
-                                        Arc::new(data)
-                                    });
-                                (font_data, false) // CFF - no TrueType cmap
-                            } else if let Some(ff_obj) = descriptor_dict.get("FontFile") {
-                                log::info!("Font '{}' has FontFile entry (Type 1)", base_font);
-                                let font_data = ff_obj
-                                    .as_reference()
-                                    .and_then(|ff_ref| {
-                                        doc.load_object(ff_ref).ok().map(|obj| (obj, ff_ref))
-                                    })
-                                    .and_then(|(ff_stream, ff_ref)| {
-                                        doc.decode_stream_with_encryption(&ff_stream, ff_ref).ok()
-                                    })
-                                    .map(|data| {
-                                        log::info!(
-                                            "Font '{}' loaded embedded Type 1 font ({} bytes)",
-                                            base_font,
-                                            data.len()
-                                        );
-                                        Arc::new(data)
-                                    });
-                                (font_data, false) // Type 1 - no TrueType cmap
-                            } else {
-                                log::debug!("Font '{}' has no embedded font data", base_font);
-                                (None, false)
-                            };
-
-                        (weight, descriptor_flags, stem_v_value, embedded_font, is_truetype_font)
+                                    data
+                                };
+                                Arc::new(data)
+                            });
+                        (font_data, false) // CFF - no TrueType cmap
+                    } else if let Some(ff_obj) = descriptor_dict.get("FontFile") {
+                        log::info!("Font '{}' has FontFile entry (Type 1)", base_font);
+                        let font_data = ff_obj
+                            .as_reference()
+                            .and_then(|ff_ref| {
+                                doc.load_object(ff_ref).ok().map(|obj| (obj, ff_ref))
+                            })
+                            .and_then(|(ff_stream, ff_ref)| {
+                                doc.decode_stream_with_encryption(&ff_stream, ff_ref).ok()
+                            })
+                            .map(|data| {
+                                log::info!(
+                                    "Font '{}' loaded embedded Type 1 font ({} bytes)",
+                                    base_font,
+                                    data.len()
+                                );
+                                Arc::new(data)
+                            });
+                        (font_data, false) // Type 1 - no TrueType cmap
                     } else {
-                        (None, None, None, None, false)
-                    }
+                        log::debug!("Font '{}' has no embedded font data", base_font);
+                        (None, false)
+                    };
+
+                    (
+                        weight,
+                        descriptor_flags,
+                        stem_v_value,
+                        embedded_font,
+                        is_truetype_font,
+                        ascent_value,
+                        descent_value,
+                    )
                 } else {
-                    (None, None, None, None, false)
+                    (None, None, None, None, false, None, None)
                 }
             } else {
-                (None, None, None, None, false)
-            };
+                (None, None, None, None, false, None, None)
+            }
+        } else {
+            (None, None, None, None, false, None, None)
+        };
 
         // TrueType cmap extraction is now LAZY — deferred until first access via
         // truetype_cmap() accessor. This saves 10-25ms per font when ToUnicode CMap
@@ -854,9 +889,22 @@ impl FontInfo {
             cid_default_width,
             has_explicit_dw,
             descendant_tt_cmap,
+            desc_raw_ascent,
+            desc_raw_descent,
         ) = if subtype == "Type0" {
             match Self::parse_descendant_fonts(font_dict, &base_font, doc) {
-                Ok((map, info, ftype, widths, dw, explicit_dw, tt_cmap, desc_embedded)) => {
+                Ok((
+                    map,
+                    info,
+                    ftype,
+                    widths,
+                    dw,
+                    explicit_dw,
+                    tt_cmap,
+                    desc_embedded,
+                    d_ascent,
+                    d_descent,
+                )) => {
                     log::info!(
                             "Font '{}': Parsed DescendantFonts - CIDFontType={}, CIDSystemInfo={}-{}, widths={}, embedded={}",
                             base_font,
@@ -874,7 +922,7 @@ impl FontInfo {
                     if desc_embedded.is_some() && embedded_font_data.is_none() {
                         embedded_font_data = desc_embedded;
                     }
-                    (map, info, ftype, widths, dw, explicit_dw, tt_cmap)
+                    (map, info, ftype, widths, dw, explicit_dw, tt_cmap, d_ascent, d_descent)
                 },
                 Err(e) => {
                     log::warn!(
@@ -882,12 +930,19 @@ impl FontInfo {
                         base_font,
                         e
                     );
-                    (Some(CIDToGIDMap::Identity), None, None, None, 1000.0, false, None)
+                    (Some(CIDToGIDMap::Identity), None, None, None, 1000.0, false, None, None, None)
                 },
             }
         } else {
-            (None, None, None, None, 1000.0, false, None)
+            (None, None, None, None, 1000.0, false, None, None, None)
         };
+
+        // For Type0 fonts the /FontDescriptor lives on the CIDFont descendant (§9.7.4).
+        // If the top-level font had no descriptor (the common case), fall back to the
+        // descendant's values so CID/CJK glyphs get real metrics instead of the 0.95/-0.35
+        // Poppler-compatible default.
+        let raw_ascent = raw_ascent.or(desc_raw_ascent);
+        let raw_descent = raw_descent.or(desc_raw_descent);
 
         // Pre-populate OnceLock with descendant's TrueType cmap if available.
         // Otherwise leave it for lazy extraction from embedded_font_data.
@@ -924,6 +979,26 @@ impl FontInfo {
             None
         };
 
+        // Normalize ascent/descent from 1000ths-of-em to fraction-of-em.
+        // PDF spec says these are in 1/1000 of em (glyph space units).
+        // Fall back to standard font metrics for the 14 standard PDF fonts,
+        // then to Poppler-compatible defaults (0.95 / -0.35).
+        let (default_ascent, default_descent) =
+            standard_font_metrics(&base_font).unwrap_or((0.95, -0.35));
+        let ascent = raw_ascent.map(|v| v / 1000.0).unwrap_or(default_ascent);
+        // PDF Descent should be ≤ 0 (below baseline). Some PDFs store it as a positive
+        // magnitude; Poppler normalizes by negating. Mirror that here.
+        let descent = raw_descent
+            .map(|v| {
+                let d = v / 1000.0;
+                if d > 0.0 {
+                    -d
+                } else {
+                    d
+                }
+            })
+            .unwrap_or(default_descent);
+
         Ok(FontInfo {
             base_font,
             subtype,
@@ -932,6 +1007,8 @@ impl FontInfo {
             font_weight,
             flags,
             stem_v,
+            ascent,
+            descent,
             embedded_font_data,
             truetype_cmap: truetype_cmap_lock,
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -1018,7 +1095,8 @@ impl FontInfo {
     /// Extracts CIDFont dictionary and related information
     /// Per PDF Spec ISO 32000-1:2008, Section 9.7.1
     ///
-    /// Returns: (CIDToGIDMap, CIDSystemInfo, CIDFontType, CIDWidths, DefaultWidth)
+    /// Returns: (CIDToGIDMap, CIDSystemInfo, CIDFontType, CIDWidths, DefaultWidth,
+    ///          has_explicit_dw, TrueTypeCMap, EmbeddedFontData, raw_ascent, raw_descent)
     fn parse_descendant_fonts(
         font_dict: &HashMap<String, Object>,
         base_font: &str,
@@ -1032,6 +1110,8 @@ impl FontInfo {
         bool,                 // has_explicit_dw (F14/F15 fix)
         Option<TrueTypeCMap>, // TrueType cmap from descendant's embedded font
         Option<Arc<Vec<u8>>>, // Embedded font data from CIDFont's FontDescriptor
+        Option<f32>,          // raw_ascent from descendant FontDescriptor
+        Option<f32>,          // raw_descent from descendant FontDescriptor
     )> {
         let descendant_obj = font_dict
             .get("DescendantFonts")
@@ -1316,6 +1396,12 @@ impl FontInfo {
         let descendant_embedded =
             Self::extract_embedded_font_from_descriptor(cidfont_dict, base_font, doc);
 
+        // Extract ascent/descent from the CIDFont's FontDescriptor (§9.7.4 / Table 117).
+        // The Type0 wrapper has no top-level /FontDescriptor, so these values must be
+        // read from the descendant.
+        let (desc_raw_ascent, desc_raw_descent) =
+            Self::read_raw_ascent_descent_from_descriptor(cidfont_dict, doc);
+
         Ok((
             cid_to_gid_map,
             cid_system_info,
@@ -1325,6 +1411,8 @@ impl FontInfo {
             has_explicit_dw,
             descendant_tt_cmap,
             descendant_embedded,
+            desc_raw_ascent,
+            desc_raw_descent,
         ))
     }
 
@@ -1381,6 +1469,39 @@ impl FontInfo {
             },
             _ => None,
         }
+    }
+
+    /// Read raw /Ascent and /Descent from a font dictionary's /FontDescriptor.
+    /// Returns (raw_ascent, raw_descent) in PDF 1/1000-em units, or None if absent.
+    /// Used to pull ascent/descent off a CIDFont descendant (§9.7.4 / Table 117).
+    fn read_raw_ascent_descent_from_descriptor(
+        font_dict: &HashMap<String, Object>,
+        doc: &PdfDocument,
+    ) -> (Option<f32>, Option<f32>) {
+        let desc_obj = match font_dict.get("FontDescriptor") {
+            Some(obj) => obj,
+            None => return (None, None),
+        };
+        let desc = if let Some(r) = desc_obj.as_reference() {
+            match doc.load_object(r) {
+                Ok(obj) => obj,
+                Err(_) => return (None, None),
+            }
+        } else {
+            desc_obj.clone()
+        };
+        let desc_dict = match desc.as_dict() {
+            Some(d) => d,
+            None => return (None, None),
+        };
+        let read_f32 = |key: &str| -> Option<f32> {
+            desc_dict.get(key).and_then(|o| {
+                o.as_real()
+                    .map(|r| r as f32)
+                    .or_else(|| o.as_integer().map(|i| i as f32))
+            })
+        };
+        (read_f32("Ascent"), read_f32("Descent"))
     }
 
     /// Extract embedded font data from a font dictionary's /FontDescriptor.
@@ -5193,6 +5314,32 @@ fn lookup_adobe_korea1_to_unicode(cid: u16) -> Option<u32> {
     crate::fonts::cid_mappings::lookup_adobe_korea1(cid)
 }
 
+/// Ascent/descent (as fractions of em) for the 14 standard PDF fonts.
+/// Values from Adobe AFM files; used when no FontDescriptor is present.
+fn standard_font_metrics(base_font: &str) -> Option<(f32, f32)> {
+    // Strip subset prefix (e.g. "ABCDEF+Courier" -> "Courier")
+    let name = if let Some(pos) = base_font.find('+') {
+        &base_font[pos + 1..]
+    } else {
+        base_font
+    };
+    match name {
+        "Courier" | "Courier-Bold" | "Courier-Oblique" | "Courier-BoldOblique" => {
+            Some((0.629, -0.157))
+        },
+        "Helvetica" | "Helvetica-Bold" | "Helvetica-Oblique" | "Helvetica-BoldOblique" => {
+            Some((0.718, -0.207))
+        },
+        "Times-Roman" => Some((0.683, -0.217)),
+        "Times-Bold" => Some((0.676, -0.205)),
+        "Times-Italic" => Some((0.683, -0.205)),
+        "Times-BoldItalic" => Some((0.683, -0.205)),
+        "Symbol" => Some((1.010, -0.293)),
+        "ZapfDingbats" => Some((0.820, -0.143)),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5219,6 +5366,8 @@ mod tests {
             font_weight: Some(700),
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -5250,6 +5399,8 @@ mod tests {
             font_weight: Some(400),
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -5284,6 +5435,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -5315,6 +5468,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -5352,6 +5507,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -5390,6 +5547,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -5427,6 +5586,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -5462,6 +5623,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -5595,6 +5758,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -5718,6 +5883,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -5759,6 +5926,8 @@ mod tests {
             font_weight: None,    // No explicit weight
             flags: Some(0x80000), // ForceBold flag set
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -5793,6 +5962,8 @@ mod tests {
             font_weight: None,
             flags: Some(0x40000), // Different flag, NOT ForceBold
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -5831,6 +6002,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: Some(120.0), // Heavy stem
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -5865,6 +6038,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: Some(95.0), // Medium stem
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -5899,6 +6074,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: Some(70.0), // Light stem
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -5937,6 +6114,8 @@ mod tests {
             font_weight: Some(300), // But explicit weight is Light
             flags: Some(0x80000),   // ForceBold flag set
             stem_v: Some(120.0),    // Heavy stem
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -5971,6 +6150,8 @@ mod tests {
             font_weight: None,    // No explicit weight
             flags: Some(0x80000), // ForceBold flag set
             stem_v: Some(70.0),   // Light stem
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -6005,6 +6186,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: Some(70.0), // Light stem, but name says Bold
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -6043,6 +6226,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -6076,6 +6261,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -6109,6 +6296,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -6142,6 +6331,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -6175,6 +6366,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -6208,6 +6401,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -6241,6 +6436,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -6274,6 +6471,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -6307,6 +6506,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -6588,6 +6789,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -6633,6 +6836,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -6674,6 +6879,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -6721,6 +6928,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -6773,6 +6982,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -8329,6 +8540,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -8371,6 +8584,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -8409,6 +8624,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -8445,6 +8662,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -8487,6 +8706,8 @@ mod tests {
             font_weight: Some(400),
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -8626,6 +8847,8 @@ mod tests {
             font_weight: None,
             flags: None,
             stem_v: None,
+            ascent: 0.95,
+            descent: -0.35,
             embedded_font_data: None,
             truetype_cmap: std::sync::OnceLock::new(),
             embedded_glyph_names: std::sync::OnceLock::new(),
@@ -8781,6 +9004,64 @@ mod tests {
             Encoding::Standard(ref n) => assert_eq!(n, "UniGB-UCS2-H"),
             other => panic!("predefined CMap name must be Encoding::Standard, got {other:?}"),
         }
+    }
+
+    /// Type0/CID fonts read ascent/descent from the CIDFont descendant's FontDescriptor
+    /// (§9.7.4 / Table 117), not from the Type0 wrapper (which has no top-level
+    /// /FontDescriptor). Verify that `FontInfo::from_dict` on a Type0 font with a
+    /// descendant FontDescriptor that carries Ascent=800 / Descent=-200 yields
+    /// ascent ≈ 0.8 and descent ≈ -0.2 (both normalised from 1/1000-em to fraction-of-em).
+    #[test]
+    fn test_type0_ascent_descent_from_descendant_descriptor() {
+        // Build an inline CIDFont dictionary with a FontDescriptor containing Ascent/Descent.
+        let mut desc: HashMap<String, Object> = HashMap::new();
+        desc.insert("Type".to_string(), Object::Name("FontDescriptor".to_string()));
+        desc.insert("Ascent".to_string(), Object::Integer(800));
+        desc.insert("Descent".to_string(), Object::Integer(-200));
+
+        // Build the CIDFont dictionary (inline, no object references needed).
+        let mut cidfont: HashMap<String, Object> = HashMap::new();
+        cidfont.insert("Type".to_string(), Object::Name("Font".to_string()));
+        cidfont.insert("Subtype".to_string(), Object::Name("CIDFontType0".to_string()));
+        cidfont.insert("BaseFont".to_string(), Object::Name("TestCIDFont".to_string()));
+        cidfont.insert("DW".to_string(), Object::Integer(1000));
+        cidfont.insert(
+            "CIDSystemInfo".to_string(),
+            Object::Dictionary({
+                let mut si = HashMap::new();
+                si.insert("Registry".to_string(), Object::String(b"Adobe".to_vec()));
+                si.insert("Ordering".to_string(), Object::String(b"Identity".to_vec()));
+                si.insert("Supplement".to_string(), Object::Integer(0));
+                si
+            }),
+        );
+        cidfont.insert("FontDescriptor".to_string(), Object::Dictionary(desc));
+
+        // Wrap the CIDFont in the Type0 outer font dictionary.
+        let mut type0: HashMap<String, Object> = HashMap::new();
+        type0.insert("Type".to_string(), Object::Name("Font".to_string()));
+        type0.insert("Subtype".to_string(), Object::Name("Type0".to_string()));
+        type0.insert("BaseFont".to_string(), Object::Name("TestType0Font".to_string()));
+        type0.insert("Encoding".to_string(), Object::Name("Identity-H".to_string()));
+        type0.insert(
+            "DescendantFonts".to_string(),
+            Object::Array(vec![Object::Dictionary(cidfont)]),
+        );
+
+        let doc = minimal_pdf_doc();
+        let font = FontInfo::from_dict(&Object::Dictionary(type0), &doc)
+            .expect("Type0 font with inline descendant must parse");
+
+        assert!(
+            (font.ascent - 0.8).abs() < 1e-4,
+            "Expected ascent ≈ 0.8 (800/1000), got {}",
+            font.ascent
+        );
+        assert!(
+            (font.descent - (-0.2)).abs() < 1e-4,
+            "Expected descent ≈ -0.2 (-200/1000), got {}",
+            font.descent
+        );
     }
 
     // =========================================================================

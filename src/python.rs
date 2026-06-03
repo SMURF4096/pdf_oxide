@@ -197,6 +197,35 @@ impl PyPdfDocument {
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to get page inks: {}", e)))
     }
 
+    /// List ink / separation names declared on a page, INCLUDING those
+    /// declared inside Form XObjects reached through the page's content
+    /// stream `Do` operators.
+    ///
+    /// Unlike :py:meth:`get_page_inks`, which only walks the page's own
+    /// ``/Resources/ColorSpace`` dictionary, this method recurses into
+    /// each invoked Form XObject and accumulates ink names from every
+    /// visited resource tree. This is the method the separation renderer
+    /// uses internally to allocate plates, so its result matches the
+    /// plate list returned by :py:meth:`render_separations`.
+    ///
+    /// Args:
+    ///     page (int): Page index (0-based)
+    ///
+    /// Returns:
+    ///     list[str]: Ink names from Separation/DeviceN color spaces in
+    ///         the page resources and every nested Form XObject reached
+    ///         via Do operators. Recursion is bounded; cycles are
+    ///         deduplicated by object reference.
+    ///
+    /// Example:
+    ///     inks = doc.get_page_inks_deep(0)
+    ///     # ['Cut', 'PANTONE 186 C', 'yellow fluorescent']
+    fn get_page_inks_deep(&mut self, page: usize) -> PyResult<Vec<String>> {
+        self.inner
+            .get_page_inks_deep(page)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to get page inks (deep): {}", e)))
+    }
+
     /// Enumerate existing PDF signatures. Returns a list of
     /// `Signature` objects — empty list when the document has no
     /// AcroForm or no signed signature fields.
