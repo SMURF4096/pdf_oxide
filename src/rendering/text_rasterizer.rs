@@ -634,7 +634,8 @@ impl TextRasterizer {
         measure_text_bytes(text, gs, font_info.as_deref())
     }
 
-    /// Measure-only: compute the horizontal advance of a TJ array without
+    /// Measure-only: compute the total advance of a TJ array along the
+    /// active writing axis (x for WMode 0, y for WMode 1), without
     /// painting any glyphs.
     pub fn measure_tj_array(
         &self,
@@ -653,7 +654,11 @@ impl TextRasterizer {
                     total += measure_text_bytes(text, gs, font_info.as_deref());
                 },
                 TextElement::Offset(offset) => {
-                    // PDF offsets are in 1/1000th of a unit, positive shifts to the left.
+                    // PDF numeric offsets in a TJ array shift the cursor by
+                    // -offset/1000 * font_size along the active writing
+                    // axis. The axis swap is applied by the caller via
+                    // advance_text_matrix; here we just accumulate the
+                    // scalar magnitude.
                     let shift = (-offset / 1000.0) * gs.font_size;
                     total += shift;
                 },
@@ -663,7 +668,12 @@ impl TextRasterizer {
     }
 
     /// Render a TJ array (text with positioning adjustments).
-    /// Returns the total horizontal advance in PDF points.
+    ///
+    /// Returns the total advance along the active writing axis (x for
+    /// WMode 0, y for WMode 1) in PDF text-space units. The axis swap is
+    /// applied by the caller via [`GraphicsState::advance_text_matrix`];
+    /// the rasterizer never constructs a horizontal-translation matrix
+    /// directly.
     ///
     /// `color_override` carries the resolution-pipeline output. It is
     /// threaded into each inner `render_text` call so the per-element
@@ -701,17 +711,12 @@ impl TextRasterizer {
                         clip_mask,
                         font_cache,
                     )?;
-
-                    // Advance text position in text space: Tm' = T(advance, 0) * Tm
-                    let advance_matrix = crate::content::Matrix::translation(advance, 0.0);
-                    current_gs.text_matrix = advance_matrix.multiply(&current_gs.text_matrix);
+                    current_gs.advance_text_matrix(advance);
                     total_advance += advance;
                 },
                 TextElement::Offset(offset) => {
-                    // PDF offsets are in 1/1000th of a unit, and positive shifts text to the left
                     let shift = (-offset / 1000.0) * current_gs.font_size;
-                    let advance_matrix = crate::content::Matrix::translation(shift, 0.0);
-                    current_gs.text_matrix = advance_matrix.multiply(&current_gs.text_matrix);
+                    current_gs.advance_text_matrix(shift);
                     total_advance += shift;
                 },
             }
@@ -1702,27 +1707,43 @@ fn measure_text_bytes(
 
     if let Some(font) = font_info {
         for (char_code, _) in TextCharIter::new(bytes, Some(font)) {
-            let glyph_metric = if wmode == 0 {
-                font.get_glyph_width(char_code)
+            // Per ISO 32000-1 §9.4.4 the advance formula differs by writing
+            // mode:
+            //   horizontal: tx = ((w0 * Tfs) + Tc + Tw) * Th
+            //   vertical:   ty = (w1y * Tfs) + Tc + Tw       (NO Th)
+            // Tz is defined as glyph stretching along the *horizontal*
+            // direction only (§9.3.4); it does not scale vertical w1y or
+            // vertical Tc / Tw.
+            if wmode == 0 {
+                let glyph_adv = font.get_glyph_width(char_code) * font_size / 1000.0;
+                advance += (glyph_adv + gs.char_space) * h_scale;
+                if char_code == 0x20 {
+                    advance += gs.word_space * h_scale;
+                }
             } else {
-                font.get_vertical_metrics(char_code).w1y
-            };
-            let glyph_adv = glyph_metric * font_size / 1000.0;
-            advance += (glyph_adv + gs.char_space) * h_scale;
-            // PDF word_space applies to byte value 0x20 (ASCII space) under the
-            // current font's encoding. For Type0 fonts this is rarely a real
-            // word boundary, but we follow the visible-path convention.
-            if char_code == 0x20 {
-                advance += gs.word_space * h_scale;
+                let w1y = font.get_vertical_metrics(char_code).w1y;
+                let glyph_adv = w1y * font_size / 1000.0;
+                advance += glyph_adv + gs.char_space;
+                if char_code == 0x20 {
+                    advance += gs.word_space;
+                }
             }
         }
     } else {
-        // No font info — half-em estimate per byte, matching render_text_fallback.
+        // No font info — half-em estimate per byte. Match the wmode-aware
+        // arm above by omitting h_scale in vertical mode.
         let char_width = font_size * 0.6;
         for &b in bytes {
-            advance += (char_width + gs.char_space) * h_scale;
-            if b == 0x20 {
-                advance += gs.word_space * h_scale;
+            if wmode == 0 {
+                advance += (char_width + gs.char_space) * h_scale;
+                if b == 0x20 {
+                    advance += gs.word_space * h_scale;
+                }
+            } else {
+                advance += char_width + gs.char_space;
+                if b == 0x20 {
+                    advance += gs.word_space;
+                }
             }
         }
     }
@@ -1824,5 +1845,86 @@ mod tests {
             advance
         );
         assert!(advance > 0.0, "horizontal advance must be positive");
+    }
+
+    /// `measure_text_bytes` MUST NOT apply Tz (horizontal scaling) to
+    /// vertical w1y advances. Per ISO 32000-1 §9.4.4 the vertical formula
+    /// is `ty = w1y * Tfs + Tc + Tw` with no Th factor; §9.3.4 defines Tz
+    /// as glyph stretching along the horizontal direction only.
+    #[test]
+    fn measure_text_bytes_ignores_tz_in_vertical_mode() {
+        let font = make_vertical_test_font();
+        let mut gs = GraphicsState::new();
+        gs.font_size = 12.0;
+        gs.text_wmode = 1;
+        gs.horizontal_scaling = 200.0; // Tz=200: would double an H advance
+
+        let bytes: &[u8] = &[0x00, 0x01];
+        let advance = measure_text_bytes(bytes, &gs, Some(&font));
+
+        // |w1y * fs / 1000| = 12.0 (NOT 24.0 — Tz must not apply).
+        assert!(
+            (advance.abs() - 12.0).abs() < 0.01,
+            "Tz=200 must NOT scale vertical advance: expected 12, got {}",
+            advance.abs()
+        );
+    }
+
+    /// Char spacing (Tc) and word spacing (Tw) in vertical mode also
+    /// ignore Tz per §9.4.4.
+    #[test]
+    fn measure_text_bytes_vertical_tc_tw_skip_tz() {
+        let font = make_vertical_test_font();
+        let mut gs = GraphicsState::new();
+        gs.font_size = 12.0;
+        gs.text_wmode = 1;
+        gs.horizontal_scaling = 200.0;
+        gs.char_space = 3.0;
+
+        // Single CID: advance = w1y*fs/1000 + Tc = -12 + 3 = -9 (Tz ignored)
+        // If Tz applied, the result would be (-12 + 3) * 2 = -18.
+        let bytes: &[u8] = &[0x00, 0x01];
+        let advance = measure_text_bytes(bytes, &gs, Some(&font));
+        assert!(
+            ((-advance) - 9.0).abs() < 0.01,
+            "vertical Tc must NOT pick up Tz: expected -9, got {}",
+            advance
+        );
+    }
+
+    /// Two-glyph TJ array under WMode 1 reports the same magnitude as the
+    /// sum of per-glyph w1y * fs / 1000 — proving `measure_tj_array`
+    /// inherits `measure_text_bytes`' axis awareness rather than treating
+    /// the scalar as horizontal.
+    #[test]
+    fn measure_tj_array_aggregates_vertical_advance() {
+        use crate::content::TextElement;
+
+        let font = make_vertical_test_font();
+        let mut font_cache: HashMap<String, Arc<crate::fonts::FontInfo>> = HashMap::new();
+        font_cache.insert("F1".to_string(), Arc::new(font));
+
+        let mut gs = GraphicsState::new();
+        gs.font_size = 12.0;
+        gs.text_wmode = 1;
+        gs.font_name = Some("F1".to_string());
+
+        let rasterizer = TextRasterizer::new();
+        let array = vec![
+            TextElement::String(vec![0x00, 0x01]),
+            // -250 offset shifts the cursor forward (negative in y for V).
+            TextElement::Offset(-250.0),
+            TextElement::String(vec![0x00, 0x02]),
+        ];
+        let total = rasterizer.measure_tj_array(&array, &gs, &font_cache);
+
+        // Two glyphs: 2 * (w1y * fs / 1000) = 2 * -12 = -24
+        // Offset:    -(-250)/1000 * 12 = +3
+        // Total:     -21
+        assert!(
+            (total - (-21.0)).abs() < 0.01,
+            "measure_tj_array total should be -21 in vertical mode, got {}",
+            total
+        );
     }
 }

@@ -332,6 +332,80 @@ fn c5_identity_v_with_silent_to_unicode_is_vertical() {
 /// direction scale". Two glyphs at fs=12 with /DW2 [880 -1000] under Tz=150
 /// must still advance by exactly 12 units in y (not 18). This pins the
 /// extractor's vertical-Tj path to the spec.
+// ---------------------------------------------------------------------------
+// C1/C3 — page renderer + separation renderer cursor advances along Y
+// ---------------------------------------------------------------------------
+
+/// Render the multi-Tj vertical PDF through the page renderer. The test
+/// asserts that rendering succeeds AND that the painted ink occupies a
+/// vertical column (more pixel rows touched than columns), which is the
+/// pixel-level signature of axis-correct per-Tj advance. A renderer that
+/// advanced along X across the second Tj would paint a horizontal row
+/// instead.
+#[cfg(feature = "rendering")]
+#[test]
+fn c1_page_renderer_multi_tj_vertical_paints_a_column() {
+    let content = b"BT /F1 24 Tf 100 700 Td <0001> Tj <0002> Tj <0003> Tj ET";
+    let pdf = build_pdf("Identity-V", content, 1000, (880, -1000), None, None, None);
+    let doc = PdfDocument::from_bytes(pdf).expect("parse synthetic vertical PDF");
+
+    let opts = pdf_oxide::rendering::RenderOptions::with_dpi(72).as_raw();
+    let rendered = pdf_oxide::rendering::render_page(&doc, 0, &opts)
+        .expect("render page 0 of vertical PDF");
+
+    // Find the bounding box of non-white pixels. The renderer falls back
+    // to rectangle painting when no system font is found, so the painted
+    // glyphs are filled rectangles — perfect for testing layout without
+    // depending on installed fonts.
+    let w = rendered.width as usize;
+    let h = rendered.height as usize;
+    let mut x_min = w;
+    let mut x_max = 0usize;
+    let mut y_min = h;
+    let mut y_max = 0usize;
+    let mut hits = 0usize;
+    for y in 0..h {
+        for x in 0..w {
+            let i = (y * w + x) * 4;
+            let r = rendered.data[i];
+            let g = rendered.data[i + 1];
+            let b = rendered.data[i + 2];
+            // Skip near-white background. Use a loose threshold to ignore
+            // anti-aliasing edges.
+            if r < 250 || g < 250 || b < 250 {
+                hits += 1;
+                if x < x_min {
+                    x_min = x;
+                }
+                if x > x_max {
+                    x_max = x;
+                }
+                if y < y_min {
+                    y_min = y;
+                }
+                if y > y_max {
+                    y_max = y;
+                }
+            }
+        }
+    }
+    assert!(
+        hits > 100,
+        "vertical render produced too few non-white pixels ({hits})"
+    );
+    let dx = (x_max - x_min) as f32;
+    let dy = (y_max - y_min) as f32;
+    // Three glyphs stacked vertically must occupy more y-extent than
+    // x-extent (column, not row). A bug-class regression to horizontal
+    // advance would invert this.
+    assert!(
+        dy > dx,
+        "vertical render must produce a column (dy > dx); got dx={}, dy={}",
+        dx,
+        dy
+    );
+}
+
 #[test]
 fn i2_tz_does_not_scale_vertical_advance() {
     let content = b"BT /F1 12 Tf 100 700 Td <0001> Tj <0002> Tj ET";

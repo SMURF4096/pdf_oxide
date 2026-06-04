@@ -1938,7 +1938,10 @@ fn execute_separation_operators(
                 }
             },
 
-            // Text showing
+            // Text showing. Each `render_*_to_plate` returns a scalar
+            // advance along the active writing axis; the caller routes it
+            // into the text matrix through `advance_text_matrix`, which
+            // performs the H/V axis swap in one place.
             Operator::Tj { text } => {
                 if in_text_object {
                     let advance = render_text_to_plate(
@@ -1953,9 +1956,7 @@ fn execute_separation_operators(
                         clip_stack.last().and_then(|c| c.as_ref()),
                         target_inks,
                     )?;
-                    let gs_mut = gs_stack.current_mut();
-                    let advance_matrix = Matrix::translation(advance, 0.0);
-                    gs_mut.text_matrix = advance_matrix.multiply(&gs_mut.text_matrix);
+                    gs_stack.current_mut().advance_text_matrix(advance);
                 }
             },
             Operator::TJ { array } => {
@@ -1972,9 +1973,7 @@ fn execute_separation_operators(
                         clip_stack.last().and_then(|c| c.as_ref()),
                         target_inks,
                     )?;
-                    let gs_mut = gs_stack.current_mut();
-                    let advance_matrix = Matrix::translation(advance, 0.0);
-                    gs_mut.text_matrix = advance_matrix.multiply(&gs_mut.text_matrix);
+                    gs_stack.current_mut().advance_text_matrix(advance);
                 }
             },
             Operator::Quote { text } => {
@@ -1997,9 +1996,7 @@ fn execute_separation_operators(
                         clip_stack.last().and_then(|c| c.as_ref()),
                         target_inks,
                     )?;
-                    let gs_mut = gs_stack.current_mut();
-                    let advance_matrix = Matrix::translation(advance, 0.0);
-                    gs_mut.text_matrix = advance_matrix.multiply(&gs_mut.text_matrix);
+                    gs_stack.current_mut().advance_text_matrix(advance);
                 }
             },
             Operator::DoubleQuote {
@@ -2028,9 +2025,7 @@ fn execute_separation_operators(
                         clip_stack.last().and_then(|c| c.as_ref()),
                         target_inks,
                     )?;
-                    let gs_mut = gs_stack.current_mut();
-                    let advance_matrix = Matrix::translation(advance, 0.0);
-                    gs_mut.text_matrix = advance_matrix.multiply(&gs_mut.text_matrix);
+                    gs_stack.current_mut().advance_text_matrix(advance);
                 }
             },
 
@@ -2257,17 +2252,12 @@ fn render_tj_to_plate(
                     clip,
                     target_inks,
                 )?;
-                let gs_mut = gs_stack.current_mut();
-                let advance_matrix = Matrix::translation(advance, 0.0);
-                gs_mut.text_matrix = advance_matrix.multiply(&gs_mut.text_matrix);
+                gs_stack.current_mut().advance_text_matrix(advance);
                 total_advance += advance;
             },
             TextElement::Offset(offset) => {
-                let gs = gs_stack.current();
-                let shift = (-*offset / 1000.0) * gs.font_size;
-                let advance_matrix = Matrix::translation(shift, 0.0);
-                let gs_mut = gs_stack.current_mut();
-                gs_mut.text_matrix = advance_matrix.multiply(&gs_mut.text_matrix);
+                let shift = (-*offset / 1000.0) * gs_stack.current().font_size;
+                gs_stack.current_mut().advance_text_matrix(shift);
                 total_advance += shift;
             },
         }
