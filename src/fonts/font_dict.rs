@@ -8080,7 +8080,7 @@ mod tests {
         let metrics = FontInfo::parse_cid_vertical_metrics(&dict, "Test").unwrap();
         // CID 10 was malformed: must NOT carry the metrics that belong to CID 11.
         assert!(
-            metrics.get(&10).is_none(),
+            !metrics.contains_key(&10),
             "malformed CID 10 must not appear in metrics; got {:?}",
             metrics.get(&10)
         );

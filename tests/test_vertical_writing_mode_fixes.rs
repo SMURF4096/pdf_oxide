@@ -439,8 +439,10 @@ end";
     // Disable table extraction so the converter doesn't mis-detect the
     // two columns × three rows as a tabular layout. This test is about
     // tategaki reading order, not table extraction.
-    let mut opts = pdf_oxide::converters::ConversionOptions::default();
-    opts.extract_tables = false;
+    let opts = pdf_oxide::converters::ConversionOptions {
+        extract_tables: false,
+        ..pdf_oxide::converters::ConversionOptions::default()
+    };
 
     let md = doc.to_markdown(0, &opts).expect("to_markdown");
     // Strip whitespace+newlines for the comparison — exact formatting
@@ -731,14 +733,14 @@ fn c5_identity_v_with_silent_to_unicode_is_vertical() {
 
 // ---------------------------------------------------------------------------
 // I2 — horizontal scaling (Tz) MUST NOT apply to vertical advances
+// Per ISO 32000-1 §9.4.4 the vertical advance formula is
+//   `ty = (w1y − Tj/1000) × Tfs + Tc + Tw` — no Th factor. Tz (horizontal
+// scaling) is the glyph-stretching direction (§9.3.4), not "writing-
+// direction scale". Two glyphs at fs=12 with /DW2 [880 -1000] under Tz=150
+// must still advance by exactly 12 units in y (not 18). This pins the
+// extractor's vertical-Tj path to the spec.
 // ---------------------------------------------------------------------------
 
-/// Per ISO 32000-1 §9.4.4 the vertical advance formula is
-/// `ty = (w1y − Tj/1000) × Tfs + Tc + Tw` — no Th factor. Tz (horizontal
-/// scaling) is the glyph-stretching direction (§9.3.4), not "writing-
-/// direction scale". Two glyphs at fs=12 with /DW2 [880 -1000] under Tz=150
-/// must still advance by exactly 12 units in y (not 18). This pins the
-/// extractor's vertical-Tj path to the spec.
 // ---------------------------------------------------------------------------
 // C1/C3 — page renderer + separation renderer cursor advances along Y
 // ---------------------------------------------------------------------------

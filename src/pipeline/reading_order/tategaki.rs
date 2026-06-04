@@ -5,8 +5,8 @@
 //! text. Spans whose horizontal X centers cluster together belong to
 //! the same column.
 //!
-//! This strategy is dispatched by [`TextPipeline::process`] when the
-//! per-span `wmode` tag indicates a vertical-majority page. The four
+//! This strategy is dispatched by [`crate::pipeline::TextPipeline::process`]
+//! when the per-span `wmode` tag indicates a vertical-majority page. The four
 //! horizontal LTR strategies (Simple, Geometric, XYCut, StructureTree)
 //! are left unchanged; tategaki always wins when the page is vertical.
 
