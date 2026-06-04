@@ -7209,19 +7209,21 @@ impl<'doc> TextExtractor<'doc> {
                 }
                 w_sum
             } else {
-                // Type0/CID font, vertical (WMode 1): the per-glyph displacement
-                // is `w1y` from /W2 (or the /DW2 default), in 1000ths-of-em. Per
-                // ISO 32000-1 §9.7.4.3 and §9.4.4 the displacement scales with
-                // font size exactly like horizontal w0. Horizontal scaling (Tz)
-                // still applies — it is defined as scaling along the writing
-                // direction (§9.3.4).
+                // Type0/CID font, vertical (WMode 1): per-glyph displacement
+                // is `w1y` (from /W2 or /DW2 default), in 1000ths-of-em.
+                //
+                // Per ISO 32000-1:2008 §9.4.4 the vertical formula is
+                //     ty = (w1y * Tfs) + Tc + Tw
+                // with NO Th factor. §9.3.4 defines Tz as the horizontal
+                // glyph-stretching axis — it does not scale w1y, Tc, or
+                // Tw in vertical mode.
                 let mut w_sum = 0.0f32;
                 for (cid, _) in TextCharIter::new(text, Some(font)) {
                     let w1y = font.get_vertical_metrics(cid).w1y;
-                    let mut w = w1y * fs_factor * hs_factor;
-                    w += cs_hs;
+                    let mut w = w1y * fs_factor;
+                    w += char_space;
                     if cid == 32 {
-                        w += ws_hs;
+                        w += word_space;
                     }
                     w_sum += w;
                 }
@@ -7394,16 +7396,19 @@ impl<'doc> TextExtractor<'doc> {
                 w_sum
             } else {
                 // Type0/CID font, vertical (WMode 1): per-glyph displacement
-                // is `w1y` (from /W2 or /DW2), in 1000ths-of-em. ISO 32000-1
-                // §9.7.4.3 + §9.4.4.
+                // is `w1y` (from /W2 or /DW2), in 1000ths-of-em.
+                //
+                // Per ISO 32000-1:2008 §9.4.4: `ty = (w1y * Tfs) + Tc + Tw`,
+                // with no Th (Tz only stretches glyphs along the horizontal
+                // axis per §9.3.4).
                 buffer.append(text)?;
                 let mut w_sum = 0.0f32;
                 for (char_code, _) in TextCharIter::new(text, Some(font)) {
                     let w1y = font.get_vertical_metrics(char_code).w1y;
-                    let mut w = w1y * fs_factor * hs_factor;
-                    w += cs_hs;
+                    let mut w = w1y * fs_factor;
+                    w += char_space;
                     if char_code == 32 {
-                        w += ws_hs;
+                        w += word_space;
                     }
                     w_sum += w;
                     buffer.char_widths.push(w);
@@ -7594,15 +7599,18 @@ impl<'doc> TextExtractor<'doc> {
                 w_sum
             } else {
                 // Type0/CID font, vertical mode: per-glyph displacement is
-                // /W2 `w1y` (or /DW2 default), in 1000ths-of-em.
+                // /W2 `w1y` (or /DW2 default), in 1000ths-of-em. The
+                // vertical formula `ty = (w1y * Tfs) + Tc + Tw` (§9.4.4)
+                // does NOT apply Th — Tz only scales glyphs horizontally
+                // (§9.3.4).
                 buffer.append(text)?;
                 let mut w_sum = 0.0f32;
                 for (cid, _) in TextCharIter::new(text, Some(font)) {
                     let w1y = font.get_vertical_metrics(cid).w1y;
-                    let mut w = w1y * fs_factor * hs_factor;
-                    w += cs_hs;
+                    let mut w = w1y * fs_factor;
+                    w += char_space;
                     if cid == 32 {
-                        w += ws_hs;
+                        w += word_space;
                     }
                     w_sum += w;
                     buffer.char_widths.push(w);
@@ -7722,19 +7730,24 @@ impl<'doc> TextExtractor<'doc> {
 
     /// Advance text position for a TJ offset value.
     ///
-    /// Per ISO 32000-1:2008 §9.4.4 a number element in a TJ array shifts the
-    /// position by `-offset/1000 × font_size × Th` along the **active**
-    /// writing axis. In horizontal mode that is x; in vertical mode it is y.
-    /// The axis-swap lives in `advance_text_matrix`.
+    /// Per ISO 32000-1:2008 §9.4.4 a number element in a TJ array shifts
+    /// the position along the **active** writing axis:
+    ///   horizontal: tx = -offset / 1000 * font_size * Th
+    ///   vertical:   ty = -offset / 1000 * font_size     (NO Th)
+    /// Th (Tz) is the horizontal glyph-stretching axis (§9.3.4) and does
+    /// not apply in vertical mode. The matrix-side axis-swap lives in
+    /// `advance_text_matrix`.
     fn advance_position_for_offset(&mut self, offset: f32) -> Result<()> {
         let state = self.state_stack.current();
         let font_size = state.font_size;
         let horizontal_scaling = state.horizontal_scaling;
+        let wmode = state.text_wmode;
 
-        // §9.4.4: tx = -offset / 1000 * font_size * (Th/100). Symbol stays
-        // `tx` for continuity with the spec; under vertical mode the helper
-        // routes it to ty.
-        let tx = -offset / 1000.0 * font_size * horizontal_scaling / 100.0;
+        let tx = if wmode == 0 {
+            -offset / 1000.0 * font_size * horizontal_scaling / 100.0
+        } else {
+            -offset / 1000.0 * font_size
+        };
 
         self.state_stack.current_mut().advance_text_matrix(tx);
 
