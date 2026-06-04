@@ -3714,6 +3714,17 @@ impl<'doc> TextExtractor<'doc> {
 
         // Estimate a per-column-grouping tolerance from the median span
         // width (cheap, robust to outliers from rotated annotations).
+        //
+        // Assumption (M7): tategaki CJK body text is functionally
+        // monospaced — every glyph occupies roughly one em (full-width
+        // kanji, hiragana, katakana, halfwidth digits all advance by
+        // similar widths). The median span width therefore approximates
+        // the column pitch, and `tol = median_w` cleanly separates a
+        // column whose glyphs cluster around one X-center from an
+        // adjacent column shifted by another median width. Mixed-pitch
+        // tategaki (rare — typically only ruby annotations) may
+        // overcluster; that is an explicit follow-up if it shows up in
+        // real corpora.
         let mut widths: Vec<f32> = self.spans.iter().map(|s| s.bbox.width.max(1.0)).collect();
         widths.sort_by(|a, b| crate::utils::safe_float_cmp(*a, *b));
         let median_w = widths[widths.len() / 2].max(1.0);
@@ -7651,9 +7662,18 @@ impl<'doc> TextExtractor<'doc> {
             font_size * (combined.d * combined.d + combined.b * combined.b).sqrt();
         let word_space = state.word_space;
         let horizontal_scaling = state.horizontal_scaling;
+        let wmode = state.text_wmode;
 
-        // Calculate space width
-        let space_width = (250.0 * font_size / 1000.0 + word_space) * horizontal_scaling / 100.0;
+        // Calculate space displacement along the active writing axis. In
+        // horizontal mode this is the glyph width (250/1000 em ≈ quarter
+        // em) plus Tw, scaled by Th. In vertical mode Tz does not apply
+        // (§9.3.4) and we use the same magnitude as a writing-axis step
+        // — the synthetic gap a TJ offset stands in for.
+        let space_advance = if wmode == 0 {
+            (250.0 * font_size / 1000.0 + word_space) * horizontal_scaling / 100.0
+        } else {
+            250.0 * font_size / 1000.0 + word_space
+        };
 
         // Apply CTM to get position in user space
         // Per PDF Spec ISO 32000-1:2008 Section 9.4.4
@@ -7676,13 +7696,24 @@ impl<'doc> TextExtractor<'doc> {
             .and_then(|name| self.fonts.get(name))
             .map(|font| font.is_italic())
             .unwrap_or(false);
+        // Bbox geometry follows the writing axis: a horizontal gap is
+        // wide and font-tall; a vertical gap is glyph-em-wide and tall
+        // along the writing direction. Downstream layout heuristics
+        // (column detection, line breaking) read width vs height to
+        // decide orientation, so labeling the synthetic-space geometry
+        // correctly keeps them honest.
+        let (space_width, space_height) = if wmode == 0 {
+            (space_advance, effective_font_size)
+        } else {
+            (effective_font_size, space_advance.abs())
+        };
         let span = TextSpan {
             text: " ".to_string(),
             bbox: Rect {
                 x: user_pos.x,
                 y: user_pos.y,
                 width: space_width,
-                height: effective_font_size,
+                height: space_height,
             },
             font_name: font_name_space,
             font_size: effective_font_size,

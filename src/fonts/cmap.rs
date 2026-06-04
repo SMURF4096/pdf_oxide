@@ -698,12 +698,35 @@ pub(crate) fn parse_wmode_directive_public(content: &str) -> Option<u8> {
 fn parse_wmode_directive(content: &str) -> Option<u8> {
     static RE: std::sync::LazyLock<Regex> =
         std::sync::LazyLock::new(|| Regex::new(r"/WMode\s+([0-9]+)\s+def").unwrap());
-    let caps = RE.captures(content)?;
+    // PostScript comments run from `%` to end-of-line (Adobe PostScript
+    // Language Reference §3.3.1). Strip them so a commented-out directive
+    // like `% /WMode 1 def` does not flip the writing mode. Keep newlines
+    // intact so any subsequent legitimate `/WMode` on a later line is
+    // still matched.
+    let cleaned: String = content
+        .lines()
+        .map(|line| match line.find('%') {
+            Some(idx) => &line[..idx],
+            None => line,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let caps = RE.captures(&cleaned)?;
     let value: u32 = caps[1].parse().ok()?;
     match value {
         0 => Some(0),
         1 => Some(1),
-        _ => None,
+        // M6: non-spec values (e.g. `/WMode 2 def`) surface a warning so
+        // producer bugs are diagnosable. We still return None and let
+        // the caller fall back to the horizontal default — the spec
+        // (§9.7.5.4) only defines values 0 and 1.
+        other => {
+            log::warn!(
+                "Non-standard /WMode {} in CMap stream; falling back to horizontal (WMode 0)",
+                other
+            );
+            None
+        },
     }
 }
 
@@ -1401,5 +1424,75 @@ endcmap
 ";
         let cmap = parse_tounicode_cmap(data).unwrap();
         assert_eq!(cmap.wmode, 0);
+    }
+
+    /// M5: a `/WMode N def` directive that lives inside a PostScript
+    /// comment (`%` to end-of-line, §3.3.1) must NOT flip the writing
+    /// mode. Without comment-stripping, this commented-out producer
+    /// debug line would silently switch a horizontal CMap to vertical.
+    #[test]
+    fn test_parse_wmode_ignored_inside_postscript_comment() {
+        // First-line commented-out directive — must be ignored.
+        let data = b"\
+begincmap
+% /WMode 1 def
+1 begincodespacerange
+<0000> <FFFF>
+endcodespacerange
+1 beginbfchar
+<0041> <0041>
+endbfchar
+endcmap
+";
+        let cmap = parse_tounicode_cmap(data).unwrap();
+        assert_eq!(
+            cmap.wmode, 0,
+            "/WMode 1 def inside a PostScript comment must be ignored"
+        );
+    }
+
+    /// M5 corollary: a legitimate `/WMode 1 def` on a later line is
+    /// still picked up even when an earlier line carries an unrelated
+    /// comment.
+    #[test]
+    fn test_parse_wmode_after_comment_still_seen() {
+        let data = b"\
+begincmap
+% some prologue comment unrelated to wmode
+/WMode 1 def
+1 begincodespacerange
+<0000> <FFFF>
+endcodespacerange
+1 beginbfchar
+<0041> <0041>
+endbfchar
+endcmap
+";
+        let cmap = parse_tounicode_cmap(data).unwrap();
+        assert_eq!(cmap.wmode, 1);
+    }
+
+    /// M6: a non-standard `/WMode 2 def` must NOT silently flip writing
+    /// mode; the spec only defines 0 and 1 (§9.7.5.4). Parser returns
+    /// None (callers fall back to horizontal default) and emits a warn
+    /// log so producer bugs are diagnosable.
+    #[test]
+    fn test_parse_wmode_non_standard_value_falls_back() {
+        let data = b"\
+begincmap
+/WMode 2 def
+1 begincodespacerange
+<0000> <FFFF>
+endcodespacerange
+1 beginbfchar
+<0041> <0041>
+endbfchar
+endcmap
+";
+        let cmap = parse_tounicode_cmap(data).unwrap();
+        assert_eq!(
+            cmap.wmode, 0,
+            "/WMode 2 def is non-standard; parser must fall back to horizontal"
+        );
     }
 }

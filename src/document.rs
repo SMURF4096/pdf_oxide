@@ -9527,6 +9527,14 @@ impl PdfDocument {
             // Cluster tolerance: median span width. Wide enough to keep one
             // vertical column together, narrow enough to separate adjacent
             // columns. Robust to single rotated outliers.
+            //
+            // Assumption (M7): tategaki CJK body text is functionally
+            // monospaced (full-width kanji/kana, half-width digits all
+            // advance by similar widths), so the median span width
+            // approximates the column pitch. Mixed-pitch tategaki (rare —
+            // typically only ruby annotations) may overcluster; that
+            // would be an explicit follow-up if it shows up in real
+            // corpora.
             let mut widths: Vec<f32> = spans.iter().map(|s| s.bbox.width.max(1.0)).collect();
             widths.sort_by(|a, b| crate::utils::safe_float_cmp(*a, *b));
             let tol = widths[widths.len() / 2].max(1.0);
