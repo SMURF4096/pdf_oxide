@@ -1034,12 +1034,12 @@ impl TextRasterizer {
         let combined_base = base_transform.pre_concat(text_transform);
 
         let mut x_cursor: f32 = 0.0; // In text space units
-        // y_cursor tracks the cursor along the y-axis. It stays at 0 in
-        // horizontal mode (the default) and accumulates `w1y*font_size/1000`
-        // per glyph when WMode 1 is active. Single cursor variable keeps the
-        // hot loop simple — the branch on `gs.text_wmode` only flips which
-        // axis receives the advance and how the glyph is positioned
-        // relative to its horizontal origin.
+                                     // y_cursor tracks the cursor along the y-axis. It stays at 0 in
+                                     // horizontal mode (the default) and accumulates `w1y*font_size/1000`
+                                     // per glyph when WMode 1 is active. Single cursor variable keeps the
+                                     // hot loop simple — the branch on `gs.text_wmode` only flips which
+                                     // axis receives the advance and how the glyph is positioned
+                                     // relative to its horizontal origin.
         let mut y_cursor: f32 = 0.0;
         let mut last_fallback_cluster: Option<usize> = None;
         let wmode = gs.text_wmode;
@@ -1142,46 +1142,45 @@ impl TextRasterizer {
             // come from /W2 + /DW2. Simple fonts in vertical mode are not
             // a real-world case but the helper still produces spec-default
             // metrics, keeping the math safe.
-            let (y_step, paint_origin_dx, paint_origin_dy) =
-                if wmode == 1 {
-                    if let Some(font_info_ref) = font_info {
-                        // Sum w1y across the source-character cluster, matching the
-                        // horizontal path's `pdf_width` accumulation. Use the
-                        // primary glyph's vertical-origin offset (v_x, v_y) for
-                        // painting — clusters share a single origin per spec.
-                        let mut w1y_sum = 0.0_f32;
-                        let mut head_v_x = 0.0_f32;
-                        let mut head_v_y = 0.0_f32;
-                        for k in 0..cluster_chars {
-                            let idx = char_idx + k;
-                            let cid = if font_info_ref.subtype == "Type0" {
-                                *cids.get(idx).unwrap_or(&0)
-                            } else {
-                                *bytes.get(idx).unwrap_or(&0) as u16
-                            };
-                            let m = font_info_ref.get_vertical_metrics(cid);
-                            w1y_sum += m.w1y;
-                            if k == 0 {
-                                head_v_x = m.v_x;
-                                head_v_y = m.v_y;
-                            }
+            let (y_step, paint_origin_dx, paint_origin_dy) = if wmode == 1 {
+                if let Some(font_info_ref) = font_info {
+                    // Sum w1y across the source-character cluster, matching the
+                    // horizontal path's `pdf_width` accumulation. Use the
+                    // primary glyph's vertical-origin offset (v_x, v_y) for
+                    // painting — clusters share a single origin per spec.
+                    let mut w1y_sum = 0.0_f32;
+                    let mut head_v_x = 0.0_f32;
+                    let mut head_v_y = 0.0_f32;
+                    for k in 0..cluster_chars {
+                        let idx = char_idx + k;
+                        let cid = if font_info_ref.subtype == "Type0" {
+                            *cids.get(idx).unwrap_or(&0)
+                        } else {
+                            *bytes.get(idx).unwrap_or(&0) as u16
+                        };
+                        let m = font_info_ref.get_vertical_metrics(cid);
+                        w1y_sum += m.w1y;
+                        if k == 0 {
+                            head_v_x = m.v_x;
+                            head_v_y = m.v_y;
                         }
-                        let y_advance_v = w1y_sum * font_size / 1000.0;
-                        let dx = -head_v_x * font_size / 1000.0;
-                        let dy = -head_v_y * font_size / 1000.0;
-                        (y_advance_v, dx, dy)
-                    } else {
-                        // No FontInfo + vertical mode: spec defaults (-1000, 500, 880).
-                        let m = crate::fonts::VerticalMetrics::SPEC_DEFAULT;
-                        (
-                            m.w1y * font_size / 1000.0,
-                            -m.v_x * font_size / 1000.0,
-                            -m.v_y * font_size / 1000.0,
-                        )
                     }
+                    let y_advance_v = w1y_sum * font_size / 1000.0;
+                    let dx = -head_v_x * font_size / 1000.0;
+                    let dy = -head_v_y * font_size / 1000.0;
+                    (y_advance_v, dx, dy)
                 } else {
-                    (0.0, 0.0, 0.0)
-                };
+                    // No FontInfo + vertical mode: spec defaults (-1000, 500, 880).
+                    let m = crate::fonts::VerticalMetrics::SPEC_DEFAULT;
+                    (
+                        m.w1y * font_size / 1000.0,
+                        -m.v_x * font_size / 1000.0,
+                        -m.v_y * font_size / 1000.0,
+                    )
+                }
+            } else {
+                (0.0, 0.0, 0.0)
+            };
 
             // Try to get glyph from primary font
             let mut pb = PathBuilder::new();
@@ -1204,9 +1203,8 @@ impl TextRasterizer {
                     };
                     let px = (x_cursor + x_offset + paint_origin_dx) * h_scale + rise_x;
                     let py = y_cursor + y_offset + paint_origin_dy + rise_y;
-                    let glyph_transform = combined_base
-                        .pre_translate(px, py)
-                        .pre_scale(scale, scale);
+                    let glyph_transform =
+                        combined_base.pre_translate(px, py).pre_scale(scale, scale);
 
                     pixmap.fill_path(
                         &path,
@@ -1269,8 +1267,8 @@ impl TextRasterizer {
                                     } else {
                                         (gs.text_rise, 0.0)
                                     };
-                                    let px = (x_cursor + x_offset + paint_origin_dx) * h_scale
-                                        + rise_x;
+                                    let px =
+                                        (x_cursor + x_offset + paint_origin_dx) * h_scale + rise_x;
                                     let py = y_cursor + y_offset + paint_origin_dy + rise_y;
                                     let cjk_transform = combined_base
                                         .pre_translate(px, py)
@@ -1450,9 +1448,8 @@ impl TextRasterizer {
                             };
                             let px = (x_cursor + paint_origin_dx) * h_scale + rise_x;
                             let py = y_cursor + paint_origin_dy + rise_y;
-                            let glyph_transform = combined_base
-                                .pre_translate(px, py)
-                                .pre_scale(scale, scale);
+                            let glyph_transform =
+                                combined_base.pre_translate(px, py).pre_scale(scale, scale);
                             pixmap.fill_path(
                                 &path,
                                 paint,

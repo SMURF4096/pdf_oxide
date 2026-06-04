@@ -101,11 +101,7 @@ end";
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off).as_bytes());
     }
     pdf.extend_from_slice(
-        format!(
-            "trailer << /Size 8 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
-            xref
-        )
-        .as_bytes(),
+        format!("trailer << /Size 8 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref).as_bytes(),
     );
 
     pdf
@@ -144,7 +140,8 @@ fn vertical_reading_order_is_right_to_left_top_to_bottom() {
     let spans = doc.extract_spans(0).expect("extract spans");
     let combined: String = spans.iter().map(|s| s.text.as_str()).collect();
     assert_eq!(
-        combined, "ABCDEF",
+        combined,
+        "ABCDEF",
         "tategaki reading order should yield right-column-first, top-down within column. \
          got {:?} from spans at positions {:?}",
         combined,

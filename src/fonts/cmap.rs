@@ -1445,10 +1445,7 @@ endbfchar
 endcmap
 ";
         let cmap = parse_tounicode_cmap(data).unwrap();
-        assert_eq!(
-            cmap.wmode, 0,
-            "/WMode 1 def inside a PostScript comment must be ignored"
-        );
+        assert_eq!(cmap.wmode, 0, "/WMode 1 def inside a PostScript comment must be ignored");
     }
 
     /// M5 corollary: a legitimate `/WMode 1 def` on a later line is

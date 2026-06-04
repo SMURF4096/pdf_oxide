@@ -101,11 +101,7 @@ end";
         pdf.extend_from_slice(format!("{:010} 00000 n \n", off).as_bytes());
     }
     pdf.extend_from_slice(
-        format!(
-            "trailer << /Size 8 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
-            xref
-        )
-        .as_bytes(),
+        format!("trailer << /Size 8 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref).as_bytes(),
     );
 
     pdf
@@ -119,10 +115,7 @@ fn horizontal_identity_h_emits_x_advancing_spans() {
     let pdf = build_pdf_with_encoding("Identity-H");
     let doc = PdfDocument::from_bytes(pdf).expect("parse synthetic horizontal PDF");
     let spans = doc.extract_spans(0).expect("extract spans");
-    assert!(
-        !spans.is_empty(),
-        "horizontal Identity-H must produce at least one span"
-    );
+    assert!(!spans.is_empty(), "horizontal Identity-H must produce at least one span");
 
     // Concatenate text so we can identify the three CIDs.
     let combined: String = spans.iter().map(|s| s.text.as_str()).collect();
@@ -155,10 +148,7 @@ fn vertical_identity_v_emits_y_advancing_spans() {
     let pdf = build_pdf_with_encoding("Identity-V");
     let doc = PdfDocument::from_bytes(pdf).expect("parse synthetic vertical PDF");
     let spans = doc.extract_spans(0).expect("extract spans");
-    assert!(
-        !spans.is_empty(),
-        "vertical Identity-V must produce at least one span"
-    );
+    assert!(!spans.is_empty(), "vertical Identity-V must produce at least one span");
 
     let combined: String = spans.iter().map(|s| s.text.as_str()).collect();
     assert!(
@@ -201,10 +191,7 @@ fn vertical_identity_v_emits_y_advancing_spans() {
     let hspans = hdoc.extract_spans(0).expect("extract horizontal spans");
 
     let x_extent = |spans: &[pdf_oxide::layout::TextSpan]| -> f32 {
-        let min = spans
-            .iter()
-            .map(|s| s.bbox.x)
-            .fold(f32::INFINITY, f32::min);
+        let min = spans.iter().map(|s| s.bbox.x).fold(f32::INFINITY, f32::min);
         let max = spans
             .iter()
             .map(|s| s.bbox.x + s.bbox.width)
@@ -212,10 +199,7 @@ fn vertical_identity_v_emits_y_advancing_spans() {
         max - min
     };
     let y_extent = |spans: &[pdf_oxide::layout::TextSpan]| -> f32 {
-        let min = spans
-            .iter()
-            .map(|s| s.bbox.y)
-            .fold(f32::INFINITY, f32::min);
+        let min = spans.iter().map(|s| s.bbox.y).fold(f32::INFINITY, f32::min);
         let max = spans
             .iter()
             .map(|s| s.bbox.y + s.bbox.height)
@@ -237,10 +221,5 @@ fn vertical_identity_v_emits_y_advancing_spans() {
         v_y,
         h_y
     );
-    assert!(
-        v_x <= h_x,
-        "vertical x-extent {} should be <= horizontal x-extent {}",
-        v_x,
-        h_x
-    );
+    assert!(v_x <= h_x, "vertical x-extent {} should be <= horizontal x-extent {}", v_x, h_x);
 }

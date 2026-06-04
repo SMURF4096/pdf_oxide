@@ -1031,8 +1031,17 @@ impl FontInfo {
                         embedded_font_data = desc_embedded;
                     }
                     (
-                        map, info, ftype, widths, dw, explicit_dw, tt_cmap, d_ascent, d_descent,
-                        vmetrics, dvmetrics,
+                        map,
+                        info,
+                        ftype,
+                        widths,
+                        dw,
+                        explicit_dw,
+                        tt_cmap,
+                        d_ascent,
+                        d_descent,
+                        vmetrics,
+                        dvmetrics,
                     )
                 },
                 Err(e) => {
@@ -1276,14 +1285,14 @@ impl FontInfo {
         Option<CIDSystemInfo>,
         Option<String>,
         Option<HashMap<u16, f32>>,
-        f32,                  // cid_default_width
-        bool,                 // has_explicit_dw (F14/F15 fix)
-        Option<TrueTypeCMap>, // TrueType cmap from descendant's embedded font
-        Option<Arc<Vec<u8>>>, // Embedded font data from CIDFont's FontDescriptor
-        Option<f32>,          // raw_ascent from descendant FontDescriptor
-        Option<f32>,          // raw_descent from descendant FontDescriptor
+        f32,                                   // cid_default_width
+        bool,                                  // has_explicit_dw (F14/F15 fix)
+        Option<TrueTypeCMap>,                  // TrueType cmap from descendant's embedded font
+        Option<Arc<Vec<u8>>>,                  // Embedded font data from CIDFont's FontDescriptor
+        Option<f32>,                           // raw_ascent from descendant FontDescriptor
+        Option<f32>,                           // raw_descent from descendant FontDescriptor
         Option<HashMap<u16, VerticalMetrics>>, // /W2 per-CID vertical metrics
-        VerticalMetrics,      // /DW2 default vertical metrics (or spec defaults)
+        VerticalMetrics,                       // /DW2 default vertical metrics (or spec defaults)
     )> {
         let descendant_obj = font_dict
             .get("DescendantFonts")
@@ -1566,11 +1575,7 @@ impl FontInfo {
                         std::borrow::Cow::Owned(dict_clone)
                     },
                     Err(e) => {
-                        log::warn!(
-                            "Font '{}': Failed to resolve /W2 reference: {}",
-                            base_font,
-                            e
-                        );
+                        log::warn!("Font '{}': Failed to resolve /W2 reference: {}", base_font, e);
                         resolved_cidfont_dict.clone()
                     },
                 }
@@ -1580,8 +1585,7 @@ impl FontInfo {
         } else {
             resolved_cidfont_dict.clone()
         };
-        let cid_vertical_metrics =
-            Self::parse_cid_vertical_metrics(&resolved_for_w2, base_font);
+        let cid_vertical_metrics = Self::parse_cid_vertical_metrics(&resolved_for_w2, base_font);
         let cid_default_vertical_metrics = Self::parse_dw2(&resolved_for_w2);
         if cid_vertical_metrics.is_some() {
             log::debug!(
@@ -1962,10 +1966,7 @@ impl FontInfo {
     /// The two signals are surfaced separately so callers can apply the
     /// precedence rules from ISO 32000-1 §9.7.5.4: an embedded CMap stream's
     /// explicit `/WMode` overrides what the name might suggest.
-    fn resolve_encoding_writing_mode(
-        enc_obj: &Object,
-        doc: &PdfDocument,
-    ) -> (Option<String>, u8) {
+    fn resolve_encoding_writing_mode(enc_obj: &Object, doc: &PdfDocument) -> (Option<String>, u8) {
         // Case 1: /Encoding is a /Name atom — predefined CMap name.
         if let Some(name) = enc_obj.as_name() {
             let wmode = wmode_from_predefined_cmap_name(name);
@@ -1993,7 +1994,10 @@ impl FontInfo {
         };
         let _ = doc; // doc reserved for future use (e.g. resolving /UseCMap refs).
 
-        let name_wmode = name.as_deref().map(wmode_from_predefined_cmap_name).unwrap_or(0);
+        let name_wmode = name
+            .as_deref()
+            .map(wmode_from_predefined_cmap_name)
+            .unwrap_or(0);
         let wmode = stream_wmode.unwrap_or(name_wmode);
         (name, wmode)
     }
@@ -2027,7 +2031,11 @@ impl FontInfo {
             Object::Real(r) => *r as f32,
             _ => return VerticalMetrics::SPEC_DEFAULT,
         };
-        VerticalMetrics { w1y, v_x: 500.0, v_y }
+        VerticalMetrics {
+            w1y,
+            v_x: 500.0,
+            v_y,
+        }
     }
 
     /// Parse `/W2` (per-CID vertical metrics) from a CIDFont dictionary.
@@ -7942,11 +7950,19 @@ mod tests {
         let metrics = FontInfo::parse_cid_vertical_metrics(&dict, "Test").unwrap();
         assert_eq!(
             metrics.get(&10),
-            Some(&VerticalMetrics { w1y: -880.0, v_x: 500.0, v_y: 900.0 })
+            Some(&VerticalMetrics {
+                w1y: -880.0,
+                v_x: 500.0,
+                v_y: 900.0
+            })
         );
         assert_eq!(
             metrics.get(&11),
-            Some(&VerticalMetrics { w1y: -1000.0, v_x: 520.0, v_y: 850.0 })
+            Some(&VerticalMetrics {
+                w1y: -1000.0,
+                v_x: 520.0,
+                v_y: 850.0
+            })
         );
         assert_eq!(metrics.get(&12), None);
     }
@@ -7967,7 +7983,11 @@ mod tests {
             ]),
         );
         let metrics = FontInfo::parse_cid_vertical_metrics(&dict, "Test").unwrap();
-        let expected = VerticalMetrics { w1y: -1000.0, v_x: 500.0, v_y: 880.0 };
+        let expected = VerticalMetrics {
+            w1y: -1000.0,
+            v_x: 500.0,
+            v_y: 880.0,
+        };
         assert_eq!(metrics.get(&100), Some(&expected));
         assert_eq!(metrics.get(&101), Some(&expected));
         assert_eq!(metrics.get(&102), Some(&expected));
@@ -8002,9 +8022,17 @@ mod tests {
         let metrics = FontInfo::parse_cid_vertical_metrics(&dict, "Test").unwrap();
         assert_eq!(
             metrics.get(&5),
-            Some(&VerticalMetrics { w1y: -900.0, v_x: 490.0, v_y: 870.0 })
+            Some(&VerticalMetrics {
+                w1y: -900.0,
+                v_x: 490.0,
+                v_y: 870.0
+            })
         );
-        let range_default = VerticalMetrics { w1y: -1000.0, v_x: 500.0, v_y: 880.0 };
+        let range_default = VerticalMetrics {
+            w1y: -1000.0,
+            v_x: 500.0,
+            v_y: 880.0,
+        };
         assert_eq!(metrics.get(&200), Some(&range_default));
         assert_eq!(metrics.get(&201), Some(&range_default));
         assert_eq!(metrics.get(&202), None);
@@ -8044,7 +8072,11 @@ mod tests {
         let metrics = FontInfo::parse_cid_vertical_metrics(&dict, "Test").unwrap();
         assert_eq!(
             metrics.get(&1),
-            Some(&VerticalMetrics { w1y: -987.5, v_x: 501.25, v_y: 879.75 })
+            Some(&VerticalMetrics {
+                w1y: -987.5,
+                v_x: 501.25,
+                v_y: 879.75
+            })
         );
     }
 
@@ -8088,7 +8120,11 @@ mod tests {
         // shifted into a different CID slot.
         assert_eq!(
             metrics.get(&11),
-            Some(&VerticalMetrics { w1y: -1000.0, v_x: 500.0, v_y: 880.0 })
+            Some(&VerticalMetrics {
+                w1y: -1000.0,
+                v_x: 500.0,
+                v_y: 880.0
+            })
         );
     }
 
@@ -8114,7 +8150,11 @@ mod tests {
             ]),
         );
         let metrics = FontInfo::parse_cid_vertical_metrics(&dict, "Test").unwrap();
-        let expected = VerticalMetrics { w1y: -1000.0, v_x: 500.0, v_y: 880.0 };
+        let expected = VerticalMetrics {
+            w1y: -1000.0,
+            v_x: 500.0,
+            v_y: 880.0,
+        };
         for cid in 0xFFFBu16..=0xFFFFu16 {
             assert_eq!(
                 metrics.get(&cid),
@@ -8167,11 +8207,19 @@ mod tests {
         let metrics = FontInfo::parse_cid_vertical_metrics(&dict, "Test").unwrap();
         assert_eq!(
             metrics.get(&0xFFFE),
-            Some(&VerticalMetrics { w1y: -1000.0, v_x: 500.0, v_y: 880.0 })
+            Some(&VerticalMetrics {
+                w1y: -1000.0,
+                v_x: 500.0,
+                v_y: 880.0
+            })
         );
         assert_eq!(
             metrics.get(&0xFFFF),
-            Some(&VerticalMetrics { w1y: -900.0, v_x: 510.0, v_y: 870.0 })
+            Some(&VerticalMetrics {
+                w1y: -900.0,
+                v_x: 510.0,
+                v_y: 870.0
+            })
         );
         assert_eq!(
             metrics.len(),
@@ -8266,24 +8314,42 @@ mod tests {
     #[test]
     fn test_get_vertical_metrics_lookup_precedence() {
         let mut per_cid: HashMap<u16, VerticalMetrics> = HashMap::new();
-        per_cid.insert(7, VerticalMetrics { w1y: -900.0, v_x: 480.0, v_y: 870.0 });
+        per_cid.insert(
+            7,
+            VerticalMetrics {
+                w1y: -900.0,
+                v_x: 480.0,
+                v_y: 870.0,
+            },
+        );
 
         let font = make_font(|f| {
             f.subtype = "Type0".to_string();
             f.cid_vertical_metrics = Some(per_cid);
-            f.cid_default_vertical_metrics =
-                VerticalMetrics { w1y: -1050.0, v_x: 500.0, v_y: 900.0 };
+            f.cid_default_vertical_metrics = VerticalMetrics {
+                w1y: -1050.0,
+                v_x: 500.0,
+                v_y: 900.0,
+            };
         });
 
         // Per-CID hit
         assert_eq!(
             font.get_vertical_metrics(7),
-            VerticalMetrics { w1y: -900.0, v_x: 480.0, v_y: 870.0 }
+            VerticalMetrics {
+                w1y: -900.0,
+                v_x: 480.0,
+                v_y: 870.0
+            }
         );
         // Per-CID miss → /DW2 defaults
         assert_eq!(
             font.get_vertical_metrics(99),
-            VerticalMetrics { w1y: -1050.0, v_x: 500.0, v_y: 900.0 }
+            VerticalMetrics {
+                w1y: -1050.0,
+                v_x: 500.0,
+                v_y: 900.0
+            }
         );
     }
 
