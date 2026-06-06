@@ -142,7 +142,13 @@ use crate::fonts::FontInfo;
 use crate::object::Object;
 
 use super::ext_gstate::{parse_ext_g_state_inner, ParsedExtGState};
+use super::resolution::{
+    InkName, PaintBackend, PaintIntent, PaintKind, PaintSide, ResolutionContext,
+    ResolutionPipeline, SeparationBackend, SeparationSurface,
+};
 use super::text_rasterizer::TextRasterizer;
+use crate::rendering::resolution::{DeviceColor, LogicalColor};
+use smallvec::SmallVec;
 
 /// A rendered separation plate for a single ink.
 ///
@@ -907,6 +913,187 @@ fn tint_for_ink(
     }
 }
 
+/// Build a [`LogicalColor`] for the per-plate path from the current
+/// graphics-state colour space and component values. Mirrors the
+/// resolution the composite-side `build_logical_color` does, but
+/// keyed on the separation walker's `gs.fill_color_space` /
+/// `gs.stroke_color_space` strings and the parallel
+/// `SeparationColorState` components vectors.
+///
+/// Returns `None` when the colour space can't be resolved or is empty.
+fn logical_color_for_side<'a>(
+    fill: bool,
+    gs: &'a GraphicsState,
+    cs: &'a SeparationColorState,
+    color_spaces: &'a HashMap<String, Object>,
+) -> Option<LogicalColor<'a>> {
+    let space_name = if fill {
+        &gs.fill_color_space
+    } else {
+        &gs.stroke_color_space
+    };
+    let components = if fill {
+        &cs.fill_components
+    } else {
+        &cs.stroke_components
+    };
+    let cmyk_state = if fill {
+        gs.fill_color_cmyk
+    } else {
+        gs.stroke_color_cmyk
+    };
+
+    // Device-family aliases: emit the operator-side LogicalColor::Device
+    // so the resolver passes straight through to the right channel
+    // decomposition.
+    match space_name.as_str() {
+        "DeviceCMYK" | "CMYK" => {
+            let (c, m, y, k) = cmyk_state.or_else(|| {
+                if components.len() >= 4 {
+                    Some((components[0], components[1], components[2], components[3]))
+                } else {
+                    None
+                }
+            })?;
+            return Some(LogicalColor::Device(DeviceColor::Cmyk(c, m, y, k)));
+        },
+        "DeviceRGB" | "RGB" => {
+            if components.len() >= 3 {
+                return Some(LogicalColor::Device(DeviceColor::Rgb(
+                    components[0],
+                    components[1],
+                    components[2],
+                )));
+            }
+            return None;
+        },
+        "DeviceGray" | "G" => {
+            if !components.is_empty() {
+                return Some(LogicalColor::Device(DeviceColor::Gray(components[0])));
+            }
+            return None;
+        },
+        _ => {},
+    }
+
+    // Spaced: needs a borrow into the page-resource colour-space map.
+    let space = color_spaces.get(space_name)?;
+    let comps: SmallVec<[f32; 8]> = components.iter().copied().collect();
+    Some(LogicalColor::Spaced {
+        space,
+        components: comps,
+    })
+}
+
+/// Dispatch a single paint operation through the resolution pipeline
+/// and the [`SeparationBackend`]. Used for the spot / DeviceN / ICCBased
+/// cases the inline `tint_for_ink` path can't resolve (notably Type-4
+/// tint transforms on Separation/DeviceN sources). Returns `true` on a
+/// successful pipeline dispatch; `false` if the colour can't be made
+/// into a logical colour (caller falls back to the inline path).
+#[allow(clippy::too_many_arguments)]
+fn paint_through_pipeline(
+    fill: bool,
+    fill_rule: Option<FillRule>,
+    path: &tiny_skia::Path,
+    pixmaps: &mut [Pixmap],
+    target_inks: &[InkName],
+    base_transform: Transform,
+    gs: &GraphicsState,
+    cs: &SeparationColorState,
+    color_spaces: &HashMap<String, Object>,
+    resources: &Object,
+    doc: &PdfDocument,
+    clip: Option<&Mask>,
+    pipeline: &ResolutionPipeline,
+    backend: &mut SeparationBackend,
+) -> Result<()> {
+    let _ = resources; // ResolutionContext consumes (doc, color_spaces); kept for future audits.
+    let Some(logical) = logical_color_for_side(fill, gs, cs, color_spaces) else {
+        return Ok(());
+    };
+    let side = if fill {
+        PaintSide::Fill
+    } else {
+        PaintSide::Stroke
+    };
+    let intent = PaintIntent {
+        kind: PaintKind::Path {
+            path,
+            fill_rule: fill_rule.unwrap_or(FillRule::Winding),
+        },
+        side,
+        gs,
+        color: logical,
+        ctm: gs.ctm,
+    };
+    let ctx = ResolutionContext::new(doc, color_spaces);
+    let cmd = pipeline.resolve(&intent, &ctx, None)?;
+    // Wrap the clip mask back into a borrowed ClipPlan-equivalent via
+    // the SeparationSurface's externally-visible state. The
+    // SeparationBackend reads cmd.clip; build the cmd with an Arc-wrapped
+    // mask only when one is present.
+    let surface = SeparationSurface {
+        pixmaps,
+        inks: target_inks,
+        base_transform,
+    };
+    // The pipeline currently produces ClipPlan::None because we passed
+    // None into resolve(); for the separation walker the active clip
+    // lives on `clip_stack` and is the same mask for every plate. Hand
+    // it through by rebuilding the cmd with a wrapped Arc when present.
+    let cmd = if let Some(mask) = clip {
+        let mut new = cmd;
+        new.clip = crate::rendering::resolution::ClipPlan::Mask(std::sync::Arc::new(mask.clone()));
+        new
+    } else {
+        cmd
+    };
+    backend.paint(&cmd, surface)?;
+    Ok(())
+}
+
+/// Decide whether the current paint at `gs.{fill,stroke}_color_space`
+/// should route through the [`ResolutionPipeline`] or stay on the
+/// inline `tint_for_ink` fast path.
+///
+/// The pipeline is the only path that handles Type-4 tint transforms,
+/// Separation reserved colorant names (`/All`, `/None`), and the OPM=1
+/// zero-component rule via [`InkRouter`]. Process colour direct
+/// (`DeviceCMYK`, `DeviceGray`) and `DeviceRGB` (which the per-plate
+/// path skips entirely) keep the existing inline behaviour — it's
+/// cheaper and the inline arms are already correct for those cases.
+fn side_uses_pipeline(
+    fill: bool,
+    gs: &GraphicsState,
+    color_spaces: &HashMap<String, Object>,
+    resources: &Object,
+    doc: &PdfDocument,
+) -> bool {
+    let space_name = if fill {
+        &gs.fill_color_space
+    } else {
+        &gs.stroke_color_space
+    };
+    // Plain Device-* names take the inline path.
+    if matches!(
+        space_name.as_str(),
+        "DeviceCMYK" | "CMYK" | "DeviceRGB" | "RGB" | "DeviceGray" | "G"
+    ) {
+        return false;
+    }
+    // Anything else: classify, and route compound spaces through the
+    // pipeline so Type-4 / DeviceN / ICCBased N=4 evaluations land.
+    matches!(
+        resolve_color_space(space_name, color_spaces, resources, doc),
+        ResolvedSpace::Separation(_)
+            | ResolvedSpace::DeviceN(_)
+            | ResolvedSpace::IccCmyk
+            | ResolvedSpace::IccRgb
+            | ResolvedSpace::IccGray
+    )
+}
+
 /// Per-render shared context (read-only) passed through the operator
 /// walk and into recursive Form XObject invocations.
 ///
@@ -1060,6 +1247,17 @@ fn execute_separation_operators(
     // paint loops are no-ops because there are no targets.
     let pixmap_width = pixmaps.first().map(|p| p.width()).unwrap_or(0);
     let pixmap_height = pixmaps.first().map(|p| p.height()).unwrap_or(0);
+
+    // Pipeline-driven dispatch state. The pipeline replaces the inline
+    // `tint_for_ink` decision tree for Separation / DeviceN / ICCBased
+    // sources — it's the only path that evaluates Type-4 tint
+    // transforms, honours §8.6.6.3 `/All` and `/None`, and routes via
+    // the §11.7.4 / §11.7.4.3 InkRouter rules. Process colour direct
+    // (DeviceCMYK / DeviceGray) and DeviceRGB keep the inline fast
+    // path because the inline arms are already correct for those.
+    let pipeline = ResolutionPipeline::new();
+    let mut backend = SeparationBackend::new();
+    let target_inks_owned: Vec<InkName> = target_inks.iter().map(|s| InkName::new(*s)).collect();
 
     for op in operators {
         match op {
@@ -1278,18 +1476,44 @@ fn execute_separation_operators(
                     let cs = color_state_stack.last().unwrap_or(&empty);
                     let transform = combine_transforms(base_transform, &gs.ctm);
                     let clip = clip_stack.last().and_then(|c| c.as_ref());
-                    for (i, &ink) in target_inks.iter().enumerate() {
-                        if let PaintAction::Paint(tint) = tint_for_ink(
+                    if side_uses_pipeline(false, gs, color_spaces, resources, ctx.doc) {
+                        paint_through_pipeline(
                             false,
+                            None,
+                            &path,
+                            pixmaps,
+                            &target_inks_owned,
+                            base_transform,
                             gs,
+                            cs,
                             color_spaces,
                             resources,
                             ctx.doc,
-                            ink,
-                            &cs.fill_components,
-                            &cs.stroke_components,
-                        ) {
-                            stroke_separation(&mut pixmaps[i], &path, transform, gs, tint, clip);
+                            clip,
+                            &pipeline,
+                            &mut backend,
+                        )?;
+                    } else {
+                        for (i, &ink) in target_inks.iter().enumerate() {
+                            if let PaintAction::Paint(tint) = tint_for_ink(
+                                false,
+                                gs,
+                                color_spaces,
+                                resources,
+                                ctx.doc,
+                                ink,
+                                &cs.fill_components,
+                                &cs.stroke_components,
+                            ) {
+                                stroke_separation(
+                                    &mut pixmaps[i],
+                                    &path,
+                                    transform,
+                                    gs,
+                                    tint,
+                                    clip,
+                                );
+                            }
                         }
                     }
                 }
@@ -1310,25 +1534,44 @@ fn execute_separation_operators(
                     let cs = color_state_stack.last().unwrap_or(&empty);
                     let transform = combine_transforms(base_transform, &gs.ctm);
                     let clip = clip_stack.last().and_then(|c| c.as_ref());
-                    for (i, &ink) in target_inks.iter().enumerate() {
-                        if let PaintAction::Paint(tint) = tint_for_ink(
+                    if side_uses_pipeline(true, gs, color_spaces, resources, ctx.doc) {
+                        paint_through_pipeline(
                             true,
+                            Some(FillRule::Winding),
+                            &path,
+                            pixmaps,
+                            &target_inks_owned,
+                            base_transform,
                             gs,
+                            cs,
                             color_spaces,
                             resources,
                             ctx.doc,
-                            ink,
-                            &cs.fill_components,
-                            &cs.stroke_components,
-                        ) {
-                            fill_separation(
-                                &mut pixmaps[i],
-                                &path,
-                                transform,
-                                tint,
-                                FillRule::Winding,
-                                clip,
-                            );
+                            clip,
+                            &pipeline,
+                            &mut backend,
+                        )?;
+                    } else {
+                        for (i, &ink) in target_inks.iter().enumerate() {
+                            if let PaintAction::Paint(tint) = tint_for_ink(
+                                true,
+                                gs,
+                                color_spaces,
+                                resources,
+                                ctx.doc,
+                                ink,
+                                &cs.fill_components,
+                                &cs.stroke_components,
+                            ) {
+                                fill_separation(
+                                    &mut pixmaps[i],
+                                    &path,
+                                    transform,
+                                    tint,
+                                    FillRule::Winding,
+                                    clip,
+                                );
+                            }
                         }
                     }
                 }
@@ -1349,25 +1592,44 @@ fn execute_separation_operators(
                     let cs = color_state_stack.last().unwrap_or(&empty);
                     let transform = combine_transforms(base_transform, &gs.ctm);
                     let clip = clip_stack.last().and_then(|c| c.as_ref());
-                    for (i, &ink) in target_inks.iter().enumerate() {
-                        if let PaintAction::Paint(tint) = tint_for_ink(
+                    if side_uses_pipeline(true, gs, color_spaces, resources, ctx.doc) {
+                        paint_through_pipeline(
                             true,
+                            Some(FillRule::EvenOdd),
+                            &path,
+                            pixmaps,
+                            &target_inks_owned,
+                            base_transform,
                             gs,
+                            cs,
                             color_spaces,
                             resources,
                             ctx.doc,
-                            ink,
-                            &cs.fill_components,
-                            &cs.stroke_components,
-                        ) {
-                            fill_separation(
-                                &mut pixmaps[i],
-                                &path,
-                                transform,
-                                tint,
-                                FillRule::EvenOdd,
-                                clip,
-                            );
+                            clip,
+                            &pipeline,
+                            &mut backend,
+                        )?;
+                    } else {
+                        for (i, &ink) in target_inks.iter().enumerate() {
+                            if let PaintAction::Paint(tint) = tint_for_ink(
+                                true,
+                                gs,
+                                color_spaces,
+                                resources,
+                                ctx.doc,
+                                ink,
+                                &cs.fill_components,
+                                &cs.stroke_components,
+                            ) {
+                                fill_separation(
+                                    &mut pixmaps[i],
+                                    &path,
+                                    transform,
+                                    tint,
+                                    FillRule::EvenOdd,
+                                    clip,
+                                );
+                            }
                         }
                     }
                 }
@@ -1388,37 +1650,86 @@ fn execute_separation_operators(
                     let cs = color_state_stack.last().unwrap_or(&empty);
                     let transform = combine_transforms(base_transform, &gs.ctm);
                     let clip = clip_stack.last().and_then(|c| c.as_ref());
-                    for (i, &ink) in target_inks.iter().enumerate() {
-                        if let PaintAction::Paint(tint) = tint_for_ink(
+                    // Fill side.
+                    if side_uses_pipeline(true, gs, color_spaces, resources, ctx.doc) {
+                        paint_through_pipeline(
                             true,
+                            Some(FillRule::Winding),
+                            &path,
+                            pixmaps,
+                            &target_inks_owned,
+                            base_transform,
                             gs,
+                            cs,
                             color_spaces,
                             resources,
                             ctx.doc,
-                            ink,
-                            &cs.fill_components,
-                            &cs.stroke_components,
-                        ) {
-                            fill_separation(
-                                &mut pixmaps[i],
-                                &path,
-                                transform,
-                                tint,
-                                FillRule::Winding,
-                                clip,
-                            );
+                            clip,
+                            &pipeline,
+                            &mut backend,
+                        )?;
+                    } else {
+                        for (i, &ink) in target_inks.iter().enumerate() {
+                            if let PaintAction::Paint(tint) = tint_for_ink(
+                                true,
+                                gs,
+                                color_spaces,
+                                resources,
+                                ctx.doc,
+                                ink,
+                                &cs.fill_components,
+                                &cs.stroke_components,
+                            ) {
+                                fill_separation(
+                                    &mut pixmaps[i],
+                                    &path,
+                                    transform,
+                                    tint,
+                                    FillRule::Winding,
+                                    clip,
+                                );
+                            }
                         }
-                        if let PaintAction::Paint(tint) = tint_for_ink(
+                    }
+                    // Stroke side.
+                    if side_uses_pipeline(false, gs, color_spaces, resources, ctx.doc) {
+                        paint_through_pipeline(
                             false,
+                            None,
+                            &path,
+                            pixmaps,
+                            &target_inks_owned,
+                            base_transform,
                             gs,
+                            cs,
                             color_spaces,
                             resources,
                             ctx.doc,
-                            ink,
-                            &cs.fill_components,
-                            &cs.stroke_components,
-                        ) {
-                            stroke_separation(&mut pixmaps[i], &path, transform, gs, tint, clip);
+                            clip,
+                            &pipeline,
+                            &mut backend,
+                        )?;
+                    } else {
+                        for (i, &ink) in target_inks.iter().enumerate() {
+                            if let PaintAction::Paint(tint) = tint_for_ink(
+                                false,
+                                gs,
+                                color_spaces,
+                                resources,
+                                ctx.doc,
+                                ink,
+                                &cs.fill_components,
+                                &cs.stroke_components,
+                            ) {
+                                stroke_separation(
+                                    &mut pixmaps[i],
+                                    &path,
+                                    transform,
+                                    gs,
+                                    tint,
+                                    clip,
+                                );
+                            }
                         }
                     }
                 }
@@ -1439,37 +1750,86 @@ fn execute_separation_operators(
                     let cs = color_state_stack.last().unwrap_or(&empty);
                     let transform = combine_transforms(base_transform, &gs.ctm);
                     let clip = clip_stack.last().and_then(|c| c.as_ref());
-                    for (i, &ink) in target_inks.iter().enumerate() {
-                        if let PaintAction::Paint(tint) = tint_for_ink(
+                    // Fill side.
+                    if side_uses_pipeline(true, gs, color_spaces, resources, ctx.doc) {
+                        paint_through_pipeline(
                             true,
+                            Some(FillRule::EvenOdd),
+                            &path,
+                            pixmaps,
+                            &target_inks_owned,
+                            base_transform,
                             gs,
+                            cs,
                             color_spaces,
                             resources,
                             ctx.doc,
-                            ink,
-                            &cs.fill_components,
-                            &cs.stroke_components,
-                        ) {
-                            fill_separation(
-                                &mut pixmaps[i],
-                                &path,
-                                transform,
-                                tint,
-                                FillRule::EvenOdd,
-                                clip,
-                            );
+                            clip,
+                            &pipeline,
+                            &mut backend,
+                        )?;
+                    } else {
+                        for (i, &ink) in target_inks.iter().enumerate() {
+                            if let PaintAction::Paint(tint) = tint_for_ink(
+                                true,
+                                gs,
+                                color_spaces,
+                                resources,
+                                ctx.doc,
+                                ink,
+                                &cs.fill_components,
+                                &cs.stroke_components,
+                            ) {
+                                fill_separation(
+                                    &mut pixmaps[i],
+                                    &path,
+                                    transform,
+                                    tint,
+                                    FillRule::EvenOdd,
+                                    clip,
+                                );
+                            }
                         }
-                        if let PaintAction::Paint(tint) = tint_for_ink(
+                    }
+                    // Stroke side.
+                    if side_uses_pipeline(false, gs, color_spaces, resources, ctx.doc) {
+                        paint_through_pipeline(
                             false,
+                            None,
+                            &path,
+                            pixmaps,
+                            &target_inks_owned,
+                            base_transform,
                             gs,
+                            cs,
                             color_spaces,
                             resources,
                             ctx.doc,
-                            ink,
-                            &cs.fill_components,
-                            &cs.stroke_components,
-                        ) {
-                            stroke_separation(&mut pixmaps[i], &path, transform, gs, tint, clip);
+                            clip,
+                            &pipeline,
+                            &mut backend,
+                        )?;
+                    } else {
+                        for (i, &ink) in target_inks.iter().enumerate() {
+                            if let PaintAction::Paint(tint) = tint_for_ink(
+                                false,
+                                gs,
+                                color_spaces,
+                                resources,
+                                ctx.doc,
+                                ink,
+                                &cs.fill_components,
+                                &cs.stroke_components,
+                            ) {
+                                stroke_separation(
+                                    &mut pixmaps[i],
+                                    &path,
+                                    transform,
+                                    gs,
+                                    tint,
+                                    clip,
+                                );
+                            }
                         }
                     }
                 }
@@ -1843,6 +2203,10 @@ fn render_text_to_plate(
             text,
             transform,
             &faux,
+            // The separation backend bakes its own faux grayscale into
+            // `faux.fill_color_rgb`; the composite-side resolution pipeline
+            // is not in play here, so no colour override is needed.
+            None,
             resources,
             ctx.doc,
             clip,
@@ -1958,7 +2322,12 @@ fn measure_text_advance(
 }
 
 /// Fill a path into the separation pixmap with the given tint value.
-fn fill_separation(
+///
+/// `pub(crate)` so the resolution pipeline's [`super::resolution::SeparationBackend`]
+/// can take it as a parity reference in its byte-for-byte equivalence test.
+/// The shipping per-plate walker calls it directly; production callers
+/// outside the renderer should not.
+pub(crate) fn fill_separation(
     pixmap: &mut Pixmap,
     path: &tiny_skia::Path,
     transform: Transform,
