@@ -685,8 +685,18 @@ jobs:
           #     improvements (#525, #524), so the ceiling is raised
           #     rather than the styling fix gated off wasm32 — same
           #     precedent the v0.3.48 bump followed.
-          # Ceiling leaves ~6% headroom above the 14489 KB v0.3.52 baseline.
-          max_kb=15360
+          #   #674 ~15.05 MB: the §11 transparency surface (isolated /
+          #     knockout groups, the full blend-mode set, soft-mask
+          #     luminosity/alpha compositing) plus the `IccBackend`
+          #     trait land real compositing code on the rendering path,
+          #     which the wasm build compiles in (`--features
+          #     wasm,rendering,barcodes`). The optional lcms2 backend is
+          #     gated off wasm, so this is the pure-Rust compositor, not
+          #     a vendored CMM — legitimate feature growth, so the
+          #     ceiling is raised rather than §11 gated off wasm32, same
+          #     precedent the v0.3.48 / v0.3.52 bumps followed.
+          # Ceiling leaves ~6% headroom above the ~15.05 MB #674 baseline.
+          max_kb=16384
           if [ "$after_kb" -gt "$max_kb" ]; then
             echo "::error::wasm bundle ${after_kb} KB exceeds ceiling ${max_kb} KB"
             exit 1
