@@ -857,38 +857,56 @@ impl FontInfo {
             // The font program's mappings override the standard encoding.
             if matches!(parsed_enc, Encoding::Standard(_)) {
                 if let Some(prog_enc) = &font_program_enc_cache {
-                    log::info!(
-                        "Font '{}': merging {} font program encoding entries with {}",
-                        base_font,
-                        prog_enc.len(),
-                        match &parsed_enc {
-                            Encoding::Standard(n) => n.as_str(),
-                            _ => "custom",
-                        }
-                    );
-                    // Build Custom map: start with standard encoding, overlay font program
                     let std_name = match &parsed_enc {
                         Encoding::Standard(n) => n.clone(),
                         _ => "StandardEncoding".to_string(),
                     };
-                    let mut custom_map: HashMap<u8, char> = HashMap::new();
-                    for code in 0u8..=255 {
-                        if let Some(unicode_str) = standard_encoding_lookup(&std_name, code) {
-                            if let Some(ch) = unicode_str.chars().next() {
-                                custom_map.insert(code, ch);
+
+                    // Decide whether the embedded program's built-in encoding is a
+                    // meaningful text encoding (a few non-standard slots to overlay,
+                    // e.g. space at 0xCA) or a re-indexed *cipher* — a subset font's
+                    // own glyph ordering that bears no relation to the producer's
+                    // declared named base encoding. Overlaying a cipher rewrites every
+                    // mapped code into mojibake. Discriminate by agreement: count how
+                    // many program codes resolve to the SAME character the named base
+                    // already gives. A real encoding agrees on most; a cipher on
+                    // almost none.
+                    let looks_like_cipher = builtin_encoding_looks_like_cipher(prog_enc, &std_name);
+
+                    if looks_like_cipher {
+                        // Trust the producer-declared named encoding; the built-in
+                        // cipher would corrupt it. Leave `parsed_enc` as the named
+                        // Standard encoding.
+                        log::debug!(
+                            "Font '{base_font}': built-in encoding disagrees with {std_name} on most overlapping codes — treating as a subset cipher and keeping the named encoding"
+                        );
+                    } else {
+                        log::info!(
+                            "Font '{}': merging {} font program encoding entries with {}",
+                            base_font,
+                            prog_enc.len(),
+                            std_name,
+                        );
+                        // Build Custom map: start with the named encoding, overlay the
+                        // (consistent) font program for its few non-standard slots.
+                        let mut custom_map: HashMap<u8, char> = HashMap::new();
+                        for code in 0u8..=255 {
+                            if let Some(unicode_str) = standard_encoding_lookup(&std_name, code) {
+                                if let Some(ch) = unicode_str.chars().next() {
+                                    custom_map.insert(code, ch);
+                                }
                             }
                         }
-                    }
-                    // Font program overrides
-                    for (&code, &ch) in prog_enc {
-                        custom_map.insert(code, ch);
-                        if is_ligature_char(ch) {
-                            if let Some(expanded) = expand_ligature_char(ch) {
-                                multi_map.insert(code, expanded.to_string());
+                        for (&code, &ch) in prog_enc {
+                            custom_map.insert(code, ch);
+                            if is_ligature_char(ch) {
+                                if let Some(expanded) = expand_ligature_char(ch) {
+                                    multi_map.insert(code, expanded.to_string());
+                                }
                             }
                         }
+                        parsed_enc = Encoding::Custom(custom_map);
                     }
-                    parsed_enc = Encoding::Custom(custom_map);
                 }
             }
 
@@ -5637,6 +5655,33 @@ pub fn pdfdoc_encoding_lookup(code: u8) -> Option<char> {
 ///
 /// # Returns
 ///
+/// Whether an embedded font program's built-in `/Encoding` (`prog_enc`,
+/// code→char) looks like a re-indexed subset **cipher** rather than a
+/// meaningful text encoding to overlay on the producer-declared named base
+/// `std_name`.
+///
+/// A real encoding (a few non-standard slots over a named base, e.g. space at
+/// 0xCA) agrees with the named base on most of the codes they share; a subset
+/// cipher — the font's own arbitrary glyph ordering — agrees on almost none,
+/// and overlaying it would rewrite every mapped code into mojibake. Decide by
+/// agreement: of the codes present in both, fewer than half resolving to the
+/// same character means cipher. Empty overlap is treated as NOT a cipher (no
+/// evidence either way; keep the prior overlay behaviour).
+fn builtin_encoding_looks_like_cipher(prog_enc: &HashMap<u8, char>, std_name: &str) -> bool {
+    let (mut agree, mut overlap) = (0u32, 0u32);
+    for (&code, &ch) in prog_enc {
+        if let Some(us) = standard_encoding_lookup(std_name, code) {
+            if let Some(sc) = us.chars().next() {
+                overlap += 1;
+                if sc == ch {
+                    agree += 1;
+                }
+            }
+        }
+    }
+    overlap > 0 && (agree as f32 / overlap as f32) < 0.5
+}
+
 /// The Unicode string for this character, or None if not in the encoding.
 fn standard_encoding_lookup(encoding: &str, code: u8) -> Option<String> {
     match encoding {
@@ -6159,6 +6204,34 @@ fn standard_font_metrics(base_font: &str) -> Option<(f32, f32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cipher_discriminator_flags_disagreeing_builtin_encoding() {
+        // A subset cipher: ASCII-letter codes resolve to unrelated glyphs, so
+        // they disagree with WinAnsi on every overlapping code (0/N agree).
+        let cipher: HashMap<u8, char> = [(b'A', 'ñ'), (b'B', 'k'), (b'C', 'º'), (b'D', 'p')]
+            .into_iter()
+            .collect();
+        assert!(builtin_encoding_looks_like_cipher(&cipher, "WinAnsiEncoding"));
+    }
+
+    #[test]
+    fn cipher_discriminator_keeps_mostly_agreeing_builtin_encoding() {
+        // A real text encoding: agrees with the named base on most codes (a
+        // single non-standard slot is not enough to look like a cipher).
+        let real: HashMap<u8, char> = [(b'A', 'A'), (b'B', 'B'), (b'C', 'C'), (0xCA, ' ')]
+            .into_iter()
+            .collect();
+        assert!(!builtin_encoding_looks_like_cipher(&real, "WinAnsiEncoding"));
+    }
+
+    #[test]
+    fn cipher_discriminator_no_overlap_is_not_a_cipher() {
+        // No codes overlap the named base's mapped range → no evidence → not a
+        // cipher (preserve the prior overlay behaviour).
+        let empty: HashMap<u8, char> = HashMap::new();
+        assert!(!builtin_encoding_looks_like_cipher(&empty, "WinAnsiEncoding"));
+    }
 
     #[test]
     fn test_standard_encoding_ascii() {
