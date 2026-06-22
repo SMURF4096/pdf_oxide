@@ -2,6 +2,12 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [Unreleased]
+
+### Fixed
+
+- **Same-row spans no longer reordered or split in plain-text output (#752)** — when a producer emits one logical line as several spans at the same Y in different reading-order groups whose boxes overlap by a fraction of a point, `to_plain_text` interleaved the overlapping group as if it were a vertical column (hoisting a fragment to the front) and forced a space between the overlapping fragments (splitting a word). A group whose spans share a Y row is now excluded from columnar detection, and the cross-group same-Y space special case is removed in favour of the standard `has_horizontal_gap` threshold the other converters already use — so overlapping fragments join. Fixes e.g. `ALPHA BETA GAMMA DELTA EPSILON` extracted as `A EPSILON ALPHA BETA GAMMA DELT`.
+
 ## [0.3.67] - 2026-06-20
 
 > Reading-order quality release for untagged scientific papers — manuscript-line-number rails lifted out of the body, dense two-column bodies kept apart at a measured gutter, comma-bearing statistic subscripts rejoined, repeated journal pagination footers suppressed, whole-page placed-PDF article bodies recovered, and single-column pages protected from false column detection.
