@@ -2116,7 +2116,21 @@ jobs:
           SONATYPE_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
           PGP_SECRET: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
           PGP_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
-        run: sbt ci-release
+          # The Java job feeds this same secret to setup-java's gpg-private-key,
+          # which wants ASCII-armored text, so the secret is stored armored.
+          # sbt-ci-release instead base64-decodes PGP_SECRET before importing,
+          # so base64-encode the armored key here (only if not already encoded).
+        run: |
+          case "$PGP_SECRET" in
+            *"BEGIN PGP"*)
+              PGP_SECRET="$(printf '%s' "$PGP_SECRET" | base64 -w0)"
+              # The re-encoded value is a new string the runner hasn't been told
+              # to redact; register it so it can never surface in logs.
+              echo "::add-mask::$PGP_SECRET"
+              ;;
+          esac
+          export PGP_SECRET
+          sbt ci-release
 
   # Clojure facade → Clojars via clojure/build.clj (tools.build + deps-deploy).
   publish-clojure:
@@ -2134,7 +2148,7 @@ jobs:
           java-version: '17'
 
       - name: Set up Clojure
-        uses: DeLaGuardo/setup-clojure@52716660ff0e592e21f16f47743ee9e996cb96be # 13.4
+        uses: DeLaGuardo/setup-clojure@f556541eb28a9303896cee0679ba9f60b898300f # 13.5
         with:
           cli: latest
 
@@ -2201,7 +2215,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Set up Dart
-        uses: dart-lang/setup-dart@e51d8e571e22473a2ddebf0ef8a2123f0ab2c02c # v1.7.0
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.0
 
       - name: pub get
         working-directory: dart
