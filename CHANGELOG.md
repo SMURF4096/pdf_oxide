@@ -2,6 +2,59 @@
 
 All notable changes to PDFOxide are documented here.
 
+## [0.3.73] - 2026-07-06
+
+> Two independent reading-order sort panics fixed — a non-transitive vertical-CJK (tategaki) column comparator and an oversized-literal lexer overflow — so malformed and scanned PDFs no longer crash extraction instead of returning text.
+
+### Fixed
+
+- **Reading-order sort could panic on malformed or scanned PDFs instead of returning text (#807)** — Rust's `sort_by`/`sort_unstable_by` (1.81+) detects a comparator that violates total order and panics with `does not correctly implement a total order` — uncatchable across the FFI boundary, aborting the host process across every binding. Two independent causes were fixed:
+  - **Tategaki (vertical-writing) column grouping (ISO 32000-1 §9.7.4.3, `WMode` 1).** `sort_spans_vertical_tategaki` and its two duplicated call sites (`postprocess_spans`'s tategaki intercept, `TategakiStrategy`) decided "same column" with a pairwise `|a - b| <= tol` check on each span's X-center. That check is not transitive: a chain of spans each within `tol` of its neighbor can span far more than `tol` end to end, so the comparator can claim `A<B`, `B<C`, and `C<A` all at once. This is exactly what a scanned vertical-CJK OCR layer produces — hundreds of single-glyph, sub-point-wide spans whose X-centers step by a fraction of the column pitch. Columns are now found by single-linkage clustering of X-centers (order right-to-left, start a new column when the gap to the previous center exceeds the tolerance), then sorted by `(column, Y)` — a genuine total order, and more accurate than quantizing each center into a fixed-size band independently, which can split two spans only a couple points apart into different columns if they straddle a band boundary.
+  - **Oversized real-number literals silently overflowing to `Infinity`.** PDF 32000-1:2008 Annex C.2 bounds real values to approximately ±3.403×10^38, but the lexer parsed real literals via `f64::from_str`, which *saturates* an all-digit literal past that limit to `f64::INFINITY` rather than erroring. Combined with a degenerate content-stream matrix (a zero CTM/`Tm` component), `0.0 × Infinity` produced a NaN glyph coordinate that could panic the same class of sort elsewhere in the pipeline. Oversized literals are now clamped to the spec's implementation limit at parse time, so an out-of-range literal can no longer poison downstream arithmetic into NaN.
+
+  @tobocop2 reported this, root-caused it, and submitted a working fix (#808) using single-linkage column clustering, along with a minimal repro and three real-world vertical-Japanese novels to stress-test against. We folded that clustering approach directly into this fix (verified byte-identical output against #808 on all three novels) alongside the separate lexer fix below, so #808 was closed in favor of this PR.
+
+_Thanks to @tobocop2 (#807, #808) for finding, root-causing, and fixing this._
+
+## [0.3.72] - 2026-07-05
+
+> Rotated-page text extraction & a transitive-dependency security patch — the spatial extractors no longer garble text on rotated pages, and the optional Office-export path clears an untrusted-XML denial-of-service advisory.
+
+### Security
+
+- **`office_oxide` 0.1.2 → 0.1.3 (clears RUSTSEC-2026-0194 / RUSTSEC-2026-0195)** — the optional Office-document export path depended on `office_oxide` 0.1.2, whose transitive `quick-xml` 0.40 has an unbounded per-`xmlns` heap allocation in `NsReader::push` that a crafted DOCX/XLSX/PPTX could use to exhaust memory (a denial-of-service on untrusted input). `office_oxide` 0.1.3 upgrades to `quick-xml` 0.41, which bounds the allocation. pdf_oxide's own `quick-xml` was already 0.41; this bump closes the remaining transitive path so the dependency tree is advisory-clean.
+
+### Fixed
+
+- **`extract_words` / `extract_spans` / `extract_text_lines` garbled text on rotated pages (#804)** — on rotated pages the spatial extractors clustered along the wrong axis and fused unrelated cells into giant tokens (a whole column returned as a single 1000+ character "word", separate rows fused into one line). Two independent root causes were fixed:
+  - **Page `/Rotate` 90/270 (§7.7.3.3).** Span bounding boxes were mapped into the page's *displayed* frame before word/line clustering, but a span decomposes into characters by laying glyphs horizontally along its bbox with their raw advance widths — a representation that cannot express a run whose visual direction has become vertical. Every raw text row therefore collapsed onto one displayed band and perpendicular columns fused. Because the horizontal clustering is already correct in raw user space (and `extract_chars` already reports raw coordinates), 90°/270° pages now keep their span geometry in raw space; all four spatial APIs agree. (180° pages, where text stays horizontal, keep their existing mirror.)
+  - **Rotated text matrices (`rotation_degrees = ±90` — vertical column headers, chart-axis labels).** A run drawn with a rotated text matrix advances along a rotated axis, but the extractor stores a span bbox flattened onto the x-axis (width = Σ advances, height = font), so adjacent rotated columns overlap and the reading-order word merge and y-band line grouping fused them. Rotated runs are now excluded from both the cross-span word merge and the line grouping — each stays its own word(s) and its own line.
+
+  Thanks @ankursri494 for the report and the public, PII-free reproducers.
+
+_Thanks to @ankursri494 (#804) for reporting the issue that drove this release._
+
+## [0.3.71] - 2026-07-04
+
+> Spec-alignment & extraction-leadership release — the renderer gains tiling patterns, Type 3 fonts, and mesh shadings; the markdown converter gains first-class tables, images, links, headings, nested lists, running header/footer removal, and footnotes; plus accurate per-glyph coordinates on the word/span APIs, correct PDF/X ICC validation, and a structure-tree parser that no longer drops large trees.
+
+### Added
+
+- **Renderer spec alignment (ISO 32000-1)** — the CPU rasteriser now paints several previously-unsupported constructs: **tiling patterns** (PatternType 1, §8.7.3), **Type 3 font glyphs** (CharProcs executed under the font matrix with `d0`/`d1`, §9.6.5), **mesh shadings** (free-form and lattice-form Gouraud triangle meshes and Coons/tensor patches — types 4/5/6/7 — plus function-based type 1, §8.7.4.5), **text rendering modes 4–7** (glyph-outline clip accumulation across `BT`/`ET`, §9.3.6), and **colour-key masking** (`/Mask [ranges]`, §8.9.6.4). JPEG 2000 images with chroma-subsampled components are now upsampled and decoded rather than skipped.
+- **First-class tables in the markdown/HTML converters** — the pipeline converter renders detected tables directly (pipe tables with header rows and colspan handling), replacing the fragile text-post-processing path.
+- **Images, links, and document structure in markdown** — figures are emitted as `![](…)`, `/Link` annotations become `[text](uri)` / `<a href>` (with a safe-scheme gate), heading hierarchy is inferred as `#`–`######`, indentation-based nested lists are preserved, cross-page running headers/footers are detected and filtered, and superscript-marker + page-bottom footnotes become `[^n]` references.
+- **Hybrid-reference files (`/XRefStm`, §7.5.8.4)** — a classic trailer's cross-reference-stream supplement is now parsed and merged, so hybrid PDFs resolve all objects.
+
+### Fixed
+
+- **Per-glyph coordinates in `extract_words` / `extract_spans` / `extract_text_lines` drifted on CID/Type 0 fonts (#780, part 2)** — these APIs reconstructed each glyph's x-position by summing nominal advance widths, which omits the ISO 32000-1 §9.4.3 `TJ`-array kerning, so positions drifted cumulatively along a line (up to tens of points) versus `extract_chars`. Each glyph's x now comes from the accurate content-stream position (matching `extract_chars` and Poppler's `pdftotext -bbox`); on the reporter's repro, glyphs within 0.5 pt of the reference went from 15 % to 97 %. Word segmentation is unchanged (the char-width array is untouched), so complex-script extraction does not regress. Thanks @ankursri494 for the report and reproducer.
+- **Valid ICC profiles reported as `[XCOLOR-005] … not a valid stream` in `validate_pdf_x` (#797)** — an ICCBased colour space embeds its profile as a *stream* (§8.6.5.5, `[ /ICCBased stream ]`), but the validator only accepted a bare dictionary and flagged every conforming profile (including the Ghent Workgroup PDF/X-4 suite). It now reads `/N` from the stream dictionary. Thanks @takoportal for the detailed report and repro.
+- **Structure-tree parsing dropped large trees under a hard-coded budget (#801)** — `parse_structure_tree` imposed a 200 ms wall-clock budget and a 10 000-element cap and returned *no* structure tree at all when either was exceeded (e.g. the 756-page ISO 32000-1 specification), which is non-deterministic across machines and silently loses data. The default now parses the complete tree; callers that need to bound the work can opt in via the new `parse_structure_tree_with_budget(&doc, Option<Duration>)` (and `doc.structure_tree_with_budget(…)`). The redundant post-parse size check is removed. Thanks @bjorn3 for the report and proposed API.
+- **Inter-word spaces dropped on justified `TJ`-positioned text (#803)** — on documents whose words are positioned with `TJ`/`Td` offsets in embedded **Type 0 / Identity-H** subset fonts (e.g. the 214-page ISO 21111-10 standard), whole runs extracted glued together — `All rights reserved` came out as `Allrightsreserved`. The word-gap detector derives its threshold from the font's space-glyph advance, but under Identity-H character code `0x20` maps to CID 32 — an arbitrary glyph, not the space (ISO 32000-2 §9.7.5.2, §9.10.2: the space is reached through the font's CMap/`ToUnicode`, never code `0x20`). Reading that ~0.56 em glyph advance as the space width inflated the threshold so far that genuine ~0.25 em word gaps fell below it and were suppressed. Identity-encoded Type 0 fonts now fall back to the 0.25 em typographic default; non-Identity CMaps that legitimately place a space at `0x20` still use their explicit `/W` entry. Thanks @Goldziher for the precise report and geometry.
+- **Numeric median selection** — heading/base-font-size statistics now use `select_nth_unstable_by` (exact O(n)) instead of a full sort.
+
+_Thanks to @ankursri494 (#780), @takoportal (#797), @bjorn3 (#801), and @Goldziher (#803) for reporting the issues that drove this release._
+
 ## [0.3.70] - 2026-07-02
 
 > Extraction-fidelity release — kerning-split words rejoined in plain text, table/form line cells split consistently regardless of word width, resolved `/BaseFont` names on the span/word APIs, and content-stream order exposed on extracted spans and words.

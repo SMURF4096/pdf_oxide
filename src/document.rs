@@ -2896,13 +2896,7 @@ impl PdfDocument {
         if labels.is_empty() {
             return;
         }
-        labels.sort_by(|&a, &b| {
-            spans[b]
-                .bbox
-                .y
-                .partial_cmp(&spans[a].bbox.y)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        labels.sort_by(|&a, &b| crate::utils::safe_float_cmp(spans[b].bbox.y, spans[a].bbox.y));
 
         // Labels that sit at near-identical Y values almost always
         // annotate the same logical row block (e.g. a test-name in the
@@ -3707,6 +3701,20 @@ impl PdfDocument {
     /// ```
     pub fn structure_tree(&self) -> Result<Option<crate::structure::StructTreeRoot>> {
         crate::structure::parse_structure_tree(self)
+    }
+
+    /// Returns the document's structure tree, bounding the parse work by an
+    /// optional wall-clock `budget`.
+    ///
+    /// `None` parses the complete tree (identical to [`Self::structure_tree`]);
+    /// `Some(duration)` returns `Ok(None)` if parsing exceeds that budget, so a
+    /// latency-sensitive caller can fall back to another strategy. Prefer `None`
+    /// unless you have a concrete responsiveness requirement.
+    pub fn structure_tree_with_budget(
+        &self,
+        budget: Option<std::time::Duration>,
+    ) -> Result<Option<crate::structure::StructTreeRoot>> {
+        crate::structure::parse_structure_tree_with_budget(self, budget)
     }
 
     /// Returns the document's structure tree **only when it is trustworthy for
@@ -5363,7 +5371,7 @@ impl PdfDocument {
         if widths.is_empty() {
             return None;
         }
-        widths.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        widths.sort_by(|a, b| crate::utils::safe_float_cmp(*a, *b));
         let gw = widths[widths.len() / 2];
 
         // Discriminate vertical (tategaki) from horizontal CJK by each glyph's
@@ -8575,6 +8583,7 @@ impl PdfDocument {
                 horizontal_scaling: 100.0,
                 primary_detected: false,
                 char_widths: vec![],
+                char_x_offsets: Vec::new(),
                 heading_level: None,
                 rotation_degrees: 0.0,
                 wmode: 0,
@@ -8744,6 +8753,7 @@ impl PdfDocument {
                 horizontal_scaling: 100.0,
                 primary_detected: false,
                 char_widths: vec![],
+                char_x_offsets: Vec::new(),
                 heading_level: None,
                 rotation_degrees: 0.0,
                 wmode: 0,
@@ -11097,7 +11107,7 @@ impl PdfDocument {
         if body_sizes.is_empty() {
             return;
         }
-        body_sizes.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        body_sizes.sort_by(|a, b| crate::utils::safe_float_cmp(*a, *b));
         let body_size = body_sizes[body_sizes.len() / 2];
 
         // Span indices sorted by left edge, and the widest font on the page, so
@@ -11301,20 +11311,39 @@ impl PdfDocument {
         Self::merge_drop_cap_initials(&mut spans);
 
         // Apply page /Rotate to span geometry BEFORE reading-order sorting.
-        // Spans are extracted in raw PDF user space; a page with a /Rotate entry
-        // must be read in its DISPLAYED orientation or the row-aware sort emits
-        // text in the wrong order (pdf.js issue14415 is a 180° English page that
-        // otherwise comes out word- and line-reversed). Every span is mapped into
-        // one consistent displayed frame via `rotate_span_bbox` BEFORE any
-        // geometric pass (column detection, table geometry, the row-aware sort),
-        // so 90° / 270° — which additionally swap page width/height — are handled
-        // uniformly alongside 180°. rot == 0 is untouched (byte-identical) and
-        // rot == 180 is numerically identical to the previous mirror. (A
-        // within-span character re-order for rotated multi-glyph spans — the
-        // issue14415 within-line residual — is a tracked follow-up.)
+        //
+        // A page with a /Rotate entry must be read in its DISPLAYED orientation
+        // or the row-aware sort emits text in the wrong order (pdf.js issue14415
+        // is a 180° English page that otherwise comes out word- and line-reversed).
+        //
+        // The transform is applied selectively, because a rotated page carries two
+        // very different kinds of run, distinguished by each span's own
+        // `rotation_degrees` (the content-stream text-matrix rotation):
+        //
+        // * **Horizontal content (`rotation_degrees == 0`) on a 90°/270° page** —
+        //   e.g. a landscape table stored rotated (`/Rotate 90`, MediaBox already
+        //   landscape). This text is horizontal in raw user space, so it reads and
+        //   groups correctly THERE. Rotating its bbox by ±90° only rotates the
+        //   RECTANGLE, but `TextSpan::to_chars` still lays glyphs horizontally with
+        //   raw advance widths and cannot express a now-vertical run, so every raw
+        //   row collapses onto one displayed band and perpendicular columns fuse
+        //   into one 1000+ char token (#804). These are LEFT RAW — matching
+        //   `extract_chars`, which also returns raw coordinates.
+        //
+        // * **Rotated content (`rotation_degrees == ±90`) on a 90°/270° page** —
+        //   e.g. a chart axis, a sideways table, or a whole landscape page authored
+        //   by drawing every glyph sideways in a portrait MediaBox with `/Rotate 90`
+        //   to present it upright. Here the page /Rotate must be applied so it
+        //   COMBINES with the content rotation (which `order_rotated_blocks` undoes
+        //   for ordering) into the correct upright displayed frame; leaving it raw
+        //   reads the page sideways. These ARE mapped.
+        //
+        // 180° maps everything (text stays horizontal; both axes just mirror —
+        // numerically identical to the legacy mirror).
+        //
         // Captured so the same transform is applied to annotation spans appended
-        // later (their /Rect is in unrotated page space too). `None` for rot==0
-        // or unknown media box — those pages are byte-identical.
+        // later (their /Rect is in unrotated page space too). `None` for rot == 0
+        // or unknown media box — those pages keep raw geometry.
         let page_rotation: Option<(i32, f32, f32, f32, f32)> =
             match self.get_page_media_box(page_index) {
                 Ok((llx, lly, urx, ury)) => {
@@ -11328,6 +11357,11 @@ impl PdfDocument {
             };
         if let Some((rot, llx, lly, w, h)) = page_rotation {
             for s in spans.iter_mut() {
+                // 90°/270°: only map runs whose own content is rotated; horizontal
+                // content stays in raw user space (see rationale above).
+                if rot != 180 && s.rotation_degrees == 0.0 {
+                    continue;
+                }
                 Self::map_span_into_rotated_frame(s, rot, llx, lly, w, h);
             }
         }
@@ -11341,31 +11375,9 @@ impl PdfDocument {
         // horizontal corpus untouched.
         let vertical_count = spans.iter().filter(|s| s.wmode == 1).count();
         if !spans.is_empty() && vertical_count * 2 >= spans.len() {
-            // Cluster tolerance: median span width. Wide enough to keep one
-            // vertical column together, narrow enough to separate adjacent
-            // columns. Robust to single rotated outliers.
-            //
-            // Assumption (M7): tategaki CJK body text is functionally
-            // monospaced (full-width kanji/kana, half-width digits all
-            // advance by similar widths), so the median span width
-            // approximates the column pitch. Mixed-pitch tategaki (rare —
-            // typically only ruby annotations) may overcluster; that
-            // would be an explicit follow-up if it shows up in real
-            // corpora.
-            let mut widths: Vec<f32> = spans.iter().map(|s| s.bbox.width.max(1.0)).collect();
-            widths.sort_by(|a, b| crate::utils::safe_float_cmp(*a, *b));
-            let tol = widths[widths.len() / 2].max(1.0);
-            spans.sort_by(|a, b| {
-                let ax = a.bbox.x + a.bbox.width * 0.5;
-                let bx = b.bbox.x + b.bbox.width * 0.5;
-                if (ax - bx).abs() <= tol {
-                    // Same column: top first (descending y in PDF user space).
-                    crate::utils::safe_float_cmp(b.bbox.y, a.bbox.y)
-                } else {
-                    // Different column: rightmost first.
-                    crate::utils::safe_float_cmp(bx, ax)
-                }
-            });
+            // See `crate::utils::sort_vertical_tategaki` for the
+            // column-clustering algorithm and the total-order rationale.
+            spans = crate::utils::sort_vertical_tategaki(spans, |s| &s.bbox);
         } else if let Some(ordered) = Self::sidebar_body_reading_order(&spans) {
             // RW-1: narrow-sidebar + wide-body first pages (full-width title band
             // over a metadata sidebar + body). Handled before the XY-cut so the
@@ -11440,10 +11452,15 @@ impl PdfDocument {
         // regular extractor. On a /Rotate'd page their /Rect-derived bboxes are
         // in unrotated page space, so map the appended spans into the same
         // displayed frame as the content spans (no-op for unrotated pages).
+        // Annotation text is horizontal (rotation_degrees == 0), so on a 90°/270°
+        // page it stays raw, matching the horizontal content spans above.
         let pre_annotation_len = spans.len();
         spans.extend(self.annotation_content_spans(page_index));
         if let Some((rot, llx, lly, w, h)) = page_rotation {
             for s in spans[pre_annotation_len..].iter_mut() {
+                if rot != 180 && s.rotation_degrees == 0.0 {
+                    continue;
+                }
                 Self::map_span_into_rotated_frame(s, rot, llx, lly, w, h);
             }
         }
@@ -11506,7 +11523,176 @@ impl PdfDocument {
         // raw two-glyph order "´Ecole" instead of "École".
         Self::apply_combining_mark_composition(&mut spans);
 
+        // Stamp accurate per-glyph x-origins onto the finalized spans so that
+        // `to_chars()` (and thus extract_words / extract_spans /
+        // extract_text_lines, which all decompose spans through it) reports
+        // spec-aligned positions instead of drifting prefix-sums. Runs last, on
+        // the fully post-processed spans, so alignment sees the same text the
+        // consumers do.
+        self.stamp_char_x_offsets(page_index, &mut spans);
+
         Ok(spans)
+    }
+
+    /// Copy the spec-aligned per-glyph baseline x-origins from the char-level
+    /// extractor onto each span's [`char_x_offsets`](crate::layout::TextSpan::char_x_offsets).
+    ///
+    /// # Why
+    ///
+    /// [`TextSpan::to_chars`](crate::layout::TextSpan::to_chars) otherwise
+    /// reconstructs each glyph's x by prefix-summing the span's nominal
+    /// `char_widths` from `bbox.x`. Those nominal widths omit the ISO
+    /// 32000-1:2008 §9.4.3 TJ-array adjustment (the number in a TJ array is
+    /// "expressed in thousandths of a unit of text space … subtracted from the
+    /// current … coordinate") and the full §9.4.4 text-space displacement
+    /// (`t_x = ((w0 − Tj/1000) · Tfs + Tc + Tw) · Th`). Prefix-summing the
+    /// nominal widths therefore drifts cumulatively along a line. The
+    /// char-level extractor that [`extract_chars`](Self::extract_chars) uses
+    /// implements §9.4.4 / §9.4.3 in full (it matches Poppler `pdftotext
+    /// -bbox`), so its `origin_x` values are the authoritative positions this
+    /// function stamps back onto the spans.
+    ///
+    /// # Alignment (robust, per span)
+    ///
+    /// A naive global greedy walk on char values mis-jumps on repeated
+    /// letters / spaces. Instead, for each span we take only the accurate chars
+    /// on the SAME baseline (`|origin_y − span.bbox.y| ≤ 0.5·font_size`), sort
+    /// them by x, and match the span's glyph sequence as a CONTIGUOUS run,
+    /// choosing the run whose first glyph's `origin_x` is nearest `span.bbox.x`.
+    ///
+    /// # Fallback (never guess)
+    ///
+    /// If a span cannot be fully, unambiguously aligned — no contiguous run of
+    /// exactly the span's glyphs exists on its line (count mismatch from a
+    /// post-processing text edit, ligature expansion, a synthetic space glyph
+    /// not present in the char stream, …) — its `char_x_offsets` is left empty
+    /// so `to_chars` uses the legacy prefix-sum path. A cleared span is a
+    /// no-op, never a regression. `char_widths` is never touched (a downstream
+    /// word-boundary heuristic keys off its length).
+    ///
+    /// 180° pages are skipped entirely: the spans are mirrored into the displayed
+    /// frame while the accurate chars remain in unrotated page space, so a
+    /// horizontal-x stamp would not correspond. On 90°/270° pages, horizontal
+    /// content spans stay in raw user space and ARE stamped, but rotated-content
+    /// spans (`rotation_degrees != 0`) have been mapped into the displayed frame
+    /// (see `postprocess_spans`) and their glyphs run along a rotated axis, so a
+    /// horizontal-x stamp would misalign — those individual spans are skipped.
+    fn stamp_char_x_offsets(&self, page_index: usize, spans: &mut [crate::layout::TextSpan]) {
+        // Horizontal-x offsets only make sense in an unrotated frame; the 180°
+        // mirror is the one rotation that leaves ALL spans in the displayed frame.
+        if self
+            .get_page_rotation(page_index)
+            .unwrap_or(0)
+            .rem_euclid(360)
+            == 180
+        {
+            return;
+        }
+
+        let accurate = match self.extract_chars(page_index) {
+            Ok(chars) if !chars.is_empty() => chars,
+            _ => return,
+        };
+
+        for span in spans.iter_mut() {
+            // Rotated-content spans are in the displayed frame (mapped on 90/270)
+            // and their glyphs run vertically; a horizontal-x stamp from the raw
+            // chars would not correspond, so leave them to the prefix-sum path.
+            if span.rotation_degrees != 0.0 {
+                continue;
+            }
+            // Start clean: any offsets carried over via struct-update from a
+            // source span must not be trusted for this (possibly edited) text.
+            span.char_x_offsets.clear();
+
+            let glyphs: Vec<char> = span.text.chars().collect();
+            let n = glyphs.len();
+            if n == 0 {
+                continue;
+            }
+
+            // Accurate chars sharing this span's baseline, left-to-right.
+            let baseline_tol = 0.6 * span.font_size.max(1.0);
+            let mut line: Vec<&crate::layout::TextChar> = accurate
+                .iter()
+                .filter(|c| (c.origin_y - span.bbox.y).abs() <= baseline_tol)
+                .collect();
+            if line.is_empty() {
+                continue;
+            }
+            line.sort_by(|a, b| crate::utils::safe_float_cmp(a.origin_x, b.origin_x));
+
+            // Greedy per-glyph alignment. Anchor the scan cursor at the accurate
+            // char nearest this span's left edge, then walk the span's glyphs,
+            // matching each to the next equal accurate char within a small
+            // forward window. Unlike an all-or-nothing contiguous match, a single
+            // unmatched glyph (an inserted word-boundary space, a ligature split,
+            // a combining mark) no longer discards the whole span — such glyphs
+            // are interpolated below so `char_x_offsets` still fills every index.
+            let start = line
+                .iter()
+                .position(|c| c.origin_x >= span.bbox.x - 0.5)
+                .unwrap_or(0);
+            let mut assigned: Vec<Option<f32>> = vec![None; n];
+            let mut li = start;
+            for (k, &g) in glyphs.iter().enumerate() {
+                let mut j = li;
+                let mut steps = 0;
+                while j < line.len() && steps < 6 {
+                    if line[j].char == g {
+                        assigned[k] = Some(line[j].origin_x);
+                        li = j + 1;
+                        break;
+                    }
+                    j += 1;
+                    steps += 1;
+                }
+            }
+
+            // Need enough real anchors to trust the run; otherwise fall back.
+            let anchors = assigned.iter().filter(|a| a.is_some()).count();
+            if anchors * 5 < n * 3 {
+                // < 60% matched
+                continue;
+            }
+
+            // Fill the gaps: each unmatched glyph takes the nearest preceding
+            // anchor plus the prefix sum of the (locally accurate) char_widths
+            // between them; if there is no preceding anchor, walk back from the
+            // nearest following one. Over the short spans between anchors the
+            // cumulative drift these interpolations reintroduce is sub-point.
+            let cw = &span.char_widths;
+            let width_at = |i: usize| -> f32 {
+                if cw.len() == n {
+                    cw[i]
+                } else {
+                    span.bbox.width / n as f32
+                }
+            };
+            let mut offs = vec![0.0f32; n];
+            // forward pass from preceding anchors
+            let mut last: Option<(usize, f32)> = None;
+            for k in 0..n {
+                if let Some(x) = assigned[k] {
+                    offs[k] = x;
+                    last = Some((k, x));
+                } else if let Some((lk, lx)) = last {
+                    let acc: f32 = (lk..k).map(width_at).sum();
+                    offs[k] = lx + acc;
+                }
+            }
+            // backfill any leading None from the first following anchor
+            if assigned[0].is_none() {
+                if let Some(fk) = assigned.iter().position(|a| a.is_some()) {
+                    let fx = assigned[fk].unwrap();
+                    for k in 0..fk {
+                        let acc: f32 = (k..fk).map(width_at).sum();
+                        offs[k] = fx - acc;
+                    }
+                }
+            }
+            span.char_x_offsets = offs;
+        }
     }
 
     /// Fold a one-char spacing-diacritic span into the following
@@ -13477,7 +13663,7 @@ impl PdfDocument {
             if total == 0 {
                 return 0.0;
             }
-            xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            xs.sort_by(|a, b| crate::utils::safe_float_cmp(*a, *b));
             let mut best = 1usize;
             let mut current = 1usize;
             let mut last = xs[0];
@@ -15820,6 +16006,17 @@ impl PdfDocument {
         // The post-processing merge must not cross these boundaries (table cells, columns).
         let mut split_boundary_word_indices: std::collections::HashSet<usize> =
             std::collections::HashSet::new();
+        // Track word indices produced from spans drawn with a rotated text matrix
+        // (rotation_degrees != 0 — figure/axis labels, rotated table headers,
+        // vertical margin stamps). Such a run's glyphs advance along a rotated
+        // axis, but the span bbox flattens them onto the x-axis (width = Σ glyph
+        // advances, height = font). Its flattened bbox therefore overlaps
+        // unrelated perpendicular columns, and the reading-order-adjacent word
+        // merge below would fuse those columns into one giant token (issue #804:
+        // a whole rotated column returned as a 1000+ char "word"). Never merge
+        // into or out of a rotated run.
+        let mut rotated_word_indices: std::collections::HashSet<usize> =
+            std::collections::HashSet::new();
         let mut words = Vec::new();
         for (span_idx, span) in spans.iter().enumerate() {
             let span_chars = &chars_per_span[span_idx];
@@ -15836,6 +16033,7 @@ impl PdfDocument {
             // boundary when split_boundary_before = true (e.g. table cell boundary).
             let first_word_idx = words.len();
             let is_split_boundary = span.split_boundary_before;
+            let is_rotated_run = span.rotation_degrees != 0.0;
 
             for cluster_indices in clusters {
                 let cluster_chars: Vec<_> = cluster_indices
@@ -15867,6 +16065,10 @@ impl PdfDocument {
             if is_split_boundary && words.len() > first_word_idx {
                 split_boundary_word_indices.insert(first_word_idx);
             }
+            // Flag every word from a rotated run so the merge below skips it.
+            if is_rotated_run {
+                rotated_word_indices.extend(first_word_idx..words.len());
+            }
         }
 
         // Post-processing: merge adjacent words whose spans abut or overlap on
@@ -15879,8 +16081,10 @@ impl PdfDocument {
         // horizontal gap ≤ 0.15 × font_size (same threshold as should_insert_space).
         // Skip merge when the current word index is a split boundary.
         let mut merged: Vec<Word> = Vec::with_capacity(words.len());
+        let mut prev_rotated = false;
         for (idx, word) in words.into_iter().enumerate() {
-            if !split_boundary_word_indices.contains(&idx) {
+            let cur_rotated = rotated_word_indices.contains(&idx);
+            if !cur_rotated && !prev_rotated && !split_boundary_word_indices.contains(&idx) {
                 if let Some(prev) = merged.last_mut() {
                     let gap = word.bbox.x - (prev.bbox.x + prev.bbox.width);
                     let y_diff = (word.bbox.y - prev.bbox.y).abs();
@@ -15911,6 +16115,7 @@ impl PdfDocument {
                 }
             }
             merged.push(word);
+            prev_rotated = cur_rotated;
         }
 
         Ok(merged)
@@ -16073,11 +16278,20 @@ impl PdfDocument {
 
         // Walk spans in canonical reading order, clustering chars → words.
         // No block partition; spans are already pre-ordered.
+        //
+        // `word_rot_run` maps each word to the index of the rotated span it came
+        // from (`None` for horizontal spans). A rotated run's glyphs advance
+        // along a rotated axis but the span bbox flattens them onto the x-axis,
+        // so the flattened y-band line clustering below would fuse the run with
+        // its perpendicular neighbours into one giant line (#804). Rotated runs
+        // are therefore lifted out and each emitted as its own line.
         let mut words: Vec<Word> = Vec::new();
-        for (span, span_chars) in spans.iter().zip(chars_per_span.iter()) {
+        let mut word_rot_run: Vec<Option<usize>> = Vec::new();
+        for (span_idx, (span, span_chars)) in spans.iter().zip(chars_per_span.iter()).enumerate() {
             if span_chars.is_empty() {
                 continue;
             }
+            let rot_run = (span.rotation_degrees != 0.0).then_some(span_idx);
 
             let clusters =
                 clustering::cluster_chars_into_words(span_chars, params.word_gap_threshold);
@@ -16093,6 +16307,7 @@ impl PdfDocument {
                             let mut word = Word::from_chars(current_word_chars);
                             word.sequence = span.sequence;
                             words.push(word);
+                            word_rot_run.push(rot_run);
                             current_word_chars = Vec::new();
                         }
                     } else {
@@ -16103,6 +16318,7 @@ impl PdfDocument {
                     let mut word = Word::from_chars(current_word_chars);
                     word.sequence = span.sequence;
                     words.push(word);
+                    word_rot_run.push(rot_run);
                 }
             }
         }
@@ -16111,19 +16327,64 @@ impl PdfDocument {
             return Ok(Vec::new());
         }
 
-        // Cluster words → lines using global y-tolerance. Same-y words merge
-        // into the same line regardless of which span they came from — the
-        // span ordering already handled the multi-column / structure-tree
-        // sequencing decision upstream.
-        let line_clusters = clustering::cluster_words_into_lines(&words, params.line_gap_threshold);
-
-        let mut all_lines = Vec::new();
-        for cluster_indices in line_clusters {
-            let cluster_words: Vec<_> = cluster_indices.iter().map(|&i| words[i].clone()).collect();
-            all_lines.push(TextLine::new(cluster_words));
+        // Fast path (byte-identical): no rotated runs on the page → cluster every
+        // word by global y-tolerance exactly as before. Same-y words merge into
+        // the same line regardless of source span (span ordering already handled
+        // the multi-column / structure-tree sequencing upstream).
+        if word_rot_run.iter().all(Option::is_none) {
+            let line_clusters =
+                clustering::cluster_words_into_lines(&words, params.line_gap_threshold);
+            let mut all_lines = Vec::new();
+            for cluster_indices in line_clusters {
+                let cluster_words: Vec<_> =
+                    cluster_indices.iter().map(|&i| words[i].clone()).collect();
+                all_lines.push(TextLine::new(cluster_words));
+            }
+            return Ok(all_lines);
         }
 
-        Ok(all_lines)
+        // Rotated-content page: y-band-cluster the horizontal words only, and
+        // emit each rotated run as its own line, then restore reading order by
+        // the span sequence of each line's first word.
+        let horizontal: Vec<Word> = words
+            .iter()
+            .zip(word_rot_run.iter())
+            .filter(|(_, r)| r.is_none())
+            .map(|(w, _)| w.clone())
+            .collect();
+        let mut lines: Vec<Vec<Word>> = Vec::new();
+        if !horizontal.is_empty() {
+            for cluster_indices in
+                clustering::cluster_words_into_lines(&horizontal, params.line_gap_threshold)
+            {
+                lines.push(
+                    cluster_indices
+                        .iter()
+                        .map(|&i| horizontal[i].clone())
+                        .collect(),
+                );
+            }
+        }
+        // One line per rotated run (contiguous words sharing the same span index).
+        let mut run_start = 0;
+        while run_start < words.len() {
+            match word_rot_run[run_start] {
+                None => run_start += 1,
+                Some(run_id) => {
+                    let mut run_end = run_start + 1;
+                    while run_end < words.len() && word_rot_run[run_end] == Some(run_id) {
+                        run_end += 1;
+                    }
+                    lines.push(words[run_start..run_end].to_vec());
+                    run_start = run_end;
+                },
+            }
+        }
+        // Reading order: sort lines by the span sequence of their first word
+        // (stable so intra-line order is preserved).
+        lines.sort_by_key(|line| line.first().map(|w| w.sequence).unwrap_or(usize::MAX));
+
+        Ok(lines.into_iter().map(TextLine::new).collect())
     }
 
     /// Apply intelligent text post-processing to extracted text spans.
@@ -16817,6 +17078,7 @@ impl PdfDocument {
                 horizontal_scaling: 1.0,
                 primary_detected: false,
                 char_widths: vec![],
+                char_x_offsets: Vec::new(),
                 heading_level: None,
                 rotation_degrees: 0.0,
                 wmode: 0,
@@ -17558,7 +17820,6 @@ impl PdfDocument {
     ///
     /// This is useful when working with indirect object references
     /// in content streams or resource dictionaries.
-    #[cfg(feature = "rendering")]
     pub fn resolve_object(&self, obj: &Object) -> Result<Object> {
         if let Some(ref_val) = obj.as_reference() {
             self.load_object(ref_val)
@@ -18559,6 +18820,7 @@ impl PdfDocument {
                 horizontal_scaling: 1.0,
                 primary_detected: false,
                 char_widths: vec![],
+                char_x_offsets: Vec::new(),
                 heading_level: None,
                 rotation_degrees: 0.0,
                 wmode: 0,
@@ -18849,7 +19111,22 @@ impl PdfDocument {
         // gone from EVERY downstream path — tables, headings, reading order
         // (#609: markdown previously ignored `exclude_regions`/`include_region`,
         // which were only honoured by the plain-text path).
-        let base_spans = Self::apply_region_filters(self.extract_spans(page_index)?, options);
+        let mut base_spans = Self::apply_region_filters(self.extract_spans(page_index)?, options);
+
+        // WS2.6: strip repeated running headers/footers from untagged output
+        // when requested. Opt-in (default off); the /Artifact-tag path already
+        // handles tagged PDFs. Computed once per page here — fine for the
+        // per-page `to_markdown`; multi-page callers pay O(pages) extra scans.
+        if options.strip_running_headers_footers {
+            let repeated = self.repeated_running_head_foot(0.6);
+            if !repeated.is_empty() {
+                let media_h = self
+                    .get_page_media_box(page_index)
+                    .map(|m| m.3)
+                    .unwrap_or(792.0);
+                base_spans.retain(|s| !Self::is_running_head_foot(s, media_h, &repeated));
+            }
+        }
 
         // Vertical CJK (tategaki, ISO 32000-1 §9.7.4.3): the column-major text is
         // a single flowing paragraph. The horizontal converter pipeline would
@@ -20299,6 +20576,175 @@ impl PdfDocument {
     pub fn extract_images(&self, page_index: usize) -> Result<Vec<crate::extractors::PdfImage>> {
         self.require_authenticated()?;
         self.extract_images_filtered(page_index, &ImageExtractFilter::default())
+    }
+
+    /// WS2.6: normalized top/bottom-band text lines that recur on a majority
+    /// of pages — running headers/footers. Page-number digits are stripped so
+    /// "Page 3"/"Page 4" collapse to one signature. Empty for documents under
+    /// 3 pages (repetition can't be judged) or when nothing repeats.
+    pub(crate) fn repeated_running_head_foot(
+        &self,
+        threshold: f32,
+    ) -> std::collections::HashSet<String> {
+        use std::collections::{HashMap, HashSet};
+        let mut out: HashSet<String> = HashSet::new();
+        let Ok(page_count) = self.page_count() else {
+            return out;
+        };
+        if page_count < 3 {
+            return out;
+        }
+        let min_occ = (((page_count as f32) * threshold).ceil() as usize).max(2);
+        let mut occ: HashMap<String, usize> = HashMap::new();
+        for p in 0..page_count {
+            let media_h = self.get_page_media_box(p).map(|m| m.3).unwrap_or(792.0);
+            let Ok(spans) = self.extract_spans(p) else {
+                continue;
+            };
+            let mut seen: HashSet<String> = HashSet::new();
+            for s in &spans {
+                if !Self::in_head_foot_band(s, media_h) {
+                    continue;
+                }
+                let norm = Self::normalize_band_line(&s.text);
+                // Count each distinct line once per page.
+                if norm.len() > 3 && seen.insert(norm.clone()) {
+                    *occ.entry(norm).or_default() += 1;
+                }
+            }
+        }
+        for (text, n) in occ {
+            if n >= min_occ {
+                out.insert(text);
+            }
+        }
+        out
+    }
+
+    /// True when a span sits in the top or bottom 15% band of the page.
+    fn in_head_foot_band(s: &crate::layout::TextSpan, media_h: f32) -> bool {
+        s.bbox.y > media_h * 0.85 || (s.bbox.y + s.bbox.height) < media_h * 0.15
+    }
+
+    /// Normalize a band line for repetition matching: drop ASCII digits (page
+    /// numbers vary), collapse whitespace, lowercase.
+    fn normalize_band_line(text: &str) -> String {
+        let stripped: String = text.chars().filter(|c| !c.is_ascii_digit()).collect();
+        stripped
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase()
+    }
+
+    /// True when `span` is a running header/footer to strip: in the top/bottom
+    /// band and its normalized text is one of the `repeated` signatures.
+    fn is_running_head_foot(
+        span: &crate::layout::TextSpan,
+        media_h: f32,
+        repeated: &std::collections::HashSet<String>,
+    ) -> bool {
+        Self::in_head_foot_band(span, media_h)
+            && repeated.contains(&Self::normalize_band_line(&span.text))
+    }
+
+    /// Extract embedded files / attachments (WS1.8a, ISO 32000-1 §7.11.4).
+    ///
+    /// Walks the catalog's `/Names /EmbeddedFiles` name tree and returns
+    /// `(filename, decoded bytes)` for each `/Filespec`'s `/EF /F` (or `/UF`)
+    /// embedded-file stream. Complements the existing embedded-file writer.
+    /// Returns an empty vector when the document has no attachments.
+    pub fn extract_embedded_files(&self) -> Result<Vec<(String, Vec<u8>)>> {
+        self.require_authenticated()?;
+        let catalog = self.catalog()?;
+        let Some(cat_dict) = catalog.as_dict() else {
+            return Ok(Vec::new());
+        };
+        // catalog → /Names → /EmbeddedFiles (name-tree root).
+        let names = cat_dict
+            .get("Names")
+            .and_then(|n| self.resolve_object(n).ok());
+        let Some(ef_root) = names
+            .as_ref()
+            .and_then(|n| n.as_dict())
+            .and_then(|d| d.get("EmbeddedFiles"))
+            .and_then(|e| self.resolve_object(e).ok())
+        else {
+            return Ok(Vec::new());
+        };
+
+        let mut filespecs: Vec<Object> = Vec::new();
+        self.collect_embedded_filespecs(&ef_root, &mut filespecs, 0);
+
+        let mut out = Vec::new();
+        for fs in &filespecs {
+            let Some(fs_dict) = fs.as_dict() else {
+                continue;
+            };
+            // Prefer the Unicode filename /UF, fall back to /F.
+            let filename = fs_dict
+                .get("UF")
+                .or_else(|| fs_dict.get("F"))
+                .and_then(|n| self.resolve_object(n).ok())
+                .and_then(|n| {
+                    n.as_string()
+                        .map(|s| String::from_utf8_lossy(s).into_owned())
+                })
+                .unwrap_or_else(|| "attachment".to_string());
+            // /EF → { /F <stream ref> } (or /UF).
+            let Some(ef) = fs_dict.get("EF").and_then(|e| self.resolve_object(e).ok()) else {
+                continue;
+            };
+            let Some(ef_dict) = ef.as_dict() else {
+                continue;
+            };
+            let Some(stream_ref) = ef_dict
+                .get("F")
+                .or_else(|| ef_dict.get("UF"))
+                .and_then(|r| r.as_reference())
+            else {
+                continue;
+            };
+            if let Ok(stream_obj) = self.load_object(stream_ref) {
+                if let Ok(bytes) = self.decode_stream_with_encryption(&stream_obj, stream_ref) {
+                    out.push((filename, bytes));
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Recursively collect `/Filespec` objects from an `/EmbeddedFiles`
+    /// name-tree node: leaf `/Names [key filespec …]` pairs plus `/Kids`.
+    fn collect_embedded_filespecs(&self, node: &Object, out: &mut Vec<Object>, depth: u8) {
+        if depth > 32 {
+            return;
+        }
+        let Ok(node) = self.resolve_object(node) else {
+            return;
+        };
+        let Some(dict) = node.as_dict() else {
+            return;
+        };
+        if let Some(names) = dict.get("Names").and_then(|n| self.resolve_object(n).ok()) {
+            if let Some(arr) = names.as_array() {
+                // Flat [key1 filespec1 key2 filespec2 …]: the odd indices.
+                let mut i = 1;
+                while i < arr.len() {
+                    if let Ok(fs) = self.resolve_object(&arr[i]) {
+                        out.push(fs);
+                    }
+                    i += 2;
+                }
+            }
+        }
+        if let Some(kids) = dict.get("Kids").and_then(|k| self.resolve_object(k).ok()) {
+            if let Some(arr) = kids.as_array() {
+                for kid in arr {
+                    self.collect_embedded_filespecs(kid, out, depth + 1);
+                }
+            }
+        }
     }
 
     /// Build the resource-name → colour-space-object map from a resolved
@@ -22235,6 +22681,71 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
+    /// Regression: `extract_spans().to_chars()` per-glyph x must track the
+    /// accurate `extract_chars()` positions instead of drifting via the
+    /// nominal-`char_widths` prefix-sum (ISO 32000-1:2008 §9.4.3 / §9.4.4).
+    ///
+    /// Loads a real-world PDF (skipped when absent so CI is unaffected),
+    /// extracts accurate chars and spans, flattens the spans via `to_chars`,
+    /// pairs each span-glyph against the accurate char stream by char value in
+    /// reading order, and asserts ≥95% of matched glyphs land within 0.5pt.
+    /// A prior BUFFER-sourced attempt scored only 15%.
+    #[test]
+    fn extract_spans_glyph_x_tracks_extract_chars() {
+        let path = "/tmp/claude-1000/-home-yfedoseev-projects-pdf-oxide-fixes3\
+/fde760b5-e8d4-45bf-8a9b-2f6311d5149d/scratchpad/issue-598-example.pdf";
+        if !std::path::Path::new(path).exists() {
+            eprintln!("repro PDF absent — skipping");
+            return;
+        }
+        let doc = PdfDocument::open(path).expect("open repro pdf");
+
+        let accurate = doc.extract_chars(0).expect("extract_chars");
+        let spans = doc.extract_spans(0).expect("extract_spans");
+        let glyphs: Vec<crate::layout::TextChar> =
+            spans.iter().flat_map(|s| s.to_chars()).collect();
+
+        // Pair each span-glyph against the next accurate char of the same value
+        // on (roughly) the same baseline, walking both in reading order.
+        let mut used = vec![false; accurate.len()];
+        let mut deltas: Vec<f32> = Vec::new();
+        for g in &glyphs {
+            if g.char.is_whitespace() {
+                continue;
+            }
+            let mut best: Option<usize> = None;
+            let mut best_score = f32::MAX;
+            for (i, a) in accurate.iter().enumerate() {
+                if used[i] || a.char != g.char {
+                    continue;
+                }
+                if (a.origin_y - g.origin_y).abs() > 3.0 {
+                    continue;
+                }
+                let score = (a.origin_x - g.origin_x).abs() + (a.origin_y - g.origin_y).abs();
+                if score < best_score {
+                    best_score = score;
+                    best = Some(i);
+                }
+            }
+            if let Some(i) = best {
+                used[i] = true;
+                deltas.push((accurate[i].origin_x - g.origin_x).abs());
+            }
+        }
+
+        assert!(!deltas.is_empty(), "no glyphs paired");
+        let matched = deltas.len();
+        let under = deltas.iter().filter(|d| **d <= 0.5).count();
+        let pct = 100.0 * under as f32 / matched as f32;
+        let maxd = deltas.iter().cloned().fold(0.0_f32, f32::max);
+        eprintln!("paired {matched} glyphs — {pct:.1}% within 0.5pt (max drift {maxd:.2}pt)");
+        assert!(
+            pct >= 95.0,
+            "only {pct:.1}% of glyphs within 0.5pt (max drift {maxd:.2}pt); expected >= 95%"
+        );
+    }
+
     #[test]
     fn test_run_is_signed_number() {
         // Signed numeric exponents (unit notation) are detected for every
@@ -22729,6 +23240,124 @@ mod tests {
         );
 
         pdf
+    }
+
+    /// Build a minimal PDF with a `/Font` resource (needed for `Tf`/`Tj`
+    /// to resolve glyph widths), used by the NaN-bbox regression test.
+    fn build_minimal_pdf_with_font(content: &[u8]) -> Vec<u8> {
+        let mut pdf = b"%PDF-1.4\n".to_vec();
+
+        let off1 = pdf.len();
+        pdf.extend_from_slice(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+
+        let off2 = pdf.len();
+        pdf.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+
+        let off3 = pdf.len();
+        // Deliberately no /MediaBox (and none on /Pages 2 0 R to inherit):
+        // `postprocess_spans`'s off-page span filter is skipped entirely
+        // when `get_page_media_box` errors, so a page missing /MediaBox
+        // is the one path where a NaN bbox component survives to the
+        // reading-order sort instead of being silently dropped.
+        pdf.extend_from_slice(
+            b"3 0 obj\n<< /Type /Page /Parent 2 0 R \
+              /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n",
+        );
+
+        let off4 = pdf.len();
+        pdf.extend_from_slice(
+            format!("4 0 obj\n<< /Length {} >>\nstream\n", content.len()).as_bytes(),
+        );
+        pdf.extend_from_slice(content);
+        pdf.extend_from_slice(b"\nendstream\nendobj\n");
+
+        let off5 = pdf.len();
+        pdf.extend_from_slice(
+            b"5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica \
+              /Encoding /WinAnsiEncoding >>\nendobj\n",
+        );
+
+        let xref_off = pdf.len();
+        pdf.extend_from_slice(b"xref\n0 6\n");
+        pdf.extend_from_slice(b"0000000000 65535 f \n");
+        for off in [off1, off2, off3, off4, off5] {
+            pdf.extend_from_slice(format!("{:010} 00000 n \n", off).as_bytes());
+        }
+        pdf.extend_from_slice(
+            format!("trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n", xref_off)
+                .as_bytes(),
+        );
+
+        pdf
+    }
+
+    /// Regression test: a content stream with a degenerate CTM (`a == 0`)
+    /// and an oversized `Tm` translation literal. The lexer now clamps an
+    /// overflowing real literal to a finite value (see
+    /// `lexer::tests::test_parse_oversized_real_clamps_to_finite`), so this
+    /// specific literal no longer reaches `TjBuffer::new` as `Infinity` and
+    /// can no longer turn into NaN via `ctm.a * Infinity`. This test is
+    /// kept as a regression guard for that class of bug — before the lexer
+    /// clamp, `f64::from_str` *saturated* the all-digit literal to
+    /// `f64::INFINITY` rather than erroring, and combined with the zero
+    /// CTM component this became a NaN `bbox.y` in `TjBuffer::new`,
+    /// panicking `snap_superscript_baselines`'s index sort — the first
+    /// span sort that runs on every page, before `postprocess_spans`'s
+    /// off-page filter (which otherwise silently drops any NaN-bbox span
+    /// and requires a missing `/MediaBox` to bypass, see
+    /// `build_minimal_pdf_with_font`) — with the exact signature
+    /// `smallsort.rs: user-provided comparison function does not
+    /// correctly implement a total order`.
+    ///
+    /// 320 glyphs with distinct (sub-point-jittered) Y coordinates —
+    /// matching real OCR/scanned-text bbox noise, so no two glyphs tie in
+    /// the sort key — emitted in a riffle-shuffled, far-from-sorted
+    /// order: a near-sorted input lets Rust's pattern-defeating sort skip
+    /// the internal total-order consistency check entirely, which is why
+    /// a naive grid/row-major layout would not have reproduced the
+    /// original panic even with the same NaN present.
+    #[test]
+    fn test_nan_bbox_from_oversized_tm_literal_does_not_panic() {
+        let n = 320usize;
+        let ys: Vec<f32> = (0..n).map(|i| 750.0 - (i as f32) * 1.37).collect();
+        let mid = ys.len() / 2;
+        let (a, b) = ys.split_at(mid);
+        let mut shuffled: Vec<f32> = Vec::with_capacity(ys.len());
+        let (mut ai, mut bi) = (a.iter(), b.iter());
+        loop {
+            match (ai.next(), bi.next()) {
+                (Some(x), Some(y)) => {
+                    shuffled.push(*x);
+                    shuffled.push(*y);
+                },
+                (Some(x), None) => shuffled.push(*x),
+                (None, Some(y)) => shuffled.push(*y),
+                (None, None) => break,
+            }
+        }
+
+        let mut content = Vec::new();
+        content.extend_from_slice(b"BT\n/F1 10 Tf\n");
+        for (i, y) in shuffled.iter().enumerate() {
+            if i == 1 {
+                // The malicious glyph, isolated under its own degenerate
+                // CTM (a = 0) so only this glyph's position collapses
+                // via `0.0 * Infinity`; ordinary glyphs are unaffected.
+                let huge = "9".repeat(400) + ".0";
+                content.extend_from_slice(b"ET\nq\n0 0 0 1 0 0 cm\nBT\n/F1 10 Tf\n");
+                content.extend_from_slice(format!("1 0 0 1 {huge} 400 Tm\n(BOOM) Tj\n").as_bytes());
+                content.extend_from_slice(b"ET\nQ\nBT\n/F1 10 Tf\n");
+            }
+            content.extend_from_slice(format!("1 0 0 1 20 {y} Tm\n(X) Tj\n").as_bytes());
+        }
+        content.extend_from_slice(b"ET\n");
+
+        let pdf_bytes = build_minimal_pdf_with_font(&content);
+        let doc = PdfDocument::from_bytes(pdf_bytes).expect("parse repro pdf");
+        let result1 = doc.extract_text(0);
+        assert!(result1.is_ok(), "extract_text panicked or errored on NaN bbox coordinate");
+        let result2 = doc.to_plain_text_all(&crate::converters::ConversionOptions::default());
+        assert!(result2.is_ok(), "to_plain_text_all panicked or errored on NaN bbox coordinate");
     }
 
     /// Build a minimal PDF with a multi-page structure (given page count).
@@ -23351,6 +23980,7 @@ mod tests {
             horizontal_scaling: 100.0,
             primary_detected: false,
             char_widths: vec![],
+            char_x_offsets: Vec::new(),
             heading_level: None,
             rotation_degrees: 0.0,
             wmode: 0,
@@ -23848,6 +24478,7 @@ mod tests {
             primary_detected: false,
             artifact_type: None,
             char_widths,
+            char_x_offsets: Vec::new(),
             heading_level: None,
             rotation_degrees: 0.0,
             wmode: 0,
@@ -24242,6 +24873,7 @@ mod tests {
             text: "تاييدلا".to_string(),
             bbox: Rect::new(100.0, 700.0, 70.0, 12.0),
             char_widths: vec![10.0; 7],
+            char_x_offsets: Vec::new(),
             font_size: 12.0,
             ..TextSpan::default()
         };
@@ -24282,6 +24914,7 @@ mod tests {
             text: "ةعئاش".to_string(),
             bbox: Rect::new(100.0, 700.0, 50.0, 12.0),
             char_widths: vec![10.0; 5],
+            char_x_offsets: Vec::new(),
             font_size: 12.0,
             ..TextSpan::default()
         };
@@ -24295,6 +24928,7 @@ mod tests {
             text: "عاونأ".to_string(),
             bbox: Rect::new(160.0, 700.0, 50.0, 12.0),
             char_widths: vec![10.0; 5],
+            char_x_offsets: Vec::new(),
             font_size: 12.0,
             ..TextSpan::default()
         };
@@ -27688,6 +28322,7 @@ mod tests {
                 horizontal_scaling: 100.0,
                 primary_detected: false,
                 char_widths: vec![],
+                char_x_offsets: Vec::new(),
                 heading_level: None,
                 rotation_degrees: 0.0,
                 wmode: 0,
@@ -27755,6 +28390,7 @@ mod tests {
             horizontal_scaling: 100.0,
             primary_detected: false,
             char_widths: vec![],
+            char_x_offsets: Vec::new(),
             heading_level: None,
             rotation_degrees: 0.0,
             wmode: 0,
@@ -28443,6 +29079,7 @@ mod tests {
                 horizontal_scaling: 100.0,
                 primary_detected: false,
                 char_widths: vec![],
+                char_x_offsets: Vec::new(),
                 heading_level: None,
                 rotation_degrees: 0.0,
                 wmode: 0,
@@ -28516,6 +29153,7 @@ mod tests {
                 horizontal_scaling: 100.0,
                 primary_detected: false,
                 char_widths: vec![],
+                char_x_offsets: Vec::new(),
                 heading_level: None,
                 rotation_degrees: 0.0,
                 wmode: 0,
@@ -28588,6 +29226,7 @@ mod tests {
                 horizontal_scaling: 100.0,
                 primary_detected: false,
                 char_widths: vec![],
+                char_x_offsets: Vec::new(),
                 heading_level: None,
                 rotation_degrees: 0.0,
                 wmode: 0,
