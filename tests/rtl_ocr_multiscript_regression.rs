@@ -158,11 +158,39 @@ const WORDS: &[(&str, bool, &str, f32, f32, &str)] = &[
     ("spa", false, "060104030705", 336.00, 708.00, "\u{a1}Hola!"),
     ("fra", false, "0804090A040B0C05", 36.00, 636.00, "Bonjour!"),
     ("deu", false, "0D0C0E0F100D04111105", 336.00, 636.00, "Gr\u{fc}\u{df} Gott!"),
-    ("rus", false, "12131415161705", 36.00, 564.00, "\u{41f}\u{440}\u{438}\u{432}\u{435}\u{442}!"),
-    ("ell", false, "18191A1B101C1D1E05", 336.00, 564.00, "\u{393}\u{3b5}\u{3b9}\u{3ac} \u{3c3}\u{3bf}\u{3c5}!"),
+    (
+        "rus",
+        false,
+        "12131415161705",
+        36.00,
+        564.00,
+        "\u{41f}\u{440}\u{438}\u{432}\u{435}\u{442}!",
+    ),
+    (
+        "ell",
+        false,
+        "18191A1B101C1D1E05",
+        336.00,
+        564.00,
+        "\u{393}\u{3b5}\u{3b9}\u{3ac} \u{3c3}\u{3bf}\u{3c5}!",
+    ),
     ("chi_sim", false, "1F2122", 36.00, 492.00, "\u{4f60}\u{597d}\u{ff01}"),
-    ("jpn", false, "232425262722", 336.00, 492.00, "\u{3053}\u{3093}\u{306b}\u{3061}\u{306f}\u{ff01}"),
-    ("kor", false, "28292A2B2C05", 36.00, 420.00, "\u{c548}\u{b155}\u{d558}\u{c138}\u{c694}!"),
+    (
+        "jpn",
+        false,
+        "232425262722",
+        336.00,
+        492.00,
+        "\u{3053}\u{3093}\u{306b}\u{3061}\u{306f}\u{ff01}",
+    ),
+    (
+        "kor",
+        false,
+        "28292A2B2C05",
+        36.00,
+        420.00,
+        "\u{c548}\u{b155}\u{d558}\u{c138}\u{c694}!",
+    ),
     ("tur", false, "2D020C2E072F0705", 336.00, 420.00, "Merhaba!"),
     (
         "hin",
@@ -172,7 +200,14 @@ const WORDS: &[(&str, bool, &str, f32, f32, &str)] = &[
         348.00,
         "\u{928}\u{92e}\u{938}\u{94d}\u{924}\u{947}!",
     ),
-    ("ara", true, "05363738393A", 336.00, 348.00, "!\u{645}\u{631}\u{62d}\u{628}\u{627}"),
+    (
+        "ara",
+        true,
+        "05363738393A",
+        336.00,
+        348.00,
+        "!\u{645}\u{631}\u{62d}\u{628}\u{627}",
+    ),
     ("heb", true, "3B3C3D3E", 36.00, 276.00, "\u{5e9}\u{5dc}\u{5d5}\u{5dd}"),
     ("por", false, "3F034005", 336.00, 276.00, "Ol\u{e1}!"),
     ("ita", false, "4142070405", 48.00, 204.00, "Ciao!"),
@@ -194,7 +229,14 @@ const WORDS: &[(&str, bool, &str, f32, f32, &str)] = &[
         60.00,
         "\u{3a7}\u{3b1}\u{3af}\u{3c1}\u{3b5}\u{3c4}\u{3b5}!",
     ),
-    ("ara", true, "055253543A55", 432.00, 60.00, "!\u{623}\u{647}\u{644}\u{627}\u{64b}"),
+    (
+        "ara",
+        true,
+        "055253543A55",
+        432.00,
+        60.00,
+        "!\u{623}\u{647}\u{644}\u{627}\u{64b}",
+    ),
 ];
 
 /// Untagged one-page PDF: a simple TrueType font (`/FirstChar 0`,
@@ -214,9 +256,7 @@ fn build_ocr_sandwich_pdf() -> Vec<u8> {
 
     let mut content_ops = String::new();
     for (_, _, hex, x, y, _) in WORDS {
-        content_ops.push_str(&format!(
-            "BT /F1 24 Tf 3 Tr 1 0 0 1 {x} {y} Tm [<{hex}>] TJ ET\n"
-        ));
+        content_ops.push_str(&format!("BT /F1 24 Tf 3 Tr 1 0 0 1 {x} {y} Tm [<{hex}>] TJ ET\n"));
     }
     let content_bytes = content_ops.as_bytes();
 

@@ -52,7 +52,12 @@ use pdf_oxide::PdfDocument;
 /// Minimal untagged one-page PDF: a simple TrueType font (`/FirstChar 0`,
 /// `/Widths`, `/ToUnicode`) and a plain content stream. `content_ops` is
 /// the full `BT ... ET` body.
-fn build_pdf(tounicode_bfchars: &str, widths: &str, last_char: usize, content_ops: &str) -> Vec<u8> {
+fn build_pdf(
+    tounicode_bfchars: &str,
+    widths: &str,
+    last_char: usize,
+    content_ops: &str,
+) -> Vec<u8> {
     let tounicode = format!(
         "/CIDInit /ProcSet findresource begin\n12 dict begin begincmap\n\
          1 begincodespacerange <00> <FF> endcodespacerange\n\
@@ -155,10 +160,7 @@ fn tj_array_invisible_logical_order_per_word_is_not_reversed() {
         "word one (ביצה) letters got reversed — invisible-text run wrongly \
          ran through the visual-order heuristic: {text:?}"
     );
-    assert!(
-        text.contains(WORD_TWO_LOGICAL),
-        "word two (פרק) letters got reversed: {text:?}"
-    );
+    assert!(text.contains(WORD_TWO_LOGICAL), "word two (פרק) letters got reversed: {text:?}");
 }
 
 /// Visible-mode counterpart (documents the fix's boundary, not a bug):
