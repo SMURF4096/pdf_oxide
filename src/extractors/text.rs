@@ -1128,6 +1128,33 @@ pub(crate) fn strip_prime_decimal_boundary_spaces(text: &str) -> String {
     out
 }
 
+/// True when any drawn glyph run puts ink inside the horizontal gap between
+/// `left` and `right`, overlapping their vertical band.
+///
+/// Used by the decimal-value merge: two pure-digit runs a split-box-sized
+/// gap apart merge into one decimal amount ONLY if the gap is empty. A
+/// separator glyph occupying the gap — the comma of a subscript index pair
+/// (`P_{1,0}`), a list delimiter — proves the runs are distinct tokens, no
+/// matter where in the content stream it was drawn. The pair's own boxes
+/// bound the gap exactly, so a small epsilon keeps them (and touching
+/// neighbours) from counting as intruders.
+fn decimal_gap_has_ink(ink_boxes: &[Rect], left: &Rect, right: &Rect) -> bool {
+    const EPS: f32 = 0.01;
+    let gap_start = left.x + left.width;
+    let gap_end = right.x;
+    if gap_end - gap_start <= 2.0 * EPS {
+        return false;
+    }
+    let band_bottom = left.y.min(right.y);
+    let band_top = (left.y + left.height).max(right.y + right.height);
+    ink_boxes.iter().any(|b| {
+        b.x + b.width > gap_start + EPS
+            && b.x < gap_end - EPS
+            && b.y < band_top
+            && b.y + b.height > band_bottom
+    })
+}
+
 fn should_insert_space(
     preceding_text: &str,
     following_text: &str,
@@ -4420,6 +4447,18 @@ impl<'doc> TextExtractor<'doc> {
         // Take ownership of spans to avoid cloning during iteration
         let old_len = self.spans.len();
         let spans = std::mem::take(&mut self.spans);
+        // Geometry of every drawn (non-whitespace) glyph run, captured
+        // before the fold consumes the list. The decimal-merge branch below
+        // needs it: a separator glyph between two digit runs — the comma of
+        // a subscript index pair like `P_{1,0}` — is often drawn elsewhere
+        // in the content stream, so the fold sees the digits as adjacent
+        // and only a geometric test over ALL runs can spot the ink sitting
+        // in the gap.
+        let ink_boxes: Vec<Rect> = spans
+            .iter()
+            .filter(|s| !s.text.trim().is_empty())
+            .map(|s| s.bbox)
+            .collect();
         let mut merged = Vec::with_capacity(old_len);
         let mut current_span: Option<TextSpan> = None;
 
@@ -4455,8 +4494,20 @@ impl<'doc> TextExtractor<'doc> {
             // the two glyphs into a single horizontal span and clobbers
             // the wmode metadata for the vertical glyph.
             let wmode_compatible = current.wmode == span.wmode;
+            // ±90°-rotated runs (text matrix rotation, not wmode) advance
+            // along Y with their line axis on X, so the portrait same-line
+            // test below reads PERPENDICULAR geometry for them: two runs
+            // from adjacent rotated lines share a baseline-Y and sit a
+            // word-gap apart in X, which glued words from different lines
+            // of a rotated table into one span ("row" + "row" → "row row",
+            //). Runs in a rotated frame never merge here; each
+            // stays per-literal and the rotated-frame reading order and
+            // word assembly handle them downstream.
+            let quadrant_vertical = |deg: f32| (deg - 90.0).abs() < 0.5 || (deg + 90.0).abs() < 0.5;
+            let rotation_compatible = !quadrant_vertical(current.rotation_degrees)
+                && !quadrant_vertical(span.rotation_degrees);
             let y_diff = (span.bbox.y - current.bbox.y).abs();
-            let same_line = y_diff < 1.0 && wmode_compatible;
+            let same_line = y_diff < 1.0 && wmode_compatible && rotation_compatible;
 
             // Gap between end of current span and start of next span
             let current_end_x = current.bbox.x + current.bbox.width;
@@ -4646,6 +4697,21 @@ impl<'doc> TextExtractor<'doc> {
             // gaps was being mangled into "201.3", losing the year token from
             // word-F1 scoring. Real "$123 _ 45" split-box layouts always have
             // a gap > ~half the font size; tight letter spacing is < 0.1 em.
+            // A separator glyph drawn INSIDE the gap is proof the two digit
+            // runs are distinct tokens (the comma of a subscript index pair
+            // like `P_{1,0}`, drawn out of content-stream order): a genuine
+            // split-box amount has nothing between its boxes. The gap band
+            // alone cannot make this call — an index pair and a real
+            // split-box amount can sit at the same gap-to-font-size ratio.
+            // A genuine split-box amount prints its integer and cents at
+            // the SAME size; a digit run markedly smaller than its
+            // neighbour is super/subscript context (the exponent of a
+            // scientific-notation value next to the following value's
+            // mantissa), and fusing those fabricates a decimal.
+            let decimal_sizes_match = {
+                let (a, b) = (current.font_size, span.font_size);
+                a > 0.0 && b > 0.0 && (a.min(b) / a.max(b)) >= 0.85
+            };
             //
             // The gap also needs an upper ceiling. In scientific and math
             // PDFs, subscript index pairs like `P_{1,0}` draw the two subscript
@@ -4658,13 +4724,23 @@ impl<'doc> TextExtractor<'doc> {
             let max_decimal_gap = current.font_size * 1.3;
             let decimal_merge = same_line
                 && same_mcid
+                && decimal_sizes_match
                 && gap > min_decimal_gap
                 && gap < max_decimal_gap
                 && !current.text.is_empty()
                 && !span.text.is_empty()
                 && current.text.chars().all(|c| c.is_ascii_digit())
                 && span.text.chars().all(|c| c.is_ascii_digit())
-                && (1..=2).contains(&span.text.len());
+                && (1..=2).contains(&span.text.len())
+                && !decimal_gap_has_ink(&ink_boxes, &current.bbox, &span.bbox);
+
+            // Snapshot the pre-merge shape for the positional `char_widths`
+            // maintenance below: the merged text is `current + [separator] +
+            // span`, so each contribution's widths must land at the same
+            // position its chars occupy. (Captured before any branch mutates
+            // `current.text` / `current.bbox`.)
+            let current_chars_before = current.text.chars().count();
+            let span_char_count = span.text.chars().count();
 
             if decimal_merge {
                 // Join integer and decimal parts with "."
@@ -4797,26 +4873,72 @@ impl<'doc> TextExtractor<'doc> {
                 current.bbox.width = new_width;
                 current.bbox.height = new_height;
 
-                // Keep `char_widths` in lockstep with the merged text. The
-                // downstream width-based splitters `is_column_spanning_decimal`
-                // and `char_widths_boundary_split` (document.rs) fire when
-                // `char_widths.len() < char_count`, so a merged multi-glyph span
-                // (e.g. per-glyph `Td <hex> Tj` table cells like "0.99" / "Q1")
-                // would otherwise be wrongly split — dropping the decimal point
-                // ("0.99" → "0 99") or gluing a space at the letter→digit
-                // boundary ("Q1" → "Q 1"). Append this span's per-glyph widths,
-                // then pad to the exact char count to cover any inserted '.'/
-                // ' ' separator (or a source span whose widths were sparse).
-                current.char_widths.extend_from_slice(&span.char_widths);
+                // Keep `char_widths` in POSITIONAL lockstep with the merged
+                // text. The downstream width-based splitters
+                // `is_column_spanning_decimal` and `char_widths_boundary_split`
+                // (document.rs) fire when `char_widths.len() < char_count`, and
+                // `TextSpan::to_chars` pairs each glyph's accurate
+                // `char_x_offsets` origin with `char_widths[i]` — so every
+                // width entry must sit at the same index as its char, not
+                // merely make the lengths match. A trailing `resize` after a
+                // width-less contribution (e.g. a TJ-offset space span merging
+                // FIRST) shifted every later width one slot left, pairing each
+                // glyph with its neighbor's advance and opening phantom
+                // intra-word gaps that the word-gap clusterer split on
+                // (`module` → `m|odu|le`). Maintain the merged
+                // vector as `current + [separator] + span`, normalizing each
+                // contribution at its own position instead.
+                let pad = if current.font_size > 0.0 {
+                    current.font_size * 0.25
+                } else {
+                    1.0
+                };
+                // 1. Normalize the accumulated widths to the pre-merge char
+                //    count. A width-less contribution is split uniformly
+                //    across its bbox (matching `to_chars`' uniform fallback);
+                //    a partially-populated one keeps the legacy tail-pad.
+                if current.char_widths.is_empty() && current_chars_before > 0 {
+                    let old_width = (current_end_x - current.bbox.x).max(0.0);
+                    current
+                        .char_widths
+                        .resize(current_chars_before, old_width / current_chars_before as f32);
+                } else if current.char_widths.len() != current_chars_before {
+                    current.char_widths.resize(current_chars_before, pad);
+                }
+                // 2. Inserted separator ('.' or ' ') widths land at the
+                //    separator's own position: the real geometric gap the
+                //    separator stands in for, with the legacy pad as the
+                //    fallback for overlapping/degenerate layouts.
                 let merged_char_count = current.text.chars().count();
-                if current.char_widths.len() != merged_char_count {
-                    let pad = if current.font_size > 0.0 {
-                        current.font_size * 0.25
+                let separator_count =
+                    merged_char_count.saturating_sub(current_chars_before + span_char_count);
+                if separator_count > 0 {
+                    let sep_gap = span.bbox.x - current_end_x;
+                    let sep_width = if sep_gap.is_finite() && sep_gap > 0.0 {
+                        sep_gap / separator_count as f32
                     } else {
-                        1.0
+                        pad
                     };
+                    current
+                        .char_widths
+                        .resize(current_chars_before + separator_count, sep_width);
+                }
+                // 3. Append the merged-in span's widths, normalized the same
+                //    way at its position.
+                if span.char_widths.is_empty() && span_char_count > 0 {
+                    let per_char = (span.bbox.width / span_char_count as f32).max(0.0);
+                    current
+                        .char_widths
+                        .extend(std::iter::repeat_n(per_char, span_char_count));
+                } else {
+                    current.char_widths.extend_from_slice(&span.char_widths);
                     current.char_widths.resize(merged_char_count, pad);
                 }
+                debug_assert_eq!(
+                    current.char_widths.len(),
+                    merged_char_count,
+                    "char_widths must stay in lockstep with merged text"
+                );
 
                 // Preserve the merged-in glyph's TRUE origin for scrambled-RTL
                 // producers (e.g. /ReversedChars + per-glyph /ActualText Arabic,
@@ -8254,6 +8376,15 @@ impl<'doc> TextExtractor<'doc> {
         // em) plus Tw, scaled by Th. In vertical mode Tz does not apply
         // (§9.3.4) and we use the same magnitude as a writing-axis step
         // — the synthetic gap a TJ offset stands in for.
+        //
+        // NOTE: the displacement is expressed against the raw `Tf` size,
+        // not the `Tm`-scaled effective size, so for print-era producers
+        // that set `/F 1 Tf` with the size in `Tm` this span is narrower
+        // in device space than a quarter em. That geometry is load-bearing
+        // for the downstream column/line heuristics, which were tuned
+        // against it — widening it reorders text on real documents — so
+        // the lockstep fix below keeps a `char_widths` entry
+        // consistent with this bbox rather than rescaling both.
         let space_advance = if wmode == 0 {
             (250.0 * font_size / 1000.0 + word_space) * horizontal_scaling / 100.0
         } else {
@@ -8320,7 +8451,11 @@ impl<'doc> TextExtractor<'doc> {
             is_monospace: false,
             primary_detected: false,
             artifact_type: self.current_artifact_type(),
-            char_widths: vec![],
+            // One synthetic space char ⇒ one width entry, so the span-merge
+            // lockstep (`char_widths.len() == text.chars().count()`) holds
+            // from birth regardless of merge order. The width is
+            // the bbox extent along x, consistent with `to_chars` geometry.
+            char_widths: vec![space_width],
             char_x_offsets: Vec::new(),
             heading_level: None,
             rotation_degrees: snap_run_rotation(&state.ctm.multiply(&state.text_matrix)),
@@ -16393,6 +16528,125 @@ mod profile_based_space_tests {
             extractor.spans.len(),
             2,
             "3-digit decimal part should not trigger decimal merge"
+        );
+    }
+
+    /// Compact TextSpan builder for the intervening-ink decimal tests.
+    fn digit_test_span(text: &str, bbox: Rect, font_size: f32) -> TextSpan {
+        TextSpan {
+            text_rise: 0.0,
+            artifact_type: None,
+            text: text.to_string(),
+            bbox,
+            font_name: "F1".to_string(),
+            font_size,
+            font_weight: FontWeight::Normal,
+            color: Color::black(),
+            mcid: None,
+            mcid_scope: None,
+            sequence: 0,
+            split_boundary_before: false,
+            offset_semantic: false,
+            is_italic: false,
+            is_monospace: false,
+            char_spacing: 0.0,
+            word_spacing: 0.0,
+            horizontal_scaling: 100.0,
+            primary_detected: false,
+            char_widths: vec![],
+            char_x_offsets: Vec::new(),
+            heading_level: None,
+            rotation_degrees: 0.0,
+            wmode: 0,
+            rtl_draw_logical: false,
+        }
+    }
+
+    #[test]
+    fn test_no_decimal_merge_with_intervening_comma_glyph() {
+        // Subscript index pairs (`P_{1,0}`, `i_2, i_4`) place two small
+        // digit runs a split-box-sized gap apart WITH the separating comma
+        // drawn between them — often later in the content stream, so the
+        // digit spans are sequence-adjacent. Ink inside the gap proves the
+        // digits are separate tokens: a genuine split-box amount has empty
+        // space between its boxes. Gap here: 110.0 - 103.5 = 6.5pt at 7pt
+        // font = 0.93x — squarely inside the genuine split-box band, so a
+        // gap ceiling alone cannot reject it.
+        let mut extractor = TextExtractor::new();
+        extractor.merging_config = SpanMergingConfig::legacy();
+
+        extractor.spans = vec![
+            digit_test_span("1", Rect::new(100.0, 700.0, 3.5, 7.0), 7.0),
+            digit_test_span("0", Rect::new(110.0, 700.0, 3.5, 7.0), 7.0),
+            // The comma, drawn after both digits in the content stream but
+            // sitting geometrically inside the gap.
+            digit_test_span(",", Rect::new(104.8, 699.0, 1.8, 3.0), 7.0),
+        ];
+
+        extractor.merge_adjacent_spans();
+        assert!(
+            !extractor.spans.iter().any(|s| s.text.contains("1.0")),
+            "digits separated by a drawn comma must not merge into a decimal, got {:?}",
+            extractor
+                .spans
+                .iter()
+                .map(|s| s.text.clone())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_no_decimal_merge_across_font_sizes() {
+        // Scientific notation in table rows: the exponent digit of one
+        // value ("10^-4" drawn as "10" + superscript "4") and the mantissa
+        // digit of the NEXT value ("3 ...") are both pure-digit runs a
+        // split-box-sized gap apart, and were fused into a fabricated
+        // decimal ("4 . 10-4 3 . 10-4" -> "4 . 10-4.3 . 10-4"). A genuine
+        // split-box amount prints both halves at the SAME size; an
+        // exponent is markedly smaller than the neighbouring mantissa, so
+        // a size mismatch disqualifies the pair.
+        let mut extractor = TextExtractor::new();
+        extractor.merging_config = SpanMergingConfig::legacy();
+
+        extractor.spans = vec![
+            // Exponent "4" of the previous value: 7pt.
+            digit_test_span("4", Rect::new(200.0, 700.0, 4.0, 7.0), 7.0),
+            // Mantissa "3" of the next value: 12pt, 8pt away (0.67-1.14x
+            // either font size -- inside the merge band for both).
+            digit_test_span("3", Rect::new(212.0, 700.0, 6.5, 12.0), 12.0),
+        ];
+
+        extractor.merge_adjacent_spans();
+        assert!(
+            !extractor.spans.iter().any(|s| s.text.contains('.')),
+            "digit runs at mismatched font sizes must not merge into a decimal, got {:?}",
+            extractor
+                .spans
+                .iter()
+                .map(|s| s.text.clone())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_decimal_merge_with_ink_elsewhere_on_line_still_joins() {
+        // Positive control for the intervening-ink test: ink elsewhere on
+        // the same line (a comma before the amount) must not block a
+        // genuine split-box merge — only ink INSIDE the gap counts.
+        let mut extractor = TextExtractor::new();
+        extractor.merging_config = SpanMergingConfig::legacy();
+
+        extractor.spans = vec![
+            digit_test_span("123456", Rect::new(382.3, 700.0, 39.6, 12.0), 12.0),
+            digit_test_span("72", Rect::new(432.7, 700.0, 13.2, 12.0), 12.0), // 10.8pt gap
+            digit_test_span(",", Rect::new(300.0, 700.0, 2.5, 4.0), 12.0),    // far left of both
+        ];
+
+        extractor.merge_adjacent_spans();
+        assert!(
+            extractor.spans.iter().any(|s| s.text == "123456.72"),
+            "split-box amount must still merge when the line's other ink is outside the gap, got {:?}",
+            extractor.spans.iter().map(|s| s.text.clone()).collect::<Vec<_>>()
         );
     }
 
