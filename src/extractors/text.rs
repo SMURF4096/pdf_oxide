@@ -3854,6 +3854,12 @@ impl<'doc> TextExtractor<'doc> {
     /// For most use cases, prefer using `extract_text_spans()` which groups
     /// characters into text spans according to PDF semantics.
     pub fn extract(&mut self, content_stream: &[u8]) -> Result<Vec<TextChar>> {
+        self.extract_into_self(content_stream)?;
+        Ok(self.chars.clone())
+    }
+
+    /// Run the character extraction and leave the result in `self.chars`.
+    fn extract_into_self(&mut self, content_stream: &[u8]) -> Result<()> {
         // Enable character extraction mode
         self.extract_spans = false;
         self.chars.clear();
@@ -3882,7 +3888,17 @@ impl<'doc> TextExtractor<'doc> {
         // at the same Y position have X positions within 2pt of each other.
         self.deduplicate_overlapping_chars();
 
-        Ok(self.chars.clone())
+        Ok(())
+    }
+
+    /// Same extraction as [`Self::extract`], but hands the buffer over instead
+    /// of copying it. Every `TextChar` owns a `font_name` String, so `extract`'s
+    /// clone re-allocates once per glyph — measurable on long documents. Leaves
+    /// `self.chars` empty, so callers that read `char_count`/`chars` afterwards
+    /// must keep using [`Self::extract`].
+    pub fn extract_owned(&mut self, content_stream: &[u8]) -> Result<Vec<TextChar>> {
+        self.extract_into_self(content_stream)?;
+        Ok(std::mem::take(&mut self.chars))
     }
 
     /// Deduplicate overlapping characters on the same line.
@@ -3915,12 +3931,16 @@ impl<'doc> TextExtractor<'doc> {
             return;
         }
 
-        let mut deduplicated = Vec::with_capacity(self.chars.len());
+        let before = self.chars.len();
         let mut prev_y_rounded: Option<i32> = None;
         let mut prev_x: Option<f32> = None;
         let mut prev_char: Option<char> = None;
 
-        for ch in self.chars.iter() {
+        // Retained in place: the predicate only looks back at the previously
+        // KEPT glyph, which `retain`'s in-order visit preserves. Building a
+        // second Vec instead deep-cloned every glyph — and `TextChar` owns a
+        // `font_name` String, so that was one malloc per glyph, per page.
+        self.chars.retain(|ch| {
             let y_rounded = ch.bbox.y.round() as i32;
             let x = ch.bbox.x;
 
@@ -3947,7 +3967,6 @@ impl<'doc> TextExtractor<'doc> {
             };
 
             if !should_skip {
-                deduplicated.push(ch.clone());
                 prev_y_rounded = Some(y_rounded);
                 prev_x = Some(x);
                 prev_char = Some(ch.char);
@@ -3959,16 +3978,15 @@ impl<'doc> TextExtractor<'doc> {
                     ch.bbox.y
                 );
             }
-        }
+            !should_skip
+        });
 
         log::debug!(
             "Deduplicated {} overlapping characters ({} -> {} chars)",
-            self.chars.len() - deduplicated.len(),
-            self.chars.len(),
-            deduplicated.len()
+            before - self.chars.len(),
+            before,
+            self.chars.len()
         );
-
-        self.chars = deduplicated;
     }
 
     /// Snap super/subscript glyph spans onto the baseline of an
@@ -9375,6 +9393,9 @@ mod tests {
                 std::collections::HashMap::new(),
             )),
             byte_to_width_table: std::sync::OnceLock::new(),
+            weight_memo: std::sync::OnceLock::new(),
+            italic_memo: std::sync::OnceLock::new(),
+            std14_memo: std::sync::OnceLock::new(),
             diff_glyph_names: std::collections::HashMap::new(),
             wmode: 0,
             cid_vertical_metrics: None,
