@@ -282,7 +282,14 @@ mandatory floor mirrors what you should run locally:
   ```bash
   git commit -s     # adds: Signed-off-by: Your Name <you@example.com>
   ```
-  The `dco` CI job enforces this. There is no CLA.
+  The `dco` CI job enforces this.
+- **CLA** — non-trivial contributions are accepted under the project's
+  [Contributor License Agreement](CLA.md). It is a *licence, not an assignment*:
+  you keep ownership of your work and grant the project a broad licence to use
+  and sub-licence it. Trivial changes (typos, formatting, docs) are exempt. Once
+  the CLA bot is enabled it records your one-click sign-off on your first PR;
+  until then the DCO sign-off above is the operative requirement. See
+  [CLA.md](CLA.md) and the licence/trademark note in the README.
 - **Fill in the template.** Issues and pull requests opened without filling in
   their template are **closed automatically** (you'll get a comment explaining
   how) — edit yours to fill it in, then reopen and we'll pick it up. Maintainers,
@@ -300,9 +307,15 @@ Speculative, unreproducible "findings" will be closed.
 
 ## License
 
-By contributing you agree your contributions are dual-licensed under **MIT OR
-Apache-2.0** (see [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE)),
-with no additional terms. Inbound = outbound.
+By contributing you agree that the **outbound licence for released code is
+MIT OR Apache-2.0** (see [LICENSE-MIT](LICENSE-MIT) and
+[LICENSE-APACHE](LICENSE-APACHE)) — inbound = outbound for what ships to users. In
+addition, **non-trivial contributions are made under the project's
+[Contributor License Agreement](CLA.md)**, which grants the Maintainer a broader,
+sub-licensable copyright and patent licence so the project can relicense *future*
+versions if it ever needs to. The CLA does not change the licence of any
+already-published release. Trivial changes (typos, formatting, docs) are exempt
+from the CLA and remain inbound = outbound only.
 
 ---
 
